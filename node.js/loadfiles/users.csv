@@ -1,0 +1,3 @@
+user_id,username,email,password,role
+1,chris,chris@fyberlabs.com,test,admin
+2,cindy,cindy@fyberlabs.com,test,user

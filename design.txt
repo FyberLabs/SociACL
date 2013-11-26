@@ -1,0 +1,11 @@
+For saas api we provide a restful check for authentication based on encrypted tokens
+
+Version 1:
+Basically the site being accessed has a secret we gave it plus a public id, the client requests auth from sociacl
+sociacl will use the publicid and client info to verify access
+if access is granted the secret will be used to send a token back
+the site can then validate the token based on the the secret and the client info
+
+Version 2:
+we use forward encryption to guarantee only this session is visible to the client and not previous matching ones
+
