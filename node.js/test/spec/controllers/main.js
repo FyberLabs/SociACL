@@ -20,3 +20,28 @@ describe('Controller: MainCtrl', function () {
     expect(scope.awesomeThings.length).toBe(3);
   });
 });
+
+//Request URI to translate into resource URI
+//Depending on Requester, return different results - none, block, partial block, alternative content, actual content
+//Support graceful parsing - ie. check each external request or even text for censorable components and remove or swap
+//content not revealed
+//alternative resource could be limited content, wrong content, request for additional permission/payment
+
+//Blind authorization where a request URI from a known associated service may check a user for permission
+//No content manipulating on our side, though we can return a user classification in relation to the request
+//or service
+
+//Setup a resource URI with a request URI
+//Modify permissions based on groups, logins, etc.
+
+//Check for a persons permissions based on
+//verified login ids we know of them
+//groups they blong to on social sites - linkedin, facebook, etc.
+//location of their app
+//additional authentication - multiple factor support - plugins in app and known hashes/certs
+
+//User and group management
+//Internal tagging of users and groups - ie. father, girl friend, fellow spy, etc.
+//associated service's group creation
+//user id and solicitation for login
+//custom tagging, but also generic tags/suggestions - father, grandfather, friend, etc.

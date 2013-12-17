@@ -23,7 +23,8 @@
     "winston": "~0.7.2",
     "passport-local": "~0.1.6",
     "passport": "~0.1.17",
-	"jasmine-node": "*"
+	"jasmine-node": "*",
+	"protractor": "*"
   },
   "devDependencies": {
     "grunt": "~0.4.1",
