@@ -1,0 +1,104 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+    <PropertyGroup>
+        <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+        <SchemaVersion>2.0</SchemaVersion>
+        <ProjectGuid>{752675ee-cb3d-456d-b4c1-9f4a641ca0a0}</ProjectGuid>
+        <ProjectHome />
+        <ProjectView>ShowAllFiles</ProjectView>
+        <StartupFile>app.js</StartupFile>
+        <WorkingDirectory>.</WorkingDirectory>
+        <OutputPath>.</OutputPath>
+        <ProjectTypeGuids>{3AF33F2E-1136-4D97-BBB7-1795711AC8B8};{349c5851-65df-11da-9384-00065b846f21};{9092AA53-FB77-4645-B42D-1CCCA6BD08BD}</ProjectTypeGuids>
+        <VisualStudioVersion Condition="'$(VisualStudioVersion)' == ''">11.0</VisualStudioVersion>
+        <VSToolsPath Condition="'$(VSToolsPath)' == ''">$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)</VSToolsPath>
+    </PropertyGroup>
+    <PropertyGroup Condition="'$(Configuration)' == 'Debug'" />
+    <PropertyGroup Condition="'$(Configuration)' == 'Release'" />
+    <ItemGroup>
+        <Content Include="LICENSE.txt" />
+        <Content Include="bower.json" />
+        <Content Include="package.json" />
+        <Content Include="README.md" />
+        <Compile Include="app.js" />
+        <Compile Include="Gruntfile.js" />
+        <Compile Include="karma-e2e.conf.js" />
+        <Compile Include="karma.conf.js" />
+        <Content Include="app\robots.txt" />
+        <Content Include="app\404.html" />
+        <Content Include="app\index.html" />
+        <Compile Include="lib\db.js" />
+        <Compile Include="lib\log.js" />
+        <Compile Include="lib\user.js" />
+        <Compile Include="routes\index.js" />
+        <Compile Include="routes\user.js" />
+        <Content Include="test\runner.html" />
+        <Content Include="views\index.jade" />
+        <Content Include="views\layout.jade" />
+        <Content Include="app\fonts\glyphicons-halflings-regular.svg" />
+        <Content Include="app\images\yeoman.png" />
+        <Compile Include="app\scripts\app.js" />
+        <Content Include="app\styles\bootstrap.css" />
+        <Content Include="app\styles\main.css" />
+        <Content Include="app\styles\style.css" />
+        <Content Include="app\views\main.html" />
+        <Compile Include="app\scripts\controllers\main.js" />
+        <Compile Include="test\spec\controllers\main.js" />
+    </ItemGroup>
+    <ItemGroup>
+        <Folder Include="app" />
+        <Folder Include="app\fonts" />
+        <Folder Include="app\images" />
+        <Folder Include="app\scripts" />
+        <Folder Include="app\scripts\controllers" />
+        <Folder Include="app\styles" />
+        <Folder Include="app\views" />
+        <Folder Include="lib" />
+        <Folder Include="loadfiles" />
+        <Folder Include="routes" />
+        <Folder Include="test" />
+        <Folder Include="test\spec" />
+        <Folder Include="test\spec\controllers" />
+        <Folder Include="views" />
+    </ItemGroup>
+    <Import Project="$(MSBuildToolsPath)\Microsoft.Common.targets" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
+    <Import Project="$(VSToolsPath)\Node.js Tools\Microsoft.NodejsTools.targets" />
+    <ProjectExtensions>
+        <VisualStudio>
+          <FlavorProperties GUID="{349c5851-65df-11da-9384-00065b846f21}">
+            <WebProjectProperties>
+              <UseIIS>False</UseIIS>
+              <AutoAssignPort>True</AutoAssignPort>
+              <DevelopmentServerPort>0</DevelopmentServerPort>
+              <DevelopmentServerVPath>/</DevelopmentServerVPath>
+              <IISUrl>http://localhost:48022/</IISUrl>
+              <NTLMAuthentication>False</NTLMAuthentication>
+              <UseCustomServer>True</UseCustomServer>
+              <CustomServerUrl>http://localhost:1337</CustomServerUrl>
+              <SaveServerSettingsInUserFile>False</SaveServerSettingsInUserFile>
+            </WebProjectProperties>
+          </FlavorProperties>
+          <FlavorProperties GUID="{349c5851-65df-11da-9384-00065b846f21}" User="">
+            <WebProjectProperties>
+              <StartPageUrl>
+              </StartPageUrl>
+              <StartAction>CurrentPage</StartAction>
+              <AspNetDebugging>True</AspNetDebugging>
+              <SilverlightDebugging>False</SilverlightDebugging>
+              <NativeDebugging>False</NativeDebugging>
+              <SQLDebugging>False</SQLDebugging>
+              <ExternalProgram>
+              </ExternalProgram>
+              <StartExternalURL>
+              </StartExternalURL>
+              <StartCmdLineArguments>
+              </StartCmdLineArguments>
+              <StartWorkingDirectory>
+              </StartWorkingDirectory>
+              <EnableENC>False</EnableENC>
+              <AlwaysStartWebServerOnDebug>False</AlwaysStartWebServerOnDebug>
+            </WebProjectProperties>
+          </FlavorProperties>
+        </VisualStudio>
+    </ProjectExtensions>
+</Project>
