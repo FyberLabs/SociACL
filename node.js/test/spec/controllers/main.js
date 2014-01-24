@@ -23,6 +23,18 @@ describe('Controller: MainCtrl', function () {
 
 //Request URI to translate into resource URI
 //Depending on Requester, return different results - none, block, partial block, alternative content, actual content
+//none - wrong request
+//none - denied request
+//none - nothing there anymore
+//block - denied request
+//block - success request (whatever)
+//partial - denied some
+//partial - allow all
+//alternative content - replacement some
+//alternative content - allow all
+//actual content - allow all
+//actual content - deny all (do we attempt anything else?)
+
 //Support graceful parsing - ie. check each external request or even text for censorable components and remove or swap
 //content not revealed
 //alternative resource could be limited content, wrong content, request for additional permission/payment
