@@ -26,3 +26,8 @@ def test_three_node_group_check():
     assert allowed is True
     assert reason == "owner"
     plane.close()
+
+
+if __name__ == "__main__":
+    test_three_node_group_check()
+    print("ok")

@@ -19,20 +19,23 @@ Two clocks: **keep-operating** (fast; no new owner, no rekey) and **Elect** (slo
 
 ## Build and test
 
-Requires Rust 1.83+ (edition 2021).
+Requires Rust 1.83+ (edition 2021). CI (`.github/workflows/ci.yml`) runs the same steps on `ubuntu-latest`.
 
 ```bash
-cargo test -p sociacl-core -p sociacl-c
-cargo run -p sociacl-core --example check
+cargo build --workspace --locked
+cargo test --workspace --locked
+cargo run --locked -p sociacl-core --example check
 ```
 
 The example is a 3-node POSIX-shaped group Check.
 
-C FFI (`sociacl-c`) and the Python package (`python/sociacl`) wrap **Check** only. Build the C library first, then import the package:
+C FFI (`sociacl-c`) and the Python package (`python/sociacl`) wrap **Check** only:
 
 ```bash
-cargo build -p sociacl-c
-PYTHONPATH=python python3 -c "from sociacl import Plane; print(Plane)"
+cargo build --workspace --locked
+cc -I crates/sociacl-c/include examples/check.c -L target/debug -lsociacl -o target/sociacl-check-c
+LD_LIBRARY_PATH=target/debug target/sociacl-check-c
+PYTHONPATH=python python3 python/tests/test_check.py
 ```
 
 See [ARCHITECTURE.md](ARCHITECTURE.md), [docs/verbs.md](docs/verbs.md), [docs/wills.md](docs/wills.md), and [docs/clocks.md](docs/clocks.md).
