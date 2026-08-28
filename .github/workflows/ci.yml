@@ -1,0 +1,16 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Test core and C FFI
+        run: cargo test -p sociacl-core -p sociacl-c
+      - name: 3-node Check example
+        run: cargo run -p sociacl-core --example check

@@ -1,0 +1,14 @@
+/target
+**/*.rs.bk
+Cargo.lock.bak
+.venv
+__pycache__/
+*.pyc
+*.pyo
+*.so
+*.dylib
+*.a
+dist/
+*.egg-info/
+.idea/
+.vscode/
