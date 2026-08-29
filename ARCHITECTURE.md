@@ -13,54 +13,64 @@ These are working choices for this tree, not closed design.
 - **k-of-n(circle)** is omitted (forest-fire risk).
 - License is **MIT** (public edge).
 - An object's current owner may write its will. A will may name any existing node as heir, including an agent; that is a type allowance, not a policy decision.
-- Privilege-up waits for a jointly stated edge. There is no extra live-plane delay timer.
+- Privilege-up waits for a jointly stated edge **and** a configurable delay after the second statement (`DEFAULT_PRIVILEGE_UP_DELAY` in tests). Privilege-down is immediate. One TTL is not used for both.
 - Co-ownership is refused: an object has one owner.
+- The object names the Check predicate in its properties. An explicit predicate on the request must match that name.
 
 ## Open questions
 
 Do not treat these as decided.
 
 1. **Server-evaluated vs client-evaluated Check.** Case C requires a client path to exist. This cut evaluates on the plane only.
-2. **Who articulates an edge, and the live-plane delay.** Joint statement is the privilege-up gate here. Delay after the second statement is unspecified.
+2. **Who articulates an edge.** Both endpoints must state. For an object endpoint, the current owner speaks. The live-plane delay after the second statement is configurable; tests use `DEFAULT_PRIVILEGE_UP_DELAY`.
 3. **Co-ownership:** union, intersect, or refuse. This cut refuses (single owner).
 4. **k-of-n(circle) in v1.** Default is omit. Adding it later is a new predicate, not a silent walk.
 5. **Who may write a will**, and whether a will may name an **agent** as heir.
 
 ## Graph
 
-Nodes: **person**, **agent**, **device**, plus **group** and **circle** as named sets. Protected **objects** (including a device when it is the thing being authorized) carry an owner and a monotonically increasing version.
+Nodes: **person**, **agent**, **device**, plus **group** and **circle** as named sets. Protected **objects** (including a device when it is the thing being authorized) carry a kind, an owner, properties, and a monotonically increasing version.
 
-Edges are **jointly stated**. Both endpoints must state the same relation. Privilege-up is delayed until both have stated. Privilege-down is immediate: one side unstating drops the edge from Check. For an object endpoint, the current owner speaks for the object.
+Check parses the object and reads the `predicate` property. That property must name one id from the table below. Fail closed if it is missing or unknown (`heir-template` is unknown). A caller-supplied predicate must match. The accessor cannot pick a richer predicate than the object names.
+
+Edges store direction (`from` → `to`) and joint articulation (`from_stated`, `to_stated`, `joint_at`). A one-sided follow or friend request is stored and is not a grant. Privilege-up becomes live only after both sides have stated **and** `now >= joint_at + privilege_up_delay`. Privilege-down is immediate: one side unstating drops the edge from Check and bumps affected object versions. For an object endpoint, the current owner speaks for the object.
 
 Relations used by named predicates:
 
 - `owns` — accessor owns the object
-- `member-of` — accessor is in a POSIX-shaped group
-- `in-circle` — accessor is in a named circle (one hop)
+- `member-of` — accessor is in a POSIX-shaped group (hop 1)
+- `in-circle` — accessor is in a named circle (hop 1)
 - `object-group` — the object's ACL names that group
 - `object-circle` — the object's ACL names that circle
+- `friend` — person-to-person; one-sided is a request, not a grant; not a walk
+- `trustee` — jointly stated; Check uses it only if the object names `trustee`
 
 `heir-template` is never a Check predicate. Wills are not consulted on the hot path.
 
-Ambient proximity, radio, and light are **not** grants. They may be used by an attestation channel to support a statement. Check reads jointly stated edges only.
+Ambient proximity, radio, and light are **not** grants. Check may accept an optional attestation (signed statement that this principal is still this principal). Missing attestation does not fail Check. Attestation does not mint an edge, owner, or heir.
 
 ## Named predicates
 
-Check names a predicate. If the id is unknown, Check fails closed. If the predicate does not hold on the current snapshot, Check denies. The reason field is the predicate id.
+The object names the predicate. If the id is unknown, Check fails closed. If the predicate does not hold on the current snapshot, Check denies. The reason field is the predicate id. No path, person list, or hop trace.
 
 | Predicate id | Holds when (hopcap 1) |
 | --- | --- |
 | `owner` | Jointly stated `owns` from accessor to object. |
 | `same-group` | Object names a group; accessor is a member of that group. |
 | `named-circle` | Object names a circle; accessor has a direct `in-circle` edge to that circle. |
+| `posix-mode` | Object carries owner/group/other bits (`mode`) and a group. Owner bits if accessor is owner; group bits if hop-1 jointly stated `member-of`; else other bits. |
+| `trustee` | Object names `trustee`; accessor has a jointly stated `trustee` edge to the object. |
+
+No friends-of-friends. No hop 2/3. No Expand/ListUsers.
 
 ## Hash cache (new-enemy)
 
-Like Zanzibar zookies: a Check result carries a **zookie** bound to the **object version** and a hash of the jointly stated edge snapshot.
+Like Zanzibar zookies: a Check result carries a **zookie** bound to **this object version** and a hash of the edges that currently grant (joint plus privilege-up delay elapsed).
 
-- Privilege-down and a write both bump the object version.
-- Cache lookup is keyed by `(object, object_version, snapshot_hash, accessor, predicate, action)`.
-- A zookie from version *N* cannot authorize a write at version *> N*. After revoke then write, the revoked accessor does not see the new content as an old friend.
+- Cache lookup is keyed by `(accessor, owner-or-anchors, edge-types, hopcap, snapshot)`. `posix-mode` also keys by `action` so owner/group/other bits are not reused across verbs.
+- Privilege-reducing graph changes bump the object version and change the snapshot immediately.
+- Privilege-increasing edges do not grant until the delay. That delay is not a TTL on privilege-down.
+- A zookie from version *N* cannot authorize a write at version *> N*. After unfriend then write, the revoked accessor does not see the new content as an old friend.
 
 ## Two clocks
 

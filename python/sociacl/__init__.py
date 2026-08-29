@@ -56,9 +56,21 @@ _LIB.sociacl_add_device.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
 _LIB.sociacl_add_group.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
 _LIB.sociacl_add_circle.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
 _LIB.sociacl_add_object.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p]
+_LIB.sociacl_set_object_property.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+]
 _LIB.sociacl_state_edge.argtypes = [
     ctypes.c_void_p,
     ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+]
+_LIB.sociacl_jointly_state.argtypes = [
+    ctypes.c_void_p,
     ctypes.c_char_p,
     ctypes.c_char_p,
     ctypes.c_char_p,
@@ -73,6 +85,17 @@ _LIB.sociacl_check.argtypes = [
     ctypes.c_size_t,
 ]
 _LIB.sociacl_check.restype = ctypes.c_int
+_LIB.sociacl_check_ex.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.c_size_t,
+]
+_LIB.sociacl_check_ex.restype = ctypes.c_int
 
 
 def _b(s: str) -> bytes:
@@ -122,27 +145,48 @@ class Plane:
         if _LIB.sociacl_add_object(self._ptr, _b(id), _b(owner)) != 0:
             raise CheckError(f"add_object {id}")
 
+    def set_object_property(self, object: str, key: str, value: str) -> None:
+        if _LIB.sociacl_set_object_property(self._ptr, _b(object), _b(key), _b(value)) != 0:
+            raise CheckError(f"set_object_property {object} {key}")
+
     def state_edge(self, speaker: str, frm: str, to: str, relation: str) -> None:
         if _LIB.sociacl_state_edge(self._ptr, _b(speaker), _b(frm), _b(to), _b(relation)) != 0:
             raise CheckError(f"state_edge {relation}")
 
     def jointly_state(self, frm: str, to: str, relation: str) -> None:
-        self.state_edge(frm, frm, to, relation)
-        self.state_edge(to, frm, to, relation)
+        if _LIB.sociacl_jointly_state(self._ptr, _b(frm), _b(to), _b(relation)) != 0:
+            raise CheckError(f"jointly_state {relation}")
 
     def check(
-        self, action: str, object: str, accessor: str, predicate: str
+        self,
+        action: str,
+        object: str,
+        accessor: str,
+        predicate: Optional[str] = None,
+        attestation: Optional[str] = None,
     ) -> Tuple[bool, str]:
         buf = ctypes.create_string_buffer(_REASON_LEN)
-        rc = _LIB.sociacl_check(
-            self._ptr,
-            _b(action),
-            _b(object),
-            _b(accessor),
-            _b(predicate),
-            buf,
-            _REASON_LEN,
-        )
+        if predicate is None or attestation is not None:
+            rc = _LIB.sociacl_check_ex(
+                self._ptr,
+                _b(action),
+                _b(object),
+                _b(accessor),
+                _b(predicate) if predicate is not None else None,
+                _b(attestation) if attestation is not None else None,
+                buf,
+                _REASON_LEN,
+            )
+        else:
+            rc = _LIB.sociacl_check(
+                self._ptr,
+                _b(action),
+                _b(object),
+                _b(accessor),
+                _b(predicate),
+                buf,
+                _REASON_LEN,
+            )
         reason = buf.value.decode("utf-8", errors="replace")
         if rc < 0:
             raise CheckError(reason or "check failed")

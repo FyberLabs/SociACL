@@ -3,7 +3,7 @@ use crate::error::VerbError;
 use crate::graph::Plane;
 use crate::types::{
     Action, AuthnState, Capability, Clock, DestroyResult, DiscoverResult, ElectResult, NodeId,
-    PredicateId, Relation, WillDisposition,
+    Relation, WillDisposition,
 };
 
 impl Plane {
@@ -31,8 +31,9 @@ impl Plane {
                 action: Action::new("remint"),
                 object: object.clone(),
                 accessor: principal.clone(),
-                predicate: remint_predicate(self, &object, &principal),
+                predicate: None,
                 zookie: None,
+                attestation: None,
             })
             .map_err(|_| VerbError::AclDoesNotNamePrincipal(principal.clone(), object.clone()))?;
         if !result.allowed {
@@ -85,6 +86,8 @@ impl Plane {
             relation: Relation::Owns,
             from_stated: true,
             to_stated: true,
+            joint_at: Some(self.immediately_effective_at()),
+            effective_at: Some(self.immediately_effective_at()),
         });
         self.bump_version(&object);
         let notify = will
@@ -141,18 +144,4 @@ impl Plane {
         }
         Ok(will)
     }
-}
-
-fn remint_predicate(plane: &Plane, object: &NodeId, principal: &NodeId) -> PredicateId {
-    if plane.has_live(principal, object, Relation::Owns) {
-        return PredicateId::owner();
-    }
-    if plane
-        .live_edges()
-        .filter(|e| e.relation == Relation::ObjectGroup && e.from == *object)
-        .any(|e| plane.has_live(principal, &e.to, Relation::MemberOf))
-    {
-        return PredicateId::same_group();
-    }
-    PredicateId::named_circle()
 }

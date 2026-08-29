@@ -5,7 +5,7 @@ use std::os::raw::{c_char, c_int};
 use std::ptr;
 use std::sync::Mutex;
 
-use sociacl_core::{CheckRequest, Plane, PredicateId, Relation};
+use sociacl_core::{Attestation, CheckRequest, Plane, PredicateId, Relation};
 
 #[allow(non_camel_case_types)]
 pub struct sociacl_plane {
@@ -121,6 +121,24 @@ pub extern "C" fn sociacl_add_circle(plane: *mut sociacl_plane, id: *const c_cha
 }
 
 #[no_mangle]
+pub extern "C" fn sociacl_set_object_property(
+    plane: *mut sociacl_plane,
+    object: *const c_char,
+    key: *const c_char,
+    value: *const c_char,
+) -> c_int {
+    let (Some(object), Some(key), Some(value)) = (cstr(object), cstr(key), cstr(value)) else {
+        return -1;
+    };
+    with_plane(plane, |p| {
+        if p.set_object_property(object, key, value).is_err() {
+            return -1;
+        }
+        0
+    })
+}
+
+#[no_mangle]
 pub extern "C" fn sociacl_add_object(
     plane: *mut sociacl_plane,
     id: *const c_char,
@@ -158,6 +176,25 @@ pub extern "C" fn sociacl_state_edge(
 }
 
 #[no_mangle]
+pub extern "C" fn sociacl_jointly_state(
+    plane: *mut sociacl_plane,
+    from: *const c_char,
+    to: *const c_char,
+    relation: *const c_char,
+) -> c_int {
+    let (Some(from), Some(to), Some(rel)) = (cstr(from), cstr(to), cstr(relation)) else {
+        return -1;
+    };
+    let Some(relation) = Relation::parse(rel) else {
+        return -1;
+    };
+    with_plane(plane, |p| {
+        p.jointly_state(from, to, relation);
+        0
+    })
+}
+
+#[no_mangle]
 pub extern "C" fn sociacl_check(
     plane: *mut sociacl_plane,
     action: *const c_char,
@@ -167,19 +204,56 @@ pub extern "C" fn sociacl_check(
     reason_out: *mut c_char,
     reason_len: usize,
 ) -> c_int {
-    let (Some(action), Some(object), Some(accessor), Some(predicate)) =
-        (cstr(action), cstr(object), cstr(accessor), cstr(predicate))
+    if cstr(action).is_none()
+        || cstr(object).is_none()
+        || cstr(accessor).is_none()
+        || cstr(predicate).is_none()
+    {
+        write_reason(reason_out, reason_len, "invalid-argument");
+        return -1;
+    }
+    sociacl_check_ex(
+        plane,
+        action,
+        object,
+        accessor,
+        predicate,
+        ptr::null(),
+        reason_out,
+        reason_len,
+    )
+}
+
+#[no_mangle]
+pub extern "C" fn sociacl_check_ex(
+    plane: *mut sociacl_plane,
+    action: *const c_char,
+    object: *const c_char,
+    accessor: *const c_char,
+    predicate: *const c_char,
+    attestation: *const c_char,
+    reason_out: *mut c_char,
+    reason_len: usize,
+) -> c_int {
+    let (Some(action), Some(object), Some(accessor)) = (cstr(action), cstr(object), cstr(accessor))
     else {
         write_reason(reason_out, reason_len, "invalid-argument");
         return -1;
     };
+    let predicate = cstr(predicate).map(PredicateId::new);
+    let attestation = cstr(attestation).map(|statement| Attestation {
+        principal: accessor.into(),
+        statement: statement.to_string(),
+        signed_at: sociacl_core::Timestamp(0),
+    });
     with_plane(plane, |p| {
         match p.check(CheckRequest {
             action: action.into(),
             object: object.into(),
             accessor: accessor.into(),
-            predicate: PredicateId::new(predicate),
+            predicate,
             zookie: None,
+            attestation,
         }) {
             Ok(result) => {
                 write_reason(reason_out, reason_len, result.reason.as_str());
@@ -217,22 +291,31 @@ mod tests {
             sociacl_add_object(plane, c("doc").as_ptr(), c("alice").as_ptr()),
             0
         );
-        for (speaker, from, to, rel) in [
-            ("alice", "alice", "ops", "member-of"),
-            ("ops", "alice", "ops", "member-of"),
-            ("bob", "bob", "ops", "member-of"),
-            ("ops", "bob", "ops", "member-of"),
-            ("alice", "doc", "ops", "object-group"),
-            ("ops", "doc", "ops", "object-group"),
+        assert_eq!(
+            sociacl_set_object_property(
+                plane,
+                c("doc").as_ptr(),
+                c("predicate").as_ptr(),
+                c("same-group").as_ptr()
+            ),
+            0
+        );
+        assert_eq!(
+            sociacl_set_object_property(
+                plane,
+                c("doc").as_ptr(),
+                c("group").as_ptr(),
+                c("ops").as_ptr()
+            ),
+            0
+        );
+        for (from, to, rel) in [
+            ("alice", "ops", "member-of"),
+            ("bob", "ops", "member-of"),
+            ("doc", "ops", "object-group"),
         ] {
             assert_eq!(
-                sociacl_state_edge(
-                    plane,
-                    c(speaker).as_ptr(),
-                    c(from).as_ptr(),
-                    c(to).as_ptr(),
-                    c(rel).as_ptr()
-                ),
+                sociacl_jointly_state(plane, c(from).as_ptr(), c(to).as_ptr(), c(rel).as_ptr()),
                 0
             );
         }

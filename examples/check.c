@@ -1,4 +1,4 @@
-/* 3-node POSIX-shaped group Check via the C FFI.
+/* 3-node POSIX-mode Check via the C FFI.
  * Build after `cargo build -p sociacl-c`:
  *   cc -I crates/sociacl-c/include examples/check.c -L target/debug -lsociacl -o check
  *   LD_LIBRARY_PATH=target/debug ./check
@@ -67,17 +67,15 @@ int main(void) {
     must(sociacl_add_person(plane, "carol"), "carol");
     must(sociacl_add_group(plane, "ops"), "ops");
     must(sociacl_add_object(plane, "doc", "alice"), "doc");
+    must(sociacl_set_object_property(plane, "doc", "predicate", "posix-mode"), "pred");
+    must(sociacl_set_object_property(plane, "doc", "group", "ops"), "group");
+    must(sociacl_set_object_property(plane, "doc", "mode", "0640"), "mode");
 
-    must(sociacl_state_edge(plane, "alice", "alice", "ops", "member-of"), "alice member");
-    must(sociacl_state_edge(plane, "ops", "alice", "ops", "member-of"), "alice member 2");
-    must(sociacl_state_edge(plane, "bob", "bob", "ops", "member-of"), "bob member");
-    must(sociacl_state_edge(plane, "ops", "bob", "ops", "member-of"), "bob member 2");
-    must(sociacl_state_edge(plane, "alice", "doc", "ops", "object-group"), "doc group");
-    must(sociacl_state_edge(plane, "ops", "doc", "ops", "object-group"), "doc group 2");
+    must(sociacl_jointly_state(plane, "bob", "ops", "member-of"), "bob member");
 
-    expect_check(plane, "alice", "owner", 1);
-    expect_check(plane, "bob", "same-group", 1);
-    expect_check(plane, "carol", "same-group", 0);
+    expect_check(plane, "alice", "posix-mode", 1);
+    expect_check(plane, "bob", "posix-mode", 1);
+    expect_check(plane, "carol", "posix-mode", 0);
 
     sociacl_plane_free(plane);
     return 0;

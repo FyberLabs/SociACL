@@ -10,14 +10,17 @@ pub mod graph;
 pub mod types;
 pub mod verbs;
 
-pub use cache::{CacheKey, HashCache, MemoryHashCache, Snapshot, SnapshotHash, Zookie};
-pub use check::{CheckRequest, CheckResult};
+pub use cache::{
+    CacheAnchors, CacheKey, EdgeTypeSet, HashCache, MemoryHashCache, Snapshot, SnapshotHash, Zookie,
+};
+pub use check::{CheckRequest, CheckResult, ParsedObject};
 pub use error::{CheckError, VerbError};
-pub use graph::Plane;
+pub use graph::{Plane, DEFAULT_PRIVILEGE_UP_DELAY};
 pub use types::{
-    Action, AuthnState, Capability, ClientHeldShare, Clock, CutBoundary, DestroyResult, Device,
-    DiscoverResult, Edge, ElectResult, NodeId, NodeKind, Object, ObjectVersion, PredicateId,
-    Principal, Relation, Timestamp, Verb, Will, WillDisposition, WillTemplate,
+    Action, Attestation, AuthnState, Capability, ClientHeldShare, Clock, CutBoundary,
+    DestroyResult, Device, DiscoverResult, Edge, ElectResult, NodeId, NodeKind, Object, ObjectKind,
+    ObjectProperties, ObjectVersion, PosixBits, PosixMode, PredicateId, Principal, Relation,
+    Timestamp, Verb, Will, WillDisposition, WillTemplate,
 };
 
 /// Hopcap for named-circle (and any future walk). This cut is 1.
