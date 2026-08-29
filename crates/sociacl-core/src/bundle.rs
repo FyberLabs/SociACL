@@ -7,7 +7,7 @@
 
 use sha2::{Digest, Sha256};
 
-use crate::attestation::{Attestation, Enrollment};
+use crate::attestation::{Attestation, Enrollment, HolderSecret};
 use crate::cache::{Snapshot, Zookie};
 use crate::client::Client;
 use crate::error::VerbError;
@@ -44,27 +44,37 @@ impl CutBundle {
         Client::open(self)
     }
 
-    /// Versioned bytes for disk. Not Debug.
-    pub fn to_bytes(&self) -> Vec<u8> {
-        crate::codec::encode(self)
+    /// Versioned bytes for disk. Wraps share keys to `secret` and
+    /// holder-signs the frame. Not Debug. Without `secret` there is
+    /// no durable export.
+    pub fn to_bytes(&self, secret: &HolderSecret) -> Vec<u8> {
+        crate::codec::encode(self, secret)
     }
 
-    /// Decode bytes. Refuses a tampered frame, post-cut material, or
-    /// a statement that does not verify against a pre-cut enrollment.
-    pub fn from_bytes(bytes: &[u8]) -> Result<Self, VerbError> {
-        let bundle = crate::codec::decode(bytes)?;
+    /// Decode bytes. Refuses a missing, unsigned, or wrong holder
+    /// signature, a tampered frame, post-cut material, or a statement
+    /// that does not verify against a pre-cut enrollment.
+    pub fn from_bytes(bytes: &[u8], secret: &HolderSecret) -> Result<Self, VerbError> {
+        let bundle = crate::codec::decode(bytes, secret)?;
         bundle.refuse_post_cut()?;
         bundle.refuse_unverified_attestations()?;
         Ok(bundle)
     }
 
-    pub fn write_path(&self, path: impl AsRef<std::path::Path>) -> Result<(), VerbError> {
-        std::fs::write(path, self.to_bytes()).map_err(|_| VerbError::BundleIo)
+    pub fn write_path(
+        &self,
+        path: impl AsRef<std::path::Path>,
+        secret: &HolderSecret,
+    ) -> Result<(), VerbError> {
+        std::fs::write(path, self.to_bytes(secret)).map_err(|_| VerbError::BundleIo)
     }
 
-    pub fn load_path(path: impl AsRef<std::path::Path>) -> Result<Self, VerbError> {
+    pub fn load_path(
+        path: impl AsRef<std::path::Path>,
+        secret: &HolderSecret,
+    ) -> Result<Self, VerbError> {
         let bytes = std::fs::read(path).map_err(|_| VerbError::BundleIo)?;
-        Self::from_bytes(&bytes)
+        Self::from_bytes(&bytes, secret)
     }
 
     pub fn object(&self, id: &NodeId) -> Option<&Object> {
@@ -300,17 +310,23 @@ impl Plane {
         Ok(bundle)
     }
 
-    /// Same as [`Self::export_bundle`], then the durable encoding.
-    pub fn export_bundle_bytes(&self, holder: impl Into<NodeId>) -> Result<Vec<u8>, VerbError> {
-        Ok(self.export_bundle(holder)?.to_bytes())
+    /// Same as [`Self::export_bundle`], then the sealed durable encoding.
+    /// Fails closed without a holder secret.
+    pub fn export_bundle_bytes(
+        &self,
+        holder: impl Into<NodeId>,
+        secret: &HolderSecret,
+    ) -> Result<Vec<u8>, VerbError> {
+        Ok(self.export_bundle(holder)?.to_bytes(secret))
     }
 
     pub fn export_bundle_path(
         &self,
         holder: impl Into<NodeId>,
         path: impl AsRef<std::path::Path>,
+        secret: &HolderSecret,
     ) -> Result<(), VerbError> {
-        self.export_bundle(holder)?.write_path(path)
+        self.export_bundle(holder)?.write_path(path, secret)
     }
 
     /// Recorded cut, or `now` pushed forward to cover statements the

@@ -122,6 +122,74 @@ impl IssuerSecret {
     }
 }
 
+/// Holder secret for a durable Case C bundle. The caller keeps it.
+/// The file does not. Used to wrap share keys and sign the frame.
+/// Same 32-byte Ed25519 shape as [`IssuerSecret`]. An enrolled issuer
+/// key may be reused via [`HolderSecret::from_issuer`].
+#[derive(Clone)]
+pub struct HolderSecret([u8; 32]);
+
+impl fmt::Debug for HolderSecret {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("HolderSecret(..)")
+    }
+}
+
+impl HolderSecret {
+    pub const LEN: usize = 32;
+
+    pub fn generate() -> Self {
+        Self(IssuerSecret::generate().0)
+    }
+
+    pub fn from_bytes(bytes: [u8; 32]) -> Self {
+        Self(bytes)
+    }
+
+    pub fn from_slice(bytes: &[u8]) -> Result<Self, AttestationError> {
+        let arr: [u8; 32] = bytes
+            .try_into()
+            .map_err(|_| AttestationError::InvalidVerifyKey)?;
+        Ok(Self(arr))
+    }
+
+    pub fn from_issuer(secret: &IssuerSecret) -> Self {
+        Self(secret.0)
+    }
+
+    pub fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
+
+    pub fn verify_key(&self) -> VerifyKey {
+        VerifyKey(self.signing().verifying_key().to_bytes())
+    }
+
+    fn signing(&self) -> SigningKey {
+        SigningKey::from_bytes(&self.0)
+    }
+
+    pub fn sign(&self, message: &[u8]) -> AttestationSig {
+        AttestationSig(self.signing().sign(message).to_bytes())
+    }
+
+    pub fn verify(&self, message: &[u8], signature: &AttestationSig) -> bool {
+        let Ok(vk) = self.verify_key().dalek() else {
+            return false;
+        };
+        let Ok(sig) = Signature::from_slice(&signature.0) else {
+            return false;
+        };
+        vk.verify_strict(message, &sig).is_ok()
+    }
+}
+
+impl From<&IssuerSecret> for HolderSecret {
+    fn from(secret: &IssuerSecret) -> Self {
+        Self::from_issuer(secret)
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub enum EnrollmentKind {
     Station,

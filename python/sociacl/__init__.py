@@ -87,6 +87,28 @@ _LIB.sociacl_issuer_keygen.argtypes = [
     ctypes.POINTER(ctypes.c_ubyte),
 ]
 _LIB.sociacl_issuer_keygen.restype = ctypes.c_int
+_LIB.sociacl_holder_keygen.argtypes = [
+    ctypes.POINTER(ctypes.c_ubyte),
+    ctypes.POINTER(ctypes.c_ubyte),
+]
+_LIB.sociacl_holder_keygen.restype = ctypes.c_int
+_LIB.sociacl_write_will.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.c_size_t,
+]
+_LIB.sociacl_write_will.restype = ctypes.c_int
+_LIB.sociacl_will.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.c_size_t,
+    ctypes.POINTER(ctypes.c_size_t),
+    ctypes.c_char_p,
+    ctypes.c_size_t,
+]
+_LIB.sociacl_will.restype = ctypes.c_int
 _LIB.sociacl_sign_claim.argtypes = [
     ctypes.c_void_p,
     ctypes.POINTER(ctypes.c_ubyte),
@@ -127,6 +149,8 @@ _LIB.sociacl_export_bundle.argtypes = [
     ctypes.c_char_p,
     ctypes.POINTER(ctypes.c_ubyte),
     ctypes.c_size_t,
+    ctypes.POINTER(ctypes.c_ubyte),
+    ctypes.c_size_t,
     ctypes.POINTER(ctypes.c_size_t),
     ctypes.c_char_p,
     ctypes.c_size_t,
@@ -136,11 +160,15 @@ _LIB.sociacl_export_bundle_file.argtypes = [
     ctypes.c_void_p,
     ctypes.c_char_p,
     ctypes.c_char_p,
+    ctypes.POINTER(ctypes.c_ubyte),
+    ctypes.c_size_t,
     ctypes.c_char_p,
     ctypes.c_size_t,
 ]
 _LIB.sociacl_export_bundle_file.restype = ctypes.c_int
 _LIB.sociacl_client_open.argtypes = [
+    ctypes.POINTER(ctypes.c_ubyte),
+    ctypes.c_size_t,
     ctypes.POINTER(ctypes.c_ubyte),
     ctypes.c_size_t,
     ctypes.c_char_p,
@@ -149,6 +177,8 @@ _LIB.sociacl_client_open.argtypes = [
 _LIB.sociacl_client_open.restype = ctypes.c_void_p
 _LIB.sociacl_client_open_file.argtypes = [
     ctypes.c_char_p,
+    ctypes.POINTER(ctypes.c_ubyte),
+    ctypes.c_size_t,
     ctypes.c_char_p,
     ctypes.c_size_t,
 ]
@@ -179,10 +209,25 @@ _LIB.sociacl_client_elect.argtypes = [
     ctypes.c_size_t,
 ]
 _LIB.sociacl_client_elect.restype = ctypes.c_int
+_LIB.sociacl_client_discover.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.c_size_t,
+]
+_LIB.sociacl_client_discover.restype = ctypes.c_int
+_LIB.sociacl_client_destroy.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.c_size_t,
+]
+_LIB.sociacl_client_destroy.restype = ctypes.c_int
 
 
 VERIFY_KEY_LEN = 32
 ISSUER_SECRET_LEN = 32
+HOLDER_SECRET_LEN = 32
 SIGNATURE_LEN = 64
 
 
@@ -196,6 +241,20 @@ def issuer_keygen() -> Tuple[bytes, bytes]:
     if _LIB.sociacl_issuer_keygen(pk, sk) != 0:
         raise Error("issuer_keygen failed")
     return bytes(pk), bytes(sk)
+
+
+def holder_keygen() -> Tuple[bytes, bytes]:
+    pk = (ctypes.c_ubyte * VERIFY_KEY_LEN)()
+    sk = (ctypes.c_ubyte * HOLDER_SECRET_LEN)()
+    if _LIB.sociacl_holder_keygen(pk, sk) != 0:
+        raise Error("holder_keygen failed")
+    return bytes(pk), bytes(sk)
+
+
+def _secret_buf(secret: bytes):
+    if not secret:
+        raise Error("holder secret required to export or open a bundle")
+    return (ctypes.c_ubyte * len(secret)).from_buffer_copy(secret)
 
 
 class Error(Exception):
@@ -256,6 +315,33 @@ class Plane:
     def jointly_state(self, frm: str, to: str, relation: str) -> None:
         if _LIB.sociacl_jointly_state(self._ptr, _b(frm), _b(to), _b(relation)) != 0:
             raise CheckError(f"jointly_state {relation}")
+
+    def write_will(self, src: str) -> None:
+        reason = ctypes.create_string_buffer(_REASON_LEN)
+        if _LIB.sociacl_write_will(self._ptr, _b(src), reason, _REASON_LEN) != 0:
+            raise Error(reason.value.decode("utf-8", errors="replace") or "write_will failed")
+
+    def will(self, object: str) -> str:
+        reason = ctypes.create_string_buffer(_REASON_LEN)
+        written = ctypes.c_size_t(0)
+        rc = _LIB.sociacl_will(
+            self._ptr, _b(object), None, 0, ctypes.byref(written), reason, _REASON_LEN
+        )
+        if rc != 0:
+            raise Error(reason.value.decode("utf-8", errors="replace") or "will failed")
+        buf = ctypes.create_string_buffer(written.value + 1)
+        rc = _LIB.sociacl_will(
+            self._ptr,
+            _b(object),
+            buf,
+            written.value + 1,
+            ctypes.byref(written),
+            reason,
+            _REASON_LEN,
+        )
+        if rc != 0:
+            raise Error(reason.value.decode("utf-8", errors="replace") or "will failed")
+        return buf.value.decode("utf-8", errors="replace")
 
     def enroll(self, issuer: str, kind: str, public_key: bytes) -> None:
         if not public_key:
@@ -328,12 +414,15 @@ class Plane:
             raise CheckError(reason or "check failed")
         return (rc == 1, reason)
 
-    def export_bundle(self, holder: str) -> bytes:
+    def export_bundle(self, holder: str, secret: bytes) -> bytes:
         reason = ctypes.create_string_buffer(_REASON_LEN)
         written = ctypes.c_size_t(0)
+        sk = _secret_buf(secret)
         rc = _LIB.sociacl_export_bundle(
             self._ptr,
             _b(holder),
+            sk,
+            len(secret),
             None,
             0,
             ctypes.byref(written),
@@ -346,6 +435,8 @@ class Plane:
         rc = _LIB.sociacl_export_bundle(
             self._ptr,
             _b(holder),
+            sk,
+            len(secret),
             buf,
             written.value,
             ctypes.byref(written),
@@ -356,10 +447,11 @@ class Plane:
             raise Error(reason.value.decode("utf-8", errors="replace") or "export failed")
         return bytes(buf[: written.value])
 
-    def export_bundle_file(self, holder: str, path: str) -> None:
+    def export_bundle_file(self, holder: str, path: str, secret: bytes) -> None:
         reason = ctypes.create_string_buffer(_REASON_LEN)
+        sk = _secret_buf(secret)
         rc = _LIB.sociacl_export_bundle_file(
-            self._ptr, _b(holder), _b(path), reason, _REASON_LEN
+            self._ptr, _b(holder), _b(path), sk, len(secret), reason, _REASON_LEN
         )
         if rc != 0:
             raise Error(reason.value.decode("utf-8", errors="replace") or "export failed")
@@ -372,18 +464,20 @@ class Client:
         self._ptr = ptr
 
     @classmethod
-    def from_bytes(cls, data: bytes) -> "Client":
+    def from_bytes(cls, data: bytes, secret: bytes) -> "Client":
         reason = ctypes.create_string_buffer(_REASON_LEN)
         buf = (ctypes.c_ubyte * len(data)).from_buffer_copy(data)
-        ptr = _LIB.sociacl_client_open(buf, len(data), reason, _REASON_LEN)
+        sk = _secret_buf(secret)
+        ptr = _LIB.sociacl_client_open(buf, len(data), sk, len(secret), reason, _REASON_LEN)
         if not ptr:
             raise Error(reason.value.decode("utf-8", errors="replace") or "open failed")
         return cls(ptr)
 
     @classmethod
-    def from_path(cls, path: str) -> "Client":
+    def from_path(cls, path: str, secret: bytes) -> "Client":
         reason = ctypes.create_string_buffer(_REASON_LEN)
-        ptr = _LIB.sociacl_client_open_file(_b(path), reason, _REASON_LEN)
+        sk = _secret_buf(secret)
+        ptr = _LIB.sociacl_client_open_file(_b(path), sk, len(secret), reason, _REASON_LEN)
         if not ptr:
             raise Error(reason.value.decode("utf-8", errors="replace") or "open failed")
         return cls(ptr)
@@ -433,3 +527,19 @@ class Client:
         _LIB.sociacl_client_elect(self._ptr, _b(object), buf, _REASON_LEN)
         reason = buf.value.decode("utf-8", errors="replace")
         raise Error(reason or "client path refuses elect")
+
+    def discover(self, object: str) -> str:
+        buf = ctypes.create_string_buffer(_REASON_LEN)
+        rc = _LIB.sociacl_client_discover(self._ptr, _b(object), buf, _REASON_LEN)
+        reason = buf.value.decode("utf-8", errors="replace")
+        if rc != 0:
+            raise Error(reason or "discover failed")
+        return reason
+
+    def destroy(self, object: str) -> str:
+        buf = ctypes.create_string_buffer(_REASON_LEN)
+        rc = _LIB.sociacl_client_destroy(self._ptr, _b(object), buf, _REASON_LEN)
+        reason = buf.value.decode("utf-8", errors="replace")
+        if rc != 1:
+            raise Error(reason or "destroy failed")
+        return reason

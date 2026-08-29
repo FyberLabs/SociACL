@@ -1,8 +1,9 @@
 //! SociACL core: social-graph authority plane.
 //!
 //! Live [`Plane::check`] is server-evaluated against an in-memory graph.
-//! Case C writes a durable [`CutBundle`] and evaluates the same named
-//! predicates offline on [`Client`]. Elect stays refuse-closed on that path.
+//! Case C writes a sealed, holder-signed [`CutBundle`] and evaluates the
+//! same named predicates offline on [`Client`]. Elect stays refuse-closed
+//! on that path.
 
 pub mod attestation;
 pub mod bundle;
@@ -18,7 +19,7 @@ pub mod will;
 
 pub use attestation::{
     Attestation, AttestationBinding, AttestationClaim, AttestationFactor, AttestationSig,
-    Enrollment, EnrollmentKind, IssuerSecret, VerifyKey,
+    Enrollment, EnrollmentKind, HolderSecret, IssuerSecret, VerifyKey,
 };
 pub use bundle::CutBundle;
 pub use cache::{

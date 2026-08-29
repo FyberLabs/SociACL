@@ -17,7 +17,7 @@ This repository is the public core (MIT). It is not Hypermesh, Panopticon acl-se
 
 Two clocks: **keep-operating** (fast; no new owner, no rekey) and **Elect** (slow). There is no dead-hand timer. Inactivity is not treated as death.
 
-After a cut, `export_bundle` freezes what a remaining principal already held. Write those bytes or a small file. `Client::from_bytes` / `from_path` keep Check and Remint on that snapshot. Elect refuses.
+After a cut, `export_bundle` freezes what a remaining principal already held. The durable file wraps share keys to a holder secret and holder-signs the frame. `Client::from_bytes` / `from_path` keep Check, Remint, Discover, and Destroy on that snapshot. Elect refuses. A captured file without the holder secret is not the object.
 
 ## Build and test
 
@@ -32,7 +32,7 @@ cargo run --locked -p sociacl-core --example wills
 
 The Check example is a 3-node `posix-mode` Check (mode 0640). The wills example parses and writes the templates in `examples/wills/`.
 
-C FFI (`sociacl-c`) and the Python package (`python/sociacl`) wrap live **Check** and the Case C **Client** (Check, Remint; Elect fails closed):
+C FFI (`sociacl-c`) and the Python package (`python/sociacl`) wrap live **Check**, will write/load, and the Case C **Client** (Check, Remint, Discover, Destroy; Elect fails closed):
 
 ```bash
 cargo build --workspace --locked

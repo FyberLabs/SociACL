@@ -1,4 +1,4 @@
-/* Case C client via the C FFI: export a durable bundle, Check, Remint.
+/* Case C client via the C FFI: sealed export, Check, Remint, Discover.
  * Elect stays refuse-closed. Live Check still works after export.
  * Build after `cargo build -p sociacl-c`:
  *   cc -I crates/sociacl-c/include examples/client.c -L target/debug -lsociacl -o client
@@ -105,20 +105,50 @@ int main(void) {
     must(sociacl_set_object_property(plane, "doc", "group", "ops"), "group");
     must(sociacl_set_object_property(plane, "doc", "mode", "0640"), "mode");
     must(sociacl_jointly_state(plane, "bob", "ops", "member-of"), "bob member");
+    must(sociacl_add_person(plane, "executor"), "executor");
+
+    char reason[128];
+    if (sociacl_write_will(
+            plane,
+            "will desk for object doc\nwritten-by alice\ncancelable-by executor\ndiscover heir bob\n",
+            reason,
+            sizeof reason
+        ) != 0) {
+        fprintf(stderr, "write will: %s\n", reason);
+        exit(1);
+    }
 
     expect_plane_check(plane, "alice", 1);
     expect_plane_check(plane, "bob", 1);
     expect_plane_check(plane, "carol", 0);
 
-    char reason[128];
-    if (sociacl_export_bundle_file(plane, "alice", BUNDLE_PATH, reason, sizeof reason) != 0) {
+    unsigned char pk[SOCIACL_HOLDER_SECRET_LEN];
+    unsigned char sk[SOCIACL_HOLDER_SECRET_LEN];
+    if (sociacl_holder_keygen(pk, sk) != 0) {
+        die("holder_keygen");
+    }
+    if (sociacl_export_bundle_file(
+            plane,
+            "alice",
+            BUNDLE_PATH,
+            sk,
+            sizeof sk,
+            reason,
+            sizeof reason
+        ) != 0) {
         fprintf(stderr, "export: %s\n", reason);
         exit(1);
     }
 
     expect_plane_check(plane, "bob", 1);
 
-    sociacl_client *client = sociacl_client_open_file(BUNDLE_PATH, reason, sizeof reason);
+    sociacl_client *client = sociacl_client_open_file(
+        BUNDLE_PATH,
+        sk,
+        sizeof sk,
+        reason,
+        sizeof reason
+    );
     if (!client) {
         fprintf(stderr, "open: %s\n", reason);
         exit(1);
@@ -133,6 +163,17 @@ int main(void) {
         exit(1);
     }
     printf("client remint bob: %s\n", reason);
+
+    if (sociacl_client_discover(client, "doc", reason, sizeof reason) != 0) {
+        fprintf(stderr, "discover: %s\n", reason);
+        exit(1);
+    }
+    printf("client discover: %s\n", reason);
+
+    if (sociacl_client_destroy(client, "doc", reason, sizeof reason) != -1) {
+        die("destroy must refuse a named heir");
+    }
+    printf("client destroy: refused (%s)\n", reason);
 
     if (sociacl_client_elect(client, "doc", reason, sizeof reason) != -1) {
         die("elect must fail closed");

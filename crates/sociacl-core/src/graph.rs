@@ -1,5 +1,8 @@
 use std::collections::{BTreeSet, HashMap};
 
+use rand::rngs::OsRng;
+use rand::RngCore;
+
 use crate::attestation::{Attestation, AttestationClaim, Enrollment, EnrollmentKind, VerifyKey};
 use crate::cache::{HashCache, MemoryHashCache, Snapshot, SnapshotHash};
 use crate::error::{AttestationError, VerbError};
@@ -148,7 +151,7 @@ impl Plane {
             owner: owner.clone(),
             version: ObjectVersion(1),
             destroyed: false,
-            content_key: Some([0u8; 32]),
+            content_key: Some(random_content_key()),
             properties: ObjectProperties::owner(),
         };
         self.objects.insert(id.clone(), object.clone());
@@ -719,4 +722,10 @@ impl Plane {
         }
         false
     }
+}
+
+fn random_content_key() -> [u8; 32] {
+    let mut key = [0u8; 32];
+    OsRng.fill_bytes(&mut key);
+    key
 }

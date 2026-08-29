@@ -7,7 +7,7 @@ Authority plane over a social graph. Same four verbs from a POSIX user/group sli
 These are working choices for this tree, not closed design.
 
 - Live `CHECK` is **server-evaluated** against an in-memory graph.
-- Case C evaluates **offline against a pre-cut bundle**. Export copies the last granting snapshot, the live will, pre-cut enrollments, and shares the remaining principal already had a right to hold. That image is durable: `CutBundle::to_bytes` / `write_path` and `Client::from_bytes` / `from_path`. C (`sociacl_export_bundle`, `sociacl_client_open`, `sociacl_client_check`, `sociacl_client_remint`) and Python (`Plane.export_bundle`, `Client`) are the edge entry points. Load refuses a tampered frame or post-cut material the same way `Client::open` does. It is not a fetch from a dead plane.
+- Case C evaluates **offline against a pre-cut bundle**. Export copies the last granting snapshot, the live will, pre-cut enrollments, and shares the remaining principal already had a right to hold. The durable image is sealed to a holder secret the caller keeps (`HolderSecret`, same 32-byte Ed25519 shape as `IssuerSecret`). `to_bytes` / `write_path` wrap share keys and holder-sign the frame. `Client::from_bytes` / `from_path` reconstruct only with that secret. C (`sociacl_export_bundle`, `sociacl_client_open`, Check, Remint, Discover, Destroy) and Python (`Plane.export_bundle`, `Client`) are the edge entry points. Export without the secret fails closed. Load refuses a missing, wrong, or unsigned signature, a tampered frame, or post-cut material. It is not a fetch from a dead plane.
 - Check reasons are **predicate ids**, not paths.
 - Hopcap is **1**. No friend-of-friend, no nested-circle walk.
 - **k-of-n(circle)** is omitted (forest-fire risk).
@@ -89,11 +89,13 @@ Elect **refuses** if keep-operating would suffice (owner authn still live).
 
 **C — Continuity of command.** The plane is gone or hostile. After a cut, only pre-cut wills, pre-cut enrollments, pre-cut attestations, old jointly stated edges, and shares already held work. **New edges stated after the cut do not grant.**
 
-`export_bundle` copies that set for a remaining principal who already had a right to hold it. The durable form is a versioned length-prefixed encoding (`SACL` / version 1) with a SHA-256 trailer. Not Debug. Not a chain or IPFS adapter. `Client::from_bytes` and `Client::from_path` reconstruct held shares and evaluate Check and Remint on the frozen snapshot. Same named predicates, hopcap 1, privilege-up already elapsed, privilege-down already applied. A zookie from the bundle is bound to the exported object version.
+`export_bundle` copies that set for a remaining principal who already had a right to hold it. The durable form is a versioned length-prefixed encoding (`SACL` / version 3). Share keys are wrapped to the holder secret (XOR of SHA-256 over a domain tag and that secret). Object `content_key` is omitted from the file. The holder signs the frame with Ed25519, same scheme as attestations. A SHA-256 trailer is integrity of the bytes, not authenticity. Open refuses a missing, wrong, or unsigned signature. v1 and v2 unsigned frames fail closed. The signing key stays with the caller, not in the bundle. A captured SACL file without the holder secret is not the object. Not Debug. Not a chain or IPFS adapter.
 
-A device talks to this through `crates/sociacl-c` and `python/sociacl`: export or load the bundle, then Check and Remint. `sociacl_client_elect` exists so the refuse is visible and always fails.
+`Client::from_bytes` and `Client::from_path` unwrap held shares with the secret and evaluate Check and Remint on the frozen snapshot. Same named predicates, hopcap 1, privilege-up already elapsed, privilege-down already applied. A zookie from the bundle is bound to the exported object version.
 
-Discover reports `Heir`, `ElectAmong`, or `StaySecret` without installing. Destroy may erase local key material when the pre-cut will says stay secret or no heir can be discovered. It does not elect a new owner.
+A device talks to this through `crates/sociacl-c` and `python/sociacl`: write a will while the owner still holds the object (`sociacl_write_will` / `Plane.write_will`), export or load the sealed bundle, then Check, Remint, Discover, and Destroy. `sociacl_client_elect` exists so the refuse is visible and always fails.
+
+Discover reports `Heir`, `ElectAmong`, or `StaySecret` without installing. Destroy erases local key material when the pre-cut will says stay secret or no heir can be discovered. It does not elect a new owner. Destroy still wipes whatever the client reconstructed locally.
 
 Elect and `commit_elect` refuse. The radio being quiet is not a reason to elect. `elect_from_attestation` still always fails. New shares are not minted after the cut. A presented post-cut edge, enrollment, or attestation is refused, including after a bytes or file load. Rejoin does not union two post-cut Elects. Both sides stay degraded. `heir-template` is still not a Check predicate.
 

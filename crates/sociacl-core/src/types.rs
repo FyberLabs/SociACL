@@ -221,7 +221,8 @@ pub struct Object {
     pub owner: NodeId,
     pub version: ObjectVersion,
     pub destroyed: bool,
-    /// Dropped on DESTROY. Placeholder for cryptographic erasure.
+    /// Dropped on DESTROY. The durable bundle wraps this; it does not
+    /// write the bytes in the clear.
     pub content_key: Option<[u8; 32]>,
     pub properties: ObjectProperties,
 }
@@ -447,6 +448,17 @@ pub enum DiscoverResult {
     StaySecret,
 }
 
+impl DiscoverResult {
+    /// Edge reason text. Discover does not install an owner.
+    pub fn as_reason(&self) -> String {
+        match self {
+            Self::Heir(id) => format!("heir {id}"),
+            Self::ElectAmong { circle } => format!("elect-among {circle}"),
+            Self::StaySecret => "stay-secret".to_string(),
+        }
+    }
+}
+
 /// Recorded when `elect` starts. The plane does not sleep. Commit may
 /// install only after `ready_at`. Expiry does not install an owner.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -517,7 +529,9 @@ pub struct ClientHeldShare {
     pub object: NodeId,
     pub holder: NodeId,
     pub share_hash: [u8; 32],
-    /// Local key the holder already had. None after Destroy.
+    /// Local key after unwrap, or on the live-plane export before
+    /// durable encode. None after Destroy. The durable file stores
+    /// the wrap of this field, not these bytes.
     pub key_material: Option<[u8; 32]>,
     pub held_at: Timestamp,
 }
