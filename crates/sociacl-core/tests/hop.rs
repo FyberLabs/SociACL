@@ -1,7 +1,8 @@
 use sociacl_core::{
-    is_lightiff_shaped_id, Attestation, AttestationBinding, AttestationClaim, AttestationError,
-    AttestationSig, CheckRequest, EnrollmentKind, HolderSecret, IssuerSecret, Plane, PredicateId,
-    SocialLightStatement, SocialLightView, Timestamp, VerbError, HOP_MAGIC, HOP_VERSION,
+    is_lightiff_shaped_id, Attestation, AttestationBinding, AttestationChannel, AttestationClaim,
+    AttestationError, AttestationSig, CheckRequest, EnrollmentKind, HolderSecret, HopFrame,
+    IssuerSecret, Plane, PredicateId, SocialLightStatement, SocialLightView, Timestamp, VerbError,
+    HOP_MAGIC, HOP_VERSION,
 };
 
 fn enroll(plane: &mut Plane, issuer: &str, kind: EnrollmentKind) -> IssuerSecret {
@@ -18,6 +19,50 @@ fn signed_badge(plane: &Plane, secret: &IssuerSecret) -> SocialLightStatement {
     SocialLightStatement::convention_badge(att).with_share_token("booth-12")
 }
 
+fn put_str(buf: &mut Vec<u8>, s: &str) {
+    buf.extend_from_slice(&(s.len() as u32).to_le_bytes());
+    buf.extend_from_slice(s.as_bytes());
+}
+
+fn put_bytes(buf: &mut Vec<u8>, bytes: &[u8]) {
+    buf.extend_from_slice(&(bytes.len() as u32).to_le_bytes());
+    buf.extend_from_slice(bytes);
+}
+
+/// SLHP v1 as published by socialight-hop. Attestation stays opaque.
+fn slhp_frame(channel: &str, attestation: &[u8], share_token: Option<&str>) -> Vec<u8> {
+    let mut payload = Vec::new();
+    put_str(&mut payload, channel);
+    put_bytes(&mut payload, attestation);
+    match share_token {
+        Some(token) => {
+            payload.push(1);
+            put_str(&mut payload, token);
+        }
+        None => payload.push(0),
+    }
+    let mut out = Vec::new();
+    out.extend_from_slice(HOP_MAGIC);
+    out.extend_from_slice(&HOP_VERSION.to_le_bytes());
+    out.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+    out.extend_from_slice(&payload);
+    out
+}
+
+fn att_bytes(issuer: &str, claim: &str) -> Vec<u8> {
+    let mut w = Vec::new();
+    put_str(&mut w, issuer);
+    put_str(&mut w, "bob");
+    put_str(&mut w, claim);
+    w.extend_from_slice(&0u64.to_le_bytes());
+    put_str(&mut w, issuer);
+    put_str(&mut w, "object-version");
+    put_str(&mut w, "doc");
+    w.extend_from_slice(&1u64.to_le_bytes());
+    put_bytes(&mut w, &[1u8; 64]);
+    w
+}
+
 #[test]
 fn hop_frame_round_trip() {
     let mut plane = Plane::new();
@@ -28,13 +73,46 @@ fn hop_frame_round_trip() {
     let light = signed_badge(&plane, &secret);
 
     let bytes = light.encode().unwrap();
-    assert!(bytes.starts_with(HOP_MAGIC));
+    assert!(bytes.starts_with(b"SLHP"));
     assert_eq!(&bytes[4..6], &HOP_VERSION.to_le_bytes());
     let back = SocialLightStatement::decode(&bytes).unwrap();
     assert_eq!(back, light);
 
     let accepted = plane.accept_social_light_bytes(&bytes).unwrap();
     assert_eq!(accepted.share_token.as_deref(), Some("booth-12"));
+}
+
+#[test]
+fn slhp_opaque_roundtrip_matches_socialight() {
+    let hop = HopFrame::accept(
+        HOP_VERSION,
+        AttestationChannel::ConventionBadge,
+        b"opaque-attestation".to_vec(),
+        Some("booth-12".into()),
+    )
+    .unwrap();
+    let bytes = hop.encode();
+    assert_eq!(
+        bytes,
+        slhp_frame("convention-badge", b"opaque-attestation", Some("booth-12"))
+    );
+    let again = HopFrame::decode(&bytes).unwrap();
+    assert_eq!(again, hop);
+    // Decode does not verify. Garbage attestation bytes stay opaque.
+    assert_eq!(again.attestation, b"opaque-attestation");
+}
+
+#[test]
+fn hop_decode_does_not_verify() {
+    let hop = HopFrame::accept(
+        HOP_VERSION,
+        AttestationChannel::EnrolledStation,
+        vec![0u8; 8],
+        None,
+    )
+    .unwrap();
+    let again = HopFrame::decode(&hop.encode()).unwrap();
+    assert_eq!(again.attestation, vec![0u8; 8]);
 }
 
 #[test]
@@ -53,17 +131,18 @@ fn unsigned_and_forged_frames_fail() {
         AttestationError::UnsignedHopFrame
     );
 
-    let mut raw = signed_badge(&plane, &secret).encode().unwrap();
-    // Zero the signature payload (last 64 bytes after its length prefix).
-    let sig_start = raw.len() - 64;
-    raw[sig_start..].fill(0);
+    let signed = signed_badge(&plane, &secret);
+    let mut hop = HopFrame::decode(&signed.encode().unwrap()).unwrap();
+    hop.attestation = encode_unsigned_att();
     assert_eq!(
-        SocialLightStatement::decode(&raw).unwrap_err(),
+        SocialLightStatement::decode(&hop.encode()).unwrap_err(),
         AttestationError::UnsignedHopFrame
     );
 
-    let mut forged = signed_badge(&plane, &secret).encode().unwrap();
-    forged[forged.len() - 1] ^= 0xff;
+    let mut forged_hop = HopFrame::decode(&signed.encode().unwrap()).unwrap();
+    let last = forged_hop.attestation.len() - 1;
+    forged_hop.attestation[last] ^= 0xff;
+    let forged = forged_hop.encode();
     let decoded = SocialLightStatement::decode(&forged).unwrap();
     assert_eq!(
         plane.accept_social_light(&decoded).unwrap_err(),
@@ -75,48 +154,53 @@ fn unsigned_and_forged_frames_fail() {
     ));
 }
 
-fn put_str(buf: &mut Vec<u8>, s: &str) {
-    buf.extend_from_slice(&(s.len() as u32).to_le_bytes());
-    buf.extend_from_slice(s.as_bytes());
-}
-
-fn handmade_frame(channel: &str, claim: &str, issuer: &str) -> Vec<u8> {
-    let mut payload = Vec::new();
-    put_str(&mut payload, channel);
-    put_str(&mut payload, issuer);
-    put_str(&mut payload, "bob");
-    put_str(&mut payload, claim);
-    payload.extend_from_slice(&0u64.to_le_bytes());
-    put_str(&mut payload, issuer);
-    put_str(&mut payload, "object-version");
-    put_str(&mut payload, "doc");
-    payload.extend_from_slice(&1u64.to_le_bytes());
-    payload.extend_from_slice(&64u32.to_le_bytes());
-    payload.extend_from_slice(&[1u8; 64]);
-    payload.push(0);
-    let mut out = Vec::new();
-    out.extend_from_slice(HOP_MAGIC);
-    out.extend_from_slice(&HOP_VERSION.to_le_bytes());
-    out.extend_from_slice(&(payload.len() as u32).to_le_bytes());
-    out.extend_from_slice(&payload);
-    out
+fn encode_unsigned_att() -> Vec<u8> {
+    let att = Attestation {
+        issuer: "alice".into(),
+        subject: "bob".into(),
+        claim: AttestationClaim::IdentityLive,
+        issued_at: Timestamp(0),
+        enrollment: "alice".into(),
+        binding: AttestationBinding::ObjectVersion {
+            object: "doc".into(),
+            version: sociacl_core::ObjectVersion(1),
+        },
+        signature: AttestationSig::empty(),
+    };
+    let mut w = Vec::new();
+    put_str(&mut w, att.issuer.as_str());
+    put_str(&mut w, att.subject.as_str());
+    put_str(&mut w, att.claim.as_str());
+    w.extend_from_slice(&att.issued_at.0.to_le_bytes());
+    put_str(&mut w, att.enrollment.as_str());
+    put_str(&mut w, "object-version");
+    put_str(&mut w, "doc");
+    w.extend_from_slice(&1u64.to_le_bytes());
+    put_bytes(&mut w, &att.signature.0);
+    w
 }
 
 #[test]
 fn forbidden_claim_and_unnamed_channel_fail() {
     assert!(matches!(
-        SocialLightStatement::decode(&handmade_frame("convention-badge", "flash", "alice"))
-            .unwrap_err(),
+        SocialLightStatement::decode(&slhp_frame(
+            "convention-badge",
+            &att_bytes("alice", "flash"),
+            None
+        ))
+        .unwrap_err(),
         AttestationError::ForbiddenClaim(_)
     ));
     assert!(matches!(
-        SocialLightStatement::decode(&handmade_frame("friend-now", "identity-live", "alice"))
-            .unwrap_err(),
+        HopFrame::decode(&slhp_frame("friend-now", b"opaque", None)).unwrap_err(),
         AttestationError::UnnamedChannel(_)
     ));
     assert!(matches!(
-        SocialLightStatement::decode(&handmade_frame("ping", "identity-live", "alice"))
-            .unwrap_err(),
+        HopFrame::decode(&slhp_frame("ping", b"opaque", None)).unwrap_err(),
+        AttestationError::ForbiddenChannel(_)
+    ));
+    assert!(matches!(
+        HopFrame::decode(&slhp_frame("lightiff", b"opaque", None)).unwrap_err(),
         AttestationError::ForbiddenChannel(_)
     ));
 }
@@ -155,10 +239,10 @@ fn lightiff_shaped_ids_fail_closed() {
     ));
 
     assert!(matches!(
-        SocialLightStatement::decode(&handmade_frame(
+        SocialLightStatement::decode(&slhp_frame(
             "convention-badge",
-            "identity-live",
-            "field-iff"
+            &att_bytes("field-iff", "identity-live"),
+            None
         ))
         .unwrap_err(),
         AttestationError::ForbiddenChannel(_)
@@ -230,7 +314,7 @@ fn enrolled_station_bytes_remint_requires_acl_name() {
             CheckRequest {
                 action: "read".into(),
                 object: doc,
-                accessor: alice,
+                accessor: alice.clone(),
                 predicate: None,
                 zookie: None,
                 attestation: None,
@@ -295,5 +379,15 @@ fn empty_signature_is_not_a_signature() {
             .encode()
             .unwrap_err(),
         AttestationError::UnsignedHopFrame
+    );
+}
+
+#[test]
+fn unknown_version_fails_closed() {
+    let mut bytes = slhp_frame("convention-badge", b"x", None);
+    bytes[4..6].copy_from_slice(&2u16.to_le_bytes());
+    assert_eq!(
+        HopFrame::decode(&bytes).unwrap_err(),
+        AttestationError::UnsupportedHopVersion(2)
     );
 }

@@ -82,7 +82,7 @@ int main(void) {
         ) != 0) {
         die(reason);
     }
-    if (written < 4 || memcmp(frame, "SLHF", 4) != 0) {
+    if (written < 4 || memcmp(frame, "SLHP", 4) != 0) {
         die("frame magic");
     }
     must(

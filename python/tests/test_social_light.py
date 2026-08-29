@@ -20,7 +20,7 @@ def test_badge_discover_does_not_elect():
         "doc",
         share_token="booth-12",
     )
-    assert frame.startswith(b"SLHF")
+    assert frame.startswith(b"SLHP")
     assert plane.accept_social_light(frame) == "convention-badge"
     assert plane.discover_social_light(frame) == "living-person bob share booth-12"
     try:

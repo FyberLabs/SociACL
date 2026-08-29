@@ -1705,7 +1705,7 @@ mod tests {
             ),
             0
         );
-        assert_eq!(&frame[..4], b"SLHF");
+        assert_eq!(&frame[..4], b"SLHP");
         assert_eq!(
             sociacl_social_light_accept(
                 plane,

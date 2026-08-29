@@ -32,7 +32,7 @@ pub use check::{CheckRequest, CheckResult, ParsedObject};
 pub use client::Client;
 pub use error::{AttestationError, CheckError, VerbError, WillError};
 pub use graph::{Plane, DEFAULT_ELECT_WAIT, DEFAULT_PRIVILEGE_UP_DELAY};
-pub use hop::{is_lightiff_shaped_id, MAGIC as HOP_MAGIC, VERSION as HOP_VERSION};
+pub use hop::{is_lightiff_shaped_id, HopFrame, MAGIC as HOP_MAGIC, VERSION as HOP_VERSION};
 pub use types::{
     Action, AuthnState, Capability, ClientHeldShare, Clock, CutBoundary, DestroyResult, Device,
     DiscoverResult, Edge, ElectResult, ElectState, NodeId, NodeKind, Object, ObjectKind,

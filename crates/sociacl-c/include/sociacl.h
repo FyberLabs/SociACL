@@ -233,9 +233,9 @@ int sociacl_client_destroy(
     size_t reason_len
 );
 
-/* Social Light hop frame (SLHF v1). Channel, signed attestation,
- * optional share-token. FyberLabs/socialight speaks these bytes.
- * SociACL verifies. A hop is not a grant.
+/* Social Light hop frame (SLHP v1, same wire as socialight-hop).
+ * Channel, opaque attestation bytes, optional share-token.
+ * FyberLabs/socialight delivers. SociACL verifies. A hop is not a grant.
  *
  * channel: convention-badge | enrolled-station
  * share_token may be NULL.
