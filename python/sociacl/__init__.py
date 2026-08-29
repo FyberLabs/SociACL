@@ -1,4 +1,4 @@
-"""SociACL Python bindings. Live Check plus Case C Client via the C FFI."""
+"""SociACL Python bindings. Live Check, Case C Client, Social Light hop frame."""
 
 from __future__ import annotations
 
@@ -223,6 +223,109 @@ _LIB.sociacl_client_destroy.argtypes = [
     ctypes.c_size_t,
 ]
 _LIB.sociacl_client_destroy.restype = ctypes.c_int
+_LIB.sociacl_social_light_encode.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_char_p,
+    ctypes.POINTER(ctypes.c_ubyte),
+    ctypes.c_size_t,
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.POINTER(ctypes.c_ubyte),
+    ctypes.c_size_t,
+    ctypes.POINTER(ctypes.c_size_t),
+    ctypes.c_char_p,
+    ctypes.c_size_t,
+]
+_LIB.sociacl_social_light_encode.restype = ctypes.c_int
+_LIB.sociacl_social_light_accept.argtypes = [
+    ctypes.c_void_p,
+    ctypes.POINTER(ctypes.c_ubyte),
+    ctypes.c_size_t,
+    ctypes.c_char_p,
+    ctypes.c_size_t,
+]
+_LIB.sociacl_social_light_accept.restype = ctypes.c_int
+_LIB.sociacl_social_light_check.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.POINTER(ctypes.c_ubyte),
+    ctypes.c_size_t,
+    ctypes.c_char_p,
+    ctypes.c_size_t,
+]
+_LIB.sociacl_social_light_check.restype = ctypes.c_int
+_LIB.sociacl_social_light_remint.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.POINTER(ctypes.c_ubyte),
+    ctypes.c_size_t,
+    ctypes.c_char_p,
+    ctypes.c_size_t,
+]
+_LIB.sociacl_social_light_remint.restype = ctypes.c_int
+_LIB.sociacl_social_light_discover.argtypes = [
+    ctypes.c_void_p,
+    ctypes.POINTER(ctypes.c_ubyte),
+    ctypes.c_size_t,
+    ctypes.c_char_p,
+    ctypes.c_size_t,
+]
+_LIB.sociacl_social_light_discover.restype = ctypes.c_int
+_LIB.sociacl_social_light_elect.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_char_p,
+    ctypes.POINTER(ctypes.c_ubyte),
+    ctypes.c_size_t,
+    ctypes.c_char_p,
+    ctypes.c_size_t,
+]
+_LIB.sociacl_social_light_elect.restype = ctypes.c_int
+_LIB.sociacl_client_social_light_check.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.POINTER(ctypes.c_ubyte),
+    ctypes.c_size_t,
+    ctypes.c_char_p,
+    ctypes.c_size_t,
+]
+_LIB.sociacl_client_social_light_check.restype = ctypes.c_int
+_LIB.sociacl_client_social_light_remint.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.POINTER(ctypes.c_ubyte),
+    ctypes.c_size_t,
+    ctypes.c_char_p,
+    ctypes.c_size_t,
+]
+_LIB.sociacl_client_social_light_remint.restype = ctypes.c_int
+_LIB.sociacl_client_social_light_discover.argtypes = [
+    ctypes.c_void_p,
+    ctypes.POINTER(ctypes.c_ubyte),
+    ctypes.c_size_t,
+    ctypes.c_char_p,
+    ctypes.c_size_t,
+]
+_LIB.sociacl_client_social_light_discover.restype = ctypes.c_int
+_LIB.sociacl_client_social_light_elect.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_char_p,
+    ctypes.POINTER(ctypes.c_ubyte),
+    ctypes.c_size_t,
+    ctypes.c_char_p,
+    ctypes.c_size_t,
+]
+_LIB.sociacl_client_social_light_elect.restype = ctypes.c_int
 
 
 VERIFY_KEY_LEN = 32
@@ -447,6 +550,126 @@ class Plane:
             raise Error(reason.value.decode("utf-8", errors="replace") or "export failed")
         return bytes(buf[: written.value])
 
+    def encode_social_light(
+        self,
+        channel: str,
+        secret: bytes,
+        issuer: str,
+        subject: str,
+        claim: str,
+        object: str,
+        share_token: Optional[str] = None,
+    ) -> bytes:
+        reason = ctypes.create_string_buffer(_REASON_LEN)
+        written = ctypes.c_size_t(0)
+        sk = (ctypes.c_ubyte * len(secret)).from_buffer_copy(secret)
+        rc = _LIB.sociacl_social_light_encode(
+            self._ptr,
+            _b(channel),
+            sk,
+            len(secret),
+            _b(issuer),
+            _b(subject),
+            _b(claim),
+            _b(object),
+            _b(share_token) if share_token is not None else None,
+            None,
+            0,
+            ctypes.byref(written),
+            reason,
+            _REASON_LEN,
+        )
+        if rc != 0:
+            raise Error(reason.value.decode("utf-8", errors="replace") or "encode failed")
+        buf = (ctypes.c_ubyte * written.value)()
+        rc = _LIB.sociacl_social_light_encode(
+            self._ptr,
+            _b(channel),
+            sk,
+            len(secret),
+            _b(issuer),
+            _b(subject),
+            _b(claim),
+            _b(object),
+            _b(share_token) if share_token is not None else None,
+            buf,
+            written.value,
+            ctypes.byref(written),
+            reason,
+            _REASON_LEN,
+        )
+        if rc != 0:
+            raise Error(reason.value.decode("utf-8", errors="replace") or "encode failed")
+        return bytes(buf[: written.value])
+
+    def accept_social_light(self, frame: bytes) -> str:
+        reason = ctypes.create_string_buffer(_REASON_LEN)
+        buf = (ctypes.c_ubyte * len(frame)).from_buffer_copy(frame)
+        rc = _LIB.sociacl_social_light_accept(
+            self._ptr, buf, len(frame), reason, _REASON_LEN
+        )
+        text = reason.value.decode("utf-8", errors="replace")
+        if rc != 0:
+            raise Error(text or "accept failed")
+        return text
+
+    def check_social_light(
+        self,
+        action: str,
+        object: str,
+        accessor: str,
+        frame: bytes,
+        predicate: Optional[str] = None,
+    ) -> Tuple[bool, str]:
+        reason = ctypes.create_string_buffer(_REASON_LEN)
+        buf = (ctypes.c_ubyte * len(frame)).from_buffer_copy(frame)
+        rc = _LIB.sociacl_social_light_check(
+            self._ptr,
+            _b(action),
+            _b(object),
+            _b(accessor),
+            _b(predicate) if predicate is not None else None,
+            buf,
+            len(frame),
+            reason,
+            _REASON_LEN,
+        )
+        text = reason.value.decode("utf-8", errors="replace")
+        if rc < 0:
+            raise CheckError(text or "check failed")
+        return (rc == 1, text)
+
+    def remint_social_light(self, object: str, principal: str, frame: bytes) -> str:
+        reason = ctypes.create_string_buffer(_REASON_LEN)
+        buf = (ctypes.c_ubyte * len(frame)).from_buffer_copy(frame)
+        rc = _LIB.sociacl_social_light_remint(
+            self._ptr, _b(object), _b(principal), buf, len(frame), reason, _REASON_LEN
+        )
+        text = reason.value.decode("utf-8", errors="replace")
+        if rc != 1:
+            raise Error(text or "remint failed")
+        return text
+
+    def discover_social_light(self, frame: bytes) -> str:
+        reason = ctypes.create_string_buffer(_REASON_LEN)
+        buf = (ctypes.c_ubyte * len(frame)).from_buffer_copy(frame)
+        rc = _LIB.sociacl_social_light_discover(
+            self._ptr, buf, len(frame), reason, _REASON_LEN
+        )
+        text = reason.value.decode("utf-8", errors="replace")
+        if rc != 0:
+            raise Error(text or "discover failed")
+        return text
+
+    def elect_social_light(self, object: str, frame: bytes) -> None:
+        reason = ctypes.create_string_buffer(_REASON_LEN)
+        buf = (ctypes.c_ubyte * len(frame)).from_buffer_copy(frame)
+        _LIB.sociacl_social_light_elect(
+            self._ptr, _b(object), buf, len(frame), reason, _REASON_LEN
+        )
+        text = reason.value.decode("utf-8", errors="replace")
+        raise Error(text or "elect does not fire on an attestation")
+
     def export_bundle_file(self, holder: str, path: str, secret: bytes) -> None:
         reason = ctypes.create_string_buffer(_REASON_LEN)
         sk = _secret_buf(secret)
@@ -535,6 +758,69 @@ class Client:
         if rc != 0:
             raise Error(reason or "discover failed")
         return reason
+
+    def check_social_light(
+        self,
+        action: str,
+        object: str,
+        accessor: str,
+        frame: bytes,
+        predicate: Optional[str] = None,
+    ) -> Tuple[bool, str]:
+        buf_reason = ctypes.create_string_buffer(_REASON_LEN)
+        frame_buf = (ctypes.c_ubyte * len(frame)).from_buffer_copy(frame)
+        rc = _LIB.sociacl_client_social_light_check(
+            self._ptr,
+            _b(action),
+            _b(object),
+            _b(accessor),
+            _b(predicate) if predicate is not None else None,
+            frame_buf,
+            len(frame),
+            buf_reason,
+            _REASON_LEN,
+        )
+        reason = buf_reason.value.decode("utf-8", errors="replace")
+        if rc < 0:
+            raise CheckError(reason or "check failed")
+        return (rc == 1, reason)
+
+    def remint_social_light(self, object: str, principal: str, frame: bytes) -> str:
+        buf = ctypes.create_string_buffer(_REASON_LEN)
+        frame_buf = (ctypes.c_ubyte * len(frame)).from_buffer_copy(frame)
+        rc = _LIB.sociacl_client_social_light_remint(
+            self._ptr,
+            _b(object),
+            _b(principal),
+            frame_buf,
+            len(frame),
+            buf,
+            _REASON_LEN,
+        )
+        reason = buf.value.decode("utf-8", errors="replace")
+        if rc != 1:
+            raise Error(reason or "remint failed")
+        return reason
+
+    def discover_social_light(self, frame: bytes) -> str:
+        buf = ctypes.create_string_buffer(_REASON_LEN)
+        frame_buf = (ctypes.c_ubyte * len(frame)).from_buffer_copy(frame)
+        rc = _LIB.sociacl_client_social_light_discover(
+            self._ptr, frame_buf, len(frame), buf, _REASON_LEN
+        )
+        reason = buf.value.decode("utf-8", errors="replace")
+        if rc != 0:
+            raise Error(reason or "discover failed")
+        return reason
+
+    def elect_social_light(self, object: str, frame: bytes) -> None:
+        buf = ctypes.create_string_buffer(_REASON_LEN)
+        frame_buf = (ctypes.c_ubyte * len(frame)).from_buffer_copy(frame)
+        _LIB.sociacl_client_social_light_elect(
+            self._ptr, _b(object), frame_buf, len(frame), buf, _REASON_LEN
+        )
+        reason = buf.value.decode("utf-8", errors="replace")
+        raise Error(reason or "elect does not fire on an attestation")
 
     def destroy(self, object: str) -> str:
         buf = ctypes.create_string_buffer(_REASON_LEN)
