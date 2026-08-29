@@ -105,7 +105,7 @@ A device is a first-class node. It can hold a will. It can be a protected object
 
 A will is a named macro body bound to an object (or a group, network, or device class): which verb, which circle, which threshold, which clock, what to destroy. Parse fails closed on unnamed verbs, missing enrollment, dead-hand shapes, and mixed clocks. `heir-template` is not a verb and not a Check predicate.
 
-An attestation is a signed statement from a pre-enrolled issuer. Check may use identity or device liveness as a factor on an already-named predicate. Remint may use enrolled-station liveness for a principal the ACL already names. Elect does not start because someone attested silence or a station was loud. After a cut, only pre-cut attestations and old jointly stated edges count.
+An attestation is an Ed25519-signed statement from a pre-enrolled issuer. Enrollment records the verify key. The plane never stores the signing key. Check may use identity or device liveness as a factor on an already-named predicate. Remint may use enrolled-station liveness for a principal the ACL already names. Elect does not start because someone attested silence or a station was loud. After a cut, only pre-cut attestations from pre-cut enrollments count.
 
 ## Public vs ITAR
 

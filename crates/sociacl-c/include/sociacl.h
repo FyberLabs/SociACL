@@ -2,10 +2,15 @@
 #define SOCIACL_H
 
 #include <stddef.h>
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+#define SOCIACL_VERIFY_KEY_LEN 32
+#define SOCIACL_ISSUER_SECRET_LEN 32
+#define SOCIACL_SIGNATURE_LEN 64
 
 typedef struct sociacl_plane sociacl_plane;
 typedef struct sociacl_client sociacl_client;
@@ -39,8 +44,32 @@ int sociacl_state_edge(
     const char *relation
 );
 
-/* kind: station | principal | device. Oracle accepts only enrolled issuers. */
-int sociacl_enroll(sociacl_plane *plane, const char *issuer, const char *kind);
+/* kind: station | principal | device. pubkey is 32-byte Ed25519.
+ * NULL or invalid fails closed. The caller keeps the signing key.
+ */
+int sociacl_enroll(
+    sociacl_plane *plane,
+    const char *issuer,
+    const char *kind,
+    const unsigned char *pubkey,
+    size_t pubkey_len
+);
+
+/* Edge helper. Caller holds sk. The plane does not store it. */
+int sociacl_issuer_keygen(unsigned char *pk_out, unsigned char *sk_out);
+
+/* Sign a claim bound to the object's current snapshot. */
+int sociacl_sign_claim(
+    sociacl_plane *plane,
+    const unsigned char *sk,
+    size_t sk_len,
+    const char *issuer,
+    const char *subject,
+    const char *claim,
+    const char *object,
+    unsigned char *sig_out,
+    size_t sig_len
+);
 
 /* Both sides state, then advance past the privilege-up delay. */
 int sociacl_jointly_state(
@@ -65,7 +94,8 @@ int sociacl_check(
 
 /* predicate and attestation may be NULL. NULL predicate uses the object's.
  * attestation is a claim id (identity-live | device-live | station-liveness),
- * not a grant. Unenrolled or forbidden claims fail closed.
+ * not a grant. A present claim requires a 64-byte Ed25519 signature.
+ * Unenrolled, unsigned, or forbidden claims fail closed.
  */
 int sociacl_check_ex(
     sociacl_plane *plane,
@@ -74,6 +104,8 @@ int sociacl_check_ex(
     const char *accessor,
     const char *predicate,
     const char *attestation,
+    const unsigned char *signature,
+    size_t signature_len,
     char *reason_out,
     size_t reason_len
 );

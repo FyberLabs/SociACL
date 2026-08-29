@@ -13,7 +13,7 @@ Hot path. Live Check is server-evaluated. After a cut, `Client::check` evaluates
 - `accessor` — person, agent, or device id.
 - `predicate` — optional. If set, must equal the object's named predicate. The accessor cannot pick a richer predicate than the object names.
 - `zookie` — optional freshness token from a prior Check. Bound to this object version.
-- `attestation` — optional signed statement (`identity-live` or `device-live`) from an enrolled issuer, bound to this snapshot or object version. Missing does not fail Check. A present unenrolled, post-cut, or forbidden claim fails closed. Not a grant. Does not mint an edge, owner, or heir. Check does not read a will.
+- `attestation` — optional Ed25519-signed statement (`identity-live` or `device-live`) from an enrolled issuer, bound to this snapshot or object version. The signature is checked against the verify key recorded at enroll. Missing does not fail Check. A present unenrolled, unsigned, post-cut, or forbidden claim fails closed. Not a grant. Does not mint an edge, owner, or heir. Check does not read a will.
 
 **Rules**
 
@@ -46,7 +46,7 @@ Authn holds, authz stale. Not election.
 
 **Deny** if the ACL no longer names them. Do not look at wills to pick a new owner.
 
-An optional enrolled-station liveness attestation may confirm the same principal. It does not name a new one. `remint_with_attestation` refuses an unenrolled or forbidden claim. If a live pre-cut will names remint issuers, the factor's issuer must be one of those enrolled names. That list is a restriction, not a grant.
+An optional enrolled-station liveness attestation may confirm the same principal. It does not name a new one. `remint_with_attestation` refuses an unenrolled, unsigned, or forbidden claim. If a live pre-cut will names remint issuers, the factor's issuer must be one of those enrolled names. That list is a restriction, not a grant.
 
 **Output:** a new `Capability` (fresh zookie for that principal and object).
 

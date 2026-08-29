@@ -75,7 +75,30 @@ _LIB.sociacl_jointly_state.argtypes = [
     ctypes.c_char_p,
     ctypes.c_char_p,
 ]
-_LIB.sociacl_enroll.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p]
+_LIB.sociacl_enroll.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.POINTER(ctypes.c_ubyte),
+    ctypes.c_size_t,
+]
+_LIB.sociacl_issuer_keygen.argtypes = [
+    ctypes.POINTER(ctypes.c_ubyte),
+    ctypes.POINTER(ctypes.c_ubyte),
+]
+_LIB.sociacl_issuer_keygen.restype = ctypes.c_int
+_LIB.sociacl_sign_claim.argtypes = [
+    ctypes.c_void_p,
+    ctypes.POINTER(ctypes.c_ubyte),
+    ctypes.c_size_t,
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.POINTER(ctypes.c_ubyte),
+    ctypes.c_size_t,
+]
+_LIB.sociacl_sign_claim.restype = ctypes.c_int
 _LIB.sociacl_check.argtypes = [
     ctypes.c_void_p,
     ctypes.c_char_p,
@@ -93,6 +116,8 @@ _LIB.sociacl_check_ex.argtypes = [
     ctypes.c_char_p,
     ctypes.c_char_p,
     ctypes.c_char_p,
+    ctypes.POINTER(ctypes.c_ubyte),
+    ctypes.c_size_t,
     ctypes.c_char_p,
     ctypes.c_size_t,
 ]
@@ -156,8 +181,21 @@ _LIB.sociacl_client_elect.argtypes = [
 _LIB.sociacl_client_elect.restype = ctypes.c_int
 
 
+VERIFY_KEY_LEN = 32
+ISSUER_SECRET_LEN = 32
+SIGNATURE_LEN = 64
+
+
 def _b(s: str) -> bytes:
     return s.encode("utf-8")
+
+
+def issuer_keygen() -> Tuple[bytes, bytes]:
+    pk = (ctypes.c_ubyte * VERIFY_KEY_LEN)()
+    sk = (ctypes.c_ubyte * ISSUER_SECRET_LEN)()
+    if _LIB.sociacl_issuer_keygen(pk, sk) != 0:
+        raise Error("issuer_keygen failed")
+    return bytes(pk), bytes(sk)
 
 
 class Error(Exception):
@@ -219,9 +257,32 @@ class Plane:
         if _LIB.sociacl_jointly_state(self._ptr, _b(frm), _b(to), _b(relation)) != 0:
             raise CheckError(f"jointly_state {relation}")
 
-    def enroll(self, issuer: str, kind: str) -> None:
-        if _LIB.sociacl_enroll(self._ptr, _b(issuer), _b(kind)) != 0:
+    def enroll(self, issuer: str, kind: str, public_key: bytes) -> None:
+        if not public_key:
+            raise CheckError(f"enroll {issuer} {kind} requires a public key")
+        pk = (ctypes.c_ubyte * len(public_key)).from_buffer_copy(public_key)
+        if _LIB.sociacl_enroll(self._ptr, _b(issuer), _b(kind), pk, len(public_key)) != 0:
             raise CheckError(f"enroll {issuer} {kind}")
+
+    def sign_claim(
+        self, secret: bytes, issuer: str, subject: str, claim: str, object: str
+    ) -> bytes:
+        sk = (ctypes.c_ubyte * len(secret)).from_buffer_copy(secret)
+        sig = (ctypes.c_ubyte * SIGNATURE_LEN)()
+        rc = _LIB.sociacl_sign_claim(
+            self._ptr,
+            sk,
+            len(secret),
+            _b(issuer),
+            _b(subject),
+            _b(claim),
+            _b(object),
+            sig,
+            SIGNATURE_LEN,
+        )
+        if rc != 0:
+            raise Error("sign_claim failed")
+        return bytes(sig)
 
     def check(
         self,
@@ -230,9 +291,16 @@ class Plane:
         accessor: str,
         predicate: Optional[str] = None,
         attestation: Optional[str] = None,
+        signature: Optional[bytes] = None,
     ) -> Tuple[bool, str]:
         buf = ctypes.create_string_buffer(_REASON_LEN)
         if predicate is None or attestation is not None:
+            sig_ptr = None
+            sig_len = 0
+            if signature is not None:
+                sig_buf = (ctypes.c_ubyte * len(signature)).from_buffer_copy(signature)
+                sig_ptr = sig_buf
+                sig_len = len(signature)
             rc = _LIB.sociacl_check_ex(
                 self._ptr,
                 _b(action),
@@ -240,6 +308,8 @@ class Plane:
                 _b(accessor),
                 _b(predicate) if predicate is not None else None,
                 _b(attestation) if attestation is not None else None,
+                sig_ptr,
+                sig_len,
                 buf,
                 _REASON_LEN,
             )

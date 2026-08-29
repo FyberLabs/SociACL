@@ -1,6 +1,6 @@
 use std::collections::{BTreeSet, HashMap};
 
-use crate::attestation::{Attestation, AttestationClaim, Enrollment, EnrollmentKind};
+use crate::attestation::{Attestation, AttestationClaim, Enrollment, EnrollmentKind, VerifyKey};
 use crate::cache::{HashCache, MemoryHashCache, Snapshot, SnapshotHash};
 use crate::error::{AttestationError, VerbError};
 use crate::types::{
@@ -369,14 +369,20 @@ impl Plane {
     }
 
     /// Only pre-enrolled issuers may issue attestations an oracle will accept.
+    /// `public_key` is the issuer's Ed25519 verify key. Missing or invalid
+    /// fails closed. The signing key stays with the issuer.
     pub fn enroll(
         &mut self,
         issuer: impl Into<NodeId>,
         kind: EnrollmentKind,
+        public_key: VerifyKey,
     ) -> Result<(), AttestationError> {
         let issuer = issuer.into();
         if !self.nodes.contains_key(&issuer) {
             return Err(AttestationError::IssuerNotFound(issuer));
+        }
+        if !public_key.is_valid() {
+            return Err(AttestationError::InvalidVerifyKey);
         }
         if let Some(cut) = self.cut {
             if self.now.0 > cut.cut_at.0 {
@@ -389,6 +395,7 @@ impl Plane {
                 issuer: issuer.clone(),
                 kind,
                 enrolled_at: self.now,
+                public_key,
             },
         );
         Ok(())
@@ -402,15 +409,19 @@ impl Plane {
         self.cut = Some(crate::types::CutBoundary { cut_at });
     }
 
-    /// Oracle: accept only from a pre-enrolled issuer. After a cut, only
-    /// pre-cut attestations and pre-cut enrollments count.
+    /// Oracle: accept only a statement signed by a pre-enrolled issuer
+    /// key. After a cut, only pre-cut attestations and pre-cut
+    /// enrollments count.
     pub fn accept_attestation(&self, att: &Attestation) -> Result<(), AttestationError> {
-        if !att.verify() {
-            return Err(AttestationError::BadSignature);
-        }
         let Some(enr) = self.enrollments.get(&att.issuer) else {
             return Err(AttestationError::NotEnrolled(att.issuer.clone()));
         };
+        if !enr.public_key.is_valid() {
+            return Err(AttestationError::InvalidVerifyKey);
+        }
+        if !att.verify(&enr.public_key) {
+            return Err(AttestationError::BadSignature);
+        }
         if let Some(cut) = self.cut {
             if enr.enrolled_at.0 > cut.cut_at.0 {
                 return Err(AttestationError::PostCutEnrollment(att.issuer.clone()));

@@ -18,7 +18,7 @@ pub mod will;
 
 pub use attestation::{
     Attestation, AttestationBinding, AttestationClaim, AttestationFactor, AttestationSig,
-    Enrollment, EnrollmentKind,
+    Enrollment, EnrollmentKind, IssuerSecret, VerifyKey,
 };
 pub use bundle::CutBundle;
 pub use cache::{

@@ -117,6 +117,8 @@ pub enum AttestationError {
     BindingMismatch,
     #[error("attestation signature does not match the statement")]
     BadSignature,
+    #[error("enrollment has no valid verify key; fail closed")]
+    InvalidVerifyKey,
     #[error("attestation subject {0} is not the named principal")]
     SubjectMismatch(NodeId),
     #[error("enrollment kind {0} is unnamed")]

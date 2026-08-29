@@ -7,6 +7,7 @@ use sha2::{Digest, Sha256};
 
 use crate::attestation::{
     Attestation, AttestationBinding, AttestationClaim, AttestationSig, Enrollment, EnrollmentKind,
+    VerifyKey,
 };
 use crate::bundle::CutBundle;
 use crate::cache::{Snapshot, SnapshotHash, Zookie};
@@ -18,10 +19,13 @@ use crate::types::{
 use crate::will::{DestroyMaterial, Will, WillBody, WillClause, WillSubject};
 
 pub const MAGIC: &[u8; 4] = b"SACL";
-pub const VERSION: u16 = 1;
+/// v1 stored a 32-byte digest as the signature and no verify key.
+/// Those frames fail closed here.
+pub const VERSION: u16 = 2;
 
 const MAX_STR: u32 = 4096;
 const MAX_ITEMS: u32 = 65_536;
+const MAX_BYTES: u32 = 256;
 
 pub fn encode(bundle: &CutBundle) -> Vec<u8> {
     let mut w = Writer::new();
@@ -74,6 +78,7 @@ pub fn encode(bundle: &CutBundle) -> Vec<u8> {
         w.str(enr.issuer.as_str());
         w.str(enr.kind.as_str());
         w.u64(enr.enrolled_at.0);
+        w.bytes(&enr.public_key.0);
     }
 
     w.u32(bundle.attestations.len() as u32);
@@ -157,6 +162,7 @@ pub fn decode(bytes: &[u8]) -> Result<CutBundle, VerbError> {
             issuer: NodeId::new(r.str()?),
             kind: EnrollmentKind::parse(r.str()?).map_err(|_| VerbError::BundleCorrupt)?,
             enrolled_at: Timestamp(r.u64()?),
+            public_key: VerifyKey::from_slice(&r.bytes()?).map_err(|_| VerbError::BundleCorrupt)?,
         });
     }
 
@@ -493,7 +499,7 @@ fn encode_attestation(w: &mut Writer, att: &Attestation) {
             w.fixed32(&hash.0);
         }
     }
-    w.fixed32(&att.signature.0);
+    w.bytes(&att.signature.0);
 }
 
 fn decode_attestation(r: &mut Reader<'_>) -> Result<Attestation, VerbError> {
@@ -520,7 +526,7 @@ fn decode_attestation(r: &mut Reader<'_>) -> Result<Attestation, VerbError> {
         issued_at,
         enrollment,
         binding,
-        signature: AttestationSig(r.fixed32()?),
+        signature: AttestationSig::from_slice(&r.bytes()?).map_err(|_| VerbError::BundleCorrupt)?,
     })
 }
 
@@ -568,6 +574,11 @@ impl Writer {
     }
 
     fn fixed32(&mut self, bytes: &[u8; 32]) {
+        self.0.extend_from_slice(bytes);
+    }
+
+    fn bytes(&mut self, bytes: &[u8]) {
+        self.u32(bytes.len() as u32);
         self.0.extend_from_slice(bytes);
     }
 
@@ -620,6 +631,14 @@ impl<'a> Reader<'a> {
         let mut out = [0u8; 32];
         out.copy_from_slice(b);
         Ok(out)
+    }
+
+    fn bytes(&mut self) -> Result<Vec<u8>, VerbError> {
+        let len = self.u32()?;
+        if len > MAX_BYTES {
+            return Err(VerbError::BundleCorrupt);
+        }
+        Ok(self.take(len as usize)?.to_vec())
     }
 
     fn str(&mut self) -> Result<&'a str, VerbError> {
