@@ -22,3 +22,5 @@ thiserror = "2"
 # 1.83 cannot parse newer crates that set edition2024.
 base64ct = "=1.6.0"
 zeroize = "=1.8.1"
+# 0.10 stays on edition 2021. Newer aead crates set edition2024.
+chacha20poly1305 = { version = "=0.10.1", default-features = false, features = ["alloc", "std"] }

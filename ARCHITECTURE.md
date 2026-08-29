@@ -21,7 +21,7 @@ These are working choices for this tree, not closed design.
 
 Do not treat these as decided.
 
-1. **Server-evaluated vs client-evaluated Check.** Live Check stays on the plane. Case C evaluates the same named predicates against a frozen bundle. Full rejoin after a split is not implemented; a union of two post-cut Elects is refused.
+1. **Server-evaluated vs client-evaluated Check.** Live Check stays on the plane. Case C evaluates the same named predicates against a frozen bundle. Rejoin continues keep-operating edges that already existed on the same pre-cut snapshot. It refuses a union of post-cut Elects or post-cut memberships. k-of-n quorum heal is omitted.
 2. **Who articulates an edge.** Both endpoints must state. For an object endpoint, the current owner speaks. The live-plane delay after the second statement is configurable; tests use `DEFAULT_PRIVILEGE_UP_DELAY`.
 3. **Co-ownership:** union, intersect, or refuse. This cut refuses (single owner).
 4. **k-of-n(circle) in v1.** Default is omit. Adding it later is a new predicate, not a silent walk.
@@ -47,7 +47,7 @@ Relations used by named predicates:
 
 `heir-template` is never a Check predicate. Wills are not consulted on the hot path.
 
-Ambient proximity, radio, and light are **not** grants. Check may accept an optional attestation (`identity-live` or `device-live`) from a pre-enrolled issuer, bound to this snapshot or object version, as a factor on the object's already-named predicate. Missing attestation does not fail Check. A present bad statement fails closed. Attestation does not mint an edge, owner, or heir. See [docs/attestations.md](docs/attestations.md).
+Ambient proximity, radio, and light are **not** grants. Check may accept an optional attestation (`identity-live` or `device-live`) from a pre-enrolled issuer, bound to this snapshot or object version, as a factor on the object's already-named predicate. Missing attestation does not fail Check. A present bad statement fails closed. Attestation does not mint an edge, owner, or heir. Social Light is a named channel for those statements (`convention-badge`, `enrolled-station`). A flash is not a friend, heir, or grant. See [docs/attestations.md](docs/attestations.md).
 
 ## Named predicates
 
@@ -89,7 +89,7 @@ Elect **refuses** if keep-operating would suffice (owner authn still live).
 
 **C — Continuity of command.** The plane is gone or hostile. After a cut, only pre-cut wills, pre-cut enrollments, pre-cut attestations, old jointly stated edges, and shares already held work. **New edges stated after the cut do not grant.**
 
-`export_bundle` copies that set for a remaining principal who already had a right to hold it. The durable form is a versioned length-prefixed encoding (`SACL` / version 3). Share keys are wrapped to the holder secret (XOR of SHA-256 over a domain tag and that secret). Object `content_key` is omitted from the file. The holder signs the frame with Ed25519, same scheme as attestations. A SHA-256 trailer is integrity of the bytes, not authenticity. Open refuses a missing, wrong, or unsigned signature. v1 and v2 unsigned frames fail closed. The signing key stays with the caller, not in the bundle. A captured SACL file without the holder secret is not the object. Not Debug. Not a chain or IPFS adapter.
+`export_bundle` copies that set for a remaining principal who already had a right to hold it. The durable form is a versioned length-prefixed encoding (`SACL` / version 4). Share keys are wrapped with XChaCha20-Poly1305. The wrapping key is derived from the holder secret. Each share gets its own nonce from object, holder, and `held_at`. Object `content_key` is omitted from the file. The holder signs the frame with Ed25519, same scheme as attestations. A SHA-256 trailer is integrity of the bytes, not authenticity. Open refuses a missing, wrong, or unsigned signature. v1, v2, and v3 (hash-XOR wrap) frames fail closed. The signing key stays with the caller, not in the bundle. A captured SACL file without the holder secret is not the object. Not Debug. Not a chain or IPFS adapter.
 
 `Client::from_bytes` and `Client::from_path` unwrap held shares with the secret and evaluate Check and Remint on the frozen snapshot. Same named predicates, hopcap 1, privilege-up already elapsed, privilege-down already applied. A zookie from the bundle is bound to the exported object version.
 
@@ -97,7 +97,7 @@ A device talks to this through `crates/sociacl-c` and `python/sociacl`: write a 
 
 Discover reports `Heir`, `ElectAmong`, or `StaySecret` without installing. Destroy erases local key material when the pre-cut will says stay secret or no heir can be discovered. It does not elect a new owner. Destroy still wipes whatever the client reconstructed locally.
 
-Elect and `commit_elect` refuse. The radio being quiet is not a reason to elect. `elect_from_attestation` still always fails. New shares are not minted after the cut. A presented post-cut edge, enrollment, or attestation is refused, including after a bytes or file load. Rejoin does not union two post-cut Elects. Both sides stay degraded. `heir-template` is still not a Check predicate.
+Elect and `commit_elect` refuse. The radio being quiet is not a reason to elect. `elect_from_attestation` and `elect_from_social_light` still always fail. New shares are not minted after the cut. A presented post-cut edge, enrollment, or attestation is refused, including after a bytes or file load. Rejoin continues the same pre-cut snapshot. It does not union two post-cut Elects or post-cut memberships. A side that installed a post-cut Elect stays degraded. `heir-template` is still not a Check predicate.
 
 ## Devices
 
@@ -117,7 +117,9 @@ This repository is the **public** authority plane: graph, verbs, clocks, hash ca
 
 ## Composition
 
-Hypermesh, attestation channels (Social Light, LightIFF), chain/IPFS object stores, and ATAK are separate. This plane does not embed them.
+Hypermesh, chain/IPFS object stores, and ATAK are separate. This plane does not embed them.
+
+Social Light is an attestation channel. SociACL is the authority plane. They compose. They do not merge names. Named public-safe kinds only: `convention-badge` and `enrolled-station`. LightIFF is not implemented here and must not be. The `social-light` crate is a local in-process test bed, not a hosted service.
 
 Contracts, if any, execute already-written wills. Oracles accept attestations from pre-enrolled issuers only. See [docs/wills.md](docs/wills.md) and [docs/attestations.md](docs/attestations.md).
 

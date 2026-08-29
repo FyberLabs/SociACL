@@ -59,8 +59,9 @@ int sociacl_enroll(
 /* Edge helper. Caller holds sk. The plane does not store it. */
 int sociacl_issuer_keygen(unsigned char *pk_out, unsigned char *sk_out);
 
-/* Same 32-byte Ed25519 shape. Used to wrap share keys and sign the
- * durable bundle. The file does not store this. */
+/* Same 32-byte Ed25519 shape. Used to wrap share keys
+ * (XChaCha20-Poly1305) and sign the durable bundle. The file does
+ * not store this. */
 int sociacl_holder_keygen(unsigned char *pk_out, unsigned char *sk_out);
 
 /* Named will macros onto an object the owner holds. Not a will VM.

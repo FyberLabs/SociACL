@@ -79,6 +79,10 @@ pub enum VerbError {
     ClientRefusesElect,
     #[error("rejoin will not union post-cut memberships")]
     RejoinUnionRefused,
+    #[error("rejoin requires the same pre-cut")]
+    RejoinCutMismatch,
+    #[error("rejoin quorum is unavailable; stay degraded")]
+    RejoinQuorumUnavailable,
     #[error("bundle contains post-cut material")]
     PostCutMaterial,
     #[error("principal {0} has no pre-cut right to hold a share of {1}")]
@@ -127,6 +131,12 @@ pub enum AttestationError {
     SubjectMismatch(NodeId),
     #[error("enrollment kind {0} is unnamed")]
     UnnamedEnrollmentKind(String),
+    #[error("forbidden channel {0}")]
+    ForbiddenChannel(String),
+    #[error("unnamed channel {0}; fail closed")]
+    UnnamedChannel(String),
+    #[error("channel {0} is not allowed for this verb")]
+    ChannelMustNotConsume(String),
 }
 
 #[derive(Debug, Error, Eq, PartialEq)]

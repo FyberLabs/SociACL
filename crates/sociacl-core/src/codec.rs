@@ -1,10 +1,12 @@
 //! Versioned encoding for a durable [`CutBundle`].
 //!
-//! Explicit length-prefixed fields, not Debug. Share keys are wrapped to
-//! the holder secret. The frame is Ed25519-signed by that secret. A
-//! SHA-256 trailer alone is not enough; v1 and v2 unsigned frames fail
-//! closed.
+//! Explicit length-prefixed fields, not Debug. Share keys are wrapped
+//! with XChaCha20-Poly1305. The frame is Ed25519-signed by the holder
+//! secret. A SHA-256 trailer alone is not enough. v1, v2, and v3
+//! (hash-XOR wrap) frames fail closed.
 
+use chacha20poly1305::aead::{Aead, KeyInit, Payload};
+use chacha20poly1305::{Key, XChaCha20Poly1305, XNonce};
 use sha2::{Digest, Sha256};
 
 use crate::attestation::{
@@ -23,11 +25,14 @@ use crate::will::{DestroyMaterial, Will, WillBody, WillClause, WillSubject};
 pub const MAGIC: &[u8; 4] = b"SACL";
 /// v1 stored a 32-byte digest as an attestation signature.
 /// v2 signed attestations but left share keys and the frame unsigned.
+/// v3 XOR-wrapped share keys with SHA-256(tag || HolderSecret).
 /// Those frames fail closed here.
-pub const VERSION: u16 = 3;
+pub const VERSION: u16 = 4;
 const DIGEST_LEN: usize = 32;
 const SIG_LEN: usize = AttestationSig::LEN;
 const TRAILER_LEN: usize = DIGEST_LEN + SIG_LEN;
+/// 32-byte key + 16-byte Poly1305 tag.
+const WRAP_CT_LEN: usize = 48;
 
 const MAX_STR: u32 = 4096;
 const MAX_ITEMS: u32 = 65_536;
@@ -559,11 +564,12 @@ fn encode_share(w: &mut Writer, share: &ClientHeldShare, secret: &HolderSecret) 
     match share.key_material {
         Some(key) => {
             w.bool(true);
-            w.fixed32(&wrap_share_key(
+            w.bytes(&wrap_share_key(
                 secret,
                 &share.object,
                 &share.holder,
                 share.held_at,
+                &share.share_hash,
                 &key,
             ));
         }
@@ -576,11 +582,11 @@ fn decode_share(r: &mut Reader<'_>, secret: &HolderSecret) -> Result<ClientHeldS
     let object = NodeId::new(r.str()?);
     let holder = NodeId::new(r.str()?);
     let share_hash = r.fixed32()?;
-    let sealed = if r.bool()? { Some(r.fixed32()?) } else { None };
+    let sealed = if r.bool()? { Some(r.bytes()?) } else { None };
     let held_at = Timestamp(r.u64()?);
     let key_material = match sealed {
         Some(sealed) => {
-            let key = unwrap_share_key(secret, &object, &holder, held_at, &sealed);
+            let key = unwrap_share_key(secret, &object, &holder, held_at, &share_hash, &sealed)?;
             if share_digest(&object, &holder, &key, held_at) != share_hash {
                 return Err(VerbError::ShareReconstruct(object));
             }
@@ -597,30 +603,59 @@ fn decode_share(r: &mut Reader<'_>, secret: &HolderSecret) -> Result<ClientHeldS
     })
 }
 
-fn wrap_stream(
-    secret: &HolderSecret,
-    object: &NodeId,
-    holder: &NodeId,
-    held_at: Timestamp,
-) -> [u8; 32] {
+fn labeled_hash(label: &[u8], parts: &[&[u8]]) -> [u8; 32] {
     let mut hasher = Sha256::new();
-    hasher.update(b"sociacl-share-wrap-v3");
-    hasher.update(secret.as_bytes());
-    hasher.update(object.as_bytes());
-    hasher.update(holder.as_bytes());
-    hasher.update(held_at.0.to_le_bytes());
+    hasher.update(label);
+    for part in parts {
+        hasher.update(part);
+    }
     let out = hasher.finalize();
     let mut bytes = [0u8; 32];
     bytes.copy_from_slice(&out);
     bytes
 }
 
-fn xor32(a: &[u8; 32], b: &[u8; 32]) -> [u8; 32] {
-    let mut out = [0u8; 32];
-    for i in 0..32 {
-        out[i] = a[i] ^ b[i];
-    }
-    out
+/// One wrapping key per holder secret. Not the Ed25519 seed itself.
+fn wrap_aead_key(secret: &HolderSecret) -> Key {
+    let bytes = labeled_hash(
+        b"sociacl-share-aead-v4-key",
+        &[secret.as_bytes().as_slice()],
+    );
+    *Key::from_slice(&bytes)
+}
+
+/// Per-share 24-byte nonce. Object, holder, and held_at are in the
+/// input so two shares never reuse one pad.
+fn wrap_nonce(
+    secret: &HolderSecret,
+    object: &NodeId,
+    holder: &NodeId,
+    held_at: Timestamp,
+) -> XNonce {
+    let bytes = labeled_hash(
+        b"sociacl-share-aead-v4-nonce",
+        &[
+            secret.as_bytes().as_slice(),
+            object.as_bytes(),
+            holder.as_bytes(),
+            &held_at.0.to_le_bytes(),
+        ],
+    );
+    *XNonce::from_slice(&bytes[..24])
+}
+
+fn wrap_aad(
+    object: &NodeId,
+    holder: &NodeId,
+    held_at: Timestamp,
+    share_hash: &[u8; 32],
+) -> Vec<u8> {
+    let mut aad = Vec::new();
+    aad.extend_from_slice(object.as_bytes());
+    aad.extend_from_slice(holder.as_bytes());
+    aad.extend_from_slice(&held_at.0.to_le_bytes());
+    aad.extend_from_slice(share_hash);
+    aad
 }
 
 fn wrap_share_key(
@@ -628,9 +663,21 @@ fn wrap_share_key(
     object: &NodeId,
     holder: &NodeId,
     held_at: Timestamp,
+    share_hash: &[u8; 32],
     key: &[u8; 32],
-) -> [u8; 32] {
-    xor32(key, &wrap_stream(secret, object, holder, held_at))
+) -> Vec<u8> {
+    let cipher = XChaCha20Poly1305::new(&wrap_aead_key(secret));
+    let nonce = wrap_nonce(secret, object, holder, held_at);
+    let aad = wrap_aad(object, holder, held_at, share_hash);
+    cipher
+        .encrypt(
+            &nonce,
+            Payload {
+                msg: key,
+                aad: &aad,
+            },
+        )
+        .expect("xchacha20-poly1305 wrap")
 }
 
 fn unwrap_share_key(
@@ -638,9 +685,28 @@ fn unwrap_share_key(
     object: &NodeId,
     holder: &NodeId,
     held_at: Timestamp,
-    sealed: &[u8; 32],
-) -> [u8; 32] {
-    xor32(sealed, &wrap_stream(secret, object, holder, held_at))
+    share_hash: &[u8; 32],
+    sealed: &[u8],
+) -> Result<[u8; 32], VerbError> {
+    if sealed.len() != WRAP_CT_LEN {
+        return Err(VerbError::ShareReconstruct(object.clone()));
+    }
+    let cipher = XChaCha20Poly1305::new(&wrap_aead_key(secret));
+    let nonce = wrap_nonce(secret, object, holder, held_at);
+    let aad = wrap_aad(object, holder, held_at, share_hash);
+    let opened = cipher
+        .decrypt(
+            &nonce,
+            Payload {
+                msg: sealed,
+                aad: &aad,
+            },
+        )
+        .map_err(|_| VerbError::ShareReconstruct(object.clone()))?;
+    let key: [u8; 32] = opened
+        .try_into()
+        .map_err(|_| VerbError::ShareReconstruct(object.clone()))?;
+    Ok(key)
 }
 
 struct Writer(Vec<u8>);
@@ -783,5 +849,40 @@ mod tests {
             decode(&rewritten, &secret).unwrap_err(),
             VerbError::BundleSignature
         );
+    }
+
+    #[test]
+    fn wrap_nonces_differ_across_shares() {
+        let secret = HolderSecret::generate();
+        let a = NodeId::new("doc-a");
+        let b = NodeId::new("doc-b");
+        let holder = NodeId::new("alice");
+        let held = Timestamp(3);
+        let hash_a = [1u8; 32];
+        let hash_b = [2u8; 32];
+        let key = [9u8; 32];
+        let ct_a = wrap_share_key(&secret, &a, &holder, held, &hash_a, &key);
+        let ct_b = wrap_share_key(&secret, &b, &holder, held, &hash_b, &key);
+        assert_eq!(ct_a.len(), WRAP_CT_LEN);
+        assert_eq!(ct_b.len(), WRAP_CT_LEN);
+        assert_ne!(ct_a, ct_b);
+        assert_eq!(
+            unwrap_share_key(&secret, &a, &holder, held, &hash_a, &ct_a).unwrap(),
+            key
+        );
+        assert!(unwrap_share_key(&secret, &a, &holder, held, &hash_a, &ct_b).is_err());
+    }
+
+    #[test]
+    fn wrong_secret_cannot_unwrap_even_given_ciphertext() {
+        let secret = HolderSecret::generate();
+        let other = HolderSecret::generate();
+        let object = NodeId::new("doc");
+        let holder = NodeId::new("alice");
+        let held = Timestamp(1);
+        let hash = [3u8; 32];
+        let key = [7u8; 32];
+        let ct = wrap_share_key(&secret, &object, &holder, held, &hash, &key);
+        assert!(unwrap_share_key(&other, &object, &holder, held, &hash, &ct).is_err());
     }
 }
