@@ -38,4 +38,5 @@ The slowness is a policy clock (wait, notify, allow cancel), not a countdown to 
 | Authn live, owner still live | Keep-operating | Check; Elect refuses |
 | Authn gone, will names heir | Elect | Discover then Elect |
 | Authn gone, will says stay secret / no heir | — | Destroy |
-| Plane gone (Case C) | Keep-operating on the pre-cut bundle | Load the sealed bundle with the holder secret. Offline Check / Remint / Discover / Destroy. Elect refuses. |
+| Plane gone (Case C) | Keep-operating on the pre-cut bundle | Load the sealed bundle with the holder secret. Offline Check / Remint / Discover / Destroy. Elect refuses. Same-cut rejoin may continue. A union of post-cut Elects refuses. |
+| Social Light flash | Keep-operating | Channel only. Check / Remint / Discover may consume the signed statement. Silence does not Elect. |

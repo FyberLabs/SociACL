@@ -8,6 +8,7 @@
 pub mod attestation;
 pub mod bundle;
 pub mod cache;
+pub mod channel;
 pub mod check;
 pub mod client;
 mod codec;
@@ -25,6 +26,7 @@ pub use bundle::CutBundle;
 pub use cache::{
     CacheAnchors, CacheKey, EdgeTypeSet, HashCache, MemoryHashCache, Snapshot, SnapshotHash, Zookie,
 };
+pub use channel::{AttestationChannel, SocialLightStatement, SocialLightView};
 pub use check::{CheckRequest, CheckResult, ParsedObject};
 pub use client::Client;
 pub use error::{AttestationError, CheckError, VerbError, WillError};

@@ -307,16 +307,64 @@ fn presented_post_cut_edge_is_refused() {
 }
 
 #[test]
-fn rejoin_refuses_union_of_post_cut_clients() {
-    let (plane, alice, bob, _, _) = group_plane();
+fn same_cut_keep_operating_rejoin() {
+    let (plane, alice, bob, _, doc) = group_plane();
     let left = plane.export_bundle(&alice).unwrap().open().unwrap();
     let right = plane.export_bundle(&bob).unwrap().open().unwrap();
+    assert_eq!(left.snapshot_identity(), right.snapshot_identity());
+    let mut joined = left.rejoin(&right).unwrap();
+    assert!(joined.check_object("read", &doc, &alice).unwrap().allowed);
+    assert!(joined.check_object("read", &doc, &bob).unwrap().allowed);
+    assert_eq!(joined.holder(), left.holder());
+    assert_eq!(
+        joined.elect(&doc).unwrap_err(),
+        VerbError::ClientRefusesElect
+    );
+    assert_eq!(
+        left.rejoin_with_quorum(&right, &[]).unwrap_err(),
+        VerbError::RejoinQuorumUnavailable
+    );
+}
+
+#[test]
+fn post_cut_elect_on_one_side_refuses_union() {
+    let (mut plane, alice, bob, _, doc) = group_plane();
+    plane.add_person("executor");
+    plane.write_will(heir_will("doc", "alice", "bob")).unwrap();
+    plane.set_cut(Timestamp(10));
+
+    let left = plane.export_bundle(&alice).unwrap().open().unwrap();
+    assert_eq!(left.object(&doc).unwrap().owner, alice);
+
+    plane.set_now(Timestamp(20));
+    plane.set_authn(&alice, AuthnState::Gone);
+    plane.elect(&doc).unwrap();
+    plane.set_now(Timestamp(20 + plane.elect_wait().0));
+    let installed = plane.commit_elect(&doc).unwrap();
+    assert_eq!(installed.state.heir(), &bob);
+
+    let right = plane.export_bundle(&bob).unwrap().open().unwrap();
+    assert_eq!(right.object(&doc).unwrap().owner, bob);
+    assert_eq!(left.bundle().cut.cut_at, right.bundle().cut.cut_at);
     assert_eq!(
         left.rejoin(&right).unwrap_err(),
         VerbError::RejoinUnionRefused
     );
-    assert!(left.check_object("read", "doc", &alice).unwrap().allowed);
-    assert!(right.check_object("read", "doc", &bob).unwrap().allowed);
+    assert_eq!(left.object(&doc).unwrap().owner, alice);
+    assert_eq!(right.object(&doc).unwrap().owner, bob);
+}
+
+#[test]
+fn different_cuts_refuse_rejoin() {
+    let (mut plane, alice, _, _, _) = group_plane();
+    let left = plane.export_bundle(&alice).unwrap().open().unwrap();
+    plane.set_cut(Timestamp(99));
+    let right = plane.export_bundle(&alice).unwrap().open().unwrap();
+    assert_ne!(left.bundle().cut.cut_at, right.bundle().cut.cut_at);
+    assert_eq!(
+        left.rejoin(&right).unwrap_err(),
+        VerbError::RejoinCutMismatch
+    );
 }
 
 #[test]
@@ -419,7 +467,7 @@ fn signed_attestation_survives_durable_round_trip() {
         u16::from_le_bytes(bytes[4..6].try_into().unwrap()),
         CutBundle::ENCODING_VERSION
     );
-    assert_eq!(CutBundle::ENCODING_VERSION, 3);
+    assert_eq!(CutBundle::ENCODING_VERSION, 4);
 
     let loaded = CutBundle::from_bytes(&bytes, &secret).unwrap();
     assert_eq!(loaded.attestations, bundle.attestations);
@@ -472,6 +520,13 @@ fn unsigned_or_v1_bundle_is_refused() {
     assert_eq!(
         CutBundle::from_bytes(&v2, &secret).unwrap_err(),
         VerbError::UnsupportedBundleVersion(2)
+    );
+    let mut v3 = bundle.to_bytes(&secret);
+    v3[4] = 3;
+    v3[5] = 0;
+    assert_eq!(
+        CutBundle::from_bytes(&v3, &secret).unwrap_err(),
+        VerbError::UnsupportedBundleVersion(3)
     );
 
     let mut unsigned = bundle.clone();

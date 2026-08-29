@@ -34,8 +34,19 @@ An attestation never sets Check `allowed` by itself. The named predicate still h
 
 Only pre-cut attestations and old jointly stated edges count. An issuer enrolled after the cut cannot grant. An attestation issued after the cut is refused even if the issuer was enrolled earlier. A post-cut key is not enrolled.
 
-Durable `CutBundle` encoding is SACL v3. Attestations still carry the verify key and a length-prefixed 64-byte signature. The frame itself is holder-signed with Ed25519 over the SHA-256 of the header and payload. v1 stored a 32-byte digest as an attestation signature. v2 signed attestations but left share keys in the clear and the frame unsigned. Load refuses both. Bundle open also refuses a statement that does not verify against a pre-cut enrollment.
+Durable `CutBundle` encoding is SACL v4. Share keys are wrapped with XChaCha20-Poly1305. The wrapping key is derived from the holder secret. Each share gets its own nonce from object, holder, and `held_at`. Object keys stay out of the file. The frame is holder-signed with Ed25519 over the SHA-256 of the header and payload. Export and open still require the holder secret. v1 stored a 32-byte digest as an attestation signature. v2 signed attestations but left share keys in the clear and the frame unsigned. v3 XOR-wrapped share keys with SHA-256. Load refuses those. Bundle open also refuses a statement that does not verify against a pre-cut enrollment.
 
 ## Channels
 
-Social Light and LightIFF are attestation channels. They are not implemented here. This plane stores the statement, the enrollment, and the verify key.
+Social Light is an attestation channel. SociACL is the authority plane. They compose. They do not merge names.
+
+Named public-safe kinds only:
+
+| Channel | Carries | Verb may |
+| --- | --- | --- |
+| `convention-badge` | `identity-live` of a living person, plus an optional voluntary share-token | Discover reports the badge principal. Check may use the statement as a factor on an already-named predicate. The token is not a capability. |
+| `enrolled-station` | enrolled-station liveness, or identity/device liveness | Remint or Check as a factor for a principal the ACL already names. |
+
+Presenting a Social Light statement goes through the existing attestation verify path (enrolled key, allowed claims only). Elect from a flash always fails (`elect_from_social_light`). Nearby, loud, flash, and ping are not friends, heirs, or grants.
+
+LightIFF is not implemented here and must not be. No waveforms, frequencies, or challenge-response. This plane stores the statement, the enrollment, the verify key, and the named channel.

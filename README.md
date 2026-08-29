@@ -4,7 +4,7 @@ Social-graph authority plane for a self-healing mesh of devices and data.
 
 Four verbs on one graph: **Check**, **Remint**, **Discover** / **Elect**, **Destroy**. People, agents, and devices are first-class nodes. Grants come from jointly stated edges and named predicates. Light, radio, and proximity can attest a statement; they do not grant.
 
-This repository is the public core (MIT). It is not Hypermesh, Panopticon acl-service, Social Light, or LightIFF.
+This repository is the public core (MIT). It is not Hypermesh, Panopticon acl-service, or LightIFF. `social-light` is a local in-process test bed. A flash is a channel, not a grant.
 
 ## Verbs
 
@@ -17,7 +17,7 @@ This repository is the public core (MIT). It is not Hypermesh, Panopticon acl-se
 
 Two clocks: **keep-operating** (fast; no new owner, no rekey) and **Elect** (slow). There is no dead-hand timer. Inactivity is not treated as death.
 
-After a cut, `export_bundle` freezes what a remaining principal already held. The durable file wraps share keys to a holder secret and holder-signs the frame. `Client::from_bytes` / `from_path` keep Check, Remint, Discover, and Destroy on that snapshot. Elect refuses. A captured file without the holder secret is not the object.
+After a cut, `export_bundle` freezes what a remaining principal already held. The durable file wraps share keys with XChaCha20-Poly1305 and holder-signs the frame. `Client::from_bytes` / `from_path` keep Check, Remint, Discover, and Destroy on that snapshot. Elect refuses. Rejoin continues the same pre-cut snapshot and refuses a union of post-cut Elects. A captured file without the holder secret is not the object.
 
 ## Build and test
 
@@ -28,9 +28,10 @@ cargo build --workspace --locked
 cargo test --workspace --locked
 cargo run --locked -p sociacl-core --example check
 cargo run --locked -p sociacl-core --example wills
+cargo run --locked -p social-light --example lab
 ```
 
-The Check example is a 3-node `posix-mode` Check (mode 0640). The wills example parses and writes the templates in `examples/wills/`.
+The Check example is a 3-node `posix-mode` Check (mode 0640). The wills example parses and writes the templates in `examples/wills/`. The Social Light lab is three devices, one enrolled station, a voluntary badge share, and a quiet node that does not become owner.
 
 C FFI (`sociacl-c`) and the Python package (`python/sociacl`) wrap live **Check**, will write/load, and the Case C **Client** (Check, Remint, Discover, Destroy; Elect fails closed):
 

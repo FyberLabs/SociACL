@@ -1,0 +1,14 @@
+[package]
+name = "social-light"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "local Social Light network test bed (attestation channel, not a grant)"
+
+[[example]]
+name = "lab"
+path = "../../examples/social_light.rs"
+
+[dependencies]
+sociacl-core = { path = "../sociacl-core" }
