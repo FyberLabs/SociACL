@@ -1,6 +1,6 @@
 use sociacl_core::{
-    Attestation, CheckError, CheckRequest, NodeId, Plane, PredicateId, Relation, Timestamp, Zookie,
-    DEFAULT_PRIVILEGE_UP_DELAY,
+    CheckError, CheckRequest, EnrollmentKind, NodeId, Plane, PredicateId, Relation, Timestamp,
+    Zookie, DEFAULT_PRIVILEGE_UP_DELAY,
 };
 
 fn owned_doc() -> (Plane, NodeId, NodeId, NodeId) {
@@ -410,8 +410,10 @@ fn trustee_only_when_object_names_it() {
 }
 
 #[test]
-fn attestation_is_ignored_as_a_grant() {
-    let (plane, _, bob, doc) = owned_doc();
+fn attestation_is_a_factor_not_a_grant() {
+    let (mut plane, _, bob, doc) = owned_doc();
+    plane.enroll(&bob, EnrollmentKind::Principal).unwrap();
+    let att = plane.identity_attestation(&bob, &bob, &doc).unwrap();
     let edges_before = plane.effective_edges().count();
     let owner_before = plane.object(&doc).unwrap().owner.clone();
 
@@ -422,14 +424,11 @@ fn attestation_is_ignored_as_a_grant() {
             accessor: bob.clone(),
             predicate: Some(PredicateId::owner()),
             zookie: None,
-            attestation: Some(Attestation {
-                principal: bob.clone(),
-                statement: "still bob".into(),
-                signed_at: Timestamp(1),
-            }),
+            attestation: Some(att),
         })
         .unwrap();
-    assert!(!result.allowed);
+    assert!(!result.allowed, "identity factor does not mint owner");
+    assert!(result.attestation_factor.is_some());
     assert_eq!(plane.effective_edges().count(), edges_before);
     assert_eq!(plane.object(&doc).unwrap().owner, owner_before);
     assert!(plane.will(&doc).is_none());

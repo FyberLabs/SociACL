@@ -1,38 +1,70 @@
 # Wills
 
-A will is written **while alive**. After a cut or after authn is gone, only that pre-positioned text runs. New edges stated after a cut do not grant. Contracts, if introduced later, execute already-written wills; they do not draft them.
+A will is a named template bound to an object, group, network, or device class. Written while the owner is alive and jointly stated, the same way an edge is. After a cut or after authn is gone, only that pre-positioned text runs.
 
-## Shape
+It is not a Check query. `heir-template` is never a Check predicate. Check does not read wills.
 
-- `object` — the protected object or device the will governs
-- `testator` — who wrote it (this cut: current owner)
-- `template` — named template for a small closed group (`military-rank`, `corporate-succession`, or a custom id)
-- `disposition` — `Heir(node)` or `StaySecret`
-- `written_at` — timestamp; must be while testator authn was live
-- `cancelable_by` — live principals who may cancel; Elect notifies them
+## Macro language
 
-Templates are labels for humans and for later contract runners. **`heir-template` is never a Check predicate.** Check does not read wills.
+Small and named. Not a general programming language. Each clause names a verb, and when it matters a circle, a threshold, a clock, and what to destroy.
 
-## Who may write (open)
+```
+will <name> for object|group|network|device-class <id>
+written-by <testator>
+cancelable-by <id>*
+keep-operating circle <id>
+remint issuers <id>+
+discover heir <id>
+elect circle <id> clock elect [threshold <n>] notify <id>* wait cancel
+destroy if-no-heir keys|content
+highest-still-attesting-rank circle <id>
+named-successor-list <id>+
+```
 
-This cut: the current owner may write or replace the will on that object. Whether others may write, and whether an agent may be named as heir, are open questions. Types accept any existing node as heir.
+`military-rank` is an alias for `highest-still-attesting-rank`. `corporate-succession` is an alias for `named-successor-list`. They are named instances, not doctrine tables. Circle order is jointly stated `in-circle` time, then node id. Rank numbers are not loaded from anywhere.
+
+A will may contain both clocks. Remint stays on keep-operating. Elect stays on Elect. That is composition, not a mix.
+
+## Fail closed
+
+Parse or validate rejects:
+
+- Unnamed verbs
+- Remint issuers that are not enrolled
+- `elect` without `clock elect`, `wait`, and `cancel`
+- `elect clock keep-operating` or `remint clock elect`
+- A single `timeout` shared by both clocks
+- Dead-hand shapes: `if-silent-for`, `if-inactive`, `on-silence`, `dead-hand`, `elect-on-silence`
+- `heir-template`
+- `vacancy` / `vacancy-ad`
+- An empty body
+
+Elect without `cancel` would be automatic seizure. It is refused.
 
 ## Discover / Elect / Destroy
 
-| Disposition | Discover | Elect | Destroy |
+| Body | Discover | Elect | Destroy |
 | --- | --- | --- | --- |
-| `Heir(p)` | reports `p` | installs `p` if keep-operating would not suffice | fail (has heir) |
-| `StaySecret` | reports stay secret | fail (use Destroy) | erase key material |
+| `discover heir p` | reports `p` | installs `p` if keep-operating would not suffice | fail (has heir) |
+| `named-successor-list` | reports the first name | installs the first existing name | fail if a name remains |
+| `highest-still-attesting-rank` / `elect circle` | reports `ElectAmong` | installs the first still-attesting enrolled member | fail if one is still-attesting |
+| `destroy if-no-heir` only | stay secret | fail (use Destroy) | erase key material |
 | missing / canceled | fail closed | fail closed | fail closed |
 
+Nobody still-attesting is not a vote. Elect does not pick a silent member. `elect_from_attestation` always fails.
+
 No public vacancy listing. Discover and Elect do not enumerate the graph looking for volunteers.
+
+## Who may write
+
+This cut: the current owner may write or replace the will on that object. The write is jointly stated at `now` (the owner speaks for both sides, same as the `owns` edge at object creation). Whether others may write, and whether an agent may be named as heir, are open questions. Types accept any existing node as heir.
 
 ## After a cut (Case C)
 
 `CutBoundary { cut_at }` is recorded so a later client path can ignore edges stated after the cut. Client-held shares are typed (`ClientHeldShare`) and not reconstructed here.
 
-Oracles, if any, are pre-enrolled attestations only. This tree does not enroll oracles.
+New attestations from issuers enrolled after the cut do not grant.
 
 ## Storage note
 
-Chains or IPFS may store objects, will text, and snapshot hashes. No chain adapter ships in this repository.
+Chains or IPFS may store objects, will text, and snapshot hashes. No chain adapter ships in this repository. Contracts, if introduced later, execute already-written wills; they do not draft them.

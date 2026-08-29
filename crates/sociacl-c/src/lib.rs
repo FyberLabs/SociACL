@@ -5,7 +5,10 @@ use std::os::raw::{c_char, c_int};
 use std::ptr;
 use std::sync::Mutex;
 
-use sociacl_core::{Attestation, CheckRequest, Plane, PredicateId, Relation};
+use sociacl_core::{
+    Attestation, AttestationBinding, AttestationClaim, CheckRequest, EnrollmentKind, Plane,
+    PredicateId, Relation,
+};
 
 #[allow(non_camel_case_types)]
 pub struct sociacl_plane {
@@ -195,6 +198,26 @@ pub extern "C" fn sociacl_jointly_state(
 }
 
 #[no_mangle]
+pub extern "C" fn sociacl_enroll(
+    plane: *mut sociacl_plane,
+    issuer: *const c_char,
+    kind: *const c_char,
+) -> c_int {
+    let (Some(issuer), Some(kind)) = (cstr(issuer), cstr(kind)) else {
+        return -1;
+    };
+    let Ok(kind) = EnrollmentKind::parse(kind) else {
+        return -1;
+    };
+    with_plane(plane, |p| {
+        if p.enroll(issuer, kind).is_err() {
+            return -1;
+        }
+        0
+    })
+}
+
+#[no_mangle]
 pub extern "C" fn sociacl_check(
     plane: *mut sociacl_plane,
     action: *const c_char,
@@ -241,12 +264,34 @@ pub extern "C" fn sociacl_check_ex(
         return -1;
     };
     let predicate = cstr(predicate).map(PredicateId::new);
-    let attestation = cstr(attestation).map(|statement| Attestation {
-        principal: accessor.into(),
-        statement: statement.to_string(),
-        signed_at: sociacl_core::Timestamp(0),
-    });
+    let claim_s = cstr(attestation);
     with_plane(plane, |p| {
+        let attestation = if let Some(claim_s) = claim_s {
+            let claim = match AttestationClaim::parse(claim_s) {
+                Ok(c) => c,
+                Err(e) => {
+                    write_reason(reason_out, reason_len, &e.to_string());
+                    return -1;
+                }
+            };
+            let object_id = sociacl_core::NodeId::new(object);
+            let Some(snap) = p.snapshot(&object_id) else {
+                write_reason(reason_out, reason_len, "object not found");
+                return -1;
+            };
+            Some(Attestation::new(
+                accessor,
+                accessor,
+                claim,
+                p.now(),
+                AttestationBinding::Snapshot {
+                    object: object_id,
+                    hash: snap.hash,
+                },
+            ))
+        } else {
+            None
+        };
         match p.check(CheckRequest {
             action: action.into(),
             object: object.into(),

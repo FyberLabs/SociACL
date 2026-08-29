@@ -1,6 +1,6 @@
 """Check-only Python binding tests. Requires `cargo build -p sociacl-c`."""
 
-from sociacl import Plane
+from sociacl import CheckError, Plane
 
 
 def test_three_node_posix_check():
@@ -39,8 +39,15 @@ def test_simple_check_and_attestation():
     assert allowed is True
     assert reason == "owner"
 
+    try:
+        plane.check("read", "doc", "bob", "owner", attestation="identity-live")
+        raise AssertionError("unenrolled attestation must fail closed")
+    except CheckError:
+        pass
+
+    plane.enroll("bob", "principal")
     allowed, reason = plane.check(
-        "read", "doc", "bob", "owner", attestation="still bob"
+        "read", "doc", "bob", "owner", attestation="identity-live"
     )
     assert allowed is False
     assert reason == "owner"

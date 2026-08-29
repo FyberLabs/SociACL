@@ -25,9 +25,10 @@ Requires Rust 1.83+ (edition 2021). CI (`.github/workflows/ci.yml`) runs the sam
 cargo build --workspace --locked
 cargo test --workspace --locked
 cargo run --locked -p sociacl-core --example check
+cargo run --locked -p sociacl-core --example wills
 ```
 
-The example is a 3-node `posix-mode` Check (mode 0640).
+The Check example is a 3-node `posix-mode` Check (mode 0640). The wills example parses and writes the templates in `examples/wills/`.
 
 C FFI (`sociacl-c`) and the Python package (`python/sociacl`) wrap **Check** only:
 
@@ -38,7 +39,7 @@ LD_LIBRARY_PATH=target/debug target/sociacl-check-c
 PYTHONPATH=python python3 python/tests/test_check.py
 ```
 
-See [ARCHITECTURE.md](ARCHITECTURE.md), [docs/verbs.md](docs/verbs.md), [docs/wills.md](docs/wills.md), and [docs/clocks.md](docs/clocks.md).
+See [ARCHITECTURE.md](ARCHITECTURE.md), [docs/verbs.md](docs/verbs.md), [docs/wills.md](docs/wills.md), [docs/attestations.md](docs/attestations.md), and [docs/clocks.md](docs/clocks.md).
 
 ## License
 

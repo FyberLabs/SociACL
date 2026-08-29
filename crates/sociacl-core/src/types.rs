@@ -357,40 +357,6 @@ pub enum AuthnState {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum WillTemplate {
-    MilitaryRank,
-    CorporateSuccession,
-    Custom(String),
-}
-
-impl WillTemplate {
-    pub fn as_str(&self) -> &str {
-        match self {
-            Self::MilitaryRank => "military-rank",
-            Self::CorporateSuccession => "corporate-succession",
-            Self::Custom(s) => s,
-        }
-    }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum WillDisposition {
-    Heir(NodeId),
-    StaySecret,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Will {
-    pub object: NodeId,
-    pub testator: NodeId,
-    pub template: WillTemplate,
-    pub disposition: WillDisposition,
-    pub written_at: Timestamp,
-    pub cancelable_by: Vec<NodeId>,
-    pub canceled: bool,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Capability {
     pub principal: NodeId,
     pub object: NodeId,
@@ -400,6 +366,10 @@ pub struct Capability {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DiscoverResult {
     Heir(NodeId),
+    /// Will elects among a pre-enrolled circle. Discover does not pick.
+    ElectAmong {
+        circle: NodeId,
+    },
     StaySecret,
 }
 
@@ -433,13 +403,4 @@ pub struct CutBoundary {
 pub struct ClientHeldShare {
     pub object: NodeId,
     pub share_hash: [u8; 32],
-}
-
-/// Signed statement that this principal is still this principal.
-/// Check may accept it. It is not a grant and does not mint edges.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Attestation {
-    pub principal: NodeId,
-    pub statement: String,
-    pub signed_at: Timestamp,
 }

@@ -38,6 +38,9 @@ int sociacl_state_edge(
     const char *relation
 );
 
+/* kind: station | principal | device. Oracle accepts only enrolled issuers. */
+int sociacl_enroll(sociacl_plane *plane, const char *issuer, const char *kind);
+
 /* Both sides state, then advance past the privilege-up delay. */
 int sociacl_jointly_state(
     sociacl_plane *plane,
@@ -60,7 +63,8 @@ int sociacl_check(
 );
 
 /* predicate and attestation may be NULL. NULL predicate uses the object's.
- * attestation is not a grant.
+ * attestation is a claim id (identity-live | device-live | station-liveness),
+ * not a grant. Unenrolled or forbidden claims fail closed.
  */
 int sociacl_check_ex(
     sociacl_plane *plane,

@@ -27,6 +27,9 @@ jobs:
       - name: Rust Check example
         run: cargo run --locked -p sociacl-core --example check
 
+      - name: Rust will example
+        run: cargo run --locked -p sociacl-core --example wills
+
       - name: C Check wrapper
         run: |
           cc -I crates/sociacl-c/include examples/check.c \

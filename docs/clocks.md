@@ -27,6 +27,8 @@ The slowness is a policy clock (wait, notify, allow cancel), not a countdown to 
 - Dead-hand timers (fire Elect or Destroy because a clock expired).
 - Using inactivity as a death oracle.
 - Starting Elect to "refresh" a live owner (that is Remint or a no-op).
+- One `timeout` for keep-operating and Elect.
+- Elect on silence, or Elect because a station was loud.
 
 ## Mapping
 

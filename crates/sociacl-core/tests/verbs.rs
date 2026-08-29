@@ -1,17 +1,18 @@
 use sociacl_core::{
     AuthnState, Clock, DiscoverResult, Plane, PredicateId, Relation, Timestamp, VerbError, Will,
-    WillDisposition, WillTemplate,
+    WillDisposition,
 };
 
 fn will(object: &str, testator: &str, disposition: WillDisposition) -> Will {
-    Will {
-        object: object.into(),
-        testator: testator.into(),
-        template: WillTemplate::CorporateSuccession,
-        disposition,
-        written_at: Timestamp(1),
-        cancelable_by: vec!["executor".into()],
-        canceled: false,
+    match disposition {
+        WillDisposition::Heir(heir) => Will::heir(
+            object,
+            testator,
+            heir,
+            Timestamp(1),
+            vec!["executor".into()],
+        ),
+        WillDisposition::StaySecret => Will::stay_secret(object, testator, Timestamp(1)),
     }
 }
 

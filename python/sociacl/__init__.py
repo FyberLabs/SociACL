@@ -75,6 +75,7 @@ _LIB.sociacl_jointly_state.argtypes = [
     ctypes.c_char_p,
     ctypes.c_char_p,
 ]
+_LIB.sociacl_enroll.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p]
 _LIB.sociacl_check.argtypes = [
     ctypes.c_void_p,
     ctypes.c_char_p,
@@ -156,6 +157,10 @@ class Plane:
     def jointly_state(self, frm: str, to: str, relation: str) -> None:
         if _LIB.sociacl_jointly_state(self._ptr, _b(frm), _b(to), _b(relation)) != 0:
             raise CheckError(f"jointly_state {relation}")
+
+    def enroll(self, issuer: str, kind: str) -> None:
+        if _LIB.sociacl_enroll(self._ptr, _b(issuer), _b(kind)) != 0:
+            raise CheckError(f"enroll {issuer} {kind}")
 
     def check(
         self,

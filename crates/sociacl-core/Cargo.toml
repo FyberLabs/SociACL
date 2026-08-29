@@ -10,6 +10,10 @@ description = "SociACL graph, Check, Remint, Discover/Elect, Destroy"
 name = "check"
 path = "../../examples/check.rs"
 
+[[example]]
+name = "wills"
+path = "../../examples/wills.rs"
+
 [dependencies]
 sha2 = "0.10"
 thiserror = "2"

@@ -1,9 +1,8 @@
+use crate::attestation::{Attestation, AttestationFactor};
 use crate::cache::{CacheAnchors, CacheKey, EdgeTypeSet, HashCache, Zookie};
-use crate::error::CheckError;
+use crate::error::{AttestationError, CheckError};
 use crate::graph::Plane;
-use crate::types::{
-    Action, Attestation, NodeId, Object, ObjectKind, ObjectProperties, PredicateId, Relation,
-};
+use crate::types::{Action, NodeId, Object, ObjectKind, ObjectProperties, PredicateId, Relation};
 
 /// CHECK(action, object, accessor). Predicate is object-driven. Callers may
 /// pass an explicit id; it must match the object's named predicate.
@@ -15,7 +14,7 @@ pub struct CheckRequest {
     pub predicate: Option<PredicateId>,
     pub zookie: Option<Zookie>,
     /// Optional attestation factor. Missing does not fail Check.
-    /// Must not mint an edge, owner, or heir.
+    /// Must not mint an edge, owner, or heir. Check never reads a will.
     pub attestation: Option<Attestation>,
 }
 
@@ -25,6 +24,9 @@ pub struct CheckResult {
     /// Names the predicate, not the path.
     pub reason: PredicateId,
     pub zookie: Zookie,
+    /// Present only when Check consumed a valid enrolled factor.
+    /// Never sets `allowed` by itself.
+    pub attestation_factor: Option<AttestationFactor>,
 }
 
 /// Parsed Check target. Properties select the predicate.
@@ -86,13 +88,13 @@ impl Plane {
             }
         }
 
-        // Attestation is a factor, not a grant. Read it so a missing value
-        // is fine and a present value cannot mint state (this method is &self).
-        let _attestation = request.attestation.as_ref();
-
+        // Check does not import will evaluation. A will on this object
+        // cannot become a predicate here.
         let snapshot = self
             .snapshot(&request.object)
             .ok_or_else(|| CheckError::ObjectNotFound(request.object.clone()))?;
+
+        let attestation_factor = self.consume_check_factor(&request, &snapshot)?;
 
         let mut extra = std::collections::BTreeSet::new();
         if let Some(g) = self.named_group(&request.object) {
@@ -149,7 +151,53 @@ impl Plane {
                 object_version: snapshot.object_version,
                 snapshot_hash: snapshot.hash,
             },
+            attestation_factor,
         })
+    }
+
+    /// Identity or device liveness from an enrolled issuer, bound to this
+    /// snapshot, about the accessor. Never a grant. Station loudness is
+    /// refused. Missing attestation skips this.
+    fn consume_check_factor(
+        &self,
+        request: &CheckRequest,
+        snapshot: &crate::cache::Snapshot,
+    ) -> Result<Option<AttestationFactor>, CheckError> {
+        let Some(att) = request.attestation.as_ref() else {
+            return Ok(None);
+        };
+        self.accept_attestation(att)
+            .map_err(CheckError::AttestationRejected)?;
+        if !att.claim.check_may_consume() {
+            return Err(CheckError::AttestationRejected(
+                AttestationError::CheckMustNotConsume(att.claim.as_str().to_string()),
+            ));
+        }
+        if att.subject != request.accessor {
+            return Err(CheckError::AttestationRejected(
+                AttestationError::SubjectMismatch(att.subject.clone()),
+            ));
+        }
+        let bound = match &att.binding {
+            crate::attestation::AttestationBinding::Snapshot { object, hash } => {
+                att.binding.matches_snapshot(object, *hash)
+                    && *object == request.object
+                    && *hash == snapshot.hash
+            }
+            crate::attestation::AttestationBinding::ObjectVersion { object, version } => {
+                *object == request.object && *version == snapshot.object_version
+            }
+        };
+        if !bound {
+            return Err(CheckError::AttestationRejected(
+                AttestationError::BindingMismatch,
+            ));
+        }
+        Ok(Some(AttestationFactor {
+            issuer: att.issuer.clone(),
+            claim: att.claim,
+            binding: att.binding.clone(),
+        }))
     }
 
     pub fn check_named(

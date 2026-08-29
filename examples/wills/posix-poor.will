@@ -1,0 +1,9 @@
+# POSIX-poor object: named heir, else erase keys.
+# Check still uses the object's predicate (posix-mode / owner / group).
+# This text is not a Check query.
+
+will posix-doc for object doc
+written-by alice
+cancelable-by executor
+discover heir bob
+destroy if-no-heir keys
