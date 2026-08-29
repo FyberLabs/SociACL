@@ -20,7 +20,7 @@ Slow. Used only when authn is gone **and** a will written while alive names an h
 - Notify live principals who may cancel. They can cancel; Elect then fails closed.
 - Do not publish a vacancy.
 
-The slowness is a policy clock (wait, notify, allow cancel), not a countdown to automatic seizure. This cut does not sleep; it returns `Clock::Elect` on a successful elect so callers can apply the slow path.
+The slowness is a policy clock (wait, notify, allow cancel), not a countdown to automatic seizure. The plane does not sleep. `elect` records a pending Elect and notifies. `commit_elect` may install only after `elect_wait`. That wait is not shared with keep-operating. Expiry does not install an owner.
 
 ## Forbidden
 

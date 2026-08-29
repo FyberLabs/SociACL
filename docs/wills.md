@@ -45,9 +45,9 @@ Elect without `cancel` would be automatic seizure. It is refused.
 
 | Body | Discover | Elect | Destroy |
 | --- | --- | --- | --- |
-| `discover heir p` | reports `p` | installs `p` if keep-operating would not suffice | fail (has heir) |
-| `named-successor-list` | reports the first name | installs the first existing name | fail if a name remains |
-| `highest-still-attesting-rank` / `elect circle` | reports `ElectAmong` | installs the first still-attesting enrolled member | fail if one is still-attesting |
+| `discover heir p` | reports `p` | pending, then installs `p` after wait if keep-operating would not suffice | fail (has heir) |
+| `named-successor-list` | reports the first name | pending, then installs the first existing name after wait | fail if a name remains |
+| `highest-still-attesting-rank` / `elect circle` | reports `ElectAmong` | pending, then installs the first still-attesting enrolled member after wait | fail if one is still-attesting |
 | `destroy if-no-heir` only | stay secret | fail (use Destroy) | erase key material |
 | missing / canceled | fail closed | fail closed | fail closed |
 

@@ -44,9 +44,9 @@ Authn holds, authz stale. Not election.
 - the principal's authn is live, and
 - a current jointly stated ACL already names that principal for the object (`owns`, group membership for a named `object-group`, or direct circle membership for a named `object-circle`).
 
-**Deny** if the ACL no longer names them. Do not look at wills. Do not pick a new owner.
+**Deny** if the ACL no longer names them. Do not look at wills to pick a new owner.
 
-An optional enrolled-station liveness attestation may confirm the same principal. It does not name a new one. `remint_with_attestation` refuses an unenrolled or forbidden claim.
+An optional enrolled-station liveness attestation may confirm the same principal. It does not name a new one. `remint_with_attestation` refuses an unenrolled or forbidden claim. If a live pre-cut will names remint issuers, the factor's issuer must be one of those enrolled names. That list is a restriction, not a grant.
 
 **Output:** a new `Capability` (fresh zookie for that principal and object).
 
@@ -60,17 +60,25 @@ Authn gone. Report what a pre-written will says. Do not install an owner. Do not
 
 ## ELECT(object)
 
-Authn gone. Slow Elect clock. Install the heir named by a live will.
+Authn gone. Slow Elect clock. A ceremony, not an instant transfer.
 
 **Refuse** when keep-operating would suffice (object owner authn still live).
 
-**Refuse** without a pre-written, uncanceled will.
+**Refuse** without a pre-written, uncanceled, pre-cut will that names an elect path.
 
 **Refuse** if the will's disposition is destroy / stay secret (call Destroy instead).
 
-On success: owner becomes the named heir or the first still-attesting enrolled member of the named circle, object version bumps, notify the live principals listed as able to cancel. Those principals may `cancel_will` before or after; a canceled will cannot elect.
+**Refuse** if a rank/circle template has nobody still-attesting. Silence is not a vote.
 
-Elect does not fire because someone attested silence or a station was loud. `elect_from_attestation` always fails. If a rank/circle template has nobody still-attesting, Elect fails closed.
+**Start** (`elect`): resolve the candidate heir (named heir, first existing successor, or first still-attesting enrolled circle member). Notify live principals the will lists as able to cancel. Record a pending Elect. Do not install an owner. Do not publish a vacancy.
+
+**Wait**: the Elect clock is a delay on that record (`elect_wait`). It is not the keep-operating privilege-up delay. The plane does not sleep. The delay elapsing does not install an owner.
+
+**Cancel**: any principal the will still treats as live may `cancel_will`. A canceled will cannot commit.
+
+**Commit** (`commit_elect`): only after the wait, and only if the will is still live and keep-operating still would not suffice. Then the owner becomes the candidate, the object version bumps, and a jointly stated `owns` edge is written.
+
+Elect does not fire because someone attested silence or a station was loud. `elect_from_attestation` always fails.
 
 No public vacancy ads. No dead-hand timer.
 
@@ -78,7 +86,7 @@ No public vacancy ads. No dead-hand timer.
 
 Cryptographic erasure: drop the object's content-key material, mark destroyed, bump version.
 
-**Allow** only with an uncanceled will whose disposition is stay secret / destroy, or a will that names no heir.
+**Allow** only with an uncanceled will whose disposition is stay secret / destroy, or a will that names no heir that can be discovered.
 
 **Fail closed** with no will.
 

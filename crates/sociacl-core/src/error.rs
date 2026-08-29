@@ -65,6 +65,16 @@ pub enum VerbError {
     CannotElectWithoutCancelers(NodeId),
     #[error("attestation rejected: {0}")]
     AttestationRejected(AttestationError),
+    #[error("elect on {0} is already pending")]
+    ElectPending(NodeId),
+    #[error("no pending elect on {0}")]
+    ElectNotPending(NodeId),
+    #[error("elect wait has not elapsed on {0}")]
+    ElectWaitNotElapsed(NodeId),
+    #[error("will for {0} was written after the cut")]
+    PostCutWill(NodeId),
+    #[error("attestation issuer {0} is not a remint issuer named by the will")]
+    RemintIssuerNotNamed(NodeId),
 }
 
 #[derive(Debug, Error, Eq, PartialEq)]

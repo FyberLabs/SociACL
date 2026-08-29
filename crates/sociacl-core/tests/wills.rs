@@ -1,6 +1,6 @@
 use sociacl_core::{
     AuthnState, CheckError, Clock, DiscoverResult, EnrollmentKind, Plane, PredicateId, Relation,
-    VerbError, Will, WillClause, WillError,
+    Timestamp, VerbError, Will, WillClause, WillError,
 };
 
 const POSIX_POOR: &str = include_str!("../../../examples/wills/posix-poor.will");
@@ -270,8 +270,14 @@ fn elect_picks_still_attesting_rank_member() {
         DiscoverResult::ElectAmong { circle: ops }
     );
     let result = plane.elect(&doc).unwrap();
-    assert_eq!(result.new_owner, carol);
+    assert_eq!(result.state.heir(), &carol);
+    assert!(result.state.is_pending());
     assert_eq!(result.clock, Clock::Elect);
+    assert_eq!(plane.object(&doc).unwrap().owner, alice);
+    plane.set_now(Timestamp(plane.now().0 + plane.elect_wait().0));
+    let committed = plane.commit_elect(&doc).unwrap();
+    assert_eq!(committed.state.heir(), &carol);
+    assert!(committed.state.is_installed());
 }
 
 #[test]

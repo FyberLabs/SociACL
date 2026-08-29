@@ -373,12 +373,51 @@ pub enum DiscoverResult {
     StaySecret,
 }
 
+/// Recorded when `elect` starts. The plane does not sleep. Commit may
+/// install only after `ready_at`. Expiry does not install an owner.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PendingElect {
+    pub object: NodeId,
+    pub candidate: NodeId,
+    pub notify: Vec<NodeId>,
+    pub started_at: Timestamp,
+    pub ready_at: Timestamp,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ElectState {
+    /// Notified. Owner has not changed.
+    Pending {
+        candidate: NodeId,
+        ready_at: Timestamp,
+    },
+    /// Installed after the wait. Jointly stated `owns` edge.
+    Installed { new_owner: NodeId },
+}
+
+impl ElectState {
+    pub fn heir(&self) -> &NodeId {
+        match self {
+            Self::Pending { candidate, .. } => candidate,
+            Self::Installed { new_owner } => new_owner,
+        }
+    }
+
+    pub fn is_pending(&self) -> bool {
+        matches!(self, Self::Pending { .. })
+    }
+
+    pub fn is_installed(&self) -> bool {
+        matches!(self, Self::Installed { .. })
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ElectResult {
-    pub new_owner: NodeId,
     pub clock: Clock,
     /// Live principals who may cancel. Not a public vacancy list.
     pub notify: Vec<NodeId>,
+    pub state: ElectState,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
