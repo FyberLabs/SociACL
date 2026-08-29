@@ -75,6 +75,18 @@ pub enum VerbError {
     PostCutWill(NodeId),
     #[error("attestation issuer {0} is not a remint issuer named by the will")]
     RemintIssuerNotNamed(NodeId),
+    #[error("client path refuses elect; silence is not a vote")]
+    ClientRefusesElect,
+    #[error("rejoin will not union post-cut memberships")]
+    RejoinUnionRefused,
+    #[error("bundle contains post-cut material")]
+    PostCutMaterial,
+    #[error("principal {0} has no pre-cut right to hold a share of {1}")]
+    NoHeldShare(NodeId, NodeId),
+    #[error("principal {0} has no pre-cut share to export")]
+    NothingToExport(NodeId),
+    #[error("share reconstruction failed for {0}")]
+    ShareReconstruct(NodeId),
 }
 
 #[derive(Debug, Error, Eq, PartialEq)]

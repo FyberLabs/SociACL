@@ -7,7 +7,7 @@ Authority plane over a social graph. Same four verbs from a POSIX user/group sli
 These are working choices for this tree, not closed design.
 
 - Live `CHECK` is **server-evaluated** against an in-memory graph.
-- Case C (plane gone or hostile) is **types and comments only**. Client-held shares are not implemented.
+- Case C evaluates **offline against a pre-cut bundle**. Export copies the last granting snapshot, the live will, pre-cut enrollments, and shares the remaining principal already had a right to hold. That is the disk image at the cut, not a fetch from a dead plane.
 - Check reasons are **predicate ids**, not paths.
 - Hopcap is **1**. No friend-of-friend, no nested-circle walk.
 - **k-of-n(circle)** is omitted (forest-fire risk).
@@ -21,7 +21,7 @@ These are working choices for this tree, not closed design.
 
 Do not treat these as decided.
 
-1. **Server-evaluated vs client-evaluated Check.** Case C requires a client path to exist. This cut evaluates on the plane only.
+1. **Server-evaluated vs client-evaluated Check.** Live Check stays on the plane. Case C evaluates the same named predicates against a frozen bundle. Full rejoin after a split is not implemented; a union of two post-cut Elects is refused.
 2. **Who articulates an edge.** Both endpoints must state. For an object endpoint, the current owner speaks. The live-plane delay after the second statement is configurable; tests use `DEFAULT_PRIVILEGE_UP_DELAY`.
 3. **Co-ownership:** union, intersect, or refuse. This cut refuses (single owner).
 4. **k-of-n(circle) in v1.** Default is omit. Adding it later is a new predicate, not a silent walk.
@@ -87,7 +87,13 @@ Elect **refuses** if keep-operating would suffice (owner authn still live).
 
 **B — Discover / Elect / Destroy.** Principal cannot authenticate. Look at a will written while alive. Discover reports the disposition without electing. Elect is a notify / wait / cancel ceremony on the slow clock; `commit_elect` installs the named heir only after the wait. Destroy erases if the will says stay secret or there is no heir that can be discovered. Fail closed with no will.
 
-**C — Continuity of command.** The plane is gone or hostile. After a cut, only pre-positioned wills and client-held shares work. **New edges stated after the cut do not grant.** This cut ships `CutBoundary` and `ClientHeldShare` as types plus comments. Reconstruction and offline Check are not implemented.
+**C — Continuity of command.** The plane is gone or hostile. After a cut, only pre-cut wills, pre-cut enrollments, pre-cut attestations, old jointly stated edges, and shares already held work. **New edges stated after the cut do not grant.**
+
+`export_bundle` copies that set for a remaining principal who already had a right to hold it. `Client` reconstructs the held share and evaluates Check and Remint on the frozen snapshot. Same named predicates, hopcap 1, privilege-up already elapsed, privilege-down already applied. A zookie from the bundle is bound to the exported object version.
+
+Discover reports `Heir`, `ElectAmong`, or `StaySecret` without installing. Destroy may erase local key material when the pre-cut will says stay secret or no heir can be discovered. It does not elect a new owner.
+
+Elect and `commit_elect` refuse. The radio being quiet is not a reason to elect. `elect_from_attestation` still always fails. New shares are not minted after the cut. A presented post-cut edge, enrollment, or attestation is refused. Rejoin does not union two post-cut Elects. Both sides stay degraded. `heir-template` is still not a Check predicate.
 
 ## Devices
 

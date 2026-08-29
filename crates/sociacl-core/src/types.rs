@@ -428,8 +428,6 @@ pub struct DestroyResult {
 
 /// After a cut, only pre-positioned wills and client-held shares work.
 /// New edges stated after `cut_at` must not grant.
-///
-/// Case C: type only. The plane does not evaluate offline.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct CutBoundary {
     pub cut_at: Timestamp,
@@ -437,9 +435,15 @@ pub struct CutBoundary {
 
 /// Client-held share for continuity of command after the plane is gone.
 ///
-/// Case C: type only. Reconstruction and offline Check are not implemented.
+/// Issued only while the holder already had a right to the object.
+/// Reconstruction verifies `share_hash` over the local key. Not Shamir.
+/// Check does not read this type.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ClientHeldShare {
     pub object: NodeId,
+    pub holder: NodeId,
     pub share_hash: [u8; 32],
+    /// Local key the holder already had. None after Destroy.
+    pub key_material: Option<[u8; 32]>,
+    pub held_at: Timestamp,
 }
