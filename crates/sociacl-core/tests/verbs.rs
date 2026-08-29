@@ -24,6 +24,10 @@ fn remint_when_acl_names_principal() {
     let doc = plane.add_object("doc", &alice).id;
     plane.jointly_state(&bob, &ops, Relation::MemberOf);
     plane.jointly_state(&doc, &ops, Relation::ObjectGroup);
+    plane
+        .set_object_property(&doc, "predicate", PredicateId::SAME_GROUP)
+        .unwrap();
+    plane.set_object_property(&doc, "group", "ops").unwrap();
 
     let cap = plane.remint(&doc, &bob).unwrap();
     assert_eq!(cap.principal, bob);
@@ -39,6 +43,10 @@ fn remint_fails_if_acl_no_longer_names_principal() {
     let doc = plane.add_object("doc", &alice).id;
     plane.jointly_state(&bob, &ops, Relation::MemberOf);
     plane.jointly_state(&doc, &ops, Relation::ObjectGroup);
+    plane
+        .set_object_property(&doc, "predicate", PredicateId::SAME_GROUP)
+        .unwrap();
+    plane.set_object_property(&doc, "group", "ops").unwrap();
     plane.unstate_edge(&bob, &bob, &ops, Relation::MemberOf);
 
     let err = plane.remint(&doc, &bob).unwrap_err();

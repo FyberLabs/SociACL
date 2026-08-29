@@ -3,31 +3,51 @@
 from sociacl import Plane
 
 
-def test_three_node_group_check():
+def test_three_node_posix_check():
     plane = Plane()
     plane.add_person("alice")
     plane.add_person("bob")
     plane.add_person("carol")
     plane.add_group("ops")
     plane.add_object("doc", "alice")
-    plane.jointly_state("alice", "ops", "member-of")
+    plane.set_object_property("doc", "predicate", "posix-mode")
+    plane.set_object_property("doc", "group", "ops")
+    plane.set_object_property("doc", "mode", "0640")
     plane.jointly_state("bob", "ops", "member-of")
-    plane.jointly_state("doc", "ops", "object-group")
 
-    allowed, reason = plane.check("read", "doc", "bob", "same-group")
+    allowed, reason = plane.check("read", "doc", "bob", "posix-mode")
     assert allowed is True
-    assert reason == "same-group"
+    assert reason == "posix-mode"
 
-    allowed, reason = plane.check("read", "doc", "carol", "same-group")
+    allowed, reason = plane.check("read", "doc", "carol", "posix-mode")
     assert allowed is False
-    assert reason == "same-group"
+    assert reason == "posix-mode"
+
+    allowed, reason = plane.check("read", "doc", "alice", "posix-mode")
+    assert allowed is True
+    assert reason == "posix-mode"
+    plane.close()
+
+
+def test_simple_check_and_attestation():
+    plane = Plane()
+    plane.add_person("alice")
+    plane.add_person("bob")
+    plane.add_object("doc", "alice")
 
     allowed, reason = plane.check("read", "doc", "alice", "owner")
     assert allowed is True
+    assert reason == "owner"
+
+    allowed, reason = plane.check(
+        "read", "doc", "bob", "owner", attestation="still bob"
+    )
+    assert allowed is False
     assert reason == "owner"
     plane.close()
 
 
 if __name__ == "__main__":
-    test_three_node_group_check()
+    test_three_node_posix_check()
+    test_simple_check_and_attestation()
     print("ok")

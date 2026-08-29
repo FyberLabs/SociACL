@@ -1,16 +1,22 @@
-use crate::cache::{CacheKey, HashCache, Zookie};
+use crate::cache::{CacheAnchors, CacheKey, EdgeTypeSet, HashCache, Zookie};
 use crate::error::CheckError;
 use crate::graph::Plane;
-use crate::types::{Action, NodeId, PredicateId, Relation};
+use crate::types::{
+    Action, Attestation, NodeId, Object, ObjectKind, ObjectProperties, PredicateId, Relation,
+};
 
-/// CHECK(action, object, accessor) plus a named predicate and optional zookie.
+/// CHECK(action, object, accessor). Predicate is object-driven. Callers may
+/// pass an explicit id; it must match the object's named predicate.
 #[derive(Clone, Debug)]
 pub struct CheckRequest {
     pub action: Action,
     pub object: NodeId,
     pub accessor: NodeId,
-    pub predicate: PredicateId,
+    pub predicate: Option<PredicateId>,
     pub zookie: Option<Zookie>,
+    /// Optional attestation factor. Missing does not fail Check.
+    /// Must not mint an edge, owner, or heir.
+    pub attestation: Option<Attestation>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -21,11 +27,39 @@ pub struct CheckResult {
     pub zookie: Zookie,
 }
 
+/// Parsed Check target. Properties select the predicate.
+pub struct ParsedObject<'a> {
+    pub kind: ObjectKind,
+    pub owner: &'a NodeId,
+    pub properties: &'a ObjectProperties,
+    pub version: crate::types::ObjectVersion,
+    pub destroyed: bool,
+}
+
+impl<'a> ParsedObject<'a> {
+    fn from_object(object: &'a Object) -> Self {
+        Self {
+            kind: object.kind,
+            owner: &object.owner,
+            properties: &object.properties,
+            version: object.version,
+            destroyed: object.destroyed,
+        }
+    }
+
+    fn named_predicate(&self, object: &NodeId) -> Result<PredicateId, CheckError> {
+        let Some(pred) = self.properties.named_predicate() else {
+            return Err(CheckError::ObjectPredicateMissing(object.clone()));
+        };
+        if !pred.is_named() {
+            return Err(CheckError::UnknownPredicate(pred));
+        }
+        Ok(pred)
+    }
+}
+
 impl Plane {
     pub fn check(&self, request: CheckRequest) -> Result<CheckResult, CheckError> {
-        if !request.predicate.is_named() {
-            return Err(CheckError::UnknownPredicate(request.predicate));
-        }
         if !self.nodes.contains_key(&request.accessor) {
             return Err(CheckError::AccessorNotFound(request.accessor));
         }
@@ -33,26 +67,54 @@ impl Plane {
             .objects
             .get(&request.object)
             .ok_or_else(|| CheckError::ObjectNotFound(request.object.clone()))?;
-        if object.destroyed {
+        let parsed = ParsedObject::from_object(object);
+        if parsed.destroyed {
             return Err(CheckError::ObjectDestroyed(request.object.clone()));
         }
+        let _kind = parsed.kind;
+
+        let named = parsed.named_predicate(&request.object)?;
+        if let Some(requested) = request.predicate.as_ref() {
+            if requested.as_str() != named.as_str() {
+                if !requested.is_named() {
+                    return Err(CheckError::UnknownPredicate(requested.clone()));
+                }
+                return Err(CheckError::PredicateMismatch {
+                    requested: requested.clone(),
+                    named,
+                });
+            }
+        }
+
+        // Attestation is a factor, not a grant. Read it so a missing value
+        // is fine and a present value cannot mint state (this method is &self).
+        let _attestation = request.attestation.as_ref();
 
         let snapshot = self
             .snapshot(&request.object)
             .ok_or_else(|| CheckError::ObjectNotFound(request.object.clone()))?;
 
-        // New-enemy: a zookie bound to an older object version is not a
-        // cached allow. We only consult the cache for the current version
-        // and current snapshot hash.
+        let mut extra = std::collections::BTreeSet::new();
+        if let Some(g) = self.named_group(&request.object) {
+            extra.insert(g);
+        }
+        if let Some(c) = self.named_circle(&request.object) {
+            extra.insert(c);
+        }
         let key = CacheKey {
-            object: request.object.clone(),
-            object_version: snapshot.object_version,
-            snapshot_hash: snapshot.hash,
             accessor: request.accessor.clone(),
-            predicate: request.predicate.clone(),
+            anchors: CacheAnchors {
+                owner: parsed.owner.clone(),
+                extra,
+            },
+            edge_types: EdgeTypeSet::from_predicate(named.as_str()),
+            hopcap: crate::HOPCAP,
+            snapshot: snapshot.hash,
             action: request.action.clone(),
         };
 
+        // New-enemy: a zookie bound to an older object version is not a
+        // cached allow. Re-evaluate the current snapshot.
         let stale_zookie = request
             .zookie
             .as_ref()
@@ -63,21 +125,25 @@ impl Plane {
             if let Some(hit) = self.cache.get(&key) {
                 hit
             } else {
-                let allowed =
-                    self.eval_predicate(&request.predicate, &request.object, &request.accessor);
+                let allowed = self.eval_predicate(
+                    &named,
+                    &request.object,
+                    &request.accessor,
+                    &request.action,
+                );
                 self.cache.insert(key, allowed);
                 allowed
             }
         } else {
             let allowed =
-                self.eval_predicate(&request.predicate, &request.object, &request.accessor);
+                self.eval_predicate(&named, &request.object, &request.accessor, &request.action);
             self.cache.insert(key, allowed);
             allowed
         };
 
         Ok(CheckResult {
             allowed,
-            reason: request.predicate,
+            reason: named,
             zookie: Zookie {
                 object: request.object,
                 object_version: snapshot.object_version,
@@ -97,31 +163,77 @@ impl Plane {
             action: action.into(),
             object: object.into(),
             accessor: accessor.into(),
-            predicate: predicate.into(),
+            predicate: Some(predicate.into()),
             zookie: None,
+            attestation: None,
         })
     }
 
-    fn eval_predicate(&self, predicate: &PredicateId, object: &NodeId, accessor: &NodeId) -> bool {
+    /// Object-driven Check. Uses the predicate the object names.
+    pub fn check_object(
+        &self,
+        action: impl Into<Action>,
+        object: impl Into<NodeId>,
+        accessor: impl Into<NodeId>,
+    ) -> Result<CheckResult, CheckError> {
+        self.check(CheckRequest {
+            action: action.into(),
+            object: object.into(),
+            accessor: accessor.into(),
+            predicate: None,
+            zookie: None,
+            attestation: None,
+        })
+    }
+
+    fn eval_predicate(
+        &self,
+        predicate: &PredicateId,
+        object: &NodeId,
+        accessor: &NodeId,
+        action: &Action,
+    ) -> bool {
         match predicate.as_str() {
             PredicateId::OWNER => self.has_live(accessor, object, Relation::Owns),
             PredicateId::SAME_GROUP => self.eval_same_group(object, accessor),
             PredicateId::NAMED_CIRCLE => self.eval_named_circle(object, accessor),
+            PredicateId::POSIX_MODE => self.eval_posix_mode(object, accessor, action),
+            PredicateId::TRUSTEE => self.has_live(accessor, object, Relation::Trustee),
             _ => false,
         }
     }
 
     fn eval_same_group(&self, object: &NodeId, accessor: &NodeId) -> bool {
-        self.live_edges()
-            .filter(|e| e.relation == Relation::ObjectGroup && e.from == *object)
-            .any(|e| self.has_live(accessor, &e.to, Relation::MemberOf))
+        let Some(group) = self.named_group(object) else {
+            return false;
+        };
+        self.has_live(accessor, &group, Relation::MemberOf)
     }
 
-    /// Named circle, hopcap 1: accessor has a direct in-circle edge to a
+    /// Named circle, hopcap 1: accessor has a direct in-circle edge to the
     /// circle the object names. No friend walk, no nested circle.
     fn eval_named_circle(&self, object: &NodeId, accessor: &NodeId) -> bool {
-        self.live_edges()
-            .filter(|e| e.relation == Relation::ObjectCircle && e.from == *object)
-            .any(|e| self.has_live(accessor, &e.to, Relation::InCircle))
+        let Some(circle) = self.named_circle(object) else {
+            return false;
+        };
+        self.has_live(accessor, &circle, Relation::InCircle)
+    }
+
+    fn eval_posix_mode(&self, object: &NodeId, accessor: &NodeId, action: &Action) -> bool {
+        let Some(obj) = self.objects.get(object) else {
+            return false;
+        };
+        let Some(mode) = obj.properties.posix_mode() else {
+            return false;
+        };
+        if accessor == &obj.owner || self.has_live(accessor, object, Relation::Owns) {
+            return mode.owner.allows(action);
+        }
+        if let Some(group) = self.named_group(object) {
+            if self.has_live(accessor, &group, Relation::MemberOf) {
+                return mode.group.allows(action);
+            }
+        }
+        mode.other.allows(action)
     }
 }

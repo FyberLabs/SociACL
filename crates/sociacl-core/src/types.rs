@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::fmt;
 use std::sync::Arc;
 
@@ -69,14 +70,120 @@ pub struct Device {
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct ObjectVersion(pub u64);
 
+/// Protected-object kind. Devices can be Check targets.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ObjectKind {
+    Data,
+    Device,
+}
+
+/// Object property bag. `predicate` must name a Check predicate or Check fails closed.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct ObjectProperties {
+    inner: BTreeMap<String, String>,
+}
+
+impl ObjectProperties {
+    pub const PREDICATE: &'static str = "predicate";
+    pub const GROUP: &'static str = "group";
+    pub const CIRCLE: &'static str = "circle";
+    pub const MODE: &'static str = "mode";
+
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn owner() -> Self {
+        let mut p = Self::new();
+        p.set(Self::PREDICATE, PredicateId::OWNER);
+        p
+    }
+
+    pub fn get(&self, key: &str) -> Option<&str> {
+        self.inner.get(key).map(String::as_str)
+    }
+
+    pub fn set(&mut self, key: impl AsRef<str>, value: impl AsRef<str>) {
+        self.inner
+            .insert(key.as_ref().to_string(), value.as_ref().to_string());
+    }
+
+    pub fn named_predicate(&self) -> Option<PredicateId> {
+        self.get(Self::PREDICATE).map(PredicateId::new)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&str, &str)> {
+        self.inner.iter().map(|(k, v)| (k.as_str(), v.as_str()))
+    }
+
+    pub fn posix_mode(&self) -> Option<PosixMode> {
+        PosixMode::parse(self.get(Self::MODE)?)
+    }
+}
+
+/// POSIX owner / group / other bits. Used only by `posix-mode`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PosixBits {
+    pub read: bool,
+    pub write: bool,
+    pub execute: bool,
+}
+
+impl PosixBits {
+    pub fn from_octal_digit(d: u32) -> Self {
+        Self {
+            read: d & 4 != 0,
+            write: d & 2 != 0,
+            execute: d & 1 != 0,
+        }
+    }
+
+    pub fn allows(&self, action: &Action) -> bool {
+        match action.as_str() {
+            "read" | "r" => self.read,
+            "write" | "w" => self.write,
+            "execute" | "exec" | "x" => self.execute,
+            _ => false,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PosixMode {
+    pub owner: PosixBits,
+    pub group: PosixBits,
+    pub other: PosixBits,
+}
+
+impl PosixMode {
+    pub fn parse(s: &str) -> Option<Self> {
+        let s = s.trim();
+        let n = if let Some(rest) = s.strip_prefix("0o") {
+            u32::from_str_radix(rest, 8).ok()?
+        } else {
+            u32::from_str_radix(s, 8).ok()?
+        };
+        if n > 0o777 {
+            return None;
+        }
+        Some(Self {
+            owner: PosixBits::from_octal_digit((n >> 6) & 7),
+            group: PosixBits::from_octal_digit((n >> 3) & 7),
+            other: PosixBits::from_octal_digit(n & 7),
+        })
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Object {
     pub id: NodeId,
+    pub kind: ObjectKind,
     pub owner: NodeId,
     pub version: ObjectVersion,
     pub destroyed: bool,
     /// Dropped on DESTROY. Placeholder for cryptographic erasure.
     pub content_key: Option<[u8; 32]>,
+    pub properties: ObjectProperties,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -86,6 +193,10 @@ pub enum Relation {
     InCircle,
     ObjectGroup,
     ObjectCircle,
+    /// Person-to-person. One-sided is a follow/request, not a grant.
+    Friend,
+    /// Named jointly stated edge. Check uses it only if the object names `trustee`.
+    Trustee,
 }
 
 impl Relation {
@@ -96,6 +207,8 @@ impl Relation {
             Self::InCircle => "in-circle",
             Self::ObjectGroup => "object-group",
             Self::ObjectCircle => "object-circle",
+            Self::Friend => "friend",
+            Self::Trustee => "trustee",
         }
     }
 
@@ -106,12 +219,15 @@ impl Relation {
             "in-circle" => Some(Self::InCircle),
             "object-group" => Some(Self::ObjectGroup),
             "object-circle" => Some(Self::ObjectCircle),
+            "friend" | "follow" => Some(Self::Friend),
+            "trustee" => Some(Self::Trustee),
             _ => None,
         }
     }
 }
 
-/// Jointly stated edge. Live for Check only when both sides have stated.
+/// Directed edge with joint articulation. Check grants only when both sides
+/// have stated and the privilege-up delay has elapsed.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Edge {
     pub from: NodeId,
@@ -119,11 +235,24 @@ pub struct Edge {
     pub relation: Relation,
     pub from_stated: bool,
     pub to_stated: bool,
+    /// Instant both sides first became jointly stated. None if one-sided.
+    pub joint_at: Option<Timestamp>,
+    /// Instant this edge may grant. Create/elect set it to `now`.
+    /// Privilege-up sets it to `now + privilege_up_delay`.
+    pub effective_at: Option<Timestamp>,
 }
 
 impl Edge {
+    pub fn direction(&self) -> (&NodeId, &NodeId) {
+        (&self.from, &self.to)
+    }
+
     pub fn is_jointly_stated(&self) -> bool {
         self.from_stated && self.to_stated
+    }
+
+    pub fn is_one_sided(&self) -> bool {
+        self.from_stated != self.to_stated
     }
 }
 
@@ -134,6 +263,9 @@ impl PredicateId {
     pub const OWNER: &'static str = "owner";
     pub const SAME_GROUP: &'static str = "same-group";
     pub const NAMED_CIRCLE: &'static str = "named-circle";
+    pub const POSIX_MODE: &'static str = "posix-mode";
+    pub const TRUSTEE: &'static str = "trustee";
+    pub const HEIR_TEMPLATE: &'static str = "heir-template";
 
     pub fn new(id: impl AsRef<str>) -> Self {
         Self(Arc::from(id.as_ref()))
@@ -151,14 +283,23 @@ impl PredicateId {
         Self::new(Self::NAMED_CIRCLE)
     }
 
+    pub fn posix_mode() -> Self {
+        Self::new(Self::POSIX_MODE)
+    }
+
+    pub fn trustee() -> Self {
+        Self::new(Self::TRUSTEE)
+    }
+
     pub fn as_str(&self) -> &str {
         &self.0
     }
 
+    /// Fixed Check list. `heir-template` is never named.
     pub fn is_named(&self) -> bool {
         matches!(
             self.as_str(),
-            Self::OWNER | Self::SAME_GROUP | Self::NAMED_CIRCLE
+            Self::OWNER | Self::SAME_GROUP | Self::NAMED_CIRCLE | Self::POSIX_MODE | Self::TRUSTEE
         )
     }
 }
@@ -292,4 +433,13 @@ pub struct CutBoundary {
 pub struct ClientHeldShare {
     pub object: NodeId,
     pub share_hash: [u8; 32],
+}
+
+/// Signed statement that this principal is still this principal.
+/// Check may accept it. It is not a grant and does not mint edges.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Attestation {
+    pub principal: NodeId,
+    pub statement: String,
+    pub signed_at: Timestamp,
 }

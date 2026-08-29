@@ -10,7 +10,7 @@ This repository is the public core (MIT). It is not Hypermesh, Panopticon acl-se
 
 | Verb | When | What it does |
 | --- | --- | --- |
-| `CHECK(action, object, accessor)` | Hot path | Named predicate on a snapshot of jointly stated edges. Hopcap 1. Reason is the predicate id. Fail closed if the predicate is unknown or does not hold. |
+| `CHECK(action, object, accessor)` | Hot path | Object-named predicate on a snapshot of jointly stated edges (plus privilege-up delay). Hopcap 1. Reason is the predicate id. Fail closed if the predicate is unknown, mismatched, or does not hold. |
 | `REMINT` | Authn holds, authz stale | Fresh capability from ACLs that already name this principal. Not an election. |
 | `DISCOVER` / `ELECT` | Authn gone | Object finds or elects an owner from a will written while alive. Elect uses the slow clock. Live principals can cancel. No public vacancy ads. |
 | `DESTROY` | No heir, or the will says stay secret | Cryptographic erasure of the object's key material. |
@@ -27,7 +27,7 @@ cargo test --workspace --locked
 cargo run --locked -p sociacl-core --example check
 ```
 
-The example is a 3-node POSIX-shaped group Check.
+The example is a 3-node `posix-mode` Check (mode 0640).
 
 C FFI (`sociacl-c`) and the Python package (`python/sociacl`) wrap **Check** only:
 

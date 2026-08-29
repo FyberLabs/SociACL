@@ -12,6 +12,15 @@ pub enum CheckError {
     ObjectDestroyed(NodeId),
     #[error("accessor {0} not found")]
     AccessorNotFound(NodeId),
+    #[error("object {0} does not name a predicate; fail closed")]
+    ObjectPredicateMissing(NodeId),
+    #[error(
+        "requested predicate {requested} does not match object predicate {named}; fail closed"
+    )]
+    PredicateMismatch {
+        requested: PredicateId,
+        named: PredicateId,
+    },
 }
 
 #[derive(Debug, Error, Eq, PartialEq)]

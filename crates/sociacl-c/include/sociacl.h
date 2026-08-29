@@ -19,8 +19,16 @@ int sociacl_add_group(sociacl_plane *plane, const char *id);
 int sociacl_add_circle(sociacl_plane *plane, const char *id);
 int sociacl_add_object(sociacl_plane *plane, const char *id, const char *owner);
 
+/* key: predicate | group | circle | mode */
+int sociacl_set_object_property(
+    sociacl_plane *plane,
+    const char *object,
+    const char *key,
+    const char *value
+);
+
 /* speaker states one side of (from, to, relation).
- * relation: owns | member-of | in-circle | object-group | object-circle
+ * relation: owns | member-of | in-circle | object-group | object-circle | friend | trustee
  */
 int sociacl_state_edge(
     sociacl_plane *plane,
@@ -30,13 +38,37 @@ int sociacl_state_edge(
     const char *relation
 );
 
-/* Returns 1 allow, 0 deny, -1 error. reason_out receives the predicate id. */
+/* Both sides state, then advance past the privilege-up delay. */
+int sociacl_jointly_state(
+    sociacl_plane *plane,
+    const char *from,
+    const char *to,
+    const char *relation
+);
+
+/* Returns 1 allow, 0 deny, -1 error. reason_out receives the predicate id.
+ * predicate must match the object's named predicate.
+ */
 int sociacl_check(
     sociacl_plane *plane,
     const char *action,
     const char *object,
     const char *accessor,
     const char *predicate,
+    char *reason_out,
+    size_t reason_len
+);
+
+/* predicate and attestation may be NULL. NULL predicate uses the object's.
+ * attestation is not a grant.
+ */
+int sociacl_check_ex(
+    sociacl_plane *plane,
+    const char *action,
+    const char *object,
+    const char *accessor,
+    const char *predicate,
+    const char *attestation,
     char *reason_out,
     size_t reason_len
 );

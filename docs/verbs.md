@@ -8,20 +8,23 @@ Hot path. Server-evaluated in this cut.
 
 **Inputs**
 
-- `action` — caller-supplied verb on the object (`read`, `write`, …). Cached, not interpreted.
-- `object` — protected object id.
+- `action` — caller-supplied verb on the object (`read`, `write`, …). Used by `posix-mode` bits. Otherwise cached, not interpreted.
+- `object` — protected object id. Check parses kind, owner, properties, version. Properties select the predicate (`predicate`, and for `posix-mode` also `mode` and `group`).
 - `accessor` — person, agent, or device id.
-- `predicate` — named predicate id (`owner`, `same-group`, `named-circle`).
-- `zookie` — optional freshness token from a prior Check.
+- `predicate` — optional. If set, must equal the object's named predicate. The accessor cannot pick a richer predicate than the object names.
+- `zookie` — optional freshness token from a prior Check. Bound to this object version.
+- `attestation` — optional signed statement that this principal is still this principal. Missing does not fail Check. Not a grant. Does not mint an edge, owner, or heir.
 
 **Rules**
 
-1. Unknown predicate → error (fail closed). `heir-template` and will template names are not predicates.
-2. Missing or destroyed object → deny / error, never allow.
-3. Evaluate the named predicate on **jointly stated** edges only, hopcap **1**.
-4. Reason is the **predicate id**, not a path.
-5. Return a zookie bound to the current object version and snapshot hash.
-6. If a presented zookie is bound to an older object version, do not honor a cached allow. Re-evaluate the current snapshot.
+1. Object properties must name a predicate from `owner`, `same-group`, `named-circle`, `posix-mode`, `trustee`. Missing, unknown, or `heir-template` → error (fail closed).
+2. Explicit predicate that does not match the object's name → error (fail closed).
+3. Missing or destroyed object → deny / error, never allow.
+4. Evaluate the object's predicate on edges that are **jointly stated** and past the privilege-up delay, hopcap **1**. One-sided follow/friend is not a grant.
+5. Reason is the **predicate id**, not a path, person list, or hop trace.
+6. Return a zookie bound to the current object version and snapshot hash.
+7. If a presented zookie is bound to an older object version, do not honor a cached allow. Re-evaluate the current snapshot.
+8. Privilege-down invalidates immediately. Privilege-up does not grant until the delay. The cache key is `(accessor, owner-or-anchors, edge-types, hopcap, snapshot)`; `posix-mode` also keys by `action`.
 
 **Outputs**
 
