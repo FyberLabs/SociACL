@@ -1,12 +1,18 @@
-//! Local Social Light network test bed.
+//! Local Social Light delivery lab.
 //!
-//! In-process hops only. Nodes are SociACL people, agents, or devices
-//! holding a live [`Plane`] or a Case C [`Client`]. A node may emit a
-//! signed Social Light statement to neighbors it can already reach.
-//! Hearing a flash does not mint a friend, heir, or owner.
+//! Nodes are SociACL people, agents, or devices holding a live
+//! [`Plane`] or a Case C [`Client`]. A node may emit a signed hop
+//! frame to neighbors it can already reach, in-process or over
+//! localhost UDP. Hearing a flash does not mint a friend, heir, or
+//! owner.
+//!
+//! FyberLabs/socialight is the product sibling that owns badge,
+//! station, and later radio hops. This crate stays here so that
+//! interface can move without merging names. SociACL verifies.
+//! socialight delivers.
 //!
 //! Partition keeps the last bundle. Silence does not Elect. Rejoin
-//! uses [`Client::rejoin`]. This crate is a lab, not a hosted service.
+//! uses [`Client::rejoin`]. Not a hosted service.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -19,6 +25,9 @@ pub use sociacl_core::{
     AttestationChannel, AttestationClaim, EnrollmentKind, IssuerSecret,
     SocialLightStatement as Statement, SocialLightView,
 };
+
+mod localhost;
+pub use localhost::{HopIoError, LocalHop};
 
 #[derive(Debug)]
 pub struct Node {
@@ -111,6 +120,7 @@ impl Lab {
     }
 
     /// Deliver a signed statement to neighbors this node already reaches.
+    /// Reachability is not a friend edge.
     pub fn emit(
         &mut self,
         from: impl Into<NodeId>,
@@ -131,6 +141,73 @@ impl Lab {
             }
         }
         Ok(n)
+    }
+
+    /// Decode hop-frame bytes, then deliver. Hearing still does not
+    /// mint a friend.
+    pub fn emit_bytes(
+        &mut self,
+        from: impl Into<NodeId>,
+        bytes: &[u8],
+    ) -> Result<usize, VerbError> {
+        let statement =
+            SocialLightStatement::decode(bytes).map_err(VerbError::AttestationRejected)?;
+        self.emit(from, statement)
+    }
+
+    /// Decode and verify on this node's plane or client.
+    pub fn accept_bytes(
+        &self,
+        id: impl Into<NodeId>,
+        bytes: &[u8],
+    ) -> Result<SocialLightStatement, VerbError> {
+        let id = id.into();
+        let node = self
+            .nodes
+            .get(&id)
+            .ok_or_else(|| VerbError::PrincipalNotFound(id.clone()))?;
+        match (&node.plane, &node.client) {
+            (Some(plane), _) => plane
+                .accept_social_light_bytes(bytes)
+                .map_err(VerbError::AttestationRejected),
+            (_, Some(client)) => client
+                .accept_social_light_bytes(bytes)
+                .map_err(VerbError::AttestationRejected),
+            _ => Err(VerbError::PrincipalNotFound(id)),
+        }
+    }
+
+    pub fn check_bytes(
+        &self,
+        id: impl Into<NodeId>,
+        request: CheckRequest,
+        bytes: &[u8],
+    ) -> Result<CheckResult, sociacl_core::CheckError> {
+        let statement = SocialLightStatement::decode(bytes)
+            .map_err(sociacl_core::CheckError::AttestationRejected)?;
+        self.check(id, request, Some(&statement))
+    }
+
+    pub fn remint_bytes(
+        &self,
+        id: impl Into<NodeId>,
+        object: impl Into<NodeId>,
+        principal: impl Into<NodeId>,
+        bytes: &[u8],
+    ) -> Result<sociacl_core::Capability, VerbError> {
+        let statement =
+            SocialLightStatement::decode(bytes).map_err(VerbError::AttestationRejected)?;
+        self.remint(id, object, principal, &statement)
+    }
+
+    pub fn discover_bytes(
+        &self,
+        id: impl Into<NodeId>,
+        bytes: &[u8],
+    ) -> Result<SocialLightView, VerbError> {
+        let statement =
+            SocialLightStatement::decode(bytes).map_err(VerbError::AttestationRejected)?;
+        self.discover(id, &statement)
     }
 
     pub fn take_inbox(

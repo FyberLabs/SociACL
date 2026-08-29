@@ -38,7 +38,7 @@ Durable `CutBundle` encoding is SACL v4. Share keys are wrapped with XChaCha20-P
 
 ## Channels
 
-Social Light is an attestation channel. SociACL is the authority plane. They compose. They do not merge names.
+Social Light is an attestation channel. SociACL is the authority plane. They compose. They do not merge names. [FyberLabs/socialight](https://github.com/FyberLabs/socialight) speaks the hop frame. This crate verifies it. See [social-light.md](social-light.md).
 
 Named public-safe kinds only:
 

@@ -233,6 +233,127 @@ int sociacl_client_destroy(
     size_t reason_len
 );
 
+/* Social Light hop frame (SLHF v1). Channel, signed attestation,
+ * optional share-token. FyberLabs/socialight speaks these bytes.
+ * SociACL verifies. A hop is not a grant.
+ *
+ * channel: convention-badge | enrolled-station
+ * share_token may be NULL.
+ * bytes_out NULL returns the size in written_out.
+ */
+int sociacl_social_light_encode(
+    sociacl_plane *plane,
+    const char *channel,
+    const unsigned char *sk,
+    size_t sk_len,
+    const char *issuer,
+    const char *subject,
+    const char *claim,
+    const char *object,
+    const char *share_token,
+    unsigned char *bytes_out,
+    size_t bytes_len,
+    size_t *written_out,
+    char *reason_out,
+    size_t reason_len
+);
+
+/* Decode and verify. Does not mint an edge. Returns 0, reason is the
+ * channel id. */
+int sociacl_social_light_accept(
+    sociacl_plane *plane,
+    const unsigned char *frame,
+    size_t frame_len,
+    char *reason_out,
+    size_t reason_len
+);
+
+/* Check using a hop frame as a factor. Returns 1 allow, 0 deny, -1
+ * error. predicate may be NULL. */
+int sociacl_social_light_check(
+    sociacl_plane *plane,
+    const char *action,
+    const char *object,
+    const char *accessor,
+    const char *predicate,
+    const unsigned char *frame,
+    size_t frame_len,
+    char *reason_out,
+    size_t reason_len
+);
+
+/* Remint using an enrolled-station frame. ACL must already name the
+ * principal. Returns 1 reminted, -1 error. */
+int sociacl_social_light_remint(
+    sociacl_plane *plane,
+    const char *object,
+    const char *principal,
+    const unsigned char *frame,
+    size_t frame_len,
+    char *reason_out,
+    size_t reason_len
+);
+
+/* Discover from a convention-badge frame. Does not elect.
+ * reason_out is "living-person <id>" or "... share <token>".
+ * Returns 0 on report, -1 on error. */
+int sociacl_social_light_discover(
+    sociacl_plane *plane,
+    const unsigned char *frame,
+    size_t frame_len,
+    char *reason_out,
+    size_t reason_len
+);
+
+/* Always -1. A flash does not Elect. */
+int sociacl_social_light_elect(
+    sociacl_plane *plane,
+    const char *object,
+    const unsigned char *frame,
+    size_t frame_len,
+    char *reason_out,
+    size_t reason_len
+);
+
+int sociacl_client_social_light_check(
+    sociacl_client *client,
+    const char *action,
+    const char *object,
+    const char *accessor,
+    const char *predicate,
+    const unsigned char *frame,
+    size_t frame_len,
+    char *reason_out,
+    size_t reason_len
+);
+
+int sociacl_client_social_light_remint(
+    sociacl_client *client,
+    const char *object,
+    const char *principal,
+    const unsigned char *frame,
+    size_t frame_len,
+    char *reason_out,
+    size_t reason_len
+);
+
+int sociacl_client_social_light_discover(
+    sociacl_client *client,
+    const unsigned char *frame,
+    size_t frame_len,
+    char *reason_out,
+    size_t reason_len
+);
+
+int sociacl_client_social_light_elect(
+    sociacl_client *client,
+    const char *object,
+    const unsigned char *frame,
+    size_t frame_len,
+    char *reason_out,
+    size_t reason_len
+);
+
 #ifdef __cplusplus
 }
 #endif

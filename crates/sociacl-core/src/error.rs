@@ -137,6 +137,12 @@ pub enum AttestationError {
     UnnamedChannel(String),
     #[error("channel {0} is not allowed for this verb")]
     ChannelMustNotConsume(String),
+    #[error("hop frame is corrupt")]
+    HopFrameCorrupt,
+    #[error("unsupported hop frame version {0}")]
+    UnsupportedHopVersion(u16),
+    #[error("hop frame attestation is unsigned")]
+    UnsignedHopFrame,
 }
 
 #[derive(Debug, Error, Eq, PartialEq)]

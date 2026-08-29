@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "C FFI for SociACL Check and Case C Client"
+description = "C FFI for SociACL Check, Case C Client, and Social Light hop frames"
 
 [lib]
 name = "sociacl"

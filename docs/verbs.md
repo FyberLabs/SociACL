@@ -84,7 +84,7 @@ On the Case C client path, `elect` and `commit_elect` refuse. The C and Python b
 
 `Client::rejoin` continues keep-operating edges that already existed on the same pre-cut (`cut_at` and exported snapshot identity). If either side installed a post-cut Elect, or the owners or memberships differ, it refuses. It does not union two post-cut graphs. `rejoin_with_quorum` stays degraded: k-of-n is omitted. See [ARCHITECTURE.md](../ARCHITECTURE.md).
 
-A Social Light statement is a channel, not a grant. Check, Remint, and Discover may consume it through the existing attestation verify path. Elect from a flash always fails.
+A Social Light statement is a channel, not a grant. Check, Remint, and Discover may consume a hop frame (`SLHF`) through the existing attestation verify path. Elect from a flash always fails. [FyberLabs/socialight](https://github.com/FyberLabs/socialight) delivers the bytes. See [social-light.md](social-light.md).
 
 No public vacancy ads. No dead-hand timer.
 

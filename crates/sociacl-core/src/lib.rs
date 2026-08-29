@@ -14,6 +14,7 @@ pub mod client;
 mod codec;
 pub mod error;
 pub mod graph;
+pub mod hop;
 pub mod types;
 pub mod verbs;
 pub mod will;
@@ -31,6 +32,7 @@ pub use check::{CheckRequest, CheckResult, ParsedObject};
 pub use client::Client;
 pub use error::{AttestationError, CheckError, VerbError, WillError};
 pub use graph::{Plane, DEFAULT_ELECT_WAIT, DEFAULT_PRIVILEGE_UP_DELAY};
+pub use hop::{is_lightiff_shaped_id, MAGIC as HOP_MAGIC, VERSION as HOP_VERSION};
 pub use types::{
     Action, AuthnState, Capability, ClientHeldShare, Clock, CutBoundary, DestroyResult, Device,
     DiscoverResult, Edge, ElectResult, ElectState, NodeId, NodeKind, Object, ObjectKind,

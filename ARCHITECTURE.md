@@ -119,7 +119,9 @@ This repository is the **public** authority plane: graph, verbs, clocks, hash ca
 
 Hypermesh, chain/IPFS object stores, and ATAK are separate. This plane does not embed them.
 
-Social Light is an attestation channel. SociACL is the authority plane. They compose. They do not merge names. Named public-safe kinds only: `convention-badge` and `enrolled-station`. LightIFF is not implemented here and must not be. The `social-light` crate is a local in-process test bed, not a hosted service.
+Social Light is an attestation channel. SociACL is the authority plane. They compose. They do not merge names. Named public-safe kinds only: `convention-badge` and `enrolled-station`. LightIFF is not implemented here and must not be.
+
+[FyberLabs/socialight](https://github.com/FyberLabs/socialight) owns badge, station, and hop delivery. This repo owns the hop frame (`SLHF`) and verb evaluation. `crates/social-light` is a local lab so that frame can be tested here; it is not the product sibling and it is not a hosted service. FlexModule (2014) is ancestor badge hardware, not a friend edge. See [docs/social-light.md](docs/social-light.md).
 
 Contracts, if any, execute already-written wills. Oracles accept attestations from pre-enrolled issuers only. See [docs/wills.md](docs/wills.md) and [docs/attestations.md](docs/attestations.md).
 

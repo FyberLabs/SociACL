@@ -4,7 +4,7 @@ Social-graph authority plane for a self-healing mesh of devices and data.
 
 Four verbs on one graph: **Check**, **Remint**, **Discover** / **Elect**, **Destroy**. People, agents, and devices are first-class nodes. Grants come from jointly stated edges and named predicates. Light, radio, and proximity can attest a statement; they do not grant.
 
-This repository is the public core (MIT). It is not Hypermesh, Panopticon acl-service, or LightIFF. `social-light` is a local in-process test bed. A flash is a channel, not a grant.
+This repository is the public core (MIT). It is not Hypermesh, Panopticon acl-service, or LightIFF. Social Light is a named attestation channel here. [FyberLabs/socialight](https://github.com/FyberLabs/socialight) owns badge and hop delivery. `crates/social-light` is a local lab for the hop frame. A flash is a channel, not a grant.
 
 ## Verbs
 
@@ -33,7 +33,7 @@ cargo run --locked -p social-light --example lab
 
 The Check example is a 3-node `posix-mode` Check (mode 0640). The wills example parses and writes the templates in `examples/wills/`. The Social Light lab is three devices, one enrolled station, a voluntary badge share, and a quiet node that does not become owner.
 
-C FFI (`sociacl-c`) and the Python package (`python/sociacl`) wrap live **Check**, will write/load, and the Case C **Client** (Check, Remint, Discover, Destroy; Elect fails closed):
+C FFI (`sociacl-c`) and the Python package (`python/sociacl`) wrap live **Check**, will write/load, the Case C **Client** (Check, Remint, Discover, Destroy; Elect fails closed), and Social Light hop frames (encode / accept / Check / Remint / Discover; Elect fails closed):
 
 ```bash
 cargo build --workspace --locked
@@ -41,11 +41,14 @@ cc -I crates/sociacl-c/include examples/check.c -L target/debug -lsociacl -o tar
 LD_LIBRARY_PATH=target/debug target/sociacl-check-c
 cc -I crates/sociacl-c/include examples/client.c -L target/debug -lsociacl -o target/sociacl-client-c
 LD_LIBRARY_PATH=target/debug target/sociacl-client-c
+cc -I crates/sociacl-c/include examples/social_light.c -L target/debug -lsociacl -o target/sociacl-social-light-c
+LD_LIBRARY_PATH=target/debug target/sociacl-social-light-c
 PYTHONPATH=python python3 python/tests/test_check.py
 PYTHONPATH=python python3 python/tests/test_client.py
+PYTHONPATH=python python3 python/tests/test_social_light.py
 ```
 
-See [ARCHITECTURE.md](ARCHITECTURE.md), [docs/verbs.md](docs/verbs.md), [docs/wills.md](docs/wills.md), [docs/attestations.md](docs/attestations.md), and [docs/clocks.md](docs/clocks.md).
+See [ARCHITECTURE.md](ARCHITECTURE.md), [docs/verbs.md](docs/verbs.md), [docs/wills.md](docs/wills.md), [docs/attestations.md](docs/attestations.md), [docs/clocks.md](docs/clocks.md), and [docs/social-light.md](docs/social-light.md).
 
 ## License
 

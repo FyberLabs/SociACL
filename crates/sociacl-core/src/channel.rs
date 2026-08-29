@@ -104,6 +104,23 @@ impl SocialLightStatement {
     }
 }
 
+impl SocialLightView {
+    /// Report string for C / Python. Not a grant.
+    pub fn as_reason(&self) -> String {
+        match self {
+            Self::LivingPerson {
+                principal,
+                share_token: Some(token),
+            } => format!("living-person {principal} share {token}"),
+            Self::LivingPerson {
+                principal,
+                share_token: None,
+            } => format!("living-person {principal}"),
+            Self::StationFactor { subject } => format!("station-factor {subject}"),
+        }
+    }
+}
+
 impl Plane {
     /// Verify the statement on the existing attestation path. Does not
     /// mint an edge.
@@ -179,6 +196,53 @@ impl Plane {
     ) -> Result<ElectResult, VerbError> {
         Err(VerbError::ElectDoesNotFireOnAttestation)
     }
+
+    /// Decode a hop frame and verify it. Does not mint an edge.
+    pub fn accept_social_light_bytes(
+        &self,
+        bytes: &[u8],
+    ) -> Result<SocialLightStatement, AttestationError> {
+        let statement = SocialLightStatement::decode(bytes)?;
+        self.accept_social_light(&statement)?;
+        Ok(statement)
+    }
+
+    pub fn check_social_light_bytes(
+        &self,
+        request: CheckRequest,
+        bytes: &[u8],
+    ) -> Result<CheckResult, CheckError> {
+        let statement =
+            SocialLightStatement::decode(bytes).map_err(CheckError::AttestationRejected)?;
+        self.check_social_light(request, &statement)
+    }
+
+    pub fn remint_social_light_bytes(
+        &self,
+        object: impl Into<NodeId>,
+        principal: impl Into<NodeId>,
+        bytes: &[u8],
+    ) -> Result<Capability, VerbError> {
+        let statement =
+            SocialLightStatement::decode(bytes).map_err(VerbError::AttestationRejected)?;
+        self.remint_social_light(object, principal, &statement)
+    }
+
+    pub fn discover_social_light_bytes(&self, bytes: &[u8]) -> Result<SocialLightView, VerbError> {
+        let statement =
+            SocialLightStatement::decode(bytes).map_err(VerbError::AttestationRejected)?;
+        self.discover_social_light(&statement)
+    }
+
+    pub fn elect_from_social_light_bytes(
+        &mut self,
+        object: impl Into<NodeId>,
+        bytes: &[u8],
+    ) -> Result<ElectResult, VerbError> {
+        let statement =
+            SocialLightStatement::decode(bytes).map_err(VerbError::AttestationRejected)?;
+        self.elect_from_social_light(object, &statement)
+    }
 }
 
 impl Client {
@@ -212,5 +276,44 @@ impl Client {
         _statement: &SocialLightStatement,
     ) -> Result<ElectResult, VerbError> {
         Err(VerbError::ElectDoesNotFireOnAttestation)
+    }
+
+    pub fn accept_social_light_bytes(
+        &self,
+        bytes: &[u8],
+    ) -> Result<SocialLightStatement, AttestationError> {
+        self.plane.accept_social_light_bytes(bytes)
+    }
+
+    pub fn check_social_light_bytes(
+        &self,
+        request: CheckRequest,
+        bytes: &[u8],
+    ) -> Result<CheckResult, CheckError> {
+        self.plane.check_social_light_bytes(request, bytes)
+    }
+
+    pub fn remint_social_light_bytes(
+        &self,
+        object: impl Into<NodeId>,
+        principal: impl Into<NodeId>,
+        bytes: &[u8],
+    ) -> Result<Capability, VerbError> {
+        self.plane
+            .remint_social_light_bytes(object, principal, bytes)
+    }
+
+    pub fn discover_social_light_bytes(&self, bytes: &[u8]) -> Result<SocialLightView, VerbError> {
+        self.plane.discover_social_light_bytes(bytes)
+    }
+
+    pub fn elect_from_social_light_bytes(
+        &mut self,
+        object: impl Into<NodeId>,
+        bytes: &[u8],
+    ) -> Result<ElectResult, VerbError> {
+        let statement =
+            SocialLightStatement::decode(bytes).map_err(VerbError::AttestationRejected)?;
+        self.elect_from_social_light(object, &statement)
     }
 }

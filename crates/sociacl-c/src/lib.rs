@@ -7,8 +7,9 @@ use std::slice;
 use std::sync::Mutex;
 
 use sociacl_core::{
-    Attestation, AttestationBinding, AttestationClaim, AttestationSig, CheckRequest, Client,
-    EnrollmentKind, HolderSecret, IssuerSecret, NodeId, Plane, PredicateId, Relation, VerifyKey,
+    Attestation, AttestationBinding, AttestationChannel, AttestationClaim, AttestationSig,
+    CheckRequest, Client, EnrollmentKind, HolderSecret, IssuerSecret, NodeId, Plane, PredicateId,
+    Relation, SocialLightStatement, VerifyKey,
 };
 
 #[allow(non_camel_case_types)]
@@ -799,6 +800,413 @@ pub extern "C" fn sociacl_client_destroy(
     })
 }
 
+fn frame_slice<'a>(frame: *const u8, frame_len: usize) -> Option<&'a [u8]> {
+    if frame.is_null() || frame_len == 0 {
+        return None;
+    }
+    Some(unsafe { slice::from_raw_parts(frame, frame_len) })
+}
+
+fn write_encoded(
+    bytes: Vec<u8>,
+    bytes_out: *mut u8,
+    bytes_len: usize,
+    written_out: *mut usize,
+    reason_out: *mut c_char,
+    reason_len: usize,
+) -> c_int {
+    if !written_out.is_null() {
+        unsafe {
+            *written_out = bytes.len();
+        }
+    }
+    if bytes_out.is_null() {
+        return 0;
+    }
+    if bytes_len < bytes.len() {
+        write_reason(reason_out, reason_len, "buffer-too-small");
+        return -1;
+    }
+    unsafe {
+        ptr::copy_nonoverlapping(bytes.as_ptr(), bytes_out, bytes.len());
+    }
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn sociacl_social_light_encode(
+    plane: *mut sociacl_plane,
+    channel: *const c_char,
+    sk: *const u8,
+    sk_len: usize,
+    issuer: *const c_char,
+    subject: *const c_char,
+    claim: *const c_char,
+    object: *const c_char,
+    share_token: *const c_char,
+    bytes_out: *mut u8,
+    bytes_len: usize,
+    written_out: *mut usize,
+    reason_out: *mut c_char,
+    reason_len: usize,
+) -> c_int {
+    let (Some(channel), Some(issuer), Some(subject), Some(claim), Some(object)) = (
+        cstr(channel),
+        cstr(issuer),
+        cstr(subject),
+        cstr(claim),
+        cstr(object),
+    ) else {
+        write_reason(reason_out, reason_len, "invalid-argument");
+        return -1;
+    };
+    if sk.is_null() || sk_len == 0 {
+        write_reason(reason_out, reason_len, "issuer secret required");
+        return -1;
+    }
+    let channel = match AttestationChannel::parse(channel) {
+        Ok(c) => c,
+        Err(e) => {
+            write_reason(reason_out, reason_len, &e.to_string());
+            return -1;
+        }
+    };
+    let claim = match AttestationClaim::parse(claim) {
+        Ok(c) => c,
+        Err(e) => {
+            write_reason(reason_out, reason_len, &e.to_string());
+            return -1;
+        }
+    };
+    let sk_bytes = unsafe { slice::from_raw_parts(sk, sk_len) };
+    let Ok(secret) = IssuerSecret::from_slice(sk_bytes) else {
+        write_reason(reason_out, reason_len, "invalid issuer secret");
+        return -1;
+    };
+    with_plane(plane, |p| {
+        let object_id = NodeId::new(object);
+        let Some(snap) = p.snapshot(&object_id) else {
+            write_reason(reason_out, reason_len, "object not found");
+            return -1;
+        };
+        let att = Attestation::new(
+            issuer,
+            subject,
+            claim,
+            p.now(),
+            AttestationBinding::Snapshot {
+                object: object_id,
+                hash: snap.hash,
+            },
+        )
+        .sign(&secret);
+        let mut statement = SocialLightStatement::new(channel, att);
+        if let Some(token) = cstr(share_token) {
+            statement = statement.with_share_token(token);
+        }
+        match statement.encode() {
+            Ok(bytes) => write_encoded(
+                bytes,
+                bytes_out,
+                bytes_len,
+                written_out,
+                reason_out,
+                reason_len,
+            ),
+            Err(e) => {
+                write_reason(reason_out, reason_len, &e.to_string());
+                -1
+            }
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sociacl_social_light_accept(
+    plane: *mut sociacl_plane,
+    frame: *const u8,
+    frame_len: usize,
+    reason_out: *mut c_char,
+    reason_len: usize,
+) -> c_int {
+    let Some(bytes) = frame_slice(frame, frame_len) else {
+        write_reason(reason_out, reason_len, "invalid-argument");
+        return -1;
+    };
+    with_plane(plane, |p| match p.accept_social_light_bytes(bytes) {
+        Ok(statement) => {
+            write_reason(reason_out, reason_len, statement.channel.as_str());
+            0
+        }
+        Err(e) => {
+            write_reason(reason_out, reason_len, &e.to_string());
+            -1
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sociacl_social_light_check(
+    plane: *mut sociacl_plane,
+    action: *const c_char,
+    object: *const c_char,
+    accessor: *const c_char,
+    predicate: *const c_char,
+    frame: *const u8,
+    frame_len: usize,
+    reason_out: *mut c_char,
+    reason_len: usize,
+) -> c_int {
+    let (Some(action), Some(object), Some(accessor), Some(bytes)) = (
+        cstr(action),
+        cstr(object),
+        cstr(accessor),
+        frame_slice(frame, frame_len),
+    ) else {
+        write_reason(reason_out, reason_len, "invalid-argument");
+        return -1;
+    };
+    let predicate = cstr(predicate).map(PredicateId::new);
+    with_plane(plane, |p| {
+        match p.check_social_light_bytes(
+            CheckRequest {
+                action: action.into(),
+                object: object.into(),
+                accessor: accessor.into(),
+                predicate,
+                zookie: None,
+                attestation: None,
+            },
+            bytes,
+        ) {
+            Ok(result) => {
+                write_reason(reason_out, reason_len, result.reason.as_str());
+                if result.allowed {
+                    1
+                } else {
+                    0
+                }
+            }
+            Err(e) => {
+                write_reason(reason_out, reason_len, &e.to_string());
+                -1
+            }
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sociacl_social_light_remint(
+    plane: *mut sociacl_plane,
+    object: *const c_char,
+    principal: *const c_char,
+    frame: *const u8,
+    frame_len: usize,
+    reason_out: *mut c_char,
+    reason_len: usize,
+) -> c_int {
+    let (Some(object), Some(principal), Some(bytes)) =
+        (cstr(object), cstr(principal), frame_slice(frame, frame_len))
+    else {
+        write_reason(reason_out, reason_len, "invalid-argument");
+        return -1;
+    };
+    with_plane(plane, |p| {
+        match p.remint_social_light_bytes(object, principal, bytes) {
+            Ok(_) => {
+                write_reason(reason_out, reason_len, "remint");
+                1
+            }
+            Err(e) => {
+                write_reason(reason_out, reason_len, &e.to_string());
+                -1
+            }
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sociacl_social_light_discover(
+    plane: *mut sociacl_plane,
+    frame: *const u8,
+    frame_len: usize,
+    reason_out: *mut c_char,
+    reason_len: usize,
+) -> c_int {
+    let Some(bytes) = frame_slice(frame, frame_len) else {
+        write_reason(reason_out, reason_len, "invalid-argument");
+        return -1;
+    };
+    with_plane(plane, |p| match p.discover_social_light_bytes(bytes) {
+        Ok(view) => {
+            write_reason(reason_out, reason_len, &view.as_reason());
+            0
+        }
+        Err(e) => {
+            write_reason(reason_out, reason_len, &e.to_string());
+            -1
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sociacl_social_light_elect(
+    plane: *mut sociacl_plane,
+    object: *const c_char,
+    frame: *const u8,
+    frame_len: usize,
+    reason_out: *mut c_char,
+    reason_len: usize,
+) -> c_int {
+    let (Some(object), Some(bytes)) = (cstr(object), frame_slice(frame, frame_len)) else {
+        write_reason(reason_out, reason_len, "invalid-argument");
+        return -1;
+    };
+    with_plane(plane, |p| {
+        match p.elect_from_social_light_bytes(object, bytes) {
+            Ok(_) => {
+                write_reason(reason_out, reason_len, "elect-must-not-succeed");
+                -1
+            }
+            Err(e) => {
+                write_reason(reason_out, reason_len, &e.to_string());
+                -1
+            }
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sociacl_client_social_light_check(
+    client: *mut sociacl_client,
+    action: *const c_char,
+    object: *const c_char,
+    accessor: *const c_char,
+    predicate: *const c_char,
+    frame: *const u8,
+    frame_len: usize,
+    reason_out: *mut c_char,
+    reason_len: usize,
+) -> c_int {
+    let (Some(action), Some(object), Some(accessor), Some(bytes)) = (
+        cstr(action),
+        cstr(object),
+        cstr(accessor),
+        frame_slice(frame, frame_len),
+    ) else {
+        write_reason(reason_out, reason_len, "invalid-argument");
+        return -1;
+    };
+    let predicate = cstr(predicate).map(PredicateId::new);
+    with_client(client, |c| {
+        match c.check_social_light_bytes(
+            CheckRequest {
+                action: action.into(),
+                object: object.into(),
+                accessor: accessor.into(),
+                predicate,
+                zookie: None,
+                attestation: None,
+            },
+            bytes,
+        ) {
+            Ok(result) => {
+                write_reason(reason_out, reason_len, result.reason.as_str());
+                if result.allowed {
+                    1
+                } else {
+                    0
+                }
+            }
+            Err(e) => {
+                write_reason(reason_out, reason_len, &e.to_string());
+                -1
+            }
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sociacl_client_social_light_remint(
+    client: *mut sociacl_client,
+    object: *const c_char,
+    principal: *const c_char,
+    frame: *const u8,
+    frame_len: usize,
+    reason_out: *mut c_char,
+    reason_len: usize,
+) -> c_int {
+    let (Some(object), Some(principal), Some(bytes)) =
+        (cstr(object), cstr(principal), frame_slice(frame, frame_len))
+    else {
+        write_reason(reason_out, reason_len, "invalid-argument");
+        return -1;
+    };
+    with_client(client, |c| {
+        match c.remint_social_light_bytes(object, principal, bytes) {
+            Ok(_) => {
+                write_reason(reason_out, reason_len, "remint");
+                1
+            }
+            Err(e) => {
+                write_reason(reason_out, reason_len, &e.to_string());
+                -1
+            }
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sociacl_client_social_light_discover(
+    client: *mut sociacl_client,
+    frame: *const u8,
+    frame_len: usize,
+    reason_out: *mut c_char,
+    reason_len: usize,
+) -> c_int {
+    let Some(bytes) = frame_slice(frame, frame_len) else {
+        write_reason(reason_out, reason_len, "invalid-argument");
+        return -1;
+    };
+    with_client(client, |c| match c.discover_social_light_bytes(bytes) {
+        Ok(view) => {
+            write_reason(reason_out, reason_len, &view.as_reason());
+            0
+        }
+        Err(e) => {
+            write_reason(reason_out, reason_len, &e.to_string());
+            -1
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sociacl_client_social_light_elect(
+    client: *mut sociacl_client,
+    object: *const c_char,
+    frame: *const u8,
+    frame_len: usize,
+    reason_out: *mut c_char,
+    reason_len: usize,
+) -> c_int {
+    let (Some(object), Some(bytes)) = (cstr(object), frame_slice(frame, frame_len)) else {
+        write_reason(reason_out, reason_len, "invalid-argument");
+        return -1;
+    };
+    with_client(client, |c| {
+        match c.elect_from_social_light_bytes(object, bytes) {
+            Ok(_) => {
+                write_reason(reason_out, reason_len, "elect-must-not-succeed");
+                -1
+            }
+            Err(e) => {
+                write_reason(reason_out, reason_len, &e.to_string());
+                -1
+            }
+        }
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1219,6 +1627,258 @@ mod tests {
             -1
         );
         sociacl_client_free(client);
+        sociacl_plane_free(plane);
+    }
+
+    #[test]
+    fn ffi_social_light_encode_accept_check_elect_closed() {
+        let plane = sociacl_plane_new();
+        assert_eq!(sociacl_add_person(plane, c("alice").as_ptr()), 0);
+        assert_eq!(sociacl_add_person(plane, c("bob").as_ptr()), 0);
+        assert_eq!(sociacl_add_device(plane, c("station-hall").as_ptr()), 0);
+        assert_eq!(
+            sociacl_add_object(plane, c("doc").as_ptr(), c("alice").as_ptr()),
+            0
+        );
+        let mut pk = [0u8; 32];
+        let mut sk = [0u8; 32];
+        assert_eq!(sociacl_issuer_keygen(pk.as_mut_ptr(), sk.as_mut_ptr()), 0);
+        assert_eq!(
+            sociacl_enroll(
+                plane,
+                c("alice").as_ptr(),
+                c("principal").as_ptr(),
+                pk.as_ptr(),
+                pk.len()
+            ),
+            0
+        );
+        assert_eq!(
+            sociacl_enroll(
+                plane,
+                c("station-hall").as_ptr(),
+                c("station").as_ptr(),
+                pk.as_ptr(),
+                pk.len()
+            ),
+            0
+        );
+
+        let mut reason = [0i8; 128];
+        let mut written = 0usize;
+        assert_eq!(
+            sociacl_social_light_encode(
+                plane,
+                c("convention-badge").as_ptr(),
+                sk.as_ptr(),
+                sk.len(),
+                c("alice").as_ptr(),
+                c("bob").as_ptr(),
+                c("identity-live").as_ptr(),
+                c("doc").as_ptr(),
+                c("booth-12").as_ptr(),
+                ptr::null_mut(),
+                0,
+                &mut written,
+                reason.as_mut_ptr(),
+                reason.len(),
+            ),
+            0
+        );
+        let mut frame = vec![0u8; written];
+        assert_eq!(
+            sociacl_social_light_encode(
+                plane,
+                c("convention-badge").as_ptr(),
+                sk.as_ptr(),
+                sk.len(),
+                c("alice").as_ptr(),
+                c("bob").as_ptr(),
+                c("identity-live").as_ptr(),
+                c("doc").as_ptr(),
+                c("booth-12").as_ptr(),
+                frame.as_mut_ptr(),
+                frame.len(),
+                &mut written,
+                reason.as_mut_ptr(),
+                reason.len(),
+            ),
+            0
+        );
+        assert_eq!(&frame[..4], b"SLHF");
+        assert_eq!(
+            sociacl_social_light_accept(
+                plane,
+                frame.as_ptr(),
+                written,
+                reason.as_mut_ptr(),
+                reason.len()
+            ),
+            0
+        );
+        assert_eq!(
+            sociacl_social_light_discover(
+                plane,
+                frame.as_ptr(),
+                written,
+                reason.as_mut_ptr(),
+                reason.len()
+            ),
+            0
+        );
+        let report = unsafe { CStr::from_ptr(reason.as_ptr()) }
+            .to_string_lossy()
+            .into_owned();
+        assert_eq!(report, "living-person bob share booth-12");
+        assert_eq!(
+            sociacl_social_light_elect(
+                plane,
+                c("doc").as_ptr(),
+                frame.as_ptr(),
+                written,
+                reason.as_mut_ptr(),
+                reason.len()
+            ),
+            -1
+        );
+
+        let mut station_len = 0usize;
+        assert_eq!(
+            sociacl_social_light_encode(
+                plane,
+                c("enrolled-station").as_ptr(),
+                sk.as_ptr(),
+                sk.len(),
+                c("station-hall").as_ptr(),
+                c("alice").as_ptr(),
+                c("station-liveness").as_ptr(),
+                c("doc").as_ptr(),
+                ptr::null(),
+                ptr::null_mut(),
+                0,
+                &mut station_len,
+                reason.as_mut_ptr(),
+                reason.len(),
+            ),
+            0
+        );
+        let mut station = vec![0u8; station_len];
+        assert_eq!(
+            sociacl_social_light_encode(
+                plane,
+                c("enrolled-station").as_ptr(),
+                sk.as_ptr(),
+                sk.len(),
+                c("station-hall").as_ptr(),
+                c("alice").as_ptr(),
+                c("station-liveness").as_ptr(),
+                c("doc").as_ptr(),
+                ptr::null(),
+                station.as_mut_ptr(),
+                station.len(),
+                &mut station_len,
+                reason.as_mut_ptr(),
+                reason.len(),
+            ),
+            0
+        );
+        assert_eq!(
+            sociacl_social_light_remint(
+                plane,
+                c("doc").as_ptr(),
+                c("alice").as_ptr(),
+                station.as_ptr(),
+                station_len,
+                reason.as_mut_ptr(),
+                reason.len()
+            ),
+            1
+        );
+        assert_eq!(
+            sociacl_social_light_remint(
+                plane,
+                c("doc").as_ptr(),
+                c("bob").as_ptr(),
+                station.as_ptr(),
+                station_len,
+                reason.as_mut_ptr(),
+                reason.len()
+            ),
+            -1
+        );
+        let mut check_len = 0usize;
+        assert_eq!(
+            sociacl_social_light_encode(
+                plane,
+                c("enrolled-station").as_ptr(),
+                sk.as_ptr(),
+                sk.len(),
+                c("station-hall").as_ptr(),
+                c("alice").as_ptr(),
+                c("identity-live").as_ptr(),
+                c("doc").as_ptr(),
+                ptr::null(),
+                ptr::null_mut(),
+                0,
+                &mut check_len,
+                reason.as_mut_ptr(),
+                reason.len(),
+            ),
+            0
+        );
+        let mut check_frame = vec![0u8; check_len];
+        assert_eq!(
+            sociacl_social_light_encode(
+                plane,
+                c("enrolled-station").as_ptr(),
+                sk.as_ptr(),
+                sk.len(),
+                c("station-hall").as_ptr(),
+                c("alice").as_ptr(),
+                c("identity-live").as_ptr(),
+                c("doc").as_ptr(),
+                ptr::null(),
+                check_frame.as_mut_ptr(),
+                check_frame.len(),
+                &mut check_len,
+                reason.as_mut_ptr(),
+                reason.len(),
+            ),
+            0
+        );
+        assert_eq!(
+            sociacl_social_light_check(
+                plane,
+                c("read").as_ptr(),
+                c("doc").as_ptr(),
+                c("alice").as_ptr(),
+                c("owner").as_ptr(),
+                check_frame.as_ptr(),
+                check_len,
+                reason.as_mut_ptr(),
+                reason.len()
+            ),
+            1
+        );
+        assert_eq!(
+            sociacl_social_light_encode(
+                plane,
+                c("lightiff").as_ptr(),
+                sk.as_ptr(),
+                sk.len(),
+                c("alice").as_ptr(),
+                c("bob").as_ptr(),
+                c("identity-live").as_ptr(),
+                c("doc").as_ptr(),
+                ptr::null(),
+                ptr::null_mut(),
+                0,
+                &mut written,
+                reason.as_mut_ptr(),
+                reason.len(),
+            ),
+            -1
+        );
         sociacl_plane_free(plane);
     }
 }
