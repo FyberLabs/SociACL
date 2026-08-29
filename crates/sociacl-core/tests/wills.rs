@@ -1,6 +1,6 @@
 use sociacl_core::{
-    AuthnState, CheckError, Clock, DiscoverResult, EnrollmentKind, Plane, PredicateId, Relation,
-    Timestamp, VerbError, Will, WillClause, WillError,
+    AuthnState, CheckError, Clock, DiscoverResult, EnrollmentKind, IssuerSecret, Plane,
+    PredicateId, Relation, Timestamp, VerbError, Will, WillClause, WillError,
 };
 
 const POSIX_POOR: &str = include_str!("../../../examples/wills/posix-poor.will");
@@ -226,7 +226,13 @@ fn elect_refuses_on_silence_in_a_rank_circle() {
     plane.add_person("executor");
     let doc = plane.add_object("doc", &alice).id;
     plane.jointly_state(&bob, &ops, Relation::InCircle);
-    plane.enroll(&bob, EnrollmentKind::Principal).unwrap();
+    plane
+        .enroll(
+            &bob,
+            EnrollmentKind::Principal,
+            IssuerSecret::generate().verify_key(),
+        )
+        .unwrap();
     plane
         .write_will_src(
             "will desk for object doc\nwritten-by alice\ncancelable-by executor\nhighest-still-attesting-rank circle ops\ndestroy if-no-heir keys\n",
@@ -254,9 +260,21 @@ fn elect_picks_still_attesting_rank_member() {
     let doc = plane.add_object("doc", &alice).id;
     plane.jointly_state(&bob, &ops, Relation::InCircle);
     plane.jointly_state(&carol, &ops, Relation::InCircle);
-    plane.enroll(&bob, EnrollmentKind::Principal).unwrap();
-    plane.enroll(&carol, EnrollmentKind::Principal).unwrap();
-    let att = plane.identity_attestation(&carol, &carol, &doc).unwrap();
+    plane
+        .enroll(
+            &bob,
+            EnrollmentKind::Principal,
+            IssuerSecret::generate().verify_key(),
+        )
+        .unwrap();
+    let carol_secret = IssuerSecret::generate();
+    plane
+        .enroll(&carol, EnrollmentKind::Principal, carol_secret.verify_key())
+        .unwrap();
+    let att = plane
+        .identity_attestation(&carol, &carol, &doc)
+        .unwrap()
+        .sign(&carol_secret);
     plane.submit_attestation(att).unwrap();
     plane
         .write_will_src(
@@ -297,8 +315,14 @@ fn elect_from_attestation_does_not_run_a_valid_will() {
         ))
         .unwrap();
     plane.set_authn(&alice, AuthnState::Gone);
-    plane.enroll(&bob, EnrollmentKind::Principal).unwrap();
-    let att = plane.identity_attestation(&bob, &bob, &doc).unwrap();
+    let bob_secret = IssuerSecret::generate();
+    plane
+        .enroll(&bob, EnrollmentKind::Principal, bob_secret.verify_key())
+        .unwrap();
+    let att = plane
+        .identity_attestation(&bob, &bob, &doc)
+        .unwrap()
+        .sign(&bob_secret);
     assert_eq!(
         plane.elect_from_attestation(&doc, &att).unwrap_err(),
         VerbError::ElectDoesNotFireOnAttestation
@@ -316,9 +340,19 @@ fn both_clocks_in_one_will_is_not_a_mix() {
     let sta = plane.add_device("station-alpha").id;
     plane.add_device("station-beta");
     plane.add_person("bob");
-    plane.enroll(&sta, EnrollmentKind::Station).unwrap();
     plane
-        .enroll("station-beta", EnrollmentKind::Station)
+        .enroll(
+            &sta,
+            EnrollmentKind::Station,
+            IssuerSecret::generate().verify_key(),
+        )
+        .unwrap();
+    plane
+        .enroll(
+            "station-beta",
+            EnrollmentKind::Station,
+            IssuerSecret::generate().verify_key(),
+        )
         .unwrap();
     plane.jointly_state(&alice, &ops, Relation::InCircle);
     plane.write_will_src(DEVICE_WILL).unwrap();

@@ -29,6 +29,7 @@ pub struct Client {
 impl Client {
     pub fn open(bundle: CutBundle) -> Result<Self, VerbError> {
         bundle.refuse_post_cut()?;
+        bundle.refuse_unverified_attestations()?;
         let mut plane = Plane::new();
         plane.set_now(bundle.cut.cut_at);
         plane.set_cut(bundle.cut.cut_at);

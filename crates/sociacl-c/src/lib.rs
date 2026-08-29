@@ -7,8 +7,8 @@ use std::slice;
 use std::sync::Mutex;
 
 use sociacl_core::{
-    Attestation, AttestationBinding, AttestationClaim, CheckRequest, Client, EnrollmentKind, Plane,
-    PredicateId, Relation,
+    Attestation, AttestationBinding, AttestationClaim, AttestationSig, CheckRequest, Client,
+    EnrollmentKind, IssuerSecret, Plane, PredicateId, Relation, VerifyKey,
 };
 
 #[allow(non_camel_case_types)]
@@ -208,6 +208,8 @@ pub extern "C" fn sociacl_enroll(
     plane: *mut sociacl_plane,
     issuer: *const c_char,
     kind: *const c_char,
+    pubkey: *const u8,
+    pubkey_len: usize,
 ) -> c_int {
     let (Some(issuer), Some(kind)) = (cstr(issuer), cstr(kind)) else {
         return -1;
@@ -215,9 +217,80 @@ pub extern "C" fn sociacl_enroll(
     let Ok(kind) = EnrollmentKind::parse(kind) else {
         return -1;
     };
+    if pubkey.is_null() || pubkey_len == 0 {
+        return -1;
+    }
+    let bytes = unsafe { slice::from_raw_parts(pubkey, pubkey_len) };
+    let Ok(public_key) = VerifyKey::from_slice(bytes) else {
+        return -1;
+    };
     with_plane(plane, |p| {
-        if p.enroll(issuer, kind).is_err() {
+        if p.enroll(issuer, kind, public_key).is_err() {
             return -1;
+        }
+        0
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sociacl_issuer_keygen(pk_out: *mut u8, sk_out: *mut u8) -> c_int {
+    if pk_out.is_null() || sk_out.is_null() {
+        return -1;
+    }
+    let secret = IssuerSecret::generate();
+    let pk = secret.verify_key();
+    unsafe {
+        ptr::copy_nonoverlapping(pk.0.as_ptr(), pk_out, VerifyKey::LEN);
+        ptr::copy_nonoverlapping(secret.as_bytes().as_ptr(), sk_out, IssuerSecret::LEN);
+    }
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn sociacl_sign_claim(
+    plane: *mut sociacl_plane,
+    sk: *const u8,
+    sk_len: usize,
+    issuer: *const c_char,
+    subject: *const c_char,
+    claim: *const c_char,
+    object: *const c_char,
+    sig_out: *mut u8,
+    sig_len: usize,
+) -> c_int {
+    if sk.is_null() || sig_out.is_null() || sig_len < AttestationSig::LEN {
+        return -1;
+    }
+    let (Some(issuer), Some(subject), Some(claim), Some(object)) =
+        (cstr(issuer), cstr(subject), cstr(claim), cstr(object))
+    else {
+        return -1;
+    };
+    let Ok(claim) = AttestationClaim::parse(claim) else {
+        return -1;
+    };
+    let sk_bytes = unsafe { slice::from_raw_parts(sk, sk_len) };
+    let Ok(secret) = IssuerSecret::from_slice(sk_bytes) else {
+        return -1;
+    };
+    with_plane(plane, |p| {
+        let object_id = sociacl_core::NodeId::new(object);
+        let Some(snap) = p.snapshot(&object_id) else {
+            return -1;
+        };
+        let att = Attestation::new(
+            issuer,
+            subject,
+            claim,
+            p.now(),
+            AttestationBinding::Snapshot {
+                object: object_id,
+                hash: snap.hash,
+            },
+        )
+        .sign(&secret);
+        unsafe {
+            ptr::copy_nonoverlapping(att.signature.0.as_ptr(), sig_out, AttestationSig::LEN);
         }
         0
     })
@@ -248,6 +321,8 @@ pub extern "C" fn sociacl_check(
         accessor,
         predicate,
         ptr::null(),
+        ptr::null(),
+        0,
         reason_out,
         reason_len,
     )
@@ -261,6 +336,8 @@ pub extern "C" fn sociacl_check_ex(
     accessor: *const c_char,
     predicate: *const c_char,
     attestation: *const c_char,
+    signature: *const u8,
+    signature_len: usize,
     reason_out: *mut c_char,
     reason_len: usize,
 ) -> c_int {
@@ -280,12 +357,28 @@ pub extern "C" fn sociacl_check_ex(
                     return -1;
                 }
             };
+            if signature.is_null() || signature_len == 0 {
+                write_reason(
+                    reason_out,
+                    reason_len,
+                    "attestation signature does not match the statement",
+                );
+                return -1;
+            }
+            let sig_bytes = unsafe { slice::from_raw_parts(signature, signature_len) };
+            let signature = match AttestationSig::from_slice(sig_bytes) {
+                Ok(s) => s,
+                Err(e) => {
+                    write_reason(reason_out, reason_len, &e.to_string());
+                    return -1;
+                }
+            };
             let object_id = sociacl_core::NodeId::new(object);
             let Some(snap) = p.snapshot(&object_id) else {
                 write_reason(reason_out, reason_len, "object not found");
                 return -1;
             };
-            Some(Attestation::new(
+            let mut att = Attestation::new(
                 accessor,
                 accessor,
                 claim,
@@ -294,7 +387,9 @@ pub extern "C" fn sociacl_check_ex(
                     object: object_id,
                     hash: snap.hash,
                 },
-            ))
+            );
+            att.signature = signature;
+            Some(att)
         } else {
             None
         };
@@ -606,6 +701,84 @@ mod tests {
             reason.len(),
         );
         assert_eq!(carol, 0);
+        sociacl_plane_free(plane);
+    }
+
+    #[test]
+    fn ffi_signed_attestation_is_a_factor() {
+        let plane = sociacl_plane_new();
+        assert_eq!(sociacl_add_person(plane, c("alice").as_ptr()), 0);
+        assert_eq!(sociacl_add_person(plane, c("bob").as_ptr()), 0);
+        assert_eq!(
+            sociacl_add_object(plane, c("doc").as_ptr(), c("alice").as_ptr()),
+            0
+        );
+        let mut reason = [0i8; 128];
+        let unsigned = sociacl_check_ex(
+            plane,
+            c("read").as_ptr(),
+            c("doc").as_ptr(),
+            c("bob").as_ptr(),
+            c("owner").as_ptr(),
+            c("identity-live").as_ptr(),
+            ptr::null(),
+            0,
+            reason.as_mut_ptr(),
+            reason.len(),
+        );
+        assert_eq!(unsigned, -1);
+
+        let mut pk = [0u8; 32];
+        let mut sk = [0u8; 32];
+        assert_eq!(sociacl_issuer_keygen(pk.as_mut_ptr(), sk.as_mut_ptr()), 0);
+        assert_eq!(
+            sociacl_enroll(
+                plane,
+                c("bob").as_ptr(),
+                c("principal").as_ptr(),
+                ptr::null(),
+                0
+            ),
+            -1
+        );
+        assert_eq!(
+            sociacl_enroll(
+                plane,
+                c("bob").as_ptr(),
+                c("principal").as_ptr(),
+                pk.as_ptr(),
+                pk.len()
+            ),
+            0
+        );
+        let mut sig = [0u8; 64];
+        assert_eq!(
+            sociacl_sign_claim(
+                plane,
+                sk.as_ptr(),
+                sk.len(),
+                c("bob").as_ptr(),
+                c("bob").as_ptr(),
+                c("identity-live").as_ptr(),
+                c("doc").as_ptr(),
+                sig.as_mut_ptr(),
+                sig.len(),
+            ),
+            0
+        );
+        let allowed = sociacl_check_ex(
+            plane,
+            c("read").as_ptr(),
+            c("doc").as_ptr(),
+            c("bob").as_ptr(),
+            c("owner").as_ptr(),
+            c("identity-live").as_ptr(),
+            sig.as_ptr(),
+            sig.len(),
+            reason.as_mut_ptr(),
+            reason.len(),
+        );
+        assert_eq!(allowed, 0);
         sociacl_plane_free(plane);
     }
 

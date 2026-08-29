@@ -1,6 +1,6 @@
 use sociacl_core::{
-    CheckError, CheckRequest, EnrollmentKind, NodeId, Plane, PredicateId, Relation, Timestamp,
-    Zookie, DEFAULT_PRIVILEGE_UP_DELAY,
+    CheckError, CheckRequest, EnrollmentKind, IssuerSecret, NodeId, Plane, PredicateId, Relation,
+    Timestamp, Zookie, DEFAULT_PRIVILEGE_UP_DELAY,
 };
 
 fn owned_doc() -> (Plane, NodeId, NodeId, NodeId) {
@@ -412,8 +412,14 @@ fn trustee_only_when_object_names_it() {
 #[test]
 fn attestation_is_a_factor_not_a_grant() {
     let (mut plane, _, bob, doc) = owned_doc();
-    plane.enroll(&bob, EnrollmentKind::Principal).unwrap();
-    let att = plane.identity_attestation(&bob, &bob, &doc).unwrap();
+    let bob_secret = IssuerSecret::generate();
+    plane
+        .enroll(&bob, EnrollmentKind::Principal, bob_secret.verify_key())
+        .unwrap();
+    let att = plane
+        .identity_attestation(&bob, &bob, &doc)
+        .unwrap()
+        .sign(&bob_secret);
     let edges_before = plane.effective_edges().count();
     let owner_before = plane.object(&doc).unwrap().owner.clone();
 

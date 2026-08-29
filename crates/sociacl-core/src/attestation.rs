@@ -1,22 +1,126 @@
 //! Signed statements. Not grants.
 //!
-//! An oracle accepts a statement only from a pre-enrolled issuer. Check may
-//! use identity or device liveness as a factor on an already-named predicate.
-//! Remint may use enrolled-station liveness for a principal the ACL already
-//! names. Elect does not fire because someone attested silence or a station
-//! was loud. After a cut, only pre-cut attestations from pre-cut enrollments
-//! count.
+//! An oracle accepts a statement only from a pre-enrolled issuer whose
+//! verify key was recorded at enroll. Check may use identity or device
+//! liveness as a factor on an already-named predicate. Remint may use
+//! enrolled-station liveness for a principal the ACL already names.
+//! Elect does not fire because someone attested silence or a station
+//! was loud. After a cut, only pre-cut attestations from pre-cut
+//! enrollments count.
+//!
+//! The plane stores verify keys. The issuer (test helper or edge) holds
+//! the signing key. CutBundle never carries issuer secrets.
 
+use std::fmt;
+
+use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
+use rand::rngs::OsRng;
 use sha2::{Digest, Sha256};
 
 use crate::cache::SnapshotHash;
 use crate::error::AttestationError;
 use crate::types::{NodeId, ObjectVersion, Timestamp};
 
-/// Digest of the canonical statement. Edge code replaces this with a real
-/// signature scheme; the plane checks that the digest matches the fields.
+/// Ed25519 signature over [`Attestation::digest`]. Not the digest itself.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
-pub struct AttestationSig(pub [u8; 32]);
+pub struct AttestationSig(pub [u8; 64]);
+
+impl AttestationSig {
+    pub const LEN: usize = 64;
+
+    pub fn empty() -> Self {
+        Self([0u8; 64])
+    }
+
+    pub fn from_slice(bytes: &[u8]) -> Result<Self, AttestationError> {
+        let arr: [u8; 64] = bytes
+            .try_into()
+            .map_err(|_| AttestationError::BadSignature)?;
+        Ok(Self(arr))
+    }
+}
+
+/// Ed25519 verify key recorded on an enrollment. The plane stores these.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+pub struct VerifyKey(pub [u8; 32]);
+
+impl VerifyKey {
+    pub const LEN: usize = 32;
+
+    pub fn from_bytes(bytes: [u8; 32]) -> Result<Self, AttestationError> {
+        if bytes == [0u8; 32] {
+            return Err(AttestationError::InvalidVerifyKey);
+        }
+        VerifyingKey::from_bytes(&bytes).map_err(|_| AttestationError::InvalidVerifyKey)?;
+        Ok(Self(bytes))
+    }
+
+    pub fn from_slice(bytes: &[u8]) -> Result<Self, AttestationError> {
+        if bytes.is_empty() {
+            return Err(AttestationError::InvalidVerifyKey);
+        }
+        let arr: [u8; 32] = bytes
+            .try_into()
+            .map_err(|_| AttestationError::InvalidVerifyKey)?;
+        Self::from_bytes(arr)
+    }
+
+    pub fn is_valid(self) -> bool {
+        self.0 != [0u8; 32] && VerifyingKey::from_bytes(&self.0).is_ok()
+    }
+
+    fn dalek(self) -> Result<VerifyingKey, AttestationError> {
+        VerifyingKey::from_bytes(&self.0).map_err(|_| AttestationError::InvalidVerifyKey)
+    }
+}
+
+/// Issuer signing key. Held by the edge or a test. Never stored on
+/// [`crate::Plane`] or [`crate::CutBundle`].
+#[derive(Clone)]
+pub struct IssuerSecret([u8; 32]);
+
+impl fmt::Debug for IssuerSecret {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("IssuerSecret(..)")
+    }
+}
+
+impl IssuerSecret {
+    pub const LEN: usize = 32;
+
+    /// Fresh issuer key. The caller keeps it; the plane does not.
+    pub fn generate() -> Self {
+        let signing = SigningKey::generate(&mut OsRng);
+        Self(signing.to_bytes())
+    }
+
+    pub fn from_bytes(bytes: [u8; 32]) -> Self {
+        Self(bytes)
+    }
+
+    pub fn from_slice(bytes: &[u8]) -> Result<Self, AttestationError> {
+        let arr: [u8; 32] = bytes
+            .try_into()
+            .map_err(|_| AttestationError::InvalidVerifyKey)?;
+        Ok(Self(arr))
+    }
+
+    pub fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
+
+    pub fn verify_key(&self) -> VerifyKey {
+        VerifyKey(self.signing().verifying_key().to_bytes())
+    }
+
+    fn signing(&self) -> SigningKey {
+        SigningKey::from_bytes(&self.0)
+    }
+
+    pub fn sign(&self, message: &[u8]) -> AttestationSig {
+        AttestationSig(self.signing().sign(message).to_bytes())
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub enum EnrollmentKind {
@@ -49,6 +153,7 @@ pub struct Enrollment {
     pub issuer: NodeId,
     pub kind: EnrollmentKind,
     pub enrolled_at: Timestamp,
+    pub public_key: VerifyKey,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
@@ -155,6 +260,8 @@ pub struct Attestation {
 }
 
 impl Attestation {
+    /// Unsigned statement. Call [`Self::sign`] with the issuer secret.
+    /// The plane will not accept a digest stuffed into `signature`.
     pub fn new(
         issuer: impl Into<NodeId>,
         subject: impl Into<NodeId>,
@@ -163,20 +270,24 @@ impl Attestation {
         binding: AttestationBinding,
     ) -> Self {
         let issuer = issuer.into();
-        let mut att = Self {
+        Self {
             enrollment: issuer.clone(),
             issuer,
             subject: subject.into(),
             claim,
             issued_at,
             binding,
-            signature: AttestationSig([0; 32]),
-        };
-        att.signature = att.digest();
-        att
+            signature: AttestationSig::empty(),
+        }
     }
 
-    pub fn digest(&self) -> AttestationSig {
+    pub fn sign(mut self, secret: &IssuerSecret) -> Self {
+        self.signature = secret.sign(&self.digest());
+        self
+    }
+
+    /// Canonical message. This is what the issuer signs.
+    pub fn digest(&self) -> [u8; 32] {
         let mut hasher = Sha256::new();
         hasher.update(self.issuer.as_bytes());
         hasher.update(self.subject.as_bytes());
@@ -198,11 +309,22 @@ impl Attestation {
         let out = hasher.finalize();
         let mut bytes = [0u8; 32];
         bytes.copy_from_slice(&out);
-        AttestationSig(bytes)
+        bytes
     }
 
-    pub fn verify(&self) -> bool {
-        self.signature == self.digest() && self.enrollment == self.issuer
+    /// Check the signature against an enrolled verify key. Not
+    /// `signature == digest()`.
+    pub fn verify(&self, public_key: &VerifyKey) -> bool {
+        if self.enrollment != self.issuer {
+            return false;
+        }
+        let Ok(vk) = public_key.dalek() else {
+            return false;
+        };
+        let Ok(sig) = Signature::from_slice(&self.signature.0) else {
+            return false;
+        };
+        vk.verify_strict(&self.digest(), &sig).is_ok()
     }
 }
 

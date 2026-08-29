@@ -1,6 +1,6 @@
 use sociacl_core::{
-    AuthnState, CheckError, Clock, DiscoverResult, ElectState, EnrollmentKind, Plane, PredicateId,
-    Relation, Timestamp, VerbError, Will, WillDisposition,
+    AuthnState, CheckError, Clock, DiscoverResult, ElectState, EnrollmentKind, IssuerSecret, Plane,
+    PredicateId, Relation, Timestamp, VerbError, Will, WillDisposition,
 };
 
 fn will(object: &str, testator: &str, disposition: WillDisposition) -> Will {
@@ -95,15 +95,22 @@ fn remint_attestation_restricted_to_will_issuers() {
     let named = plane.add_device("station-a").id;
     let other = plane.add_device("station-b").id;
     let doc = plane.add_object("doc", &alice).id;
-    plane.enroll(&named, EnrollmentKind::Station).unwrap();
-    plane.enroll(&other, EnrollmentKind::Station).unwrap();
+    let named_secret = IssuerSecret::generate();
+    let other_secret = IssuerSecret::generate();
+    plane
+        .enroll(&named, EnrollmentKind::Station, named_secret.verify_key())
+        .unwrap();
+    plane
+        .enroll(&other, EnrollmentKind::Station, other_secret.verify_key())
+        .unwrap();
     plane
         .write_will_src("will radio for object doc\nwritten-by alice\nremint issuers station-a\n")
         .unwrap();
 
     let bad = plane
         .station_liveness_attestation(&other, &alice, &doc)
-        .unwrap();
+        .unwrap()
+        .sign(&other_secret);
     assert_eq!(
         plane
             .remint_with_attestation(&doc, &alice, &bad)
@@ -113,7 +120,8 @@ fn remint_attestation_restricted_to_will_issuers() {
 
     let good = plane
         .station_liveness_attestation(&named, &alice, &doc)
-        .unwrap();
+        .unwrap()
+        .sign(&named_secret);
     let cap = plane.remint_with_attestation(&doc, &alice, &good).unwrap();
     assert_eq!(cap.principal, alice);
     assert_eq!(plane.object(&doc).unwrap().owner, alice);
@@ -125,7 +133,13 @@ fn remint_without_attestation_still_works_when_will_names_issuers() {
     let alice = plane.add_person("alice").id;
     let sta = plane.add_device("station-a").id;
     let doc = plane.add_object("doc", &alice).id;
-    plane.enroll(&sta, EnrollmentKind::Station).unwrap();
+    plane
+        .enroll(
+            &sta,
+            EnrollmentKind::Station,
+            IssuerSecret::generate().verify_key(),
+        )
+        .unwrap();
     plane
         .write_will_src("will radio for object doc\nwritten-by alice\nremint issuers station-a\n")
         .unwrap();
@@ -342,8 +356,14 @@ fn elect_from_attestation_does_not_run_a_valid_will() {
         .write_will(will("doc", "alice", WillDisposition::Heir(bob)))
         .unwrap();
     plane.set_authn(&alice, AuthnState::Gone);
-    plane.enroll(&alice, EnrollmentKind::Principal).unwrap();
-    let att = plane.identity_attestation(&alice, &alice, &doc).unwrap();
+    let alice_secret = IssuerSecret::generate();
+    plane
+        .enroll(&alice, EnrollmentKind::Principal, alice_secret.verify_key())
+        .unwrap();
+    let att = plane
+        .identity_attestation(&alice, &alice, &doc)
+        .unwrap()
+        .sign(&alice_secret);
     assert_eq!(
         plane.elect_from_attestation(&doc, &att).unwrap_err(),
         VerbError::ElectDoesNotFireOnAttestation
@@ -397,8 +417,14 @@ fn destroy_refuses_when_a_circle_member_is_still_attesting() {
     plane.add_person("executor");
     let doc = plane.add_object("doc", &alice).id;
     plane.jointly_state(&carol, &ops, Relation::InCircle);
-    plane.enroll(&carol, EnrollmentKind::Principal).unwrap();
-    let att = plane.identity_attestation(&carol, &carol, &doc).unwrap();
+    let carol_secret = IssuerSecret::generate();
+    plane
+        .enroll(&carol, EnrollmentKind::Principal, carol_secret.verify_key())
+        .unwrap();
+    let att = plane
+        .identity_attestation(&carol, &carol, &doc)
+        .unwrap()
+        .sign(&carol_secret);
     plane.submit_attestation(att).unwrap();
     plane
         .write_will_src(
@@ -416,7 +442,13 @@ fn destroy_erases_when_nobody_still_attesting() {
     let ops = plane.add_circle("ops");
     let doc = plane.add_object("doc", &alice).id;
     plane.jointly_state(&bob, &ops, Relation::InCircle);
-    plane.enroll(&bob, EnrollmentKind::Principal).unwrap();
+    plane
+        .enroll(
+            &bob,
+            EnrollmentKind::Principal,
+            IssuerSecret::generate().verify_key(),
+        )
+        .unwrap();
     plane
         .write_will_src(
             "will desk for object doc\nwritten-by alice\nhighest-still-attesting-rank circle ops\ndestroy if-no-heir keys\n",

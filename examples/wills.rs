@@ -2,7 +2,7 @@
 //!
 //! Run: `cargo run -p sociacl-core --example wills`
 
-use sociacl_core::{EnrollmentKind, Plane, Relation, Will};
+use sociacl_core::{EnrollmentKind, IssuerSecret, Plane, Relation, Will};
 
 const TEMPLATES: &[(&str, &str)] = &[
     ("posix-poor.will", include_str!("wills/posix-poor.will")),
@@ -41,10 +41,18 @@ fn main() {
     let radio = plane.add_device("radio-1");
     plane.add_object(&radio.id, &alice);
     plane
-        .enroll("station-alpha", EnrollmentKind::Station)
+        .enroll(
+            "station-alpha",
+            EnrollmentKind::Station,
+            IssuerSecret::generate().verify_key(),
+        )
         .unwrap();
     plane
-        .enroll("station-beta", EnrollmentKind::Station)
+        .enroll(
+            "station-beta",
+            EnrollmentKind::Station,
+            IssuerSecret::generate().verify_key(),
+        )
         .unwrap();
     plane.jointly_state(&alice, "operators", Relation::InCircle);
     plane.jointly_state("bob", "desk-ops", Relation::InCircle);

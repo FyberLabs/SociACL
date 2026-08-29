@@ -49,10 +49,12 @@ impl CutBundle {
         crate::codec::encode(self)
     }
 
-    /// Decode bytes. Refuses a tampered frame or post-cut material.
+    /// Decode bytes. Refuses a tampered frame, post-cut material, or
+    /// a statement that does not verify against a pre-cut enrollment.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, VerbError> {
         let bundle = crate::codec::decode(bytes)?;
         bundle.refuse_post_cut()?;
+        bundle.refuse_unverified_attestations()?;
         Ok(bundle)
     }
 
@@ -108,6 +110,30 @@ impl CutBundle {
         for share in &self.shares {
             if share.held_at.0 > cut {
                 return Err(VerbError::PostCutMaterial);
+            }
+        }
+        Ok(())
+    }
+
+    /// Digest-as-signature and keys that were never enrolled fail closed.
+    pub(crate) fn refuse_unverified_attestations(&self) -> Result<(), VerbError> {
+        for enr in &self.enrollments {
+            if !enr.public_key.is_valid() {
+                return Err(VerbError::AttestationRejected(
+                    crate::error::AttestationError::InvalidVerifyKey,
+                ));
+            }
+        }
+        for att in &self.attestations {
+            let Some(enr) = self.enrollments.iter().find(|e| e.issuer == att.issuer) else {
+                return Err(VerbError::AttestationRejected(
+                    crate::error::AttestationError::NotEnrolled(att.issuer.clone()),
+                ));
+            };
+            if !att.verify(&enr.public_key) {
+                return Err(VerbError::AttestationRejected(
+                    crate::error::AttestationError::BadSignature,
+                ));
             }
         }
         Ok(())

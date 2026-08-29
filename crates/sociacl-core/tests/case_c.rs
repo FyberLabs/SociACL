@@ -1,6 +1,6 @@
 use sociacl_core::{
-    AuthnState, Client, CutBundle, DiscoverResult, EnrollmentKind, Plane, PredicateId, Relation,
-    Timestamp, VerbError, Will,
+    AuthnState, Client, CutBundle, DiscoverResult, EnrollmentKind, IssuerSecret, Plane,
+    PredicateId, Relation, Timestamp, VerbError, Will,
 };
 
 fn heir_will(object: &str, testator: &str, heir: &str) -> Will {
@@ -242,17 +242,26 @@ fn bundle_does_not_include_post_cut_material() {
     let ops = plane.add_group("ops");
     let doc = plane.add_object("doc", &alice).id;
     plane.write_will(heir_will("doc", "alice", "bob")).unwrap();
-    plane.enroll(&station, EnrollmentKind::Station).unwrap();
+    plane
+        .enroll(
+            &station,
+            EnrollmentKind::Station,
+            IssuerSecret::generate().verify_key(),
+        )
+        .unwrap();
 
     plane.set_now(Timestamp(20));
     plane.set_cut(Timestamp(10));
     plane.jointly_state(&bob, &ops, Relation::MemberOf);
+    let late_key = IssuerSecret::generate().verify_key();
     assert!(matches!(
-        plane.enroll("late", EnrollmentKind::Principal),
+        plane.enroll("late", EnrollmentKind::Principal, late_key),
         Err(_)
     ));
     plane.add_person("late");
-    assert!(plane.enroll("late", EnrollmentKind::Principal).is_err());
+    assert!(plane
+        .enroll("late", EnrollmentKind::Principal, late_key)
+        .is_err());
     let late_will = Will::heir(&doc, &alice, &bob, Timestamp(21), vec!["executor".into()]);
     assert_eq!(
         plane.write_will(late_will).unwrap_err(),
@@ -379,6 +388,84 @@ fn durable_bytes_and_file_round_trip() {
 
     let live = plane.check_object("read", &doc, &alice).unwrap();
     assert!(live.allowed);
+}
+
+#[test]
+fn signed_attestation_survives_durable_round_trip() {
+    let (mut plane, alice, _, _, doc) = group_plane();
+    let secret = IssuerSecret::generate();
+    plane
+        .enroll(&alice, EnrollmentKind::Principal, secret.verify_key())
+        .unwrap();
+    let att = plane
+        .identity_attestation(&alice, &alice, &doc)
+        .unwrap()
+        .sign(&secret);
+    plane.submit_attestation(att.clone()).unwrap();
+
+    let bundle = plane.export_bundle(&alice).unwrap();
+    assert_eq!(bundle.attestations.len(), 1);
+    assert!(bundle.attestations[0].verify(&secret.verify_key()));
+    assert!(bundle.enrollments.iter().all(|e| e.public_key.is_valid()));
+
+    let bytes = bundle.to_bytes();
+    assert_eq!(
+        u16::from_le_bytes(bytes[4..6].try_into().unwrap()),
+        CutBundle::ENCODING_VERSION
+    );
+    assert_eq!(CutBundle::ENCODING_VERSION, 2);
+
+    let loaded = CutBundle::from_bytes(&bytes).unwrap();
+    assert_eq!(loaded.attestations, bundle.attestations);
+    assert_eq!(loaded.enrollments, bundle.enrollments);
+
+    let mut client = Client::from_bytes(&bytes).unwrap();
+    let result = client
+        .check(sociacl_core::CheckRequest {
+            action: "read".into(),
+            object: doc.clone(),
+            accessor: alice.clone(),
+            predicate: None,
+            zookie: None,
+            attestation: Some(loaded.attestations[0].clone()),
+        })
+        .unwrap();
+    assert!(result.allowed);
+    assert!(result.attestation_factor.is_some());
+    assert_eq!(
+        client.elect_from_attestation(&doc, &att).unwrap_err(),
+        VerbError::ElectDoesNotFireOnAttestation
+    );
+}
+
+#[test]
+fn unsigned_or_v1_bundle_is_refused() {
+    let (mut plane, alice, _, _, doc) = group_plane();
+    let secret = IssuerSecret::generate();
+    plane
+        .enroll(&alice, EnrollmentKind::Principal, secret.verify_key())
+        .unwrap();
+    let att = plane
+        .identity_attestation(&alice, &alice, &doc)
+        .unwrap()
+        .sign(&secret);
+    plane.submit_attestation(att).unwrap();
+    let bundle = plane.export_bundle(&alice).unwrap();
+
+    let mut v1 = bundle.to_bytes();
+    v1[4] = 1;
+    v1[5] = 0;
+    assert_eq!(
+        CutBundle::from_bytes(&v1).unwrap_err(),
+        VerbError::UnsupportedBundleVersion(1)
+    );
+
+    let mut unsigned = bundle.clone();
+    unsigned.attestations[0].signature = sociacl_core::AttestationSig::empty();
+    assert!(matches!(
+        unsigned.open().unwrap_err(),
+        VerbError::AttestationRejected(sociacl_core::AttestationError::BadSignature)
+    ));
 }
 
 #[test]

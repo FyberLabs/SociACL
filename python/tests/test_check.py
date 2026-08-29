@@ -1,6 +1,6 @@
 """Check-only Python binding tests. Requires `cargo build -p sociacl-c`."""
 
-from sociacl import CheckError, Plane
+from sociacl import CheckError, Plane, issuer_keygen
 
 
 def test_three_node_posix_check():
@@ -39,15 +39,32 @@ def test_simple_check_and_attestation():
     assert allowed is True
     assert reason == "owner"
 
+    pk, sk = issuer_keygen()
     try:
         plane.check("read", "doc", "bob", "owner", attestation="identity-live")
+        raise AssertionError("unsigned attestation must fail closed")
+    except CheckError:
+        pass
+
+    try:
+        plane.enroll("bob", "principal", b"")
+        raise AssertionError("enroll without a key must fail closed")
+    except CheckError:
+        pass
+
+    try:
+        sig = plane.sign_claim(sk, "bob", "bob", "identity-live", "doc")
+        plane.check(
+            "read", "doc", "bob", "owner", attestation="identity-live", signature=sig
+        )
         raise AssertionError("unenrolled attestation must fail closed")
     except CheckError:
         pass
 
-    plane.enroll("bob", "principal")
+    plane.enroll("bob", "principal", pk)
+    sig = plane.sign_claim(sk, "bob", "bob", "identity-live", "doc")
     allowed, reason = plane.check(
-        "read", "doc", "bob", "owner", attestation="identity-live"
+        "read", "doc", "bob", "owner", attestation="identity-live", signature=sig
     )
     assert allowed is False
     assert reason == "owner"
