@@ -1,11 +1,13 @@
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 
+use crate::attestation::{Attestation, AttestationClaim, Enrollment, EnrollmentKind};
 use crate::cache::{HashCache, MemoryHashCache, Snapshot, SnapshotHash};
-use crate::error::VerbError;
+use crate::error::{AttestationError, VerbError};
 use crate::types::{
     AuthnState, Device, Edge, NodeId, NodeKind, Object, ObjectKind, ObjectProperties,
-    ObjectVersion, Principal, Relation, Timestamp, Will,
+    ObjectVersion, Principal, Relation, Timestamp,
 };
+use crate::will::{Will, WillSubject, WillValidateCtx};
 
 /// Privilege-up delay used by tests unless a test sets another value.
 /// Privilege-down does not use this number.
@@ -18,9 +20,11 @@ pub struct Plane {
     pub(crate) edges: Vec<Edge>,
     pub(crate) authn: HashMap<NodeId, AuthnState>,
     pub(crate) wills: HashMap<NodeId, Will>,
+    pub(crate) enrollments: HashMap<NodeId, Enrollment>,
+    pub(crate) attestations: Vec<Attestation>,
     pub(crate) cache: MemoryHashCache,
-    /// Case C marker. Edges stated after this instant must not grant.
-    /// Evaluation of the cut is not implemented (types + comments only).
+    /// Case C marker. After a cut, only pre-cut attestations and old jointly
+    /// stated edges count. New enrollments after the cut do not grant.
     pub cut: Option<crate::types::CutBoundary>,
     now: Timestamp,
     privilege_up_delay: Timestamp,
@@ -40,6 +44,8 @@ impl Plane {
             edges: Vec::new(),
             authn: HashMap::new(),
             wills: HashMap::new(),
+            enrollments: HashMap::new(),
+            attestations: Vec::new(),
             cache: MemoryHashCache::default(),
             cut: None,
             now: Timestamp(0),
@@ -284,22 +290,168 @@ impl Plane {
         self.bump_version(&object.into());
     }
 
-    pub fn write_will(&mut self, will: Will) -> Result<(), VerbError> {
-        let object = self
-            .objects
-            .get(&will.object)
-            .ok_or_else(|| VerbError::ObjectNotFound(will.object.clone()))?;
-        if object.destroyed {
-            return Err(VerbError::ObjectDestroyed(will.object.clone()));
-        }
-        if object.owner != will.testator {
-            return Err(VerbError::CannotWriteWill(will.testator.clone()));
+    pub fn write_will(&mut self, mut will: Will) -> Result<(), VerbError> {
+        match &will.subject {
+            WillSubject::Object(id) => {
+                let object = self
+                    .objects
+                    .get(id)
+                    .ok_or_else(|| VerbError::ObjectNotFound(id.clone()))?;
+                if object.destroyed {
+                    return Err(VerbError::ObjectDestroyed(id.clone()));
+                }
+                if object.owner != will.testator {
+                    return Err(VerbError::CannotWriteWill(will.testator.clone()));
+                }
+            }
+            other => {
+                let id = other.id();
+                if !self.nodes.contains_key(id) {
+                    return Err(VerbError::ObjectNotFound(id.clone()));
+                }
+            }
         }
         if self.authn(&will.testator) != AuthnState::Live {
             return Err(VerbError::TestatorNotAlive);
         }
-        self.wills.insert(will.object.clone(), will);
+        will.validate(&self.will_ctx())
+            .map_err(VerbError::InvalidWill)?;
+        will.joint_at = self.now;
+        if will.written_at.0 == 0 {
+            will.written_at = self.now;
+        }
+        self.wills.insert(will.object().clone(), will);
         Ok(())
+    }
+
+    pub fn write_will_src(&mut self, src: &str) -> Result<(), VerbError> {
+        let will = Will::parse(src).map_err(VerbError::InvalidWill)?;
+        self.write_will(will)
+    }
+
+    fn will_ctx(&self) -> WillValidateCtx {
+        WillValidateCtx {
+            nodes: self.nodes.keys().cloned().collect(),
+            enrolled: self.enrollments.keys().cloned().collect(),
+        }
+    }
+
+    /// Only pre-enrolled issuers may issue attestations an oracle will accept.
+    pub fn enroll(
+        &mut self,
+        issuer: impl Into<NodeId>,
+        kind: EnrollmentKind,
+    ) -> Result<(), AttestationError> {
+        let issuer = issuer.into();
+        if !self.nodes.contains_key(&issuer) {
+            return Err(AttestationError::IssuerNotFound(issuer));
+        }
+        self.enrollments.insert(
+            issuer.clone(),
+            Enrollment {
+                issuer: issuer.clone(),
+                kind,
+                enrolled_at: self.now,
+            },
+        );
+        Ok(())
+    }
+
+    pub fn enrollment(&self, issuer: &NodeId) -> Option<&Enrollment> {
+        self.enrollments.get(issuer)
+    }
+
+    pub fn set_cut(&mut self, cut_at: Timestamp) {
+        self.cut = Some(crate::types::CutBoundary { cut_at });
+    }
+
+    /// Oracle: accept only from a pre-enrolled issuer. After a cut, only
+    /// pre-cut attestations and pre-cut enrollments count.
+    pub fn accept_attestation(&self, att: &Attestation) -> Result<(), AttestationError> {
+        if !att.verify() {
+            return Err(AttestationError::BadSignature);
+        }
+        let Some(enr) = self.enrollments.get(&att.issuer) else {
+            return Err(AttestationError::NotEnrolled(att.issuer.clone()));
+        };
+        if let Some(cut) = self.cut {
+            if enr.enrolled_at.0 > cut.cut_at.0 {
+                return Err(AttestationError::PostCutEnrollment(att.issuer.clone()));
+            }
+            if att.issued_at.0 > cut.cut_at.0 {
+                return Err(AttestationError::PostCutAttestation);
+            }
+        }
+        Ok(())
+    }
+
+    pub fn submit_attestation(&mut self, att: Attestation) -> Result<(), AttestationError> {
+        self.accept_attestation(&att)?;
+        self.attestations.push(att);
+        Ok(())
+    }
+
+    pub fn still_attesting(&self, subject: &NodeId) -> bool {
+        self.attestations.iter().any(|a| {
+            a.subject == *subject
+                && a.claim.elect_may_consume_for_choice()
+                && self.accept_attestation(a).is_ok()
+        })
+    }
+
+    pub fn identity_attestation(
+        &self,
+        issuer: impl Into<NodeId>,
+        subject: impl Into<NodeId>,
+        object: &NodeId,
+    ) -> Option<Attestation> {
+        let snap = self.snapshot(object)?;
+        Some(Attestation::new(
+            issuer,
+            subject,
+            AttestationClaim::IdentityLive,
+            self.now,
+            crate::attestation::AttestationBinding::Snapshot {
+                object: object.clone(),
+                hash: snap.hash,
+            },
+        ))
+    }
+
+    pub fn station_liveness_attestation(
+        &self,
+        station: impl Into<NodeId>,
+        subject: impl Into<NodeId>,
+        object: &NodeId,
+    ) -> Option<Attestation> {
+        let snap = self.snapshot(object)?;
+        Some(Attestation::new(
+            station,
+            subject,
+            AttestationClaim::StationLiveness,
+            self.now,
+            crate::attestation::AttestationBinding::Snapshot {
+                object: object.clone(),
+                hash: snap.hash,
+            },
+        ))
+    }
+
+    pub(crate) fn circle_members_ordered(&self, circle: &NodeId) -> Vec<NodeId> {
+        let mut members: Vec<(Timestamp, NodeId)> = self
+            .effective_edges()
+            .filter(|e| e.relation == Relation::InCircle && e.to == *circle)
+            .map(|e| (e.joint_at.unwrap_or(Timestamp(0)), e.from.clone()))
+            .collect();
+        members.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
+        let mut seen = BTreeSet::new();
+        let mut out = Vec::new();
+        for (_, id) in members {
+            if seen.insert(id.clone()) {
+                out.push(id);
+            }
+        }
+        out
     }
 
     pub fn cancel_will(
@@ -353,7 +505,7 @@ impl Plane {
         self.now
     }
 
-    pub(crate) fn snapshot(&self, object: &NodeId) -> Option<Snapshot> {
+    pub fn snapshot(&self, object: &NodeId) -> Option<Snapshot> {
         let obj = self.objects.get(object)?;
         let mut parts: Vec<Vec<u8>> = Vec::new();
         parts.push(object.as_bytes().to_vec());

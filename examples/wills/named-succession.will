@@ -1,0 +1,9 @@
+# Small-group named succession. The list is the template.
+# military-rank / corporate-succession are aliases of these macros.
+
+will desk-succession for object desk
+written-by alice
+cancelable-by bob
+named-successor-list bob carol
+elect circle desk-ops clock elect threshold 1 notify bob wait cancel
+destroy if-no-heir keys

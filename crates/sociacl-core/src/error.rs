@@ -21,6 +21,8 @@ pub enum CheckError {
         requested: PredicateId,
         named: PredicateId,
     },
+    #[error("attestation rejected: {0}")]
+    AttestationRejected(AttestationError),
 }
 
 #[derive(Debug, Error, Eq, PartialEq)]
@@ -51,4 +53,70 @@ pub enum VerbError {
     CannotCancel(NodeId),
     #[error("will must be written while testator authn is live")]
     TestatorNotAlive,
+    #[error("invalid will: {0}")]
+    InvalidWill(WillError),
+    #[error("elect does not fire on an attestation")]
+    ElectDoesNotFireOnAttestation,
+    #[error("will for {0} has no elect path")]
+    NoElectPath(NodeId),
+    #[error("will for {0} has no destroy path")]
+    NoDestroyPath(NodeId),
+    #[error("not enough live cancelers to elect on {0}")]
+    CannotElectWithoutCancelers(NodeId),
+    #[error("attestation rejected: {0}")]
+    AttestationRejected(AttestationError),
+}
+
+#[derive(Debug, Error, Eq, PartialEq)]
+pub enum AttestationError {
+    #[error("issuer {0} is not enrolled; oracle refuses")]
+    NotEnrolled(NodeId),
+    #[error("issuer {0} is not a graph node")]
+    IssuerNotFound(NodeId),
+    #[error("issuer {0} was enrolled after the cut")]
+    PostCutEnrollment(NodeId),
+    #[error("attestation issued after the cut")]
+    PostCutAttestation,
+    #[error("forbidden claim {0}")]
+    ForbiddenClaim(String),
+    #[error("unnamed claim {0}; fail closed")]
+    UnnamedClaim(String),
+    #[error("claim {0} is not a Check factor")]
+    CheckMustNotConsume(String),
+    #[error("claim {0} is not a Remint factor")]
+    RemintMustNotConsume(String),
+    #[error("attestation binding does not match the current snapshot")]
+    BindingMismatch,
+    #[error("attestation signature does not match the statement")]
+    BadSignature,
+    #[error("attestation subject {0} is not the named principal")]
+    SubjectMismatch(NodeId),
+    #[error("enrollment kind {0} is unnamed")]
+    UnnamedEnrollmentKind(String),
+}
+
+#[derive(Debug, Error, Eq, PartialEq)]
+pub enum WillError {
+    #[error("{0}")]
+    Parse(String),
+    #[error("unnamed verb {0}; fail closed")]
+    UnnamedVerb(String),
+    #[error("dead-hand shape {0}; fail closed")]
+    DeadHand(String),
+    #[error("clock mix: {0}")]
+    ClockMix(String),
+    #[error("issuer {0} is not enrolled")]
+    MissingEnrollment(NodeId),
+    #[error("elect clause must name clock elect")]
+    ElectClockRequired,
+    #[error("elect without cancel is automatic seizure; fail closed")]
+    ElectRequiresCancel,
+    #[error("heir-template is never a will verb or a Check predicate")]
+    HeirTemplate,
+    #[error("vacancy listing is forbidden")]
+    VacancyAd,
+    #[error("node {0} not found")]
+    NodeNotFound(NodeId),
+    #[error("will has no clauses")]
+    Empty,
 }

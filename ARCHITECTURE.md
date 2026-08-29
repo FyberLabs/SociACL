@@ -12,7 +12,7 @@ These are working choices for this tree, not closed design.
 - Hopcap is **1**. No friend-of-friend, no nested-circle walk.
 - **k-of-n(circle)** is omitted (forest-fire risk).
 - License is **MIT** (public edge).
-- An object's current owner may write its will. A will may name any existing node as heir, including an agent; that is a type allowance, not a policy decision.
+- An object's current owner may write its will (jointly stated at write, owner speaks for both sides). A will is a named macro body, not a Check query. A will may name any existing node as heir, including an agent; that is a type allowance, not a policy decision.
 - Privilege-up waits for a jointly stated edge **and** a configurable delay after the second statement (`DEFAULT_PRIVILEGE_UP_DELAY` in tests). Privilege-down is immediate. One TTL is not used for both.
 - Co-ownership is refused: an object has one owner.
 - The object names the Check predicate in its properties. An explicit predicate on the request must match that name.
@@ -47,7 +47,7 @@ Relations used by named predicates:
 
 `heir-template` is never a Check predicate. Wills are not consulted on the hot path.
 
-Ambient proximity, radio, and light are **not** grants. Check may accept an optional attestation (signed statement that this principal is still this principal). Missing attestation does not fail Check. Attestation does not mint an edge, owner, or heir.
+Ambient proximity, radio, and light are **not** grants. Check may accept an optional attestation (`identity-live` or `device-live`) from a pre-enrolled issuer, bound to this snapshot or object version, as a factor on the object's already-named predicate. Missing attestation does not fail Check. A present bad statement fails closed. Attestation does not mint an edge, owner, or heir. See [docs/attestations.md](docs/attestations.md).
 
 ## Named predicates
 
@@ -93,6 +93,12 @@ Elect **refuses** if keep-operating would suffice (owner authn still live).
 
 A device is a first-class node. It can hold a will. It can be a protected object (Check target) with an owner and a version. Same verbs as any other object.
 
+## Wills and attestations
+
+A will is a named macro body bound to an object (or a group, network, or device class): which verb, which circle, which threshold, which clock, what to destroy. Parse fails closed on unnamed verbs, missing enrollment, dead-hand shapes, and mixed clocks. `heir-template` is not a verb and not a Check predicate.
+
+An attestation is a signed statement from a pre-enrolled issuer. Check may use identity or device liveness as a factor on an already-named predicate. Remint may use enrolled-station liveness for a principal the ACL already names. Elect does not start because someone attested silence or a station was loud. After a cut, only pre-cut attestations and old jointly stated edges count.
+
 ## Public vs ITAR
 
 This repository is the **public** authority plane: graph, verbs, clocks, hash cache, named predicates.
@@ -103,6 +109,6 @@ This repository is the **public** authority plane: graph, verbs, clocks, hash ca
 
 Hypermesh, attestation channels (Social Light, LightIFF), chain/IPFS object stores, and ATAK are separate. This plane does not embed them.
 
-Contracts, if any, execute already-written wills. Oracles, if any, are pre-enrolled attestations. Neither is implemented here.
+Contracts, if any, execute already-written wills. Oracles accept attestations from pre-enrolled issuers only. See [docs/wills.md](docs/wills.md) and [docs/attestations.md](docs/attestations.md).
 
 Slider: POSIX `same-group` and Circles `named-circle` are predicates on the same verbs. They are not different APIs.

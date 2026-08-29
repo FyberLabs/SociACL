@@ -1,0 +1,11 @@
+# Device will: remint a lease on keep-operating, elect an operator
+# on the Elect clock, destroy keys if there is no heir.
+# Capture is a destroy path the owner wrote while alive, not a timer.
+
+will radio-1-will for object radio-1
+written-by alice
+cancelable-by alice
+keep-operating circle operators
+remint issuers station-alpha station-beta
+elect circle operators clock elect notify alice wait cancel
+destroy if-no-heir keys
