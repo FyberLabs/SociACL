@@ -56,6 +56,29 @@ pub enum NodeKind {
     Circle,
 }
 
+impl NodeKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Person => "person",
+            Self::Agent => "agent",
+            Self::Device => "device",
+            Self::Group => "group",
+            Self::Circle => "circle",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "person" => Some(Self::Person),
+            "agent" => Some(Self::Agent),
+            "device" => Some(Self::Device),
+            "group" => Some(Self::Group),
+            "circle" => Some(Self::Circle),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Principal {
     pub id: NodeId,
@@ -75,6 +98,23 @@ pub struct ObjectVersion(pub u64);
 pub enum ObjectKind {
     Data,
     Device,
+}
+
+impl ObjectKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Data => "data",
+            Self::Device => "device",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "data" => Some(Self::Data),
+            "device" => Some(Self::Device),
+            _ => None,
+        }
+    }
 }
 
 /// Object property bag. `predicate` must name a Check predicate or Check fails closed.
@@ -350,10 +390,44 @@ pub enum Clock {
     Elect,
 }
 
+impl Clock {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::KeepOperating => "keep-operating",
+            Self::Elect => "elect",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "keep-operating" => Some(Self::KeepOperating),
+            "elect" => Some(Self::Elect),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AuthnState {
     Live,
     Gone,
+}
+
+impl AuthnState {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Live => "live",
+            Self::Gone => "gone",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "live" => Some(Self::Live),
+            "gone" => Some(Self::Gone),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

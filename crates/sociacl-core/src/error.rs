@@ -87,6 +87,12 @@ pub enum VerbError {
     NothingToExport(NodeId),
     #[error("share reconstruction failed for {0}")]
     ShareReconstruct(NodeId),
+    #[error("bundle encoding is corrupt")]
+    BundleCorrupt,
+    #[error("unsupported bundle version {0}")]
+    UnsupportedBundleVersion(u16),
+    #[error("bundle io failed")]
+    BundleIo,
 }
 
 #[derive(Debug, Error, Eq, PartialEq)]

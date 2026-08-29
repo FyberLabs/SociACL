@@ -36,5 +36,14 @@ jobs:
             -L target/debug -lsociacl -o target/sociacl-check-c
           LD_LIBRARY_PATH="${PWD}/target/debug" target/sociacl-check-c
 
+      - name: C Client wrapper
+        run: |
+          cc -I crates/sociacl-c/include examples/client.c \
+            -L target/debug -lsociacl -o target/sociacl-client-c
+          LD_LIBRARY_PATH="${PWD}/target/debug" target/sociacl-client-c
+
       - name: Python Check wrapper
         run: PYTHONPATH=python python3 python/tests/test_check.py
+
+      - name: Python Client wrapper
+        run: PYTHONPATH=python python3 python/tests/test_client.py
