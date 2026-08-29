@@ -17,6 +17,8 @@ This repository is the public core (MIT). It is not Hypermesh, Panopticon acl-se
 
 Two clocks: **keep-operating** (fast; no new owner, no rekey) and **Elect** (slow). There is no dead-hand timer. Inactivity is not treated as death.
 
+After a cut, `export_bundle` freezes what a remaining principal already held. `Client` keeps Check and Remint on that snapshot. Elect refuses.
+
 ## Build and test
 
 Requires Rust 1.83+ (edition 2021). CI (`.github/workflows/ci.yml`) runs the same steps on `ubuntu-latest`.

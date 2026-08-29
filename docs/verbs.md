@@ -4,7 +4,7 @@ Implement against this page. Fail closed unless a named rule allows the call.
 
 ## CHECK(action, object, accessor)
 
-Hot path. Server-evaluated in this cut.
+Hot path. Live Check is server-evaluated. After a cut, `Client::check` evaluates the same rules against a pre-cut bundle only.
 
 **Inputs**
 
@@ -79,6 +79,8 @@ Authn gone. Slow Elect clock. A ceremony, not an instant transfer.
 **Commit** (`commit_elect`): only after the wait, and only if the will is still live and keep-operating still would not suffice. Then the owner becomes the candidate, the object version bumps, and a jointly stated `owns` edge is written.
 
 Elect does not fire because someone attested silence or a station was loud. `elect_from_attestation` always fails.
+
+On the Case C client path, `elect` and `commit_elect` refuse. The radio being quiet is not a reason to elect. Discover may still report the bundled will. Destroy may erase local key material. See [ARCHITECTURE.md](../ARCHITECTURE.md).
 
 No public vacancy ads. No dead-hand timer.
 

@@ -18,6 +18,7 @@ pub const DEFAULT_PRIVILEGE_UP_DELAY: Timestamp = Timestamp(1);
 pub const DEFAULT_ELECT_WAIT: Timestamp = Timestamp(10);
 
 /// In-memory authority plane.
+#[derive(Debug)]
 pub struct Plane {
     pub(crate) nodes: HashMap<NodeId, NodeKind>,
     pub(crate) objects: HashMap<NodeId, Object>,
@@ -28,8 +29,9 @@ pub struct Plane {
     pub(crate) attestations: Vec<Attestation>,
     pub(crate) pending_elects: HashMap<NodeId, PendingElect>,
     pub(crate) cache: MemoryHashCache,
-    /// Case C marker. After a cut, only pre-cut attestations, pre-cut
-    /// enrollments, pre-cut wills, and old jointly stated edges count.
+    /// After a cut, only pre-cut attestations, pre-cut enrollments,
+    /// pre-cut wills, and old jointly stated edges count. Export copies
+    /// that set onto a [`crate::Client`].
     pub cut: Option<crate::types::CutBoundary>,
     now: Timestamp,
     privilege_up_delay: Timestamp,

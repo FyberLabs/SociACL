@@ -38,4 +38,4 @@ The slowness is a policy clock (wait, notify, allow cancel), not a countdown to 
 | Authn live, owner still live | Keep-operating | Check; Elect refuses |
 | Authn gone, will names heir | Elect | Discover then Elect |
 | Authn gone, will says stay secret / no heir | — | Destroy |
-| Plane gone (Case C) | pre-positioned only | types only in this cut |
+| Plane gone (Case C) | Keep-operating on the pre-cut bundle | Offline Check / Remint. Elect refuses. |

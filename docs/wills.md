@@ -61,9 +61,9 @@ This cut: the current owner may write or replace the will on that object. The wr
 
 ## After a cut (Case C)
 
-`CutBoundary { cut_at }` is recorded so a later client path can ignore edges stated after the cut. Client-held shares are typed (`ClientHeldShare`) and not reconstructed here.
+`CutBoundary { cut_at }` seals the bundle. `export_bundle` copies the live will, pre-cut enrollments, and shares the remaining principal already had a right to hold. Reconstruction verifies the share hash over the local key. Check does not read the share.
 
-New attestations from issuers enrolled after the cut do not grant.
+New attestations from issuers enrolled after the cut do not grant. Post-cut wills, edges, and enrollments are omitted from the bundle and refused if presented. Discover may report the bundled will. Elect and `commit_elect` refuse on the client. Destroy may erase the local key when the will says stay secret; it does not install an owner.
 
 ## Storage note
 

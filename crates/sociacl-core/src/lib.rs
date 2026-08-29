@@ -1,11 +1,14 @@
 //! SociACL core: social-graph authority plane.
 //!
 //! Live [`Plane::check`] is server-evaluated against an in-memory graph.
-//! Case C (plane gone or hostile) is types and comments only.
+//! Case C evaluates the same named predicates offline against a pre-cut
+//! [`CutBundle`] on [`Client`]. Elect stays refuse-closed on that path.
 
 pub mod attestation;
+pub mod bundle;
 pub mod cache;
 pub mod check;
+pub mod client;
 pub mod error;
 pub mod graph;
 pub mod types;
@@ -16,10 +19,12 @@ pub use attestation::{
     Attestation, AttestationBinding, AttestationClaim, AttestationFactor, AttestationSig,
     Enrollment, EnrollmentKind,
 };
+pub use bundle::CutBundle;
 pub use cache::{
     CacheAnchors, CacheKey, EdgeTypeSet, HashCache, MemoryHashCache, Snapshot, SnapshotHash, Zookie,
 };
 pub use check::{CheckRequest, CheckResult, ParsedObject};
+pub use client::Client;
 pub use error::{AttestationError, CheckError, VerbError, WillError};
 pub use graph::{Plane, DEFAULT_ELECT_WAIT, DEFAULT_PRIVILEGE_UP_DELAY};
 pub use types::{
