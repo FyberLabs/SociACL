@@ -1,7 +1,11 @@
 use sociacl_core::{
-    AuthnState, Client, CutBundle, DiscoverResult, EnrollmentKind, IssuerSecret, Plane,
-    PredicateId, Relation, Timestamp, VerbError, Will,
+    AuthnState, Client, CutBundle, DiscoverResult, EnrollmentKind, HolderSecret, IssuerSecret,
+    Plane, PredicateId, Relation, Timestamp, VerbError, Will,
 };
+
+fn holder() -> HolderSecret {
+    HolderSecret::generate()
+}
 
 fn heir_will(object: &str, testator: &str, heir: &str) -> Will {
     Will::heir(
@@ -353,18 +357,19 @@ fn new_share_is_not_minted_after_the_cut() {
 #[test]
 fn durable_bytes_and_file_round_trip() {
     let (plane, alice, bob, _, doc) = group_plane();
+    let secret = holder();
     let bundle = plane.export_bundle(&alice).unwrap();
-    let bytes = bundle.to_bytes();
+    let bytes = bundle.to_bytes(&secret);
     assert!(bytes.starts_with(b"SACL"));
     assert_eq!(
         u16::from_le_bytes(bytes[4..6].try_into().unwrap()),
         CutBundle::ENCODING_VERSION
     );
 
-    let loaded = CutBundle::from_bytes(&bytes).unwrap();
+    let loaded = CutBundle::from_bytes(&bytes, &secret).unwrap();
     assert_eq!(loaded, bundle);
 
-    let client = Client::from_bytes(&bytes).unwrap();
+    let client = Client::from_bytes(&bytes, &secret).unwrap();
     assert!(client.check_object("read", &doc, &alice).unwrap().allowed);
     assert!(client.check_object("read", &doc, &bob).unwrap().allowed);
     let cap = client.remint(&doc, &bob).unwrap();
@@ -376,8 +381,8 @@ fn durable_bytes_and_file_round_trip() {
         std::process::id(),
         alice.as_str()
     ));
-    bundle.write_path(&path).unwrap();
-    let from_file = Client::from_path(&path).unwrap();
+    bundle.write_path(&path, &secret).unwrap();
+    let from_file = Client::from_path(&path, &secret).unwrap();
     assert!(
         from_file
             .check_object("read", &doc, &alice)
@@ -408,18 +413,19 @@ fn signed_attestation_survives_durable_round_trip() {
     assert!(bundle.attestations[0].verify(&secret.verify_key()));
     assert!(bundle.enrollments.iter().all(|e| e.public_key.is_valid()));
 
-    let bytes = bundle.to_bytes();
+    let secret = holder();
+    let bytes = bundle.to_bytes(&secret);
     assert_eq!(
         u16::from_le_bytes(bytes[4..6].try_into().unwrap()),
         CutBundle::ENCODING_VERSION
     );
-    assert_eq!(CutBundle::ENCODING_VERSION, 2);
+    assert_eq!(CutBundle::ENCODING_VERSION, 3);
 
-    let loaded = CutBundle::from_bytes(&bytes).unwrap();
+    let loaded = CutBundle::from_bytes(&bytes, &secret).unwrap();
     assert_eq!(loaded.attestations, bundle.attestations);
     assert_eq!(loaded.enrollments, bundle.enrollments);
 
-    let mut client = Client::from_bytes(&bytes).unwrap();
+    let mut client = Client::from_bytes(&bytes, &secret).unwrap();
     let result = client
         .check(sociacl_core::CheckRequest {
             action: "read".into(),
@@ -451,13 +457,21 @@ fn unsigned_or_v1_bundle_is_refused() {
         .sign(&secret);
     plane.submit_attestation(att).unwrap();
     let bundle = plane.export_bundle(&alice).unwrap();
+    let secret = holder();
 
-    let mut v1 = bundle.to_bytes();
+    let mut v1 = bundle.to_bytes(&secret);
     v1[4] = 1;
     v1[5] = 0;
     assert_eq!(
-        CutBundle::from_bytes(&v1).unwrap_err(),
+        CutBundle::from_bytes(&v1, &secret).unwrap_err(),
         VerbError::UnsupportedBundleVersion(1)
+    );
+    let mut v2 = bundle.to_bytes(&secret);
+    v2[4] = 2;
+    v2[5] = 0;
+    assert_eq!(
+        CutBundle::from_bytes(&v2, &secret).unwrap_err(),
+        VerbError::UnsupportedBundleVersion(2)
     );
 
     let mut unsigned = bundle.clone();
@@ -472,29 +486,30 @@ fn unsigned_or_v1_bundle_is_refused() {
 fn tampered_or_post_cut_payload_is_refused() {
     let (plane, alice, bob, _, doc) = group_plane();
     let bundle = plane.export_bundle(&alice).unwrap();
-    let mut bytes = bundle.to_bytes();
+    let secret = holder();
+    let mut bytes = bundle.to_bytes(&secret);
 
     let mid = bytes.len() / 2;
     bytes[mid] ^= 0xff;
     assert_eq!(
-        CutBundle::from_bytes(&bytes).unwrap_err(),
+        CutBundle::from_bytes(&bytes, &secret).unwrap_err(),
         VerbError::BundleCorrupt
     );
     assert_eq!(
-        Client::from_bytes(&bytes).unwrap_err(),
+        Client::from_bytes(&bytes, &secret).unwrap_err(),
         VerbError::BundleCorrupt
     );
 
     assert_eq!(
-        CutBundle::from_bytes(b"XXXX").unwrap_err(),
+        CutBundle::from_bytes(b"XXXX", &secret).unwrap_err(),
         VerbError::BundleCorrupt
     );
 
-    let mut bad_ver = bundle.to_bytes();
+    let mut bad_ver = bundle.to_bytes(&secret);
     bad_ver[4] = 99;
     bad_ver[5] = 0;
     assert_eq!(
-        CutBundle::from_bytes(&bad_ver).unwrap_err(),
+        CutBundle::from_bytes(&bad_ver, &secret).unwrap_err(),
         VerbError::UnsupportedBundleVersion(99)
     );
 
@@ -508,13 +523,128 @@ fn tampered_or_post_cut_payload_is_refused() {
         joint_at: Some(Timestamp(99)),
         effective_at: Some(Timestamp(99)),
     });
-    let post_bytes = post.to_bytes();
+    let post_bytes = post.to_bytes(&secret);
     assert_eq!(
-        CutBundle::from_bytes(&post_bytes).unwrap_err(),
+        CutBundle::from_bytes(&post_bytes, &secret).unwrap_err(),
         VerbError::PostCutMaterial
     );
     assert_eq!(
-        Client::from_bytes(&post_bytes).unwrap_err(),
+        Client::from_bytes(&post_bytes, &secret).unwrap_err(),
         VerbError::PostCutMaterial
+    );
+}
+
+#[test]
+fn captured_bundle_without_holder_secret_is_not_the_object() {
+    let (plane, alice, _, _, doc) = group_plane();
+    let key = plane.object(&doc).unwrap().content_key.unwrap();
+    assert_ne!(key, [0u8; 32]);
+    let secret = holder();
+    let other = holder();
+    let bundle = plane.export_bundle(&alice).unwrap();
+    let bytes = bundle.to_bytes(&secret);
+
+    assert!(
+        !bytes.windows(32).any(|w| w == key),
+        "durable file must not carry the plaintext object key"
+    );
+
+    assert_eq!(
+        CutBundle::from_bytes(&bytes, &other).unwrap_err(),
+        VerbError::BundleSignature
+    );
+    assert_eq!(
+        Client::from_bytes(&bytes, &other).unwrap_err(),
+        VerbError::BundleSignature
+    );
+
+    let opened = Client::from_bytes(&bytes, &secret).unwrap();
+    assert_eq!(opened.reconstruct_share(&doc).unwrap(), key);
+    assert!(opened.check_object("read", &doc, &alice).unwrap().allowed);
+    let cap = opened.remint(&doc, &alice).unwrap();
+    assert_eq!(cap.principal, alice);
+}
+
+#[test]
+fn rewritten_or_unsigned_bundle_fails_open() {
+    let (plane, alice, _, _, doc) = group_plane();
+    let secret = holder();
+    let bundle = plane.export_bundle(&alice).unwrap();
+    let bytes = bundle.to_bytes(&secret);
+    assert!(bytes.len() >= 96);
+
+    let mut unsigned = bytes.clone();
+    let n = unsigned.len();
+    unsigned[n - 64..].fill(0);
+    assert_eq!(
+        CutBundle::from_bytes(&unsigned, &secret).unwrap_err(),
+        VerbError::BundleSignature
+    );
+    assert_eq!(
+        Client::from_bytes(&unsigned, &secret).unwrap_err(),
+        VerbError::BundleSignature
+    );
+
+    let attacker = holder();
+    let forged = bundle.to_bytes(&attacker);
+    assert_eq!(
+        Client::from_bytes(&forged, &secret).unwrap_err(),
+        VerbError::BundleSignature
+    );
+    let _ = doc;
+}
+
+#[test]
+fn sealed_load_keeps_check_remint_and_edge_verbs() {
+    let mut plane = Plane::new();
+    let alice = plane.add_person("alice").id;
+    let bob = plane.add_person("bob").id;
+    plane.add_person("executor");
+    let doc = plane.add_object("doc", &alice).id;
+    plane.write_will(heir_will("doc", "alice", "bob")).unwrap();
+    let secret = holder();
+    let bytes = plane.export_bundle_bytes(&alice, &secret).unwrap();
+
+    let mut client = Client::from_bytes(&bytes, &secret).unwrap();
+    assert_eq!(
+        client.discover(&doc).unwrap(),
+        DiscoverResult::Heir(bob.clone())
+    );
+    assert_eq!(client.object(&doc).unwrap().owner, alice);
+    assert!(
+        client
+            .check_named("read", &doc, &alice, PredicateId::owner())
+            .unwrap()
+            .allowed
+    );
+    assert_eq!(
+        client.elect(&doc).unwrap_err(),
+        VerbError::ClientRefusesElect
+    );
+    assert_eq!(
+        client.destroy(&doc).unwrap_err(),
+        VerbError::HasHeir(doc.clone())
+    );
+    assert_eq!(client.object(&doc).unwrap().owner, alice);
+
+    let mut plane = Plane::new();
+    let alice = plane.add_person("alice").id;
+    let doc = plane.add_object("doc", &alice).id;
+    plane
+        .write_will(Will::stay_secret(&doc, &alice, Timestamp(1)))
+        .unwrap();
+    let key = plane.object(&doc).unwrap().content_key.unwrap();
+    let secret = holder();
+    let bytes = plane.export_bundle_bytes(&alice, &secret).unwrap();
+    let mut client = Client::from_bytes(&bytes, &secret).unwrap();
+    assert_eq!(client.discover(&doc).unwrap(), DiscoverResult::StaySecret);
+    assert_eq!(client.local_key(&doc), Some(key));
+    let owner_before = client.object(&doc).unwrap().owner.clone();
+    assert!(client.destroy(&doc).unwrap().erased);
+    assert!(client.local_key(&doc).is_none());
+    assert_eq!(client.object(&doc).unwrap().owner, owner_before);
+    assert_eq!(
+        client.elect(&doc).unwrap_err(),
+        VerbError::ClientRefusesElect
     );
 }

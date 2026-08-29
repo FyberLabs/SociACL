@@ -277,6 +277,31 @@ impl Will {
         parse_will(src)
     }
 
+    /// Named macro text. Not a VM. Write this back with [`crate::Plane::write_will_src`].
+    pub fn to_src(&self) -> String {
+        let mut out = String::new();
+        out.push_str(&format!(
+            "will {} for {} {}\n",
+            self.name,
+            self.subject.kind_str(),
+            self.subject.id()
+        ));
+        out.push_str(&format!("written-by {}\n", self.testator));
+        if !self.cancelable_by.is_empty() {
+            out.push_str("cancelable-by");
+            for id in &self.cancelable_by {
+                out.push(' ');
+                out.push_str(id.as_str());
+            }
+            out.push('\n');
+        }
+        for clause in &self.body.clauses {
+            out.push_str(&clause_src(clause));
+            out.push('\n');
+        }
+        out
+    }
+
     pub fn validate(&self, ctx: &WillValidateCtx) -> Result<(), WillError> {
         if self.body.clauses.is_empty() {
             return Err(WillError::Empty);
@@ -588,6 +613,71 @@ fn parse_successors(tokens: &[&str]) -> Result<WillClause, WillError> {
     Ok(WillClause::NamedSuccessorList {
         successors: tokens[1..].iter().map(|s| NodeId::new(*s)).collect(),
     })
+}
+
+fn clause_src(clause: &WillClause) -> String {
+    match clause {
+        WillClause::KeepOperating { circle } => {
+            format!("keep-operating circle {circle}")
+        }
+        WillClause::Remint { issuers } => {
+            let mut s = String::from("remint issuers");
+            for id in issuers {
+                s.push(' ');
+                s.push_str(id.as_str());
+            }
+            s
+        }
+        WillClause::Discover { heir } => format!("discover heir {heir}"),
+        WillClause::Elect {
+            circle,
+            clock,
+            threshold,
+            notify,
+            wait,
+            cancel,
+        } => {
+            let mut s = format!(
+                "elect circle {circle} clock {} threshold {threshold}",
+                clock.as_str()
+            );
+            if !notify.is_empty() {
+                s.push_str(" notify");
+                for id in notify {
+                    s.push(' ');
+                    s.push_str(id.as_str());
+                }
+            }
+            if *wait {
+                s.push_str(" wait");
+            }
+            if *cancel {
+                s.push_str(" cancel");
+            }
+            s
+        }
+        WillClause::Destroy {
+            if_no_heir,
+            material,
+        } => {
+            if *if_no_heir {
+                format!("destroy if-no-heir {}", material.as_str())
+            } else {
+                format!("destroy {}", material.as_str())
+            }
+        }
+        WillClause::HighestStillAttestingRank { circle } => {
+            format!("highest-still-attesting-rank circle {circle}")
+        }
+        WillClause::NamedSuccessorList { successors } => {
+            let mut s = String::from("named-successor-list");
+            for id in successors {
+                s.push(' ');
+                s.push_str(id.as_str());
+            }
+            s
+        }
+    }
 }
 
 fn named_value<'a>(tokens: &'a [&'a str], key: &str) -> Option<&'a str> {

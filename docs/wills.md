@@ -61,9 +61,11 @@ This cut: the current owner may write or replace the will on that object. The wr
 
 ## After a cut (Case C)
 
-`CutBoundary { cut_at }` seals the bundle. `export_bundle` copies the live will, pre-cut enrollments, and shares the remaining principal already had a right to hold. Write the snapshot with `to_bytes` / `write_path` (C `sociacl_export_bundle`, Python `Plane.export_bundle`). Reload with `Client::from_bytes` / `from_path`. Reconstruction verifies the share hash over the local key. Check does not read the share. A tampered or post-cut payload is refused on load.
+`CutBoundary { cut_at }` seals the bundle. `export_bundle` copies the live will, pre-cut enrollments, and shares the remaining principal already had a right to hold. Write the snapshot with `to_bytes(secret)` / `write_path` (C `sociacl_export_bundle`, Python `Plane.export_bundle`). The holder secret wraps the share key and signs the frame. Reload with `Client::from_bytes` / `from_path` and the same secret. Reconstruction unwraps, then verifies the share hash over the local key. Check does not read the share. A captured file without that secret cannot reconstruct the key. A rewritten or unsigned frame fails open. v1 and v2 frames fail closed.
 
-New attestations from issuers enrolled after the cut do not grant. A post-cut key is not enrolled. Post-cut wills, edges, and enrollments are omitted from the bundle and refused if presented. Discover may report the bundled will. Elect and `commit_elect` refuse on the client. Destroy may erase the local key when the will says stay secret; it does not install an owner.
+The owner writes the will before the cut. C `sociacl_write_will` / `sociacl_will` and Python `Plane.write_will` / `Plane.will` parse and dump the named macro text. That is write/load, not a will VM.
+
+New attestations from issuers enrolled after the cut do not grant. A post-cut key is not enrolled. Post-cut wills, edges, and enrollments are omitted from the bundle and refused if presented. Discover reports the bundled will (`heir <id>`, `elect-among <id>`, or `stay-secret`) without installing. Elect and `commit_elect` refuse on the client. Destroy erases the local key when the will says stay secret; it does not install an owner.
 
 ## Storage note
 

@@ -8,7 +8,7 @@ use std::sync::Mutex;
 
 use sociacl_core::{
     Attestation, AttestationBinding, AttestationClaim, AttestationSig, CheckRequest, Client,
-    EnrollmentKind, IssuerSecret, Plane, PredicateId, Relation, VerifyKey,
+    EnrollmentKind, HolderSecret, IssuerSecret, NodeId, Plane, PredicateId, Relation, VerifyKey,
 };
 
 #[allow(non_camel_case_types)]
@@ -232,6 +232,14 @@ pub extern "C" fn sociacl_enroll(
     })
 }
 
+fn holder_secret_from(sk: *const u8, sk_len: usize) -> Option<HolderSecret> {
+    if sk.is_null() || sk_len == 0 {
+        return None;
+    }
+    let bytes = unsafe { slice::from_raw_parts(sk, sk_len) };
+    HolderSecret::from_slice(bytes).ok()
+}
+
 #[no_mangle]
 pub extern "C" fn sociacl_issuer_keygen(pk_out: *mut u8, sk_out: *mut u8) -> c_int {
     if pk_out.is_null() || sk_out.is_null() {
@@ -244,6 +252,77 @@ pub extern "C" fn sociacl_issuer_keygen(pk_out: *mut u8, sk_out: *mut u8) -> c_i
         ptr::copy_nonoverlapping(secret.as_bytes().as_ptr(), sk_out, IssuerSecret::LEN);
     }
     0
+}
+
+#[no_mangle]
+pub extern "C" fn sociacl_holder_keygen(pk_out: *mut u8, sk_out: *mut u8) -> c_int {
+    if pk_out.is_null() || sk_out.is_null() {
+        return -1;
+    }
+    let secret = HolderSecret::generate();
+    let pk = secret.verify_key();
+    unsafe {
+        ptr::copy_nonoverlapping(pk.0.as_ptr(), pk_out, VerifyKey::LEN);
+        ptr::copy_nonoverlapping(secret.as_bytes().as_ptr(), sk_out, HolderSecret::LEN);
+    }
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn sociacl_write_will(
+    plane: *mut sociacl_plane,
+    src: *const c_char,
+    reason_out: *mut c_char,
+    reason_len: usize,
+) -> c_int {
+    let Some(src) = cstr(src) else {
+        write_reason(reason_out, reason_len, "invalid-argument");
+        return -1;
+    };
+    with_plane(plane, |p| match p.write_will_src(src) {
+        Ok(()) => 0,
+        Err(e) => {
+            write_reason(reason_out, reason_len, &e.to_string());
+            -1
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sociacl_will(
+    plane: *mut sociacl_plane,
+    object: *const c_char,
+    src_out: *mut c_char,
+    src_len: usize,
+    written_out: *mut usize,
+    reason_out: *mut c_char,
+    reason_len: usize,
+) -> c_int {
+    let Some(object) = cstr(object) else {
+        write_reason(reason_out, reason_len, "invalid-argument");
+        return -1;
+    };
+    with_plane(plane, |p| {
+        let Some(will) = p.will(&NodeId::new(object)) else {
+            write_reason(reason_out, reason_len, "no will written while alive");
+            return -1;
+        };
+        let src = will.to_src();
+        if !written_out.is_null() {
+            unsafe {
+                *written_out = src.len();
+            }
+        }
+        if src_out.is_null() {
+            return 0;
+        }
+        if src_len < src.len() + 1 {
+            write_reason(reason_out, reason_len, "buffer-too-small");
+            return -1;
+        }
+        write_reason(src_out, src_len, &src);
+        0
+    })
 }
 
 #[no_mangle]
@@ -421,6 +500,8 @@ pub extern "C" fn sociacl_check_ex(
 pub extern "C" fn sociacl_export_bundle(
     plane: *mut sociacl_plane,
     holder: *const c_char,
+    holder_sk: *const u8,
+    holder_sk_len: usize,
     bytes_out: *mut u8,
     bytes_len: usize,
     written_out: *mut usize,
@@ -431,7 +512,15 @@ pub extern "C" fn sociacl_export_bundle(
         write_reason(reason_out, reason_len, "invalid-argument");
         return -1;
     };
-    with_plane(plane, |p| match p.export_bundle_bytes(holder) {
+    let Some(secret) = holder_secret_from(holder_sk, holder_sk_len) else {
+        write_reason(
+            reason_out,
+            reason_len,
+            "holder secret required to export or open a bundle",
+        );
+        return -1;
+    };
+    with_plane(plane, |p| match p.export_bundle_bytes(holder, &secret) {
         Ok(bytes) => {
             if !written_out.is_null() {
                 unsafe {
@@ -462,6 +551,8 @@ pub extern "C" fn sociacl_export_bundle_file(
     plane: *mut sociacl_plane,
     holder: *const c_char,
     path: *const c_char,
+    holder_sk: *const u8,
+    holder_sk_len: usize,
     reason_out: *mut c_char,
     reason_len: usize,
 ) -> c_int {
@@ -469,11 +560,21 @@ pub extern "C" fn sociacl_export_bundle_file(
         write_reason(reason_out, reason_len, "invalid-argument");
         return -1;
     };
-    with_plane(plane, |p| match p.export_bundle_path(holder, path) {
-        Ok(()) => 0,
-        Err(e) => {
-            write_reason(reason_out, reason_len, &e.to_string());
-            -1
+    let Some(secret) = holder_secret_from(holder_sk, holder_sk_len) else {
+        write_reason(
+            reason_out,
+            reason_len,
+            "holder secret required to export or open a bundle",
+        );
+        return -1;
+    };
+    with_plane(plane, |p| {
+        match p.export_bundle_path(holder, path, &secret) {
+            Ok(()) => 0,
+            Err(e) => {
+                write_reason(reason_out, reason_len, &e.to_string());
+                -1
+            }
         }
     })
 }
@@ -498,6 +599,8 @@ fn client_open_result(
 pub extern "C" fn sociacl_client_open(
     bytes: *const u8,
     len: usize,
+    holder_sk: *const u8,
+    holder_sk_len: usize,
     reason_out: *mut c_char,
     reason_len: usize,
 ) -> *mut sociacl_client {
@@ -505,13 +608,23 @@ pub extern "C" fn sociacl_client_open(
         write_reason(reason_out, reason_len, "invalid-argument");
         return ptr::null_mut();
     }
+    let Some(secret) = holder_secret_from(holder_sk, holder_sk_len) else {
+        write_reason(
+            reason_out,
+            reason_len,
+            "holder secret required to export or open a bundle",
+        );
+        return ptr::null_mut();
+    };
     let slice = unsafe { slice::from_raw_parts(bytes, len) };
-    client_open_result(Client::from_bytes(slice), reason_out, reason_len)
+    client_open_result(Client::from_bytes(slice, &secret), reason_out, reason_len)
 }
 
 #[no_mangle]
 pub extern "C" fn sociacl_client_open_file(
     path: *const c_char,
+    holder_sk: *const u8,
+    holder_sk_len: usize,
     reason_out: *mut c_char,
     reason_len: usize,
 ) -> *mut sociacl_client {
@@ -519,7 +632,15 @@ pub extern "C" fn sociacl_client_open_file(
         write_reason(reason_out, reason_len, "invalid-argument");
         return ptr::null_mut();
     };
-    client_open_result(Client::from_path(path), reason_out, reason_len)
+    let Some(secret) = holder_secret_from(holder_sk, holder_sk_len) else {
+        write_reason(
+            reason_out,
+            reason_len,
+            "holder secret required to export or open a bundle",
+        );
+        return ptr::null_mut();
+    };
+    client_open_result(Client::from_path(path, &secret), reason_out, reason_len)
 }
 
 #[no_mangle]
@@ -624,6 +745,52 @@ pub extern "C" fn sociacl_client_elect(
         Ok(_) => {
             write_reason(reason_out, reason_len, "elect-must-not-succeed");
             -1
+        }
+        Err(e) => {
+            write_reason(reason_out, reason_len, &e.to_string());
+            -1
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sociacl_client_discover(
+    client: *mut sociacl_client,
+    object: *const c_char,
+    reason_out: *mut c_char,
+    reason_len: usize,
+) -> c_int {
+    let Some(object) = cstr(object) else {
+        write_reason(reason_out, reason_len, "invalid-argument");
+        return -1;
+    };
+    with_client(client, |c| match c.discover(object) {
+        Ok(result) => {
+            write_reason(reason_out, reason_len, &result.as_reason());
+            0
+        }
+        Err(e) => {
+            write_reason(reason_out, reason_len, &e.to_string());
+            -1
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sociacl_client_destroy(
+    client: *mut sociacl_client,
+    object: *const c_char,
+    reason_out: *mut c_char,
+    reason_len: usize,
+) -> c_int {
+    let Some(object) = cstr(object) else {
+        write_reason(reason_out, reason_len, "invalid-argument");
+        return -1;
+    };
+    with_client(client, |c| match c.destroy(object) {
+        Ok(_) => {
+            write_reason(reason_out, reason_len, "destroy");
+            1
         }
         Err(e) => {
             write_reason(reason_out, reason_len, &e.to_string());
@@ -834,11 +1001,54 @@ mod tests {
         );
         assert_eq!(live, 1);
 
+        let mut pk = [0u8; 32];
+        let mut sk = [0u8; 32];
+        assert_eq!(sociacl_holder_keygen(pk.as_mut_ptr(), sk.as_mut_ptr()), 0);
+        assert_eq!(
+            sociacl_write_will(
+                plane,
+                c("will desk for object doc\nwritten-by alice\ndiscover heir bob\n").as_ptr(),
+                reason.as_mut_ptr(),
+                reason.len(),
+            ),
+            0
+        );
+        let mut will_len = 0usize;
+        assert_eq!(
+            sociacl_will(
+                plane,
+                c("doc").as_ptr(),
+                ptr::null_mut(),
+                0,
+                &mut will_len,
+                reason.as_mut_ptr(),
+                reason.len(),
+            ),
+            0
+        );
+        assert!(will_len > 0);
+
         let mut written = 0usize;
         assert_eq!(
             sociacl_export_bundle(
                 plane,
                 c("alice").as_ptr(),
+                ptr::null(),
+                0,
+                ptr::null_mut(),
+                0,
+                &mut written,
+                reason.as_mut_ptr(),
+                reason.len(),
+            ),
+            -1
+        );
+        assert_eq!(
+            sociacl_export_bundle(
+                plane,
+                c("alice").as_ptr(),
+                sk.as_ptr(),
+                sk.len(),
                 ptr::null_mut(),
                 0,
                 &mut written,
@@ -853,6 +1063,8 @@ mod tests {
             sociacl_export_bundle(
                 plane,
                 c("alice").as_ptr(),
+                sk.as_ptr(),
+                sk.len(),
                 buf.as_mut_ptr(),
                 buf.len(),
                 &mut written,
@@ -862,7 +1074,14 @@ mod tests {
             0
         );
 
-        let client = sociacl_client_open(buf.as_ptr(), written, reason.as_mut_ptr(), reason.len());
+        let client = sociacl_client_open(
+            buf.as_ptr(),
+            written,
+            sk.as_ptr(),
+            sk.len(),
+            reason.as_mut_ptr(),
+            reason.len(),
+        );
         assert!(!client.is_null());
 
         let alice = sociacl_client_check(
@@ -896,6 +1115,18 @@ mod tests {
             1
         );
         assert_eq!(
+            sociacl_client_discover(client, c("doc").as_ptr(), reason.as_mut_ptr(), reason.len()),
+            0
+        );
+        let discover = unsafe { CStr::from_ptr(reason.as_ptr()) }
+            .to_string_lossy()
+            .into_owned();
+        assert_eq!(discover, "heir bob");
+        assert_eq!(
+            sociacl_client_destroy(client, c("doc").as_ptr(), reason.as_mut_ptr(), reason.len()),
+            -1
+        );
+        assert_eq!(
             sociacl_client_elect(client, c("doc").as_ptr(), reason.as_mut_ptr(), reason.len()),
             -1
         );
@@ -907,6 +1138,86 @@ mod tests {
             "elect reason: {text}"
         );
 
+        sociacl_client_free(client);
+        sociacl_plane_free(plane);
+    }
+
+    #[test]
+    fn ffi_client_destroy_stay_secret() {
+        let plane = sociacl_plane_new();
+        assert_eq!(sociacl_add_person(plane, c("alice").as_ptr()), 0);
+        assert_eq!(
+            sociacl_add_object(plane, c("doc").as_ptr(), c("alice").as_ptr()),
+            0
+        );
+        let mut reason = [0i8; 128];
+        assert_eq!(
+            sociacl_write_will(
+                plane,
+                c("will hush for object doc\nwritten-by alice\ndestroy if-no-heir keys\n").as_ptr(),
+                reason.as_mut_ptr(),
+                reason.len(),
+            ),
+            0
+        );
+        let mut pk = [0u8; 32];
+        let mut sk = [0u8; 32];
+        assert_eq!(sociacl_holder_keygen(pk.as_mut_ptr(), sk.as_mut_ptr()), 0);
+        let mut written = 0usize;
+        assert_eq!(
+            sociacl_export_bundle(
+                plane,
+                c("alice").as_ptr(),
+                sk.as_ptr(),
+                sk.len(),
+                ptr::null_mut(),
+                0,
+                &mut written,
+                reason.as_mut_ptr(),
+                reason.len(),
+            ),
+            0
+        );
+        let mut buf = vec![0u8; written];
+        assert_eq!(
+            sociacl_export_bundle(
+                plane,
+                c("alice").as_ptr(),
+                sk.as_ptr(),
+                sk.len(),
+                buf.as_mut_ptr(),
+                buf.len(),
+                &mut written,
+                reason.as_mut_ptr(),
+                reason.len(),
+            ),
+            0
+        );
+        let client = sociacl_client_open(
+            buf.as_ptr(),
+            written,
+            sk.as_ptr(),
+            sk.len(),
+            reason.as_mut_ptr(),
+            reason.len(),
+        );
+        assert!(!client.is_null());
+        assert_eq!(
+            sociacl_client_discover(client, c("doc").as_ptr(), reason.as_mut_ptr(), reason.len()),
+            0
+        );
+        let discover = unsafe { CStr::from_ptr(reason.as_ptr()) }
+            .to_string_lossy()
+            .into_owned();
+        assert_eq!(discover, "stay-secret");
+        assert_eq!(
+            sociacl_client_destroy(client, c("doc").as_ptr(), reason.as_mut_ptr(), reason.len()),
+            1
+        );
+        assert_eq!(
+            sociacl_client_elect(client, c("doc").as_ptr(), reason.as_mut_ptr(), reason.len()),
+            -1
+        );
         sociacl_client_free(client);
         sociacl_plane_free(plane);
     }

@@ -93,6 +93,10 @@ pub enum VerbError {
     UnsupportedBundleVersion(u16),
     #[error("bundle io failed")]
     BundleIo,
+    #[error("bundle signature is missing or does not verify")]
+    BundleSignature,
+    #[error("holder secret required to export or open a bundle")]
+    HolderSecretRequired,
 }
 
 #[derive(Debug, Error, Eq, PartialEq)]

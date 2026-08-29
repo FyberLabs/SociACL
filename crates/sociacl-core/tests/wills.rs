@@ -147,6 +147,17 @@ fn remint_issuers_must_be_enrolled() {
 }
 
 #[test]
+fn will_to_src_round_trips_named_macros() {
+    let src = "will posix-doc for object doc\nwritten-by alice\ncancelable-by executor\ndiscover heir bob\ndestroy if-no-heir keys\n";
+    let will = Will::parse(src).unwrap();
+    let again = Will::parse(&will.to_src()).unwrap();
+    assert_eq!(again.name, will.name);
+    assert_eq!(again.testator, will.testator);
+    assert_eq!(again.body, will.body);
+    assert_eq!(again.cancelable_by, will.cancelable_by);
+}
+
+#[test]
 fn write_will_validates_and_jointly_states() {
     let mut plane = Plane::new();
     let alice = plane.add_person("alice").id;

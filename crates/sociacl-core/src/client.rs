@@ -7,7 +7,7 @@
 
 use std::collections::HashMap;
 
-use crate::attestation::Attestation;
+use crate::attestation::{Attestation, HolderSecret};
 use crate::bundle::CutBundle;
 use crate::cache::Zookie;
 use crate::check::{CheckRequest, CheckResult};
@@ -68,12 +68,16 @@ impl Client {
     }
 
     /// Open from durable bytes. Same refuse-closed rules as [`Self::open`].
-    pub fn from_bytes(bytes: &[u8]) -> Result<Self, VerbError> {
-        Self::open(CutBundle::from_bytes(bytes)?)
+    /// Reconstructs share keys only with `secret`.
+    pub fn from_bytes(bytes: &[u8], secret: &HolderSecret) -> Result<Self, VerbError> {
+        Self::open(CutBundle::from_bytes(bytes, secret)?)
     }
 
-    pub fn from_path(path: impl AsRef<std::path::Path>) -> Result<Self, VerbError> {
-        Self::open(CutBundle::load_path(path)?)
+    pub fn from_path(
+        path: impl AsRef<std::path::Path>,
+        secret: &HolderSecret,
+    ) -> Result<Self, VerbError> {
+        Self::open(CutBundle::load_path(path, secret)?)
     }
 
     pub fn bundle(&self) -> &CutBundle {

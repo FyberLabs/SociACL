@@ -34,7 +34,7 @@ An attestation never sets Check `allowed` by itself. The named predicate still h
 
 Only pre-cut attestations and old jointly stated edges count. An issuer enrolled after the cut cannot grant. An attestation issued after the cut is refused even if the issuer was enrolled earlier. A post-cut key is not enrolled.
 
-Durable `CutBundle` encoding is SACL v2. It carries the verify key and a length-prefixed 64-byte signature. v1 frames stored a 32-byte digest as the signature and no key; load refuses them. Bundle open also refuses a statement that does not verify against a pre-cut enrollment.
+Durable `CutBundle` encoding is SACL v3. Attestations still carry the verify key and a length-prefixed 64-byte signature. The frame itself is holder-signed with Ed25519 over the SHA-256 of the header and payload. v1 stored a 32-byte digest as an attestation signature. v2 signed attestations but left share keys in the clear and the frame unsigned. Load refuses both. Bundle open also refuses a statement that does not verify against a pre-cut enrollment.
 
 ## Channels
 

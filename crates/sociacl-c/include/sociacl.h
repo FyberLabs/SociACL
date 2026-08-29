@@ -10,6 +10,7 @@ extern "C" {
 
 #define SOCIACL_VERIFY_KEY_LEN 32
 #define SOCIACL_ISSUER_SECRET_LEN 32
+#define SOCIACL_HOLDER_SECRET_LEN 32
 #define SOCIACL_SIGNATURE_LEN 64
 
 typedef struct sociacl_plane sociacl_plane;
@@ -57,6 +58,31 @@ int sociacl_enroll(
 
 /* Edge helper. Caller holds sk. The plane does not store it. */
 int sociacl_issuer_keygen(unsigned char *pk_out, unsigned char *sk_out);
+
+/* Same 32-byte Ed25519 shape. Used to wrap share keys and sign the
+ * durable bundle. The file does not store this. */
+int sociacl_holder_keygen(unsigned char *pk_out, unsigned char *sk_out);
+
+/* Named will macros onto an object the owner holds. Not a will VM.
+ * src is the same language as Will::parse. */
+int sociacl_write_will(
+    sociacl_plane *plane,
+    const char *src,
+    char *reason_out,
+    size_t reason_len
+);
+
+/* Load the will source on an object. src_out NULL returns the size in
+ * written_out. Too-small src_out writes the size and returns -1. */
+int sociacl_will(
+    sociacl_plane *plane,
+    const char *object,
+    char *src_out,
+    size_t src_len,
+    size_t *written_out,
+    char *reason_out,
+    size_t reason_len
+);
 
 /* Sign a claim bound to the object's current snapshot. */
 int sociacl_sign_claim(
@@ -110,12 +136,16 @@ int sociacl_check_ex(
     size_t reason_len
 );
 
-/* Durable Case C bundle. bytes_out NULL returns the size in written_out.
- * Too-small bytes_out writes the size and returns -1 (reason buffer-too-small).
+/* Durable Case C bundle. holder_sk wraps share keys and signs the frame.
+ * NULL or wrong length fails closed. bytes_out NULL returns the size in
+ * written_out. Too-small bytes_out writes the size and returns -1
+ * (reason buffer-too-small).
  */
 int sociacl_export_bundle(
     sociacl_plane *plane,
     const char *holder,
+    const unsigned char *holder_sk,
+    size_t holder_sk_len,
     unsigned char *bytes_out,
     size_t bytes_len,
     size_t *written_out,
@@ -127,19 +157,27 @@ int sociacl_export_bundle_file(
     sociacl_plane *plane,
     const char *holder,
     const char *path,
+    const unsigned char *holder_sk,
+    size_t holder_sk_len,
     char *reason_out,
     size_t reason_len
 );
 
-/* Open a client from durable bytes or a file. NULL on error. */
+/* Open a client from durable bytes or a file. holder_sk required.
+ * NULL on error.
+ */
 sociacl_client *sociacl_client_open(
     const unsigned char *bytes,
     size_t len,
+    const unsigned char *holder_sk,
+    size_t holder_sk_len,
     char *reason_out,
     size_t reason_len
 );
 sociacl_client *sociacl_client_open_file(
     const char *path,
+    const unsigned char *holder_sk,
+    size_t holder_sk_len,
     char *reason_out,
     size_t reason_len
 );
@@ -167,6 +205,27 @@ int sociacl_client_remint(
 
 /* Always -1. Silence is not Elect. */
 int sociacl_client_elect(
+    sociacl_client *client,
+    const char *object,
+    char *reason_out,
+    size_t reason_len
+);
+
+/* Report the bundled will. Does not install an owner.
+ * reason_out is "heir <id>", "elect-among <id>", or "stay-secret".
+ * Returns 0 on report, -1 on error.
+ */
+int sociacl_client_discover(
+    sociacl_client *client,
+    const char *object,
+    char *reason_out,
+    size_t reason_len
+);
+
+/* Erase local key material when the will allows. Does not install an
+ * owner. Returns 1 erased, -1 error. reason_out is "destroy" on success.
+ */
+int sociacl_client_destroy(
     sociacl_client *client,
     const char *object,
     char *reason_out,

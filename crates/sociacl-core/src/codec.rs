@@ -1,15 +1,17 @@
 //! Versioned encoding for a durable [`CutBundle`].
 //!
-//! Explicit length-prefixed fields, not Debug. A trailing SHA-256 binds
-//! the payload so a flipped or truncated file fails closed before open.
+//! Explicit length-prefixed fields, not Debug. Share keys are wrapped to
+//! the holder secret. The frame is Ed25519-signed by that secret. A
+//! SHA-256 trailer alone is not enough; v1 and v2 unsigned frames fail
+//! closed.
 
 use sha2::{Digest, Sha256};
 
 use crate::attestation::{
     Attestation, AttestationBinding, AttestationClaim, AttestationSig, Enrollment, EnrollmentKind,
-    VerifyKey,
+    HolderSecret, VerifyKey,
 };
-use crate::bundle::CutBundle;
+use crate::bundle::{share_digest, CutBundle};
 use crate::cache::{Snapshot, SnapshotHash, Zookie};
 use crate::error::VerbError;
 use crate::types::{
@@ -19,15 +21,19 @@ use crate::types::{
 use crate::will::{DestroyMaterial, Will, WillBody, WillClause, WillSubject};
 
 pub const MAGIC: &[u8; 4] = b"SACL";
-/// v1 stored a 32-byte digest as the signature and no verify key.
+/// v1 stored a 32-byte digest as an attestation signature.
+/// v2 signed attestations but left share keys and the frame unsigned.
 /// Those frames fail closed here.
-pub const VERSION: u16 = 2;
+pub const VERSION: u16 = 3;
+const DIGEST_LEN: usize = 32;
+const SIG_LEN: usize = AttestationSig::LEN;
+const TRAILER_LEN: usize = DIGEST_LEN + SIG_LEN;
 
 const MAX_STR: u32 = 4096;
 const MAX_ITEMS: u32 = 65_536;
 const MAX_BYTES: u32 = 256;
 
-pub fn encode(bundle: &CutBundle) -> Vec<u8> {
+pub fn encode(bundle: &CutBundle, secret: &HolderSecret) -> Vec<u8> {
     let mut w = Writer::new();
     w.u64(bundle.cut.cut_at.0);
     w.str(bundle.holder.as_str());
@@ -88,14 +94,14 @@ pub fn encode(bundle: &CutBundle) -> Vec<u8> {
 
     w.u32(bundle.shares.len() as u32);
     for share in &bundle.shares {
-        encode_share(&mut w, share);
+        encode_share(&mut w, share, secret);
     }
 
-    frame(&w.0)
+    frame(&w.0, secret)
 }
 
-pub fn decode(bytes: &[u8]) -> Result<CutBundle, VerbError> {
-    let payload = unframe(bytes)?;
+pub fn decode(bytes: &[u8], secret: &HolderSecret) -> Result<CutBundle, VerbError> {
+    let payload = unframe(bytes, secret)?;
     let mut r = Reader::new(payload);
 
     let cut_at = Timestamp(r.u64()?);
@@ -175,10 +181,15 @@ pub fn decode(bytes: &[u8]) -> Result<CutBundle, VerbError> {
     let n = r.count()?;
     let mut shares = Vec::with_capacity(n);
     for _ in 0..n {
-        shares.push(decode_share(&mut r)?);
+        shares.push(decode_share(&mut r, secret)?);
     }
 
     r.finish()?;
+    for obj in &mut objects {
+        if let Some(share) = shares.iter().find(|s| s.object == obj.id) {
+            obj.content_key = share.key_material;
+        }
+    }
     Ok(CutBundle {
         cut: CutBoundary { cut_at },
         holder,
@@ -195,20 +206,22 @@ pub fn decode(bytes: &[u8]) -> Result<CutBundle, VerbError> {
     })
 }
 
-fn frame(payload: &[u8]) -> Vec<u8> {
-    let mut out = Vec::with_capacity(4 + 2 + 4 + payload.len() + 32);
+fn frame(payload: &[u8], secret: &HolderSecret) -> Vec<u8> {
+    let mut out = Vec::with_capacity(4 + 2 + 4 + payload.len() + TRAILER_LEN);
     out.extend_from_slice(MAGIC);
     out.extend_from_slice(&VERSION.to_le_bytes());
     out.extend_from_slice(&(payload.len() as u32).to_le_bytes());
     out.extend_from_slice(payload);
     let digest = Sha256::digest(&out);
+    let sig = secret.sign(digest.as_slice());
     out.extend_from_slice(&digest);
+    out.extend_from_slice(&sig.0);
     out
 }
 
-fn unframe(bytes: &[u8]) -> Result<&[u8], VerbError> {
+fn unframe<'a>(bytes: &'a [u8], secret: &HolderSecret) -> Result<&'a [u8], VerbError> {
     const HEADER: usize = 4 + 2 + 4;
-    if bytes.len() < HEADER + 32 {
+    if bytes.len() < HEADER + TRAILER_LEN {
         return Err(VerbError::BundleCorrupt);
     }
     if &bytes[..4] != MAGIC {
@@ -222,13 +235,23 @@ fn unframe(bytes: &[u8]) -> Result<&[u8], VerbError> {
     let end = HEADER
         .checked_add(payload_len)
         .ok_or(VerbError::BundleCorrupt)?;
-    let digest_end = end.checked_add(32).ok_or(VerbError::BundleCorrupt)?;
-    if bytes.len() != digest_end {
+    let digest_end = end
+        .checked_add(DIGEST_LEN)
+        .ok_or(VerbError::BundleCorrupt)?;
+    let sig_end = digest_end
+        .checked_add(SIG_LEN)
+        .ok_or(VerbError::BundleCorrupt)?;
+    if bytes.len() != sig_end {
         return Err(VerbError::BundleCorrupt);
     }
     let expected = Sha256::digest(&bytes[..end]);
     if expected.as_slice() != &bytes[end..digest_end] {
         return Err(VerbError::BundleCorrupt);
+    }
+    let sig = AttestationSig::from_slice(&bytes[digest_end..sig_end])
+        .map_err(|_| VerbError::BundleSignature)?;
+    if sig.0 == [0u8; SIG_LEN] || !secret.verify(expected.as_slice(), &sig) {
+        return Err(VerbError::BundleSignature);
     }
     Ok(&bytes[HEADER..end])
 }
@@ -239,13 +262,9 @@ fn encode_object(w: &mut Writer, obj: &Object) {
     w.str(obj.owner.as_str());
     w.u64(obj.version.0);
     w.bool(obj.destroyed);
-    match obj.content_key {
-        Some(key) => {
-            w.bool(true);
-            w.fixed32(&key);
-        }
-        None => w.bool(false),
-    }
+    // Durable objects never carry the plaintext key. The share wrap
+    // is the only copy that leaves the process.
+    w.bool(false);
     let props: Vec<(&str, &str)> = obj.properties.iter().collect();
     w.u32(props.len() as u32);
     for (k, v) in props {
@@ -260,7 +279,10 @@ fn decode_object(r: &mut Reader<'_>) -> Result<Object, VerbError> {
     let owner = NodeId::new(r.str()?);
     let version = ObjectVersion(r.u64()?);
     let destroyed = r.bool()?;
-    let content_key = if r.bool()? { Some(r.fixed32()?) } else { None };
+    if r.bool()? {
+        return Err(VerbError::BundleCorrupt);
+    }
+    let content_key = None;
     let n = r.count()?;
     let mut properties = ObjectProperties::new();
     for _ in 0..n {
@@ -530,28 +552,95 @@ fn decode_attestation(r: &mut Reader<'_>) -> Result<Attestation, VerbError> {
     })
 }
 
-fn encode_share(w: &mut Writer, share: &ClientHeldShare) {
+fn encode_share(w: &mut Writer, share: &ClientHeldShare, secret: &HolderSecret) {
     w.str(share.object.as_str());
     w.str(share.holder.as_str());
     w.fixed32(&share.share_hash);
     match share.key_material {
         Some(key) => {
             w.bool(true);
-            w.fixed32(&key);
+            w.fixed32(&wrap_share_key(
+                secret,
+                &share.object,
+                &share.holder,
+                share.held_at,
+                &key,
+            ));
         }
         None => w.bool(false),
     }
     w.u64(share.held_at.0);
 }
 
-fn decode_share(r: &mut Reader<'_>) -> Result<ClientHeldShare, VerbError> {
+fn decode_share(r: &mut Reader<'_>, secret: &HolderSecret) -> Result<ClientHeldShare, VerbError> {
+    let object = NodeId::new(r.str()?);
+    let holder = NodeId::new(r.str()?);
+    let share_hash = r.fixed32()?;
+    let sealed = if r.bool()? { Some(r.fixed32()?) } else { None };
+    let held_at = Timestamp(r.u64()?);
+    let key_material = match sealed {
+        Some(sealed) => {
+            let key = unwrap_share_key(secret, &object, &holder, held_at, &sealed);
+            if share_digest(&object, &holder, &key, held_at) != share_hash {
+                return Err(VerbError::ShareReconstruct(object));
+            }
+            Some(key)
+        }
+        None => None,
+    };
     Ok(ClientHeldShare {
-        object: NodeId::new(r.str()?),
-        holder: NodeId::new(r.str()?),
-        share_hash: r.fixed32()?,
-        key_material: if r.bool()? { Some(r.fixed32()?) } else { None },
-        held_at: Timestamp(r.u64()?),
+        object,
+        holder,
+        share_hash,
+        key_material,
+        held_at,
     })
+}
+
+fn wrap_stream(
+    secret: &HolderSecret,
+    object: &NodeId,
+    holder: &NodeId,
+    held_at: Timestamp,
+) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update(b"sociacl-share-wrap-v3");
+    hasher.update(secret.as_bytes());
+    hasher.update(object.as_bytes());
+    hasher.update(holder.as_bytes());
+    hasher.update(held_at.0.to_le_bytes());
+    let out = hasher.finalize();
+    let mut bytes = [0u8; 32];
+    bytes.copy_from_slice(&out);
+    bytes
+}
+
+fn xor32(a: &[u8; 32], b: &[u8; 32]) -> [u8; 32] {
+    let mut out = [0u8; 32];
+    for i in 0..32 {
+        out[i] = a[i] ^ b[i];
+    }
+    out
+}
+
+fn wrap_share_key(
+    secret: &HolderSecret,
+    object: &NodeId,
+    holder: &NodeId,
+    held_at: Timestamp,
+    key: &[u8; 32],
+) -> [u8; 32] {
+    xor32(key, &wrap_stream(secret, object, holder, held_at))
+}
+
+fn unwrap_share_key(
+    secret: &HolderSecret,
+    object: &NodeId,
+    holder: &NodeId,
+    held_at: Timestamp,
+    sealed: &[u8; 32],
+) -> [u8; 32] {
+    xor32(sealed, &wrap_stream(secret, object, holder, held_at))
 }
 
 struct Writer(Vec<u8>);
@@ -664,5 +753,35 @@ impl<'a> Reader<'a> {
         } else {
             Err(VerbError::BundleCorrupt)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::graph::Plane;
+    use crate::types::PredicateId;
+
+    #[test]
+    fn recomputed_digest_without_holder_signature_fails() {
+        let mut plane = Plane::new();
+        let alice = plane.add_person("alice").id;
+        let doc = plane.add_object("doc", &alice).id;
+        plane
+            .set_object_property(&doc, "predicate", PredicateId::OWNER)
+            .unwrap();
+        let secret = HolderSecret::generate();
+        let bytes = plane.export_bundle_bytes(&alice, &secret).unwrap();
+        let mut rewritten = bytes.clone();
+        let mid = rewritten.len() / 2;
+        rewritten[mid] ^= 0xff;
+        let digest_start = rewritten.len() - TRAILER_LEN;
+        let sig_start = rewritten.len() - SIG_LEN;
+        let digest = Sha256::digest(&rewritten[..digest_start]);
+        rewritten[digest_start..sig_start].copy_from_slice(&digest);
+        assert_eq!(
+            decode(&rewritten, &secret).unwrap_err(),
+            VerbError::BundleSignature
+        );
     }
 }
