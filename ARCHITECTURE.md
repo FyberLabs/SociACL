@@ -85,7 +85,7 @@ Elect **refuses** if keep-operating would suffice (owner authn still live).
 
 **A — Remint.** Principal can still authenticate. ACL still names them. Issue a new capability from current edges. Not an election.
 
-**B — Discover / Elect / Destroy.** Principal cannot authenticate. Look at a will written while alive. Discover reports the disposition without electing. Elect installs a named heir on the slow clock. Destroy erases if the will says stay secret or there is no heir. Fail closed with no will.
+**B — Discover / Elect / Destroy.** Principal cannot authenticate. Look at a will written while alive. Discover reports the disposition without electing. Elect is a notify / wait / cancel ceremony on the slow clock; `commit_elect` installs the named heir only after the wait. Destroy erases if the will says stay secret or there is no heir that can be discovered. Fail closed with no will.
 
 **C — Continuity of command.** The plane is gone or hostile. After a cut, only pre-positioned wills and client-held shares work. **New edges stated after the cut do not grant.** This cut ships `CutBoundary` and `ClientHeldShare` as types plus comments. Reconstruction and offline Check are not implemented.
 

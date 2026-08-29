@@ -5,13 +5,17 @@ use crate::cache::{HashCache, MemoryHashCache, Snapshot, SnapshotHash};
 use crate::error::{AttestationError, VerbError};
 use crate::types::{
     AuthnState, Device, Edge, NodeId, NodeKind, Object, ObjectKind, ObjectProperties,
-    ObjectVersion, Principal, Relation, Timestamp,
+    ObjectVersion, PendingElect, Principal, Relation, Timestamp,
 };
 use crate::will::{Will, WillSubject, WillValidateCtx};
 
 /// Privilege-up delay used by tests unless a test sets another value.
 /// Privilege-down does not use this number.
 pub const DEFAULT_PRIVILEGE_UP_DELAY: Timestamp = Timestamp(1);
+
+/// Elect wait used by tests unless a test sets another value.
+/// Not shared with keep-operating. Expiry does not install an owner.
+pub const DEFAULT_ELECT_WAIT: Timestamp = Timestamp(10);
 
 /// In-memory authority plane.
 pub struct Plane {
@@ -22,12 +26,14 @@ pub struct Plane {
     pub(crate) wills: HashMap<NodeId, Will>,
     pub(crate) enrollments: HashMap<NodeId, Enrollment>,
     pub(crate) attestations: Vec<Attestation>,
+    pub(crate) pending_elects: HashMap<NodeId, PendingElect>,
     pub(crate) cache: MemoryHashCache,
-    /// Case C marker. After a cut, only pre-cut attestations and old jointly
-    /// stated edges count. New enrollments after the cut do not grant.
+    /// Case C marker. After a cut, only pre-cut attestations, pre-cut
+    /// enrollments, pre-cut wills, and old jointly stated edges count.
     pub cut: Option<crate::types::CutBoundary>,
     now: Timestamp,
     privilege_up_delay: Timestamp,
+    elect_wait: Timestamp,
 }
 
 impl Default for Plane {
@@ -46,10 +52,12 @@ impl Plane {
             wills: HashMap::new(),
             enrollments: HashMap::new(),
             attestations: Vec::new(),
+            pending_elects: HashMap::new(),
             cache: MemoryHashCache::default(),
             cut: None,
             now: Timestamp(0),
             privilege_up_delay: DEFAULT_PRIVILEGE_UP_DELAY,
+            elect_wait: DEFAULT_ELECT_WAIT,
         }
     }
 
@@ -67,6 +75,18 @@ impl Plane {
 
     pub fn set_privilege_up_delay(&mut self, delay: Timestamp) {
         self.privilege_up_delay = delay;
+    }
+
+    pub fn elect_wait(&self) -> Timestamp {
+        self.elect_wait
+    }
+
+    pub fn set_elect_wait(&mut self, delay: Timestamp) {
+        self.elect_wait = delay;
+    }
+
+    pub fn pending_elect(&self, object: &NodeId) -> Option<&PendingElect> {
+        self.pending_elects.get(object)
     }
 
     pub fn cache_hits(&self) -> u64 {
@@ -314,11 +334,21 @@ impl Plane {
         if self.authn(&will.testator) != AuthnState::Live {
             return Err(VerbError::TestatorNotAlive);
         }
+        if let Some(cut) = self.cut {
+            if self.now.0 > cut.cut_at.0 {
+                return Err(VerbError::PostCutWill(will.object().clone()));
+            }
+        }
         will.validate(&self.will_ctx())
             .map_err(VerbError::InvalidWill)?;
         will.joint_at = self.now;
         if will.written_at.0 == 0 {
             will.written_at = self.now;
+        }
+        if let Some(cut) = self.cut {
+            if will.written_at.0 > cut.cut_at.0 || will.joint_at.0 > cut.cut_at.0 {
+                return Err(VerbError::PostCutWill(will.object().clone()));
+            }
         }
         self.wills.insert(will.object().clone(), will);
         Ok(())
@@ -345,6 +375,11 @@ impl Plane {
         let issuer = issuer.into();
         if !self.nodes.contains_key(&issuer) {
             return Err(AttestationError::IssuerNotFound(issuer));
+        }
+        if let Some(cut) = self.cut {
+            if self.now.0 > cut.cut_at.0 {
+                return Err(AttestationError::PostCutEnrollment(issuer));
+            }
         }
         self.enrollments.insert(
             issuer.clone(),
@@ -463,13 +498,23 @@ impl Plane {
         let by = by.into();
         let will = self
             .wills
-            .get_mut(&object)
+            .get(&object)
             .ok_or_else(|| VerbError::NoWill(object.clone()))?;
-        let may = will.cancelable_by.contains(&by) || will.testator == by;
+        let on_elect_notify = match will.body.elect() {
+            Some(crate::will::WillClause::Elect { notify, .. }) => notify.contains(&by),
+            _ => false,
+        };
+        let may = will.cancelable_by.contains(&by) || will.testator == by || on_elect_notify;
         if !may {
             return Err(VerbError::CannotCancel(by));
         }
-        will.canceled = true;
+        if self.authn(&by) != AuthnState::Live {
+            return Err(VerbError::AuthnNotLive(by));
+        }
+        if let Some(will) = self.wills.get_mut(&object) {
+            will.canceled = true;
+        }
+        self.pending_elects.remove(&object);
         Ok(())
     }
 
@@ -498,7 +543,17 @@ impl Plane {
         let Some(effective_at) = edge.effective_at else {
             return false;
         };
-        self.now.0 >= effective_at.0
+        if self.now.0 < effective_at.0 {
+            return false;
+        }
+        if let Some(cut) = self.cut {
+            if let Some(joint_at) = edge.joint_at {
+                if joint_at.0 > cut.cut_at.0 {
+                    return false;
+                }
+            }
+        }
+        true
     }
 
     pub(crate) fn immediately_effective_at(&self) -> Timestamp {

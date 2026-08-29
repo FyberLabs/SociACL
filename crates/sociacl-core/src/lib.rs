@@ -21,11 +21,12 @@ pub use cache::{
 };
 pub use check::{CheckRequest, CheckResult, ParsedObject};
 pub use error::{AttestationError, CheckError, VerbError, WillError};
-pub use graph::{Plane, DEFAULT_PRIVILEGE_UP_DELAY};
+pub use graph::{Plane, DEFAULT_ELECT_WAIT, DEFAULT_PRIVILEGE_UP_DELAY};
 pub use types::{
     Action, AuthnState, Capability, ClientHeldShare, Clock, CutBoundary, DestroyResult, Device,
-    DiscoverResult, Edge, ElectResult, NodeId, NodeKind, Object, ObjectKind, ObjectProperties,
-    ObjectVersion, PosixBits, PosixMode, PredicateId, Principal, Relation, Timestamp, Verb,
+    DiscoverResult, Edge, ElectResult, ElectState, NodeId, NodeKind, Object, ObjectKind,
+    ObjectProperties, ObjectVersion, PendingElect, PosixBits, PosixMode, PredicateId, Principal,
+    Relation, Timestamp, Verb,
 };
 pub use will::{
     DestroyMaterial, Will, WillBody, WillClause, WillDisposition, WillSubject, WillValidateCtx,

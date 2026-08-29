@@ -1,16 +1,16 @@
 use crate::attestation::{Attestation, EnrollmentKind};
-use crate::check::CheckRequest;
+use crate::cache::Zookie;
 use crate::error::{AttestationError, VerbError};
 use crate::graph::Plane;
 use crate::types::{
-    Action, AuthnState, Capability, Clock, DestroyResult, DiscoverResult, ElectResult, NodeId,
-    Relation,
+    AuthnState, Capability, Clock, DestroyResult, DiscoverResult, ElectResult, ElectState, NodeId,
+    PendingElect, Relation,
 };
-use crate::will::{WillClause, WillDisposition};
+use crate::will::{Will, WillClause, WillDisposition};
 
 impl Plane {
     /// Authn holds, authz stale. New capability from ACLs that already name
-    /// this principal. Not an election. Does not read a will.
+    /// this principal. Not an election. Does not read a will to pick an owner.
     pub fn remint(
         &self,
         object: impl Into<NodeId>,
@@ -66,27 +66,31 @@ impl Plane {
                     }
                 }
             }
+            // A will that names remint issuers restricts the factor. It is
+            // not a grant and does not pick an owner.
+            if let Some(issuers) = self
+                .precut_will(&object)
+                .and_then(|w| w.body.remint_issuers())
+            {
+                if !issuers.contains(&att.issuer) {
+                    return Err(VerbError::RemintIssuerNotNamed(att.issuer.clone()));
+                }
+            }
         }
         if !self.acl_names(&object, &principal) {
             return Err(VerbError::AclDoesNotNamePrincipal(principal, object));
         }
-        let result = self
-            .check(CheckRequest {
-                action: Action::new("remint"),
-                object: object.clone(),
-                accessor: principal.clone(),
-                predicate: None,
-                zookie: None,
-                attestation: None,
-            })
-            .map_err(|_| VerbError::AclDoesNotNamePrincipal(principal.clone(), object.clone()))?;
-        if !result.allowed {
-            return Err(VerbError::AclDoesNotNamePrincipal(principal, object));
-        }
+        let snapshot = self
+            .snapshot(&object)
+            .ok_or_else(|| VerbError::ObjectNotFound(object.clone()))?;
         Ok(Capability {
             principal,
-            object,
-            zookie: result.zookie,
+            object: object.clone(),
+            zookie: Zookie {
+                object,
+                object_version: snapshot.object_version,
+                snapshot_hash: snapshot.hash,
+            },
         })
     }
 
@@ -95,42 +99,40 @@ impl Plane {
         let object = object.into();
         self.require_object(&object)?;
         let will = self.live_will(&object)?;
-        if let Some(WillDisposition::Heir(heir)) = will.disposition() {
-            return Ok(DiscoverResult::Heir(heir));
+        if let Some(heir) = will.body.named_heir() {
+            return Ok(DiscoverResult::Heir(heir.clone()));
+        }
+        if let Some(successors) = will.body.successor_list() {
+            if let Some(first) = successors.first() {
+                return Ok(DiscoverResult::Heir(first.clone()));
+            }
         }
         if let Some(circle) = will.body.rank_circle() {
             return Ok(DiscoverResult::ElectAmong {
                 circle: circle.clone(),
             });
         }
-        if matches!(will.disposition(), Some(WillDisposition::StaySecret)) {
+        if matches!(will.disposition(), Some(WillDisposition::StaySecret))
+            || will.body.has_destroy()
+        {
             return Ok(DiscoverResult::StaySecret);
         }
         Err(VerbError::NoElectPath(object))
     }
 
-    /// Authn gone. Slow Elect clock. Refuses if keep-operating would suffice
-    /// or if no pre-written will names an elect path. Never starts because
-    /// of an attestation.
+    /// Start the Elect ceremony. Notify, wait, do not install.
+    ///
+    /// Refuses if keep-operating would suffice, if there is no live
+    /// uncanceled pre-cut will with an elect path, or if the will says
+    /// stay secret. Silence is not a vote.
     pub fn elect(&mut self, object: impl Into<NodeId>) -> Result<ElectResult, VerbError> {
         let object = object.into();
-        let owner = {
-            let obj = self.require_object(&object)?;
-            obj.owner.clone()
-        };
-        if self.authn(&owner) == AuthnState::Live {
-            return Err(VerbError::KeepOperatingSuffices(object));
+        self.refuse_if_keep_operating(&object)?;
+        if self.pending_elects.contains_key(&object) {
+            return Err(VerbError::ElectPending(object));
         }
         let will = self.live_will(&object)?.clone();
-        if !will.body.has_elect_path() {
-            if will.body.has_destroy() {
-                return Err(VerbError::WillPrescribesDestroy(object));
-            }
-            return Err(VerbError::NoElectPath(object));
-        }
-        if let Some(WillDisposition::StaySecret) = will.disposition() {
-            return Err(VerbError::WillPrescribesDestroy(object));
-        }
+        self.refuse_if_no_elect_path(&will, &object)?;
 
         let notify = self.elect_notify(&will);
         let threshold = match will.body.elect() {
@@ -142,6 +144,44 @@ impl Plane {
         }
 
         let heir = self.resolve_heir(&will, &object)?;
+        let started_at = self.now();
+        let ready_at = crate::types::Timestamp(started_at.0.saturating_add(self.elect_wait().0));
+        let pending = PendingElect {
+            object: object.clone(),
+            candidate: heir.clone(),
+            notify: notify.clone(),
+            started_at,
+            ready_at,
+        };
+        self.pending_elects.insert(object, pending);
+        Ok(ElectResult {
+            clock: Clock::Elect,
+            notify,
+            state: ElectState::Pending {
+                candidate: heir,
+                ready_at,
+            },
+        })
+    }
+
+    /// Install the pending candidate after the Elect wait. Not a timer fire.
+    pub fn commit_elect(&mut self, object: impl Into<NodeId>) -> Result<ElectResult, VerbError> {
+        let object = object.into();
+        self.require_object(&object)?;
+        self.refuse_if_keep_operating(&object)?;
+        let will = self.live_will(&object)?.clone();
+        self.refuse_if_no_elect_path(&will, &object)?;
+        let pending = self
+            .pending_elects
+            .get(&object)
+            .cloned()
+            .ok_or_else(|| VerbError::ElectNotPending(object.clone()))?;
+        if self.now().0 < pending.ready_at.0 {
+            return Err(VerbError::ElectWaitNotElapsed(object));
+        }
+
+        let heir = pending.candidate;
+        let notify = pending.notify;
         if let Some(obj) = self.objects.get_mut(&object) {
             obj.owner = heir.clone();
         }
@@ -157,10 +197,11 @@ impl Plane {
             effective_at: Some(self.immediately_effective_at()),
         });
         self.bump_version(&object);
+        self.pending_elects.remove(&object);
         Ok(ElectResult {
-            new_owner: heir,
             clock: Clock::Elect,
             notify,
+            state: ElectState::Installed { new_owner: heir },
         })
     }
 
@@ -173,7 +214,28 @@ impl Plane {
         Err(VerbError::ElectDoesNotFireOnAttestation)
     }
 
-    fn elect_notify(&self, will: &crate::will::Will) -> Vec<NodeId> {
+    fn refuse_if_keep_operating(&self, object: &NodeId) -> Result<(), VerbError> {
+        let owner = self.require_object(object)?.owner.clone();
+        if self.authn(&owner) == AuthnState::Live {
+            return Err(VerbError::KeepOperatingSuffices(object.clone()));
+        }
+        Ok(())
+    }
+
+    fn refuse_if_no_elect_path(&self, will: &Will, object: &NodeId) -> Result<(), VerbError> {
+        if !will.body.has_elect_path() {
+            if will.body.has_destroy() {
+                return Err(VerbError::WillPrescribesDestroy(object.clone()));
+            }
+            return Err(VerbError::NoElectPath(object.clone()));
+        }
+        if let Some(WillDisposition::StaySecret) = will.disposition() {
+            return Err(VerbError::WillPrescribesDestroy(object.clone()));
+        }
+        Ok(())
+    }
+
+    fn elect_notify(&self, will: &Will) -> Vec<NodeId> {
         let mut ids = will.cancelable_by.clone();
         if let Some(WillClause::Elect { notify, .. }) = will.body.elect() {
             ids.extend(notify.iter().cloned());
@@ -185,7 +247,7 @@ impl Plane {
             .collect()
     }
 
-    fn resolve_heir(&self, will: &crate::will::Will, object: &NodeId) -> Result<NodeId, VerbError> {
+    fn resolve_heir(&self, will: &Will, object: &NodeId) -> Result<NodeId, VerbError> {
         if let Some(heir) = will.body.named_heir() {
             return Ok(heir.clone());
         }
@@ -209,18 +271,24 @@ impl Plane {
         Err(VerbError::NoElectPath(object.clone()))
     }
 
-    /// No heir, or will says stay secret. Cryptographic erasure of content_key.
+    /// A named living / still-attesting heir is not a destroy grant.
+    fn discoverable_heir(&self, will: &Will, object: &NodeId) -> Option<NodeId> {
+        if let Some(heir) = will.body.named_heir() {
+            return Some(heir.clone());
+        }
+        self.resolve_heir(will, object).ok()
+    }
+
+    /// No heir that can be discovered, or will says stay secret.
+    /// Cryptographic erasure of content_key.
     pub fn destroy(&mut self, object: impl Into<NodeId>) -> Result<DestroyResult, VerbError> {
         let object = object.into();
         self.require_object(&object)?;
         let will = self.live_will(&object)?.clone();
-        if will.body.named_heir().is_some() {
+        if self.discoverable_heir(&will, &object).is_some() {
             return Err(VerbError::HasHeir(object));
         }
-        if will.body.has_elect_path() && self.resolve_heir(&will, &object).is_ok() {
-            return Err(VerbError::HasHeir(object));
-        }
-        if !will.body.has_destroy() {
+        if !will.body.has_destroy() && !will.body.has_elect_path() {
             return Err(VerbError::NoDestroyPath(object));
         }
         if let Some(obj) = self.objects.get_mut(&object) {
@@ -245,7 +313,7 @@ impl Plane {
         Ok(obj)
     }
 
-    fn live_will(&self, object: &NodeId) -> Result<&crate::will::Will, VerbError> {
+    fn live_will(&self, object: &NodeId) -> Result<&Will, VerbError> {
         let will = self
             .wills
             .get(object)
@@ -253,6 +321,26 @@ impl Plane {
         if will.canceled {
             return Err(VerbError::WillCanceled(object.clone()));
         }
+        if self.will_is_post_cut(will) {
+            return Err(VerbError::PostCutWill(object.clone()));
+        }
         Ok(will)
+    }
+
+    /// Remint may read remint-issuer names as a restriction. A canceled or
+    /// post-cut will does not restrict and does not grant.
+    fn precut_will(&self, object: &NodeId) -> Option<&Will> {
+        let will = self.wills.get(object)?;
+        if will.canceled || self.will_is_post_cut(will) {
+            return None;
+        }
+        Some(will)
+    }
+
+    fn will_is_post_cut(&self, will: &Will) -> bool {
+        let Some(cut) = self.cut else {
+            return false;
+        };
+        will.written_at.0 > cut.cut_at.0 || will.joint_at.0 > cut.cut_at.0
     }
 }

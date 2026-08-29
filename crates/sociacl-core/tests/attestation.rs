@@ -98,7 +98,10 @@ fn post_cut_enrollment_and_attestation_do_not_grant() {
 
     plane.set_now(Timestamp(10));
     plane.set_cut(Timestamp(5));
-    plane.enroll(&bob, EnrollmentKind::Principal).unwrap();
+    assert_eq!(
+        plane.enroll(&bob, EnrollmentKind::Principal),
+        Err(AttestationError::PostCutEnrollment(bob.clone()))
+    );
     let post = Attestation::new(
         &bob,
         &bob,
@@ -111,7 +114,7 @@ fn post_cut_enrollment_and_attestation_do_not_grant() {
     );
     assert_eq!(
         plane.accept_attestation(&post),
-        Err(AttestationError::PostCutEnrollment(bob))
+        Err(AttestationError::NotEnrolled(bob))
     );
 
     let late_alice = Attestation::new(

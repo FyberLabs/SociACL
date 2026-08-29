@@ -158,16 +158,17 @@ impl WillBody {
     }
 
     pub fn named_heir(&self) -> Option<&NodeId> {
-        for c in &self.clauses {
-            match c {
-                WillClause::Discover { heir } => return Some(heir),
-                WillClause::NamedSuccessorList { successors } if !successors.is_empty() => {
-                    return Some(&successors[0]);
-                }
-                _ => {}
-            }
-        }
-        None
+        self.clauses.iter().find_map(|c| match c {
+            WillClause::Discover { heir } => Some(heir),
+            _ => None,
+        })
+    }
+
+    pub fn remint_issuers(&self) -> Option<&[NodeId]> {
+        self.clauses.iter().find_map(|c| match c {
+            WillClause::Remint { issuers } => Some(issuers.as_slice()),
+            _ => None,
+        })
     }
 
     pub fn elect(&self) -> Option<&WillClause> {
