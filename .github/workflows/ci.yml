@@ -1,0 +1,37 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build workspace
+        run: cargo build --workspace --locked
+
+      - name: Test workspace
+        run: cargo test --workspace --locked
+
+      - name: Rust Check example
+        run: cargo run --locked -p sociacl-core --example check
+
+      - name: C Check wrapper
+        run: |
+          cc -I crates/sociacl-c/include examples/check.c \
+            -L target/debug -lsociacl -o target/sociacl-check-c
+          LD_LIBRARY_PATH="${PWD}/target/debug" target/sociacl-check-c
+
+      - name: Python Check wrapper
+        run: PYTHONPATH=python python3 python/tests/test_check.py

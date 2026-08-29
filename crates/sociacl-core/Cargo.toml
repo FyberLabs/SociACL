@@ -1,0 +1,15 @@
+[package]
+name = "sociacl-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "SociACL graph, Check, Remint, Discover/Elect, Destroy"
+
+[[example]]
+name = "check"
+path = "../../examples/check.rs"
+
+[dependencies]
+sha2 = "0.10"
+thiserror = "2"
