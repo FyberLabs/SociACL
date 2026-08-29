@@ -66,6 +66,15 @@ impl Client {
         })
     }
 
+    /// Open from durable bytes. Same refuse-closed rules as [`Self::open`].
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, VerbError> {
+        Self::open(CutBundle::from_bytes(bytes)?)
+    }
+
+    pub fn from_path(path: impl AsRef<std::path::Path>) -> Result<Self, VerbError> {
+        Self::open(CutBundle::load_path(path)?)
+    }
+
     pub fn bundle(&self) -> &CutBundle {
         &self.bundle
     }

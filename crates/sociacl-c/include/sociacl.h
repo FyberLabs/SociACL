@@ -8,6 +8,7 @@ extern "C" {
 #endif
 
 typedef struct sociacl_plane sociacl_plane;
+typedef struct sociacl_client sociacl_client;
 
 sociacl_plane *sociacl_plane_new(void);
 void sociacl_plane_free(sociacl_plane *plane);
@@ -73,6 +74,69 @@ int sociacl_check_ex(
     const char *accessor,
     const char *predicate,
     const char *attestation,
+    char *reason_out,
+    size_t reason_len
+);
+
+/* Durable Case C bundle. bytes_out NULL returns the size in written_out.
+ * Too-small bytes_out writes the size and returns -1 (reason buffer-too-small).
+ */
+int sociacl_export_bundle(
+    sociacl_plane *plane,
+    const char *holder,
+    unsigned char *bytes_out,
+    size_t bytes_len,
+    size_t *written_out,
+    char *reason_out,
+    size_t reason_len
+);
+
+int sociacl_export_bundle_file(
+    sociacl_plane *plane,
+    const char *holder,
+    const char *path,
+    char *reason_out,
+    size_t reason_len
+);
+
+/* Open a client from durable bytes or a file. NULL on error. */
+sociacl_client *sociacl_client_open(
+    const unsigned char *bytes,
+    size_t len,
+    char *reason_out,
+    size_t reason_len
+);
+sociacl_client *sociacl_client_open_file(
+    const char *path,
+    char *reason_out,
+    size_t reason_len
+);
+void sociacl_client_free(sociacl_client *client);
+
+/* Returns 1 allow, 0 deny, -1 error. Same reason rules as sociacl_check. */
+int sociacl_client_check(
+    sociacl_client *client,
+    const char *action,
+    const char *object,
+    const char *accessor,
+    const char *predicate,
+    char *reason_out,
+    size_t reason_len
+);
+
+/* Returns 1 reminted, -1 error. reason_out is "remint" on success. */
+int sociacl_client_remint(
+    sociacl_client *client,
+    const char *object,
+    const char *principal,
+    char *reason_out,
+    size_t reason_len
+);
+
+/* Always -1. Silence is not Elect. */
+int sociacl_client_elect(
+    sociacl_client *client,
+    const char *object,
     char *reason_out,
     size_t reason_len
 );

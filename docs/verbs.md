@@ -4,7 +4,7 @@ Implement against this page. Fail closed unless a named rule allows the call.
 
 ## CHECK(action, object, accessor)
 
-Hot path. Live Check is server-evaluated. After a cut, `Client::check` evaluates the same rules against a pre-cut bundle only.
+Hot path. Live Check is server-evaluated. After a cut, `Client::check` evaluates the same rules against a pre-cut bundle only. Load that bundle from durable bytes or a file (`Client::from_bytes`, `Client::from_path`, C `sociacl_client_open`, Python `Client.from_bytes`).
 
 **Inputs**
 
@@ -80,7 +80,7 @@ Authn gone. Slow Elect clock. A ceremony, not an instant transfer.
 
 Elect does not fire because someone attested silence or a station was loud. `elect_from_attestation` always fails.
 
-On the Case C client path, `elect` and `commit_elect` refuse. The radio being quiet is not a reason to elect. Discover may still report the bundled will. Destroy may erase local key material. See [ARCHITECTURE.md](../ARCHITECTURE.md).
+On the Case C client path, `elect` and `commit_elect` refuse. The C and Python bindings expose `sociacl_client_elect` / `Client.elect` so that refuse is visible; they always fail. The radio being quiet is not a reason to elect. Discover may still report the bundled will. Destroy may erase local key material. See [ARCHITECTURE.md](../ARCHITECTURE.md).
 
 No public vacancy ads. No dead-hand timer.
 

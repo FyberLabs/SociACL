@@ -1,18 +1,24 @@
-//! C FFI wrapping SociACL Check only.
+//! C FFI wrapping live Check and the Case C client path.
 
 use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_int};
 use std::ptr;
+use std::slice;
 use std::sync::Mutex;
 
 use sociacl_core::{
-    Attestation, AttestationBinding, AttestationClaim, CheckRequest, EnrollmentKind, Plane,
+    Attestation, AttestationBinding, AttestationClaim, CheckRequest, Client, EnrollmentKind, Plane,
     PredicateId, Relation,
 };
 
 #[allow(non_camel_case_types)]
 pub struct sociacl_plane {
     inner: Mutex<Plane>,
+}
+
+#[allow(non_camel_case_types)]
+pub struct sociacl_client {
+    inner: Mutex<Client>,
 }
 
 fn cstr<'a>(p: *const c_char) -> Option<&'a str> {
@@ -316,6 +322,221 @@ pub extern "C" fn sociacl_check_ex(
     })
 }
 
+#[no_mangle]
+pub extern "C" fn sociacl_export_bundle(
+    plane: *mut sociacl_plane,
+    holder: *const c_char,
+    bytes_out: *mut u8,
+    bytes_len: usize,
+    written_out: *mut usize,
+    reason_out: *mut c_char,
+    reason_len: usize,
+) -> c_int {
+    let Some(holder) = cstr(holder) else {
+        write_reason(reason_out, reason_len, "invalid-argument");
+        return -1;
+    };
+    with_plane(plane, |p| match p.export_bundle_bytes(holder) {
+        Ok(bytes) => {
+            if !written_out.is_null() {
+                unsafe {
+                    *written_out = bytes.len();
+                }
+            }
+            if bytes_out.is_null() {
+                return 0;
+            }
+            if bytes_len < bytes.len() {
+                write_reason(reason_out, reason_len, "buffer-too-small");
+                return -1;
+            }
+            unsafe {
+                ptr::copy_nonoverlapping(bytes.as_ptr(), bytes_out, bytes.len());
+            }
+            0
+        }
+        Err(e) => {
+            write_reason(reason_out, reason_len, &e.to_string());
+            -1
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sociacl_export_bundle_file(
+    plane: *mut sociacl_plane,
+    holder: *const c_char,
+    path: *const c_char,
+    reason_out: *mut c_char,
+    reason_len: usize,
+) -> c_int {
+    let (Some(holder), Some(path)) = (cstr(holder), cstr(path)) else {
+        write_reason(reason_out, reason_len, "invalid-argument");
+        return -1;
+    };
+    with_plane(plane, |p| match p.export_bundle_path(holder, path) {
+        Ok(()) => 0,
+        Err(e) => {
+            write_reason(reason_out, reason_len, &e.to_string());
+            -1
+        }
+    })
+}
+
+fn client_open_result(
+    result: Result<Client, sociacl_core::VerbError>,
+    reason_out: *mut c_char,
+    reason_len: usize,
+) -> *mut sociacl_client {
+    match result {
+        Ok(client) => Box::into_raw(Box::new(sociacl_client {
+            inner: Mutex::new(client),
+        })),
+        Err(e) => {
+            write_reason(reason_out, reason_len, &e.to_string());
+            ptr::null_mut()
+        }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn sociacl_client_open(
+    bytes: *const u8,
+    len: usize,
+    reason_out: *mut c_char,
+    reason_len: usize,
+) -> *mut sociacl_client {
+    if bytes.is_null() {
+        write_reason(reason_out, reason_len, "invalid-argument");
+        return ptr::null_mut();
+    }
+    let slice = unsafe { slice::from_raw_parts(bytes, len) };
+    client_open_result(Client::from_bytes(slice), reason_out, reason_len)
+}
+
+#[no_mangle]
+pub extern "C" fn sociacl_client_open_file(
+    path: *const c_char,
+    reason_out: *mut c_char,
+    reason_len: usize,
+) -> *mut sociacl_client {
+    let Some(path) = cstr(path) else {
+        write_reason(reason_out, reason_len, "invalid-argument");
+        return ptr::null_mut();
+    };
+    client_open_result(Client::from_path(path), reason_out, reason_len)
+}
+
+#[no_mangle]
+pub extern "C" fn sociacl_client_free(client: *mut sociacl_client) {
+    if !client.is_null() {
+        unsafe {
+            drop(Box::from_raw(client));
+        }
+    }
+}
+
+fn with_client<F>(client: *mut sociacl_client, f: F) -> c_int
+where
+    F: FnOnce(&mut Client) -> c_int,
+{
+    let Some(c) = (unsafe { client.as_mut() }) else {
+        return -1;
+    };
+    let Ok(mut guard) = c.inner.lock() else {
+        return -1;
+    };
+    f(&mut guard)
+}
+
+#[no_mangle]
+pub extern "C" fn sociacl_client_check(
+    client: *mut sociacl_client,
+    action: *const c_char,
+    object: *const c_char,
+    accessor: *const c_char,
+    predicate: *const c_char,
+    reason_out: *mut c_char,
+    reason_len: usize,
+) -> c_int {
+    let (Some(action), Some(object), Some(accessor), Some(predicate)) =
+        (cstr(action), cstr(object), cstr(accessor), cstr(predicate))
+    else {
+        write_reason(reason_out, reason_len, "invalid-argument");
+        return -1;
+    };
+    with_client(client, |c| {
+        match c.check(CheckRequest {
+            action: action.into(),
+            object: object.into(),
+            accessor: accessor.into(),
+            predicate: Some(PredicateId::new(predicate)),
+            zookie: None,
+            attestation: None,
+        }) {
+            Ok(result) => {
+                write_reason(reason_out, reason_len, result.reason.as_str());
+                if result.allowed {
+                    1
+                } else {
+                    0
+                }
+            }
+            Err(e) => {
+                write_reason(reason_out, reason_len, &e.to_string());
+                -1
+            }
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sociacl_client_remint(
+    client: *mut sociacl_client,
+    object: *const c_char,
+    principal: *const c_char,
+    reason_out: *mut c_char,
+    reason_len: usize,
+) -> c_int {
+    let (Some(object), Some(principal)) = (cstr(object), cstr(principal)) else {
+        write_reason(reason_out, reason_len, "invalid-argument");
+        return -1;
+    };
+    with_client(client, |c| match c.remint(object, principal) {
+        Ok(_) => {
+            write_reason(reason_out, reason_len, "remint");
+            1
+        }
+        Err(e) => {
+            write_reason(reason_out, reason_len, &e.to_string());
+            -1
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sociacl_client_elect(
+    client: *mut sociacl_client,
+    object: *const c_char,
+    reason_out: *mut c_char,
+    reason_len: usize,
+) -> c_int {
+    let Some(object) = cstr(object) else {
+        write_reason(reason_out, reason_len, "invalid-argument");
+        return -1;
+    };
+    with_client(client, |c| match c.elect(object) {
+        Ok(_) => {
+            write_reason(reason_out, reason_len, "elect-must-not-succeed");
+            -1
+        }
+        Err(e) => {
+            write_reason(reason_out, reason_len, &e.to_string());
+            -1
+        }
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -385,6 +606,135 @@ mod tests {
             reason.len(),
         );
         assert_eq!(carol, 0);
+        sociacl_plane_free(plane);
+    }
+
+    #[test]
+    fn ffi_client_check_remint_elect_closed() {
+        let plane = sociacl_plane_new();
+        assert_eq!(sociacl_add_person(plane, c("alice").as_ptr()), 0);
+        assert_eq!(sociacl_add_person(plane, c("bob").as_ptr()), 0);
+        assert_eq!(sociacl_add_person(plane, c("carol").as_ptr()), 0);
+        assert_eq!(sociacl_add_group(plane, c("ops").as_ptr()), 0);
+        assert_eq!(
+            sociacl_add_object(plane, c("doc").as_ptr(), c("alice").as_ptr()),
+            0
+        );
+        assert_eq!(
+            sociacl_set_object_property(
+                plane,
+                c("doc").as_ptr(),
+                c("predicate").as_ptr(),
+                c("same-group").as_ptr()
+            ),
+            0
+        );
+        assert_eq!(
+            sociacl_set_object_property(
+                plane,
+                c("doc").as_ptr(),
+                c("group").as_ptr(),
+                c("ops").as_ptr()
+            ),
+            0
+        );
+        for (from, to, rel) in [
+            ("alice", "ops", "member-of"),
+            ("bob", "ops", "member-of"),
+            ("doc", "ops", "object-group"),
+        ] {
+            assert_eq!(
+                sociacl_jointly_state(plane, c(from).as_ptr(), c(to).as_ptr(), c(rel).as_ptr()),
+                0
+            );
+        }
+
+        let mut reason = [0i8; 128];
+        let live = sociacl_check(
+            plane,
+            c("read").as_ptr(),
+            c("doc").as_ptr(),
+            c("bob").as_ptr(),
+            c("same-group").as_ptr(),
+            reason.as_mut_ptr(),
+            reason.len(),
+        );
+        assert_eq!(live, 1);
+
+        let mut written = 0usize;
+        assert_eq!(
+            sociacl_export_bundle(
+                plane,
+                c("alice").as_ptr(),
+                ptr::null_mut(),
+                0,
+                &mut written,
+                reason.as_mut_ptr(),
+                reason.len(),
+            ),
+            0
+        );
+        assert!(written > 0);
+        let mut buf = vec![0u8; written];
+        assert_eq!(
+            sociacl_export_bundle(
+                plane,
+                c("alice").as_ptr(),
+                buf.as_mut_ptr(),
+                buf.len(),
+                &mut written,
+                reason.as_mut_ptr(),
+                reason.len(),
+            ),
+            0
+        );
+
+        let client = sociacl_client_open(buf.as_ptr(), written, reason.as_mut_ptr(), reason.len());
+        assert!(!client.is_null());
+
+        let alice = sociacl_client_check(
+            client,
+            c("read").as_ptr(),
+            c("doc").as_ptr(),
+            c("alice").as_ptr(),
+            c("same-group").as_ptr(),
+            reason.as_mut_ptr(),
+            reason.len(),
+        );
+        assert_eq!(alice, 1);
+        let carol = sociacl_client_check(
+            client,
+            c("read").as_ptr(),
+            c("doc").as_ptr(),
+            c("carol").as_ptr(),
+            c("same-group").as_ptr(),
+            reason.as_mut_ptr(),
+            reason.len(),
+        );
+        assert_eq!(carol, 0);
+        assert_eq!(
+            sociacl_client_remint(
+                client,
+                c("doc").as_ptr(),
+                c("bob").as_ptr(),
+                reason.as_mut_ptr(),
+                reason.len(),
+            ),
+            1
+        );
+        assert_eq!(
+            sociacl_client_elect(client, c("doc").as_ptr(), reason.as_mut_ptr(), reason.len()),
+            -1
+        );
+        let text = unsafe { CStr::from_ptr(reason.as_ptr()) }
+            .to_string_lossy()
+            .into_owned();
+        assert!(
+            text.contains("refuses elect") || text.contains("silence"),
+            "elect reason: {text}"
+        );
+
+        sociacl_client_free(client);
         sociacl_plane_free(plane);
     }
 }

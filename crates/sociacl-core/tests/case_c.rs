@@ -1,6 +1,6 @@
 use sociacl_core::{
-    AuthnState, DiscoverResult, EnrollmentKind, Plane, PredicateId, Relation, Timestamp, VerbError,
-    Will,
+    AuthnState, Client, CutBundle, DiscoverResult, EnrollmentKind, Plane, PredicateId, Relation,
+    Timestamp, VerbError, Will,
 };
 
 fn heir_will(object: &str, testator: &str, heir: &str) -> Will {
@@ -339,4 +339,95 @@ fn new_share_is_not_minted_after_the_cut() {
     let bundle = plane.export_bundle(&alice).unwrap();
     assert!(bundle.share(&doc).is_some());
     assert!(!bundle.shares.iter().any(|s| s.holder == bob));
+}
+
+#[test]
+fn durable_bytes_and_file_round_trip() {
+    let (plane, alice, bob, _, doc) = group_plane();
+    let bundle = plane.export_bundle(&alice).unwrap();
+    let bytes = bundle.to_bytes();
+    assert!(bytes.starts_with(b"SACL"));
+    assert_eq!(
+        u16::from_le_bytes(bytes[4..6].try_into().unwrap()),
+        CutBundle::ENCODING_VERSION
+    );
+
+    let loaded = CutBundle::from_bytes(&bytes).unwrap();
+    assert_eq!(loaded, bundle);
+
+    let client = Client::from_bytes(&bytes).unwrap();
+    assert!(client.check_object("read", &doc, &alice).unwrap().allowed);
+    assert!(client.check_object("read", &doc, &bob).unwrap().allowed);
+    let cap = client.remint(&doc, &bob).unwrap();
+    assert_eq!(cap.principal, bob);
+
+    let dir = std::env::temp_dir();
+    let path = dir.join(format!(
+        "sociacl-bundle-{}-{}.bin",
+        std::process::id(),
+        alice.as_str()
+    ));
+    bundle.write_path(&path).unwrap();
+    let from_file = Client::from_path(&path).unwrap();
+    assert!(
+        from_file
+            .check_object("read", &doc, &alice)
+            .unwrap()
+            .allowed
+    );
+    let _ = std::fs::remove_file(&path);
+
+    let live = plane.check_object("read", &doc, &alice).unwrap();
+    assert!(live.allowed);
+}
+
+#[test]
+fn tampered_or_post_cut_payload_is_refused() {
+    let (plane, alice, bob, _, doc) = group_plane();
+    let bundle = plane.export_bundle(&alice).unwrap();
+    let mut bytes = bundle.to_bytes();
+
+    let mid = bytes.len() / 2;
+    bytes[mid] ^= 0xff;
+    assert_eq!(
+        CutBundle::from_bytes(&bytes).unwrap_err(),
+        VerbError::BundleCorrupt
+    );
+    assert_eq!(
+        Client::from_bytes(&bytes).unwrap_err(),
+        VerbError::BundleCorrupt
+    );
+
+    assert_eq!(
+        CutBundle::from_bytes(b"XXXX").unwrap_err(),
+        VerbError::BundleCorrupt
+    );
+
+    let mut bad_ver = bundle.to_bytes();
+    bad_ver[4] = 99;
+    bad_ver[5] = 0;
+    assert_eq!(
+        CutBundle::from_bytes(&bad_ver).unwrap_err(),
+        VerbError::UnsupportedBundleVersion(99)
+    );
+
+    let mut post = bundle.clone();
+    post.edges.push(sociacl_core::Edge {
+        from: bob,
+        to: doc,
+        relation: Relation::Owns,
+        from_stated: true,
+        to_stated: true,
+        joint_at: Some(Timestamp(99)),
+        effective_at: Some(Timestamp(99)),
+    });
+    let post_bytes = post.to_bytes();
+    assert_eq!(
+        CutBundle::from_bytes(&post_bytes).unwrap_err(),
+        VerbError::PostCutMaterial
+    );
+    assert_eq!(
+        Client::from_bytes(&post_bytes).unwrap_err(),
+        VerbError::PostCutMaterial
+    );
 }

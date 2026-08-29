@@ -17,7 +17,7 @@ This repository is the public core (MIT). It is not Hypermesh, Panopticon acl-se
 
 Two clocks: **keep-operating** (fast; no new owner, no rekey) and **Elect** (slow). There is no dead-hand timer. Inactivity is not treated as death.
 
-After a cut, `export_bundle` freezes what a remaining principal already held. `Client` keeps Check and Remint on that snapshot. Elect refuses.
+After a cut, `export_bundle` freezes what a remaining principal already held. Write those bytes or a small file. `Client::from_bytes` / `from_path` keep Check and Remint on that snapshot. Elect refuses.
 
 ## Build and test
 
@@ -32,13 +32,16 @@ cargo run --locked -p sociacl-core --example wills
 
 The Check example is a 3-node `posix-mode` Check (mode 0640). The wills example parses and writes the templates in `examples/wills/`.
 
-C FFI (`sociacl-c`) and the Python package (`python/sociacl`) wrap **Check** only:
+C FFI (`sociacl-c`) and the Python package (`python/sociacl`) wrap live **Check** and the Case C **Client** (Check, Remint; Elect fails closed):
 
 ```bash
 cargo build --workspace --locked
 cc -I crates/sociacl-c/include examples/check.c -L target/debug -lsociacl -o target/sociacl-check-c
 LD_LIBRARY_PATH=target/debug target/sociacl-check-c
+cc -I crates/sociacl-c/include examples/client.c -L target/debug -lsociacl -o target/sociacl-client-c
+LD_LIBRARY_PATH=target/debug target/sociacl-client-c
 PYTHONPATH=python python3 python/tests/test_check.py
+PYTHONPATH=python python3 python/tests/test_client.py
 ```
 
 See [ARCHITECTURE.md](ARCHITECTURE.md), [docs/verbs.md](docs/verbs.md), [docs/wills.md](docs/wills.md), [docs/attestations.md](docs/attestations.md), and [docs/clocks.md](docs/clocks.md).

@@ -61,10 +61,10 @@ This cut: the current owner may write or replace the will on that object. The wr
 
 ## After a cut (Case C)
 
-`CutBoundary { cut_at }` seals the bundle. `export_bundle` copies the live will, pre-cut enrollments, and shares the remaining principal already had a right to hold. Reconstruction verifies the share hash over the local key. Check does not read the share.
+`CutBoundary { cut_at }` seals the bundle. `export_bundle` copies the live will, pre-cut enrollments, and shares the remaining principal already had a right to hold. Write the snapshot with `to_bytes` / `write_path` (C `sociacl_export_bundle`, Python `Plane.export_bundle`). Reload with `Client::from_bytes` / `from_path`. Reconstruction verifies the share hash over the local key. Check does not read the share. A tampered or post-cut payload is refused on load.
 
 New attestations from issuers enrolled after the cut do not grant. Post-cut wills, edges, and enrollments are omitted from the bundle and refused if presented. Discover may report the bundled will. Elect and `commit_elect` refuse on the client. Destroy may erase the local key when the will says stay secret; it does not install an owner.
 
 ## Storage note
 
-Chains or IPFS may store objects, will text, and snapshot hashes. No chain adapter ships in this repository. Contracts, if introduced later, execute already-written wills; they do not draft them.
+The durable bundle is a versioned encoding on local disk. Chains or IPFS may store objects, will text, and snapshot hashes later. No chain adapter ships in this repository. Contracts, if introduced later, execute already-written wills; they do not draft them.

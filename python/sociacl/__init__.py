@@ -1,4 +1,4 @@
-"""SociACL Python bindings. Check only, via the C FFI."""
+"""SociACL Python bindings. Live Check plus Case C Client via the C FFI."""
 
 from __future__ import annotations
 
@@ -97,13 +97,74 @@ _LIB.sociacl_check_ex.argtypes = [
     ctypes.c_size_t,
 ]
 _LIB.sociacl_check_ex.restype = ctypes.c_int
+_LIB.sociacl_export_bundle.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_char_p,
+    ctypes.POINTER(ctypes.c_ubyte),
+    ctypes.c_size_t,
+    ctypes.POINTER(ctypes.c_size_t),
+    ctypes.c_char_p,
+    ctypes.c_size_t,
+]
+_LIB.sociacl_export_bundle.restype = ctypes.c_int
+_LIB.sociacl_export_bundle_file.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.c_size_t,
+]
+_LIB.sociacl_export_bundle_file.restype = ctypes.c_int
+_LIB.sociacl_client_open.argtypes = [
+    ctypes.POINTER(ctypes.c_ubyte),
+    ctypes.c_size_t,
+    ctypes.c_char_p,
+    ctypes.c_size_t,
+]
+_LIB.sociacl_client_open.restype = ctypes.c_void_p
+_LIB.sociacl_client_open_file.argtypes = [
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.c_size_t,
+]
+_LIB.sociacl_client_open_file.restype = ctypes.c_void_p
+_LIB.sociacl_client_free.argtypes = [ctypes.c_void_p]
+_LIB.sociacl_client_check.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.c_size_t,
+]
+_LIB.sociacl_client_check.restype = ctypes.c_int
+_LIB.sociacl_client_remint.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.c_size_t,
+]
+_LIB.sociacl_client_remint.restype = ctypes.c_int
+_LIB.sociacl_client_elect.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.c_size_t,
+]
+_LIB.sociacl_client_elect.restype = ctypes.c_int
 
 
 def _b(s: str) -> bytes:
     return s.encode("utf-8")
 
 
-class CheckError(Exception):
+class Error(Exception):
+    pass
+
+
+class CheckError(Error):
     pass
 
 
@@ -196,3 +257,109 @@ class Plane:
         if rc < 0:
             raise CheckError(reason or "check failed")
         return (rc == 1, reason)
+
+    def export_bundle(self, holder: str) -> bytes:
+        reason = ctypes.create_string_buffer(_REASON_LEN)
+        written = ctypes.c_size_t(0)
+        rc = _LIB.sociacl_export_bundle(
+            self._ptr,
+            _b(holder),
+            None,
+            0,
+            ctypes.byref(written),
+            reason,
+            _REASON_LEN,
+        )
+        if rc != 0:
+            raise Error(reason.value.decode("utf-8", errors="replace") or "export failed")
+        buf = (ctypes.c_ubyte * written.value)()
+        rc = _LIB.sociacl_export_bundle(
+            self._ptr,
+            _b(holder),
+            buf,
+            written.value,
+            ctypes.byref(written),
+            reason,
+            _REASON_LEN,
+        )
+        if rc != 0:
+            raise Error(reason.value.decode("utf-8", errors="replace") or "export failed")
+        return bytes(buf[: written.value])
+
+    def export_bundle_file(self, holder: str, path: str) -> None:
+        reason = ctypes.create_string_buffer(_REASON_LEN)
+        rc = _LIB.sociacl_export_bundle_file(
+            self._ptr, _b(holder), _b(path), reason, _REASON_LEN
+        )
+        if rc != 0:
+            raise Error(reason.value.decode("utf-8", errors="replace") or "export failed")
+
+
+class Client:
+    def __init__(self, ptr: int) -> None:
+        if not ptr:
+            raise Error("sociacl_client_open failed")
+        self._ptr = ptr
+
+    @classmethod
+    def from_bytes(cls, data: bytes) -> "Client":
+        reason = ctypes.create_string_buffer(_REASON_LEN)
+        buf = (ctypes.c_ubyte * len(data)).from_buffer_copy(data)
+        ptr = _LIB.sociacl_client_open(buf, len(data), reason, _REASON_LEN)
+        if not ptr:
+            raise Error(reason.value.decode("utf-8", errors="replace") or "open failed")
+        return cls(ptr)
+
+    @classmethod
+    def from_path(cls, path: str) -> "Client":
+        reason = ctypes.create_string_buffer(_REASON_LEN)
+        ptr = _LIB.sociacl_client_open_file(_b(path), reason, _REASON_LEN)
+        if not ptr:
+            raise Error(reason.value.decode("utf-8", errors="replace") or "open failed")
+        return cls(ptr)
+
+    def close(self) -> None:
+        if getattr(self, "_ptr", None):
+            _LIB.sociacl_client_free(self._ptr)
+            self._ptr = None
+
+    def __del__(self) -> None:
+        self.close()
+
+    def check(
+        self,
+        action: str,
+        object: str,
+        accessor: str,
+        predicate: str,
+    ) -> Tuple[bool, str]:
+        buf = ctypes.create_string_buffer(_REASON_LEN)
+        rc = _LIB.sociacl_client_check(
+            self._ptr,
+            _b(action),
+            _b(object),
+            _b(accessor),
+            _b(predicate),
+            buf,
+            _REASON_LEN,
+        )
+        reason = buf.value.decode("utf-8", errors="replace")
+        if rc < 0:
+            raise CheckError(reason or "check failed")
+        return (rc == 1, reason)
+
+    def remint(self, object: str, principal: str) -> str:
+        buf = ctypes.create_string_buffer(_REASON_LEN)
+        rc = _LIB.sociacl_client_remint(
+            self._ptr, _b(object), _b(principal), buf, _REASON_LEN
+        )
+        reason = buf.value.decode("utf-8", errors="replace")
+        if rc != 1:
+            raise Error(reason or "remint failed")
+        return reason
+
+    def elect(self, object: str) -> None:
+        buf = ctypes.create_string_buffer(_REASON_LEN)
+        _LIB.sociacl_client_elect(self._ptr, _b(object), buf, _REASON_LEN)
+        reason = buf.value.decode("utf-8", errors="replace")
+        raise Error(reason or "client path refuses elect")

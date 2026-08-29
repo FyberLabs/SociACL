@@ -36,9 +36,33 @@ pub struct CutBundle {
 }
 
 impl CutBundle {
+    /// Encoding version written by [`Self::to_bytes`].
+    pub const ENCODING_VERSION: u16 = crate::codec::VERSION;
+
     /// Load the bundle as a client. Refuses post-cut material.
     pub fn open(self) -> Result<Client, VerbError> {
         Client::open(self)
+    }
+
+    /// Versioned bytes for disk. Not Debug.
+    pub fn to_bytes(&self) -> Vec<u8> {
+        crate::codec::encode(self)
+    }
+
+    /// Decode bytes. Refuses a tampered frame or post-cut material.
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, VerbError> {
+        let bundle = crate::codec::decode(bytes)?;
+        bundle.refuse_post_cut()?;
+        Ok(bundle)
+    }
+
+    pub fn write_path(&self, path: impl AsRef<std::path::Path>) -> Result<(), VerbError> {
+        std::fs::write(path, self.to_bytes()).map_err(|_| VerbError::BundleIo)
+    }
+
+    pub fn load_path(path: impl AsRef<std::path::Path>) -> Result<Self, VerbError> {
+        let bytes = std::fs::read(path).map_err(|_| VerbError::BundleIo)?;
+        Self::from_bytes(&bytes)
     }
 
     pub fn object(&self, id: &NodeId) -> Option<&Object> {
@@ -248,6 +272,19 @@ impl Plane {
         };
         bundle.refuse_post_cut()?;
         Ok(bundle)
+    }
+
+    /// Same as [`Self::export_bundle`], then the durable encoding.
+    pub fn export_bundle_bytes(&self, holder: impl Into<NodeId>) -> Result<Vec<u8>, VerbError> {
+        Ok(self.export_bundle(holder)?.to_bytes())
+    }
+
+    pub fn export_bundle_path(
+        &self,
+        holder: impl Into<NodeId>,
+        path: impl AsRef<std::path::Path>,
+    ) -> Result<(), VerbError> {
+        self.export_bundle(holder)?.write_path(path)
     }
 
     /// Recorded cut, or `now` pushed forward to cover statements the

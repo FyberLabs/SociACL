@@ -1,14 +1,15 @@
 //! SociACL core: social-graph authority plane.
 //!
 //! Live [`Plane::check`] is server-evaluated against an in-memory graph.
-//! Case C evaluates the same named predicates offline against a pre-cut
-//! [`CutBundle`] on [`Client`]. Elect stays refuse-closed on that path.
+//! Case C writes a durable [`CutBundle`] and evaluates the same named
+//! predicates offline on [`Client`]. Elect stays refuse-closed on that path.
 
 pub mod attestation;
 pub mod bundle;
 pub mod cache;
 pub mod check;
 pub mod client;
+mod codec;
 pub mod error;
 pub mod graph;
 pub mod types;
