@@ -263,6 +263,12 @@ impl Client {
             if let Some(t) = edge.joint_at {
                 hasher.update(t.0.to_le_bytes());
             }
+            if edge.relation == crate::types::Relation::Delegate {
+                hasher.update([edge.actions.bits()]);
+                if let Some(t) = edge.until {
+                    hasher.update(t.0.to_le_bytes());
+                }
+            }
         }
         for enr in &self.bundle.enrollments {
             hasher.update(enr.issuer.as_bytes());

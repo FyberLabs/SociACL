@@ -71,7 +71,55 @@ def test_simple_check_and_attestation():
     plane.close()
 
 
+def test_attestation_does_not_mint_delegate():
+    plane = Plane()
+    plane.add_person("alice")
+    plane.add_person("bob")
+    plane.add_object("doc", "alice")
+    plane.set_object_property("doc", "predicate", "delegate")
+    pk, sk = issuer_keygen()
+    plane.enroll("bob", "principal", pk)
+    sig = plane.sign_claim(sk, "bob", "bob", "identity-live", "doc")
+    allowed, reason = plane.check(
+        "read", "doc", "bob", "delegate", attestation="identity-live", signature=sig
+    )
+    assert allowed is False
+    assert reason == "delegate"
+    allowed, reason = plane.check("read", "doc", "bob", "delegate")
+    assert allowed is False
+    plane.close()
+
+
+def test_delegate_view_execute_without_view_cancel():
+    plane = Plane()
+    plane.add_person("alice")
+    plane.add_person("bob")
+    plane.add_object("doc", "alice")
+    plane.set_object_property("doc", "predicate", "delegate")
+
+    plane.delegate("alice", "bob", "doc", "read")
+    allowed, reason = plane.check("read", "doc", "bob", "delegate")
+    assert allowed is True
+    assert reason == "delegate"
+    allowed, reason = plane.check("execute", "doc", "bob", "delegate")
+    assert allowed is False
+    assert reason == "delegate"
+
+    plane.undelegate("alice", "bob", "doc")
+    allowed, reason = plane.check("read", "doc", "bob", "delegate")
+    assert allowed is False
+
+    plane.delegate("alice", "bob", "doc", "execute")
+    allowed, reason = plane.check("execute", "doc", "bob", "delegate")
+    assert allowed is True
+    allowed, reason = plane.check("read", "doc", "bob", "delegate")
+    assert allowed is False
+    plane.close()
+
+
 if __name__ == "__main__":
     test_three_node_posix_check()
     test_simple_check_and_attestation()
+    test_attestation_does_not_mint_delegate()
+    test_delegate_view_execute_without_view_cancel()
     print("ok")

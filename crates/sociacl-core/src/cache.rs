@@ -67,6 +67,7 @@ impl EdgeTypeSet {
                 [Relation::Owns, Relation::MemberOf].into_iter().collect()
             }
             crate::types::PredicateId::TRUSTEE => [Relation::Trustee].into_iter().collect(),
+            crate::types::PredicateId::DELEGATE => [Relation::Delegate].into_iter().collect(),
             _ => BTreeSet::new(),
         };
         Self { relations }
@@ -78,7 +79,8 @@ impl EdgeTypeSet {
 }
 
 /// Keyed by (accessor, owner-or-anchors, edge-types, hopcap, snapshot).
-/// `action` is also stored so `posix-mode` bits are not reused across verbs.
+/// `action` is also stored so `posix-mode` bits and `delegate` masks
+/// are not reused across verbs.
 /// Object version lives on the snapshot / zookie, not as a second TTL.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct CacheKey {

@@ -8,7 +8,7 @@ Hot path. Live Check is server-evaluated. After a cut, `Client::check` evaluates
 
 **Inputs**
 
-- `action` — caller-supplied verb on the object (`read`, `write`, …). Used by `posix-mode` bits. Otherwise cached, not interpreted.
+- `action` — caller-supplied verb on the object (`read`, `write`, `execute`, …). Used by `posix-mode` bits and by a `delegate` action mask. Otherwise cached, not interpreted. The two are not merged.
 - `object` — protected object id. Check parses kind, owner, properties, version. Properties select the predicate (`predicate`, and for `posix-mode` also `mode` and `group`).
 - `accessor` — person, agent, or device id.
 - `predicate` — optional. If set, must equal the object's named predicate. The accessor cannot pick a richer predicate than the object names.
@@ -17,14 +17,15 @@ Hot path. Live Check is server-evaluated. After a cut, `Client::check` evaluates
 
 **Rules**
 
-1. Object properties must name a predicate from `owner`, `same-group`, `named-circle`, `posix-mode`, `trustee`. Missing, unknown, or `heir-template` → error (fail closed).
+1. Object properties must name a predicate from `owner`, `same-group`, `named-circle`, `posix-mode`, `trustee`, `delegate`. Missing, unknown, or `heir-template` → error (fail closed).
 2. Explicit predicate that does not match the object's name → error (fail closed).
 3. Missing or destroyed object → deny / error, never allow.
 4. Evaluate the object's predicate on edges that are **jointly stated** and past the privilege-up delay, hopcap **1**. One-sided follow/friend is not a grant.
 5. Reason is the **predicate id**, not a path, person list, or hop trace.
 6. Return a zookie bound to the current object version and snapshot hash.
 7. If a presented zookie is bound to an older object version, do not honor a cached allow. Re-evaluate the current snapshot.
-8. Privilege-down invalidates immediately. Privilege-up does not grant until the delay. The cache key is `(accessor, owner-or-anchors, edge-types, hopcap, snapshot)`; `posix-mode` also keys by `action`.
+8. Privilege-down invalidates immediately. Privilege-up does not grant until the delay. The cache key is `(accessor, owner-or-anchors, edge-types, hopcap, snapshot)`; `posix-mode` and `delegate` also key by `action`.
+9. A `delegate` grant is keep-operating. Owner authn stays live. Owner stays owner. No rekey, no heir. If the grant carries `until` and `now >= until`, Check denies that accessor. That is grant expiry, not dead-hand ownership. Cancel (`undelegate`) unstates immediately and bumps the object version. An attestation or Social Light hop is an optional factor on this already-named predicate. Missing hop does not fail Check. A hop alone does not mint a delegate.
 
 **Outputs**
 
@@ -42,7 +43,7 @@ Authn holds, authz stale. Not election.
 **Allow** only when:
 
 - the principal's authn is live, and
-- a current jointly stated ACL already names that principal for the object (`owns`, group membership for a named `object-group`, or direct circle membership for a named `object-circle`).
+- a current jointly stated ACL already names that principal for the object (`owns`, group membership for a named `object-group`, direct circle membership for a named `object-circle`, `trustee`, or a live `delegate` grant whose `until` has not elapsed).
 
 **Deny** if the ACL no longer names them. Do not look at wills to pick a new owner.
 
@@ -62,7 +63,7 @@ Authn gone. Report what a pre-written will says. Do not install an owner. Do not
 
 Authn gone. Slow Elect clock. A ceremony, not an instant transfer.
 
-**Refuse** when keep-operating would suffice (object owner authn still live).
+**Refuse** when keep-operating would suffice (object owner authn still live). A live `delegate` grant is keep-operating. Elect from a delegate grant always fails. Owner stays owner.
 
 **Refuse** without a pre-written, uncanceled, pre-cut will that names an elect path.
 

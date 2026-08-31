@@ -101,6 +101,10 @@ pub enum VerbError {
     BundleSignature,
     #[error("holder secret required to export or open a bundle")]
     HolderSecretRequired,
+    #[error("principal {0} is not the live owner; cannot delegate")]
+    CannotDelegate(NodeId),
+    #[error("delegate grant must name at least one of read, write, execute")]
+    InvalidDelegateMask,
 }
 
 #[derive(Debug, Error, Eq, PartialEq)]

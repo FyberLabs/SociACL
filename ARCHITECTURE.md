@@ -33,7 +33,7 @@ Nodes: **person**, **agent**, **device**, plus **group** and **circle** as named
 
 Check parses the object and reads the `predicate` property. That property must name one id from the table below. Fail closed if it is missing or unknown (`heir-template` is unknown). A caller-supplied predicate must match. The accessor cannot pick a richer predicate than the object names.
 
-Edges store direction (`from` → `to`) and joint articulation (`from_stated`, `to_stated`, `joint_at`). A one-sided follow or friend request is stored and is not a grant. Privilege-up becomes live only after both sides have stated **and** `now >= joint_at + privilege_up_delay`. Privilege-down is immediate: one side unstating drops the edge from Check and bumps affected object versions. For an object endpoint, the current owner speaks for the object.
+Edges store direction (`from` → `to`) and joint articulation (`from_stated`, `to_stated`, `joint_at`). A one-sided follow or friend request is stored and is not a grant. Privilege-up becomes live only after both sides have stated **and** `now >= joint_at + privilege_up_delay`. Privilege-down is immediate: one side unstating drops the edge from Check and bumps affected object versions. For an object endpoint, the current owner speaks for the object. `Plane::delegate` is owner-only: the owner speaks for the object; the principal states accept. Privilege-up waits for both statements and the delay. `Plane::undelegate` is owner-only cancel: unstate, privilege-down immediate, object version bumps. `jointly_delegate` is the same helper shape as `jointly_state`.
 
 Relations used by named predicates:
 
@@ -43,7 +43,8 @@ Relations used by named predicates:
 - `object-group` — the object's ACL names that group
 - `object-circle` — the object's ACL names that circle
 - `friend` — person-to-person; one-sided is a request, not a grant; not a walk
-- `trustee` — jointly stated; Check uses it only if the object names `trustee`
+- `trustee` — jointly stated; Check uses it only if the object names `trustee`. Standing. No action mask.
+- `delegate` — jointly stated keep-operating grant; Check uses it only if the object names `delegate`. Carries an action mask (`read`, `write`, `execute`) and an optional `until`. Not trustee. Not an Elect.
 
 `heir-template` is never a Check predicate. Wills are not consulted on the hot path.
 
@@ -58,8 +59,9 @@ The object names the predicate. If the id is unknown, Check fails closed. If the
 | `owner` | Jointly stated `owns` from accessor to object. |
 | `same-group` | Object names a group; accessor is a member of that group. |
 | `named-circle` | Object names a circle; accessor has a direct `in-circle` edge to that circle. |
-| `posix-mode` | Object carries owner/group/other bits (`mode`) and a group. Owner bits if accessor is owner; group bits if hop-1 jointly stated `member-of`; else other bits. |
-| `trustee` | Object names `trustee`; accessor has a jointly stated `trustee` edge to the object. |
+| `posix-mode` | Object carries owner/group/other bits (`mode`) and a group. Owner bits if accessor is owner; group bits if hop-1 jointly stated `member-of`; else other bits. Not mixed with `delegate`. |
+| `trustee` | Object names `trustee`; accessor has a jointly stated `trustee` edge to the object. Standing. No action mask. |
+| `delegate` | Object names `delegate`; accessor has a jointly stated `delegate` edge; the requested action is in the grant mask; `until` is unset or `now < until`. Owner is unchanged. `until` elapsing is grant expiry, not dead-hand ownership. |
 
 No friends-of-friends. No hop 2/3. No Expand/ListUsers.
 
@@ -67,14 +69,14 @@ No friends-of-friends. No hop 2/3. No Expand/ListUsers.
 
 Like Zanzibar zookies: a Check result carries a **zookie** bound to **this object version** and a hash of the edges that currently grant (joint plus privilege-up delay elapsed).
 
-- Cache lookup is keyed by `(accessor, owner-or-anchors, edge-types, hopcap, snapshot)`. `posix-mode` also keys by `action` so owner/group/other bits are not reused across verbs.
+- Cache lookup is keyed by `(accessor, owner-or-anchors, edge-types, hopcap, snapshot)`. `posix-mode` and `delegate` also key by `action` so bits and masks are not reused across verbs.
 - Privilege-reducing graph changes bump the object version and change the snapshot immediately.
 - Privilege-increasing edges do not grant until the delay. That delay is not a TTL on privilege-down.
 - A zookie from version *N* cannot authorize a write at version *> N*. After unfriend then write, the revoked accessor does not see the new content as an old friend.
 
 ## Two clocks
 
-- **Keep-operating** — fast. Authn still holds. No new owner, no rekey. Remint lives here.
+- **Keep-operating** — fast. Authn still holds. No new owner, no rekey. Remint and temporary `delegate` grants live here. A session bound on a grant that expires (Check denies the delegate, owner unchanged) is not a dead-hand Elect.
 - **Elect** — slow. Authn is gone. Used only when a pre-written will names a path. Live principals who can cancel are notified; there is no public vacancy listing.
 
 There is no dead-hand timer. Inactivity is a bad death oracle and is not implemented.
@@ -87,7 +89,7 @@ Elect **refuses** if keep-operating would suffice (owner authn still live).
 
 **B — Discover / Elect / Destroy.** Principal cannot authenticate. Look at a will written while alive. Discover reports the disposition without electing. Elect is a notify / wait / cancel ceremony on the slow clock; `commit_elect` installs the named heir only after the wait. Destroy erases if the will says stay secret or there is no heir that can be discovered. Fail closed with no will.
 
-**C — Continuity of command.** The plane is gone or hostile. After a cut, only pre-cut wills, pre-cut enrollments, pre-cut attestations, old jointly stated edges, and shares already held work. **New edges stated after the cut do not grant.**
+**C — Continuity of command.** The plane is gone or hostile. After a cut, only pre-cut wills, pre-cut enrollments, pre-cut attestations, old jointly stated edges (including a live `delegate` grant already on the snapshot), and shares already held work. **New edges stated after the cut do not grant.** A post-cut `delegate` does not grant. The Case C client has no mint path for a new delegate.
 
 `export_bundle` copies that set for a remaining principal who already had a right to hold it. The durable form is a versioned length-prefixed encoding (`SACL` / version 4). Share keys are wrapped with XChaCha20-Poly1305. The wrapping key is derived from the holder secret. Each share gets its own nonce from object, holder, and `held_at`. Object `content_key` is omitted from the file. The holder signs the frame with Ed25519, same scheme as attestations. A SHA-256 trailer is integrity of the bytes, not authenticity. Open refuses a missing, wrong, or unsigned signature. v1, v2, and v3 (hash-XOR wrap) frames fail closed. The signing key stays with the caller, not in the bundle. A captured SACL file without the holder secret is not the object. Not Debug. Not a chain or IPFS adapter.
 

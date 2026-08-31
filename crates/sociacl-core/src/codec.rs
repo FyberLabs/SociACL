@@ -17,8 +17,8 @@ use crate::bundle::{share_digest, CutBundle};
 use crate::cache::{Snapshot, SnapshotHash, Zookie};
 use crate::error::VerbError;
 use crate::types::{
-    AuthnState, ClientHeldShare, CutBoundary, Edge, NodeId, NodeKind, Object, ObjectKind,
-    ObjectProperties, ObjectVersion, Relation, Timestamp,
+    ActionMask, AuthnState, ClientHeldShare, CutBoundary, Edge, NodeId, NodeKind, Object,
+    ObjectKind, ObjectProperties, ObjectVersion, Relation, Timestamp,
 };
 use crate::will::{DestroyMaterial, Will, WillBody, WillClause, WillSubject};
 
@@ -324,25 +324,61 @@ fn encode_edge(w: &mut Writer, edge: &Edge) {
         }
         None => w.bool(false),
     }
+    if edge.relation == Relation::Delegate {
+        w.bool(edge.actions.read);
+        w.bool(edge.actions.write);
+        w.bool(edge.actions.execute);
+        match edge.until {
+            Some(t) => {
+                w.bool(true);
+                w.u64(t.0);
+            }
+            None => w.bool(false),
+        }
+    }
 }
 
 fn decode_edge(r: &mut Reader<'_>) -> Result<Edge, VerbError> {
+    let from = NodeId::new(r.str()?);
+    let to = NodeId::new(r.str()?);
+    let relation = Relation::parse(r.str()?).ok_or(VerbError::BundleCorrupt)?;
+    let from_stated = r.bool()?;
+    let to_stated = r.bool()?;
+    let joint_at = if r.bool()? {
+        Some(Timestamp(r.u64()?))
+    } else {
+        None
+    };
+    let effective_at = if r.bool()? {
+        Some(Timestamp(r.u64()?))
+    } else {
+        None
+    };
+    let (actions, until) = if relation == Relation::Delegate {
+        let actions = ActionMask {
+            read: r.bool()?,
+            write: r.bool()?,
+            execute: r.bool()?,
+        };
+        let until = if r.bool()? {
+            Some(Timestamp(r.u64()?))
+        } else {
+            None
+        };
+        (actions, until)
+    } else {
+        (ActionMask::none(), None)
+    };
     Ok(Edge {
-        from: NodeId::new(r.str()?),
-        to: NodeId::new(r.str()?),
-        relation: Relation::parse(r.str()?).ok_or(VerbError::BundleCorrupt)?,
-        from_stated: r.bool()?,
-        to_stated: r.bool()?,
-        joint_at: if r.bool()? {
-            Some(Timestamp(r.u64()?))
-        } else {
-            None
-        },
-        effective_at: if r.bool()? {
-            Some(Timestamp(r.u64()?))
-        } else {
-            None
-        },
+        from,
+        to,
+        relation,
+        from_stated,
+        to_stated,
+        joint_at,
+        effective_at,
+        actions,
+        until,
     })
 }
 

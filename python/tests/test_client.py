@@ -132,8 +132,35 @@ def test_will_discover_destroy():
     plane.close()
 
 
+def test_client_precut_delegate_remint_elect_closed():
+    plane = Plane()
+    plane.add_person("alice")
+    plane.add_person("bob")
+    plane.add_object("doc", "alice")
+    plane.set_object_property("doc", "predicate", "delegate")
+    plane.delegate("alice", "bob", "doc", "execute")
+
+    _, secret = holder_keygen()
+    client = Client.from_bytes(plane.export_bundle("bob", secret), secret)
+    allowed, reason = client.check("execute", "doc", "bob", "delegate")
+    assert allowed is True
+    assert reason == "delegate"
+    allowed, reason = client.check("read", "doc", "bob", "delegate")
+    assert allowed is False
+    assert client.remint("doc", "bob") == "remint"
+    try:
+        client.elect("doc")
+        raise AssertionError("elect from a delegate grant must fail closed")
+    except Error as exc:
+        text = str(exc)
+        assert "elect" in text.lower() or "silence" in text.lower()
+    client.close()
+    plane.close()
+
+
 if __name__ == "__main__":
     test_client_check_remint_elect_from_bytes()
     test_client_from_path_and_tampered_bytes()
     test_will_discover_destroy()
+    test_client_precut_delegate_remint_elect_closed()
     print("ok")

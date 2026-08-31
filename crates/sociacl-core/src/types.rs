@@ -188,6 +188,116 @@ impl PosixBits {
     }
 }
 
+/// Action bits on a keep-operating `delegate` grant. Not POSIX mode bits.
+/// `posix-mode` still reads Unix owner/group/other on the object.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Hash)]
+pub struct ActionMask {
+    pub read: bool,
+    pub write: bool,
+    pub execute: bool,
+}
+
+impl ActionMask {
+    pub fn none() -> Self {
+        Self::default()
+    }
+
+    pub fn read() -> Self {
+        Self {
+            read: true,
+            write: false,
+            execute: false,
+        }
+    }
+
+    pub fn write() -> Self {
+        Self {
+            read: false,
+            write: true,
+            execute: false,
+        }
+    }
+
+    pub fn execute() -> Self {
+        Self {
+            read: false,
+            write: false,
+            execute: true,
+        }
+    }
+
+    pub fn is_empty(self) -> bool {
+        !self.read && !self.write && !self.execute
+    }
+
+    pub fn bits(self) -> u8 {
+        (if self.read { 1 } else { 0 })
+            | (if self.write { 2 } else { 0 })
+            | (if self.execute { 4 } else { 0 })
+    }
+
+    pub fn from_bits(bits: u8) -> Self {
+        Self {
+            read: bits & 1 != 0,
+            write: bits & 2 != 0,
+            execute: bits & 4 != 0,
+        }
+    }
+
+    pub fn allows(&self, action: &Action) -> bool {
+        match action.as_str() {
+            "read" | "r" => self.read,
+            "write" | "w" => self.write,
+            "execute" | "exec" | "x" => self.execute,
+            _ => false,
+        }
+    }
+
+    /// Comma/`+` list (`read,execute`) or compact `rwx` letters.
+    pub fn parse(s: &str) -> Option<Self> {
+        let s = s.trim();
+        if s.is_empty() {
+            return None;
+        }
+        let mut mask = Self::none();
+        if s.contains(',') || s.contains('+') || s.contains(' ') {
+            for part in s.split(|c| c == ',' || c == '+' || c == ' ') {
+                let part = part.trim();
+                if part.is_empty() {
+                    continue;
+                }
+                add_action_token(&mut mask, part)?;
+            }
+        } else if matches!(s, "read" | "write" | "execute" | "exec") {
+            add_action_token(&mut mask, s)?;
+        } else {
+            for c in s.chars() {
+                match c {
+                    'r' => mask.read = true,
+                    'w' => mask.write = true,
+                    'x' => mask.execute = true,
+                    _ => return None,
+                }
+            }
+        }
+        if mask.is_empty() {
+            None
+        } else {
+            Some(mask)
+        }
+    }
+}
+
+fn add_action_token(mask: &mut ActionMask, token: &str) -> Option<()> {
+    match token {
+        "read" | "r" => mask.read = true,
+        "write" | "w" => mask.write = true,
+        "execute" | "exec" | "x" => mask.execute = true,
+        _ => return None,
+    }
+    Some(())
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PosixMode {
     pub owner: PosixBits,
@@ -238,6 +348,9 @@ pub enum Relation {
     Friend,
     /// Named jointly stated edge. Check uses it only if the object names `trustee`.
     Trustee,
+    /// Keep-operating grant with an action mask. Check uses it only if
+    /// the object names `delegate`. Not trustee. Not an Elect.
+    Delegate,
 }
 
 impl Relation {
@@ -250,6 +363,7 @@ impl Relation {
             Self::ObjectCircle => "object-circle",
             Self::Friend => "friend",
             Self::Trustee => "trustee",
+            Self::Delegate => "delegate",
         }
     }
 
@@ -262,6 +376,7 @@ impl Relation {
             "object-circle" => Some(Self::ObjectCircle),
             "friend" | "follow" => Some(Self::Friend),
             "trustee" => Some(Self::Trustee),
+            "delegate" => Some(Self::Delegate),
             _ => None,
         }
     }
@@ -281,6 +396,11 @@ pub struct Edge {
     /// Instant this edge may grant. Create/elect set it to `now`.
     /// Privilege-up sets it to `now + privilege_up_delay`.
     pub effective_at: Option<Timestamp>,
+    /// Action mask on a `delegate` grant. Empty on every other relation.
+    pub actions: ActionMask,
+    /// Optional grant expiry. `now >= until` denies this accessor.
+    /// Owner is unchanged. This is not dead-hand ownership.
+    pub until: Option<Timestamp>,
 }
 
 impl Edge {
@@ -306,6 +426,7 @@ impl PredicateId {
     pub const NAMED_CIRCLE: &'static str = "named-circle";
     pub const POSIX_MODE: &'static str = "posix-mode";
     pub const TRUSTEE: &'static str = "trustee";
+    pub const DELEGATE: &'static str = "delegate";
     pub const HEIR_TEMPLATE: &'static str = "heir-template";
 
     pub fn new(id: impl AsRef<str>) -> Self {
@@ -332,6 +453,10 @@ impl PredicateId {
         Self::new(Self::TRUSTEE)
     }
 
+    pub fn delegate() -> Self {
+        Self::new(Self::DELEGATE)
+    }
+
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -340,7 +465,12 @@ impl PredicateId {
     pub fn is_named(&self) -> bool {
         matches!(
             self.as_str(),
-            Self::OWNER | Self::SAME_GROUP | Self::NAMED_CIRCLE | Self::POSIX_MODE | Self::TRUSTEE
+            Self::OWNER
+                | Self::SAME_GROUP
+                | Self::NAMED_CIRCLE
+                | Self::POSIX_MODE
+                | Self::TRUSTEE
+                | Self::DELEGATE
         )
     }
 }
