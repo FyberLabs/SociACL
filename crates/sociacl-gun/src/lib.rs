@@ -10,13 +10,15 @@
 //! grant. It does not add a Gun-only verb and it does not fork the
 //! locked s3r.ch graph.
 //!
-//! s3r.ch reimplements the handoff types in TypeScript. It does not
-//! import this crate. The Gun adapter surface for that product is
-//! Check + `delegate` only. Elect, wills, and Case C mint stay off
-//! that surface. This crate may Check a Case C [`sociacl_core::Client`]
-//! the way the rest of SociACL does.
+//! s3r.ch copies [docs/s3rch-check.d.ts](../../docs/s3rch-check.d.ts)
+//! and runs light Check in the browser. It does not import this crate.
+//! The Gun adapter surface for that product is Check + `delegate`
+//! only. Elect, wills, and Case C mint stay off that surface. This
+//! crate may Check a Case C [`sociacl_core::Client`] the way the rest
+//! of SociACL does.
 //!
-//! See [docs/gun.md](../../docs/gun.md).
+//! See [docs/s3rch-check.md](../../docs/s3rch-check.md) and
+//! [docs/gun.md](../../docs/gun.md).
 
 mod adapter;
 mod error;

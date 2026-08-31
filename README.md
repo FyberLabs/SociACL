@@ -34,7 +34,7 @@ cargo run --locked -p sociacl-gun --example gun
 
 The Check example is a 3-node `posix-mode` Check (mode 0640). The wills example parses and writes the templates in `examples/wills/`. The Social Light lab is three devices, one enrolled station, a voluntary badge share, and a quiet node that does not become owner. The Gun example is a hint that is not a grant, then dest `delegate` Check.
 
-C FFI (`sociacl-c`) and the Python package (`python/sociacl`) wrap live **Check**, owner-only **delegate** / **undelegate**, will write/load, the Case C **Client** (Check, Remint, Discover, Destroy; Elect fails closed), Social Light hop frames (encode / accept / Check / Remint / Discover; Elect fails closed), and the Gun adapter (hint encode / accept / Check / remint / cancel; Elect fails closed). The Gun surface is Check + `delegate`. s3r.ch reimplements the types in TypeScript and does not import this crate.
+C FFI (`sociacl-c`) and the Python package (`python/sociacl`) wrap live **Check**, owner-only **delegate** / **undelegate**, will write/load, the Case C **Client** (Check, Remint, Discover, Destroy; Elect fails closed), Social Light hop frames (encode / accept / Check / Remint / Discover; Elect fails closed), and the Gun adapter (hint encode / accept / Check / remint / cancel; Elect fails closed). The Gun surface is Check + `delegate`. s3r.ch copies [docs/s3rch-check.d.ts](docs/s3rch-check.d.ts) and reimplements light Check in the browser. It does not import this crate.
 
 ```bash
 cargo build --workspace --locked
@@ -52,7 +52,7 @@ LD_LIBRARY_PATH=target/debug target/sociacl-gun-c
 PYTHONPATH=python python3 python/tests/test_gun.py
 ```
 
-See [ARCHITECTURE.md](ARCHITECTURE.md), [docs/verbs.md](docs/verbs.md), [docs/wills.md](docs/wills.md), [docs/attestations.md](docs/attestations.md), [docs/clocks.md](docs/clocks.md), [docs/social-light.md](docs/social-light.md), and [docs/gun.md](docs/gun.md).
+See [ARCHITECTURE.md](ARCHITECTURE.md), [docs/verbs.md](docs/verbs.md), [docs/wills.md](docs/wills.md), [docs/attestations.md](docs/attestations.md), [docs/clocks.md](docs/clocks.md), [docs/social-light.md](docs/social-light.md), [docs/gun.md](docs/gun.md), and [docs/s3rch-check.md](docs/s3rch-check.md).
 
 ## License
 

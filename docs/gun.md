@@ -2,7 +2,9 @@
 
 Authority-plane mapping for GunDB. This is not the s3r.ch product surface.
 
-[FyberLabs/s3r.ch](https://github.com/FyberLabs/s3r.ch) owns feed, UX, and the TypeScript graph. That work lives on s3r.ch PR #7 (`cursor/gundb-feed-rearchitecture-9b12`). s3r.ch does **not** import this Rust crate. Reimplement the types below in TypeScript. The Gun adapter surface for that product is **Check + `delegate` only**.
+[FyberLabs/s3r.ch](https://github.com/FyberLabs/s3r.ch) owns feed, UX, and the TypeScript graph. That work lives on s3r.ch PR #7 (`cursor/gundb-feed-rearchitecture-9b12`). s3r.ch does **not** import this Rust crate, NAPI, or WASM. Check runs in the browser on the Gun mesh. WASM later is optional and is **not** the lab-feed path.
+
+The consume contract they reimplement is **[s3rch-check.d.ts](s3rch-check.d.ts)** ([s3rch-check.md](s3rch-check.md)). Copy the file or re-type the names. Do not `npm install sociacl`. The Gun adapter surface for that product is **light Check + `delegate` only**.
 
 This crate maps the locked s3r.ch Gun graph onto existing SociACL Check predicates and the keep-operating `delegate` grant. It does not add a Gun-only verb. It does not fork that graph.
 
@@ -60,38 +62,11 @@ Arrays cannot live in Gun. Tags (and later indicators) are a comma-separated str
 
 Graphs: public cache vs personal overlay vs later explicit share-into-mesh. Observing public traces is not dumping a private overlay.
 
-## TypeScript handoff surface
+## TypeScript consume contract
 
-Reimplement these named fields. Do not pull `sociacl-core`.
+Canonical file: [s3rch-check.d.ts](s3rch-check.d.ts). How to consume it: [s3rch-check.md](s3rch-check.md). Lab-feed and initial sharing are light Check only. Later, on request: more verbs on the TS spec for granted distribution.
 
-```ts
-type GunSoul = { segments: string[] }
-// user: ['s3rch', 'users', wallet]
-// item: ['s3rch', 'items', encodeKey(id)]
-// meta: ['s3rch', 'meta']   // not a Check object
-// claim object id: the claim id, linked from the user node
-
-type UrlLeaf = { url: string }  // RSS3 / RSS / Atom / issuer HTTP; not a node; not a grant
-
-type HandoffHint = {
-  principal: string   // wallet / agent id as we name them
-  target: string      // claimed soul, feed item, or claim object id
-  verb?: string       // see | execute | write | …
-  context?: string    // optional; the URL being crossed is not a grant
-}
-
-type IdentitySeeGrant = {
-  claimId: string
-  accessor: string
-  from: number
-  until: number
-}
-
-type FeedTab = "public" | "mine" | "network"  // UX only; not a Check object
-type IdentityClaimKind = "wallet" | "rss3" | "ens" | "kyc_attestation" | "email" | "phone"
-```
-
-`accept_hint` / decode does not verify and does not mint. Destination Check against the live ACL (including `delegate` grants) is the grant. A hint alone fails closed.
+`acceptHint` does not verify and does not mint. Destination Check against the live ACL (including see grants) is the grant. A hint alone fails closed.
 
 ### Hint wire (`SGH1` v1)
 
@@ -132,9 +107,11 @@ Max string 4096. Fail closed on a bad magic, version, or length.
 ## File layout
 
 ```
-docs/gun.md                    this page
-crates/sociacl-gun             types + dest Check + delegate mapping
-crates/sociacl-c/include       encode / accept / Check / see-grant / remint / cancel / elect
+docs/s3rch-check.d.ts          TS consume contract (browser Check; copy / re-type)
+docs/s3rch-check.md            how s3r.ch consumes that file
+docs/gun.md                    this page (Rust adapter map)
+crates/sociacl-gun             reference implementation
+crates/sociacl-c/include       C encode / accept / Check / see-grant / remint / cancel
 python/sociacl                 thin ctypes of the C ABI
 ```
 

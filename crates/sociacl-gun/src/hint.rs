@@ -13,16 +13,8 @@ const MAX_STR: u32 = 4096;
 /// Untrusted edge handoff. User/agent id as we name them, claimed
 /// target, optional verb/context. The hop cannot mint a grant.
 ///
-/// TypeScript surface (reimplement; do not import this crate):
-///
-/// ```text
-/// {
-///   principal: string,  // wallet / agent id
-///   target: string,     // claimed soul, feed item, or claim object id
-///   verb?: string,      // see | execute | write | …
-///   context?: string
-/// }
-/// ```
+/// TypeScript surface: copy [docs/s3rch-check.d.ts](../../../docs/s3rch-check.d.ts).
+/// Do not import this crate.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HandoffHint {
     pub principal: NodeId,
