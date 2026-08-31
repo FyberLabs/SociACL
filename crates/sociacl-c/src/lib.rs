@@ -7,9 +7,9 @@ use std::slice;
 use std::sync::Mutex;
 
 use sociacl_core::{
-    Attestation, AttestationBinding, AttestationChannel, AttestationClaim, AttestationSig,
-    CheckRequest, Client, EnrollmentKind, HolderSecret, IssuerSecret, NodeId, Plane, PredicateId,
-    Relation, SocialLightStatement, VerifyKey,
+    ActionMask, Attestation, AttestationBinding, AttestationChannel, AttestationClaim,
+    AttestationSig, CheckRequest, Client, EnrollmentKind, HolderSecret, IssuerSecret, NodeId,
+    Plane, PredicateId, Relation, SocialLightStatement, Timestamp, VerifyKey,
 };
 
 #[allow(non_camel_case_types)]
@@ -200,6 +200,57 @@ pub extern "C" fn sociacl_jointly_state(
     };
     with_plane(plane, |p| {
         p.jointly_state(from, to, relation);
+        0
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sociacl_delegate(
+    plane: *mut sociacl_plane,
+    owner: *const c_char,
+    principal: *const c_char,
+    object: *const c_char,
+    actions: *const c_char,
+    until_tick: u64,
+) -> c_int {
+    let (Some(owner), Some(principal), Some(object), Some(actions)) =
+        (cstr(owner), cstr(principal), cstr(object), cstr(actions))
+    else {
+        return -1;
+    };
+    let Some(actions) = ActionMask::parse(actions) else {
+        return -1;
+    };
+    let until = if until_tick == 0 {
+        None
+    } else {
+        Some(Timestamp(until_tick))
+    };
+    with_plane(plane, |p| {
+        if p.jointly_delegate(owner, principal, object, actions, until)
+            .is_err()
+        {
+            return -1;
+        }
+        0
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sociacl_undelegate(
+    plane: *mut sociacl_plane,
+    owner: *const c_char,
+    principal: *const c_char,
+    object: *const c_char,
+) -> c_int {
+    let (Some(owner), Some(principal), Some(object)) = (cstr(owner), cstr(principal), cstr(object))
+    else {
+        return -1;
+    };
+    with_plane(plane, |p| {
+        if p.undelegate(owner, principal, object).is_err() {
+            return -1;
+        }
         0
     })
 }
@@ -1276,6 +1327,119 @@ mod tests {
             reason.len(),
         );
         assert_eq!(carol, 0);
+        sociacl_plane_free(plane);
+    }
+
+    #[test]
+    fn ffi_delegate_view_execute_without_view_cancel() {
+        let plane = sociacl_plane_new();
+        assert_eq!(sociacl_add_person(plane, c("alice").as_ptr()), 0);
+        assert_eq!(sociacl_add_person(plane, c("bob").as_ptr()), 0);
+        assert_eq!(
+            sociacl_add_object(plane, c("doc").as_ptr(), c("alice").as_ptr()),
+            0
+        );
+        assert_eq!(
+            sociacl_set_object_property(
+                plane,
+                c("doc").as_ptr(),
+                c("predicate").as_ptr(),
+                c("delegate").as_ptr()
+            ),
+            0
+        );
+        assert_eq!(
+            sociacl_delegate(
+                plane,
+                c("alice").as_ptr(),
+                c("bob").as_ptr(),
+                c("doc").as_ptr(),
+                c("read").as_ptr(),
+                0
+            ),
+            0
+        );
+        let mut reason = [0i8; 64];
+        assert_eq!(
+            sociacl_check(
+                plane,
+                c("read").as_ptr(),
+                c("doc").as_ptr(),
+                c("bob").as_ptr(),
+                c("delegate").as_ptr(),
+                reason.as_mut_ptr(),
+                reason.len(),
+            ),
+            1
+        );
+        assert_eq!(
+            sociacl_check(
+                plane,
+                c("execute").as_ptr(),
+                c("doc").as_ptr(),
+                c("bob").as_ptr(),
+                c("delegate").as_ptr(),
+                reason.as_mut_ptr(),
+                reason.len(),
+            ),
+            0
+        );
+        assert_eq!(
+            sociacl_undelegate(
+                plane,
+                c("alice").as_ptr(),
+                c("bob").as_ptr(),
+                c("doc").as_ptr()
+            ),
+            0
+        );
+        assert_eq!(
+            sociacl_check(
+                plane,
+                c("read").as_ptr(),
+                c("doc").as_ptr(),
+                c("bob").as_ptr(),
+                c("delegate").as_ptr(),
+                reason.as_mut_ptr(),
+                reason.len(),
+            ),
+            0
+        );
+        assert_eq!(
+            sociacl_delegate(
+                plane,
+                c("alice").as_ptr(),
+                c("bob").as_ptr(),
+                c("doc").as_ptr(),
+                c("x").as_ptr(),
+                0
+            ),
+            0
+        );
+        assert_eq!(
+            sociacl_check(
+                plane,
+                c("execute").as_ptr(),
+                c("doc").as_ptr(),
+                c("bob").as_ptr(),
+                c("delegate").as_ptr(),
+                reason.as_mut_ptr(),
+                reason.len(),
+            ),
+            1
+        );
+        assert_eq!(
+            sociacl_check(
+                plane,
+                c("read").as_ptr(),
+                c("doc").as_ptr(),
+                c("bob").as_ptr(),
+                c("delegate").as_ptr(),
+                reason.as_mut_ptr(),
+                reason.len(),
+            ),
+            0
+        );
         sociacl_plane_free(plane);
     }
 

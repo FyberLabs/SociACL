@@ -8,7 +8,8 @@ Fast. Used when the owner's authn still holds.
 
 - No new owner.
 - No rekey.
-- `REMINT` is the keep-operating repair: authz is stale, ACL still names the principal, issue a fresh capability.
+- `REMINT` is the keep-operating repair: authz is stale, ACL still names the principal (including a live `delegate` grant), issue a fresh capability.
+- A temporary `delegate` grant is keep-operating. Owner stays owner. Optional `until` is grant expiry: Check denies that accessor, owner unchanged. That is not a dead-hand Elect.
 
 Inactivity on this clock is **not** death. Do not start Elect because someone went quiet.
 
@@ -35,7 +36,8 @@ The slowness is a policy clock (wait, notify, allow cancel), not a countdown to 
 | Situation | Clock | Verb |
 | --- | --- | --- |
 | Authn live, authz stale, ACL names principal | Keep-operating | Remint |
-| Authn live, owner still live | Keep-operating | Check; Elect refuses |
+| Authn live, owner still live, temporary delegate | Keep-operating | Check on `delegate`; Elect refuses |
+| Delegate `until` elapsed | Keep-operating | Check denies that accessor; owner unchanged |
 | Authn gone, will names heir | Elect | Discover then Elect |
 | Authn gone, will says stay secret / no heir | — | Destroy |
 | Plane gone (Case C) | Keep-operating on the pre-cut bundle | Load the sealed bundle with the holder secret. Offline Check / Remint / Discover / Destroy. Elect refuses. Same-cut rejoin may continue. A union of post-cut Elects refuses. |

@@ -6,6 +6,7 @@ use crate::types::{Action, NodeId, Object, ObjectKind, ObjectProperties, Predica
 
 /// CHECK(action, object, accessor). Predicate is object-driven. Callers may
 /// pass an explicit id; it must match the object's named predicate.
+/// `action` is interpreted by `posix-mode` bits and by a `delegate` mask.
 #[derive(Clone, Debug)]
 pub struct CheckRequest {
     pub action: Action,
@@ -123,7 +124,19 @@ impl Plane {
             .map(|z| z.object_version < snapshot.object_version)
             .unwrap_or(false);
 
-        let allowed = if !stale_zookie {
+        // Grant expiry is checked against `now` even if a prior allow
+        // is cached. `until` is not a dead-hand ownership timer.
+        let until_elapsed = named.as_str() == PredicateId::DELEGATE
+            && self.edges.iter().any(|e| {
+                e.from == request.accessor
+                    && e.to == request.object
+                    && e.relation == Relation::Delegate
+                    && e.until.map(|u| self.now().0 >= u.0).unwrap_or(false)
+            });
+
+        let allowed = if until_elapsed {
+            false
+        } else if !stale_zookie {
             if let Some(hit) = self.cache.get(&key) {
                 hit
             } else {
@@ -247,8 +260,18 @@ impl Plane {
             PredicateId::NAMED_CIRCLE => self.eval_named_circle(object, accessor),
             PredicateId::POSIX_MODE => self.eval_posix_mode(object, accessor, action),
             PredicateId::TRUSTEE => self.has_live(accessor, object, Relation::Trustee),
+            PredicateId::DELEGATE => self.eval_delegate(object, accessor, action),
             _ => false,
         }
+    }
+
+    /// Object names `delegate`; jointly stated live grant; action in
+    /// the mask; until not elapsed. Not posix-mode. Owner stays owner.
+    fn eval_delegate(&self, object: &NodeId, accessor: &NodeId, action: &Action) -> bool {
+        let Some(edge) = self.delegate_edge(accessor, object) else {
+            return false;
+        };
+        self.delegate_grant_holds(edge, Some(action))
     }
 
     fn eval_same_group(&self, object: &NodeId, accessor: &NodeId) -> bool {

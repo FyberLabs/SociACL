@@ -10,8 +10,8 @@ This repository is the public core (MIT). It is not Hypermesh, Panopticon acl-se
 
 | Verb | When | What it does |
 | --- | --- | --- |
-| `CHECK(action, object, accessor)` | Hot path | Object-named predicate on a snapshot of jointly stated edges (plus privilege-up delay). Hopcap 1. Reason is the predicate id. Fail closed if the predicate is unknown, mismatched, or does not hold. |
-| `REMINT` | Authn holds, authz stale | Fresh capability from ACLs that already name this principal. Not an election. |
+| `CHECK(action, object, accessor)` | Hot path | Object-named predicate on a snapshot of jointly stated edges (plus privilege-up delay). Hopcap 1. Reason is the predicate id. Fail closed if the predicate is unknown, mismatched, or does not hold. `delegate` is a keep-operating grant with an action mask (`read` / `write` / `execute`) and optional `until`. Owner stays owner. |
+| `REMINT` | Authn holds, authz stale | Fresh capability from ACLs that already name this principal, including a live delegate grant. Not an election. |
 | `DISCOVER` / `ELECT` | Authn gone | Object finds or elects an owner from a will written while alive. Elect uses the slow clock. Live principals can cancel. No public vacancy ads. |
 | `DESTROY` | No heir, or the will says stay secret | Cryptographic erasure of the object's key material. |
 
@@ -33,7 +33,7 @@ cargo run --locked -p social-light --example lab
 
 The Check example is a 3-node `posix-mode` Check (mode 0640). The wills example parses and writes the templates in `examples/wills/`. The Social Light lab is three devices, one enrolled station, a voluntary badge share, and a quiet node that does not become owner.
 
-C FFI (`sociacl-c`) and the Python package (`python/sociacl`) wrap live **Check**, will write/load, the Case C **Client** (Check, Remint, Discover, Destroy; Elect fails closed), and Social Light hop frames (encode / accept / Check / Remint / Discover; Elect fails closed):
+C FFI (`sociacl-c`) and the Python package (`python/sociacl`) wrap live **Check**, owner-only **delegate** / **undelegate**, will write/load, the Case C **Client** (Check, Remint, Discover, Destroy; Elect fails closed), and Social Light hop frames (encode / accept / Check / Remint / Discover; Elect fails closed):
 
 ```bash
 cargo build --workspace --locked

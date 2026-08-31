@@ -35,8 +35,31 @@ int sociacl_set_object_property(
 );
 
 /* speaker states one side of (from, to, relation).
- * relation: owns | member-of | in-circle | object-group | object-circle | friend | trustee
+ * relation: owns | member-of | in-circle | object-group | object-circle | friend | trustee | delegate
  */
+
+/* Owner-authorized keep-operating grant. Owner speaks for the object;
+ * the call records the delegate accept and advances past the
+ * privilege-up delay (same as jointly_state). actions: comma list or
+ * compact rwx (read, write, execute). until_tick 0 means no expiry.
+ * Expiry is grant expiry, not dead-hand ownership. Owner stays owner.
+ */
+int sociacl_delegate(
+    sociacl_plane *plane,
+    const char *owner,
+    const char *principal,
+    const char *object,
+    const char *actions,
+    uint64_t until_tick
+);
+
+/* Owner-only cancel. Privilege-down is immediate. */
+int sociacl_undelegate(
+    sociacl_plane *plane,
+    const char *owner,
+    const char *principal,
+    const char *object
+);
 int sociacl_state_edge(
     sociacl_plane *plane,
     const char *speaker,

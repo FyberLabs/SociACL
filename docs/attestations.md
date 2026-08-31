@@ -24,7 +24,7 @@ Wrong key, missing enrollment, bad signature, forbidden claim, or subject mismat
 
 | Verb | May consume | Must not |
 | --- | --- | --- |
-| Check | `identity-live` or `device-live` as a *factor* on the object's already-named predicate | Station loudness. A will. A missing factor (missing does not fail Check). |
+| Check | `identity-live` or `device-live` as a *factor* on the object's already-named predicate, including `delegate` | Station loudness. A will. A missing factor (missing does not fail Check). Minting a delegate. |
 | Remint | Enrolled-station liveness, or identity/device liveness, for a principal the ACL already names | Naming a new principal. Reading a will. |
 | Elect | Identity/device liveness only when *choosing* among a pre-enrolled circle that a will already named | Firing because someone attested silence, or because a station was loud. `elect_from_attestation` always fails. |
 

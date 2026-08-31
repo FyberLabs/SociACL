@@ -7,7 +7,7 @@ use crate::attestation::{Attestation, AttestationClaim, Enrollment, EnrollmentKi
 use crate::cache::{HashCache, MemoryHashCache, Snapshot, SnapshotHash};
 use crate::error::{AttestationError, VerbError};
 use crate::types::{
-    AuthnState, Device, Edge, NodeId, NodeKind, Object, ObjectKind, ObjectProperties,
+    Action, AuthnState, Device, Edge, NodeId, NodeKind, Object, ObjectKind, ObjectProperties,
     ObjectVersion, PendingElect, Principal, Relation, Timestamp,
 };
 use crate::will::{Will, WillSubject, WillValidateCtx};
@@ -163,6 +163,8 @@ impl Plane {
             to_stated: true,
             joint_at: Some(self.now),
             effective_at: Some(self.now),
+            actions: crate::types::ActionMask::none(),
+            until: None,
         });
         object
     }
@@ -255,6 +257,8 @@ impl Plane {
             } else {
                 None
             },
+            actions: crate::types::ActionMask::none(),
+            until: None,
         });
     }
 
@@ -594,6 +598,12 @@ impl Plane {
             parts.push(from.as_bytes().to_vec());
             parts.push(to.as_bytes().to_vec());
             parts.push(vec![e.relation as u8]);
+            if e.relation == Relation::Delegate {
+                parts.push(vec![e.actions.bits()]);
+                if let Some(until) = e.until {
+                    parts.push(until.0.to_le_bytes().to_vec());
+                }
+            }
         }
         let refs: Vec<&[u8]> = parts.iter().map(|p| p.as_slice()).collect();
         Some(Snapshot {
@@ -632,7 +642,11 @@ impl Plane {
 
     fn objects_affected_by(&self, from: &NodeId, to: &NodeId, relation: Relation) -> Vec<NodeId> {
         match relation {
-            Relation::Owns | Relation::ObjectGroup | Relation::ObjectCircle | Relation::Trustee => {
+            Relation::Owns
+            | Relation::ObjectGroup
+            | Relation::ObjectCircle
+            | Relation::Trustee
+            | Relation::Delegate => {
                 if self.objects.contains_key(to) {
                     vec![to.clone()]
                 } else {
@@ -702,12 +716,16 @@ impl Plane {
             .map(|e| e.to.clone())
     }
 
-    /// ACL names `principal` on `object` via owner, group, or one-hop circle.
+    /// ACL names `principal` on `object` via owner, group, one-hop circle,
+    /// trustee, or a live keep-operating delegate grant (until not elapsed).
     pub fn acl_names(&self, object: &NodeId, principal: &NodeId) -> bool {
         if self.has_live(principal, object, Relation::Owns) {
             return true;
         }
         if self.has_live(principal, object, Relation::Trustee) {
+            return true;
+        }
+        if self.live_delegate(principal, object) {
             return true;
         }
         if let Some(group) = self.named_group(object) {
@@ -721,6 +739,152 @@ impl Plane {
             }
         }
         false
+    }
+
+    /// Jointly stated `delegate` edge, privilege-up elapsed, until not
+    /// elapsed, mask non-empty. Owner is unchanged.
+    pub(crate) fn live_delegate(&self, principal: &NodeId, object: &NodeId) -> bool {
+        self.delegate_edge(principal, object)
+            .map(|e| self.delegate_grant_holds(e, None))
+            .unwrap_or(false)
+    }
+
+    pub(crate) fn delegate_edge(&self, principal: &NodeId, object: &NodeId) -> Option<&Edge> {
+        self.effective_edges()
+            .find(|e| e.from == *principal && e.to == *object && e.relation == Relation::Delegate)
+    }
+
+    /// Grant holds when the edge is effective, the mask is non-empty, until
+    /// has not elapsed, and `action` (if given) is in the mask.
+    pub(crate) fn delegate_grant_holds(&self, edge: &Edge, action: Option<&Action>) -> bool {
+        if edge.relation != Relation::Delegate || edge.actions.is_empty() {
+            return false;
+        }
+        if let Some(until) = edge.until {
+            if self.now.0 >= until.0 {
+                return false;
+            }
+        }
+        match action {
+            Some(action) => edge.actions.allows(action),
+            None => true,
+        }
+    }
+
+    /// Owner-only keep-operating grant. Owner speaks for the object.
+    /// The principal must state accept. Privilege-up waits for the delay
+    /// after the second statement. Not Elect. Owner stays owner.
+    pub fn delegate(
+        &mut self,
+        owner: impl Into<NodeId>,
+        principal: impl Into<NodeId>,
+        object: impl Into<NodeId>,
+        actions: crate::types::ActionMask,
+        until: Option<Timestamp>,
+    ) -> Result<(), VerbError> {
+        let owner = owner.into();
+        let principal = principal.into();
+        let object = object.into();
+        if actions.is_empty() {
+            return Err(VerbError::InvalidDelegateMask);
+        }
+        let obj = self
+            .objects
+            .get(&object)
+            .ok_or_else(|| VerbError::ObjectNotFound(object.clone()))?;
+        if obj.destroyed {
+            return Err(VerbError::ObjectDestroyed(object.clone()));
+        }
+        if obj.owner != owner {
+            return Err(VerbError::CannotDelegate(owner));
+        }
+        if self.authn(&owner) != AuthnState::Live {
+            return Err(VerbError::AuthnNotLive(owner));
+        }
+        if !self.nodes.contains_key(&principal) {
+            return Err(VerbError::PrincipalNotFound(principal));
+        }
+
+        let shrinks = self
+            .find_edge(&principal, &object, Relation::Delegate)
+            .map(|e| {
+                (e.actions.read && !actions.read)
+                    || (e.actions.write && !actions.write)
+                    || (e.actions.execute && !actions.execute)
+            })
+            .unwrap_or(false);
+
+        self.state_edge(&owner, &principal, &object, Relation::Delegate);
+        let delay = self.privilege_up_delay;
+        let now = self.now;
+        if let Some(edge) = self.find_edge_mut(&principal, &object, Relation::Delegate) {
+            let added = (!edge.actions.read && actions.read)
+                || (!edge.actions.write && actions.write)
+                || (!edge.actions.execute && actions.execute);
+            edge.actions = actions;
+            edge.until = until;
+            if added && edge.is_jointly_stated() {
+                edge.effective_at = Some(Timestamp(now.0.saturating_add(delay.0)));
+            }
+        }
+        if shrinks {
+            self.bump_version(&object);
+        }
+        Ok(())
+    }
+
+    /// Owner-authorized joint ceremony: owner speaks for the object,
+    /// the principal states accept, then `now` advances past the
+    /// privilege-up delay. Same shape as [`Self::jointly_state`].
+    pub fn jointly_delegate(
+        &mut self,
+        owner: impl Into<NodeId>,
+        principal: impl Into<NodeId>,
+        object: impl Into<NodeId>,
+        actions: crate::types::ActionMask,
+        until: Option<Timestamp>,
+    ) -> Result<(), VerbError> {
+        let owner = owner.into();
+        let principal = principal.into();
+        let object = object.into();
+        self.delegate(&owner, &principal, &object, actions, until)?;
+        self.state_edge(&principal, &principal, &object, Relation::Delegate);
+        self.now.0 = self.now.0.saturating_add(self.privilege_up_delay.0);
+        Ok(())
+    }
+
+    /// Owner-only cancel. Unstate, privilege-down immediate, version bump.
+    /// Grant expiry is a different path: Check denies, owner unchanged.
+    pub fn undelegate(
+        &mut self,
+        owner: impl Into<NodeId>,
+        principal: impl Into<NodeId>,
+        object: impl Into<NodeId>,
+    ) -> Result<(), VerbError> {
+        let owner = owner.into();
+        let principal = principal.into();
+        let object = object.into();
+        let obj = self
+            .objects
+            .get(&object)
+            .ok_or_else(|| VerbError::ObjectNotFound(object.clone()))?;
+        if obj.destroyed {
+            return Err(VerbError::ObjectDestroyed(object.clone()));
+        }
+        if obj.owner != owner {
+            return Err(VerbError::CannotDelegate(owner));
+        }
+        if self.authn(&owner) != AuthnState::Live {
+            return Err(VerbError::AuthnNotLive(owner));
+        }
+        self.unstate_edge(&owner, &principal, &object, Relation::Delegate);
+        Ok(())
+    }
+
+    fn find_edge(&self, from: &NodeId, to: &NodeId, relation: Relation) -> Option<&Edge> {
+        self.edges
+            .iter()
+            .find(|e| e.from == *from && e.to == *to && e.relation == relation)
     }
 }
 

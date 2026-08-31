@@ -302,6 +302,8 @@ fn presented_post_cut_edge_is_refused() {
         to_stated: true,
         joint_at: Some(Timestamp(99)),
         effective_at: Some(Timestamp(99)),
+        actions: sociacl_core::ActionMask::none(),
+        until: None,
     });
     assert_eq!(bundle.open().unwrap_err(), VerbError::PostCutMaterial);
 }
@@ -577,6 +579,8 @@ fn tampered_or_post_cut_payload_is_refused() {
         to_stated: true,
         joint_at: Some(Timestamp(99)),
         effective_at: Some(Timestamp(99)),
+        actions: sociacl_core::ActionMask::none(),
+        until: None,
     });
     let post_bytes = post.to_bytes(&secret);
     assert_eq!(

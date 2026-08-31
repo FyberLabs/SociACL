@@ -195,6 +195,8 @@ impl Plane {
             to_stated: true,
             joint_at: Some(self.immediately_effective_at()),
             effective_at: Some(self.immediately_effective_at()),
+            actions: crate::types::ActionMask::none(),
+            until: None,
         });
         self.bump_version(&object);
         self.pending_elects.remove(&object);

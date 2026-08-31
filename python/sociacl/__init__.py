@@ -75,6 +75,22 @@ _LIB.sociacl_jointly_state.argtypes = [
     ctypes.c_char_p,
     ctypes.c_char_p,
 ]
+_LIB.sociacl_delegate.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.c_uint64,
+]
+_LIB.sociacl_delegate.restype = ctypes.c_int
+_LIB.sociacl_undelegate.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+]
+_LIB.sociacl_undelegate.restype = ctypes.c_int
 _LIB.sociacl_enroll.argtypes = [
     ctypes.c_void_p,
     ctypes.c_char_p,
@@ -418,6 +434,27 @@ class Plane:
     def jointly_state(self, frm: str, to: str, relation: str) -> None:
         if _LIB.sociacl_jointly_state(self._ptr, _b(frm), _b(to), _b(relation)) != 0:
             raise CheckError(f"jointly_state {relation}")
+
+    def delegate(
+        self,
+        owner: str,
+        principal: str,
+        object: str,
+        actions: str,
+        until: Optional[int] = None,
+    ) -> None:
+        tick = 0 if until is None else int(until)
+        if (
+            _LIB.sociacl_delegate(
+                self._ptr, _b(owner), _b(principal), _b(object), _b(actions), tick
+            )
+            != 0
+        ):
+            raise CheckError(f"delegate {principal} {object}")
+
+    def undelegate(self, owner: str, principal: str, object: str) -> None:
+        if _LIB.sociacl_undelegate(self._ptr, _b(owner), _b(principal), _b(object)) != 0:
+            raise CheckError(f"undelegate {principal} {object}")
 
     def write_will(self, src: str) -> None:
         reason = ctypes.create_string_buffer(_REASON_LEN)
