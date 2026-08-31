@@ -123,6 +123,8 @@ Hypermesh, chain/IPFS object stores, and ATAK are separate. This plane does not 
 
 Social Light is an attestation channel. SociACL is the authority plane. They compose. They do not merge names. Named public-safe kinds only: `convention-badge` and `enrolled-station`. LightIFF is not implemented here and must not be.
 
+GunDB is an adapter, not a second authority plane. In-graph Gun data is the native ACL. A Check object is a Gun-native feed item or a held claim (same shape). A permalink / RSS3 / RSS / issuer HTTP URL is a leaf, not a node. A handoff hint is untrusted and cannot mint. Destination Check (including `delegate`) issues the grant. `crates/sociacl-gun` maps the locked s3r.ch souls and hints onto existing predicates. s3r.ch reimplements the types in TypeScript and does not import this crate. See [docs/gun.md](docs/gun.md).
+
 [FyberLabs/socialight](https://github.com/FyberLabs/socialight) owns badge, station, and hop delivery. It published hop frame v1 (`SLHP`) in `socialight-hop`. This repo consumes that layout, verifies the attestation bytes, and evaluates the verbs. `crates/social-light` is a local in-process lab; it is not the product sibling and it is not a hosted service. FlexModule (2014) is ancestor badge hardware, not a friend edge. See [docs/social-light.md](docs/social-light.md).
 
 Contracts, if any, execute already-written wills. Oracles accept attestations from pre-enrolled issuers only. See [docs/wills.md](docs/wills.md) and [docs/attestations.md](docs/attestations.md).

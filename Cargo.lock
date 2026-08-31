@@ -360,6 +360,7 @@ name = "sociacl-c"
 version = "0.1.0"
 dependencies = [
  "sociacl-core",
+ "sociacl-gun",
 ]
 
 [[package]]
@@ -373,6 +374,14 @@ dependencies = [
  "sha2",
  "thiserror",
  "zeroize",
+]
+
+[[package]]
+name = "sociacl-gun"
+version = "0.1.0"
+dependencies = [
+ "sociacl-core",
+ "thiserror",
 ]
 
 [[package]]

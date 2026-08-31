@@ -377,6 +377,123 @@ int sociacl_client_social_light_elect(
     size_t reason_len
 );
 
+/* Gun adapter. Hint is untrusted. Decode does not verify or mint.
+ * Destination Check (including delegate) is the grant.
+ * s3r.ch reimplements these types in TypeScript and does not import
+ * the Rust crate. Surface is Check + delegate. Elect always fails.
+ *
+ * object is a Gun-native feed item or held claim (same Check).
+ * action: see | read | execute | write. see maps to read.
+ * verb and context may be NULL. hint and hop may be NULL / 0.
+ */
+
+int sociacl_gun_hint_encode(
+    const char *principal,
+    const char *target,
+    const char *verb,
+    const char *context,
+    unsigned char *bytes_out,
+    size_t bytes_len,
+    size_t *written_out,
+    char *reason_out,
+    size_t reason_len
+);
+
+/* Decode. Does not mint. Returns 0. reason is "hint <principal> <target>". */
+int sociacl_gun_hint_accept(
+    const unsigned char *hint,
+    size_t hint_len,
+    char *reason_out,
+    size_t reason_len
+);
+
+/* Returns 1 allow, 0 deny, -1 error. reason is the predicate id. */
+int sociacl_gun_check(
+    sociacl_plane *plane,
+    const char *action,
+    const char *claim,
+    const char *accessor,
+    const unsigned char *hint,
+    size_t hint_len,
+    const unsigned char *hop,
+    size_t hop_len,
+    char *reason_out,
+    size_t reason_len
+);
+
+/* Dest Check AND IdentitySeeGrant [from, until) at plane now.
+ * from inclusive, until exclusive. hint may be NULL / 0.
+ */
+int sociacl_gun_check_see_grant(
+    sociacl_plane *plane,
+    const char *claim_id,
+    const char *grant_accessor,
+    uint64_t from,
+    uint64_t until,
+    const char *object,
+    const char *accessor,
+    const unsigned char *hint,
+    size_t hint_len,
+    char *reason_out,
+    size_t reason_len
+);
+
+int sociacl_gun_remint(
+    sociacl_plane *plane,
+    const char *claim,
+    const char *principal,
+    char *reason_out,
+    size_t reason_len
+);
+
+/* Owner undelegate / unstate on the dest object. */
+int sociacl_gun_cancel(
+    sociacl_plane *plane,
+    const char *owner,
+    const char *principal,
+    const char *claim
+);
+
+/* Always -1. Elect from a hint fails. */
+int sociacl_gun_elect(
+    sociacl_plane *plane,
+    const char *claim,
+    const unsigned char *hint,
+    size_t hint_len,
+    char *reason_out,
+    size_t reason_len
+);
+
+/* Write s3rch/users/<wallet>. Returns 0. */
+int sociacl_gun_user_soul(
+    const char *wallet,
+    char *dst,
+    size_t dst_len
+);
+
+/* Write s3rch/items/<encodeKey(id)>. Returns 0. */
+int sociacl_gun_item_soul(
+    const char *id,
+    char *dst,
+    size_t dst_len
+);
+
+/* s3r.ch encodeKey: replace . # $ [ ] with _. */
+int sociacl_gun_encode_key(
+    const char *id,
+    char *dst,
+    size_t dst_len
+);
+
+/* Normalize a permalink. A URL is not a Gun node. */
+int sociacl_gun_normalize_url(
+    const char *url,
+    char *dst,
+    size_t dst_len,
+    char *reason_out,
+    size_t reason_len
+);
+
 #ifdef __cplusplus
 }
 #endif

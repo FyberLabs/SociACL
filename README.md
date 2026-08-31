@@ -29,11 +29,12 @@ cargo test --workspace --locked
 cargo run --locked -p sociacl-core --example check
 cargo run --locked -p sociacl-core --example wills
 cargo run --locked -p social-light --example lab
+cargo run --locked -p sociacl-gun --example gun
 ```
 
-The Check example is a 3-node `posix-mode` Check (mode 0640). The wills example parses and writes the templates in `examples/wills/`. The Social Light lab is three devices, one enrolled station, a voluntary badge share, and a quiet node that does not become owner.
+The Check example is a 3-node `posix-mode` Check (mode 0640). The wills example parses and writes the templates in `examples/wills/`. The Social Light lab is three devices, one enrolled station, a voluntary badge share, and a quiet node that does not become owner. The Gun example is a hint that is not a grant, then dest `delegate` Check.
 
-C FFI (`sociacl-c`) and the Python package (`python/sociacl`) wrap live **Check**, owner-only **delegate** / **undelegate**, will write/load, the Case C **Client** (Check, Remint, Discover, Destroy; Elect fails closed), and Social Light hop frames (encode / accept / Check / Remint / Discover; Elect fails closed):
+C FFI (`sociacl-c`) and the Python package (`python/sociacl`) wrap live **Check**, owner-only **delegate** / **undelegate**, will write/load, the Case C **Client** (Check, Remint, Discover, Destroy; Elect fails closed), Social Light hop frames (encode / accept / Check / Remint / Discover; Elect fails closed), and the Gun adapter (hint encode / accept / Check / remint / cancel; Elect fails closed). The Gun surface is Check + `delegate`. s3r.ch reimplements the types in TypeScript and does not import this crate.
 
 ```bash
 cargo build --workspace --locked
@@ -46,9 +47,12 @@ LD_LIBRARY_PATH=target/debug target/sociacl-social-light-c
 PYTHONPATH=python python3 python/tests/test_check.py
 PYTHONPATH=python python3 python/tests/test_client.py
 PYTHONPATH=python python3 python/tests/test_social_light.py
+cc -I crates/sociacl-c/include examples/gun.c -L target/debug -lsociacl -o target/sociacl-gun-c
+LD_LIBRARY_PATH=target/debug target/sociacl-gun-c
+PYTHONPATH=python python3 python/tests/test_gun.py
 ```
 
-See [ARCHITECTURE.md](ARCHITECTURE.md), [docs/verbs.md](docs/verbs.md), [docs/wills.md](docs/wills.md), [docs/attestations.md](docs/attestations.md), [docs/clocks.md](docs/clocks.md), and [docs/social-light.md](docs/social-light.md).
+See [ARCHITECTURE.md](ARCHITECTURE.md), [docs/verbs.md](docs/verbs.md), [docs/wills.md](docs/wills.md), [docs/attestations.md](docs/attestations.md), [docs/clocks.md](docs/clocks.md), [docs/social-light.md](docs/social-light.md), and [docs/gun.md](docs/gun.md).
 
 ## License
 

@@ -1,4 +1,4 @@
-"""SociACL Python bindings. Live Check, Case C Client, Social Light hop frame."""
+"""SociACL Python bindings. Live Check, Case C Client, Social Light hop, Gun hint."""
 
 from __future__ import annotations
 
@@ -342,6 +342,102 @@ _LIB.sociacl_client_social_light_elect.argtypes = [
     ctypes.c_size_t,
 ]
 _LIB.sociacl_client_social_light_elect.restype = ctypes.c_int
+_LIB.sociacl_gun_hint_encode.argtypes = [
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.POINTER(ctypes.c_ubyte),
+    ctypes.c_size_t,
+    ctypes.POINTER(ctypes.c_size_t),
+    ctypes.c_char_p,
+    ctypes.c_size_t,
+]
+_LIB.sociacl_gun_hint_encode.restype = ctypes.c_int
+_LIB.sociacl_gun_hint_accept.argtypes = [
+    ctypes.POINTER(ctypes.c_ubyte),
+    ctypes.c_size_t,
+    ctypes.c_char_p,
+    ctypes.c_size_t,
+]
+_LIB.sociacl_gun_hint_accept.restype = ctypes.c_int
+_LIB.sociacl_gun_check.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.POINTER(ctypes.c_ubyte),
+    ctypes.c_size_t,
+    ctypes.POINTER(ctypes.c_ubyte),
+    ctypes.c_size_t,
+    ctypes.c_char_p,
+    ctypes.c_size_t,
+]
+_LIB.sociacl_gun_check.restype = ctypes.c_int
+_LIB.sociacl_gun_check_see_grant.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.c_uint64,
+    ctypes.c_uint64,
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.POINTER(ctypes.c_ubyte),
+    ctypes.c_size_t,
+    ctypes.c_char_p,
+    ctypes.c_size_t,
+]
+_LIB.sociacl_gun_check_see_grant.restype = ctypes.c_int
+_LIB.sociacl_gun_remint.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.c_size_t,
+]
+_LIB.sociacl_gun_remint.restype = ctypes.c_int
+_LIB.sociacl_gun_cancel.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+]
+_LIB.sociacl_gun_cancel.restype = ctypes.c_int
+_LIB.sociacl_gun_elect.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_char_p,
+    ctypes.POINTER(ctypes.c_ubyte),
+    ctypes.c_size_t,
+    ctypes.c_char_p,
+    ctypes.c_size_t,
+]
+_LIB.sociacl_gun_elect.restype = ctypes.c_int
+_LIB.sociacl_gun_user_soul.argtypes = [
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.c_size_t,
+]
+_LIB.sociacl_gun_user_soul.restype = ctypes.c_int
+_LIB.sociacl_gun_item_soul.argtypes = [
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.c_size_t,
+]
+_LIB.sociacl_gun_item_soul.restype = ctypes.c_int
+_LIB.sociacl_gun_encode_key.argtypes = [
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.c_size_t,
+]
+_LIB.sociacl_gun_encode_key.restype = ctypes.c_int
+_LIB.sociacl_gun_normalize_url.argtypes = [
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.c_size_t,
+    ctypes.c_char_p,
+    ctypes.c_size_t,
+]
+_LIB.sociacl_gun_normalize_url.restype = ctypes.c_int
 
 
 VERIFY_KEY_LEN = 32
@@ -368,6 +464,35 @@ def holder_keygen() -> Tuple[bytes, bytes]:
     if _LIB.sociacl_holder_keygen(pk, sk) != 0:
         raise Error("holder_keygen failed")
     return bytes(pk), bytes(sk)
+
+
+def user_soul(wallet: str) -> str:
+    buf = ctypes.create_string_buffer(_REASON_LEN)
+    if _LIB.sociacl_gun_user_soul(_b(wallet), buf, _REASON_LEN) != 0:
+        raise Error("user_soul failed")
+    return buf.value.decode("utf-8", errors="replace")
+
+
+def item_soul(id: str) -> str:
+    buf = ctypes.create_string_buffer(_REASON_LEN)
+    if _LIB.sociacl_gun_item_soul(_b(id), buf, _REASON_LEN) != 0:
+        raise Error("item_soul failed")
+    return buf.value.decode("utf-8", errors="replace")
+
+
+def encode_key(id: str) -> str:
+    buf = ctypes.create_string_buffer(_REASON_LEN)
+    if _LIB.sociacl_gun_encode_key(_b(id), buf, _REASON_LEN) != 0:
+        raise Error("encode_key failed")
+    return buf.value.decode("utf-8", errors="replace")
+
+
+def normalize_url(url: str) -> str:
+    dst = ctypes.create_string_buffer(_REASON_LEN)
+    reason = ctypes.create_string_buffer(_REASON_LEN)
+    if _LIB.sociacl_gun_normalize_url(_b(url), dst, _REASON_LEN, reason, _REASON_LEN) != 0:
+        raise Error(reason.value.decode("utf-8", errors="replace") or "invalid url")
+    return dst.value.decode("utf-8", errors="replace")
 
 
 def _secret_buf(secret: bytes):
@@ -706,6 +831,149 @@ class Plane:
         )
         text = reason.value.decode("utf-8", errors="replace")
         raise Error(text or "elect does not fire on an attestation")
+
+    def encode_gun_hint(
+        self,
+        principal: str,
+        target: str,
+        verb: Optional[str] = None,
+        context: Optional[str] = None,
+    ) -> bytes:
+        reason = ctypes.create_string_buffer(_REASON_LEN)
+        written = ctypes.c_size_t(0)
+        rc = _LIB.sociacl_gun_hint_encode(
+            _b(principal),
+            _b(target),
+            _b(verb) if verb is not None else None,
+            _b(context) if context is not None else None,
+            None,
+            0,
+            ctypes.byref(written),
+            reason,
+            _REASON_LEN,
+        )
+        if rc != 0:
+            raise Error(reason.value.decode("utf-8", errors="replace") or "encode failed")
+        buf = (ctypes.c_ubyte * written.value)()
+        rc = _LIB.sociacl_gun_hint_encode(
+            _b(principal),
+            _b(target),
+            _b(verb) if verb is not None else None,
+            _b(context) if context is not None else None,
+            buf,
+            written.value,
+            ctypes.byref(written),
+            reason,
+            _REASON_LEN,
+        )
+        if rc != 0:
+            raise Error(reason.value.decode("utf-8", errors="replace") or "encode failed")
+        return bytes(buf[: written.value])
+
+    def accept_gun_hint(self, hint: bytes) -> str:
+        reason = ctypes.create_string_buffer(_REASON_LEN)
+        buf = (ctypes.c_ubyte * len(hint)).from_buffer_copy(hint)
+        rc = _LIB.sociacl_gun_hint_accept(buf, len(hint), reason, _REASON_LEN)
+        text = reason.value.decode("utf-8", errors="replace")
+        if rc != 0:
+            raise Error(text or "accept failed")
+        return text
+
+    def check_gun(
+        self,
+        action: str,
+        claim: str,
+        accessor: str,
+        hint: Optional[bytes] = None,
+        hop: Optional[bytes] = None,
+    ) -> Tuple[bool, str]:
+        reason = ctypes.create_string_buffer(_REASON_LEN)
+        hint_ptr = None
+        hint_len = 0
+        if hint is not None:
+            hint_buf = (ctypes.c_ubyte * len(hint)).from_buffer_copy(hint)
+            hint_ptr = hint_buf
+            hint_len = len(hint)
+        hop_ptr = None
+        hop_len = 0
+        if hop is not None:
+            hop_buf = (ctypes.c_ubyte * len(hop)).from_buffer_copy(hop)
+            hop_ptr = hop_buf
+            hop_len = len(hop)
+        rc = _LIB.sociacl_gun_check(
+            self._ptr,
+            _b(action),
+            _b(claim),
+            _b(accessor),
+            hint_ptr,
+            hint_len,
+            hop_ptr,
+            hop_len,
+            reason,
+            _REASON_LEN,
+        )
+        text = reason.value.decode("utf-8", errors="replace")
+        if rc < 0:
+            raise CheckError(text or "check failed")
+        return (rc == 1, text)
+
+    def check_see_grant(
+        self,
+        claim_id: str,
+        grant_accessor: str,
+        from_tick: int,
+        until_tick: int,
+        object: str,
+        accessor: str,
+        hint: Optional[bytes] = None,
+    ) -> Tuple[bool, str]:
+        reason = ctypes.create_string_buffer(_REASON_LEN)
+        hint_ptr = None
+        hint_len = 0
+        if hint is not None:
+            hint_buf = (ctypes.c_ubyte * len(hint)).from_buffer_copy(hint)
+            hint_ptr = hint_buf
+            hint_len = len(hint)
+        rc = _LIB.sociacl_gun_check_see_grant(
+            self._ptr,
+            _b(claim_id),
+            _b(grant_accessor),
+            from_tick,
+            until_tick,
+            _b(object),
+            _b(accessor),
+            hint_ptr,
+            hint_len,
+            reason,
+            _REASON_LEN,
+        )
+        text = reason.value.decode("utf-8", errors="replace")
+        if rc < 0:
+            raise CheckError(text or "check failed")
+        return (rc == 1, text)
+
+    def remint_gun(self, claim: str, principal: str) -> str:
+        reason = ctypes.create_string_buffer(_REASON_LEN)
+        rc = _LIB.sociacl_gun_remint(
+            self._ptr, _b(claim), _b(principal), reason, _REASON_LEN
+        )
+        text = reason.value.decode("utf-8", errors="replace")
+        if rc != 1:
+            raise Error(text or "remint failed")
+        return text
+
+    def cancel_gun(self, owner: str, principal: str, claim: str) -> None:
+        if _LIB.sociacl_gun_cancel(self._ptr, _b(owner), _b(principal), _b(claim)) != 0:
+            raise CheckError(f"cancel {principal} {claim}")
+
+    def elect_gun(self, claim: str, hint: bytes) -> None:
+        reason = ctypes.create_string_buffer(_REASON_LEN)
+        buf = (ctypes.c_ubyte * len(hint)).from_buffer_copy(hint)
+        _LIB.sociacl_gun_elect(
+            self._ptr, _b(claim), buf, len(hint), reason, _REASON_LEN
+        )
+        text = reason.value.decode("utf-8", errors="replace")
+        raise Error(text or "elect does not fire on a handoff hint")
 
     def export_bundle_file(self, holder: str, path: str, secret: bytes) -> None:
         reason = ctypes.create_string_buffer(_REASON_LEN)

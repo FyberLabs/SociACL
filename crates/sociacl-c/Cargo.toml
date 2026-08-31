@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "C FFI for SociACL Check, Case C Client, and Social Light hop frames"
+description = "C FFI for SociACL Check, Case C Client, Social Light hop frames, and Gun adapter"
 
 [lib]
 name = "sociacl"
@@ -12,3 +12,4 @@ crate-type = ["cdylib", "staticlib", "rlib"]
 
 [dependencies]
 sociacl-core = { path = "../sociacl-core" }
+sociacl-gun = { path = "../sociacl-gun" }

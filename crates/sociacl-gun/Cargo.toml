@@ -1,0 +1,15 @@
+[package]
+name = "sociacl-gun"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "GunDB adapter: souls and URL leaves onto SociACL Check and delegate"
+
+[[example]]
+name = "gun"
+path = "../../examples/gun.rs"
+
+[dependencies]
+sociacl-core = { path = "../sociacl-core" }
+thiserror = "2"
