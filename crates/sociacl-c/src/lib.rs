@@ -11,6 +11,10 @@ use sociacl_core::{
     AttestationSig, CheckRequest, Client, EnrollmentKind, HolderSecret, IssuerSecret, NodeId,
     Plane, PredicateId, Relation, SocialLightStatement, Timestamp, VerifyKey,
 };
+use sociacl_gun::{
+    accept_hint_bytes, cancel as gun_cancel, check as gun_check, elect_from_hint,
+    remint as gun_remint, GunSoul, HandoffHint, UrlLeaf,
+};
 
 #[allow(non_camel_case_types)]
 pub struct sociacl_plane {
@@ -1258,6 +1262,265 @@ pub extern "C" fn sociacl_client_social_light_elect(
     })
 }
 
+#[no_mangle]
+pub extern "C" fn sociacl_gun_hint_encode(
+    principal: *const c_char,
+    target: *const c_char,
+    verb: *const c_char,
+    context: *const c_char,
+    bytes_out: *mut u8,
+    bytes_len: usize,
+    written_out: *mut usize,
+    reason_out: *mut c_char,
+    reason_len: usize,
+) -> c_int {
+    let (Some(principal), Some(target)) = (cstr(principal), cstr(target)) else {
+        write_reason(reason_out, reason_len, "invalid-argument");
+        return -1;
+    };
+    let hint = match HandoffHint::parse(principal, target, cstr(verb), cstr(context)) {
+        Ok(h) => h,
+        Err(e) => {
+            write_reason(reason_out, reason_len, &e.to_string());
+            return -1;
+        }
+    };
+    match hint.encode() {
+        Ok(bytes) => write_encoded(
+            bytes,
+            bytes_out,
+            bytes_len,
+            written_out,
+            reason_out,
+            reason_len,
+        ),
+        Err(e) => {
+            write_reason(reason_out, reason_len, &e.to_string());
+            -1
+        }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn sociacl_gun_hint_accept(
+    hint: *const u8,
+    hint_len: usize,
+    reason_out: *mut c_char,
+    reason_len: usize,
+) -> c_int {
+    let Some(bytes) = frame_slice(hint, hint_len) else {
+        write_reason(reason_out, reason_len, "invalid-argument");
+        return -1;
+    };
+    match accept_hint_bytes(bytes) {
+        Ok(h) => {
+            write_reason(reason_out, reason_len, &h.as_reason());
+            0
+        }
+        Err(e) => {
+            write_reason(reason_out, reason_len, &e.to_string());
+            -1
+        }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn sociacl_gun_check(
+    plane: *mut sociacl_plane,
+    action: *const c_char,
+    claim: *const c_char,
+    accessor: *const c_char,
+    hint: *const u8,
+    hint_len: usize,
+    hop: *const u8,
+    hop_len: usize,
+    reason_out: *mut c_char,
+    reason_len: usize,
+) -> c_int {
+    let (Some(action), Some(claim), Some(accessor)) = (cstr(action), cstr(claim), cstr(accessor))
+    else {
+        write_reason(reason_out, reason_len, "invalid-argument");
+        return -1;
+    };
+    let parsed_hint = if hint_len == 0 || hint.is_null() {
+        None
+    } else {
+        let Some(bytes) = frame_slice(hint, hint_len) else {
+            write_reason(reason_out, reason_len, "invalid-argument");
+            return -1;
+        };
+        match accept_hint_bytes(bytes) {
+            Ok(h) => Some(h),
+            Err(e) => {
+                write_reason(reason_out, reason_len, &e.to_string());
+                return -1;
+            }
+        }
+    };
+    with_plane(plane, |p| {
+        let hop_stmt = if hop_len == 0 || hop.is_null() {
+            None
+        } else {
+            let Some(bytes) = frame_slice(hop, hop_len) else {
+                write_reason(reason_out, reason_len, "invalid-argument");
+                return -1;
+            };
+            match SocialLightStatement::decode(bytes) {
+                Ok(s) => Some(s),
+                Err(e) => {
+                    write_reason(reason_out, reason_len, &e.to_string());
+                    return -1;
+                }
+            }
+        };
+        match gun_check(
+            p,
+            action,
+            claim,
+            accessor,
+            parsed_hint.as_ref(),
+            hop_stmt.as_ref(),
+        ) {
+            Ok(result) => {
+                write_reason(reason_out, reason_len, result.reason.as_str());
+                if result.allowed {
+                    1
+                } else {
+                    0
+                }
+            }
+            Err(e) => {
+                write_reason(reason_out, reason_len, &e.to_string());
+                -1
+            }
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sociacl_gun_remint(
+    plane: *mut sociacl_plane,
+    claim: *const c_char,
+    principal: *const c_char,
+    reason_out: *mut c_char,
+    reason_len: usize,
+) -> c_int {
+    let (Some(claim), Some(principal)) = (cstr(claim), cstr(principal)) else {
+        write_reason(reason_out, reason_len, "invalid-argument");
+        return -1;
+    };
+    with_plane(plane, |p| match gun_remint(p, claim, principal, None) {
+        Ok(_) => {
+            write_reason(reason_out, reason_len, "remint");
+            1
+        }
+        Err(e) => {
+            write_reason(reason_out, reason_len, &e.to_string());
+            -1
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sociacl_gun_cancel(
+    plane: *mut sociacl_plane,
+    owner: *const c_char,
+    principal: *const c_char,
+    claim: *const c_char,
+) -> c_int {
+    let (Some(owner), Some(principal), Some(claim)) = (cstr(owner), cstr(principal), cstr(claim))
+    else {
+        return -1;
+    };
+    with_plane(plane, |p| {
+        if gun_cancel(p, owner, principal, claim).is_err() {
+            return -1;
+        }
+        0
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sociacl_gun_elect(
+    plane: *mut sociacl_plane,
+    claim: *const c_char,
+    hint: *const u8,
+    hint_len: usize,
+    reason_out: *mut c_char,
+    reason_len: usize,
+) -> c_int {
+    let Some(claim) = cstr(claim) else {
+        write_reason(reason_out, reason_len, "invalid-argument");
+        return -1;
+    };
+    let Some(bytes) = frame_slice(hint, hint_len) else {
+        write_reason(reason_out, reason_len, "invalid-argument");
+        return -1;
+    };
+    let parsed = match accept_hint_bytes(bytes) {
+        Ok(h) => h,
+        Err(e) => {
+            write_reason(reason_out, reason_len, &e.to_string());
+            return -1;
+        }
+    };
+    with_plane(plane, |p| match elect_from_hint(p, claim, &parsed) {
+        Ok(_) => {
+            write_reason(reason_out, reason_len, "elect-must-not-succeed");
+            -1
+        }
+        Err(e) => {
+            write_reason(reason_out, reason_len, &e.to_string());
+            -1
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sociacl_gun_user_soul(
+    wallet: *const c_char,
+    dst: *mut c_char,
+    dst_len: usize,
+) -> c_int {
+    let Some(wallet) = cstr(wallet) else {
+        return -1;
+    };
+    if dst.is_null() || dst_len == 0 {
+        return -1;
+    }
+    let soul = GunSoul::s3rch_user(wallet).as_node_id();
+    write_reason(dst, dst_len, soul.as_str());
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn sociacl_gun_normalize_url(
+    url: *const c_char,
+    dst: *mut c_char,
+    dst_len: usize,
+    reason_out: *mut c_char,
+    reason_len: usize,
+) -> c_int {
+    let Some(url) = cstr(url) else {
+        write_reason(reason_out, reason_len, "invalid-argument");
+        return -1;
+    };
+    match UrlLeaf::parse(url) {
+        Ok(leaf) => {
+            if dst.is_null() || dst_len == 0 {
+                write_reason(reason_out, reason_len, "invalid-argument");
+                return -1;
+            }
+            write_reason(dst, dst_len, leaf.normalized());
+            0
+        }
+        Err(e) => {
+            write_reason(reason_out, reason_len, &e.to_string());
+            -1
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2043,6 +2306,213 @@ mod tests {
             ),
             -1
         );
+        sociacl_plane_free(plane);
+    }
+
+    #[test]
+    fn ffi_gun_hint_is_not_a_grant_dest_check_is() {
+        let plane = sociacl_plane_new();
+        let mut soul = [0i8; 64];
+        assert_eq!(
+            sociacl_gun_user_soul(c("0xalice").as_ptr(), soul.as_mut_ptr(), soul.len()),
+            0
+        );
+        let alice = unsafe { CStr::from_ptr(soul.as_ptr()) }
+            .to_string_lossy()
+            .into_owned();
+        assert_eq!(alice, "s3rch/users/0xalice");
+        assert_eq!(sociacl_add_person(plane, c(&alice).as_ptr()), 0);
+        assert_eq!(
+            sociacl_gun_user_soul(c("0xbob").as_ptr(), soul.as_mut_ptr(), soul.len()),
+            0
+        );
+        let bob = unsafe { CStr::from_ptr(soul.as_ptr()) }
+            .to_string_lossy()
+            .into_owned();
+        assert_eq!(sociacl_add_person(plane, c(&bob).as_ptr()), 0);
+        assert_eq!(
+            sociacl_add_object(plane, c("claim-1").as_ptr(), c(&alice).as_ptr()),
+            0
+        );
+        assert_eq!(
+            sociacl_set_object_property(
+                plane,
+                c("claim-1").as_ptr(),
+                c("predicate").as_ptr(),
+                c("delegate").as_ptr()
+            ),
+            0
+        );
+
+        let mut reason = [0i8; 128];
+        let mut written = 0usize;
+        assert_eq!(
+            sociacl_gun_hint_encode(
+                c(&bob).as_ptr(),
+                c("claim-1").as_ptr(),
+                c("see").as_ptr(),
+                ptr::null(),
+                ptr::null_mut(),
+                0,
+                &mut written,
+                reason.as_mut_ptr(),
+                reason.len(),
+            ),
+            0
+        );
+        let mut hint = vec![0u8; written];
+        assert_eq!(
+            sociacl_gun_hint_encode(
+                c(&bob).as_ptr(),
+                c("claim-1").as_ptr(),
+                c("see").as_ptr(),
+                ptr::null(),
+                hint.as_mut_ptr(),
+                hint.len(),
+                &mut written,
+                reason.as_mut_ptr(),
+                reason.len(),
+            ),
+            0
+        );
+        assert_eq!(&hint[..4], b"SGH1");
+        assert_eq!(
+            sociacl_gun_hint_accept(hint.as_ptr(), written, reason.as_mut_ptr(), reason.len()),
+            0
+        );
+        assert_eq!(
+            sociacl_gun_check(
+                plane,
+                c("see").as_ptr(),
+                c("claim-1").as_ptr(),
+                c(&bob).as_ptr(),
+                hint.as_ptr(),
+                written,
+                ptr::null(),
+                0,
+                reason.as_mut_ptr(),
+                reason.len(),
+            ),
+            0,
+            "hint alone fails closed"
+        );
+        assert_eq!(
+            sociacl_delegate(
+                plane,
+                c(&alice).as_ptr(),
+                c(&bob).as_ptr(),
+                c("claim-1").as_ptr(),
+                c("read").as_ptr(),
+                0
+            ),
+            0
+        );
+        assert_eq!(
+            sociacl_gun_check(
+                plane,
+                c("see").as_ptr(),
+                c("claim-1").as_ptr(),
+                c(&bob).as_ptr(),
+                hint.as_ptr(),
+                written,
+                ptr::null(),
+                0,
+                reason.as_mut_ptr(),
+                reason.len(),
+            ),
+            1
+        );
+        assert_eq!(
+            sociacl_gun_elect(
+                plane,
+                c("claim-1").as_ptr(),
+                hint.as_ptr(),
+                written,
+                reason.as_mut_ptr(),
+                reason.len()
+            ),
+            -1
+        );
+        assert_eq!(
+            sociacl_gun_cancel(
+                plane,
+                c(&alice).as_ptr(),
+                c(&bob).as_ptr(),
+                c("claim-1").as_ptr()
+            ),
+            0
+        );
+        assert_eq!(
+            sociacl_gun_check(
+                plane,
+                c("see").as_ptr(),
+                c("claim-1").as_ptr(),
+                c(&bob).as_ptr(),
+                ptr::null(),
+                0,
+                ptr::null(),
+                0,
+                reason.as_mut_ptr(),
+                reason.len(),
+            ),
+            0
+        );
+        assert_eq!(
+            sociacl_delegate(
+                plane,
+                c(&alice).as_ptr(),
+                c(&bob).as_ptr(),
+                c("claim-1").as_ptr(),
+                c("x").as_ptr(),
+                0
+            ),
+            0
+        );
+        assert_eq!(
+            sociacl_gun_check(
+                plane,
+                c("execute").as_ptr(),
+                c("claim-1").as_ptr(),
+                c(&bob).as_ptr(),
+                ptr::null(),
+                0,
+                ptr::null(),
+                0,
+                reason.as_mut_ptr(),
+                reason.len(),
+            ),
+            1
+        );
+        assert_eq!(
+            sociacl_gun_check(
+                plane,
+                c("see").as_ptr(),
+                c("claim-1").as_ptr(),
+                c(&bob).as_ptr(),
+                ptr::null(),
+                0,
+                ptr::null(),
+                0,
+                reason.as_mut_ptr(),
+                reason.len(),
+            ),
+            0
+        );
+        let mut url = [0i8; 64];
+        assert_eq!(
+            sociacl_gun_normalize_url(
+                c("https://Example.COM/item/1/#x").as_ptr(),
+                url.as_mut_ptr(),
+                url.len(),
+                reason.as_mut_ptr(),
+                reason.len(),
+            ),
+            0
+        );
+        let normalized = unsafe { CStr::from_ptr(url.as_ptr()) }
+            .to_string_lossy()
+            .into_owned();
+        assert_eq!(normalized, "https://example.com/item/1");
         sociacl_plane_free(plane);
     }
 }

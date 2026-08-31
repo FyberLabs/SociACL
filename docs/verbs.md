@@ -87,6 +87,8 @@ On the Case C client path, `elect` and `commit_elect` refuse. The C and Python b
 
 A Social Light statement is a channel, not a grant. Check, Remint, and Discover may consume a hop frame (`SLHP`, as published by FyberLabs/socialight) through the existing attestation verify path. Elect from a flash always fails. socialight delivers the bytes. See [social-light.md](social-light.md).
 
+A Gun handoff hint is untrusted. Decode does not mint. Destination Check, including a live `delegate` grant, issues the grant. `see` maps to Check `read`. Elect from a hint fails. See [gun.md](gun.md).
+
 No public vacancy ads. No dead-hand timer.
 
 ## DESTROY(object)
