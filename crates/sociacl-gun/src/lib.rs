@@ -27,14 +27,14 @@ mod soul;
 
 pub use adapter::{
     accept_hint, accept_hint_bytes, add_claim, add_feed_node, add_item, add_wallet,
-    apply_see_grant, cancel, check, check_execute, check_see, client_check, client_elect_from_hint,
-    client_mint_grant, client_remint, elect_from_delegate, elect_from_hint, map_action, remint,
-    GunCheckResult,
+    apply_see_grant, cancel, check, check_execute, check_see, check_see_grant, client_check,
+    client_elect_from_hint, client_mint_grant, client_remint, elect_from_delegate, elect_from_hint,
+    map_action, remint, GunCheckResult,
 };
 pub use error::GunError;
 pub use feed::{
-    from_gun_node, item_key, to_gun_node, FeedItem, FeedMeta, FeedSource, GunFeedNode, GunUserNode,
-    IdentityClaimKind, IdentitySeeGrant, OffGraphKind,
+    from_gun_node, item_key, to_gun_node, FeedItem, FeedMeta, FeedSource, FeedTab, GunFeedNode,
+    GunUserNode, IdentityClaimKind, IdentitySeeGrant, OffGraphKind,
 };
 pub use hint::{HandoffHint, MAGIC as HINT_MAGIC, VERSION as HINT_VERSION};
 pub use leaf::{normalize_permalink, normalize_tags, split_tags, ItemShape, UrlLeaf};

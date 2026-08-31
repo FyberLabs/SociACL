@@ -374,6 +374,20 @@ _LIB.sociacl_gun_check.argtypes = [
     ctypes.c_size_t,
 ]
 _LIB.sociacl_gun_check.restype = ctypes.c_int
+_LIB.sociacl_gun_check_see_grant.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.c_uint64,
+    ctypes.c_uint64,
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.POINTER(ctypes.c_ubyte),
+    ctypes.c_size_t,
+    ctypes.c_char_p,
+    ctypes.c_size_t,
+]
+_LIB.sociacl_gun_check_see_grant.restype = ctypes.c_int
 _LIB.sociacl_gun_remint.argtypes = [
     ctypes.c_void_p,
     ctypes.c_char_p,
@@ -895,6 +909,41 @@ class Plane:
             hint_len,
             hop_ptr,
             hop_len,
+            reason,
+            _REASON_LEN,
+        )
+        text = reason.value.decode("utf-8", errors="replace")
+        if rc < 0:
+            raise CheckError(text or "check failed")
+        return (rc == 1, text)
+
+    def check_see_grant(
+        self,
+        claim_id: str,
+        grant_accessor: str,
+        from_tick: int,
+        until_tick: int,
+        object: str,
+        accessor: str,
+        hint: Optional[bytes] = None,
+    ) -> Tuple[bool, str]:
+        reason = ctypes.create_string_buffer(_REASON_LEN)
+        hint_ptr = None
+        hint_len = 0
+        if hint is not None:
+            hint_buf = (ctypes.c_ubyte * len(hint)).from_buffer_copy(hint)
+            hint_ptr = hint_buf
+            hint_len = len(hint)
+        rc = _LIB.sociacl_gun_check_see_grant(
+            self._ptr,
+            _b(claim_id),
+            _b(grant_accessor),
+            from_tick,
+            until_tick,
+            _b(object),
+            _b(accessor),
+            hint_ptr,
+            hint_len,
             reason,
             _REASON_LEN,
         )

@@ -46,13 +46,15 @@ gun.get('s3rch').get('users').get(wallet)        → GunUserNode
 { id, source: rss3|rss|atom, kind, author, body, ts, permalink, tags: string, provenance }
 ```
 
-`FeedItem` is UX only (`tags: string[]`). Mapping is `toGunNode` / `fromGunNode`. Unknown `source` is not a feed node. Dedupe: canonical id, else normalized permalink.
+`FeedItem` is UX only (`tags: string[]`). Mapping is `toGunNode` / `fromGunNode`. Unknown `source` is not a feed node. Empty `kind` maps to `"activity"` (same as s3r.ch `fromGunNode`). Dedupe: canonical id, else normalized permalink.
+
+`FeedTab` is `"public" | "mine" | "network"`. UX only. Not a Check object.
 
 `GunUserNode` (typed, later): `{ id, indicators: string[], provenance, ts }`. Indicators are a comma-separated string on the Gun wire, same as tags. Do not invent a second user node.
 
 `IdentityClaimKind`: `wallet | rss3 | ens | kyc_attestation | email | phone`. Issuers prove a claim to the holder. They are not grants.
 
-`IdentitySeeGrant`: `{ claimId, accessor, from, until }`. Maps onto keep-operating `delegate` read with `until`. hopcap 1. Jointly stated. Revoke immediate. Not Elect.
+`IdentitySeeGrant`: `{ claimId, accessor, from, until }`. Maps onto keep-operating `delegate` read with `until`. hopcap 1. Jointly stated. Revoke immediate. Not Elect. Dest Check `until` is exclusive (existing `delegate`). `from` is inclusive and is **not** on the dest edge — `check_see_grant` ANDs dest Check with `now ∈ [from, until)`. `CHECK(see, object, accessor)` at now.
 
 Arrays cannot live in Gun. Tags (and later indicators) are a comma-separated string on the wire.
 
@@ -84,6 +86,9 @@ type IdentitySeeGrant = {
   from: number
   until: number
 }
+
+type FeedTab = "public" | "mine" | "network"  // UX only; not a Check object
+type IdentityClaimKind = "wallet" | "rss3" | "ens" | "kyc_attestation" | "email" | "phone"
 ```
 
 `accept_hint` / decode does not verify and does not mint. Destination Check against the live ACL (including `delegate` grants) is the grant. A hint alone fails closed.
@@ -115,7 +120,7 @@ Max string 4096. Fail closed on a bad magic, version, or length.
 | object | `GunFeedNode` or a held claim (same Check) |
 | accessor | wallet / Gun peer (`s3rch/users/<wallet>`) |
 | execute-without-view | `delegate` mask `execute` without `read` |
-| `IdentitySeeGrant` | `delegate` read + `until`; cancel is undelegate |
+| `IdentitySeeGrant` | `delegate` read + `until`; `check_see_grant` ANDs `[from, until)` at now; cancel is undelegate |
 | cancel | owner `undelegate` / unstate on the dest object |
 | remint | refresh only if the current ACL already names the principal |
 | permalink / RSS3 / RSS / KYC HTTP | `UrlLeaf` (handoff, not a node) |
@@ -129,7 +134,7 @@ Max string 4096. Fail closed on a bad magic, version, or length.
 ```
 docs/gun.md                    this page
 crates/sociacl-gun             types + dest Check + delegate mapping
-crates/sociacl-c/include       encode / accept / Check / remint / cancel / elect
+crates/sociacl-c/include       encode / accept / Check / see-grant / remint / cancel / elect
 python/sociacl                 thin ctypes of the C ABI
 ```
 

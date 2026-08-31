@@ -421,6 +421,23 @@ int sociacl_gun_check(
     size_t reason_len
 );
 
+/* Dest Check AND IdentitySeeGrant [from, until) at plane now.
+ * from inclusive, until exclusive. hint may be NULL / 0.
+ */
+int sociacl_gun_check_see_grant(
+    sociacl_plane *plane,
+    const char *claim_id,
+    const char *grant_accessor,
+    uint64_t from,
+    uint64_t until,
+    const char *object,
+    const char *accessor,
+    const unsigned char *hint,
+    size_t hint_len,
+    char *reason_out,
+    size_t reason_len
+);
+
 int sociacl_gun_remint(
     sociacl_plane *plane,
     const char *claim,

@@ -75,4 +75,8 @@ def test_feed_item_checks_the_same_as_a_claim():
     allowed, reason = plane.check_gun("see", object_id, bob, hint=hint)
     assert allowed is True
     assert reason == "delegate"
+    allowed, _ = plane.check_see_grant(object_id, bob, 40, 80, object_id, bob)
+    assert allowed is False, "from window denies at now=0"
+    allowed, _ = plane.check_see_grant(object_id, bob, 0, 80, object_id, bob)
+    assert allowed is True
     plane.close()

@@ -12,8 +12,9 @@ use sociacl_core::{
     Plane, PredicateId, Relation, SocialLightStatement, Timestamp, VerifyKey,
 };
 use sociacl_gun::{
-    accept_hint_bytes, cancel as gun_cancel, check as gun_check, elect_from_hint, encode_key,
-    remint as gun_remint, GunSoul, HandoffHint, UrlLeaf,
+    accept_hint_bytes, cancel as gun_cancel, check as gun_check,
+    check_see_grant as gun_check_see_grant, elect_from_hint, encode_key, remint as gun_remint,
+    GunSoul, HandoffHint, IdentitySeeGrant, UrlLeaf,
 };
 
 #[allow(non_camel_case_types)]
@@ -1397,6 +1398,70 @@ pub extern "C" fn sociacl_gun_check(
     })
 }
 
+/// Dest Check AND `IdentitySeeGrant` `[from, until)` at plane now.
+/// Returns 1 allow, 0 deny, -1 error.
+#[no_mangle]
+pub extern "C" fn sociacl_gun_check_see_grant(
+    plane: *mut sociacl_plane,
+    claim_id: *const c_char,
+    grant_accessor: *const c_char,
+    from: u64,
+    until: u64,
+    object: *const c_char,
+    accessor: *const c_char,
+    hint: *const u8,
+    hint_len: usize,
+    reason_out: *mut c_char,
+    reason_len: usize,
+) -> c_int {
+    let (Some(claim_id), Some(grant_accessor), Some(object), Some(accessor)) = (
+        cstr(claim_id),
+        cstr(grant_accessor),
+        cstr(object),
+        cstr(accessor),
+    ) else {
+        write_reason(reason_out, reason_len, "invalid-argument");
+        return -1;
+    };
+    let grant = IdentitySeeGrant {
+        claim_id: claim_id.to_string(),
+        accessor: grant_accessor.into(),
+        from: Timestamp(from),
+        until: Timestamp(until),
+    };
+    let parsed_hint = if hint_len == 0 || hint.is_null() {
+        None
+    } else {
+        let Some(bytes) = frame_slice(hint, hint_len) else {
+            write_reason(reason_out, reason_len, "invalid-argument");
+            return -1;
+        };
+        match accept_hint_bytes(bytes) {
+            Ok(h) => Some(h),
+            Err(e) => {
+                write_reason(reason_out, reason_len, &e.to_string());
+                return -1;
+            }
+        }
+    };
+    with_plane(plane, |p| {
+        match gun_check_see_grant(p, &grant, object, accessor, parsed_hint.as_ref()) {
+            Ok(result) => {
+                write_reason(reason_out, reason_len, result.reason.as_str());
+                if result.allowed {
+                    1
+                } else {
+                    0
+                }
+            }
+            Err(e) => {
+                write_reason(reason_out, reason_len, &e.to_string());
+                -1
+            }
+        }
+    })
+}
+
 #[no_mangle]
 pub extern "C" fn sociacl_gun_remint(
     plane: *mut sociacl_plane,
@@ -2448,6 +2513,39 @@ mod tests {
                 c(&bob).as_ptr(),
                 hint.as_ptr(),
                 written,
+                ptr::null(),
+                0,
+                reason.as_mut_ptr(),
+                reason.len(),
+            ),
+            1
+        );
+        assert_eq!(
+            sociacl_gun_check_see_grant(
+                plane,
+                c("claim-1").as_ptr(),
+                c(&bob).as_ptr(),
+                40,
+                80,
+                c("claim-1").as_ptr(),
+                c(&bob).as_ptr(),
+                ptr::null(),
+                0,
+                reason.as_mut_ptr(),
+                reason.len(),
+            ),
+            0,
+            "from window denies even when dest Check allows"
+        );
+        assert_eq!(
+            sociacl_gun_check_see_grant(
+                plane,
+                c("claim-1").as_ptr(),
+                c(&bob).as_ptr(),
+                0,
+                80,
+                c("claim-1").as_ptr(),
+                c(&bob).as_ptr(),
                 ptr::null(),
                 0,
                 reason.as_mut_ptr(),

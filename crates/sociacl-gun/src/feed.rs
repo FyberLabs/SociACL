@@ -122,10 +122,15 @@ pub fn from_gun_node(node: &GunFeedNode) -> Option<FeedItem> {
         return None;
     }
     let source = FeedSource::parse(&node.source)?;
+    let kind = as_text(&node.kind);
     Some(FeedItem {
         id: id.to_string(),
         source,
-        kind: as_text(&node.kind),
+        kind: if kind.is_empty() {
+            "activity".to_string()
+        } else {
+            kind
+        },
         author: as_text(&node.author),
         body: as_text(&node.body),
         ts: node.ts,
@@ -219,21 +224,81 @@ pub struct IdentitySeeGrant {
 
 impl IdentitySeeGrant {
     pub fn object_id(&self) -> NodeId {
-        if self.claim_id.contains('/') || self.claim_id.contains(".get(") {
-            GunSoul::parse(&self.claim_id)
+        let id = self.claim_id.trim();
+        if id.contains('/') || id.contains(".get(") {
+            GunSoul::parse(id)
                 .map(|s| s.as_node_id())
-                .unwrap_or_else(|_| NodeId::new(self.claim_id.trim()))
+                .unwrap_or_else(|_| NodeId::new(id))
         } else {
-            NodeId::new(self.claim_id.trim())
+            NodeId::new(id)
         }
     }
 
+    /// Wallet as we name them → locked `s3rch/users/<wallet>`. A soul
+    /// path is left as-is. Not a second user node.
+    pub fn accessor_id(&self) -> NodeId {
+        resolve_wallet_or_soul(self.accessor.as_str())
+    }
+
+    /// Claim id, item soul, or raw item id (`encodeKey` path).
+    pub fn names_object(&self, object: &NodeId) -> bool {
+        let id = self.object_id();
+        if id == *object {
+            return true;
+        }
+        GunSoul::s3rch_item(self.claim_id.trim()).as_node_id() == *object
+    }
+
+    pub fn names_accessor(&self, accessor: &NodeId) -> bool {
+        self.accessor == *accessor || self.accessor_id() == *accessor
+    }
+
+    /// `now ∈ [from, until)` at dest Check. `until` is exclusive, same
+    /// as keep-operating `delegate`. `from` is inclusive.
     pub fn live_at(&self, now: Timestamp) -> bool {
         now.0 >= self.from.0 && now.0 < self.until.0
     }
 }
 
-/// Seed / snapshot meta. Not a Check object.
+fn resolve_wallet_or_soul(s: &str) -> NodeId {
+    let s = s.trim();
+    if s.contains('/') || s.contains(".get(") {
+        GunSoul::parse(s)
+            .map(|soul| soul.as_node_id())
+            .unwrap_or_else(|_| NodeId::new(s))
+    } else {
+        GunSoul::s3rch_user(s).as_node_id()
+    }
+}
+
+/// Locked later tab. UX only. Not a Check object.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+pub enum FeedTab {
+    Public,
+    Mine,
+    Network,
+}
+
+impl FeedTab {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Public => "public",
+            Self::Mine => "mine",
+            Self::Network => "network",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.trim() {
+            "public" => Some(Self::Public),
+            "mine" => Some(Self::Mine),
+            "network" => Some(Self::Network),
+            _ => None,
+        }
+    }
+}
+
+/// `gun.get('s3rch').get('meta')`. Seed peer cache. Not a Check object.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct FeedMeta {
     pub seeded_at: Option<String>,

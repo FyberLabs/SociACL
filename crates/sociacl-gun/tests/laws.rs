@@ -4,11 +4,11 @@ use sociacl_core::{
 };
 use sociacl_gun::{
     accept_hint, accept_hint_bytes, add_claim, add_item, add_wallet, apply_see_grant, cancel,
-    check, check_execute, check_see, client_check, client_elect_from_hint, client_mint_grant,
-    client_remint, elect_from_delegate, elect_from_hint, encode_key, from_gun_node, remint,
-    to_gun_node, FeedItem, FeedSource, GunError, GunNode, GunSoul, GunUserNode, HandoffHint,
-    IdentityClaimKind, IdentitySeeGrant, ItemShape, OffGraphKind, UrlLeaf, HINT_MAGIC, S3RCH_ITEMS,
-    S3RCH_META, S3RCH_ROOT, S3RCH_USERS, SEE,
+    check, check_execute, check_see, check_see_grant, client_check, client_elect_from_hint,
+    client_mint_grant, client_remint, elect_from_delegate, elect_from_hint, encode_key,
+    from_gun_node, remint, to_gun_node, FeedItem, FeedSource, FeedTab, GunError, GunNode, GunSoul,
+    GunUserNode, HandoffHint, IdentityClaimKind, IdentitySeeGrant, ItemShape, OffGraphKind,
+    UrlLeaf, HINT_MAGIC, S3RCH_ITEMS, S3RCH_META, S3RCH_ROOT, S3RCH_USERS, SEE,
 };
 
 fn wallet_plane() -> (
@@ -508,12 +508,105 @@ fn identity_see_grant_is_delegate_not_elect() {
     apply_see_grant(&mut plane, &alice, &grant).unwrap();
     assert!(grant.live_at(Timestamp(0)));
     assert!(check_see(&plane, &claim, &bob, None).unwrap().allowed);
+    assert!(
+        check_see_grant(&plane, &grant, &claim, &bob, None)
+            .unwrap()
+            .allowed
+    );
     plane.set_now(Timestamp(80));
     assert!(!check_see(&plane, &claim, &bob, None).unwrap().allowed);
+    assert!(
+        !check_see_grant(&plane, &grant, &claim, &bob, None)
+            .unwrap()
+            .allowed
+    );
     assert_eq!(plane.object(&claim).unwrap().owner, alice);
     assert_eq!(
         elect_from_delegate(&mut plane, &claim).unwrap_err(),
         VerbError::KeepOperatingSuffices(claim.clone())
+    );
+}
+
+#[test]
+fn see_grant_from_window_denies_until_now() {
+    let (mut plane, alice, bob, claim) = delegate_claim();
+    let grant = IdentitySeeGrant {
+        claim_id: claim.as_str().to_string(),
+        accessor: bob.clone(),
+        from: Timestamp(40),
+        until: Timestamp(80),
+    };
+    apply_see_grant(&mut plane, &alice, &grant).unwrap();
+    plane.set_now(Timestamp(10));
+    assert!(
+        check_see(&plane, &claim, &bob, None).unwrap().allowed,
+        "dest delegate is live; until alone is not the grant window"
+    );
+    assert!(
+        !check_see_grant(&plane, &grant, &claim, &bob, None)
+            .unwrap()
+            .allowed,
+        "CHECK(see, object, accessor) at now ANDs [from, until)"
+    );
+    plane.set_now(Timestamp(40));
+    assert!(
+        check_see_grant(&plane, &grant, &claim, &bob, None)
+            .unwrap()
+            .allowed
+    );
+    plane.set_now(Timestamp(80));
+    assert!(
+        !check_see_grant(&plane, &grant, &claim, &bob, None)
+            .unwrap()
+            .allowed
+    );
+    assert_eq!(plane.object(&claim).unwrap().owner, alice);
+}
+
+#[test]
+fn from_gun_node_empty_kind_is_activity() {
+    let mut node = to_gun_node(&sample_feed_item());
+    node.kind = "  ".into();
+    assert_eq!(from_gun_node(&node).unwrap().kind, "activity");
+    node.kind = String::new();
+    assert_eq!(from_gun_node(&node).unwrap().kind, "activity");
+}
+
+#[test]
+fn meta_soul_is_not_a_check_object() {
+    let mut plane = Plane::new();
+    let alice = add_wallet(&mut plane, "0xalice");
+    let meta = GunSoul::s3rch_meta().as_node_id();
+    assert!(meta.as_str() == "s3rch/meta");
+    assert!(
+        check_see(&plane, &meta, &alice, None).is_err(),
+        "seed meta is not a Check object"
+    );
+}
+
+#[test]
+fn feed_tab_is_ux_not_a_check_object() {
+    assert_eq!(FeedTab::Public.as_str(), "public");
+    assert_eq!(FeedTab::parse("mine"), Some(FeedTab::Mine));
+    assert_eq!(FeedTab::parse("network"), Some(FeedTab::Network));
+    assert!(FeedTab::parse("secret").is_none());
+}
+
+#[test]
+fn see_grant_bare_wallet_accessor_is_the_user_soul() {
+    let (mut plane, alice, bob, claim) = delegate_claim();
+    let grant = IdentitySeeGrant {
+        claim_id: claim.as_str().to_string(),
+        accessor: "0xbob".into(),
+        from: Timestamp(0),
+        until: Timestamp(80),
+    };
+    assert_eq!(grant.accessor_id(), bob);
+    apply_see_grant(&mut plane, &alice, &grant).unwrap();
+    assert!(
+        check_see_grant(&plane, &grant, &claim, &bob, None)
+            .unwrap()
+            .allowed
     );
 }
 

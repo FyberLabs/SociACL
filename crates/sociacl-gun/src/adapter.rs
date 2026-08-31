@@ -94,6 +94,34 @@ pub fn check_see(
     check(plane, SEE, object, accessor, hint, None)
 }
 
+/// Dest Check AND the jointly-stated `[from, until)` window.
+/// `from` denies until `plane.now()` is in range — dest `until`
+/// alone is not enough. Hop can factor dest Check; it cannot mint.
+pub fn check_see_grant(
+    plane: &Plane,
+    grant: &IdentitySeeGrant,
+    object: impl Into<NodeId>,
+    accessor: impl Into<NodeId>,
+    hint: Option<&HandoffHint>,
+) -> Result<GunCheckResult, sociacl_core::CheckError> {
+    let object = object.into();
+    let accessor = accessor.into();
+    let dest = check_see(plane, object.clone(), accessor.clone(), hint)?;
+    if !grant.names_object(&object)
+        || !grant.names_accessor(&accessor)
+        || !grant.live_at(plane.now())
+    {
+        return Ok(GunCheckResult {
+            allowed: false,
+            reason: dest.reason,
+            zookie: dest.zookie,
+            attestation_factor: dest.attestation_factor,
+            hint: dest.hint,
+        });
+    }
+    Ok(dest)
+}
+
 /// Execute-without-read uses the existing `delegate` mask. Not Elect.
 pub fn check_execute(
     plane: &Plane,
@@ -226,21 +254,31 @@ pub fn add_feed_node(plane: &mut Plane, node: &GunFeedNode, owner: impl Into<Nod
 }
 
 /// `IdentitySeeGrant` is keep-operating `delegate` read with `until`.
-/// Not Elect. Privilege-down is `cancel` / undelegate.
+/// Not Elect. Privilege-down is `cancel` / undelegate. `from` is
+/// enforced at Check, not by delaying the dest edge.
 pub fn apply_see_grant(
     plane: &mut Plane,
     owner: impl Into<NodeId>,
     grant: &IdentitySeeGrant,
 ) -> Result<(), VerbError> {
-    let object = grant.object_id();
-    if plane.object(&object).is_none() {
-        return Err(VerbError::ObjectNotFound(object));
-    }
+    let object = resolve_grant_object(plane, grant)?;
     plane.jointly_delegate(
         owner,
-        &grant.accessor,
+        grant.accessor_id(),
         object,
         ActionMask::read(),
         Some(grant.until),
     )
+}
+
+fn resolve_grant_object(plane: &Plane, grant: &IdentitySeeGrant) -> Result<NodeId, VerbError> {
+    let object = grant.object_id();
+    if plane.object(&object).is_some() {
+        return Ok(object);
+    }
+    let item = GunSoul::s3rch_item(grant.claim_id.trim()).as_node_id();
+    if plane.object(&item).is_some() {
+        return Ok(item);
+    }
+    Err(VerbError::ObjectNotFound(object))
 }
