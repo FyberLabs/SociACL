@@ -18,7 +18,7 @@ const MAX_STR: u32 = 4096;
 /// ```text
 /// {
 ///   principal: string,  // wallet / agent id
-///   target: string,     // claimed soul or claim object id
+///   target: string,     // claimed soul, feed item, or claim object id
 ///   verb?: string,      // see | execute | write | …
 ///   context?: string
 /// }

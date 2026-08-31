@@ -12,7 +12,7 @@ use sociacl_core::{
     Plane, PredicateId, Relation, SocialLightStatement, Timestamp, VerifyKey,
 };
 use sociacl_gun::{
-    accept_hint_bytes, cancel as gun_cancel, check as gun_check, elect_from_hint,
+    accept_hint_bytes, cancel as gun_cancel, check as gun_check, elect_from_hint, encode_key,
     remint as gun_remint, GunSoul, HandoffHint, UrlLeaf,
 };
 
@@ -1494,6 +1494,39 @@ pub extern "C" fn sociacl_gun_user_soul(
 }
 
 #[no_mangle]
+pub extern "C" fn sociacl_gun_item_soul(
+    id: *const c_char,
+    dst: *mut c_char,
+    dst_len: usize,
+) -> c_int {
+    let Some(id) = cstr(id) else {
+        return -1;
+    };
+    if dst.is_null() || dst_len == 0 {
+        return -1;
+    }
+    let soul = GunSoul::s3rch_item(id).as_node_id();
+    write_reason(dst, dst_len, soul.as_str());
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn sociacl_gun_encode_key(
+    id: *const c_char,
+    dst: *mut c_char,
+    dst_len: usize,
+) -> c_int {
+    let Some(id) = cstr(id) else {
+        return -1;
+    };
+    if dst.is_null() || dst_len == 0 {
+        return -1;
+    }
+    write_reason(dst, dst_len, &encode_key(id));
+    0
+}
+
+#[no_mangle]
 pub extern "C" fn sociacl_gun_normalize_url(
     url: *const c_char,
     dst: *mut c_char,
@@ -2513,6 +2546,15 @@ mod tests {
             .to_string_lossy()
             .into_owned();
         assert_eq!(normalized, "https://example.com/item/1");
+        let mut item = [0i8; 64];
+        assert_eq!(
+            sociacl_gun_item_soul(c("rss3:act/1#x").as_ptr(), item.as_mut_ptr(), item.len()),
+            0
+        );
+        let item_soul = unsafe { CStr::from_ptr(item.as_ptr()) }
+            .to_string_lossy()
+            .into_owned();
+        assert_eq!(item_soul, "s3rch/items/rss3:act/1_x");
         sociacl_plane_free(plane);
     }
 }

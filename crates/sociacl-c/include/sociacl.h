@@ -382,6 +382,7 @@ int sociacl_client_social_light_elect(
  * s3r.ch reimplements these types in TypeScript and does not import
  * the Rust crate. Surface is Check + delegate. Elect always fails.
  *
+ * object is a Gun-native feed item or held claim (same Check).
  * action: see | read | execute | write. see maps to read.
  * verb and context may be NULL. hint and hop may be NULL / 0.
  */
@@ -449,6 +450,20 @@ int sociacl_gun_elect(
 /* Write s3rch/users/<wallet>. Returns 0. */
 int sociacl_gun_user_soul(
     const char *wallet,
+    char *dst,
+    size_t dst_len
+);
+
+/* Write s3rch/items/<encodeKey(id)>. Returns 0. */
+int sociacl_gun_item_soul(
+    const char *id,
+    char *dst,
+    size_t dst_len
+);
+
+/* s3r.ch encodeKey: replace . # $ [ ] with _. */
+int sociacl_gun_encode_key(
+    const char *id,
     char *dst,
     size_t dst_len
 );

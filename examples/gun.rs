@@ -8,8 +8,8 @@
 
 use sociacl_core::{ActionMask, PredicateId};
 use sociacl_gun::{
-    accept_hint, add_claim, add_wallet, cancel, check_execute, check_see, elect_from_hint,
-    HandoffHint, UrlLeaf, SEE,
+    accept_hint, add_claim, add_item, add_wallet, cancel, check_execute, check_see,
+    elect_from_hint, FeedItem, FeedSource, HandoffHint, UrlLeaf, SEE,
 };
 
 fn main() {
@@ -55,10 +55,28 @@ fn main() {
         Err(e) => println!("elect from hint: {e}"),
     }
 
-    let leaf = UrlLeaf::parse("https://Example.COM/item/1/#x").unwrap();
+    let leaf = UrlLeaf::parse("https://gi.rss3.io/decentralized/0xalice").unwrap();
     println!(
         "url leaf: normalized={} gun_node={}",
         leaf.normalized(),
         leaf.is_gun_node()
     );
+
+    let item = FeedItem {
+        id: "rss3:act/1#x".into(),
+        source: FeedSource::Rss3,
+        kind: "social".into(),
+        author: "0xalice".into(),
+        body: "hello".into(),
+        ts: 1,
+        permalink: leaf.normalized().to_string(),
+        tags: vec!["social".into()],
+        provenance: "rss3:gi".into(),
+    };
+    let feed = add_item(&mut plane, &item, &alice).unwrap();
+    plane
+        .set_object_property(&feed, "predicate", PredicateId::OWNER)
+        .unwrap();
+    let feed_see = check_see(&plane, &feed, &alice, None).unwrap();
+    println!("feed item: soul={} see={}", feed, feed_see.allowed);
 }

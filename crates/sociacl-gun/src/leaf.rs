@@ -2,8 +2,9 @@ use sociacl_core::NodeId;
 
 use crate::GunError;
 
-/// Non-Gun pointer. A permalink / ingest URL is a leaf, not a Gun
-/// node and not an ACL grant.
+/// Non-Gun pointer. A permalink, RSS3 GI, RSS/Atom, or issuer HTTP
+/// URL is a leaf, not a Gun node and not an ACL grant. Crossing it
+/// is an edge handoff. Destination re-authorizes on the way back.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct UrlLeaf {
     raw: String,
@@ -53,12 +54,10 @@ pub struct ItemShape {
 }
 
 impl ItemShape {
-    /// Gun stores tags as a comma-separated string.
+    /// Gun stores tags as a comma-separated string. Same normalize
+    /// as s3r.ch: trim, lowercase, dedupe.
     pub fn tags_from_csv(s: &str) -> Vec<String> {
-        s.split(',')
-            .map(|t| t.trim().to_string())
-            .filter(|t| !t.is_empty())
-            .collect()
+        split_tags(s)
     }
 
     pub fn tags_as_csv(&self) -> String {
@@ -75,6 +74,24 @@ impl ItemShape {
         }
         self.permalink.as_ref().map(|u| u.normalized().to_string())
     }
+}
+
+/// s3r.ch `splitTags` / `normalizeTags`: trim, lowercase, dedupe.
+pub fn split_tags(value: &str) -> Vec<String> {
+    normalize_tags(value.split(',').map(|t| t.to_string()))
+}
+
+pub fn normalize_tags(tags: impl IntoIterator<Item = impl AsRef<str>>) -> Vec<String> {
+    let mut seen = std::collections::BTreeSet::new();
+    let mut out = Vec::new();
+    for raw in tags {
+        let tag = raw.as_ref().trim().to_ascii_lowercase();
+        if tag.is_empty() || !seen.insert(tag.clone()) {
+            continue;
+        }
+        out.push(tag);
+    }
+    out
 }
 
 /// Lowercase scheme and host. Drop fragment. Drop a trailing slash

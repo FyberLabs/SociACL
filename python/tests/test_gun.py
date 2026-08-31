@@ -1,6 +1,6 @@
 """Gun adapter Python binding tests. Requires `cargo build -p sociacl-c`."""
 
-from sociacl import Error, Plane, normalize_url, user_soul
+from sociacl import Error, Plane, encode_key, item_soul, normalize_url, user_soul
 
 
 def test_hint_is_not_a_grant_dest_check_is():
@@ -53,3 +53,26 @@ def test_url_leaf_is_not_a_node():
         raise AssertionError("a soul is not a URL leaf")
     except Error:
         pass
+
+
+def test_feed_item_checks_the_same_as_a_claim():
+    assert encode_key("rss3:act/1#x") == "rss3:act/1_x"
+    object_id = item_soul("rss3:act/1#x")
+    assert object_id == "s3rch/items/rss3:act/1_x"
+    plane = Plane()
+    alice = user_soul("0xalice")
+    bob = user_soul("0xbob")
+    plane.add_person(alice)
+    plane.add_person(bob)
+    plane.add_object(object_id, alice)
+    plane.set_object_property(object_id, "predicate", "delegate")
+    hint = plane.encode_gun_hint(
+        bob, object_id, verb="see", context="https://gi.rss3.io/decentralized/0xalice"
+    )
+    allowed, _ = plane.check_gun("see", object_id, bob, hint=hint)
+    assert allowed is False
+    plane.delegate(alice, bob, object_id, "read")
+    allowed, reason = plane.check_gun("see", object_id, bob, hint=hint)
+    assert allowed is True
+    assert reason == "delegate"
+    plane.close()

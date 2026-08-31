@@ -404,6 +404,18 @@ _LIB.sociacl_gun_user_soul.argtypes = [
     ctypes.c_size_t,
 ]
 _LIB.sociacl_gun_user_soul.restype = ctypes.c_int
+_LIB.sociacl_gun_item_soul.argtypes = [
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.c_size_t,
+]
+_LIB.sociacl_gun_item_soul.restype = ctypes.c_int
+_LIB.sociacl_gun_encode_key.argtypes = [
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.c_size_t,
+]
+_LIB.sociacl_gun_encode_key.restype = ctypes.c_int
 _LIB.sociacl_gun_normalize_url.argtypes = [
     ctypes.c_char_p,
     ctypes.c_char_p,
@@ -444,6 +456,20 @@ def user_soul(wallet: str) -> str:
     buf = ctypes.create_string_buffer(_REASON_LEN)
     if _LIB.sociacl_gun_user_soul(_b(wallet), buf, _REASON_LEN) != 0:
         raise Error("user_soul failed")
+    return buf.value.decode("utf-8", errors="replace")
+
+
+def item_soul(id: str) -> str:
+    buf = ctypes.create_string_buffer(_REASON_LEN)
+    if _LIB.sociacl_gun_item_soul(_b(id), buf, _REASON_LEN) != 0:
+        raise Error("item_soul failed")
+    return buf.value.decode("utf-8", errors="replace")
+
+
+def encode_key(id: str) -> str:
+    buf = ctypes.create_string_buffer(_REASON_LEN)
+    if _LIB.sociacl_gun_encode_key(_b(id), buf, _REASON_LEN) != 0:
+        raise Error("encode_key failed")
     return buf.value.decode("utf-8", errors="replace")
 
 

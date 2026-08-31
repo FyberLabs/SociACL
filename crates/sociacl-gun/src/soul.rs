@@ -4,6 +4,20 @@ use sociacl_core::NodeId;
 pub const S3RCH_ROOT: &str = "s3rch";
 /// Locked user collection: `gun.get('s3rch').get('users').get(wallet)`.
 pub const S3RCH_USERS: &str = "users";
+/// Locked feed collection: `gun.get('s3rch').get('items').get(encodeKey(id))`.
+pub const S3RCH_ITEMS: &str = "items";
+/// Locked seed meta: `gun.get('s3rch').get('meta')`. Not a Check object.
+pub const S3RCH_META: &str = "meta";
+
+/// s3r.ch `encodeKey`: replace `. # $ [ ]` with `_`.
+pub fn encode_key(id: &str) -> String {
+    id.chars()
+        .map(|c| match c {
+            '.' | '#' | '$' | '[' | ']' => '_',
+            _ => c,
+        })
+        .collect()
+}
 
 /// Gun soul path. Maps onto an existing [`NodeId`].
 ///
@@ -29,6 +43,16 @@ impl GunSoul {
     /// `gun.get('s3rch').get('users').get(wallet)`.
     pub fn s3rch_user(wallet: impl AsRef<str>) -> Self {
         Self::new([S3RCH_ROOT, S3RCH_USERS, wallet.as_ref()])
+    }
+
+    /// `gun.get('s3rch').get('items').get(encodeKey(id))`.
+    pub fn s3rch_item(id: impl AsRef<str>) -> Self {
+        Self::new([S3RCH_ROOT, S3RCH_ITEMS, &encode_key(id.as_ref())])
+    }
+
+    /// `gun.get('s3rch').get('meta')`.
+    pub fn s3rch_meta() -> Self {
+        Self::new([S3RCH_ROOT, S3RCH_META])
     }
 
     /// Slash or `gun.get('a').get('b')` form. Does not verify the graph.
@@ -60,6 +84,16 @@ impl GunSoul {
         self.segments.len() == 3
             && self.segments[0] == S3RCH_ROOT
             && self.segments[1] == S3RCH_USERS
+    }
+
+    pub fn is_s3rch_item(&self) -> bool {
+        self.segments.len() == 3
+            && self.segments[0] == S3RCH_ROOT
+            && self.segments[1] == S3RCH_ITEMS
+    }
+
+    pub fn is_s3rch_meta(&self) -> bool {
+        self.segments.len() == 2 && self.segments[0] == S3RCH_ROOT && self.segments[1] == S3RCH_META
     }
 
     pub fn wallet(&self) -> Option<&str> {
@@ -99,15 +133,19 @@ fn parse_gun_gets(s: &str) -> Result<GunSoul, crate::GunError> {
 }
 
 /// What a soul names on the locked graph. A user is a wallet.
-/// A claim is the Check object. Not a second identity node.
+/// A feed item or a held claim is the Check object. Not a second
+/// identity node.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub enum GunNodeKind {
     User,
+    Feed,
     Claim,
 }
 
 /// Gun node mapped onto [`NodeId`]. Users use the locked
-/// `s3rch/users/<wallet>` soul. Claims use the claim id (dedup key).
+/// `s3rch/users/<wallet>` soul. Feed items use
+/// `s3rch/items/<encodeKey(id)>`. Claims use the claim id (linked
+/// from the user node; not a second user).
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct GunNode {
     pub soul: GunSoul,
@@ -122,8 +160,16 @@ impl GunNode {
         }
     }
 
-    /// Claim object. The id is the item `id` (or the claim soul the
-    /// graph already uses). Do not invent a second user node.
+    /// In-graph feed item. Same Check path as a held claim.
+    pub fn feed(id: impl AsRef<str>) -> Self {
+        Self {
+            soul: GunSoul::s3rch_item(id),
+            kind: GunNodeKind::Feed,
+        }
+    }
+
+    /// Held claim on the identity graph. The id is the claim id.
+    /// Do not invent a second user node.
     pub fn claim(id: impl AsRef<str>) -> Self {
         Self {
             soul: GunSoul::new([id.as_ref()]),

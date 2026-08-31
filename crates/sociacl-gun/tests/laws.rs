@@ -3,10 +3,12 @@ use sociacl_core::{
     Relation, Timestamp, VerbError,
 };
 use sociacl_gun::{
-    accept_hint, accept_hint_bytes, add_claim, add_wallet, cancel, check, check_execute, check_see,
-    client_check, client_elect_from_hint, client_mint_grant, client_remint, elect_from_delegate,
-    elect_from_hint, remint, GunError, GunNode, GunSoul, HandoffHint, ItemShape, UrlLeaf,
-    HINT_MAGIC, S3RCH_ROOT, S3RCH_USERS, SEE,
+    accept_hint, accept_hint_bytes, add_claim, add_item, add_wallet, apply_see_grant, cancel,
+    check, check_execute, check_see, client_check, client_elect_from_hint, client_mint_grant,
+    client_remint, elect_from_delegate, elect_from_hint, encode_key, from_gun_node, remint,
+    to_gun_node, FeedItem, FeedSource, GunError, GunNode, GunSoul, GunUserNode, HandoffHint,
+    IdentityClaimKind, IdentitySeeGrant, ItemShape, OffGraphKind, UrlLeaf, HINT_MAGIC, S3RCH_ITEMS,
+    S3RCH_META, S3RCH_ROOT, S3RCH_USERS, SEE,
 };
 
 fn wallet_plane() -> (
@@ -341,4 +343,195 @@ fn hint_does_not_mint_a_missing_accessor() {
         check_see(&plane, &claim, "stranger", Some(&hint)).unwrap_err(),
         sociacl_core::CheckError::AccessorNotFound(_)
     ));
+}
+
+fn sample_feed_item() -> FeedItem {
+    FeedItem {
+        id: "rss3:act/1#x".into(),
+        source: FeedSource::Rss3,
+        kind: "social".into(),
+        author: "0xalice".into(),
+        body: "hello".into(),
+        ts: 1,
+        permalink: "https://gi.rss3.io/decentralized/0xalice".into(),
+        tags: vec!["Social".into(), "farcaster".into(), "social".into()],
+        provenance: "rss3:gi".into(),
+    }
+}
+
+#[test]
+fn encode_key_and_item_soul_match_s3rch() {
+    assert_eq!(encode_key("rss3:act/1#x"), "rss3:act/1_x");
+    assert_eq!(encode_key("a.b#$[c]"), "a_b___c_");
+    let soul = GunSoul::s3rch_item("rss3:act/1#x");
+    assert!(soul.is_s3rch_item());
+    assert_eq!(soul.as_node_id().as_str(), "s3rch/items/rss3:act/1_x");
+    assert_eq!(
+        GunSoul::s3rch_item("rss3:act/1#x").segments()[1],
+        S3RCH_ITEMS
+    );
+    assert!(GunSoul::s3rch_meta().is_s3rch_meta());
+    assert_eq!(GunSoul::s3rch_meta().segments()[1], S3RCH_META);
+    assert_eq!(
+        GunNode::feed("rss3:act/1#x").as_node_id(),
+        soul.as_node_id()
+    );
+}
+
+#[test]
+fn feed_item_checks_the_same_as_a_claim() {
+    let mut plane = Plane::new();
+    let alice = add_wallet(&mut plane, "0xalice");
+    let bob = add_wallet(&mut plane, "0xbob");
+    let item = sample_feed_item();
+    let node = to_gun_node(&item);
+    assert_eq!(node.tags, "Social,farcaster,social");
+    let back = from_gun_node(&node).unwrap();
+    assert_eq!(back.source, FeedSource::Rss3);
+    assert_eq!(back.tags, vec!["social", "farcaster"]);
+
+    let object = add_item(&mut plane, &item, &alice).unwrap();
+    assert_eq!(object.as_str(), "s3rch/items/rss3:act/1_x");
+    plane
+        .set_object_property(&object, "predicate", PredicateId::DELEGATE)
+        .unwrap();
+
+    assert!(
+        check_see(&plane, &object, &alice, None).unwrap().allowed == false,
+        "delegate predicate does not imply owner"
+    );
+    plane
+        .set_object_property(&object, "predicate", PredicateId::OWNER)
+        .unwrap();
+    assert!(
+        check_see(&plane, &object, &alice, None).unwrap().allowed,
+        "holder sees their Gun-native feed item"
+    );
+    plane
+        .set_object_property(&object, "predicate", PredicateId::DELEGATE)
+        .unwrap();
+
+    let hint = HandoffHint::parse(
+        bob.as_str(),
+        object.as_str(),
+        Some(SEE),
+        Some(item.permalink.as_str()),
+    )
+    .unwrap();
+    assert!(
+        !check_see(&plane, &object, &bob, Some(&hint))
+            .unwrap()
+            .allowed
+    );
+
+    plane
+        .jointly_delegate(&alice, &bob, &object, ActionMask::read(), None)
+        .unwrap();
+    assert!(
+        check_see(&plane, &object, &bob, Some(&hint))
+            .unwrap()
+            .allowed,
+        "feed item dest Check is the same as a claim"
+    );
+    plane
+        .jointly_delegate(&alice, &bob, &object, ActionMask::execute(), None)
+        .unwrap();
+    assert!(check_execute(&plane, &object, &bob, None).unwrap().allowed);
+    assert!(
+        !check_see(&plane, &object, &bob, None).unwrap().allowed,
+        "execute-without-read stays delegate, not Elect"
+    );
+}
+
+#[test]
+fn rss3_rss_kyc_http_is_url_handoff_not_a_node() {
+    for url in [
+        "https://gi.rss3.io/decentralized/network/ethereum",
+        "https://example.com/feed.xml",
+        "https://issuer.example/kyc/attest",
+    ] {
+        let leaf = UrlLeaf::parse(url).unwrap();
+        assert!(!leaf.is_gun_node(), "{url} is not a Gun node");
+        assert!(leaf.as_node_id().is_none());
+    }
+    assert!(IdentityClaimKind::KycAttestation.issuer_is_url());
+    assert!(IdentityClaimKind::Email.issuer_is_url());
+    assert!(!IdentityClaimKind::Wallet.issuer_is_url());
+    assert_eq!(OffGraphKind::Rss3.as_str(), "rss3");
+
+    let mut plane = Plane::new();
+    let alice = add_wallet(&mut plane, "0xalice");
+    let bob = add_wallet(&mut plane, "0xbob");
+    let item = sample_feed_item();
+    let object = item.as_node_id().unwrap();
+    let hint = HandoffHint::parse(
+        bob.as_str(),
+        object.as_str(),
+        Some(SEE),
+        Some("https://gi.rss3.io/decentralized/0xalice"),
+    )
+    .unwrap();
+    assert!(
+        check_see(&plane, &object, &bob, Some(&hint)).is_err(),
+        "a URL handoff does not admit a Gun object"
+    );
+
+    let admitted = add_item(&mut plane, &item, &alice).unwrap();
+    plane
+        .set_object_property(&admitted, "predicate", PredicateId::DELEGATE)
+        .unwrap();
+    assert!(
+        !check_see(&plane, &admitted, &bob, Some(&hint))
+            .unwrap()
+            .allowed,
+        "dest re-authorizes; hint still not a grant"
+    );
+    plane
+        .jointly_delegate(&alice, &bob, &admitted, ActionMask::read(), None)
+        .unwrap();
+    assert!(
+        check_see(&plane, &admitted, &bob, Some(&hint))
+            .unwrap()
+            .allowed
+    );
+}
+
+#[test]
+fn identity_see_grant_is_delegate_not_elect() {
+    let (mut plane, alice, bob, claim) = delegate_claim();
+    let grant = IdentitySeeGrant {
+        claim_id: claim.as_str().to_string(),
+        accessor: bob.clone(),
+        from: Timestamp(0),
+        until: Timestamp(80),
+    };
+    apply_see_grant(&mut plane, &alice, &grant).unwrap();
+    assert!(grant.live_at(Timestamp(0)));
+    assert!(check_see(&plane, &claim, &bob, None).unwrap().allowed);
+    plane.set_now(Timestamp(80));
+    assert!(!check_see(&plane, &claim, &bob, None).unwrap().allowed);
+    assert_eq!(plane.object(&claim).unwrap().owner, alice);
+    assert_eq!(
+        elect_from_delegate(&mut plane, &claim).unwrap_err(),
+        VerbError::KeepOperatingSuffices(claim.clone())
+    );
+}
+
+#[test]
+fn user_node_is_the_wallet_not_a_second_schema() {
+    let user = GunUserNode {
+        id: "0xalice".into(),
+        indicators: vec!["ens:name.eth".into(), "rss3:0xalice".into()],
+        provenance: "overlay".into(),
+        ts: 1,
+    };
+    assert_eq!(user.as_node_id().as_str(), "s3rch/users/0xalice");
+    assert_eq!(user.indicators_as_csv(), "ens:name.eth,rss3:0xalice");
+}
+
+#[test]
+fn from_gun_node_refuses_unknown_source() {
+    let mut node = to_gun_node(&sample_feed_item());
+    node.source = "kyc".into();
+    assert!(from_gun_node(&node).is_none());
 }

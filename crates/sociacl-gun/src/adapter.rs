@@ -3,9 +3,11 @@ use sociacl_core::{
     ElectResult, NodeId, Plane, SocialLightStatement, Timestamp, VerbError, Zookie,
 };
 
-use crate::{GunError, GunNode, GunSoul, HandoffHint, SEE};
+use crate::{
+    FeedItem, GunError, GunFeedNode, GunNode, GunSoul, HandoffHint, IdentitySeeGrant, SEE,
+};
 
-/// `see` is Check `read` on a claim object.
+/// `see` is Check `read` on a Gun-native object (feed item or claim).
 pub fn map_action(verb: &str) -> Action {
     match verb.trim() {
         SEE | "read" | "r" => Action::new("read"),
@@ -61,14 +63,14 @@ pub fn accept_hint_bytes(bytes: &[u8]) -> Result<HandoffHint, GunError> {
 pub fn check(
     plane: &Plane,
     action: impl AsRef<str>,
-    claim: impl Into<NodeId>,
+    object: impl Into<NodeId>,
     accessor: impl Into<NodeId>,
     hint: Option<&HandoffHint>,
     hop: Option<&SocialLightStatement>,
 ) -> Result<GunCheckResult, sociacl_core::CheckError> {
     let request = CheckRequest {
         action: map_action(action.as_ref()),
-        object: claim.into(),
+        object: object.into(),
         accessor: accessor.into(),
         predicate: None,
         zookie: None,
@@ -81,36 +83,37 @@ pub fn check(
     Ok(GunCheckResult::from_check(result, hint.cloned()))
 }
 
-/// `CHECK(see, claim, accessor)` at now.
+/// `CHECK(see, object, accessor)` at now. Object is a Gun-native
+/// feed item or held claim.
 pub fn check_see(
     plane: &Plane,
-    claim: impl Into<NodeId>,
+    object: impl Into<NodeId>,
     accessor: impl Into<NodeId>,
     hint: Option<&HandoffHint>,
 ) -> Result<GunCheckResult, sociacl_core::CheckError> {
-    check(plane, SEE, claim, accessor, hint, None)
+    check(plane, SEE, object, accessor, hint, None)
 }
 
-/// Execute-without-read uses the existing `delegate` mask.
+/// Execute-without-read uses the existing `delegate` mask. Not Elect.
 pub fn check_execute(
     plane: &Plane,
-    claim: impl Into<NodeId>,
+    object: impl Into<NodeId>,
     accessor: impl Into<NodeId>,
     hint: Option<&HandoffHint>,
 ) -> Result<GunCheckResult, sociacl_core::CheckError> {
-    check(plane, "execute", claim, accessor, hint, None)
+    check(plane, "execute", object, accessor, hint, None)
 }
 
 /// Remint may refresh only if the current ACL already names the
 /// principal. A hint does not name them.
 pub fn remint(
     plane: &Plane,
-    claim: impl Into<NodeId>,
+    object: impl Into<NodeId>,
     principal: impl Into<NodeId>,
     hint: Option<&HandoffHint>,
 ) -> Result<Capability, VerbError> {
     let _ = hint;
-    plane.remint(claim, principal)
+    plane.remint(object, principal)
 }
 
 /// Cancel stays on the destination ACL: owner undelegate / unstate.
@@ -118,15 +121,15 @@ pub fn cancel(
     plane: &mut Plane,
     owner: impl Into<NodeId>,
     principal: impl Into<NodeId>,
-    claim: impl Into<NodeId>,
+    object: impl Into<NodeId>,
 ) -> Result<(), VerbError> {
-    plane.undelegate(owner, principal, claim)
+    plane.undelegate(owner, principal, object)
 }
 
 /// Elect from a hop / hint / delegate remains refuse-closed.
 pub fn elect_from_hint(
     _plane: &mut Plane,
-    _claim: impl Into<NodeId>,
+    _object: impl Into<NodeId>,
     _hint: &HandoffHint,
 ) -> Result<ElectResult, GunError> {
     Err(GunError::ElectFromHint)
@@ -136,23 +139,23 @@ pub fn elect_from_hint(
 /// operating suffices). Owner stays owner.
 pub fn elect_from_delegate(
     plane: &mut Plane,
-    claim: impl Into<NodeId>,
+    object: impl Into<NodeId>,
 ) -> Result<ElectResult, VerbError> {
-    plane.elect(claim)
+    plane.elect(object)
 }
 
 /// Case C Check against the frozen bundle. Same dest ACL. No mint.
 pub fn client_check(
     client: &Client,
     action: impl AsRef<str>,
-    claim: impl Into<NodeId>,
+    object: impl Into<NodeId>,
     accessor: impl Into<NodeId>,
     hint: Option<&HandoffHint>,
     hop: Option<&SocialLightStatement>,
 ) -> Result<GunCheckResult, sociacl_core::CheckError> {
     let request = CheckRequest {
         action: map_action(action.as_ref()),
-        object: claim.into(),
+        object: object.into(),
         accessor: accessor.into(),
         predicate: None,
         zookie: None,
@@ -167,10 +170,10 @@ pub fn client_check(
 
 pub fn client_remint(
     client: &Client,
-    claim: impl Into<NodeId>,
+    object: impl Into<NodeId>,
     principal: impl Into<NodeId>,
 ) -> Result<Capability, VerbError> {
-    client.remint(claim, principal)
+    client.remint(object, principal)
 }
 
 /// Visible refuse. Case C has no mint path for new Gun grants.
@@ -178,7 +181,7 @@ pub fn client_mint_grant(
     _client: &mut Client,
     _owner: impl Into<NodeId>,
     _principal: impl Into<NodeId>,
-    _claim: impl Into<NodeId>,
+    _object: impl Into<NodeId>,
     _actions: ActionMask,
     _until: Option<Timestamp>,
 ) -> Result<(), GunError> {
@@ -187,7 +190,7 @@ pub fn client_mint_grant(
 
 pub fn client_elect_from_hint(
     _client: &mut Client,
-    _claim: impl Into<NodeId>,
+    _object: impl Into<NodeId>,
     _hint: &HandoffHint,
 ) -> Result<ElectResult, GunError> {
     Err(GunError::ElectFromHint)
@@ -200,10 +203,44 @@ pub fn add_wallet(plane: &mut Plane, wallet: impl AsRef<str>) -> NodeId {
         .id
 }
 
-/// Claim object on the destination plane. The claim is the Check
-/// object. Default predicate is `owner` (holder sees their claim).
+/// Held claim on the destination plane. Default predicate is `owner`.
 pub fn add_claim(plane: &mut Plane, claim: impl AsRef<str>, owner: impl Into<NodeId>) -> NodeId {
     plane
         .add_object(GunNode::claim(claim).as_node_id(), owner)
         .id
+}
+
+/// Admit a Gun-native feed item. Destination re-authorizes before
+/// this put. A permalink / RSS3 / RSS / KYC URL is not the object.
+pub fn add_item(
+    plane: &mut Plane,
+    item: &FeedItem,
+    owner: impl Into<NodeId>,
+) -> Result<NodeId, GunError> {
+    let id = item.as_node_id().ok_or(GunError::UrlLeafNotANode)?;
+    Ok(plane.add_object(id, owner).id)
+}
+
+pub fn add_feed_node(plane: &mut Plane, node: &GunFeedNode, owner: impl Into<NodeId>) -> NodeId {
+    plane.add_object(node.as_node_id(), owner).id
+}
+
+/// `IdentitySeeGrant` is keep-operating `delegate` read with `until`.
+/// Not Elect. Privilege-down is `cancel` / undelegate.
+pub fn apply_see_grant(
+    plane: &mut Plane,
+    owner: impl Into<NodeId>,
+    grant: &IdentitySeeGrant,
+) -> Result<(), VerbError> {
+    let object = grant.object_id();
+    if plane.object(&object).is_none() {
+        return Err(VerbError::ObjectNotFound(object));
+    }
+    plane.jointly_delegate(
+        owner,
+        &grant.accessor,
+        object,
+        ActionMask::read(),
+        Some(grant.until),
+    )
 }
