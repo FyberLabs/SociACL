@@ -220,15 +220,3 @@ export function cancelSee(
   accessor: AccessorId,
   object: CheckObjectId,
 ): void;
-
-/**
- * Existing delegate: execute without read.
- * Documented for alignment. Lab-feed may omit this.
- */
-export type CheckExecute = (
-  graph: SeeGraph,
-  object: CheckObjectId,
-  accessor: AccessorId,
-  now: number,
-  hint?: HandoffHint,
-) => CheckResult;

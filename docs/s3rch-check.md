@@ -24,7 +24,7 @@ The Next app runs Check **in the browser** on the Gun mesh. It does **not** impo
 
 `s3rch/meta` is seed cache. It is not a Check object. A permalink / RSS3 / RSS / issuer URL is a `UrlLeaf`, not a node and not a grant.
 
-Execute-without-read is existing `delegate` (`execute` without `read`). The `.d.ts` documents it. Lab-feed may omit it.
+Later, on request: more verbs on the TS spec for granted distribution. Not this cut.
 
 ## Locked Gun paths (do not fork)
 
@@ -38,8 +38,4 @@ gun.get('s3rch').get('users').get(wallet)        → GunUserNode
 
 Claim object id is the claim id, linked from the user node. Do not invent `s3rch/users/{wallet}/claims/…`.
 
-## Out of this contract
-
-Anything not in [s3rch-check.d.ts](s3rch-check.d.ts) is **not** for the Next app: other SociACL verbs, C / Python bindings, and optional binary hint frames. The crate may implement those here. The browser path does not.
-
-See [gun.md](gun.md) for the Rust adapter map.
+The Rust crate in this repo remains the full plane. See [gun.md](gun.md) for that map.

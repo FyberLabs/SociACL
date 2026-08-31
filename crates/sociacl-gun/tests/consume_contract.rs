@@ -35,7 +35,6 @@ fn consume_contract_covers_light_check() {
         "admitFeedNode",
         "cancelSee",
         "hopcap",
-        "CheckExecute",
     ] {
         assert!(dts.contains(needle), "contract missing {needle}");
     }
@@ -48,6 +47,9 @@ fn consume_contract_stays_off_the_other_plane() {
     for banned in [
         "elect",
         "will",
+        "remint",
+        "discover",
+        "destroy",
         "case c",
         "case_c",
         "napi",
@@ -55,6 +57,9 @@ fn consume_contract_stays_off_the_other_plane() {
         "wasm-pack",
         "wasm-bindgen",
         "npm install",
+        "sea",
+        "encrypt",
+        "checkexecute",
     ] {
         assert!(
             !lower.contains(banned),
@@ -72,7 +77,17 @@ fn consume_doc_says_browser_not_a_package() {
     assert!(lower.contains("do not `npm install sociacl`") || lower.contains("do not npm install"));
     assert!(lower.contains("wasm later is optional"));
     assert!(
+        lower.contains("later, on request"),
+        "extra verbs wait for a later ask"
+    );
+    assert!(
         !lower.contains("wasm-pack") && !lower.contains("wasm-bindgen"),
         "lab-feed path does not add a compiled module toolchain"
     );
+    for banned in ["remint", "discover", "elect", "destroy", "sea"] {
+        assert!(
+            !lower.contains(banned),
+            "consume doc must not name {banned}"
+        );
+    }
 }
