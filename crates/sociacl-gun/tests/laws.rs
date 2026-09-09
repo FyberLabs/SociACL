@@ -91,6 +91,7 @@ fn hop_and_hint_cannot_mint() {
 
     let result = check(&plane, SEE, &claim, &bob, Some(&hint), Some(&hop)).unwrap();
     assert!(!result.allowed, "hop plus hint do not mint");
+    assert!(!result.hop_is_grant());
     assert!(result.attestation_factor.is_some());
     assert_eq!(plane.edges().len(), edges_before);
     assert_eq!(plane.object(&claim).unwrap().owner, owner_before);

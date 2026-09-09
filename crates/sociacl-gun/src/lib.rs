@@ -1,9 +1,12 @@
 //! GunDB adapter for the SociACL authority plane.
 //!
 //! In-graph Gun data is the native ACL. A Check object is a
-//! Gun-native feed item (`s3rch/items/<encodeKey(id)>`) or a held
-//! claim on the user node. Non-Gun data is a [`UrlLeaf`]: RSS3,
-//! RSS/Atom, and issuer HTTP calls are not Gun nodes and not grants.
+//! Gun-native feed item (`s3rch/items/<encodeKey(id)>`), a held
+//! claim on the user node, or a later opaque post/room id. Dest
+//! ACL grants HAM-merge under `s3rch/acl/…` and do not fork items
+//! or users. Non-Gun data is a [`UrlLeaf`]: RSS3, RSS/Atom, and
+//! issuer HTTP calls are not Gun nodes and not grants. A Social
+//! Light hop may factor Check. It cannot mint.
 //!
 //! This crate maps Gun types onto existing [`sociacl_core`] Check
 //! predicates and the keep-operating [`sociacl_core::Relation::Delegate`]
@@ -24,14 +27,16 @@ mod adapter;
 mod error;
 mod feed;
 mod hint;
+mod hop;
 mod leaf;
+mod mesh;
 mod soul;
 
 pub use adapter::{
     accept_hint, accept_hint_bytes, add_claim, add_feed_node, add_item, add_wallet,
-    apply_see_grant, cancel, check, check_execute, check_see, check_see_grant, client_check,
-    client_elect_from_hint, client_mint_grant, client_remint, elect_from_delegate, elect_from_hint,
-    map_action, remint, GunCheckResult,
+    apply_see_grant, cancel, check, check_execute, check_see, check_see_grant, check_see_hop,
+    client_check, client_elect_from_hint, client_mint_grant, client_remint, elect_from_delegate,
+    elect_from_hint, map_action, remint, GunCheckResult,
 };
 pub use error::GunError;
 pub use feed::{
@@ -39,11 +44,19 @@ pub use feed::{
     GunUserNode, IdentityClaimKind, IdentitySeeGrant, OffGraphKind,
 };
 pub use hint::{HandoffHint, MAGIC as HINT_MAGIC, VERSION as HINT_VERSION};
+pub use hop::{accept_hop, accept_hop_bytes, decode_hop, HopFactor};
 pub use leaf::{normalize_permalink, normalize_tags, split_tags, ItemShape, UrlLeaf};
+pub use mesh::{
+    acl_soul, grant_soul, GunAclEdge, MeshCheckResult, MeshSeeGrant, MeshSeeGraph, MESH_REASON_ACL,
+    MESH_REASON_CANCELLED, MESH_REASON_DELEGATE, MESH_REASON_META, MESH_REASON_MISSING,
+    MESH_REASON_OWNER, MESH_REASON_URL_LEAF,
+};
 pub use soul::{
-    encode_key, GunNode, GunNodeKind, GunSoul, S3RCH_ITEMS, S3RCH_META, S3RCH_ROOT, S3RCH_USERS,
+    acl_key, acl_principal_key, encode_key, GunNode, GunNodeKind, GunSoul, S3RCH_ACL, S3RCH_ITEMS,
+    S3RCH_META, S3RCH_ROOT, S3RCH_USERS,
 };
 
 /// Lighter s3r.ch Check: `CHECK(see, object, accessor)` at now.
-/// Object is a Gun-native feed item or held claim. Mapped onto Check `read`.
+/// Object is a Gun-native feed item, held claim, or opaque post/room
+/// id. Mapped onto Check `read`. Hop is an optional factor.
 pub const SEE: &str = "see";

@@ -35,6 +35,11 @@ impl GunCheckResult {
         false
     }
 
+    /// A hop is a factor at most. Always false. Never mints.
+    pub fn hop_is_grant(&self) -> bool {
+        false
+    }
+
     pub fn from_check(result: CheckResult, hint: Option<HandoffHint>) -> Self {
         Self {
             allowed: result.allowed,
@@ -84,7 +89,8 @@ pub fn check(
 }
 
 /// `CHECK(see, object, accessor)` at now. Object is a Gun-native
-/// feed item or held claim.
+/// feed item, held claim, or opaque post/room id. Hop is optional;
+/// missing does not fail. A hop alone never allows.
 pub fn check_see(
     plane: &Plane,
     object: impl Into<NodeId>,
@@ -92,6 +98,17 @@ pub fn check_see(
     hint: Option<&HandoffHint>,
 ) -> Result<GunCheckResult, sociacl_core::CheckError> {
     check(plane, SEE, object, accessor, hint, None)
+}
+
+/// Same as [`check_see`] with a Social Light hop factor.
+pub fn check_see_hop(
+    plane: &Plane,
+    object: impl Into<NodeId>,
+    accessor: impl Into<NodeId>,
+    hint: Option<&HandoffHint>,
+    hop: Option<&SocialLightStatement>,
+) -> Result<GunCheckResult, sociacl_core::CheckError> {
+    check(plane, SEE, object, accessor, hint, hop)
 }
 
 /// Dest Check AND the jointly-stated `[from, until)` window.

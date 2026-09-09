@@ -1,8 +1,9 @@
 //! Gun adapter: hint is not a grant. Destination Check is.
 //!
 //! alice holds a claim. bob presents a handoff hint. Dest re-check
-//! issues a `delegate` read. Execute-without-read is the existing
-//! mask. Elect from a hint fails. A permalink is a URL leaf.
+//! issues a `delegate` read. A Social Light hop may factor Check;
+//! it cannot mint. Execute-without-read is the existing mask.
+//! Elect from a hint fails. A permalink is a URL leaf.
 //!
 //! Run: `cargo run --locked -p sociacl-gun --example gun`
 

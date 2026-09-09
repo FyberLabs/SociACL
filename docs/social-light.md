@@ -35,6 +35,7 @@ LightIFF, Tennessee Windage, and LightFight are other products. LightIFF is not 
 A flash, badge ping, or radio hop is a carrier. It is not a grant, friend, heir, or owner.
 
 - Check may use a statement as a factor on an already-named predicate.
+- s3r.ch mesh Check names this `HopFactor` on `checkSee(..., hint?, hop?)` in [s3rch-check.d.ts](s3rch-check.d.ts). Hop missing does not fail. Hop alone never allows. Hop never mints a grant. `acceptHop` / `decodeHop` do not verify (mirror `acceptHint`). URL handoffs stay `HandoffHint`. See [gun.md](gun.md).
 - Remint may use enrolled-station liveness for a principal the ACL already names.
 - Discover may report a living badge principal and an optional voluntary share-token.
 - Elect from a flash always fails. Silence does not Elect.

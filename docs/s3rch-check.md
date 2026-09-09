@@ -14,12 +14,13 @@ The Next app runs Check **in the browser** on the Gun mesh. It does **not** impo
 
 | Name | Meaning |
 | --- | --- |
-| `object` | `GunFeedNode` at `s3rch/items/<encodeKey(id)>`, or a Gun-native claim linked from `s3rch/users/{wallet}` |
+| `object` | `GunFeedNode` at `s3rch/items/<encodeKey(id)>`, a Gun-native claim linked from `s3rch/users/{wallet}`, or a later opaque post/room `CheckObjectId` |
 | `accessor` | wallet / Gun peer (`s3rch/users/{wallet}`) |
 | `see` | dest Check `read` |
-| grant | jointly stated `IdentitySeeGrant`; hopcap **1** (no friend-of-friend) |
+| grant | jointly stated `IdentitySeeGrant` / mesh `MeshSeeGrant`; hopcap **1** (no friend-of-friend) |
 | revoke | immediate privilege-down on the dest object (`cancelSee`) |
 | hint | `HandoffHint` — untrusted; never a grant |
+| hop | optional Social Light `HopFactor`; never a grant; missing does not fail |
 | admit | dest re-authorizes **before** `put()` into `items` |
 
 `s3rch/meta` is seed cache. It is not a Check object. A permalink / RSS3 / RSS / issuer URL is a `UrlLeaf`, not a node and not a grant.
@@ -32,10 +33,60 @@ Later, on request: more verbs on the TS spec for granted distribution. Not this 
 gun.get('s3rch').get('items').get(encodeKey(id))  → GunFeedNode
 gun.get('s3rch').get('meta')                     → seed meta (not a Check object)
 gun.get('s3rch').get('users').get(wallet)        → GunUserNode
+gun.get('s3rch').get('acl').get(aclPrincipalKey(owner))
+     .get(aclKey(object)).get(aclPrincipalKey(accessor))  → MeshSeeGrant
 ```
 
 `encodeKey`: `id.replace(/[.#$\[\]]/g, '_')`.
 
-Claim object id is the claim id, linked from the user node. Do not invent `s3rch/users/{wallet}/claims/…`.
+`aclKey`: `encodeKey` then `/` → `_` so dest-ACL souls stay five segments. Not a second `encodeKey` for items or users.
 
-The Rust crate in this repo remains the full plane. See [gun.md](gun.md) for that map.
+Claim object id is the claim id, linked from the user node. Do not invent `s3rch/users/{wallet}/claims/…`. Do not invent `s3rch/posts/…` — s3r.ch owns post/room souls; treat them as opaque `CheckObjectId`s.
+
+The Rust crate in this repo remains the full plane. See [gun.md](gun.md) for that map. Social Light hop wire: [social-light.md](social-light.md).
+
+## Mesh
+
+This is the cut the s3r.ch design engineer wires after held-claims land.
+
+**Copy / re-type:** [s3rch-check.d.ts](s3rch-check.d.ts) (one file; Mesh section is at the bottom). Do not `npm install sociacl`.
+
+### Dest ACL soul
+
+See grants are Gun nodes under the **object owner's dest ACL**, not under `items` or `users`:
+
+```
+s3rch/acl/<aclPrincipalKey(owner)>/<aclKey(object)>/<aclPrincipalKey(accessor)>
+```
+
+`s3rch/users/<wallet>` collapses to the wallet on dest ACL. Example: alice shares item `rss3:act/1#x` with bob:
+
+```
+s3rch/acl/0xalice/rss3:act_1_x/0xbob
+```
+
+Each field HAM-merges. `MeshSeeGrant.stated` is `1` (live) or `0` (cancelled). Cancel is owner-only and **must bump Gun HAM state** so privilege-down wins the next merge. Each peer runs `checkSee` on its locally HAM-merged graph at `now`. Do not cache an allow across a privilege-down merge.
+
+`s3rch/acl` itself is not a Check object (same as `meta`).
+
+### Objects in scope
+
+| Object | Id | In-graph? |
+| --- | --- | --- |
+| Feed item | `s3rch/items/<encodeKey(id)>` | yes, after dest admit |
+| Held claim | claim id linked from `s3rch/users/<wallet>` | yes, after dest admit |
+| Post / room | opaque `CheckObjectId` (s3r.ch names the soul later) | yes, after dest admit |
+| Mine overlay | local only | **no** until explicit share-into-mesh `putObject` |
+| Permalink / RSS3 / issuer HTTP | `UrlLeaf` | never |
+
+### Hop factor
+
+`checkSee(graph, object, accessor, now, hint?, hop?)`.
+
+- hop missing does not fail.
+- hop alone never allows.
+- `hop` may only factor an already-named grant or owner path.
+- `acceptHop` / `decodeHop` do not verify and do not mint (mirror `acceptHint`).
+- URL handoffs stay untrusted `HandoffHint`. A hint plus a hop still fail closed without dest ACL.
+
+Reuse SociACL Social Light (`convention-badge` / `enrolled-station`, SLHP v1). Do not reimplement the hop frame.

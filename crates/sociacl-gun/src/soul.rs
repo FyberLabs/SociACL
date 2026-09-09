@@ -8,6 +8,9 @@ pub const S3RCH_USERS: &str = "users";
 pub const S3RCH_ITEMS: &str = "items";
 /// Locked seed meta: `gun.get('s3rch').get('meta')`. Not a Check object.
 pub const S3RCH_META: &str = "meta";
+/// Dest ACL collection. Sibling of items/users/meta. Not a Check
+/// object. Grants HAM-merge here; they do not fork items or users.
+pub const S3RCH_ACL: &str = "acl";
 
 /// s3r.ch `encodeKey`: replace `. # $ [ ]` with `_`.
 pub fn encode_key(id: &str) -> String {
@@ -55,6 +58,31 @@ impl GunSoul {
         Self::new([S3RCH_ROOT, S3RCH_META])
     }
 
+    /// Owner dest-ACL root.
+    /// `gun.get('s3rch').get('acl').get(aclPrincipalKey(owner))`.
+    pub fn s3rch_acl(owner: impl AsRef<str>) -> Self {
+        Self::new([S3RCH_ROOT, S3RCH_ACL, &acl_principal_key(owner.as_ref())])
+    }
+
+    /// Jointly stated see grant under the object owner's dest ACL.
+    /// Does not fork `items` or `users`.
+    ///
+    /// `gun.get('s3rch').get('acl').get(aclPrincipalKey(owner))
+    ///     .get(aclKey(object)).get(aclPrincipalKey(accessor))`
+    pub fn s3rch_acl_grant(
+        owner: impl AsRef<str>,
+        object: impl AsRef<str>,
+        accessor: impl AsRef<str>,
+    ) -> Self {
+        Self::new([
+            S3RCH_ROOT,
+            S3RCH_ACL,
+            &acl_principal_key(owner.as_ref()),
+            &acl_key(object.as_ref()),
+            &acl_principal_key(accessor.as_ref()),
+        ])
+    }
+
     /// Slash or `gun.get('a').get('b')` form. Does not verify the graph.
     pub fn parse(s: &str) -> Result<Self, crate::GunError> {
         let s = s.trim();
@@ -96,6 +124,16 @@ impl GunSoul {
         self.segments.len() == 2 && self.segments[0] == S3RCH_ROOT && self.segments[1] == S3RCH_META
     }
 
+    /// Any dest-ACL soul (`s3rch/acl/…`). Not a Check object.
+    pub fn is_s3rch_acl(&self) -> bool {
+        self.segments.len() >= 2 && self.segments[0] == S3RCH_ROOT && self.segments[1] == S3RCH_ACL
+    }
+
+    /// Five-segment grant node under dest ACL.
+    pub fn is_s3rch_acl_grant(&self) -> bool {
+        self.segments.len() == 5 && self.is_s3rch_acl()
+    }
+
     pub fn wallet(&self) -> Option<&str> {
         if self.is_s3rch_user() {
             Some(self.segments[2].as_str())
@@ -130,6 +168,26 @@ fn parse_gun_gets(s: &str) -> Result<GunSoul, crate::GunError> {
         return Err(crate::GunError::HintCorrupt);
     }
     Ok(GunSoul { segments })
+}
+
+/// Dest-ACL path key. `encodeKey` then `/` → `_` so a grant soul
+/// stays five segments when the object id still contains slashes
+/// (`rss3:act/1_x`, `s3rch/items/…`). Not a second `encodeKey` for
+/// items or users — those keep the locked replace-only rule.
+pub fn acl_key(id: &str) -> String {
+    encode_key(id.trim()).replace('/', "_")
+}
+
+/// Owner / accessor key on dest ACL. A locked user soul collapses
+/// to the wallet. Anything else is [`acl_key`].
+pub fn acl_principal_key(id: &str) -> String {
+    let id = id.trim();
+    if let Ok(soul) = GunSoul::parse(id) {
+        if let Some(wallet) = soul.wallet() {
+            return encode_key(wallet);
+        }
+    }
+    acl_key(id)
 }
 
 /// What a soul names on the locked graph. A user is a wallet.

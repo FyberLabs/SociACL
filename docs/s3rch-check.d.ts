@@ -10,8 +10,10 @@
  *
  * CHECK(see, object, accessor) at now.
  *   object   = GunFeedNode | Gun-native claim on s3rch/users/{wallet}
+ *            | later opaque post/room CheckObjectId
  *   accessor = wallet / Gun peer
  *   hopcap 1, jointly stated grants, revoke immediate
+ *   hop      = optional Social Light factor; never a grant
  */
 
 /** Locked Gun root. */
@@ -113,7 +115,11 @@ export type FeedMeta = {
   count: number;
 };
 
-/** Feed item soul or claim id linked from the user node. */
+/**
+ * Feed item soul, claim id linked from the user node, or a later
+ * post/room id. s3r.ch owns post/room souls — do not invent
+ * s3rch/posts/… here. Treat those as opaque CheckObjectIds.
+ */
 export type CheckObjectId = string;
 
 /** Wallet or s3rch/users/{wallet}. */
@@ -121,13 +127,19 @@ export type AccessorId = string;
 
 export type CheckResult = {
   allowed: boolean;
-  /** Predicate / deny reason. A present hint never makes this a grant. */
+  /**
+   * Predicate / deny reason. A present hint never makes this a grant.
+   * A present hop never makes this a grant.
+   */
   reason: string;
 };
 
 /**
  * Live graph the browser reads. Only in-graph objects and jointly
  * stated see grants. Do not walk friend edges (hopcap 1).
+ *
+ * Mesh: each peer evaluates against its locally HAM-merged Gun graph
+ * at now. Do not cache an allow across a privilege-down merge.
  */
 export type SeeGraph = {
   hasObject(object: CheckObjectId): boolean;
@@ -171,8 +183,11 @@ export function acceptHint(hint: HandoffHint): HandoffHint;
 /**
  * CHECK(see, object, accessor) at now.
  * see maps to dest read. Hint is ignored for allowed.
- * Owner sees their object. Else a live IdentitySeeGrant must name
- * this pair and now ∈ [from, until). meta and UrlLeaf fail closed.
+ * Hop missing does not fail. Hop alone never allows. Hop may only
+ * factor an already-named grant or owner path.
+ * Owner sees their object. Else a live IdentitySeeGrant / MeshSeeGrant
+ * must name this pair and now ∈ [from, until). meta, dest ACL souls,
+ * and UrlLeaf fail closed.
  */
 export function checkSee(
   graph: SeeGraph,
@@ -180,6 +195,7 @@ export function checkSee(
   accessor: AccessorId,
   now: number,
   hint?: HandoffHint,
+  hop?: HopFactor,
 ): CheckResult;
 
 /**
@@ -193,6 +209,7 @@ export function checkSeeGrant(
   accessor: AccessorId,
   now: number,
   hint?: HandoffHint,
+  hop?: HopFactor,
 ): CheckResult;
 
 /**
@@ -220,3 +237,102 @@ export function cancelSee(
   accessor: AccessorId,
   object: CheckObjectId,
 ): void;
+
+/* -------------------------------------------------------------------------- */
+/* Mesh — dest ACL + Social Light hop factor                                  */
+/*                                                                            */
+/* Copy / re-type with the types above. Same file. Not an npm package.        */
+/* Grants HAM-merge under s3rch/acl. They do not fork items or users.         */
+/* Mine overlay stays local until an explicit share-into-mesh putObject.      */
+/* -------------------------------------------------------------------------- */
+
+/** Dest ACL collection. Sibling of items / users / meta. Not a Check object. */
+export type S3rchAcl = "acl";
+
+/**
+ * Dest-ACL path key. encodeKey, then `/` → `_`, so a grant soul stays
+ * five segments when the object id still contains slashes
+ * (`rss3:act/1_x`, `s3rch/items/…`). Not a second encodeKey for items
+ * or users.
+ */
+export function aclKey(id: string): string;
+
+/**
+ * Owner / accessor key on dest ACL. `s3rch/users/<wallet>` collapses
+ * to the wallet. Anything else is aclKey.
+ */
+export function aclPrincipalKey(id: string): string;
+
+/**
+ * Owner dest-ACL root. Not a Check object.
+ * gun.get('s3rch').get('acl').get(aclPrincipalKey(owner))
+ */
+export function aclSoul(owner: AccessorId): string;
+
+/**
+ * Jointly stated see grant under the object owner's dest ACL.
+ * Does not fork items or users.
+ * gun.get('s3rch').get('acl')
+ *   .get(aclPrincipalKey(owner))
+ *   .get(aclKey(object))
+ *   .get(aclPrincipalKey(accessor))
+ */
+export function grantSoul(
+  owner: AccessorId,
+  object: CheckObjectId,
+  accessor: AccessorId,
+): string;
+
+/**
+ * In-graph see grant. HAM-merges across peers.
+ * `stated` 1 = jointly stated, 0 = cancelled (privilege-down).
+ * `from` inclusive, `until` exclusive.
+ * Cancel is owner-only on dest ACL and must bump Gun HAM state so
+ * the next Check after merge denies. Do not cache an allow.
+ */
+export type MeshSeeGrant = {
+  object: CheckObjectId;
+  accessor: AccessorId;
+  from: number;
+  until: number;
+  stated: 0 | 1;
+};
+
+/**
+ * One dest-ACL grant node. Soul is grantSoul(owner, object, accessor).
+ * Peers HAM-merge by hamState (higher wins). Cancel bumps hamState.
+ */
+export type GunAclEdge = {
+  soul: string;
+  owner: AccessorId;
+  grant: MeshSeeGrant;
+  hamState: number;
+};
+
+/** Named Social Light channels. Same as sociacl-core. Hop is not a grant. */
+export type SocialLightChannel = "convention-badge" | "enrolled-station";
+
+/**
+ * Optional Check factor. Opaque SLHP bytes or the structured hop
+ * sociacl-core already names. Destination re-authorizes.
+ * Hop missing does not fail. Hop alone never allows.
+ * Hop never mints a grant. URL handoffs stay untrusted HandoffHint.
+ */
+export type HopFactor =
+  | Uint8Array
+  | {
+      channel: SocialLightChannel;
+      attestationBytes?: Uint8Array;
+      shareToken?: string;
+    };
+
+/**
+ * Identity. Does not verify. Does not mint. Mirror acceptHint.
+ */
+export function acceptHop(hop: HopFactor): HopFactor;
+
+/**
+ * SLHP decode. Does not verify. Does not mint. Mirror acceptHint.
+ * Attestation bytes stay opaque.
+ */
+export function decodeHop(bytes: Uint8Array): HopFactor;
