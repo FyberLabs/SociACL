@@ -14,7 +14,7 @@ The Next app runs Check **in the browser** on the Gun mesh. It does **not** impo
 
 | Name | Meaning |
 | --- | --- |
-| `object` | `GunFeedNode` at `s3rch/items/<encodeKey(id)>`, a Gun-native claim linked from `s3rch/users/{wallet}`, or a later opaque post/room `CheckObjectId` |
+| `object` | `GunFeedNode` at `s3rch/items/<encodeKey(id)>`, or a held claim id itself (`ens:…` / `unstoppable:…` / `fc:…` / `lens:…` / `rss3:…`) linked from `GunUserNode.indicators`, or a later opaque post/room `CheckObjectId` |
 | `accessor` | wallet / Gun peer (`s3rch/users/{wallet}`) |
 | `see` | dest Check `read` |
 | grant | jointly stated `IdentitySeeGrant` / mesh `MeshSeeGrant`; hopcap **1** (no friend-of-friend) |
@@ -41,7 +41,7 @@ gun.get('s3rch').get('acl').get(aclPrincipalKey(owner))
 
 `aclKey`: `encodeKey` then `/` → `_` so dest-ACL souls stay five segments. Not a second `encodeKey` for items or users.
 
-Claim object id is the claim id, linked from the user node. Do not invent `s3rch/users/{wallet}/claims/…`. Do not invent `s3rch/posts/…` — s3r.ch owns post/room souls; treat them as opaque `CheckObjectId`s.
+Held-claim object id is the **claim id itself** (`ens:name.eth`, `unstoppable:…`, `fc:…`, `lens:…`, `rss3:0x…`), linked from `GunUserNode.indicators` on `s3rch/users/<wallet>`. Mesh Check treats those ids the same as `GunFeedNode` ids. Do not invent `s3rch/users/<wallet>/claims/…`. Overlay uses the same `GunUserNode` shape until s3r.ch `prepareShareUserIntoMesh` / `prepareShareClaimIntoMesh`. Do not invent `s3rch/posts/…` — s3r.ch owns post/room souls; treat them as opaque `CheckObjectId`s.
 
 The Rust crate in this repo remains the full plane. See [gun.md](gun.md) for that map. Social Light hop wire: [social-light.md](social-light.md).
 
@@ -59,10 +59,11 @@ See grants are Gun nodes under the **object owner's dest ACL**, not under `items
 s3rch/acl/<aclPrincipalKey(owner)>/<aclKey(object)>/<aclPrincipalKey(accessor)>
 ```
 
-`s3rch/users/<wallet>` collapses to the wallet on dest ACL. Example: alice shares item `rss3:act/1#x` with bob:
+`s3rch/users/<wallet>` collapses to the wallet on dest ACL. Examples:
 
 ```
-s3rch/acl/0xalice/rss3:act_1_x/0xbob
+s3rch/acl/0xalice/rss3:act_1_x/0xbob          // feed item rss3:act/1#x
+s3rch/acl/0xalice/ens:alice_eth/0xbob         // held claim ens:alice.eth
 ```
 
 Each field HAM-merges. `MeshSeeGrant.stated` is `1` (live) or `0` (cancelled). Cancel is owner-only and **must bump Gun HAM state** so privilege-down wins the next merge. Each peer runs `checkSee` on its locally HAM-merged graph at `now`. Do not cache an allow across a privilege-down merge.
@@ -74,9 +75,9 @@ Each field HAM-merges. `MeshSeeGrant.stated` is `1` (live) or `0` (cancelled). C
 | Object | Id | In-graph? |
 | --- | --- | --- |
 | Feed item | `s3rch/items/<encodeKey(id)>` | yes, after dest admit |
-| Held claim | claim id linked from `s3rch/users/<wallet>` | yes, after dest admit |
+| Held claim | claim id itself (`ens:…` / `unstoppable:…` / `fc:…` / `lens:…` / `rss3:…`), linked from `GunUserNode.indicators` | yes, after dest admit / s3r.ch `prepareShareClaimIntoMesh` |
 | Post / room | opaque `CheckObjectId` (s3r.ch names the soul later) | yes, after dest admit |
-| Mine overlay | local only | **no** until explicit share-into-mesh `putObject` |
+| Mine overlay | same `GunUserNode` shape, local only | **no** until s3r.ch `prepareShare*` then `putObject` |
 | Permalink / RSS3 / issuer HTTP | `UrlLeaf` | never |
 
 ### Hop factor

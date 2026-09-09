@@ -226,8 +226,10 @@ impl GunNode {
         }
     }
 
-    /// Held claim on the identity graph. The id is the claim id.
-    /// Do not invent a second user node.
+    /// Held claim. The CheckObjectId is the claim id itself
+    /// (`ens:…` / `unstoppable:…` / `fc:…` / `lens:…` / `rss3:…`),
+    /// linked from the user node's indicators. Do not invent
+    /// `s3rch/users/<wallet>/claims/…`.
     pub fn claim(id: impl AsRef<str>) -> Self {
         Self {
             soul: GunSoul::new([id.as_ref()]),

@@ -46,6 +46,14 @@ fn consume_contract_covers_light_check() {
         "hop?: HopFactor",
         "Hop missing does not fail",
         "Hop alone never allows",
+        "HeldClaimPrefix",
+        "ens:",
+        "unstoppable:",
+        "fc:",
+        "lens:",
+        "rss3:",
+        "GunUserNode.indicators",
+        "s3rch/users/<wallet>/claims/",
     ] {
         assert!(dts.contains(needle), "contract missing {needle}");
     }
@@ -102,6 +110,34 @@ fn consume_contract_hop_never_mints() {
     assert!(
         !lower.contains("break_glass") && !lower.contains("wills"),
         "consume contract does not export wills / break_glass"
+    );
+}
+
+#[test]
+fn consume_contract_locks_held_claim_souls() {
+    let dts = read(contract_path());
+    let md = read(doc_path());
+    for text in [&dts, &md] {
+        assert!(
+            text.contains("s3rch/users/<wallet>/claims/"),
+            "must refuse a nested claims/ soul"
+        );
+        assert!(
+            text.contains("ens:")
+                && text.contains("unstoppable:")
+                && text.contains("fc:")
+                && text.contains("lens:")
+                && text.contains("rss3:"),
+            "must name locked claim-id prefixes"
+        );
+        assert!(
+            text.contains("indicators"),
+            "claim ids link from GunUserNode.indicators"
+        );
+    }
+    assert!(
+        !dts.contains("s3rch/users/") || dts.contains("Do not invent"),
+        "users collection stays the wallet node"
     );
 }
 

@@ -40,8 +40,9 @@ pub use adapter::{
 };
 pub use error::GunError;
 pub use feed::{
-    from_gun_node, item_key, to_gun_node, FeedItem, FeedMeta, FeedSource, FeedTab, GunFeedNode,
-    GunUserNode, IdentityClaimKind, IdentitySeeGrant, OffGraphKind,
+    from_gun_node, has_held_claim_prefix, item_key, to_gun_node, FeedItem, FeedMeta, FeedSource,
+    FeedTab, GunFeedNode, GunUserNode, IdentityClaimKind, IdentitySeeGrant, OffGraphKind,
+    HELD_CLAIM_PREFIXES,
 };
 pub use hint::{HandoffHint, MAGIC as HINT_MAGIC, VERSION as HINT_VERSION};
 pub use hop::{accept_hop, accept_hop_bytes, decode_hop, HopFactor};
@@ -57,6 +58,7 @@ pub use soul::{
 };
 
 /// Lighter s3r.ch Check: `CHECK(see, object, accessor)` at now.
-/// Object is a Gun-native feed item, held claim, or opaque post/room
-/// id. Mapped onto Check `read`. Hop is an optional factor.
+/// Object is a Gun-native feed item, a held claim id itself
+/// (`ens:…` / `fc:…` / … linked from the user node), or an opaque
+/// post/room id. Mapped onto Check `read`. Hop is an optional factor.
 pub const SEE: &str = "see";

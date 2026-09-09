@@ -64,11 +64,7 @@ impl MeshSeeGrant {
         let object = object.trim();
         self.object == object
             || acl_key(&self.object) == acl_key(object)
-            || GunSoul::s3rch_item(self.object.trim())
-                .as_node_id()
-                .as_str()
-                == object
-            || GunSoul::s3rch_item(object).as_node_id().as_str() == self.object
+            || item_soul_alias(&self.object, object)
     }
 
     pub fn names_accessor(&self, accessor: &str) -> bool {
@@ -419,16 +415,43 @@ impl MeshSeeGraph {
             return Some(found);
         }
         self.objects.values().find(|o| {
-            o.id == object
-                || acl_key(&o.id) == acl_key(object)
-                || GunSoul::s3rch_item(&o.id).as_node_id().as_str() == object
-                || GunSoul::s3rch_item(object).as_node_id().as_str() == o.id
+            o.id == object || acl_key(&o.id) == acl_key(object) || item_soul_alias(&o.id, object)
         })
     }
 }
 
 fn object_store_key(id: &str) -> String {
     acl_key(id)
+}
+
+fn is_item_shaped(id: &str) -> bool {
+    GunSoul::parse(id)
+        .map(|s| s.is_s3rch_item())
+        .unwrap_or(false)
+}
+
+/// Alias a raw feed id to `s3rch/items/<encodeKey(id)>`. Held claim
+/// ids (`ens:…` / `fc:…` / … without a `/`) stay the claim id itself
+/// and must not rewrite into an item soul.
+fn may_alias_to_item_soul(id: &str) -> bool {
+    if is_item_shaped(id) {
+        return true;
+    }
+    if crate::has_held_claim_prefix(id) && !id.contains('/') {
+        return false;
+    }
+    true
+}
+
+fn item_soul_alias(a: &str, b: &str) -> bool {
+    if !is_item_shaped(a) && !is_item_shaped(b) {
+        return false;
+    }
+    if !may_alias_to_item_soul(a) || !may_alias_to_item_soul(b) {
+        return false;
+    }
+    GunSoul::s3rch_item(a).as_node_id().as_str() == b
+        || GunSoul::s3rch_item(b).as_node_id().as_str() == a
 }
 
 fn is_url_leaf(object: &str) -> bool {

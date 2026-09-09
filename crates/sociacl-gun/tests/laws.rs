@@ -615,12 +615,23 @@ fn see_grant_bare_wallet_accessor_is_the_user_soul() {
 fn user_node_is_the_wallet_not_a_second_schema() {
     let user = GunUserNode {
         id: "0xalice".into(),
-        indicators: vec!["ens:name.eth".into(), "rss3:0xalice".into()],
+        indicators: vec![
+            "ens:name.eth".into(),
+            "unstoppable:name.crypto".into(),
+            "fc:name".into(),
+            "lens:name".into(),
+            "rss3:0xalice".into(),
+        ],
         provenance: "overlay".into(),
         ts: 1,
     };
     assert_eq!(user.as_node_id().as_str(), "s3rch/users/0xalice");
-    assert_eq!(user.indicators_as_csv(), "ens:name.eth,rss3:0xalice");
+    assert_eq!(
+        user.indicators_as_csv(),
+        "ens:name.eth,unstoppable:name.crypto,fc:name,lens:name,rss3:0xalice"
+    );
+    assert_eq!(user.linked_claim_ids().len(), 5);
+    assert!(!user.as_node_id().as_str().contains("/claims/"));
 }
 
 #[test]

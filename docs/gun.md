@@ -58,7 +58,7 @@ gun.get('s3rch').get('acl').get(aclPrincipalKey(owner))
 
 `FeedTab` is `"public" | "mine" | "network"`. UX only. Not a Check object.
 
-`GunUserNode` (typed, later): `{ id, indicators: string[], provenance, ts }`. Indicators are a comma-separated string on the Gun wire, same as tags. Do not invent a second user node.
+`GunUserNode` (locked): `{ id, indicators: string[], provenance, ts }` at `s3rch/users/<wallet>`. `indicators` are held-claim ids — the claim id itself (`ens:…` / `unstoppable:…` / `fc:…` / `lens:…` / `rss3:…`). Same Mesh Check path as a `GunFeedNode` id. Indicators are a comma-separated string on the Gun wire, same as tags. Overlay uses this same shape until s3r.ch `prepareShare*`. Do not invent a second user node. Do not invent `s3rch/users/<wallet>/claims/…`.
 
 `IdentityClaimKind`: `wallet | rss3 | ens | kyc_attestation | email | phone`. Issuers prove a claim to the holder. They are not grants.
 

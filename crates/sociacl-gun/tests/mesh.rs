@@ -7,8 +7,9 @@ use sociacl_core::{
 use sociacl_gun::{
     accept_hop, acl_key, acl_principal_key, acl_soul, add_claim, add_item, add_wallet,
     apply_see_grant, cancel, check, check_see, check_see_hop, decode_hop, encode_key, grant_soul,
-    FeedItem, FeedSource, GunAclEdge, GunError, GunSoul, HandoffHint, HopFactor, IdentitySeeGrant,
-    MeshSeeGrant, MeshSeeGraph, MESH_REASON_ACL, MESH_REASON_CANCELLED, MESH_REASON_DELEGATE,
+    has_held_claim_prefix, FeedItem, FeedSource, GunAclEdge, GunError, GunNode, GunSoul,
+    GunUserNode, HandoffHint, HopFactor, IdentitySeeGrant, MeshSeeGrant, MeshSeeGraph,
+    HELD_CLAIM_PREFIXES, MESH_REASON_ACL, MESH_REASON_CANCELLED, MESH_REASON_DELEGATE,
     MESH_REASON_META, MESH_REASON_MISSING, MESH_REASON_OWNER, MESH_REASON_URL_LEAF, S3RCH_ACL,
     S3RCH_ROOT, SEE,
 };
@@ -74,6 +75,132 @@ fn dest_acl_soul_does_not_fork_items_or_users() {
         "s3rch/users/0xalice"
     );
     assert_eq!(encode_key("rss3:act/1#x"), "rss3:act/1_x");
+}
+
+#[test]
+fn held_claim_id_is_the_claim_id_itself() {
+    let claims = [
+        "ens:alice.eth",
+        "unstoppable:alice.crypto",
+        "fc:alice",
+        "lens:alice",
+        "rss3:0xalice",
+    ];
+    assert_eq!(HELD_CLAIM_PREFIXES.len(), claims.len());
+    let user = GunUserNode {
+        id: "0xalice".into(),
+        indicators: claims.iter().map(|s| (*s).to_string()).collect(),
+        provenance: "overlay".into(),
+        ts: 1,
+    };
+    assert_eq!(user.as_node_id().as_str(), "s3rch/users/0xalice");
+    assert_eq!(user.linked_claim_ids(), &claims.map(str::to_string));
+
+    for claim in claims {
+        assert!(has_held_claim_prefix(claim), "{claim}");
+        let node = GunNode::claim(claim);
+        assert_eq!(
+            node.as_node_id().as_str(),
+            claim,
+            "claim id is the object id"
+        );
+        assert!(
+            !node.as_node_id().as_str().contains("/claims/"),
+            "do not invent s3rch/users/<wallet>/claims/"
+        );
+        assert_eq!(
+            grant_soul("0xalice", claim, "0xbob")
+                .as_str()
+                .matches('/')
+                .count(),
+            4,
+            "dest ACL stays five segments"
+        );
+    }
+}
+
+#[test]
+fn mesh_check_treats_held_claims_like_feed_items() {
+    let mut graph = MeshSeeGraph::new();
+    let item = sample_feed_item();
+    let item_soul = item.as_node_id().unwrap();
+    graph.put_object(item_soul.as_str(), "0xalice");
+
+    let claims = [
+        "ens:alice.eth",
+        "unstoppable:alice.crypto",
+        "fc:alice",
+        "lens:alice",
+        "rss3:0xalice",
+    ];
+    for claim in claims {
+        graph.put_object(claim, "0xalice");
+    }
+
+    let now = Timestamp(10);
+    graph
+        .state_see_grant(
+            "0xalice",
+            MeshSeeGrant::live(item_soul.as_str(), "0xbob", 0, 80),
+        )
+        .unwrap();
+    for claim in claims {
+        graph
+            .state_see_grant("0xalice", MeshSeeGrant::live(claim, "0xbob", 0, 80))
+            .unwrap();
+    }
+
+    let feed = graph.check_see(item_soul.as_str(), "0xbob", now, None, None);
+    assert!(feed.allowed);
+    assert_eq!(feed.reason, MESH_REASON_DELEGATE);
+
+    for claim in claims {
+        let see = graph.check_see(claim, "0xbob", now, None, None);
+        assert!(see.allowed, "{claim} mesh see");
+        assert_eq!(see.reason, feed.reason, "{claim} same Check path as feed");
+        assert!(!see.hop_is_grant());
+        assert!(
+            !graph.has_object(&format!("s3rch/users/0xalice/claims/{claim}")),
+            "{claim} is not nested under users/…/claims/"
+        );
+        assert!(
+            !graph.has_object(&format!("s3rch/items/{}", encode_key(claim))),
+            "{claim} must not rewrite into an item soul"
+        );
+    }
+
+    graph
+        .unstate_see_grant("0xalice", "0xbob", "ens:alice.eth")
+        .unwrap();
+    assert!(
+        !graph
+            .check_see("ens:alice.eth", "0xbob", now, None, None)
+            .allowed
+    );
+    assert!(
+        graph
+            .check_see(item_soul.as_str(), "0xbob", now, None, None)
+            .allowed,
+        "cancel one claim does not drop the feed grant"
+    );
+}
+
+#[test]
+fn overlay_held_claims_stay_off_mesh_until_share() {
+    let user = GunUserNode {
+        id: "0xalice".into(),
+        indicators: vec!["ens:alice.eth".into(), "fc:alice".into()],
+        provenance: "overlay".into(),
+        ts: 1,
+    };
+    let mut graph = MeshSeeGraph::new();
+    assert!(
+        !graph.has_object("ens:alice.eth"),
+        "overlay indicators are not in-graph until share"
+    );
+    graph.put_object("ens:alice.eth", &user.id);
+    assert!(graph.has_object("ens:alice.eth"));
+    assert_eq!(graph.owner_of("ens:alice.eth"), Some("0xalice"));
 }
 
 #[test]

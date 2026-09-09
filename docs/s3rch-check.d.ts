@@ -9,8 +9,10 @@
  * Reference implementation (Rust, this repo): crates/sociacl-gun.
  *
  * CHECK(see, object, accessor) at now.
- *   object   = GunFeedNode | Gun-native claim on s3rch/users/{wallet}
- *            | later opaque post/room CheckObjectId
+ *   object   = GunFeedNode | held claim id | later opaque post/room
+ *   claim id = the id itself (ens:… / unstoppable:… / fc:… / lens:… /
+ *              rss3:…), linked from GunUserNode.indicators
+ *   Do not invent s3rch/users/<wallet>/claims/…
  *   accessor = wallet / Gun peer
  *   hopcap 1, jointly stated grants, revoke immediate
  *   hop      = optional Social Light factor; never a grant
@@ -55,8 +57,12 @@ export type FeedItem = {
 };
 
 /**
- * Later user node. gun.get('s3rch').get('users').get(wallet)
- * On the Gun wire, indicators are a comma-separated string.
+ * Locked user node. gun.get('s3rch').get('users').get(wallet)
+ * `indicators` are held-claim ids (ens:… / unstoppable:… / fc:… /
+ * lens:… / rss3:…). On the Gun wire they are a comma-separated
+ * string. Overlay uses this same shape (origin IndexedDB) until
+ * s3r.ch prepareShareUserIntoMesh / prepareShareClaimIntoMesh.
+ * Do not invent s3rch/users/<wallet>/claims/… or a second user node.
  */
 export type GunUserNode = {
   id: string;
@@ -64,6 +70,18 @@ export type GunUserNode = {
   provenance: string;
   ts: number;
 };
+
+/**
+ * Held-claim CheckObjectId prefixes locked by s3r.ch.
+ * The object id is the claim id itself, linked from
+ * GunUserNode.indicators. Same Mesh Check path as a GunFeedNode id.
+ */
+export type HeldClaimPrefix =
+  | "ens:"
+  | "unstoppable:"
+  | "fc:"
+  | "lens:"
+  | "rss3:";
 
 /** Issuers prove a claim to the holder. They are not grants. */
 export type IdentityClaimKind =
@@ -116,9 +134,12 @@ export type FeedMeta = {
 };
 
 /**
- * Feed item soul, claim id linked from the user node, or a later
- * post/room id. s3r.ch owns post/room souls — do not invent
- * s3rch/posts/… here. Treat those as opaque CheckObjectIds.
+ * Feed item soul (`s3rch/items/<encodeKey(id)>`), or a held claim id
+ * itself (`ens:name.eth`, `unstoppable:…`, `fc:…`, `lens:…`,
+ * `rss3:0x…`) linked from GunUserNode.indicators, or a later
+ * post/room id. Mesh Check treats claim ids and GunFeedNode ids the
+ * same. Do not invent s3rch/users/<wallet>/claims/…. s3r.ch owns
+ * post/room souls — do not invent s3rch/posts/… here.
  */
 export type CheckObjectId = string;
 
@@ -243,7 +264,9 @@ export function cancelSee(
 /*                                                                            */
 /* Copy / re-type with the types above. Same file. Not an npm package.        */
 /* Grants HAM-merge under s3rch/acl. They do not fork items or users.         */
-/* Mine overlay stays local until an explicit share-into-mesh putObject.      */
+/* Held claim CheckObjectId = claim id itself (ens:… / fc:… / …).             */
+/* Linked from GunUserNode.indicators. No users/<wallet>/claims/ path.        */
+/* Overlay stays local until s3r.ch prepareShare* then putObject.             */
 /* -------------------------------------------------------------------------- */
 
 /** Dest ACL collection. Sibling of items / users / meta. Not a Check object. */
