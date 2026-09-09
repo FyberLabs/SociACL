@@ -91,6 +91,7 @@ fn hop_and_hint_cannot_mint() {
 
     let result = check(&plane, SEE, &claim, &bob, Some(&hint), Some(&hop)).unwrap();
     assert!(!result.allowed, "hop plus hint do not mint");
+    assert!(!result.hop_is_grant());
     assert!(result.attestation_factor.is_some());
     assert_eq!(plane.edges().len(), edges_before);
     assert_eq!(plane.object(&claim).unwrap().owner, owner_before);
@@ -614,12 +615,23 @@ fn see_grant_bare_wallet_accessor_is_the_user_soul() {
 fn user_node_is_the_wallet_not_a_second_schema() {
     let user = GunUserNode {
         id: "0xalice".into(),
-        indicators: vec!["ens:name.eth".into(), "rss3:0xalice".into()],
+        indicators: vec![
+            "ens:name.eth".into(),
+            "unstoppable:name.crypto".into(),
+            "fc:name".into(),
+            "lens:name".into(),
+            "rss3:0xalice".into(),
+        ],
         provenance: "overlay".into(),
         ts: 1,
     };
     assert_eq!(user.as_node_id().as_str(), "s3rch/users/0xalice");
-    assert_eq!(user.indicators_as_csv(), "ens:name.eth,rss3:0xalice");
+    assert_eq!(
+        user.indicators_as_csv(),
+        "ens:name.eth,unstoppable:name.crypto,fc:name,lens:name,rss3:0xalice"
+    );
+    assert_eq!(user.linked_claim_ids().len(), 5);
+    assert!(!user.as_node_id().as_str().contains("/claims/"));
 }
 
 #[test]

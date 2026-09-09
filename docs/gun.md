@@ -26,7 +26,9 @@ Non-Gun data is a URL. RSS3 GI, RSS/Atom, KYC / email / phone issuer HTTP calls 
 
 Execute-without-read is the existing `delegate` primitive (action mask `execute` without `read`). Elect from a hop, hint, or delegate remains refuse-closed.
 
-A Social Light hop can factor Check. It cannot mint.
+A Social Light hop can factor Check. It cannot mint. The consume contract names this `HopFactor` on `checkSee(..., hint?, hop?)`. Decode (`acceptHop` / `decodeHop`) does not verify and does not mint. See [social-light.md](social-light.md).
+
+Mesh see grants are Gun-native dest-ACL nodes under `s3rch/acl/<owner>/<object>/<accessor>`. They do not fork `items` or `users`. Each peer Checks its locally HAM-merged graph at now. Cancel is owner-only privilege-down and must be visible on the next Check after merge (no cached allow). Soul helpers: `aclKey`, `aclPrincipalKey`, `grantSoul` in [s3rch-check.d.ts](s3rch-check.d.ts).
 
 Case C may Check a frozen bundle the way the rest of SociACL does. The client has no mint path for new Gun grants.
 
@@ -38,7 +40,11 @@ Gun root: `s3rch`.
 gun.get('s3rch').get('items').get(encodeKey(id))  → GunFeedNode
 gun.get('s3rch').get('meta')                     → seed meta (not a Check object)
 gun.get('s3rch').get('users').get(wallet)        → GunUserNode
+gun.get('s3rch').get('acl').get(aclPrincipalKey(owner))
+     .get(aclKey(object)).get(aclPrincipalKey(accessor))  → MeshSeeGrant
 ```
+
+`aclKey` is `encodeKey` then `/` → `_` so dest-ACL souls stay five segments. It is not a second `encodeKey` for items or users. `s3rch/acl` is dest ACL, not a Check object.
 
 `encodeKey`: `id.replace(/[.#$\[\]]/g, '_')`.
 
@@ -52,7 +58,7 @@ gun.get('s3rch').get('users').get(wallet)        → GunUserNode
 
 `FeedTab` is `"public" | "mine" | "network"`. UX only. Not a Check object.
 
-`GunUserNode` (typed, later): `{ id, indicators: string[], provenance, ts }`. Indicators are a comma-separated string on the Gun wire, same as tags. Do not invent a second user node.
+`GunUserNode` (locked): `{ id, indicators: string[], provenance, ts }` at `s3rch/users/<wallet>`. `indicators` are held-claim ids — the claim id itself (`ens:…` / `unstoppable:…` / `fc:…` / `lens:…` / `rss3:…`). Same Mesh Check path as a `GunFeedNode` id. Indicators are a comma-separated string on the Gun wire, same as tags. Overlay uses this same shape until s3r.ch `prepareShare*`. Do not invent a second user node. Do not invent `s3rch/users/<wallet>/claims/…`.
 
 `IdentityClaimKind`: `wallet | rss3 | ens | kyc_attestation | email | phone`. Issuers prove a claim to the holder. They are not grants.
 
@@ -100,6 +106,8 @@ Max string 4096. Fail closed on a bad magic, version, or length.
 | remint | refresh only if the current ACL already names the principal |
 | permalink / RSS3 / RSS / KYC HTTP | `UrlLeaf` (handoff, not a node) |
 | handoff | `HandoffHint` (untrusted factor) |
+| hop | `HopFactor` (Social Light SLHP; optional; never a grant) |
+| dest ACL grant | `MeshSeeGrant` / `GunAclEdge` at `s3rch/acl/…` |
 | hopcap | 1. No friend-of-friend |
 
 `see` is an adapter alias for `read`. `ActionMask` still matches `read` / `write` / `execute`. The adapter maps `see` before dest Check.
@@ -107,10 +115,11 @@ Max string 4096. Fail closed on a bad magic, version, or length.
 ## File layout
 
 ```
-docs/s3rch-check.d.ts          TS consume contract (browser Check; copy / re-type)
-docs/s3rch-check.md            how s3r.ch consumes that file
+docs/s3rch-check.d.ts          TS consume contract (browser Check + Mesh; copy / re-type)
+docs/s3rch-check.md            how s3r.ch consumes that file (Mesh section)
 docs/gun.md                    this page (Rust adapter map)
-crates/sociacl-gun             reference implementation
+docs/social-light.md           SLHP hop factor Check may consume
+crates/sociacl-gun             reference implementation (MeshSeeGraph + hop)
 crates/sociacl-c/include       C encode / accept / Check / see-grant / remint / cancel
 python/sociacl                 thin ctypes of the C ABI
 ```

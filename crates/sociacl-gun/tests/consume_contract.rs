@@ -35,6 +35,30 @@ fn consume_contract_covers_light_check() {
         "admitFeedNode",
         "cancelSee",
         "hopcap",
+        "MeshSeeGrant",
+        "GunAclEdge",
+        "HopFactor",
+        "acceptHop",
+        "decodeHop",
+        "grantSoul",
+        "aclKey",
+        "s3rch/acl",
+        "hop?: HopFactor",
+        "Hop missing does not fail",
+        "Hop alone never allows",
+        "HeldClaimPrefix",
+        "ens:",
+        "unstoppable:",
+        "fc:",
+        "lens:",
+        "rss3:",
+        "GunUserNode.indicators",
+        "s3rch/users/<wallet>/claims/",
+        "ens:name.eth",
+        "unstoppable:name.crypto",
+        "fc:name",
+        "lens:name",
+        "rss3:0x",
     ] {
         assert!(dts.contains(needle), "contract missing {needle}");
     }
@@ -60,12 +84,66 @@ fn consume_contract_stays_off_the_other_plane() {
         "sea",
         "encrypt",
         "checkexecute",
+        "break_glass",
+        "break-glass",
+        "hop mint",
+        "hop mints",
     ] {
         assert!(
             !lower.contains(banned),
             "consume contract must not mention {banned}"
         );
     }
+}
+
+#[test]
+fn consume_contract_hop_never_mints() {
+    let dts = read(contract_path());
+    let lower = dts.to_ascii_lowercase();
+    assert!(
+        lower.contains("hop never mints a grant") || lower.contains("hop alone never allows"),
+        "contract must say hop does not mint"
+    );
+    assert!(
+        !lower.contains("hop mint") && !lower.contains("hop mints"),
+        "contract must not claim hop mints"
+    );
+    assert!(
+        !dts.contains("Elect") && !dts.contains("elect"),
+        "consume contract does not export Elect"
+    );
+    assert!(
+        !lower.contains("break_glass") && !lower.contains("wills"),
+        "consume contract does not export wills / break_glass"
+    );
+}
+
+#[test]
+fn consume_contract_locks_held_claim_souls() {
+    let dts = read(contract_path());
+    let md = read(doc_path());
+    for text in [&dts, &md] {
+        assert!(
+            text.contains("s3rch/users/<wallet>/claims/"),
+            "must refuse a nested claims/ soul"
+        );
+        assert!(
+            text.contains("ens:")
+                && text.contains("unstoppable:")
+                && text.contains("fc:")
+                && text.contains("lens:")
+                && text.contains("rss3:"),
+            "must name locked claim-id prefixes"
+        );
+        assert!(
+            text.contains("indicators"),
+            "claim ids link from GunUserNode.indicators"
+        );
+    }
+    assert!(
+        !dts.contains("s3rch/users/") || dts.contains("Do not invent"),
+        "users collection stays the wallet node"
+    );
 }
 
 #[test]
@@ -84,10 +162,29 @@ fn consume_doc_says_browser_not_a_package() {
         !lower.contains("wasm-pack") && !lower.contains("wasm-bindgen"),
         "lab-feed path does not add a compiled module toolchain"
     );
-    for banned in ["remint", "discover", "elect", "destroy", "sea"] {
+    for banned in [
+        "remint",
+        "discover",
+        "elect",
+        "destroy",
+        "sea",
+        "break_glass",
+    ] {
         assert!(
             !lower.contains(banned),
             "consume doc must not name {banned}"
         );
     }
+    assert!(
+        md.contains("Mesh") && md.contains("s3rch/acl"),
+        "consume doc must name the Mesh dest ACL"
+    );
+    assert!(
+        lower.contains("hop missing does not fail"),
+        "consume doc must say hop missing does not fail"
+    );
+    assert!(
+        lower.contains("hop alone never allows"),
+        "consume doc must say hop alone never allows"
+    );
 }

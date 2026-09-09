@@ -21,6 +21,10 @@ pub enum GunError {
     ElectFromHint,
     #[error("Case C client has no mint path for new Gun grants")]
     ClientHasNoMintPath,
+    #[error("dest ACL write is owner-only")]
+    AclOwnerOnly,
+    #[error("mesh object is not in-graph")]
+    ObjectNotInGraph,
     #[error("check rejected: {0}")]
     Check(CheckError),
     #[error("{0}")]

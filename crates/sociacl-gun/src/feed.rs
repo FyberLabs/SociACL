@@ -144,9 +144,11 @@ fn as_text(s: &str) -> String {
     s.trim().to_string()
 }
 
-/// Locked later user node. `gun.get('s3rch').get('users').get(wallet)`.
-/// Indicators are a list here; Gun stores them as a comma-separated
-/// string. Not a second user schema.
+/// Locked user node. `gun.get('s3rch').get('users').get(wallet)`.
+/// `indicators` are held-claim ids (the claim id itself: `ens:…` /
+/// `unstoppable:…` / `fc:…` / `lens:…` / `rss3:…`). Gun stores them
+/// as a comma-separated string. Not a second user schema and not
+/// `s3rch/users/<wallet>/claims/…`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct GunUserNode {
     pub id: String,
@@ -167,6 +169,24 @@ impl GunUserNode {
     pub fn indicators_from_csv(s: &str) -> Vec<String> {
         split_tags(s)
     }
+
+    /// Held-claim CheckObjectIds linked from this user. Each id is
+    /// the claim id itself. Same Mesh Check path as a feed item id.
+    pub fn linked_claim_ids(&self) -> &[String] {
+        &self.indicators
+    }
+}
+
+/// Locked held-claim CheckObjectId prefixes (s3r.ch). The object id
+/// is the claim id itself, linked from [`GunUserNode::indicators`].
+pub const HELD_CLAIM_PREFIXES: [&str; 5] = ["ens:", "unstoppable:", "fc:", "lens:", "rss3:"];
+
+/// Whether `id` uses a locked held-claim prefix. Feed items may also
+/// start with `rss3:` — those still Check as whatever soul was put
+/// (`s3rch/items/…` after admit). Claims stay the claim id.
+pub fn has_held_claim_prefix(id: &str) -> bool {
+    let id = id.trim();
+    HELD_CLAIM_PREFIXES.iter().any(|p| id.starts_with(p))
 }
 
 /// Locked later claim kinds. Issuers prove a claim to the holder.
