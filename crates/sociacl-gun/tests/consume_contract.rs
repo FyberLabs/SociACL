@@ -54,6 +54,11 @@ fn consume_contract_covers_light_check() {
         "rss3:",
         "GunUserNode.indicators",
         "s3rch/users/<wallet>/claims/",
+        "ens:name.eth",
+        "unstoppable:name.crypto",
+        "fc:name",
+        "lens:name",
+        "rss3:0x",
     ] {
         assert!(dts.contains(needle), "contract missing {needle}");
     }

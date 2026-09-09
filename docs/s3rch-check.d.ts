@@ -134,12 +134,17 @@ export type FeedMeta = {
 };
 
 /**
- * Feed item soul (`s3rch/items/<encodeKey(id)>`), or a held claim id
- * itself (`ens:name.eth`, `unstoppable:…`, `fc:…`, `lens:…`,
- * `rss3:0x…`) linked from GunUserNode.indicators, or a later
- * post/room id. Mesh Check treats claim ids and GunFeedNode ids the
- * same. Do not invent s3rch/users/<wallet>/claims/…. s3r.ch owns
- * post/room souls — do not invent s3rch/posts/… here.
+ * Mesh Check / hop `object`. Examples:
+ *   s3rch/items/<encodeKey(id)>     GunFeedNode
+ *   ens:name.eth                    held claim (ENS)
+ *   unstoppable:name.crypto         held claim (Unstoppable)
+ *   fc:name                         held claim (Farcaster)
+ *   lens:name                       held claim (Lens)
+ *   rss3:0x…                        held claim (RSS3)
+ * Claim id = the id itself, linked from GunUserNode.indicators.
+ * Same checkSee / hop path as a GunFeedNode id.
+ * Do not invent s3rch/users/<wallet>/claims/….
+ * Later posts/rooms are opaque — s3r.ch owns those souls.
  */
 export type CheckObjectId = string;
 

@@ -204,6 +204,43 @@ fn overlay_held_claims_stay_off_mesh_until_share() {
 }
 
 #[test]
+fn hop_factors_held_claim_id_the_same_as_a_feed_item() {
+    let mut graph = MeshSeeGraph::new();
+    let item_soul = sample_feed_item().as_node_id().unwrap();
+    graph.put_object(item_soul.as_str(), "0xalice");
+    graph.put_object("ens:alice.eth", "0xalice");
+    graph
+        .state_see_grant(
+            "0xalice",
+            MeshSeeGrant::live(item_soul.as_str(), "0xbob", 0, 80),
+        )
+        .unwrap();
+    graph
+        .state_see_grant(
+            "0xalice",
+            MeshSeeGrant::live("ens:alice.eth", "0xbob", 0, 80),
+        )
+        .unwrap();
+
+    let hop = accept_hop(
+        decode_hop(&slhp(
+            AttestationChannel::ConventionBadge,
+            b"opaque-attestation",
+            None,
+        ))
+        .unwrap(),
+    );
+    let now = Timestamp(1);
+    let feed = graph.check_see(item_soul.as_str(), "0xbob", now, None, Some(&hop));
+    let claim = graph.check_see("ens:alice.eth", "0xbob", now, None, Some(&hop));
+    assert!(feed.allowed && claim.allowed);
+    assert_eq!(feed.reason, claim.reason);
+    assert!(feed.hop_factored() && claim.hop_factored());
+    assert!(!claim.hop_is_grant());
+    assert!(!graph.has_object("s3rch/users/0xalice/claims/ens:alice.eth"));
+}
+
+#[test]
 fn mesh_grant_allows_gun_shaped_objects() {
     let mut graph = MeshSeeGraph::new();
     let item = sample_feed_item();
