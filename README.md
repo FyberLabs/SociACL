@@ -21,7 +21,7 @@ After a cut, `export_bundle` freezes what a remaining principal already held. Th
 
 ## Build and test
 
-Requires Rust 1.83+ (edition 2021). CI (`.github/workflows/ci.yml`) runs the same steps on `ubuntu-latest`.
+Requires Rust 1.83+ (edition 2021). CI (`.github/workflows/ci.yml`) runs the same steps on `[self-hosted, linux, x64]`.
 
 ```bash
 cargo build --workspace --locked
