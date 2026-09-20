@@ -104,6 +104,9 @@ impl Plane {
         if let Some(c) = self.named_circle(&request.object) {
             extra.insert(c);
         }
+        if let Some(n) = self.named_network(&request.object) {
+            extra.insert(n);
+        }
         let key = CacheKey {
             accessor: request.accessor.clone(),
             anchors: CacheAnchors {
@@ -261,6 +264,7 @@ impl Plane {
             PredicateId::POSIX_MODE => self.eval_posix_mode(object, accessor, action),
             PredicateId::TRUSTEE => self.has_live(accessor, object, Relation::Trustee),
             PredicateId::DELEGATE => self.eval_delegate(object, accessor, action),
+            PredicateId::SAME_NETWORK => self.eval_same_network(object, accessor),
             _ => false,
         }
     }
@@ -288,6 +292,15 @@ impl Plane {
             return false;
         };
         self.has_live(accessor, &circle, Relation::InCircle)
+    }
+
+    /// Named network, hopcap 1: accessor has a direct in-network edge.
+    /// No walk, no service discovery, no BFT.
+    fn eval_same_network(&self, object: &NodeId, accessor: &NodeId) -> bool {
+        let Some(network) = self.named_network(object) else {
+            return false;
+        };
+        self.has_live(accessor, &network, Relation::InNetwork)
     }
 
     fn eval_posix_mode(&self, object: &NodeId, accessor: &NodeId, action: &Action) -> bool {

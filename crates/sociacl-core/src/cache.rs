@@ -68,6 +68,7 @@ impl EdgeTypeSet {
             }
             crate::types::PredicateId::TRUSTEE => [Relation::Trustee].into_iter().collect(),
             crate::types::PredicateId::DELEGATE => [Relation::Delegate].into_iter().collect(),
+            crate::types::PredicateId::SAME_NETWORK => [Relation::InNetwork].into_iter().collect(),
             _ => BTreeSet::new(),
         };
         Self { relations }

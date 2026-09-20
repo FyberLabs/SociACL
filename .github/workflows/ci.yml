@@ -30,6 +30,9 @@ jobs:
       - name: Rust will example
         run: cargo run --locked -p sociacl-core --example wills
 
+      - name: Rust network example
+        run: cargo run --locked -p sociacl-core --example network
+
       - name: Social Light lab example
         run: cargo run --locked -p social-light --example lab
 
@@ -71,3 +74,18 @@ jobs:
 
       - name: Python Gun adapter
         run: PYTHONPATH=python python3 python/tests/test_gun.py
+
+      - name: C live verbs and network
+        run: |
+          cc -I crates/sociacl-c/include examples/verbs.c \
+            -L target/debug -lsociacl -o target/sociacl-verbs-c
+          LD_LIBRARY_PATH="${PWD}/target/debug" target/sociacl-verbs-c
+
+      - name: Python live verbs
+        run: PYTHONPATH=python python3 python/tests/test_verbs.py
+
+      - name: Python network membership
+        run: PYTHONPATH=python python3 python/tests/test_network.py
+
+      - name: TypeScript light plane
+        run: node typescript/tests/test_plane.js

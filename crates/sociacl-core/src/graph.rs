@@ -7,8 +7,8 @@ use crate::attestation::{Attestation, AttestationClaim, Enrollment, EnrollmentKi
 use crate::cache::{HashCache, MemoryHashCache, Snapshot, SnapshotHash};
 use crate::error::{AttestationError, VerbError};
 use crate::types::{
-    Action, AuthnState, Device, Edge, NodeId, NodeKind, Object, ObjectKind, ObjectProperties,
-    ObjectVersion, PendingElect, Principal, Relation, Timestamp,
+    Action, AuthnState, CensureRecord, Device, Edge, NodeId, NodeKind, Object, ObjectKind,
+    ObjectProperties, ObjectVersion, PendingElect, Principal, Relation, Timestamp,
 };
 use crate::will::{Will, WillSubject, WillValidateCtx};
 
@@ -31,6 +31,7 @@ pub struct Plane {
     pub(crate) enrollments: HashMap<NodeId, Enrollment>,
     pub(crate) attestations: Vec<Attestation>,
     pub(crate) pending_elects: HashMap<NodeId, PendingElect>,
+    pub(crate) audit: Vec<CensureRecord>,
     pub(crate) cache: MemoryHashCache,
     /// After a cut, only pre-cut attestations, pre-cut enrollments,
     /// pre-cut wills, and old jointly stated edges count. Export copies
@@ -58,6 +59,7 @@ impl Plane {
             enrollments: HashMap::new(),
             attestations: Vec::new(),
             pending_elects: HashMap::new(),
+            audit: Vec::new(),
             cache: MemoryHashCache::default(),
             cut: None,
             now: Timestamp(0),
@@ -135,6 +137,14 @@ impl Plane {
         id
     }
 
+    /// Named membership set. Does not encode BFT, leader, discovery,
+    /// or recovery. Ownership is a later `add_object` on the same id.
+    pub fn add_network(&mut self, id: impl Into<NodeId>) -> NodeId {
+        let id = id.into();
+        self.nodes.insert(id.clone(), NodeKind::Network);
+        id
+    }
+
     /// Creates a protected object owned by `owner`. The `owns` edge is jointly
     /// stated at creation (owner speaks for both endpoints) and is live
     /// immediately. Properties default to predicate `owner`.
@@ -143,6 +153,7 @@ impl Plane {
         let owner = owner.into();
         let kind = match self.nodes.get(&id) {
             Some(NodeKind::Device) => ObjectKind::Device,
+            Some(NodeKind::Network) => ObjectKind::Network,
             _ => ObjectKind::Data,
         };
         let object = Object {
@@ -337,6 +348,14 @@ impl Plane {
                 let id = other.id();
                 if !self.nodes.contains_key(id) {
                     return Err(VerbError::ObjectNotFound(id.clone()));
+                }
+                if let Some(obj) = self.objects.get(id) {
+                    if obj.destroyed {
+                        return Err(VerbError::ObjectDestroyed(id.clone()));
+                    }
+                    if obj.owner != will.testator {
+                        return Err(VerbError::CannotWriteWill(will.testator.clone()));
+                    }
                 }
             }
         }
@@ -675,6 +694,12 @@ impl Plane {
                 })
                 .cloned()
                 .collect(),
+            Relation::InNetwork => self
+                .objects
+                .keys()
+                .filter(|oid| self.named_network(*oid).as_ref() == Some(to))
+                .cloned()
+                .collect(),
         }
         .into_iter()
         .chain(if self.objects.contains_key(from) {
@@ -716,8 +741,27 @@ impl Plane {
             .map(|e| e.to.clone())
     }
 
+    /// Object names a network, or the object is the network itself.
+    pub(crate) fn named_network(&self, object: &NodeId) -> Option<NodeId> {
+        if let Some(n) = self
+            .objects
+            .get(object)
+            .and_then(|o| o.properties.get(ObjectProperties::NETWORK))
+        {
+            return Some(NodeId::new(n));
+        }
+        if self.nodes.get(object) == Some(&NodeKind::Network) {
+            return Some(object.clone());
+        }
+        self.objects
+            .get(object)
+            .filter(|o| o.kind == ObjectKind::Network)
+            .map(|o| o.id.clone())
+    }
+
     /// ACL names `principal` on `object` via owner, group, one-hop circle,
-    /// trustee, or a live keep-operating delegate grant (until not elapsed).
+    /// network membership, trustee, or a live keep-operating delegate
+    /// grant (until not elapsed).
     pub fn acl_names(&self, object: &NodeId, principal: &NodeId) -> bool {
         if self.has_live(principal, object, Relation::Owns) {
             return true;
@@ -735,6 +779,11 @@ impl Plane {
         }
         if let Some(circle) = self.named_circle(object) {
             if self.has_live(principal, &circle, Relation::InCircle) {
+                return true;
+            }
+        }
+        if let Some(network) = self.named_network(object) {
+            if self.has_live(principal, &network, Relation::InNetwork) {
                 return true;
             }
         }

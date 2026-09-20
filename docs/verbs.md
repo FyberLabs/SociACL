@@ -17,7 +17,7 @@ Hot path. Live Check is server-evaluated. After a cut, `Client::check` evaluates
 
 **Rules**
 
-1. Object properties must name a predicate from `owner`, `same-group`, `named-circle`, `posix-mode`, `trustee`, `delegate`. Missing, unknown, or `heir-template` → error (fail closed).
+1. Object properties must name a predicate from `owner`, `same-group`, `named-circle`, `posix-mode`, `trustee`, `delegate`, `same-network`. Missing, unknown, or `heir-template` → error (fail closed).
 2. Explicit predicate that does not match the object's name → error (fail closed).
 3. Missing or destroyed object → deny / error, never allow.
 4. Evaluate the object's predicate on edges that are **jointly stated** and past the privilege-up delay, hopcap **1**. One-sided follow/friend is not a grant.
@@ -43,7 +43,7 @@ Authn holds, authz stale. Not election.
 **Allow** only when:
 
 - the principal's authn is live, and
-- a current jointly stated ACL already names that principal for the object (`owns`, group membership for a named `object-group`, direct circle membership for a named `object-circle`, `trustee`, or a live `delegate` grant whose `until` has not elapsed).
+- a current jointly stated ACL already names that principal for the object (`owns`, group membership for a named `object-group`, direct circle membership for a named `object-circle`, network membership for a named `same-network` object, `trustee`, or a live `delegate` grant whose `until` has not elapsed).
 
 **Deny** if the ACL no longer names them. Do not look at wills to pick a new owner.
 

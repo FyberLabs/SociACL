@@ -54,6 +54,8 @@ pub enum NodeKind {
     Device,
     Group,
     Circle,
+    /// Named membership set. Not a transport, BFT, or leader scheme.
+    Network,
 }
 
 impl NodeKind {
@@ -64,6 +66,7 @@ impl NodeKind {
             Self::Device => "device",
             Self::Group => "group",
             Self::Circle => "circle",
+            Self::Network => "network",
         }
     }
 
@@ -74,6 +77,7 @@ impl NodeKind {
             "device" => Some(Self::Device),
             "group" => Some(Self::Group),
             "circle" => Some(Self::Circle),
+            "network" => Some(Self::Network),
             _ => None,
         }
     }
@@ -98,6 +102,8 @@ pub struct ObjectVersion(pub u64);
 pub enum ObjectKind {
     Data,
     Device,
+    /// The network itself is the Check target (ownership / membership).
+    Network,
 }
 
 impl ObjectKind {
@@ -105,6 +111,7 @@ impl ObjectKind {
         match self {
             Self::Data => "data",
             Self::Device => "device",
+            Self::Network => "network",
         }
     }
 
@@ -112,6 +119,7 @@ impl ObjectKind {
         match s {
             "data" => Some(Self::Data),
             "device" => Some(Self::Device),
+            "network" => Some(Self::Network),
             _ => None,
         }
     }
@@ -127,6 +135,7 @@ impl ObjectProperties {
     pub const PREDICATE: &'static str = "predicate";
     pub const GROUP: &'static str = "group";
     pub const CIRCLE: &'static str = "circle";
+    pub const NETWORK: &'static str = "network";
     pub const MODE: &'static str = "mode";
 
     pub fn new() -> Self {
@@ -351,6 +360,9 @@ pub enum Relation {
     /// Keep-operating grant with an action mask. Check uses it only if
     /// the object names `delegate`. Not trustee. Not an Elect.
     Delegate,
+    /// Principal-to-network membership. Hopcap 1. Not a discovery
+    /// protocol, BFT vote, or leader election.
+    InNetwork,
 }
 
 impl Relation {
@@ -364,6 +376,7 @@ impl Relation {
             Self::Friend => "friend",
             Self::Trustee => "trustee",
             Self::Delegate => "delegate",
+            Self::InNetwork => "in-network",
         }
     }
 
@@ -377,6 +390,7 @@ impl Relation {
             "friend" | "follow" => Some(Self::Friend),
             "trustee" => Some(Self::Trustee),
             "delegate" => Some(Self::Delegate),
+            "in-network" => Some(Self::InNetwork),
             _ => None,
         }
     }
@@ -427,6 +441,7 @@ impl PredicateId {
     pub const POSIX_MODE: &'static str = "posix-mode";
     pub const TRUSTEE: &'static str = "trustee";
     pub const DELEGATE: &'static str = "delegate";
+    pub const SAME_NETWORK: &'static str = "same-network";
     pub const HEIR_TEMPLATE: &'static str = "heir-template";
 
     pub fn new(id: impl AsRef<str>) -> Self {
@@ -457,6 +472,10 @@ impl PredicateId {
         Self::new(Self::DELEGATE)
     }
 
+    pub fn same_network() -> Self {
+        Self::new(Self::SAME_NETWORK)
+    }
+
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -471,6 +490,7 @@ impl PredicateId {
                 | Self::POSIX_MODE
                 | Self::TRUSTEE
                 | Self::DELEGATE
+                | Self::SAME_NETWORK
         )
     }
 }
@@ -609,6 +629,79 @@ pub enum ElectState {
     },
     /// Installed after the wait. Jointly stated `owns` edge.
     Installed { new_owner: NodeId },
+}
+
+impl ElectResult {
+    /// Edge reason text. Elect does not publish a vacancy.
+    pub fn as_reason(&self) -> String {
+        match &self.state {
+            ElectState::Pending { candidate, .. } => format!("pending {candidate}"),
+            ElectState::Installed { new_owner } => format!("installed {new_owner}"),
+        }
+    }
+}
+
+/// Why a member was removed. Not a grant. Not a BFT vote.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CensureReason {
+    SelfLeave,
+    UnintentionalFailure,
+    PolicyViolation,
+    ActiveSabotage,
+}
+
+impl CensureReason {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::SelfLeave => "self-leave",
+            Self::UnintentionalFailure => "unintentional-failure",
+            Self::PolicyViolation => "policy-violation",
+            Self::ActiveSabotage => "active-sabotage",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "self-leave" => Some(Self::SelfLeave),
+            "unintentional-failure" => Some(Self::UnintentionalFailure),
+            "policy-violation" => Some(Self::PolicyViolation),
+            "active-sabotage" => Some(Self::ActiveSabotage),
+            _ => None,
+        }
+    }
+
+    pub fn member_may_state(self) -> bool {
+        matches!(self, Self::SelfLeave)
+    }
+
+    pub fn owner_may_state(self) -> bool {
+        matches!(
+            self,
+            Self::UnintentionalFailure | Self::PolicyViolation | Self::ActiveSabotage
+        )
+    }
+}
+
+/// Privilege-down plus a recorded reason. Check does not read this.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CensureRecord {
+    pub network: NodeId,
+    pub member: NodeId,
+    pub speaker: NodeId,
+    pub reason: CensureReason,
+    pub at: Timestamp,
+}
+
+impl CensureRecord {
+    pub fn as_reason(&self) -> String {
+        format!(
+            "{} {} {} {}",
+            self.member,
+            self.speaker,
+            self.reason.as_str(),
+            self.at.0
+        )
+    }
 }
 
 impl ElectState {

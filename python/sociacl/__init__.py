@@ -55,6 +55,7 @@ _LIB.sociacl_add_agent.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
 _LIB.sociacl_add_device.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
 _LIB.sociacl_add_group.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
 _LIB.sociacl_add_circle.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
+_LIB.sociacl_add_network.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
 _LIB.sociacl_add_object.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p]
 _LIB.sociacl_set_object_property.argtypes = [
     ctypes.c_void_p,
@@ -75,6 +76,17 @@ _LIB.sociacl_jointly_state.argtypes = [
     ctypes.c_char_p,
     ctypes.c_char_p,
 ]
+_LIB.sociacl_unstate_edge.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+]
+_LIB.sociacl_set_authn.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p]
+_LIB.sociacl_set_now.argtypes = [ctypes.c_void_p, ctypes.c_uint64]
+_LIB.sociacl_now.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_uint64)]
+_LIB.sociacl_now.restype = ctypes.c_int
 _LIB.sociacl_delegate.argtypes = [
     ctypes.c_void_p,
     ctypes.c_char_p,
@@ -160,6 +172,80 @@ _LIB.sociacl_check_ex.argtypes = [
     ctypes.c_size_t,
 ]
 _LIB.sociacl_check_ex.restype = ctypes.c_int
+_LIB.sociacl_remint.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.c_size_t,
+]
+_LIB.sociacl_remint.restype = ctypes.c_int
+_LIB.sociacl_discover.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.c_size_t,
+]
+_LIB.sociacl_discover.restype = ctypes.c_int
+_LIB.sociacl_elect.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.c_size_t,
+]
+_LIB.sociacl_elect.restype = ctypes.c_int
+_LIB.sociacl_commit_elect.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.c_size_t,
+]
+_LIB.sociacl_commit_elect.restype = ctypes.c_int
+_LIB.sociacl_cancel_will.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.c_size_t,
+]
+_LIB.sociacl_cancel_will.restype = ctypes.c_int
+_LIB.sociacl_destroy.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.c_size_t,
+]
+_LIB.sociacl_destroy.restype = ctypes.c_int
+_LIB.sociacl_admit_member.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.c_size_t,
+]
+_LIB.sociacl_admit_member.restype = ctypes.c_int
+_LIB.sociacl_censure.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+    ctypes.c_size_t,
+]
+_LIB.sociacl_censure.restype = ctypes.c_int
+_LIB.sociacl_is_member.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p]
+_LIB.sociacl_is_member.restype = ctypes.c_int
+_LIB.sociacl_audit_count.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
+_LIB.sociacl_audit_count.restype = ctypes.c_int
+_LIB.sociacl_audit_at.argtypes = [
+    ctypes.c_void_p,
+    ctypes.c_char_p,
+    ctypes.c_size_t,
+    ctypes.c_char_p,
+    ctypes.c_size_t,
+]
+_LIB.sociacl_audit_at.restype = ctypes.c_int
 _LIB.sociacl_export_bundle.argtypes = [
     ctypes.c_void_p,
     ctypes.c_char_p,
@@ -544,6 +630,10 @@ class Plane:
         if _LIB.sociacl_add_circle(self._ptr, _b(id)) != 0:
             raise CheckError(f"add_circle {id}")
 
+    def add_network(self, id: str) -> None:
+        if _LIB.sociacl_add_network(self._ptr, _b(id)) != 0:
+            raise CheckError(f"add_network {id}")
+
     def add_object(self, id: str, owner: str) -> None:
         if _LIB.sociacl_add_object(self._ptr, _b(id), _b(owner)) != 0:
             raise CheckError(f"add_object {id}")
@@ -559,6 +649,107 @@ class Plane:
     def jointly_state(self, frm: str, to: str, relation: str) -> None:
         if _LIB.sociacl_jointly_state(self._ptr, _b(frm), _b(to), _b(relation)) != 0:
             raise CheckError(f"jointly_state {relation}")
+
+    def unstate_edge(self, speaker: str, frm: str, to: str, relation: str) -> None:
+        if _LIB.sociacl_unstate_edge(self._ptr, _b(speaker), _b(frm), _b(to), _b(relation)) != 0:
+            raise CheckError(f"unstate_edge {relation}")
+
+    def set_authn(self, id: str, state: str) -> None:
+        if _LIB.sociacl_set_authn(self._ptr, _b(id), _b(state)) != 0:
+            raise CheckError(f"set_authn {id} {state}")
+
+    def set_now(self, now: int) -> None:
+        if _LIB.sociacl_set_now(self._ptr, int(now)) != 0:
+            raise CheckError("set_now")
+
+    def now(self) -> int:
+        tick = ctypes.c_uint64(0)
+        if _LIB.sociacl_now(self._ptr, ctypes.byref(tick)) != 0:
+            raise CheckError("now")
+        return int(tick.value)
+
+    def remint(self, object: str, principal: str) -> str:
+        buf = ctypes.create_string_buffer(_REASON_LEN)
+        rc = _LIB.sociacl_remint(self._ptr, _b(object), _b(principal), buf, _REASON_LEN)
+        reason = buf.value.decode("utf-8", errors="replace")
+        if rc != 1:
+            raise Error(reason or "remint failed")
+        return reason
+
+    def discover(self, object: str) -> str:
+        buf = ctypes.create_string_buffer(_REASON_LEN)
+        rc = _LIB.sociacl_discover(self._ptr, _b(object), buf, _REASON_LEN)
+        reason = buf.value.decode("utf-8", errors="replace")
+        if rc != 0:
+            raise Error(reason or "discover failed")
+        return reason
+
+    def elect(self, object: str) -> str:
+        buf = ctypes.create_string_buffer(_REASON_LEN)
+        rc = _LIB.sociacl_elect(self._ptr, _b(object), buf, _REASON_LEN)
+        reason = buf.value.decode("utf-8", errors="replace")
+        if rc != 0:
+            raise Error(reason or "elect failed")
+        return reason
+
+    def commit_elect(self, object: str) -> str:
+        buf = ctypes.create_string_buffer(_REASON_LEN)
+        rc = _LIB.sociacl_commit_elect(self._ptr, _b(object), buf, _REASON_LEN)
+        reason = buf.value.decode("utf-8", errors="replace")
+        if rc != 0:
+            raise Error(reason or "commit_elect failed")
+        return reason
+
+    def cancel_will(self, object: str, by: str) -> str:
+        buf = ctypes.create_string_buffer(_REASON_LEN)
+        rc = _LIB.sociacl_cancel_will(self._ptr, _b(object), _b(by), buf, _REASON_LEN)
+        reason = buf.value.decode("utf-8", errors="replace")
+        if rc != 0:
+            raise Error(reason or "cancel_will failed")
+        return reason
+
+    def destroy(self, object: str) -> str:
+        buf = ctypes.create_string_buffer(_REASON_LEN)
+        rc = _LIB.sociacl_destroy(self._ptr, _b(object), buf, _REASON_LEN)
+        reason = buf.value.decode("utf-8", errors="replace")
+        if rc != 1:
+            raise Error(reason or "destroy failed")
+        return reason
+
+    def admit_member(self, member: str, network: str) -> None:
+        buf = ctypes.create_string_buffer(_REASON_LEN)
+        rc = _LIB.sociacl_admit_member(self._ptr, _b(member), _b(network), buf, _REASON_LEN)
+        if rc != 0:
+            raise Error(buf.value.decode("utf-8", errors="replace") or "admit_member failed")
+
+    def censure(self, speaker: str, network: str, member: str, reason: str) -> str:
+        buf = ctypes.create_string_buffer(_REASON_LEN)
+        rc = _LIB.sociacl_censure(
+            self._ptr, _b(speaker), _b(network), _b(member), _b(reason), buf, _REASON_LEN
+        )
+        text = buf.value.decode("utf-8", errors="replace")
+        if rc != 0:
+            raise Error(text or "censure failed")
+        return text
+
+    def is_member(self, member: str, network: str) -> bool:
+        rc = _LIB.sociacl_is_member(self._ptr, _b(member), _b(network))
+        if rc < 0:
+            raise CheckError(f"is_member {member} {network}")
+        return rc == 1
+
+    def audit(self, network: str) -> list[str]:
+        count = _LIB.sociacl_audit_count(self._ptr, _b(network))
+        if count < 0:
+            raise Error("audit failed")
+        out: list[str] = []
+        for i in range(count):
+            buf = ctypes.create_string_buffer(_REASON_LEN)
+            rc = _LIB.sociacl_audit_at(self._ptr, _b(network), i, buf, _REASON_LEN)
+            if rc != 0:
+                raise Error(buf.value.decode("utf-8", errors="replace") or "audit failed")
+            out.append(buf.value.decode("utf-8", errors="replace"))
+        return out
 
     def delegate(
         self,

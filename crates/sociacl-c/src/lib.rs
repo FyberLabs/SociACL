@@ -8,8 +8,8 @@ use std::sync::Mutex;
 
 use sociacl_core::{
     ActionMask, Attestation, AttestationBinding, AttestationChannel, AttestationClaim,
-    AttestationSig, CheckRequest, Client, EnrollmentKind, HolderSecret, IssuerSecret, NodeId,
-    Plane, PredicateId, Relation, SocialLightStatement, Timestamp, VerifyKey,
+    AttestationSig, AuthnState, CensureReason, CheckRequest, Client, EnrollmentKind, HolderSecret,
+    IssuerSecret, NodeId, Plane, PredicateId, Relation, SocialLightStatement, Timestamp, VerifyKey,
 };
 use sociacl_gun::{
     accept_hint_bytes, cancel as gun_cancel, check as gun_check,
@@ -136,6 +136,17 @@ pub extern "C" fn sociacl_add_circle(plane: *mut sociacl_plane, id: *const c_cha
 }
 
 #[no_mangle]
+pub extern "C" fn sociacl_add_network(plane: *mut sociacl_plane, id: *const c_char) -> c_int {
+    let Some(id) = cstr(id) else {
+        return -1;
+    };
+    with_plane(plane, |p| {
+        p.add_network(id);
+        0
+    })
+}
+
+#[no_mangle]
 pub extern "C" fn sociacl_set_object_property(
     plane: *mut sociacl_plane,
     object: *const c_char,
@@ -205,6 +216,67 @@ pub extern "C" fn sociacl_jointly_state(
     };
     with_plane(plane, |p| {
         p.jointly_state(from, to, relation);
+        0
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sociacl_unstate_edge(
+    plane: *mut sociacl_plane,
+    speaker: *const c_char,
+    from: *const c_char,
+    to: *const c_char,
+    relation: *const c_char,
+) -> c_int {
+    let (Some(speaker), Some(from), Some(to), Some(rel)) =
+        (cstr(speaker), cstr(from), cstr(to), cstr(relation))
+    else {
+        return -1;
+    };
+    let Some(relation) = Relation::parse(rel) else {
+        return -1;
+    };
+    with_plane(plane, |p| {
+        p.unstate_edge(speaker, from, to, relation);
+        0
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sociacl_set_authn(
+    plane: *mut sociacl_plane,
+    id: *const c_char,
+    state: *const c_char,
+) -> c_int {
+    let (Some(id), Some(state)) = (cstr(id), cstr(state)) else {
+        return -1;
+    };
+    let Some(state) = AuthnState::parse(state) else {
+        return -1;
+    };
+    with_plane(plane, |p| {
+        p.set_authn(id, state);
+        0
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sociacl_set_now(plane: *mut sociacl_plane, now: u64) -> c_int {
+    with_plane(plane, |p| {
+        p.set_now(Timestamp(now));
+        0
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sociacl_now(plane: *mut sociacl_plane, now_out: *mut u64) -> c_int {
+    if now_out.is_null() {
+        return -1;
+    }
+    with_plane(plane, |p| {
+        unsafe {
+            *now_out = p.now().0;
+        }
         0
     })
 }
@@ -550,6 +622,249 @@ pub extern "C" fn sociacl_check_ex(
                 -1
             }
         }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sociacl_remint(
+    plane: *mut sociacl_plane,
+    object: *const c_char,
+    principal: *const c_char,
+    reason_out: *mut c_char,
+    reason_len: usize,
+) -> c_int {
+    let (Some(object), Some(principal)) = (cstr(object), cstr(principal)) else {
+        write_reason(reason_out, reason_len, "invalid-argument");
+        return -1;
+    };
+    with_plane(plane, |p| match p.remint(object, principal) {
+        Ok(_) => {
+            write_reason(reason_out, reason_len, "remint");
+            1
+        }
+        Err(e) => {
+            write_reason(reason_out, reason_len, &e.to_string());
+            -1
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sociacl_discover(
+    plane: *mut sociacl_plane,
+    object: *const c_char,
+    reason_out: *mut c_char,
+    reason_len: usize,
+) -> c_int {
+    let Some(object) = cstr(object) else {
+        write_reason(reason_out, reason_len, "invalid-argument");
+        return -1;
+    };
+    with_plane(plane, |p| match p.discover(object) {
+        Ok(result) => {
+            write_reason(reason_out, reason_len, &result.as_reason());
+            0
+        }
+        Err(e) => {
+            write_reason(reason_out, reason_len, &e.to_string());
+            -1
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sociacl_elect(
+    plane: *mut sociacl_plane,
+    object: *const c_char,
+    reason_out: *mut c_char,
+    reason_len: usize,
+) -> c_int {
+    let Some(object) = cstr(object) else {
+        write_reason(reason_out, reason_len, "invalid-argument");
+        return -1;
+    };
+    with_plane(plane, |p| match p.elect(object) {
+        Ok(result) => {
+            write_reason(reason_out, reason_len, &result.as_reason());
+            0
+        }
+        Err(e) => {
+            write_reason(reason_out, reason_len, &e.to_string());
+            -1
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sociacl_commit_elect(
+    plane: *mut sociacl_plane,
+    object: *const c_char,
+    reason_out: *mut c_char,
+    reason_len: usize,
+) -> c_int {
+    let Some(object) = cstr(object) else {
+        write_reason(reason_out, reason_len, "invalid-argument");
+        return -1;
+    };
+    with_plane(plane, |p| match p.commit_elect(object) {
+        Ok(result) => {
+            write_reason(reason_out, reason_len, &result.as_reason());
+            0
+        }
+        Err(e) => {
+            write_reason(reason_out, reason_len, &e.to_string());
+            -1
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sociacl_cancel_will(
+    plane: *mut sociacl_plane,
+    object: *const c_char,
+    by: *const c_char,
+    reason_out: *mut c_char,
+    reason_len: usize,
+) -> c_int {
+    let (Some(object), Some(by)) = (cstr(object), cstr(by)) else {
+        write_reason(reason_out, reason_len, "invalid-argument");
+        return -1;
+    };
+    with_plane(plane, |p| match p.cancel_will(object, by) {
+        Ok(()) => {
+            write_reason(reason_out, reason_len, "canceled");
+            0
+        }
+        Err(e) => {
+            write_reason(reason_out, reason_len, &e.to_string());
+            -1
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sociacl_destroy(
+    plane: *mut sociacl_plane,
+    object: *const c_char,
+    reason_out: *mut c_char,
+    reason_len: usize,
+) -> c_int {
+    let Some(object) = cstr(object) else {
+        write_reason(reason_out, reason_len, "invalid-argument");
+        return -1;
+    };
+    with_plane(plane, |p| match p.destroy(object) {
+        Ok(_) => {
+            write_reason(reason_out, reason_len, "destroy");
+            1
+        }
+        Err(e) => {
+            write_reason(reason_out, reason_len, &e.to_string());
+            -1
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sociacl_admit_member(
+    plane: *mut sociacl_plane,
+    member: *const c_char,
+    network: *const c_char,
+    reason_out: *mut c_char,
+    reason_len: usize,
+) -> c_int {
+    let (Some(member), Some(network)) = (cstr(member), cstr(network)) else {
+        write_reason(reason_out, reason_len, "invalid-argument");
+        return -1;
+    };
+    with_plane(plane, |p| match p.admit_member(member, network) {
+        Ok(()) => 0,
+        Err(e) => {
+            write_reason(reason_out, reason_len, &e.to_string());
+            -1
+        }
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sociacl_censure(
+    plane: *mut sociacl_plane,
+    speaker: *const c_char,
+    network: *const c_char,
+    member: *const c_char,
+    reason: *const c_char,
+    reason_out: *mut c_char,
+    reason_len: usize,
+) -> c_int {
+    let (Some(speaker), Some(network), Some(member), Some(reason)) =
+        (cstr(speaker), cstr(network), cstr(member), cstr(reason))
+    else {
+        write_reason(reason_out, reason_len, "invalid-argument");
+        return -1;
+    };
+    let Some(reason) = CensureReason::parse(reason) else {
+        write_reason(
+            reason_out,
+            reason_len,
+            "unnamed censure reason; fail closed",
+        );
+        return -1;
+    };
+    with_plane(plane, |p| {
+        match p.censure(speaker, network, member, reason) {
+            Ok(record) => {
+                write_reason(reason_out, reason_len, &record.as_reason());
+                0
+            }
+            Err(e) => {
+                write_reason(reason_out, reason_len, &e.to_string());
+                -1
+            }
+        }
+    })
+}
+
+/* Returns 1 member, 0 not, -1 error. */
+#[no_mangle]
+pub extern "C" fn sociacl_is_member(
+    plane: *mut sociacl_plane,
+    member: *const c_char,
+    network: *const c_char,
+) -> c_int {
+    let (Some(member), Some(network)) = (cstr(member), cstr(network)) else {
+        return -1;
+    };
+    with_plane(plane, |p| if p.is_member(member, network) { 1 } else { 0 })
+}
+
+#[no_mangle]
+pub extern "C" fn sociacl_audit_count(plane: *mut sociacl_plane, network: *const c_char) -> c_int {
+    let Some(network) = cstr(network) else {
+        return -1;
+    };
+    with_plane(plane, |p| p.audit(network).len() as c_int)
+}
+
+#[no_mangle]
+pub extern "C" fn sociacl_audit_at(
+    plane: *mut sociacl_plane,
+    network: *const c_char,
+    index: usize,
+    reason_out: *mut c_char,
+    reason_len: usize,
+) -> c_int {
+    let Some(network) = cstr(network) else {
+        write_reason(reason_out, reason_len, "invalid-argument");
+        return -1;
+    };
+    with_plane(plane, |p| {
+        let records = p.audit(network);
+        let Some(record) = records.get(index) else {
+            write_reason(reason_out, reason_len, "audit index out of range");
+            return -1;
+        };
+        write_reason(reason_out, reason_len, &record.as_reason());
+        0
     })
 }
 
@@ -2653,6 +2968,134 @@ mod tests {
             .to_string_lossy()
             .into_owned();
         assert_eq!(item_soul, "s3rch/items/rss3:act/1_x");
+        sociacl_plane_free(plane);
+    }
+
+    #[test]
+    fn ffi_live_verbs_and_network() {
+        let plane = sociacl_plane_new();
+        assert_eq!(sociacl_add_person(plane, c("alice").as_ptr()), 0);
+        assert_eq!(sociacl_add_person(plane, c("bob").as_ptr()), 0);
+        assert_eq!(sociacl_add_person(plane, c("mallory").as_ptr()), 0);
+        assert_eq!(sociacl_add_person(plane, c("executor").as_ptr()), 0);
+        assert_eq!(sociacl_add_network(plane, c("panopticon").as_ptr()), 0);
+        assert_eq!(
+            sociacl_add_object(plane, c("panopticon").as_ptr(), c("alice").as_ptr()),
+            0
+        );
+        assert_eq!(
+            sociacl_set_object_property(
+                plane,
+                c("panopticon").as_ptr(),
+                c("predicate").as_ptr(),
+                c("same-network").as_ptr()
+            ),
+            0
+        );
+        let mut reason = [0i8; 256];
+        assert_eq!(
+            sociacl_admit_member(
+                plane,
+                c("alice").as_ptr(),
+                c("panopticon").as_ptr(),
+                reason.as_mut_ptr(),
+                reason.len()
+            ),
+            0
+        );
+        assert_eq!(
+            sociacl_admit_member(
+                plane,
+                c("bob").as_ptr(),
+                c("panopticon").as_ptr(),
+                reason.as_mut_ptr(),
+                reason.len()
+            ),
+            0
+        );
+        assert_eq!(
+            sociacl_is_member(plane, c("bob").as_ptr(), c("panopticon").as_ptr()),
+            1
+        );
+        assert_eq!(
+            sociacl_is_member(plane, c("mallory").as_ptr(), c("panopticon").as_ptr()),
+            0
+        );
+        assert_eq!(
+            sociacl_check(
+                plane,
+                c("read").as_ptr(),
+                c("panopticon").as_ptr(),
+                c("bob").as_ptr(),
+                c("same-network").as_ptr(),
+                reason.as_mut_ptr(),
+                reason.len()
+            ),
+            1
+        );
+        assert_eq!(
+            sociacl_remint(
+                plane,
+                c("panopticon").as_ptr(),
+                c("bob").as_ptr(),
+                reason.as_mut_ptr(),
+                reason.len()
+            ),
+            1
+        );
+        assert_eq!(
+            sociacl_censure(
+                plane,
+                c("alice").as_ptr(),
+                c("panopticon").as_ptr(),
+                c("bob").as_ptr(),
+                c("active-sabotage").as_ptr(),
+                reason.as_mut_ptr(),
+                reason.len()
+            ),
+            0
+        );
+        assert_eq!(
+            sociacl_is_member(plane, c("bob").as_ptr(), c("panopticon").as_ptr()),
+            0
+        );
+        assert_eq!(sociacl_audit_count(plane, c("panopticon").as_ptr()), 1);
+        assert_eq!(
+            sociacl_audit_at(
+                plane,
+                c("panopticon").as_ptr(),
+                0,
+                reason.as_mut_ptr(),
+                reason.len()
+            ),
+            0
+        );
+
+        assert_eq!(
+            sociacl_add_object(plane, c("doc").as_ptr(), c("alice").as_ptr()),
+            0
+        );
+        let will = c("will secret for object doc\nwritten-by alice\ndestroy if-no-heir keys\n");
+        assert_eq!(
+            sociacl_write_will(plane, will.as_ptr(), reason.as_mut_ptr(), reason.len()),
+            0
+        );
+        assert_eq!(
+            sociacl_discover(plane, c("doc").as_ptr(), reason.as_mut_ptr(), reason.len()),
+            0
+        );
+        let text = unsafe { CStr::from_ptr(reason.as_ptr()) }
+            .to_string_lossy()
+            .into_owned();
+        assert_eq!(text, "stay-secret");
+        assert_eq!(
+            sociacl_elect(plane, c("doc").as_ptr(), reason.as_mut_ptr(), reason.len()),
+            -1
+        );
+        assert_eq!(
+            sociacl_destroy(plane, c("doc").as_ptr(), reason.as_mut_ptr(), reason.len()),
+            1
+        );
         sociacl_plane_free(plane);
     }
 }

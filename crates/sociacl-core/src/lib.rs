@@ -15,6 +15,7 @@ mod codec;
 pub mod error;
 pub mod graph;
 pub mod hop;
+pub mod network;
 pub mod types;
 pub mod verbs;
 pub mod will;
@@ -34,10 +35,10 @@ pub use error::{AttestationError, CheckError, VerbError, WillError};
 pub use graph::{Plane, DEFAULT_ELECT_WAIT, DEFAULT_PRIVILEGE_UP_DELAY};
 pub use hop::{is_lightiff_shaped_id, HopFrame, MAGIC as HOP_MAGIC, VERSION as HOP_VERSION};
 pub use types::{
-    Action, ActionMask, AuthnState, Capability, ClientHeldShare, Clock, CutBoundary, DestroyResult,
-    Device, DiscoverResult, Edge, ElectResult, ElectState, NodeId, NodeKind, Object, ObjectKind,
-    ObjectProperties, ObjectVersion, PendingElect, PosixBits, PosixMode, PredicateId, Principal,
-    Relation, Timestamp, Verb,
+    Action, ActionMask, AuthnState, Capability, CensureReason, CensureRecord, ClientHeldShare,
+    Clock, CutBoundary, DestroyResult, Device, DiscoverResult, Edge, ElectResult, ElectState,
+    NodeId, NodeKind, Object, ObjectKind, ObjectProperties, ObjectVersion, PendingElect, PosixBits,
+    PosixMode, PredicateId, Principal, Relation, Timestamp, Verb,
 };
 pub use will::{
     DestroyMaterial, Will, WillBody, WillClause, WillDisposition, WillSubject, WillValidateCtx,

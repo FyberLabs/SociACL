@@ -2,7 +2,7 @@
 
 Social-graph authority plane for a self-healing mesh of devices and data.
 
-Four verbs on one graph: **Check**, **Remint**, **Discover** / **Elect**, **Destroy**. People, agents, and devices are first-class nodes. Grants come from jointly stated edges and named predicates. Light, radio, and proximity can attest a statement; they do not grant.
+Four verbs on one graph: **Check**, **Remint**, **Discover** / **Elect**, **Destroy**. People, agents, devices, groups, circles, and **networks** are first-class nodes. Grants come from jointly stated edges and named predicates. A network proves ownership and membership; it does not run BFT, elect a leader, or discover peers. Light, radio, and proximity can attest a statement; they do not grant.
 
 This repository is the public core (MIT). It is not Hypermesh, Panopticon acl-service, or LightIFF. Social Light is a named attestation channel here. [FyberLabs/socialight](https://github.com/FyberLabs/socialight) owns badge and hop delivery. `crates/social-light` is a local lab for the hop frame. A flash is a channel, not a grant.
 
@@ -28,13 +28,14 @@ cargo build --workspace --locked
 cargo test --workspace --locked
 cargo run --locked -p sociacl-core --example check
 cargo run --locked -p sociacl-core --example wills
+cargo run --locked -p sociacl-core --example network
 cargo run --locked -p social-light --example lab
 cargo run --locked -p sociacl-gun --example gun
 ```
 
 The Check example is a 3-node `posix-mode` Check (mode 0640). The wills example parses and writes the templates in `examples/wills/`. The Social Light lab is three devices, one enrolled station, a voluntary badge share, and a quiet node that does not become owner. The Gun example is a hint that is not a grant, then dest `delegate` Check.
 
-C FFI (`sociacl-c`) and the Python package (`python/sociacl`) wrap live **Check**, owner-only **delegate** / **undelegate**, will write/load, the Case C **Client** (Check, Remint, Discover, Destroy; Elect fails closed), Social Light hop frames (encode / accept / Check / Remint / Discover; Elect fails closed), and the Gun adapter (hint encode / accept / Check / remint / cancel; Elect fails closed). The Gun surface is Check + `delegate`. s3r.ch copies [docs/s3rch-check.d.ts](docs/s3rch-check.d.ts) and reimplements light Check in the browser (mesh dest ACL + optional Social Light hop factor). It does not import this crate. AImmune / Brewnix IR copies [docs/aimmune-ir-check.d.ts](docs/aimmune-ir-check.d.ts) the same way (Check + `delegate` on site objects).
+C FFI (`sociacl-c`) and the Python package (`python/sociacl`) wrap the live plane (**Check**, **Remint**, **Discover**, **Elect**, **Destroy**, owner-only **delegate** / **undelegate**, network **admit** / **censure**), will write/load, the Case C **Client** (Check, Remint, Discover, Destroy; Elect fails closed), Social Light hop frames (encode / accept / Check / Remint / Discover; Elect fails closed), and the Gun adapter (hint encode / accept / Check / remint / cancel; Elect fails closed). The Gun / s3r.ch product surface stays light Check + `delegate`. s3r.ch copies [docs/s3rch-check.d.ts](docs/s3rch-check.d.ts) and reimplements light Check in the browser. It does not import this crate. AImmune / Brewnix IR copies [docs/aimmune-ir-check.d.ts](docs/aimmune-ir-check.d.ts) the same way. The portable TypeScript light plane in `typescript/` implements the same named predicates and verbs for Panopticon and other adapters; it is a copyable reference, not an s3r.ch npm dependency.
 
 ```bash
 cargo build --workspace --locked
@@ -50,9 +51,14 @@ PYTHONPATH=python python3 python/tests/test_social_light.py
 cc -I crates/sociacl-c/include examples/gun.c -L target/debug -lsociacl -o target/sociacl-gun-c
 LD_LIBRARY_PATH=target/debug target/sociacl-gun-c
 PYTHONPATH=python python3 python/tests/test_gun.py
+cc -I crates/sociacl-c/include examples/verbs.c -L target/debug -lsociacl -o target/sociacl-verbs-c
+LD_LIBRARY_PATH=target/debug target/sociacl-verbs-c
+PYTHONPATH=python python3 python/tests/test_verbs.py
+PYTHONPATH=python python3 python/tests/test_network.py
+node typescript/tests/test_plane.js
 ```
 
-See [ARCHITECTURE.md](ARCHITECTURE.md), [docs/verbs.md](docs/verbs.md), [docs/wills.md](docs/wills.md), [docs/attestations.md](docs/attestations.md), [docs/clocks.md](docs/clocks.md), [docs/social-light.md](docs/social-light.md), [docs/gun.md](docs/gun.md), [docs/s3rch-check.md](docs/s3rch-check.md), and [docs/aimmune-ir-check.md](docs/aimmune-ir-check.md).
+See [ARCHITECTURE.md](ARCHITECTURE.md), [docs/verbs.md](docs/verbs.md), [docs/networks.md](docs/networks.md), [docs/wills.md](docs/wills.md), [docs/attestations.md](docs/attestations.md), [docs/clocks.md](docs/clocks.md), [docs/social-light.md](docs/social-light.md), [docs/gun.md](docs/gun.md), [docs/s3rch-check.md](docs/s3rch-check.md), and [docs/aimmune-ir-check.md](docs/aimmune-ir-check.md).
 
 ## License
 

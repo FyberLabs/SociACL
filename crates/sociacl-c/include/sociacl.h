@@ -24,6 +24,7 @@ int sociacl_add_agent(sociacl_plane *plane, const char *id);
 int sociacl_add_device(sociacl_plane *plane, const char *id);
 int sociacl_add_group(sociacl_plane *plane, const char *id);
 int sociacl_add_circle(sociacl_plane *plane, const char *id);
+int sociacl_add_network(sociacl_plane *plane, const char *id);
 int sociacl_add_object(sociacl_plane *plane, const char *id, const char *owner);
 
 /* key: predicate | group | circle | mode */
@@ -35,7 +36,8 @@ int sociacl_set_object_property(
 );
 
 /* speaker states one side of (from, to, relation).
- * relation: owns | member-of | in-circle | object-group | object-circle | friend | trustee | delegate
+ * relation: owns | member-of | in-circle | object-group | object-circle |
+ * friend | trustee | delegate | in-network
  */
 
 /* Owner-authorized keep-operating grant. Owner speaks for the object;
@@ -129,6 +131,20 @@ int sociacl_jointly_state(
     const char *relation
 );
 
+/* Privilege-down is immediate. */
+int sociacl_unstate_edge(
+    sociacl_plane *plane,
+    const char *speaker,
+    const char *from,
+    const char *to,
+    const char *relation
+);
+
+/* state: live | gone */
+int sociacl_set_authn(sociacl_plane *plane, const char *id, const char *state);
+int sociacl_set_now(sociacl_plane *plane, uint64_t now);
+int sociacl_now(sociacl_plane *plane, uint64_t *now_out);
+
 /* Returns 1 allow, 0 deny, -1 error. reason_out receives the predicate id.
  * predicate must match the object's named predicate.
  */
@@ -156,6 +172,79 @@ int sociacl_check_ex(
     const char *attestation,
     const unsigned char *signature,
     size_t signature_len,
+    char *reason_out,
+    size_t reason_len
+);
+
+/* Live-plane verbs. Same reason text as the Case C client path. */
+int sociacl_remint(
+    sociacl_plane *plane,
+    const char *object,
+    const char *principal,
+    char *reason_out,
+    size_t reason_len
+);
+int sociacl_discover(
+    sociacl_plane *plane,
+    const char *object,
+    char *reason_out,
+    size_t reason_len
+);
+int sociacl_elect(
+    sociacl_plane *plane,
+    const char *object,
+    char *reason_out,
+    size_t reason_len
+);
+int sociacl_commit_elect(
+    sociacl_plane *plane,
+    const char *object,
+    char *reason_out,
+    size_t reason_len
+);
+int sociacl_cancel_will(
+    sociacl_plane *plane,
+    const char *object,
+    const char *by,
+    char *reason_out,
+    size_t reason_len
+);
+int sociacl_destroy(
+    sociacl_plane *plane,
+    const char *object,
+    char *reason_out,
+    size_t reason_len
+);
+
+/* Network membership. Proves ownership/membership. Not BFT or discovery.
+ * reason: self-leave | unintentional-failure | policy-violation | active-sabotage
+ */
+int sociacl_admit_member(
+    sociacl_plane *plane,
+    const char *member,
+    const char *network,
+    char *reason_out,
+    size_t reason_len
+);
+int sociacl_censure(
+    sociacl_plane *plane,
+    const char *speaker,
+    const char *network,
+    const char *member,
+    const char *reason,
+    char *reason_out,
+    size_t reason_len
+);
+int sociacl_is_member(
+    sociacl_plane *plane,
+    const char *member,
+    const char *network
+);
+int sociacl_audit_count(sociacl_plane *plane, const char *network);
+int sociacl_audit_at(
+    sociacl_plane *plane,
+    const char *network,
+    size_t index,
     char *reason_out,
     size_t reason_len
 );

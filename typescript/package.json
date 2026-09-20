@@ -1,0 +1,13 @@
+{
+  "name": "sociacl",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Portable SociACL light plane. s3r.ch still copies docs/s3rch-check.d.ts and does not import this package.",
+  "license": "MIT",
+  "exports": {
+    ".": "./src/index.js",
+    "./gun": "./src/gun.js",
+    "./ir": "./src/ir.js"
+  }
+}

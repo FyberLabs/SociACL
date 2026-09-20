@@ -25,7 +25,7 @@ The Next app runs Check **in the browser** on the Gun mesh. It does **not** impo
 
 `s3rch/meta` is seed cache. It is not a Check object. A permalink / RSS3 / RSS / issuer URL is a `UrlLeaf`, not a node and not a grant.
 
-Later, on request: more verbs on the TS spec for granted distribution. Not this cut.
+Later, on request: more verbs on the TS spec for granted distribution. Not this cut. The portable plane in `typescript/` is a copyable reference for Panopticon and other adapters. s3r.ch still copies this file and does not `npm install sociacl`.
 
 ## Locked Gun paths (do not fork)
 

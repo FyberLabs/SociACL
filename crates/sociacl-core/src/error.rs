@@ -105,6 +105,10 @@ pub enum VerbError {
     CannotDelegate(NodeId),
     #[error("delegate grant must name at least one of read, write, execute")]
     InvalidDelegateMask,
+    #[error("principal {0} may not censure this member")]
+    CannotCensure(NodeId),
+    #[error("unnamed censure reason {0}; fail closed")]
+    UnnamedCensureReason(String),
 }
 
 #[derive(Debug, Error, Eq, PartialEq)]

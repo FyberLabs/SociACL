@@ -14,6 +14,10 @@ path = "../../examples/check.rs"
 name = "wills"
 path = "../../examples/wills.rs"
 
+[[example]]
+name = "network"
+path = "../../examples/network.rs"
+
 [dependencies]
 ed25519-dalek = { version = "=2.1.1", default-features = false, features = ["std", "fast", "rand_core", "zeroize"] }
 rand = "0.8"

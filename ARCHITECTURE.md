@@ -29,9 +29,9 @@ Do not treat these as decided.
 
 ## Graph
 
-Nodes: **person**, **agent**, **device**, plus **group** and **circle** as named sets. Protected **objects** (including a device when it is the thing being authorized) carry a kind, an owner, properties, and a monotonically increasing version.
+Nodes: **person**, **agent**, **device**, plus **group**, **circle**, and **network** as named sets. Protected **objects** (including a device or a network when it is the thing being authorized) carry a kind, an owner, properties, and a monotonically increasing version. A network proves ownership and membership. It does not encode BFT, leader election, discovery, or recovery. See [docs/networks.md](docs/networks.md).
 
-Check parses the object and reads the `predicate` property. That property must name one id from the table below. Fail closed if it is missing or unknown (`heir-template` is unknown). A caller-supplied predicate must match. The accessor cannot pick a richer predicate than the object names.
+Check parses the object and reads the `predicate` property. That property must name one id from the table below. Fail closed if it is missing or unknown (`heir-template` is unknown). A caller-supplied predicate must match. The accessor cannot pick a richer predicate than the object names. A Social Light hop or Gun hint still cannot mint. Network membership is `same-network` only.
 
 Edges store direction (`from` → `to`) and joint articulation (`from_stated`, `to_stated`, `joint_at`). A one-sided follow or friend request is stored and is not a grant. Privilege-up becomes live only after both sides have stated **and** `now >= joint_at + privilege_up_delay`. Privilege-down is immediate: one side unstating drops the edge from Check and bumps affected object versions. For an object endpoint, the current owner speaks for the object. `Plane::delegate` is owner-only: the owner speaks for the object; the principal states accept. Privilege-up waits for both statements and the delay. `Plane::undelegate` is owner-only cancel: unstate, privilege-down immediate, object version bumps. `jointly_delegate` is the same helper shape as `jointly_state`.
 
@@ -45,6 +45,7 @@ Relations used by named predicates:
 - `friend` — person-to-person; one-sided is a request, not a grant; not a walk
 - `trustee` — jointly stated; Check uses it only if the object names `trustee`. Standing. No action mask.
 - `delegate` — jointly stated keep-operating grant; Check uses it only if the object names `delegate`. Carries an action mask (`read`, `write`, `execute`) and an optional `until`. Not trustee. Not an Elect.
+- `in-network` — accessor is in a named network (hop 1). Not a peer advertisement.
 
 `heir-template` is never a Check predicate. Wills are not consulted on the hot path.
 
@@ -62,6 +63,7 @@ The object names the predicate. If the id is unknown, Check fails closed. If the
 | `posix-mode` | Object carries owner/group/other bits (`mode`) and a group. Owner bits if accessor is owner; group bits if hop-1 jointly stated `member-of`; else other bits. Not mixed with `delegate`. |
 | `trustee` | Object names `trustee`; accessor has a jointly stated `trustee` edge to the object. Standing. No action mask. |
 | `delegate` | Object names `delegate`; accessor has a jointly stated `delegate` edge; the requested action is in the grant mask; `until` is unset or `now < until`. Owner is unchanged. `until` elapsing is grant expiry, not dead-hand ownership. |
+| `same-network` | Object names a network (or is the network); accessor has a direct `in-network` edge. |
 
 No friends-of-friends. No hop 2/3. No Expand/ListUsers.
 
