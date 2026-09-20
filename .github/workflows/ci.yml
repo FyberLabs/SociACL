@@ -33,6 +33,9 @@ jobs:
       - name: Rust network example
         run: cargo run --locked -p sociacl-core --example network
 
+      - name: Rust Elect example
+        run: cargo run --locked -p sociacl-core --example elect
+
       - name: Social Light lab example
         run: cargo run --locked -p social-light --example lab
 
@@ -87,5 +90,11 @@ jobs:
       - name: Python network membership
         run: PYTHONPATH=python python3 python/tests/test_network.py
 
+      - name: C Elect ceremony
+        run: |
+          cc -I crates/sociacl-c/include examples/elect.c \
+            -L target/debug -lsociacl -o target/sociacl-elect-c
+          LD_LIBRARY_PATH="${PWD}/target/debug" target/sociacl-elect-c
+
       - name: TypeScript light plane
-        run: node typescript/tests/test_plane.js
+        run: node --test typescript/tests/*.js

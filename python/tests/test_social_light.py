@@ -1,6 +1,6 @@
 """Social Light hop-frame Python binding tests. Requires `cargo build -p sociacl-c`."""
 
-from sociacl import Error, Plane, issuer_keygen
+from sociacl import Client, Error, Plane, holder_keygen, issuer_keygen
 
 
 def test_badge_discover_does_not_elect():
@@ -92,8 +92,50 @@ def test_forbidden_channel_fails():
     plane.close()
 
 
+def test_client_still_consumes_a_precut_badge():
+    plane = Plane()
+    plane.add_person("alice")
+    plane.add_person("bob")
+    plane.add_object("doc", "alice")
+    pk, sk = issuer_keygen()
+    plane.enroll("alice", "principal", pk)
+    frame = plane.encode_social_light(
+        "convention-badge",
+        sk,
+        "alice",
+        "bob",
+        "identity-live",
+        "doc",
+        share_token="opt-in",
+    )
+    factor = plane.encode_social_light(
+        "convention-badge",
+        sk,
+        "alice",
+        "alice",
+        "identity-live",
+        "doc",
+    )
+    _, secret = holder_keygen()
+    client = Client.from_bytes(plane.export_bundle("alice", secret), secret)
+    assert client.discover_social_light(frame) == "living-person bob share opt-in"
+    allowed, reason = client.check_social_light(
+        "read", "doc", "alice", factor, "owner"
+    )
+    assert allowed is True
+    assert reason == "owner"
+    try:
+        client.elect_social_light("doc", frame)
+        raise AssertionError("elect from a flash must fail on the client")
+    except Error:
+        pass
+    client.close()
+    plane.close()
+
+
 if __name__ == "__main__":
     test_badge_discover_does_not_elect()
     test_station_remint_and_check()
     test_forbidden_channel_fails()
+    test_client_still_consumes_a_precut_badge()
     print("ok")

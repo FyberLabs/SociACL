@@ -1937,10 +1937,16 @@ pub extern "C" fn sociacl_gun_normalize_url(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::ffi::CString;
+    use std::ffi::{CStr, CString};
 
     fn c(s: &str) -> CString {
         CString::new(s).unwrap()
+    }
+
+    fn text(buf: &[i8]) -> String {
+        unsafe { CStr::from_ptr(buf.as_ptr()) }
+            .to_string_lossy()
+            .into_owned()
     }
 
     #[test]
@@ -3094,6 +3100,360 @@ mod tests {
         );
         assert_eq!(
             sociacl_destroy(plane, c("doc").as_ptr(), reason.as_mut_ptr(), reason.len()),
+            1
+        );
+        sociacl_plane_free(plane);
+    }
+
+    #[test]
+    fn ffi_privilege_up_waits_unstate_is_immediate() {
+        let plane = sociacl_plane_new();
+        assert_eq!(sociacl_add_person(plane, c("alice").as_ptr()), 0);
+        assert_eq!(sociacl_add_person(plane, c("bob").as_ptr()), 0);
+        assert_eq!(sociacl_add_group(plane, c("ops").as_ptr()), 0);
+        assert_eq!(
+            sociacl_add_object(plane, c("doc").as_ptr(), c("alice").as_ptr()),
+            0
+        );
+        assert_eq!(
+            sociacl_set_object_property(
+                plane,
+                c("doc").as_ptr(),
+                c("predicate").as_ptr(),
+                c("same-group").as_ptr()
+            ),
+            0
+        );
+        assert_eq!(
+            sociacl_set_object_property(
+                plane,
+                c("doc").as_ptr(),
+                c("group").as_ptr(),
+                c("ops").as_ptr()
+            ),
+            0
+        );
+        let mut reason = [0i8; 128];
+        assert_eq!(
+            sociacl_state_edge(
+                plane,
+                c("bob").as_ptr(),
+                c("bob").as_ptr(),
+                c("ops").as_ptr(),
+                c("member-of").as_ptr()
+            ),
+            0
+        );
+        assert_eq!(
+            sociacl_check(
+                plane,
+                c("read").as_ptr(),
+                c("doc").as_ptr(),
+                c("bob").as_ptr(),
+                c("same-group").as_ptr(),
+                reason.as_mut_ptr(),
+                reason.len()
+            ),
+            0
+        );
+        assert_eq!(
+            sociacl_state_edge(
+                plane,
+                c("ops").as_ptr(),
+                c("bob").as_ptr(),
+                c("ops").as_ptr(),
+                c("member-of").as_ptr()
+            ),
+            0
+        );
+        assert_eq!(
+            sociacl_check(
+                plane,
+                c("read").as_ptr(),
+                c("doc").as_ptr(),
+                c("bob").as_ptr(),
+                c("same-group").as_ptr(),
+                reason.as_mut_ptr(),
+                reason.len()
+            ),
+            0,
+            "joint is not enough; privilege-up delay must elapse"
+        );
+        let mut now = 0u64;
+        assert_eq!(sociacl_now(plane, &mut now), 0);
+        assert_eq!(sociacl_set_now(plane, now + 1), 0);
+        assert_eq!(
+            sociacl_check(
+                plane,
+                c("read").as_ptr(),
+                c("doc").as_ptr(),
+                c("bob").as_ptr(),
+                c("same-group").as_ptr(),
+                reason.as_mut_ptr(),
+                reason.len()
+            ),
+            1
+        );
+        assert_eq!(
+            sociacl_unstate_edge(
+                plane,
+                c("bob").as_ptr(),
+                c("bob").as_ptr(),
+                c("ops").as_ptr(),
+                c("member-of").as_ptr()
+            ),
+            0
+        );
+        assert_eq!(
+            sociacl_check(
+                plane,
+                c("read").as_ptr(),
+                c("doc").as_ptr(),
+                c("bob").as_ptr(),
+                c("same-group").as_ptr(),
+                reason.as_mut_ptr(),
+                reason.len()
+            ),
+            0,
+            "privilege-down is immediate"
+        );
+        sociacl_plane_free(plane);
+    }
+
+    #[test]
+    fn ffi_named_circle_and_trustee() {
+        let plane = sociacl_plane_new();
+        assert_eq!(sociacl_add_person(plane, c("alice").as_ptr()), 0);
+        assert_eq!(sociacl_add_person(plane, c("bob").as_ptr()), 0);
+        assert_eq!(sociacl_add_circle(plane, c("friends").as_ptr()), 0);
+        assert_eq!(
+            sociacl_add_object(plane, c("album").as_ptr(), c("alice").as_ptr()),
+            0
+        );
+        assert_eq!(
+            sociacl_set_object_property(
+                plane,
+                c("album").as_ptr(),
+                c("predicate").as_ptr(),
+                c("named-circle").as_ptr()
+            ),
+            0
+        );
+        assert_eq!(
+            sociacl_set_object_property(
+                plane,
+                c("album").as_ptr(),
+                c("circle").as_ptr(),
+                c("friends").as_ptr()
+            ),
+            0
+        );
+        assert_eq!(
+            sociacl_jointly_state(
+                plane,
+                c("bob").as_ptr(),
+                c("friends").as_ptr(),
+                c("in-circle").as_ptr()
+            ),
+            0
+        );
+        let mut reason = [0i8; 128];
+        assert_eq!(
+            sociacl_check(
+                plane,
+                c("read").as_ptr(),
+                c("album").as_ptr(),
+                c("bob").as_ptr(),
+                c("named-circle").as_ptr(),
+                reason.as_mut_ptr(),
+                reason.len()
+            ),
+            1
+        );
+        assert_eq!(text(&reason), "named-circle");
+
+        assert_eq!(
+            sociacl_add_object(plane, c("vault").as_ptr(), c("alice").as_ptr()),
+            0
+        );
+        assert_eq!(
+            sociacl_set_object_property(
+                plane,
+                c("vault").as_ptr(),
+                c("predicate").as_ptr(),
+                c("trustee").as_ptr()
+            ),
+            0
+        );
+        assert_eq!(
+            sociacl_jointly_state(
+                plane,
+                c("bob").as_ptr(),
+                c("vault").as_ptr(),
+                c("trustee").as_ptr()
+            ),
+            0
+        );
+        assert_eq!(
+            sociacl_check(
+                plane,
+                c("read").as_ptr(),
+                c("vault").as_ptr(),
+                c("bob").as_ptr(),
+                c("trustee").as_ptr(),
+                reason.as_mut_ptr(),
+                reason.len()
+            ),
+            1
+        );
+        sociacl_plane_free(plane);
+    }
+
+    #[test]
+    fn ffi_one_sided_in_network_is_not_a_grant() {
+        let plane = sociacl_plane_new();
+        assert_eq!(sociacl_add_person(plane, c("alice").as_ptr()), 0);
+        assert_eq!(sociacl_add_person(plane, c("bob").as_ptr()), 0);
+        assert_eq!(sociacl_add_network(plane, c("mesh").as_ptr()), 0);
+        assert_eq!(
+            sociacl_add_object(plane, c("mesh").as_ptr(), c("alice").as_ptr()),
+            0
+        );
+        assert_eq!(
+            sociacl_set_object_property(
+                plane,
+                c("mesh").as_ptr(),
+                c("predicate").as_ptr(),
+                c("same-network").as_ptr()
+            ),
+            0
+        );
+        assert_eq!(
+            sociacl_state_edge(
+                plane,
+                c("bob").as_ptr(),
+                c("bob").as_ptr(),
+                c("mesh").as_ptr(),
+                c("in-network").as_ptr()
+            ),
+            0
+        );
+        assert_eq!(
+            sociacl_is_member(plane, c("bob").as_ptr(), c("mesh").as_ptr()),
+            0
+        );
+        let mut reason = [0i8; 128];
+        assert_eq!(
+            sociacl_check(
+                plane,
+                c("read").as_ptr(),
+                c("mesh").as_ptr(),
+                c("bob").as_ptr(),
+                c("same-network").as_ptr(),
+                reason.as_mut_ptr(),
+                reason.len()
+            ),
+            0
+        );
+        sociacl_plane_free(plane);
+    }
+
+    #[test]
+    fn ffi_elect_ceremony_then_cancel_or_commit() {
+        let plane = sociacl_plane_new();
+        assert_eq!(sociacl_add_person(plane, c("alice").as_ptr()), 0);
+        assert_eq!(sociacl_add_person(plane, c("bob").as_ptr()), 0);
+        assert_eq!(sociacl_add_person(plane, c("executor").as_ptr()), 0);
+        assert_eq!(
+            sociacl_add_object(plane, c("doc").as_ptr(), c("alice").as_ptr()),
+            0
+        );
+        let mut reason = [0i8; 256];
+        let will = c(
+            "will heir-doc for object doc\nwritten-by alice\ncancelable-by executor\ndiscover heir bob\n",
+        );
+        assert_eq!(
+            sociacl_write_will(plane, will.as_ptr(), reason.as_mut_ptr(), reason.len()),
+            0
+        );
+        assert_eq!(
+            sociacl_elect(plane, c("doc").as_ptr(), reason.as_mut_ptr(), reason.len()),
+            -1,
+            "live owner: keep-operating suffices"
+        );
+
+        assert_eq!(
+            sociacl_set_authn(plane, c("alice").as_ptr(), c("gone").as_ptr()),
+            0
+        );
+        assert_eq!(
+            sociacl_elect(plane, c("doc").as_ptr(), reason.as_mut_ptr(), reason.len()),
+            0
+        );
+        assert_eq!(text(&reason), "pending bob");
+        assert_eq!(
+            sociacl_commit_elect(plane, c("doc").as_ptr(), reason.as_mut_ptr(), reason.len()),
+            -1,
+            "Elect wait has not elapsed"
+        );
+        assert_eq!(
+            sociacl_cancel_will(
+                plane,
+                c("doc").as_ptr(),
+                c("executor").as_ptr(),
+                reason.as_mut_ptr(),
+                reason.len()
+            ),
+            0
+        );
+        assert_eq!(text(&reason), "canceled");
+        let mut now = 0u64;
+        assert_eq!(sociacl_now(plane, &mut now), 0);
+        assert_eq!(sociacl_set_now(plane, now + 10), 0);
+        assert_eq!(
+            sociacl_commit_elect(plane, c("doc").as_ptr(), reason.as_mut_ptr(), reason.len()),
+            -1,
+            "canceled will cannot install"
+        );
+        sociacl_plane_free(plane);
+
+        let plane = sociacl_plane_new();
+        assert_eq!(sociacl_add_person(plane, c("alice").as_ptr()), 0);
+        assert_eq!(sociacl_add_person(plane, c("bob").as_ptr()), 0);
+        assert_eq!(sociacl_add_person(plane, c("executor").as_ptr()), 0);
+        assert_eq!(
+            sociacl_add_object(plane, c("doc").as_ptr(), c("alice").as_ptr()),
+            0
+        );
+        assert_eq!(
+            sociacl_write_will(plane, will.as_ptr(), reason.as_mut_ptr(), reason.len()),
+            0
+        );
+        assert_eq!(
+            sociacl_set_authn(plane, c("alice").as_ptr(), c("gone").as_ptr()),
+            0
+        );
+        assert_eq!(
+            sociacl_elect(plane, c("doc").as_ptr(), reason.as_mut_ptr(), reason.len()),
+            0
+        );
+        assert_eq!(sociacl_now(plane, &mut now), 0);
+        assert_eq!(sociacl_set_now(plane, now + 10), 0);
+        assert_eq!(
+            sociacl_commit_elect(plane, c("doc").as_ptr(), reason.as_mut_ptr(), reason.len()),
+            0
+        );
+        assert_eq!(text(&reason), "installed bob");
+        assert_eq!(
+            sociacl_check(
+                plane,
+                c("read").as_ptr(),
+                c("doc").as_ptr(),
+                c("bob").as_ptr(),
+                c("owner").as_ptr(),
+                reason.as_mut_ptr(),
+                reason.len()
+            ),
             1
         );
         sociacl_plane_free(plane);

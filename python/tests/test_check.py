@@ -117,9 +117,42 @@ def test_delegate_view_execute_without_view_cancel():
     plane.close()
 
 
+def test_named_circle_hopcap_one():
+    plane = Plane()
+    plane.add_person("alice")
+    plane.add_person("bob")
+    plane.add_person("carol")
+    plane.add_circle("friends")
+    plane.add_object("album", "alice")
+    plane.set_object_property("album", "predicate", "named-circle")
+    plane.set_object_property("album", "circle", "friends")
+    plane.jointly_state("bob", "friends", "in-circle")
+    allowed, reason = plane.check("read", "album", "bob", "named-circle")
+    assert allowed is True
+    assert reason == "named-circle"
+    allowed, _ = plane.check("read", "album", "carol", "named-circle")
+    assert allowed is False
+    plane.close()
+
+
+def test_trustee_only_when_object_names_it():
+    plane = Plane()
+    plane.add_person("alice")
+    plane.add_person("bob")
+    plane.add_object("vault", "alice")
+    plane.set_object_property("vault", "predicate", "trustee")
+    plane.jointly_state("bob", "vault", "trustee")
+    allowed, reason = plane.check("read", "vault", "bob", "trustee")
+    assert allowed is True
+    assert reason == "trustee"
+    plane.close()
+
+
 if __name__ == "__main__":
     test_three_node_posix_check()
     test_simple_check_and_attestation()
     test_attestation_does_not_mint_delegate()
     test_delegate_view_execute_without_view_cancel()
+    test_named_circle_hopcap_one()
+    test_trustee_only_when_object_names_it()
     print("ok")

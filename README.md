@@ -29,6 +29,7 @@ cargo test --workspace --locked
 cargo run --locked -p sociacl-core --example check
 cargo run --locked -p sociacl-core --example wills
 cargo run --locked -p sociacl-core --example network
+cargo run --locked -p sociacl-core --example elect
 cargo run --locked -p social-light --example lab
 cargo run --locked -p sociacl-gun --example gun
 ```
@@ -55,7 +56,9 @@ cc -I crates/sociacl-c/include examples/verbs.c -L target/debug -lsociacl -o tar
 LD_LIBRARY_PATH=target/debug target/sociacl-verbs-c
 PYTHONPATH=python python3 python/tests/test_verbs.py
 PYTHONPATH=python python3 python/tests/test_network.py
-node typescript/tests/test_plane.js
+cc -I crates/sociacl-c/include examples/elect.c -L target/debug -lsociacl -o target/sociacl-elect-c
+LD_LIBRARY_PATH=target/debug target/sociacl-elect-c
+node --test typescript/tests/*.js
 ```
 
 See [ARCHITECTURE.md](ARCHITECTURE.md), [docs/verbs.md](docs/verbs.md), [docs/networks.md](docs/networks.md), [docs/wills.md](docs/wills.md), [docs/attestations.md](docs/attestations.md), [docs/clocks.md](docs/clocks.md), [docs/social-light.md](docs/social-light.md), [docs/gun.md](docs/gun.md), [docs/s3rch-check.md](docs/s3rch-check.md), and [docs/aimmune-ir-check.md](docs/aimmune-ir-check.md).

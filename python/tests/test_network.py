@@ -57,9 +57,36 @@ def test_self_leave():
     plane.close()
 
 
+def test_one_sided_join_is_not_a_grant():
+    plane = Plane()
+    plane.add_person("alice")
+    plane.add_person("bob")
+    plane.add_network("mesh")
+    plane.add_object("mesh", "alice")
+    plane.set_object_property("mesh", "predicate", "same-network")
+    plane.state_edge("bob", "bob", "mesh", "in-network")
+    assert plane.is_member("bob", "mesh") is False
+    allowed, _ = plane.check("read", "mesh", "bob", "same-network")
+    assert allowed is False
+    plane.close()
+
+
+def test_owner_cannot_record_self_leave_for_another():
+    plane = _mesh()
+    try:
+        plane.censure("alice", "panopticon", "bob", "self-leave")
+        raise AssertionError("owner must not record self-leave for another")
+    except Error:
+        pass
+    assert plane.is_member("bob", "panopticon") is True
+    plane.close()
+
+
 if __name__ == "__main__":
     test_same_network_membership()
     test_owner_censure_drops_member()
     test_member_cannot_censure_another()
     test_self_leave()
+    test_one_sided_join_is_not_a_grant()
+    test_owner_cannot_record_self_leave_for_another()
     print("ok")
