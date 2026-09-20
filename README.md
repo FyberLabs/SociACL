@@ -19,9 +19,35 @@ Two clocks: **keep-operating** (fast; no new owner, no rekey) and **Elect** (slo
 
 After a cut, `export_bundle` freezes what a remaining principal already held. The durable file wraps share keys with XChaCha20-Poly1305 and holder-signs the frame. `Client::from_bytes` / `from_path` keep Check, Remint, Discover, and Destroy on that snapshot. Elect refuses. Rejoin continues the same pre-cut snapshot and refuses a union of post-cut Elects. A captured file without the holder secret is not the object.
 
+## Tests and coverage
+
+[![ci](https://github.com/FyberLabs/SociACL/actions/workflows/ci.yml/badge.svg)](https://github.com/FyberLabs/SociACL/actions/workflows/ci.yml)
+
+CI (`.github/workflows/ci.yml`) runs `./scripts/test-all.sh` then `./scripts/coverage.sh` on `[self-hosted, linux, x64]`. Same commands refresh this snapshot.
+
+<!-- coverage:start -->
+Measured **2026-09-20** by `scripts/coverage.sh`. CI publishes the same table on the job summary.
+
+| Surface | Result | Line coverage |
+| --- | --- | ---: |
+| Rust workspace | 229 tests + 6 examples | 85.50% |
+| C FFI (`sociacl-c`) | 12 unit + 6 examples | 82.71% |
+| Python `python/sociacl` | 28 tests | 77.3% |
+| TypeScript `typescript/src` | 20 tests | 85.8% |
+
+C example hits land in `libsociacl`, not in the `.c` files. Full crate table: [docs/coverage.md](docs/coverage.md).
+<!-- coverage:end -->
+
 ## Build and test
 
-Requires Rust 1.83+ (edition 2021). CI (`.github/workflows/ci.yml`) runs the same steps on `[self-hosted, linux, x64]`.
+Requires Rust 1.83+ (edition 2021). One script is the full suite; the other refreshes the coverage table above.
+
+```bash
+./scripts/test-all.sh
+./scripts/coverage.sh
+```
+
+The same steps, expanded:
 
 ```bash
 cargo build --workspace --locked
@@ -61,7 +87,7 @@ LD_LIBRARY_PATH=target/debug target/sociacl-elect-c
 node --test typescript/tests/*.js
 ```
 
-See [ARCHITECTURE.md](ARCHITECTURE.md), [docs/verbs.md](docs/verbs.md), [docs/networks.md](docs/networks.md), [docs/wills.md](docs/wills.md), [docs/attestations.md](docs/attestations.md), [docs/clocks.md](docs/clocks.md), [docs/social-light.md](docs/social-light.md), [docs/gun.md](docs/gun.md), [docs/s3rch-check.md](docs/s3rch-check.md), and [docs/aimmune-ir-check.md](docs/aimmune-ir-check.md).
+See [ARCHITECTURE.md](ARCHITECTURE.md), [docs/verbs.md](docs/verbs.md), [docs/networks.md](docs/networks.md), [docs/wills.md](docs/wills.md), [docs/attestations.md](docs/attestations.md), [docs/clocks.md](docs/clocks.md), [docs/social-light.md](docs/social-light.md), [docs/gun.md](docs/gun.md), [docs/s3rch-check.md](docs/s3rch-check.md), [docs/aimmune-ir-check.md](docs/aimmune-ir-check.md), and [docs/coverage.md](docs/coverage.md).
 
 ## License
 

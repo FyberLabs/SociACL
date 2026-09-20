@@ -4,6 +4,7 @@ on:
   pull_request:
   push:
     branches: [master]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -15,86 +16,39 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
 
       - uses: Swatinem/rust-cache@v2
 
-      - name: Build workspace
-        run: cargo build --workspace --locked
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov
 
-      - name: Test workspace
-        run: cargo test --workspace --locked
+      - name: Test all languages
+        run: ./scripts/test-all.sh
 
-      - name: Rust Check example
-        run: cargo run --locked -p sociacl-core --example check
+      - name: Coverage
+        run: ./scripts/coverage.sh
 
-      - name: Rust will example
-        run: cargo run --locked -p sociacl-core --example wills
-
-      - name: Rust network example
-        run: cargo run --locked -p sociacl-core --example network
-
-      - name: Rust Elect example
-        run: cargo run --locked -p sociacl-core --example elect
-
-      - name: Social Light lab example
-        run: cargo run --locked -p social-light --example lab
-
-      - name: Gun adapter example
-        run: cargo run --locked -p sociacl-gun --example gun
-
-      - name: C Check wrapper
+      - name: Publish coverage summary
+        if: always()
         run: |
-          cc -I crates/sociacl-c/include examples/check.c \
-            -L target/debug -lsociacl -o target/sociacl-check-c
-          LD_LIBRARY_PATH="${PWD}/target/debug" target/sociacl-check-c
+          if [[ -f docs/coverage.md ]]; then
+            cat docs/coverage.md >> "$GITHUB_STEP_SUMMARY"
+          fi
 
-      - name: C Client wrapper
-        run: |
-          cc -I crates/sociacl-c/include examples/client.c \
-            -L target/debug -lsociacl -o target/sociacl-client-c
-          LD_LIBRARY_PATH="${PWD}/target/debug" target/sociacl-client-c
-
-      - name: C Social Light hop frame
-        run: |
-          cc -I crates/sociacl-c/include examples/social_light.c \
-            -L target/debug -lsociacl -o target/sociacl-social-light-c
-          LD_LIBRARY_PATH="${PWD}/target/debug" target/sociacl-social-light-c
-
-      - name: Python Check wrapper
-        run: PYTHONPATH=python python3 python/tests/test_check.py
-
-      - name: Python Client wrapper
-        run: PYTHONPATH=python python3 python/tests/test_client.py
-
-      - name: Python Social Light wrapper
-        run: PYTHONPATH=python python3 python/tests/test_social_light.py
-
-      - name: C Gun adapter
-        run: |
-          cc -I crates/sociacl-c/include examples/gun.c \
-            -L target/debug -lsociacl -o target/sociacl-gun-c
-          LD_LIBRARY_PATH="${PWD}/target/debug" target/sociacl-gun-c
-
-      - name: Python Gun adapter
-        run: PYTHONPATH=python python3 python/tests/test_gun.py
-
-      - name: C live verbs and network
-        run: |
-          cc -I crates/sociacl-c/include examples/verbs.c \
-            -L target/debug -lsociacl -o target/sociacl-verbs-c
-          LD_LIBRARY_PATH="${PWD}/target/debug" target/sociacl-verbs-c
-
-      - name: Python live verbs
-        run: PYTHONPATH=python python3 python/tests/test_verbs.py
-
-      - name: Python network membership
-        run: PYTHONPATH=python python3 python/tests/test_network.py
-
-      - name: C Elect ceremony
-        run: |
-          cc -I crates/sociacl-c/include examples/elect.c \
-            -L target/debug -lsociacl -o target/sociacl-elect-c
-          LD_LIBRARY_PATH="${PWD}/target/debug" target/sociacl-elect-c
-
-      - name: TypeScript light plane
-        run: node --test typescript/tests/*.js
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: |
+            docs/coverage.md
+            target/coverage/rust-summary.txt
+            target/coverage/rust.lcov
+            target/coverage/python-report.txt
+            target/coverage/python.json
+            target/coverage/typescript-report.txt
+          if-no-files-found: warn
