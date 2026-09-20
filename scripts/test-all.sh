@@ -9,6 +9,8 @@ if [[ -f "$HOME/.cargo/env" ]]; then
   # shellcheck source=/dev/null
   . "$HOME/.cargo/env"
 fi
+# shellcheck source=/dev/null
+. "${root}/scripts/require-node.sh"
 
 cargo build --workspace --locked
 cargo test --workspace --locked

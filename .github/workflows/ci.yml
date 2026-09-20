@@ -13,7 +13,18 @@ jobs:
   test:
     runs-on: [self-hosted, linux, x64]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          check-latest: true
+          package-manager-cache: false
+
+      - name: Check Node 24+
+        run: |
+          node -v
+          test "$(node -p "process.versions.node.split('.')[0]")" -ge 24
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -41,7 +52,7 @@ jobs:
 
       - name: Upload coverage
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: coverage
           path: |

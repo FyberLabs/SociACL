@@ -40,7 +40,7 @@ C example hits land in `libsociacl`, not in the `.c` files. Full crate table: [d
 
 ## Build and test
 
-Requires Rust 1.83+ (edition 2021). One script is the full suite; the other refreshes the coverage table above.
+Requires Rust 1.83+ (edition 2021) and **Node.js 24+** (20 and 22 are not supported). One script is the full suite; the other refreshes the coverage table above.
 
 ```bash
 ./scripts/test-all.sh
