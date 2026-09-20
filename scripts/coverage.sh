@@ -28,21 +28,32 @@ echo "==> Python"
 # already installed; otherwise scripts/run_python_coverage.py uses stdlib.
 python3 scripts/run_python_coverage.py
 
-echo "==> TypeScript (node --experimental-test-coverage)"
-# Coverage reporter is extra output; a second run confirms the suite still passes.
+echo "==> TypeScript"
+# Node 20 has --experimental-test-coverage. --test-coverage-include is Node 22+.
+# The self-hosted PATH node is older than the Actions Node 24 runtime.
+run_ts_coverage() {
+  node --test --experimental-test-coverage "$@" --test-reporter=spec typescript/tests/*.js \
+    > target/coverage/typescript-report.txt 2>&1
+}
+
 set +e
-node --test --experimental-test-coverage \
-  --test-coverage-include='typescript/src/**' \
-  --test-reporter=spec \
-  typescript/tests/*.js \
-  > target/coverage/typescript-report.txt 2>&1
+run_ts_coverage --test-coverage-include='typescript/src/**'
 ts_status=$?
+if [[ "${ts_status}" -ne 0 ]] && grep -q 'bad option: --test-coverage-include' target/coverage/typescript-report.txt; then
+  run_ts_coverage
+  ts_status=$?
+fi
+if [[ "${ts_status}" -ne 0 ]] && grep -q 'bad option' target/coverage/typescript-report.txt; then
+  echo "node coverage flags unsupported; tests only" | tee target/coverage/typescript-report.txt
+  node --test typescript/tests/*.js
+  ts_status=$?
+  printf '\nall files | n/a |\n' >> target/coverage/typescript-report.txt
+fi
 set -e
 if [[ "${ts_status}" -ne 0 ]]; then
   cat target/coverage/typescript-report.txt
   exit "${ts_status}"
 fi
-node --test typescript/tests/*.js >/dev/null
 
 python3 scripts/write_coverage.py
 
