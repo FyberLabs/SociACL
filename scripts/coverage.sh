@@ -23,21 +23,10 @@ cargo llvm-cov --workspace --locked --lcov --output-path target/coverage/rust.lc
   > target/coverage/rust-tests.txt
 cargo llvm-cov report --summary-only > target/coverage/rust-summary.txt
 
-echo "==> Python (coverage.py)"
-if [[ ! -x target/coverage/venv/bin/coverage ]]; then
-  python3 -m venv target/coverage/venv
-  target/coverage/venv/bin/pip install -q coverage
-fi
-cov=(target/coverage/venv/bin/coverage)
-rm -f .coverage .coverage.*
-for t in python/tests/test_check.py python/tests/test_client.py \
-  python/tests/test_social_light.py python/tests/test_gun.py \
-  python/tests/test_verbs.py python/tests/test_network.py; do
-  PYTHONPATH=python "${cov[@]}" run --source=python/sociacl --parallel-mode "$t"
-done
-"${cov[@]}" combine
-"${cov[@]}" report --show-missing > target/coverage/python-report.txt
-"${cov[@]}" json -o target/coverage/python.json
+echo "==> Python"
+# No venv: self-hosted images often lack ensurepip. Prefer coverage.py if
+# already installed; otherwise scripts/run_python_coverage.py uses stdlib.
+python3 scripts/run_python_coverage.py
 
 echo "==> TypeScript (node --experimental-test-coverage)"
 # Coverage reporter is extra output; a second run confirms the suite still passes.

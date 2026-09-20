@@ -153,7 +153,7 @@ def docs_md(
         "| --- | --- | ---: | --- |",
         f"| Rust workspace | {n['rust'] or '?'} tests + {n['rust_examples']} examples | {rust} | cargo-llvm-cov |",
         f"| C FFI | {n['c_unit']} unit + {n['c_examples']} examples | {c} (`sociacl-c`) | same llvm-cov |",
-        f"| Python | {n['python']} tests | {py} | coverage.py |",
+        f"| Python | {n['python']} tests | {py} | coverage.py or stdlib trace |",
         f"| TypeScript | {n['typescript']} tests | {ts} | node --experimental-test-coverage |",
         "",
         "C examples are smoke tests against `libsociacl`. Their line hits land in the Rust FFI crate.",

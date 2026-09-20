@@ -6,7 +6,7 @@ Measured **2026-09-20** by `scripts/coverage.sh`.
 | --- | --- | ---: | --- |
 | Rust workspace | 229 tests + 6 examples | 85.50% | cargo-llvm-cov |
 | C FFI | 12 unit + 6 examples | 82.71% (`sociacl-c`) | same llvm-cov |
-| Python | 28 tests | 77.3% | coverage.py |
+| Python | 28 tests | 86.6% | coverage.py or stdlib trace |
 | TypeScript | 20 tests | 85.8% | node --experimental-test-coverage |
 
 C examples are smoke tests against `libsociacl`. Their line hits land in the Rust FFI crate.

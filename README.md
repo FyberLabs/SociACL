@@ -32,7 +32,7 @@ Measured **2026-09-20** by `scripts/coverage.sh`. CI publishes the same table on
 | --- | --- | ---: |
 | Rust workspace | 229 tests + 6 examples | 85.50% |
 | C FFI (`sociacl-c`) | 12 unit + 6 examples | 82.71% |
-| Python `python/sociacl` | 28 tests | 77.3% |
+| Python `python/sociacl` | 28 tests | 86.6% |
 | TypeScript `typescript/src` | 20 tests | 85.8% |
 
 C example hits land in `libsociacl`, not in the `.c` files. Full crate table: [docs/coverage.md](docs/coverage.md).
