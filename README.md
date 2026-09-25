@@ -23,7 +23,7 @@ After a cut, `export_bundle` freezes what a remaining principal already held. Th
 
 [![ci](https://github.com/FyberLabs/SociACL/actions/workflows/ci.yml/badge.svg)](https://github.com/FyberLabs/SociACL/actions/workflows/ci.yml)
 
-CI (`.github/workflows/ci.yml`) runs `./scripts/test-all.sh` then `./scripts/coverage.sh` on `[self-hosted, linux, x64]`. Same commands refresh this snapshot.
+CI (`.github/workflows/ci.yml`) runs `./scripts/test-all.sh` then `./scripts/coverage.sh` on `ubuntu-latest`. Same commands refresh this snapshot.
 
 <!-- coverage:start -->
 Measured **2026-09-20** by `scripts/coverage.sh`. CI publishes the same table on the job summary.
