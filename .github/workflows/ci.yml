@@ -11,7 +11,9 @@ permissions:
 
 jobs:
   test:
-    runs-on: [self-hosted, linux, x64]
+    # Public pull_request and push CI must not run on the org self-hosted
+    # runner. A fork PR would execute untrusted code on that machine.
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
 
