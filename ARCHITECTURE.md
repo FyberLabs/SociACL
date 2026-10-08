@@ -121,7 +121,7 @@ This repository is the **public** authority plane: graph, verbs, clocks, hash ca
 
 ## Composition
 
-Hypermesh, chain/IPFS object stores, and ATAK are separate. This plane does not embed them.
+Hypermesh and chain/IPFS object stores are separate. This plane does not embed them.
 
 Social Light is an attestation channel. SociACL is the authority plane. They compose. They do not merge names. Named public-safe kinds only: `convention-badge` and `enrolled-station`. LightIFF is not implemented here and must not be.
 

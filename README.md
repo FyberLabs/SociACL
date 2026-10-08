@@ -4,7 +4,7 @@ Social-graph authority plane for a self-healing mesh of devices and data.
 
 Four verbs on one graph: **Check**, **Remint**, **Discover** / **Elect**, **Destroy**. People, agents, devices, groups, circles, and **networks** are first-class nodes. Grants come from jointly stated edges and named predicates. A network proves ownership and membership; it does not run BFT, elect a leader, or discover peers. Light, radio, and proximity can attest a statement; they do not grant.
 
-This repository is the public core (MIT). It is not Hypermesh, Panopticon acl-service, or LightIFF. Social Light is a named attestation channel here. [FyberLabs/socialight](https://github.com/FyberLabs/socialight) owns badge and hop delivery. `crates/social-light` is a local lab for the hop frame. A flash is a channel, not a grant.
+This repository is the public core (MIT). It is not Hypermesh or Panopticon acl-service. Social Light is a named attestation channel here. [FyberLabs/socialight](https://github.com/FyberLabs/socialight) owns badge and hop delivery. `crates/social-light` is a local lab for the hop frame. A flash is a channel, not a grant.
 
 ## Verbs
 

@@ -33,8 +33,8 @@
 /**
  * Standing site object or IR keep-operating object.
  * site_id is the envelope / grant / auditor scope token.
- * :host is later — not this cut. Do not invent
- * site:{site_id}:incident:{incident_id}.
+ * :host is later — not this cut. There is no
+ * site:{site_id}:incident:{incident_id} object.
  */
 export type SiteObjectId = `site:${string}` | `site:${string}:ir`;
 

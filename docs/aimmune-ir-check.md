@@ -33,7 +33,7 @@ The Brewnix object/mask table lives in [Brewnix/inference-iface `docs/sociacl-ir
 
 Later, on request: `:host` execute when Host exists. Not this cut.
 
-## Locked site objects (do not fork)
+## Fixed site objects (do not fork)
 
 ```
 site:{site_id}       standing owner possession
