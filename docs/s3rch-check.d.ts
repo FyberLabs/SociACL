@@ -18,7 +18,7 @@
  *   hop      = optional Social Light factor; never a grant
  */
 
-/** Locked Gun root. */
+/** Fixed Gun root. */
 export type S3rchRoot = "s3rch";
 
 export type FeedSource = "rss3" | "rss" | "atom";
@@ -57,7 +57,7 @@ export type FeedItem = {
 };
 
 /**
- * Locked user node. gun.get('s3rch').get('users').get(wallet)
+ * Fixed user node. gun.get('s3rch').get('users').get(wallet)
  * `indicators` are held-claim ids (ens:… / unstoppable:… / fc:… /
  * lens:… / rss3:…). On the Gun wire they are a comma-separated
  * string. Overlay uses this same shape (origin IndexedDB) until
@@ -72,7 +72,7 @@ export type GunUserNode = {
 };
 
 /**
- * Held-claim CheckObjectId prefixes locked by s3r.ch.
+ * Held-claim CheckObjectId prefixes fixed by s3r.ch.
  * The object id is the claim id itself, linked from
  * GunUserNode.indicators. Same Mesh Check path as a GunFeedNode id.
  */

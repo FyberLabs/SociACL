@@ -49,4 +49,4 @@ Named public-safe kinds only:
 
 Presenting a Social Light statement goes through the existing attestation verify path (enrolled key, allowed claims only). Elect from a flash always fails (`elect_from_social_light`). Nearby, loud, flash, and ping are not friends, heirs, or grants.
 
-LightIFF is not implemented here and must not be. No waveforms, frequencies, or challenge-response. This plane stores the statement, the enrollment, the verify key, and the named channel.
+Signal-based identification is not implemented here and must not be. No waveforms, frequencies, or challenge-response. This plane stores the statement, the enrollment, the verify key, and the named channel.

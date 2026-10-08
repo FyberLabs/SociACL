@@ -6,7 +6,7 @@ Authority-plane mapping for GunDB. This is not the s3r.ch product surface.
 
 The consume contract they reimplement is **[s3rch-check.d.ts](s3rch-check.d.ts)** ([s3rch-check.md](s3rch-check.md)). Copy the file or re-type the names. Do not `npm install sociacl`. The Gun adapter surface for that product is **light Check + `delegate` only**.
 
-This crate maps the locked s3r.ch Gun graph onto existing SociACL Check predicates and the keep-operating `delegate` grant. It does not add a Gun-only verb. It does not fork that graph.
+This crate maps the fixed s3r.ch Gun graph onto existing SociACL Check predicates and the keep-operating `delegate` grant. It does not add a Gun-only verb. It does not fork that graph.
 
 ## Product split
 
@@ -32,7 +32,7 @@ Mesh see grants are Gun-native dest-ACL nodes under `s3rch/acl/<owner>/<object>/
 
 Case C may Check a frozen bundle the way the rest of SociACL does. The client has no mint path for new Gun grants.
 
-## Locked s3r.ch graph (consume, do not fork)
+## Fixed s3r.ch graph (consume, do not fork)
 
 Gun root: `s3rch`.
 
@@ -58,7 +58,7 @@ gun.get('s3rch').get('acl').get(aclPrincipalKey(owner))
 
 `FeedTab` is `"public" | "mine" | "network"`. UX only. Not a Check object.
 
-`GunUserNode` (locked): `{ id, indicators: string[], provenance, ts }` at `s3rch/users/<wallet>`. `indicators` are held-claim ids — the claim id itself (`ens:…` / `unstoppable:…` / `fc:…` / `lens:…` / `rss3:…`). Same Mesh Check path as a `GunFeedNode` id. Indicators are a comma-separated string on the Gun wire, same as tags. Overlay uses this same shape until s3r.ch `prepareShare*`. Do not invent a second user node. Do not invent `s3rch/users/<wallet>/claims/…`.
+`GunUserNode` (fixed): `{ id, indicators: string[], provenance, ts }` at `s3rch/users/<wallet>`. `indicators` are held-claim ids — the claim id itself (`ens:…` / `unstoppable:…` / `fc:…` / `lens:…` / `rss3:…`). Same Mesh Check path as a `GunFeedNode` id. Indicators are a comma-separated string on the Gun wire, same as tags. Overlay uses this same shape until s3r.ch `prepareShare*`. Do not invent a second user node. Do not invent `s3rch/users/<wallet>/claims/…`.
 
 `IdentityClaimKind`: `wallet | rss3 | ens | kyc_attestation | email | phone`. Issuers prove a claim to the holder. They are not grants.
 
@@ -129,10 +129,10 @@ Elect is visible and always fails (`sociacl_gun_elect`). Case C mint is visible 
 ## What this does not do
 
 - Open or edit FyberLabs/s3r.ch
-- Invent a second graph schema or a second user node
+- Add a second graph schema or a second user node
 - Add a Gun-only Check verb
 - Treat a seeder or `/api/ingest` fetch as a grant
 - Put lease tickets on this plane
 - Bolt Elect, wills, or devices onto the s3r.ch Gun surface
 - Host accounts, add SaaS, or invent tokenomics
-- Implement LightIFF
+- Implement signal-based identification

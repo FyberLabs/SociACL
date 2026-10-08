@@ -22,13 +22,13 @@ socialight's 2026-03-29 notes still describe a hosted control plane and an optic
 
 ## Ancestor hardware
 
-FyberLabs/FlexModule (2014) is a light-plus-radio convention badge. Cite it as ancestor hardware. Do not port Diptrace boards. Do not invent a BOM. FlexModule reachability is not a friend edge.
+FyberLabs/FlexModule (2014) is a light-plus-radio convention badge. Cite it as ancestor hardware. Do not port Diptrace boards. No BOM is defined here. FlexModule reachability is not a friend edge.
 
 The FyberLabs website mentions Social Light as a convention badge. Leave the site alone.
 
 Panopticon listed Social Light as not started. Do not add a Panopticon product folder or SaaS here.
 
-LightIFF, Tennessee Windage, and LightFight are other products. LightIFF is not implemented. No waveforms, frequencies, challenge-response, or ITAR.
+Signal-based identification is out of scope and not implemented. No waveforms, frequencies, challenge-response, or export-controlled content.
 
 ## Product law
 
@@ -93,7 +93,7 @@ Fail closed on:
 - forbidden channel (`lightiff`, `flash`, `ping`, `nearby`, …)
 - forbidden claim (`flash`, `ping`, `loud`, `silence`, …)
 - unsigned statement (64 zero bytes is not a signature)
-- LightIFF-shaped ids (`lightiff`, `field-iff`, `iff`, `*-iff`, `iff-*`)
+- Reserved identification ids (`lightiff`, `field-iff`, `iff`, `*-iff`, `iff-*`)
 - forged signature at verify time (`sociacl-core` owns verify)
 
 `social-light` owns delivery of the bytes. `sociacl-core` owns verify.
@@ -117,4 +117,4 @@ C matches `sociacl.h` style. Elect is visible and always fails (`sociacl_social_
 - Rewrite the FyberLabs website
 - Add billing, accounts, or a control-plane server
 - Grow FlexModule hardware
-- Implement LightIFF
+- Implement signal-based identification
