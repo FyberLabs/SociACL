@@ -42,7 +42,17 @@ fn consume_contract_covers_light_check() {
         "decodeHop",
         "grantSoul",
         "aclKey",
+        "aclSoul",
         "s3rch/acl",
+        "WrappedKey",
+        "BlindedGrantRow",
+        "MeshMembership",
+        "checkGroupSee",
+        "rotateOnRevoke",
+        "same-group",
+        "named-circle",
+        "A wrap is not a grant",
+        "epriv",
         "hop?: HopFactor",
         "Hop missing does not fail",
         "Hop alone never allows",
@@ -64,15 +74,22 @@ fn consume_contract_covers_light_check() {
     }
 }
 
+fn mentions_discover_verb(lower: &str) -> bool {
+    lower
+        .split(|c: char| !c.is_ascii_alphanumeric() && c != '_')
+        .any(|word| word == "discover" || word == "discovers" || word == "discovered")
+}
+
 #[test]
 fn consume_contract_stays_off_the_other_plane() {
     let dts = read(contract_path());
     let lower = dts.to_ascii_lowercase();
+    // SEA wraps and encrypted rows are named on the wrapped-key spec.
+    // "discovery" is recipient-side scan, not the DISCOVER verb.
     for banned in [
         "elect",
         "will",
         "remint",
-        "discover",
         "destroy",
         "case c",
         "case_c",
@@ -81,8 +98,6 @@ fn consume_contract_stays_off_the_other_plane() {
         "wasm-pack",
         "wasm-bindgen",
         "npm install",
-        "sea",
-        "encrypt",
         "checkexecute",
         "break_glass",
         "break-glass",
@@ -94,6 +109,10 @@ fn consume_contract_stays_off_the_other_plane() {
             "consume contract must not mention {banned}"
         );
     }
+    assert!(
+        !mentions_discover_verb(&lower),
+        "consume contract must not name the DISCOVER verb"
+    );
 }
 
 #[test]
@@ -162,19 +181,16 @@ fn consume_doc_says_browser_not_a_package() {
         !lower.contains("wasm-pack") && !lower.contains("wasm-bindgen"),
         "lab-feed path does not add a compiled module toolchain"
     );
-    for banned in [
-        "remint",
-        "discover",
-        "elect",
-        "destroy",
-        "sea",
-        "break_glass",
-    ] {
+    for banned in ["remint", "elect", "destroy", "break_glass"] {
         assert!(
             !lower.contains(banned),
             "consume doc must not name {banned}"
         );
     }
+    assert!(
+        !mentions_discover_verb(&lower),
+        "consume doc must not name the DISCOVER verb"
+    );
     assert!(
         md.contains("Mesh") && md.contains("s3rch/acl"),
         "consume doc must name the Mesh dest ACL"
@@ -187,4 +203,58 @@ fn consume_doc_says_browser_not_a_package() {
         lower.contains("hop alone never allows"),
         "consume doc must say hop alone never allows"
     );
+    assert!(
+        md.contains("encrypted-discovery.md"),
+        "consume doc must point at the wrapped-key spec"
+    );
+    assert!(
+        lower.contains("a wrap is not a grant") || lower.contains("wrap of a dek"),
+        "consume doc must say a wrap is not a grant"
+    );
+}
+
+#[test]
+fn encrypted_discovery_spec_stays_on_the_light_surface() {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../docs/encrypted-discovery.md");
+    let doc = read(path);
+    let lower = doc.to_ascii_lowercase();
+    for needle in [
+        "a wrap is not a grant",
+        "sea",
+        "epriv",
+        "hamstate",
+        "same-group",
+        "named-circle",
+        "hopcap",
+        "row counts",
+        "timing",
+        "sizes",
+        "future work",
+        "private information retrieval",
+        "zero-knowledge",
+        "sociacl runs no index",
+        "https://github.com/fyberlabs/s3r.ch/pull/108",
+        "already unwrapped",
+        "grantsoul",
+        "stated: 0",
+    ] {
+        assert!(lower.contains(needle), "spec missing {needle}");
+    }
+    assert!(
+        !mentions_discover_verb(&lower),
+        "spec must not name the DISCOVER verb"
+    );
+    for banned in [
+        "lightiff",
+        "itar",
+        "saas",
+        "hypermesh",
+        "case c",
+        "wills",
+        "checkout",
+    ] {
+        assert!(!lower.contains(banned), "spec must not name {banned}");
+    }
+    assert!(!doc.contains("DISCOVER"), "spec must not name DISCOVER");
+    assert!(!doc.contains("ELECT"), "spec must not name ELECT");
 }

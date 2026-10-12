@@ -21,11 +21,12 @@ The Next app runs Check **in the browser** on the Gun mesh. It does **not** impo
 | revoke | immediate privilege-down on the dest object (`cancelSee`) |
 | hint | `HandoffHint` — untrusted; never a grant |
 | hop | optional Social Light `HopFactor`; never a grant; missing does not fail |
+| wrap | `WrappedKey` to a SEA `epub` or a group epoch key; never a grant; never mints |
 | admit | dest re-authorizes **before** `put()` into `items` |
 
 `s3rch/meta` is seed cache. It is not a Check object. A permalink / RSS3 / RSS / issuer URL is a `UrlLeaf`, not a node and not a grant.
 
-Later, on request: more verbs on the TS spec for granted distribution. Not this cut. The portable plane in `typescript/` is a copyable reference for Panopticon and other adapters. s3r.ch still copies this file and does not `npm install sociacl`.
+Later, on request: more verbs on the TS spec for granted distribution. Not this cut. Wrapped keys, recipient-side discovery, and group predicates are named in [encrypted-discovery.md](encrypted-discovery.md). They are not extra verbs. The portable plane in `typescript/` is a copyable reference for Panopticon and other adapters. s3r.ch still copies this file and does not `npm install sociacl`.
 
 ## Fixed Gun paths (do not fork)
 
@@ -86,8 +87,26 @@ Each field HAM-merges. `MeshSeeGrant.stated` is `1` (live) or `0` (cancelled). C
 
 - hop missing does not fail.
 - hop alone never allows.
-- `hop` may only factor an already-named grant or owner path.
+- `hop` may only factor an already-named grant or owner path. Direct membership is the same rule on `checkGroupSee` (spec, below).
 - `acceptHop` / `decodeHop` do not verify and do not mint (mirror `acceptHint`).
 - URL handoffs stay untrusted `HandoffHint`. A hint plus a hop still fail closed without dest ACL.
 
 Reuse SociACL Social Light (`convention-badge` / `enrolled-station`, SLHP v1). Do not reimplement the hop frame.
+
+## Private rows and group predicates (spec)
+
+[encrypted-discovery.md](encrypted-discovery.md) is the spec. s3r.ch product draft: [FyberLabs/s3r.ch#108](https://github.com/FyberLabs/s3r.ch/pull/108) (`docs/encrypted-discovery.md` there). This repo does not edit s3r.ch.
+
+Copy the new names from [s3rch-check.d.ts](s3rch-check.d.ts) (`WrappedKey`, `BlindedGrantRow`, `MeshMembership`, `checkGroupSee`, `rotateOnRevoke`). The reference crate still evaluates plaintext `MeshSeeGrant` only. `GunFeedNode` and `GunUserNode` stay as they are. Do not `npm install sociacl`.
+
+A wrap of a DEK to a reader SEA `epub` is not a grant. SEA `priv` and `epriv` never go on Gun. Check must still pass. A hop, a hint, or a wrap never mints. SociACL decides who receives a wrap: only a principal the live grant or direct membership already names.
+
+`same-group` and `named-circle` are hopcap **1** and jointly stated. The object names the set, and the accessor has a direct `member-of` or `in-circle` edge. Membership does not inherit across groups or circles. Hop may factor that direct edge. Hop alone never allows.
+
+Revoke of an encrypted object is `stated: 0` plus a `hamState` bump, then a new epoch wrapped to the remaining readers. Bytes a revoked reader already unwrapped stay readable to that reader.
+
+Recipient-side discovery replaces plaintext enumeration of `s3rch/acl/<owner>/<object>/<accessor>`. Check at the destination still verifies an owner signature or commitment. Row counts, timing, and sizes still leak. Private information retrieval and zero-knowledge proofs are future work, not this spec.
+
+SociACL runs no index. One public index for public content. Each private group runs its own. Individuals push and pull, then index a small set on device. An index hit is not a grant.
+
+Blinding scheme, group epoch length, grant verifier key, and whether plaintext `MeshSeeGrant` stays for public content are open. See the spec.

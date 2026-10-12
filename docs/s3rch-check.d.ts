@@ -16,6 +16,12 @@
  *   accessor = wallet / Gun peer
  *   hopcap 1, jointly stated grants, revoke immediate
  *   hop      = optional Social Light factor; never a grant
+ *   wrap     = SEA epub wrap of a DEK; never a grant
+ *   same-group / named-circle = direct edges only; no transitive inheritance
+ *
+ * Wrapped keys, recipient-side discovery, rotation on revoke:
+ * docs/encrypted-discovery.md. Spec only. The reference crate does
+ * not evaluate these types yet. SEA priv and epriv never go on Gun.
  */
 
 /** Fixed Gun root. */
@@ -156,6 +162,7 @@ export type CheckResult = {
   /**
    * Predicate / deny reason. A present hint never makes this a grant.
    * A present hop never makes this a grant.
+   * A present wrap never makes this a grant.
    */
   reason: string;
 };
@@ -214,6 +221,8 @@ export function acceptHint(hint: HandoffHint): HandoffHint;
  * Owner sees their object. Else a live IdentitySeeGrant / MeshSeeGrant
  * must name this pair and now ∈ [from, until). meta, dest ACL souls,
  * and UrlLeaf fail closed.
+ * A wrap is not an argument. A wrap is not a grant.
+ * A hop, a hint, or a wrap never mints.
  */
 export function checkSee(
   graph: SeeGraph,
@@ -364,3 +373,199 @@ export function acceptHop(hop: HopFactor): HopFactor;
  * Attestation bytes stay opaque.
  */
 export function decodeHop(bytes: Uint8Array): HopFactor;
+
+/* -------------------------------------------------------------------------- */
+/* Wrapped keys, private rows, group predicates (spec)                        */
+/*                                                                            */
+/* docs/encrypted-discovery.md. Copy / re-type with the types above.          */
+/* The reference crate still evaluates plaintext MeshSeeGrant only.          */
+/* A wrap is not a grant. SEA priv and epriv never go on Gun.                 */
+/* same-group and named-circle: hopcap 1, jointly stated, no inheritance.    */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Light predicate an object may name. The accessor does not pick a
+ * richer one. owner and delegate are today's see path. same-group
+ * and named-circle are direct edges only.
+ */
+export type LightPredicate =
+  | "owner"
+  | "delegate"
+  | "same-group"
+  | "named-circle";
+
+/**
+ * DEK or group-key material. Not a grant.
+ * reader-epub: ECDH-derived wrap to that SEA epub.
+ * group-epoch: wrap to the group key for this epoch.
+ * scope item-dek + reader-epub: per-item DEK to one reader.
+ * scope group-key + reader-epub: group epoch key to one member.
+ * scope item-dek + group-epoch: item DEK to the group's epoch key.
+ */
+export type WrappedKey = {
+  scope: "item-dek" | "group-key";
+  epoch: number;
+  target: "reader-epub" | "group-epoch";
+  /** SEA epub, or group id when target is group-epoch. */
+  targetId: string;
+  object?: CheckObjectId;
+  group?: string;
+  wrappedKey: string;
+};
+
+/**
+ * How a private row is addressed. Not decided.
+ * static-tag: ECDH-derived row tag, stable for the owner and accessor.
+ * epoch-tag: that tag, rotated with the epoch.
+ * inbox-soul: encrypted row under a recipient inbox soul.
+ */
+export type GrantRowBlinding = "static-tag" | "epoch-tag" | "inbox-soul";
+
+/**
+ * Who checks the owner signature or commitment. Not decided.
+ * Both the holder and the destination check whichever the row names.
+ */
+export type GrantVerifier = "sea-pub" | "principal-key";
+
+/**
+ * public-plain: today's plaintext MeshSeeGrant (open whether it stays
+ * for public content). private-row: blinded or encrypted grant row.
+ */
+export type GrantStorage = "public-plain" | "private-row";
+
+/**
+ * Owner signature or commitment over the grant fields.
+ * Check at the destination still verifies this. Fail closed.
+ */
+export type GrantCommitment = {
+  verifier: GrantVerifier;
+  signer: string;
+  sig: string;
+};
+
+/**
+ * Private grant row. Replaces plaintext enumeration of
+ * grantSoul(owner, object, accessor) for private items.
+ * rowTag is not a clear owner/object/accessor path.
+ * A wrap on the row is not a grant. hamState: higher wins.
+ */
+export type BlindedGrantRow = {
+  blinding: GrantRowBlinding;
+  rowTag: string;
+  owner: AccessorId;
+  grant: MeshSeeGrant;
+  wrap?: WrappedKey;
+  commitment: GrantCommitment;
+  storage: GrantStorage;
+  hamState: number;
+};
+
+/**
+ * Recipient-side scan target. Not a Check object.
+ * The soul path is open (see GrantRowBlinding). Scanning it
+ * is not Check and does not mint.
+ */
+export type RecipientInbox = {
+  accessor: AccessorId;
+  blinding: GrantRowBlinding;
+  rowTag: string;
+};
+
+/**
+ * Direct membership. Hopcap 1. Jointly stated.
+ * stated 1 = live, 0 = cancelled. Cancel bumps hamState.
+ * One-sided membership is not a grant. Not a walk.
+ * Nested groups and nested circles do not grant.
+ */
+export type MeshMembership = {
+  predicate: "same-group" | "named-circle";
+  setId: string;
+  accessor: AccessorId;
+  stated: 0 | 1;
+  hamState: number;
+};
+
+/**
+ * Group or circle the object names. One predicate.
+ * Does not change GunFeedNode or GunUserNode.
+ */
+export type ObjectSetName = {
+  object: CheckObjectId;
+  predicate: "same-group" | "named-circle";
+  setId: string;
+  stated: 0 | 1;
+  hamState: number;
+};
+
+/**
+ * See graph plus direct group and circle edges.
+ * Check does not walk from one set into another.
+ */
+export type GroupSeeGraph = SeeGraph & {
+  objectSet(object: CheckObjectId): ObjectSetName | undefined;
+  membership(
+    predicate: "same-group" | "named-circle",
+    setId: string,
+    accessor: AccessorId,
+  ): MeshMembership | undefined;
+};
+
+/**
+ * CHECK(see) when the object names same-group or named-circle.
+ * Hopcap 1. Direct jointly stated edge only.
+ * No transitive inheritance.
+ * Both the object-set edge and the membership edge must be stated 1.
+ * Hop missing does not fail. Hop alone never allows.
+ * A hop, a hint, or a wrap never mints.
+ * stated 0 denies. now is the Check instant; membership has no
+ * from/until window on this surface.
+ */
+export function checkGroupSee(
+  graph: GroupSeeGraph,
+  predicate: "same-group" | "named-circle",
+  object: CheckObjectId,
+  accessor: AccessorId,
+  now: number,
+  hint?: HandoffHint,
+  hop?: HopFactor,
+): CheckResult;
+
+/**
+ * One edge after privilege-down.
+ * grant.stated is 0. hamState is the bumped value.
+ */
+export type CancelledGrant = {
+  grant: MeshSeeGrant | MeshMembership;
+  hamState: number;
+};
+
+/**
+ * Revoke record for an encrypted object.
+ * Order: stated 0 and a hamState bump, then rewrapped keys for
+ * the next epoch, remaining readers only.
+ * Bytes a revoked reader already unwrapped stay readable to them.
+ * An older epoch wrap does not mint.
+ */
+export type EpochRotation = {
+  object: CheckObjectId;
+  revokedEpoch: number;
+  nextEpoch: number;
+  cancelled: readonly CancelledGrant[];
+  rewrapped: readonly WrappedKey[];
+};
+
+/**
+ * Spec signature. The reference crate does not run this.
+ * Privilege-down first (stated 0, hamState bump), then wraps of
+ * the next epoch. A wrap written here is not a grant.
+ */
+export function rotateOnRevoke(rotation: EpochRotation): void;
+
+/**
+ * Not a Check object. SociACL runs no index and does not store this.
+ * public: one index, public content only.
+ * private-group: that group's own index.
+ * local: one person, after push/pull, on device.
+ * An index hit never mints.
+ */
+export type ContentIndexTier = "public" | "private-group" | "local";

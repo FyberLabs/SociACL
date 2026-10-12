@@ -87,7 +87,7 @@ LD_LIBRARY_PATH=target/debug target/sociacl-elect-c
 node --test typescript/tests/*.js
 ```
 
-See [ARCHITECTURE.md](ARCHITECTURE.md), [docs/verbs.md](docs/verbs.md), [docs/networks.md](docs/networks.md), [docs/wills.md](docs/wills.md), [docs/attestations.md](docs/attestations.md), [docs/clocks.md](docs/clocks.md), [docs/social-light.md](docs/social-light.md), [docs/gun.md](docs/gun.md), [docs/s3rch-check.md](docs/s3rch-check.md), [docs/aimmune-ir-check.md](docs/aimmune-ir-check.md), and [docs/coverage.md](docs/coverage.md).
+See [ARCHITECTURE.md](ARCHITECTURE.md), [docs/verbs.md](docs/verbs.md), [docs/networks.md](docs/networks.md), [docs/wills.md](docs/wills.md), [docs/attestations.md](docs/attestations.md), [docs/clocks.md](docs/clocks.md), [docs/social-light.md](docs/social-light.md), [docs/gun.md](docs/gun.md), [docs/s3rch-check.md](docs/s3rch-check.md), [docs/encrypted-discovery.md](docs/encrypted-discovery.md), [docs/aimmune-ir-check.md](docs/aimmune-ir-check.md), and [docs/coverage.md](docs/coverage.md).
 
 ## License
 
