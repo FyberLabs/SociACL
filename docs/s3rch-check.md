@@ -103,10 +103,16 @@ A wrap of a DEK to a reader SEA `epub` is not a grant. SEA `priv` and `epriv` ne
 
 `same-group` and `named-circle` are hopcap **1** and jointly stated. The object names the set, and the accessor has a direct `member-of` or `in-circle` edge. Membership does not inherit across groups or circles. Hop may factor that direct edge. Hop alone never allows.
 
-Revoke of an encrypted object is `stated: 0` plus a `hamState` bump, then a new epoch wrapped to the remaining readers. Bytes a revoked reader already unwrapped stay readable to that reader.
+Each reader account has exactly one private inbox lane. Scanning a shared bucket is not allowed. The visible row has no owner id and no owner SEA pub. The holder presents the opened grant at the destination. Check recomputes the commitment, then checks the signature with the enrolled SEA pub from that presentation. Row counts, timing, and sizes still leak. The destination learns the owner. Private information retrieval and zero-knowledge proofs are future work, not this spec.
 
-Recipient-side discovery replaces plaintext enumeration of `s3rch/acl/<owner>/<object>/<accessor>`. Check at the destination still verifies an owner signature or commitment. Row counts, timing, and sizes still leak. Private information retrieval and zero-knowledge proofs are future work, not this spec.
+Each account has one SEA keypair. Devices inherit it through enrollment. `priv` and `epriv` never go on Gun. The author may unwrap from a local DEK. That fast path is not a grant.
+
+The reader chooses who may append. The default is public writes with a local spam filter (`public-filtered`). The hook is not a grant.
+
+Revoke is `stated: 0` plus a `hamState` bump, then a new epoch wrapped to the remaining readers. The owner chooses `forward-only` or `re-encrypt`. Bytes a revoked reader already unwrapped stay readable to that reader.
+
+Applying a new protocol version encrypts existing data in place. A plaintext replica already stored elsewhere remains a historical leak.
 
 SociACL runs no index. One public index for public content. Each private group runs its own. Individuals push and pull, then index a small set on device. An index hit is not a grant.
 
-Blinding scheme, group epoch length, grant verifier key, and whether plaintext `MeshSeeGrant` stays for public content are open. See the spec.
+Group epoch length, whether plaintext `MeshSeeGrant` stays for public content, and group search tokens are open. See the spec.

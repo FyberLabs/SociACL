@@ -237,6 +237,15 @@ fn encrypted_discovery_spec_stays_on_the_light_surface() {
         "already unwrapped",
         "grantsoul",
         "stated: 0",
+        "exactly one",
+        "scanning a shared bucket is not allowed",
+        "forward-only",
+        "re-encrypt",
+        "public-filtered",
+        "enrollment",
+        "in place",
+        "group search tokens",
+        "author fast unwrap",
     ] {
         assert!(lower.contains(needle), "spec missing {needle}");
     }

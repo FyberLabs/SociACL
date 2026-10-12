@@ -414,18 +414,16 @@ export type WrappedKey = {
 };
 
 /**
- * How a private row is addressed. Not decided.
- * static-tag: ECDH-derived row tag, stable for the owner and accessor.
- * epoch-tag: that tag, rotated with the epoch.
- * inbox-soul: encrypted row under a recipient inbox soul.
+ * One SEA keypair for the account. Devices inherit this same
+ * keypair through enrollment. They do not mint a second pair.
+ * pub and epub may sit on the user node. priv and epriv never
+ * go on Gun. Enrollment does not mint a grant.
  */
-export type GrantRowBlinding = "static-tag" | "epoch-tag" | "inbox-soul";
-
-/**
- * Who checks the owner signature or commitment. Not decided.
- * Both the holder and the destination check whichever the row names.
- */
-export type GrantVerifier = "sea-pub" | "principal-key";
+export type AccountSeaKey = {
+  account: AccessorId;
+  pub: string;
+  epub: string;
+};
 
 /**
  * public-plain: today's plaintext MeshSeeGrant (open whether it stays
@@ -434,42 +432,118 @@ export type GrantVerifier = "sea-pub" | "principal-key";
 export type GrantStorage = "public-plain" | "private-row";
 
 /**
- * Owner signature or commitment over the grant fields.
- * Check at the destination still verifies this. Fail closed.
+ * Hash of the canonical grant bytes. Stored on the visible row.
+ * Not an owner id and not an owner SEA pub.
+ * The signature over the grant stays inside the ciphertext.
  */
 export type GrantCommitment = {
-  verifier: GrantVerifier;
-  signer: string;
-  sig: string;
+  hash: string;
 };
 
 /**
- * Private grant row. Replaces plaintext enumeration of
- * grantSoul(owner, object, accessor) for private items.
- * rowTag is not a clear owner/object/accessor path.
+ * Visible lane entry. Replaces plaintext enumeration of
+ * grantSoul for private items. No owner field.
  * A wrap on the row is not a grant. hamState: higher wins.
+ * laneId is the reader's one lane, not a shared bucket.
  */
 export type BlindedGrantRow = {
-  blinding: GrantRowBlinding;
-  rowTag: string;
-  owner: AccessorId;
-  grant: MeshSeeGrant;
-  wrap?: WrappedKey;
+  laneId: string;
+  /** Entry id inside the one lane. Not a plaintext accessor path. */
+  entryId: string;
+  /** Ciphertext of the canonical grant, including the owner id and the signature. */
+  grantCiphertext: string;
   commitment: GrantCommitment;
-  storage: GrantStorage;
+  wrap?: WrappedKey;
   hamState: number;
 };
 
 /**
- * Recipient-side scan target. Not a Check object.
- * The soul path is open (see GrantRowBlinding). Scanning it
- * is not Check and does not mint.
+ * Exactly one private lane per reader account. Not a Check object.
+ * Not a shared bucket. Not one lane per device, sender, or epoch.
+ * laneId is not the plaintext accessor id. Scanning it is not Check
+ * and does not mint.
  */
 export type RecipientInbox = {
   accessor: AccessorId;
-  blinding: GrantRowBlinding;
-  rowTag: string;
+  laneId: string;
 };
+
+/**
+ * Opened grant the holder shows to the destination.
+ * Not written to Gun. The destination recomputes GrantCommitment
+ * from grantBytes, checks the signature with seaPub, and checks
+ * that seaPub is the enrolled key for owner. Then Check runs.
+ * A presentation is not a grant.
+ */
+export type GrantPresentation = {
+  owner: AccessorId;
+  grant: MeshSeeGrant;
+  /** Canonical bytes the commitment hashes. */
+  grantBytes: string;
+  signature: string;
+  /** Enrolled account SEA pub. Not a field of BlindedGrantRow. */
+  seaPub: string;
+};
+
+/**
+ * Spec signature. The reference crate does not run this.
+ * Commitment mismatch or a bad signature fails closed.
+ * A hop, a hint, or a wrap never mints.
+ */
+export function checkPresentedGrant(
+  row: BlindedGrantRow,
+  presentation: GrantPresentation,
+  graph: SeeGraph,
+  accessor: AccessorId,
+  now: number,
+  hint?: HandoffHint,
+  hop?: HopFactor,
+): CheckResult;
+
+/**
+ * Author-only local DEK. Not a Gun row and not a grant.
+ * Other readers do not use this path. Enrolled devices of the
+ * same account share the one SEA keypair and may unwrap a
+ * self-wrap in the author's single lane.
+ */
+export type AuthorFastUnwrap = {
+  object: CheckObjectId;
+  epoch: number;
+  dek: string;
+};
+
+/**
+ * Who may append to the one lane. Default is public-filtered:
+ * any principal may append, and the reader drops spam.
+ * named-writers appends only from writers.
+ * A passed hook is not a grant.
+ */
+export type InboxWritePolicy = "public-filtered" | "named-writers";
+
+export type InboxWriteHook = {
+  policy: InboxWritePolicy;
+  /** Required when policy is named-writers. */
+  writers?: readonly AccessorId[];
+};
+
+export type InboxWriteDecision = {
+  allowAppend: boolean;
+  /** Local drop label. Not a Check reason and not a grant. */
+  filter: "ok" | "spam" | "unnamed-writer";
+};
+
+/**
+ * Spec signature. The reference crate does not run this.
+ * public-filtered is the default: any writer may append.
+ * The reader then drops oversized rows and rows over a local
+ * rate. Commitment mismatch is checkPresentedGrant, not this
+ * hook. SociACL does not store the filter.
+ */
+export function filterInboxAppend(
+  hook: InboxWriteHook,
+  writer: AccessorId,
+  rowBytes: number,
+): InboxWriteDecision;
 
 /**
  * Direct membership. Hopcap 1. Jointly stated.
@@ -540,11 +614,18 @@ export type CancelledGrant = {
 };
 
 /**
+ * Owner's choice at revoke, after stated 0 and the hamState bump.
+ * forward-only: new epoch for later writes; old ciphertext stays.
+ * re-encrypt: rewrite existing ciphertext in place under the new DEK.
+ * Either way, bytes a revoked reader already unwrapped stay readable
+ * to them. An older epoch wrap does not mint.
+ */
+export type RevokeCipherMode = "forward-only" | "re-encrypt";
+
+/**
  * Revoke record for an encrypted object.
  * Order: stated 0 and a hamState bump, then rewrapped keys for
- * the next epoch, remaining readers only.
- * Bytes a revoked reader already unwrapped stay readable to them.
- * An older epoch wrap does not mint.
+ * the next epoch, remaining readers only, then cipher mode.
  */
 export type EpochRotation = {
   object: CheckObjectId;
@@ -552,6 +633,7 @@ export type EpochRotation = {
   nextEpoch: number;
   cancelled: readonly CancelledGrant[];
   rewrapped: readonly WrappedKey[];
+  cipher: RevokeCipherMode;
 };
 
 /**
@@ -560,6 +642,19 @@ export type EpochRotation = {
  * the next epoch. A wrap written here is not a grant.
  */
 export function rotateOnRevoke(rotation: EpochRotation): void;
+
+/**
+ * In-place encryption when a protocol version is applied.
+ * The object id stays. The body is replaced with ciphertext.
+ * Plaintext already replicated elsewhere is a historical leak.
+ * Not a grant.
+ */
+export type ProtocolMigration = {
+  object: CheckObjectId;
+  fromVersion: number;
+  toVersion: number;
+  rewrapped: readonly WrappedKey[];
+};
 
 /**
  * Not a Check object. SociACL runs no index and does not store this.
