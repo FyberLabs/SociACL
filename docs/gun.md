@@ -28,7 +28,9 @@ Execute-without-read is the existing `delegate` primitive (action mask `execute`
 
 A Social Light hop can factor Check. It cannot mint. The consume contract names this `HopFactor` on `checkSee(..., hint?, hop?)`. Decode (`acceptHop` / `decodeHop`) does not verify and does not mint. See [social-light.md](social-light.md).
 
-Mesh see grants are Gun-native dest-ACL nodes under `s3rch/acl/<owner>/<object>/<accessor>`. They do not fork `items` or `users`. Each peer Checks its locally HAM-merged graph at now. Cancel is owner-only privilege-down and must be visible on the next Check after merge (no cached allow). Soul helpers: `aclKey`, `aclPrincipalKey`, `grantSoul` in [s3rch-check.d.ts](s3rch-check.d.ts).
+Mesh see grants are Gun-native dest-ACL nodes under `s3rch/acl/<owner>/<object>/<accessor>`. They do not fork `items` or `users`. Each peer Checks its locally HAM-merged graph at now. Cancel is owner-only privilege-down and must be visible on the next Check after merge (no cached allow). Soul helpers: `aclKey`, `aclPrincipalKey`, `aclSoul`, `grantSoul` in [s3rch-check.d.ts](s3rch-check.d.ts).
+
+Wrapped-key grants, recipient-side discovery, rotation on revoke, and light-contract `same-group` / `named-circle` are specified in [encrypted-discovery.md](encrypted-discovery.md). That page is spec only. This crate still evaluates plaintext `MeshSeeGrant` rows. A wrap is not a grant. A hop, a hint, or a wrap never mints. SEA `priv` and `epriv` never go on Gun. SociACL runs no index. s3r.ch product draft: [FyberLabs/s3r.ch#108](https://github.com/FyberLabs/s3r.ch/pull/108). This repo does not edit s3r.ch.
 
 Case C may Check a frozen bundle the way the rest of SociACL does. The client has no mint path for new Gun grants.
 
@@ -117,6 +119,7 @@ Max string 4096. Fail closed on a bad magic, version, or length.
 ```
 docs/s3rch-check.d.ts          TS consume contract (browser Check + Mesh; copy / re-type)
 docs/s3rch-check.md            how s3r.ch consumes that file (Mesh section)
+docs/encrypted-discovery.md    spec: wrapped keys, private rows, group predicates
 docs/gun.md                    this page (Rust adapter map)
 docs/social-light.md           SLHP hop factor Check may consume
 crates/sociacl-gun             reference implementation (MeshSeeGraph + hop)
@@ -129,6 +132,8 @@ Elect is visible and always fails (`sociacl_gun_elect`). Case C mint is visible 
 ## What this does not do
 
 - Open or edit FyberLabs/s3r.ch
+- Evaluate wrapped keys or blinded grant rows (spec only; see [encrypted-discovery.md](encrypted-discovery.md))
+- Run an index (one public index, per-group indexes, and local indexes are product storage)
 - Add a second graph schema or a second user node
 - Add a Gun-only Check verb
 - Treat a seeder or `/api/ingest` fetch as a grant
