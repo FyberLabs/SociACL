@@ -464,11 +464,21 @@ export type GrantCommitment = {
 
 /**
  * Owner signature over item authenticity.
- * Signed bytes, in order: item id, epoch, version, plaintext
- * digest, revisionId. revisionId is part of that tuple.
- * The owner signs that tuple, then encrypts the plaintext and
- * this signature together. The ciphertext digest is not an
- * input to the signature. The signature sits inside the
+ * plaintextDigest is SHA-256 of the raw plaintext bytes,
+ * lowercase hex.
+ * The signed bytes use the same length-prefixed UTF-8
+ * encoding as inboxEntryId. The signature is over those
+ * bytes. It is not a hex encoding of the plaintext.
+ * Fields:
+ * 1. "s3rch-item-auth-v1"
+ * 2. object
+ * 3. decimal epoch
+ * 4. decimal version
+ * 5. plaintextDigest
+ * 6. revisionId
+ * The owner signs that encoding, then encrypts the plaintext
+ * and this signature together. The ciphertext digest is not
+ * an input to the signature. The signature sits inside the
  * encrypted item. The visible grant row does not carry it
  * and does not carry the owner pub.
  * GrantCommitment still covers the ciphertext digest, computed
@@ -497,6 +507,15 @@ export type ItemContentAuth = {
  * item ciphertext when the grant names an encrypted item,
  * and "" otherwise. The owner signature covers it. The
  * destination compares it to the fetched item.
+ * payload digest is SHA-256, lowercase hex, of the
+ * length-prefixed fields "s3rch-grant-payload-v1", object,
+ * accessor, decimal from, decimal until, decimal stated,
+ * decimal epoch, owner, decimal grantRevision,
+ * itemCiphertextDigest. The signature covers those bytes.
+ * Two payloads with the same grantRevision: the smaller
+ * payload digest wins. A later smaller digest replaces the
+ * stored one. A larger digest at that revision fails closed.
+ * Arrival order does not pick the payload.
  * Not a merge field on the lane entry. Not a grant by itself.
  */
 export type SignedGrantPayload = {
@@ -576,16 +595,19 @@ export type BlindedGrantRow = {
 
 /**
  * Optional outer envelope when the writer is already known
- * (named-writers). Relays verify writerSignature over entryId
- * without opening the grant. The default public lane stays
- * content-addressed and does not carry writerPub.
+ * (named-writers). body is the full InboxEntryBody. The relay
+ * recomputes inboxEntryId(body), checks it equals entryId, and
+ * verifies writerSignature over that id, without opening the
+ * grant. The default public lane stays content-addressed and
+ * does not carry writerPub.
  * Not a grant.
  */
 export type InboxEnvelope = {
-  laneId: string;
+  /** Full content-addressed entry. entryId is inboxEntryId(body). */
+  body: InboxEntryBody;
   entryId: string;
-  ciphertext: string;
   writerPub: string;
+  /** Over entryId. The relay recomputes entryId from body. */
   writerSignature: string;
 };
 
@@ -604,8 +626,10 @@ export type RecipientInbox = {
  * Opened grant the holder shows to the destination.
  * Not written to Gun. The destination recomputes GrantCommitment
  * from grantBytes, checks the signature with seaPub, and checks
- * that seaPub is the enrolled key for owner. grantBytes include
- * grantRevision. Then presenter binding and a fresh
+ * that seaPub is the enrolled key for owner. grantBytes decode
+ * to one SignedGrantPayload. grant, owner, and grantRevision
+ * must match that payload. A mismatch fails closed before
+ * verifier state changes. Then presenter binding and a fresh
  * EpochStatusProof, then Check.
  * A presentation alone grants nothing. A presentation is not a grant.
  */
@@ -695,6 +719,8 @@ export type VerifierGrantRevision = {
   accessor: AccessorId;
   grantRevision: number;
   stated: 0 | 1;
+  /** Smaller digest wins when grantRevision ties. */
+  payloadDigest: string;
 };
 
 /**
@@ -770,12 +796,27 @@ export type EpochStatusProof = {
  * for another principal fails closed. Omitted binding and omitted
  * channel fails closed. Omitted, stale, future-dated beyond
  * skew, or superseded status fails closed.
+ * Decode SignedGrantPayload from grantBytes first. If grant,
+ * owner, or grantRevision disagree with that payload, fail
+ * closed before revisions changes. Check uses the decoded
+ * payload.
  * revisions is the verifier's highest accepted grantRevision
- * for this object and accessor. A presented revision lower
- * than that record fails closed. An equal revision whose
- * recorded stated is 0 does not accept stated 1. A higher
- * signed revision replaces the record in the returned state.
- * The holder does not choose that record.
+ * for this object and accessor, plus its payloadDigest.
+ * A presented revision lower than that record fails closed.
+ * An equal revision with a larger payloadDigest fails closed.
+ * An equal revision with a smaller payloadDigest replaces
+ * the record. An equal digest whose recorded stated is 0
+ * does not accept stated 1. A higher signed revision replaces
+ * the record. The holder does not choose that record.
+ * epochView is the verifier's epoch state for status.object.
+ * status.revisionId must be the read key: settledRevisionId
+ * while epochStepCurrent(epochView, now) is false, and the
+ * recomputed winner once it is true. Any other revision fails
+ * closed. The presenter does not supply epochView.
+ * The age bound is the smaller of status.maxAgeMs and
+ * policyMaxAgeMs. policyMaxAgeMs is the verifier's cap.
+ * The owner does not set it. A proof older than that bound
+ * fails closed.
  * A proof alone grants nothing.
  * A hop, a hint, or a wrap never mints.
  */
@@ -788,6 +829,8 @@ export function checkPresentedGrant(
   skewAllowanceMs: number,
   challenges: VerifierChallengeState,
   revisions: VerifierGrantRevisionState,
+  epochView: EpochReplicaView,
+  policyMaxAgeMs: number,
   hint?: HandoffHint,
   hop?: HopFactor,
   binding?: PresenterBinding,
@@ -840,8 +883,12 @@ export type FirstContactIntro = {
  * key can mint different keys for the same next epoch.
  * revisionId = epochRevisionId of the canonical body:
  * object, epoch, previousEpoch, deviceId, keyCommitment,
- * settleWindowMs.
+ * settleWindowMs, aclSnapshot.
  * A new key commitment is a new revision id.
+ * aclSnapshot commits to the wrap recipients and the highest
+ * cancel grantRevision the author applied. A manifest whose
+ * snapshot still names a reader this replica has cancelled
+ * at a higher grantRevision is ignored.
  * settleWindowMs is the owner-signed wait for this object,
  * or the same number as GroupEpochConfig for a group epoch.
  * In range SETTLE_WINDOW_MIN_MS through SETTLE_WINDOW_MAX_MS.
@@ -873,6 +920,11 @@ export type EpochManifest = {
    * Group epochs repeat GroupEpochConfig.settleWindowMs.
    */
   settleWindowMs: number;
+  /**
+   * SHA-256 lowercase hex of the ACL snapshot. Covered by
+   * revisionId. See aclSnapshotId.
+   */
+  aclSnapshot: string;
   signature: string;
 };
 
@@ -888,7 +940,29 @@ export type EpochManifestBody = {
   keyCommitment: string;
   /** Decimal milliseconds. Covered by revisionId. */
   settleWindowMs: number;
+  /** aclSnapshotId of the recipients and cancel high water. */
+  aclSnapshot: string;
 };
+
+/**
+ * Who receives a wrap for this candidate, and which cancel
+ * the author had applied. Recipients are sorted ascending.
+ * A revoked reader is absent. Not a grant.
+ */
+export type AclSnapshotBody = {
+  recipients: readonly AccessorId[];
+  /** Highest cancel grantRevision applied, or 0. */
+  cancelRevision: number;
+};
+
+/**
+ * Spec signature. The reference crate does not run this.
+ * SHA-256, lowercase hex, of the length-prefixed UTF-8
+ * encoding. Fields: "s3rch-acl-snapshot-v1", then each
+ * recipient in sorted order, then decimal cancelRevision.
+ * Does not mint.
+ */
+export function aclSnapshotId(body: AclSnapshotBody): string;
 
 /**
  * Spec signature. The reference crate does not run this.
@@ -903,6 +977,7 @@ export type EpochManifestBody = {
  * 5. deviceId
  * 6. keyCommitment
  * 7. decimal settleWindowMs
+ * 8. aclSnapshot
  */
 export function epochRevisionId(body: EpochManifestBody): string;
 
@@ -1319,9 +1394,11 @@ export type EpochRotation = {
 export function rotateOnRevoke(rotation: EpochRotation): void;
 
 /**
- * One current reader during migration. Plaintext for this
- * reader stays until acknowledged is set, or atGate is set
- * because readerVersion >= ProtocolMigration.versionGate.
+ * One current reader during migration. acknowledged is an
+ * authenticated receipt that this reader has the wrap.
+ * atGate means readerVersion >= versionGate. atGate alone
+ * does not remove plaintext. Plaintext for this reader stays
+ * until acknowledged is set.
  * One reader's ack does not clear another reader's copy.
  */
 export type ReaderMigration = {
@@ -1333,8 +1410,9 @@ export type ReaderMigration = {
 /**
  * In-place encryption when a protocol version is applied.
  * Only the owner re-encrypts a shared item and issues wraps.
- * Plaintext removal is per reader: after that reader's ack,
- * or when that reader is at or above versionGate.
+ * Plaintext removal is per reader, after that reader's
+ * authenticated wrap receipt. A version at or above
+ * versionGate does not by itself remove plaintext.
  * There is no single flag for every reader.
  * Readers do not issue wraps.
  * Plaintext already replicated elsewhere is a historical leak.
@@ -1386,6 +1464,15 @@ export type EncryptedDiscoveryVector =
   | "inbox-concurrent-challenges"
   | "presenter-brand-unforgeable"
   | "revoke-no-old-key-writes"
+  | "grant-payload-mismatch"
+  | "grant-revision-tie"
+  | "epoch-proof-matches-winner"
+  | "epoch-buffer-until-settle"
+  | "epoch-stale-acl"
+  | "inbox-envelope-body"
+  | "item-auth-canonical"
+  | "status-policy-max-age"
+  | "migration-wrap-receipt"
   | "epoch-late-manifest"
   | "epoch-arrival-order"
   | "epoch-settle-window"
