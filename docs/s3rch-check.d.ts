@@ -1235,7 +1235,12 @@ export const SETTLE_WINDOW_DEFAULT_MS: 86400000;
 /**
  * Owner-signed settle window for one group or circle.
  * Signed bytes, length-prefixed: "s3rch-group-epoch-config-v1",
- * setId, predicate, decimal settleWindowMs, decimal configRevision.
+ * owner, setId, predicate, decimal settleWindowMs, decimal
+ * configRevision.
+ * owner must equal GroupSeeGraph.ownerOfSet(predicate, setId).
+ * The signature is checked with the enrolled pub of that
+ * account. A missing set owner, a different owner, or a
+ * signature under some other key fails closed.
  * configRevision is monotonic for that set and predicate.
  * The greatest configRevision wins. A lower revision is ignored.
  * At the same configRevision, the smaller digest of those
@@ -1247,6 +1252,8 @@ export const SETTLE_WINDOW_DEFAULT_MS: 86400000;
  * grant row. Not a grant.
  */
 export type GroupEpochConfig = {
+  /** Account that owns the set. Must match ownerOfSet. */
+  owner: AccessorId;
   setId: string;
   predicate: "same-group" | "named-circle";
   settleWindowMs: number;
@@ -1358,10 +1365,13 @@ export type EpochReplicaView = {
  * through SETTLE_WINDOW_MAX_MS.
  * False when snapshot has a stated-1 entry with until <= now,
  * or from > now.
- * False when current knows a higher grantRevision cancel, a
- * higher membership hamState cancel, a higher object-set
- * hamState, a different object-set predicate or setId, or a
- * past until for an accessor snapshot still lists as stated 1.
+ * False when, for an accessor the snapshot lists, current has
+ * a higher grantRevision, live or cancel, stated 0 against a
+ * snapshot stated 1, an earlier until, or a later from.
+ * False when current knows a higher membership hamState cancel,
+ * a higher object-set hamState, a different object-set predicate
+ * or setId, or a past until for an accessor the snapshot still
+ * lists as stated 1.
  * False when one of snapshot and current has objectSet and
  * the other does not.
  * True only when view.seen has a winner, the snapshot still
@@ -1388,8 +1398,14 @@ export function epochStepCurrent(
 /**
  * Whether new ciphertext may use the settled key.
  * settled is the ACL snapshot of view.settledRevisionId.
- * The writer does not supply it.
+ * current is the ACL this replica has already merged.
+ * The writer does not supply either.
  * False when any stated-1 entry has until <= now or from > now.
+ * False when, for an accessor settled lists as stated 1,
+ * current has stated 0, a higher grantRevision, an earlier
+ * until, or a later from.
+ * False on the same membership and object-set mismatches
+ * as epochStepCurrent.
  * While false, new writes are buffered. They are not encrypted
  * under settledRevisionId. The owner publishes a new revision
  * whose key was not wrapped to that accessor, and whose
@@ -1403,6 +1419,7 @@ export function epochStepCurrent(
 export function settledKeyOpen(
   view: EpochReplicaView,
   settled: AclSnapshotBody,
+  current: AclSnapshotBody,
   now: number,
 ): boolean;
 
@@ -1549,17 +1566,23 @@ export type WriterAppendProof = {
 };
 
 /**
- * One enrolled account SEA pub. The writer does not supply it.
+ * One enrolled account SEA pair. The writer does not supply it.
+ * pub is the signing key. epub is the encryption key.
+ * An introduction compares both. An append compares pub.
  */
 export type EnrolledSeaPub = {
   account: AccessorId;
   pub: string;
+  epub: string;
 };
 
 /**
- * Verifier-held enrollment for append checks. The writer does
- * not supply it. pub is the enrolled SEA pub for that account.
- * Not a field of the stored row. Not a grant.
+ * Verifier-held enrollment. The writer does not supply it.
+ * pub is the enrolled SEA pub for that account.
+ * epub is the enrolled SEA epub for that account.
+ * An introduction's enrollment binding requires both to match.
+ * A swapped epub fails closed. An append compares writerPub
+ * to pub. Not a field of the stored row. Not a grant.
  */
 export type VerifierEnrollmentState = {
   accounts: readonly EnrolledSeaPub[];
@@ -1706,6 +1729,15 @@ export type GroupSeeGraph = SeeGraph & {
     setId: string,
     accessor: AccessorId,
   ): MeshMembership | undefined;
+  /**
+   * Account that owns this set. Absent when the set is unknown.
+   * GroupEpochConfig.owner must equal this. The config does
+   * not choose it.
+   */
+  ownerOfSet(
+    predicate: "same-group" | "named-circle",
+    setId: string,
+  ): AccessorId | undefined;
 };
 
 /**
@@ -1921,6 +1953,10 @@ export type EncryptedDiscoveryVector =
   | "presenter-binding-canonical"
   | "presenter-audience"
   | "epoch-settled-expiry"
+  | "epoch-settled-cancel"
+  | "epoch-live-revision-window"
+  | "intro-enrolled-epub"
+  | "epoch-group-owner"
   | "presented-enrollment"
   | "presented-graph-owner"
   | "presenter-bad-key"
