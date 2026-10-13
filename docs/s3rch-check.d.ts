@@ -512,10 +512,13 @@ export type ItemContentAuth = {
  * accessor, decimal from, decimal until, decimal stated,
  * decimal epoch, owner, decimal grantRevision,
  * itemCiphertextDigest. The signature covers those bytes.
- * Two payloads with the same grantRevision: the smaller
- * payload digest wins. A later smaller digest replaces the
- * stored one. A larger digest at that revision fails closed.
- * Arrival order does not pick the payload.
+ * Two payloads with the same grantRevision: stated 0 wins
+ * before any digest comparison. A live payload does not
+ * replace a cancellation at that revision. When stated
+ * matches, the smaller payload digest wins. A later smaller
+ * digest replaces a stored larger one. A larger digest at
+ * that revision fails closed. Arrival order does not pick
+ * the payload.
  * Not a merge field on the lane entry. Not a grant by itself.
  */
 export type SignedGrantPayload = {
@@ -719,7 +722,12 @@ export type VerifierGrantRevision = {
   accessor: AccessorId;
   grantRevision: number;
   stated: 0 | 1;
-  /** Smaller digest wins when grantRevision ties. */
+  /**
+   * Smaller digest wins when grantRevision and stated tie.
+   * stated 0 wins over stated 1 at the same revision.
+   * Empty when the record was raised from an EpochStatusProof
+   * that names the revision and stated without the payload.
+   */
   payloadDigest: string;
 };
 
@@ -756,11 +764,26 @@ export type LightZookie = {
 /**
  * Fresh owner-signed epoch/status, required beside the zookie
  * at destination re-check of an encrypted grant.
+ * Names this accessor and this grantRevision, not only the object.
  * The signature is checked with the enrolled owner pub from the
  * presentation, not from a field on the visible row.
- * Freshness, with the verifier's skewAllowanceMs:
- * signedAt <= now + skewAllowanceMs, and
- * now - signedAt <= maxAgeMs. Otherwise fail closed.
+ * Signed bytes use the length-prefixed UTF-8 encoding:
+ * 1. "s3rch-epoch-status-v1"
+ * 2. object
+ * 3. decimal epoch
+ * 4. revisionId
+ * 5. accessor
+ * 6. decimal grantRevision
+ * 7. decimal stated
+ * 8. decimal signedAt
+ * 9. decimal maxAgeMs
+ * 10. zookie.object
+ * 11. decimal zookie.objectVersion
+ * 12. zookie.snapshotHash
+ * Freshness, with the verifier's skewAllowanceMs and
+ * policyMaxAgeMs: signedAt <= now + skewAllowanceMs, and
+ * now - signedAt is within the smaller of maxAgeMs and
+ * policyMaxAgeMs. Otherwise fail closed.
  * The zookie is compared to SeeGraph.objectVersion and
  * SeeGraph.snapshotHash(object). An older object version, a newer
  * version this graph has not merged, or a different snapshot
@@ -773,11 +796,25 @@ export type EpochStatusProof = {
   object: CheckObjectId;
   epoch: number;
   revisionId: string;
+  /** The accessor this proof refreshes. Not another reader. */
+  accessor: AccessorId;
+  /** Owner-signed high water for that accessor. */
+  grantRevision: number;
   stated: 0 | 1;
   signedAt: number;
   maxAgeMs: number;
   signature: string;
   zookie: LightZookie;
+};
+
+/**
+ * Group or circle check inside checkPresentedGrant.
+ * Required when the opened grant is same-group or named-circle.
+ * Absent for an ordinary see grant. Not a grant by itself.
+ */
+export type PresentedGroup = {
+  predicate: "same-group" | "named-circle";
+  setId: string;
 };
 
 /**
@@ -800,19 +837,34 @@ export type EpochStatusProof = {
  * owner, or grantRevision disagree with that payload, fail
  * closed before revisions changes. Check uses the decoded
  * payload.
- * revisions is the verifier's highest accepted grantRevision
- * for this object and accessor, plus its payloadDigest.
- * A presented revision lower than that record fails closed.
- * An equal revision with a larger payloadDigest fails closed.
- * An equal revision with a smaller payloadDigest replaces
- * the record. An equal digest whose recorded stated is 0
- * does not accept stated 1. A higher signed revision replaces
- * the record. The holder does not choose that record.
- * epochView is the verifier's epoch state for status.object.
+ * The decoded grant, status, status.zookie, and epochView
+ * name the same object. status.epoch, the grant epoch, and
+ * epochView.epoch match. status.accessor is the grant accessor
+ * and the accessor argument. A mismatch fails closed before
+ * challenges are spent and before revisions changes.
+ * A verified proof whose grantRevision is higher than the
+ * record, or whose stated is 0 at an equal revision against
+ * a stored stated 1, updates the record from the proof.
+ * The presenter cannot keep the record on an older live row
+ * by withholding the cancel.
+ * revisions is that verifier record, plus its payloadDigest.
+ * A presented revision lower than the record fails closed.
+ * At an equal revision, stated 0 wins before digest order.
+ * A live payload does not replace a stored cancellation.
+ * When stated matches, a larger payloadDigest fails closed
+ * and a smaller one replaces the record. A higher signed
+ * revision replaces the record. The holder does not choose
+ * that record.
+ * epochView is the verifier's epoch state for that same object.
  * status.revisionId must be the read key: settledRevisionId
  * while epochStepCurrent(epochView, now) is false, and the
  * recomputed winner once it is true. Any other revision fails
  * closed. The presenter does not supply epochView.
+ * When group is set, graph is a GroupSeeGraph and this
+ * function runs checkGroupSee after the same binding,
+ * revision, and freshness checks. When group is omitted,
+ * it runs checkSee / checkSeeGrant. A group object with
+ * no group argument fails closed.
  * The age bound is the smaller of status.maxAgeMs and
  * policyMaxAgeMs. policyMaxAgeMs is the verifier's cap.
  * The owner does not set it. A proof older than that bound
@@ -836,6 +888,7 @@ export function checkPresentedGrant(
   binding?: PresenterBinding,
   channel?: AuthenticatedPresenterChannel,
   status?: EpochStatusProof,
+  group?: PresentedGroup,
 ): PresentedGrantDecision;
 
 /**
@@ -885,10 +938,9 @@ export type FirstContactIntro = {
  * object, epoch, previousEpoch, deviceId, keyCommitment,
  * settleWindowMs, aclSnapshot.
  * A new key commitment is a new revision id.
- * aclSnapshot commits to the wrap recipients and the highest
- * cancel grantRevision the author applied. A manifest whose
- * snapshot still names a reader this replica has cancelled
- * at a higher grantRevision is ignored.
+ * aclSnapshot commits to each recipient and that accessor's
+ * own cancel revision. A manifest whose snapshot misses a
+ * cancel this replica already has for that accessor is ignored.
  * settleWindowMs is the owner-signed wait for this object,
  * or the same number as GroupEpochConfig for a group epoch.
  * In range SETTLE_WINDOW_MIN_MS through SETTLE_WINDOW_MAX_MS.
@@ -901,7 +953,9 @@ export type FirstContactIntro = {
  * finalizationId replaces it. Readers use the last settled
  * revision until that winner's settle window elapses, then
  * switch. They reject further writes under a revision the
- * settled result has superseded.
+ * settled result has superseded. Content bound to a revision
+ * a later smaller finalizationId displaces is not current.
+ * The owner re-encrypts those writes under the new winner.
  * Every WrappedKey for that epoch carries the same revisionId
  * inside the authenticated payload.
  * Self-wrap in the author lane, or inside the encrypted item.
@@ -940,27 +994,39 @@ export type EpochManifestBody = {
   keyCommitment: string;
   /** Decimal milliseconds. Covered by revisionId. */
   settleWindowMs: number;
-  /** aclSnapshotId of the recipients and cancel high water. */
+  /** aclSnapshotId of the per-accessor cancel rows. */
   aclSnapshot: string;
 };
 
 /**
- * Who receives a wrap for this candidate, and which cancel
- * the author had applied. Recipients are sorted ascending.
- * A revoked reader is absent. Not a grant.
+ * One accessor in an ACL snapshot. stated 1 receives a wrap.
+ * stated 0 is a cancel at grantRevision and receives none.
+ * Not a grant.
+ */
+export type AclSnapshotEntry = {
+  accessor: AccessorId;
+  grantRevision: number;
+  stated: 0 | 1;
+};
+
+/**
+ * Who receives a wrap for this candidate, and the cancel
+ * applied for each accessor. Entries are sorted by accessor.
+ * There is no single cancel high-water across accessors.
+ * A replica that knows accessor A is cancelled at revision R
+ * ignores a snapshot that lists A as stated 1, omits A, or
+ * lists A cancelled below R. Not a grant.
  */
 export type AclSnapshotBody = {
-  recipients: readonly AccessorId[];
-  /** Highest cancel grantRevision applied, or 0. */
-  cancelRevision: number;
+  entries: readonly AclSnapshotEntry[];
 };
 
 /**
  * Spec signature. The reference crate does not run this.
  * SHA-256, lowercase hex, of the length-prefixed UTF-8
  * encoding. Fields: "s3rch-acl-snapshot-v1", then each
- * recipient in sorted order, then decimal cancelRevision.
- * Does not mint.
+ * entry in accessor order as accessor, decimal grantRevision,
+ * decimal stated. Does not mint.
  */
 export function aclSnapshotId(body: AclSnapshotBody): string;
 
@@ -1466,12 +1532,18 @@ export type EncryptedDiscoveryVector =
   | "revoke-no-old-key-writes"
   | "grant-payload-mismatch"
   | "grant-revision-tie"
+  | "grant-revision-digest-tie"
   | "epoch-proof-matches-winner"
   | "epoch-buffer-until-settle"
   | "epoch-stale-acl"
+  | "epoch-reencrypt-displaced"
   | "inbox-envelope-body"
   | "item-auth-canonical"
   | "status-policy-max-age"
+  | "status-binds-accessor"
+  | "status-object-match"
+  | "status-signed-encoding"
+  | "presented-group-check"
   | "migration-wrap-receipt"
   | "epoch-late-manifest"
   | "epoch-arrival-order"
