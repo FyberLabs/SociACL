@@ -867,10 +867,14 @@ export type PresentedGroup = {
  * closed before revisions changes. Check uses the decoded
  * payload.
  * The decoded grant, status, status.zookie, and epochView
- * name the same object. status.epoch, the grant epoch, and
- * epochView.epoch match. status.accessor is the grant accessor
- * and the accessor argument. A mismatch fails closed before
- * challenges are spent and before revisions changes.
+ * name the same object. status.accessor is the grant accessor
+ * and the accessor argument. While epochStepCurrent is false
+ * and settledRevisionId is set, status.epoch and the grant
+ * epoch match epochView.settledEpoch, not the pending
+ * epochView.epoch. Once epochStepCurrent is true, status.epoch,
+ * the grant epoch, and epochView.epoch match. A mismatch fails
+ * closed before challenges are spent and before revisions
+ * changes.
  * A verified proof whose grantRevision is higher than the
  * record, or whose stated is 0 at an equal revision against
  * a stored stated 1, updates the record from the proof.
@@ -896,9 +900,10 @@ export type PresentedGroup = {
  * When the payload field is empty, fetchedItemDigest is omitted.
  * epochView is the verifier's epoch state for that same object.
  * status.revisionId must be the read key: settledRevisionId
- * while epochStepCurrent(epochView, now) is false, and the
- * recomputed winner once it is true. Any other revision fails
- * closed. The presenter does not supply epochView.
+ * while epochStepCurrent is false, and the recomputed winner
+ * once it is true. Any other revision fails closed. The
+ * presenter does not supply epochView, the winning snapshot,
+ * or the verifier ACL.
  * When group is set, graph is a GroupSeeGraph and this
  * function runs checkGroupSee after the same binding,
  * revision, and freshness checks. When group is omitted,
@@ -948,9 +953,16 @@ export type AuthorFastUnwrap = {
  * enrollment: the reader's trusted enrollment record for
  * account already names this pub and this epub.
  * account-signature: signature by the account identity
- * (the key already enrolled for that AccessorId), over pub
- * and epub. A signature by the introduced pub is not this
- * binding. A missing epub or a swapped epub fails closed.
+ * (the key already enrolled for that AccessorId).
+ * Signed bytes, length-prefixed:
+ * 1. "s3rch-account-binding-v1"
+ * 2. account
+ * 3. pub
+ * 4. epub
+ * A signature by the introduced pub is not this binding.
+ * A signature that omits account, or concatenates pub and
+ * epub with no lengths, does not verify. A missing epub
+ * or a swapped epub fails closed.
  * Not a grant.
  */
 export type AccountKeyBinding =
@@ -1019,6 +1031,15 @@ export type EpochManifest = {
    * revisionId. See aclSnapshotId.
    */
   aclSnapshot: string;
+  /**
+   * Owner signature over revisionId, not over keyCommitment
+   * alone. Signed bytes, length-prefixed:
+   * 1. "s3rch-epoch-manifest-sig-v1"
+   * 2. revisionId
+   * revisionId already covers object, epoch, previousEpoch,
+   * deviceId, keyCommitment, settleWindowMs, and aclSnapshot.
+   * A signature over keyCommitment alone does not verify.
+   */
   signature: string;
 };
 
@@ -1047,6 +1068,11 @@ export type EpochManifestBody = {
  * The owner publishes a new revision whose key was not wrapped
  * to that accessor, and whose snapshot lists that accessor
  * stated 0. That replacement starts its own settle window.
+ * scope direct is one grant. same-group and named-circle name
+ * one MeshMembership. hamState is that membership's hamState.
+ * A replica that knows the membership is cancelled at hamState
+ * H ignores a snapshot that lists that accessor live for that
+ * set, omits that set, or names a hamState below H.
  * Not a grant.
  */
 export type AclSnapshotEntry = {
@@ -1056,6 +1082,15 @@ export type AclSnapshotEntry = {
   /** Grant window. Covered by aclSnapshotId. */
   from: number;
   until: number;
+  /** direct, or the membership predicate this wrap follows. */
+  scope: "direct" | "same-group" | "named-circle";
+  /** Empty when scope is direct. */
+  setId: string;
+  /**
+   * MeshMembership.hamState for a group or circle.
+   * 0 when scope is direct. Covered by aclSnapshotId.
+   */
+  hamState: number;
 };
 
 /**
@@ -1065,6 +1100,9 @@ export type AclSnapshotEntry = {
  * A replica that knows accessor A is cancelled at revision R
  * ignores a snapshot that lists A as stated 1, omits A, or
  * lists A cancelled below R.
+ * For a group or circle entry, the same rule uses hamState
+ * on that predicate and setId. A lower hamState does not hide
+ * a removal this replica has already merged.
  * A stated-1 entry with until <= now does not settle. Not a grant.
  */
 export type AclSnapshotBody = {
@@ -1076,7 +1114,8 @@ export type AclSnapshotBody = {
  * SHA-256, lowercase hex, of the length-prefixed UTF-8
  * encoding. Fields: "s3rch-acl-snapshot-v1", then each
  * entry in accessor order as accessor, decimal grantRevision,
- * decimal stated, decimal from, decimal until. Does not mint.
+ * decimal stated, decimal from, decimal until, scope, setId,
+ * decimal hamState. Does not mint.
  */
 export function aclSnapshotId(body: AclSnapshotBody): string;
 
@@ -1199,8 +1238,10 @@ export type EpochFinalization = {
  * settleWindowMs is the in-range value from the winning
  * manifest, which matches GroupEpochConfig for a group epoch.
  * settledRevisionId is the last revision whose window already
- * elapsed. Readers use that key while a candidate is pending
- * and switch to the winner once the window elapses.
+ * elapsed. settledEpoch is the epoch number of that revision.
+ * Readers use that key while a candidate is pending and switch
+ * to the winner once the window elapses. A presentation during
+ * the window names settledEpoch, not the pending epoch.
  * The window does not delay privilege-down or grantRevision.
  * Not a grant.
  */
@@ -1212,26 +1253,40 @@ export type EpochReplicaView = {
   winnerSeenAt: number;
   settleWindowMs: number;
   settledRevisionId: string;
+  /** Epoch of settledRevisionId. Not the pending candidate. */
+  settledEpoch: number;
 };
 
 /**
  * Spec signature. The reference crate does not run this.
+ * snapshot is the ACL body of the winning manifest. Its
+ * aclSnapshotId must be that manifest's aclSnapshot.
+ * current is the ACL this replica has already merged.
+ * The writer of the finalization does not supply either.
  * False when settleWindowMs is outside SETTLE_WINDOW_MIN_MS
  * through SETTLE_WINDOW_MAX_MS.
- * True only when view.seen has a winner and
- * now >= winnerSeenAt + settleWindowMs.
- * While false, readers keep settledRevisionId.
+ * False when snapshot has a stated-1 entry with until <= now,
+ * or from > now.
+ * False when current knows a higher grantRevision cancel, a
+ * higher membership hamState cancel, or a past until for an
+ * accessor snapshot still lists as stated 1.
+ * True only when view.seen has a winner, the snapshot still
+ * matches current, and now >= winnerSeenAt + settleWindowMs.
+ * While false, readers keep settledRevisionId and settledEpoch.
  * A smaller finalizationId after that instant still replaces
  * the winner. Readers then stay on settledRevisionId until
  * the new window elapses, and then switch.
- * A candidate with a stated-1 snapshot entry whose until is
- * <= now is not current, even after the window. The buffer
- * stays buffered until a replacement that excludes that
- * accessor settles.
+ * The buffer stays buffered until a snapshot that excludes
+ * each expired or cancelled accessor settles.
  * A cancel or a higher grantRevision applies when seen.
  * This wait does not delay that. Does not mint.
  */
-export function epochStepCurrent(view: EpochReplicaView, now: number): boolean;
+export function epochStepCurrent(
+  view: EpochReplicaView,
+  snapshot: AclSnapshotBody,
+  current: AclSnapshotBody,
+  now: number,
+): boolean;
 
 /**
  * Rescan of one UTC day shard of the one lane.
@@ -1341,8 +1396,9 @@ export class AuthenticatedWriterChannel {
 
 /**
  * Signature over row.entryId by the writer's enrolled SEA pub.
- * Checked at append. Not stored on the content-addressed row.
- * Not a grant.
+ * Checked at append. writerPub is the claimed key. It is not
+ * the enrollment record. Not stored on the content-addressed
+ * row. Not a grant.
  */
 export type WriterAppendProof = {
   writer: AccessorId;
@@ -1351,9 +1407,31 @@ export type WriterAppendProof = {
 };
 
 /**
+ * One enrolled account SEA pub. The writer does not supply it.
+ */
+export type EnrolledSeaPub = {
+  account: AccessorId;
+  pub: string;
+};
+
+/**
+ * Verifier-held enrollment for append checks. The writer does
+ * not supply it. pub is the enrolled SEA pub for that account.
+ * Not a field of the stored row. Not a grant.
+ */
+export type VerifierEnrollmentState = {
+  accounts: readonly EnrolledSeaPub[];
+};
+
+/**
  * How filterInboxAppend learns the writer. A bare accessor
  * is not a member of this union. channel or signature is
- * checked before knownSenders, the allowlist, and quotas.
+ * checked against VerifierEnrollmentState before knownSenders,
+ * the allowlist, and quotas. The claimed writerPub is not
+ * that enrollment record.
+ * The relay that runs this check learns the writer id for
+ * that entryId. The stored public row still has no writer
+ * pub. A peer that only replicates the row does not.
  */
 export type WriterAppendAuth =
   | { kind: "channel"; channel: AuthenticatedWriterChannel }
@@ -1398,11 +1476,15 @@ export type InboxWriteDecision = {
  * public-filtered is the default: any writer may append.
  * state is the verifier's challenges, issuers, replay set,
  * known senders, per-sender quotas, and the one lane capacity.
- * writerAuth is a transport channel or a signature over
- * row.entryId. The writer id is taken only after that check
- * matches the enrolled pub. A bare accessor is writer-auth
- * and does not read knownSenders or quotas. The stored row
- * still has no writer pub.
+ * enrollment is the verifier's account-to-pub map. The writer
+ * does not pass it. writerAuth is a transport channel or a
+ * signature over row.entryId. The claimed writerPub must
+ * equal the enrolled pub for that writer. A missing account
+ * or a different pub is writer-auth and does not read
+ * knownSenders, the allowlist, or quotas. A bare accessor is
+ * the same failure. The stored row still has no writer pub.
+ * The relay that accepts the append learns that writer id.
+ * A later replicating peer does not learn it from the row.
  * The writer does not pass the counters.
  * A matching challenge nonce is spent alone. Other outstanding
  * challenges stay.
@@ -1427,6 +1509,7 @@ export function filterInboxAppend(
   row: BlindedGrantRow,
   state: VerifierAdmissionState,
   now: number,
+  enrollment: VerifierEnrollmentState,
   writerAuth: WriterAppendAuth,
   admission?: InboxAdmission,
 ): InboxAppendResult;
@@ -1607,6 +1690,8 @@ export type EncryptedDiscoveryVector =
   | "grant-revision-stale"
   | "grant-item-digest"
   | "writer-auth-required"
+  | "writer-enrollment-pub"
+  | "public-append-relay-learns-writer"
   | "inbox-concurrent-challenges"
   | "presenter-brand-unforgeable"
   | "revoke-no-old-key-writes"
@@ -1621,6 +1706,10 @@ export type EncryptedDiscoveryVector =
   | "epoch-rebuild-descendants"
   | "epoch-finalization-sig"
   | "epoch-expire-before-settle"
+  | "epoch-settle-needs-snapshot"
+  | "epoch-settled-read"
+  | "epoch-stale-membership"
+  | "epoch-manifest-sig"
   | "inbox-envelope-body"
   | "item-auth-canonical"
   | "status-policy-max-age"
@@ -1640,6 +1729,7 @@ export type EncryptedDiscoveryVector =
   | "zookie-object-snapshot"
   | "intro-epub-required"
   | "intro-binding-ok"
+  | "intro-binding-canonical"
   | "intro-binding-swap-epub"
   | "intro-self-signature-rejected"
   | "intro-not-a-grant"
