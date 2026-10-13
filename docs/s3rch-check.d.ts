@@ -186,10 +186,12 @@ export type SeeGraph = {
    */
   objectVersion(object: CheckObjectId): number | undefined;
   /**
-   * Snapshot hash of this verifier's merged graph.
-   * A zookie whose snapshotHash differs fails closed.
+   * Snapshot hash of this object on the verifier's merged graph.
+   * Same binding as a zookie: one object, one hash. Absent when
+   * the object is missing. A zookie is compared to
+   * snapshotHash(zookie.object), not to a graph-wide hash.
    */
-  snapshotHash(): string;
+  snapshotHash(object: CheckObjectId): string | undefined;
 };
 
 /** Writable dest ACL. Cancel and admit land here, not on a URL. */
@@ -493,8 +495,30 @@ export type InboxEntryBody = {
 
 /**
  * Spec signature. The reference crate does not run this.
- * Lowercase hex of the canonical InboxEntryBody encoding.
- * Does not mint.
+ * SHA-256 of the canonical bytes below, as lowercase hex
+ * (64 chars). Not a hex encoding of the raw body. Does not mint.
+ *
+ * Canonical bytes are the concatenation, for each field in
+ * order, of a uint32 little-endian length and then the UTF-8
+ * bytes of that field. An empty field is 4 zero bytes.
+ * Integers are ASCII decimal with no sign and no leading zeros.
+ * The value 0 is the single byte 0x30.
+ *
+ * Fields:
+ * 1. "s3rch-inbox-entry-v1"
+ * 2. laneId
+ * 3. grantCiphertext
+ * 4. commitment.hash
+ * 5. "1" when wrap is present, otherwise "0"
+ * 6. wrap.scope, or empty
+ * 7. decimal wrap.epoch, or empty
+ * 8. wrap.target, or empty
+ * 9. wrap.targetId, or empty
+ * 10. wrap.object, or empty
+ * 11. wrap.group, or empty
+ * 12. wrap.revisionId, or empty
+ * 13. wrap.wrappedKey, or empty
+ * Fields 6-13 are empty when wrap is absent.
  */
 export function inboxEntryId(body: InboxEntryBody): string;
 
@@ -574,15 +598,23 @@ export type PresenterBinding = {
   readerPub: string;
 };
 
+declare const presenterChannelBrand: unique symbol;
+
 /**
  * Opaque capability. Only the authenticated transport can
- * construct a value. A caller-built pair of public identifiers
- * is not this type and fails closed. Not a grant.
+ * construct a value. channelBrand is a private instance field
+ * holding presenterChannelBrand, so a structural object literal
+ * is not assignable. checkPresentedGrant also requires
+ * `channel instanceof AuthenticatedPresenterChannel` and
+ * hasTransportBrand(). hasTransportBrand is true only when
+ * channelBrand is that symbol. Not a grant.
  */
 export class AuthenticatedPresenterChannel {
   private constructor(accessor: AccessorId, readerPub: string);
   readonly accessor: AccessorId;
   readonly readerPub: string;
+  private readonly channelBrand: typeof presenterChannelBrand;
+  hasTransportBrand(): boolean;
 }
 
 /**
@@ -634,7 +666,7 @@ export type LightZookie = {
  * signedAt <= now + skewAllowanceMs, and
  * now - signedAt <= maxAgeMs. Otherwise fail closed.
  * The zookie is compared to SeeGraph.objectVersion and
- * SeeGraph.snapshotHash. An older object version, a newer
+ * SeeGraph.snapshotHash(object). An older object version, a newer
  * version this graph has not merged, or a different snapshot
  * hash fails closed.
  * Revocation is immediate only for a current verifier (merged
@@ -659,7 +691,8 @@ export type EpochStatusProof = {
  * A binding nonce must match one outstanding challenge,
  * now must be before expiresAt, and that nonce is then spent.
  * A channel argument must be an AuthenticatedPresenterChannel
- * the transport constructed. Omitted binding and omitted
+ * instance whose hasTransportBrand() is true. An object literal
+ * fails instanceof and fails the brand check. Omitted binding and omitted
  * channel fails closed. Omitted, stale, future-dated beyond
  * skew, or superseded status fails closed.
  * A proof alone grants nothing.
@@ -728,10 +761,11 @@ export type FirstContactIntro = {
  * A new key commitment is a new revision id.
  * deviceId is a local enrollment id. Not a Gun device
  * record, not a second SEA keypair, and not a grant.
- * Winner: lexicographically smallest revisionId among manifests
- * that verify under the account pub and name the same object,
- * next epoch, and previous epoch. Readers reject content under
- * a superseded revision or a superseded epoch.
+ * The minimum revisionId is the winner only inside an
+ * EpochFinalization candidate set. After that finalization
+ * is accepted, a later smaller revisionId does not replace it.
+ * Readers reject content under a superseded revision or a
+ * superseded epoch.
  * Every WrappedKey for that epoch carries the same revisionId
  * inside the authenticated payload.
  * Self-wrap in the author lane, or inside the encrypted item.
@@ -762,10 +796,46 @@ export type EpochManifestBody = {
 
 /**
  * Spec signature. The reference crate does not run this.
- * Lowercase hex of the canonical EpochManifestBody encoding.
- * Does not mint.
+ * SHA-256, lowercase hex, of the same length-prefixed UTF-8
+ * encoding as inboxEntryId. Does not mint.
+ *
+ * Fields:
+ * 1. "s3rch-epoch-revision-v1"
+ * 2. object
+ * 3. decimal epoch
+ * 4. decimal previousEpoch
+ * 5. deviceId
+ * 6. keyCommitment
  */
 export function epochRevisionId(body: EpochManifestBody): string;
+
+/**
+ * Owner-signed close of one epoch step. Readers accept current
+ * content for that step only after this verifies. The named
+ * revisionId is the lexicographically smallest id in
+ * candidateRevisionIds. A later manifest is not added.
+ * A second finalization for the same previousFinalizationId
+ * does not replace one already accepted.
+ * Not a grant. Not an owner pub on a visible grant row.
+ */
+export type EpochFinalization = {
+  object: CheckObjectId;
+  previousEpoch: number;
+  epoch: number;
+  revisionId: string;
+  /** Sorted ascending. The closed candidate set. */
+  candidateRevisionIds: readonly string[];
+  /** Accepted finalization of the previous epoch, or "". */
+  previousFinalizationId: string;
+  /**
+   * SHA-256 lowercase hex of the length-prefixed fields:
+   * "s3rch-epoch-finalization-v1", object, decimal epoch,
+   * decimal previousEpoch, revisionId, previousFinalizationId,
+   * then each candidateRevisionIds entry in sorted order.
+   */
+  finalizationId: string;
+  signature: string;
+};
 
 /**
  * Rescan of one UTC day shard of the one lane.
@@ -798,22 +868,61 @@ export type InboxWriteHook = {
 };
 
 /**
- * Admission beside an append. First contact under
- * public-filtered requires proof-of-work or a stamp bound to
- * the introduction entryId. senderRemaining is that sender's
- * own budget. readerRemaining is the reader's capacity.
- * Spending one does not spend the other.
+ * Verifier-issued proof-of-work challenge. The writer does not
+ * choose the nonce or the difficulty. Single use. Dead when
+ * now >= expiresAt.
+ */
+export type AdmissionChallenge = {
+  nonce: string;
+  /** Leading zero bits required in the SHA-256 work digest. */
+  difficulty: number;
+  expiresAt: number;
+};
+
+/**
+ * What the writer shows. Quotas, difficulty, and replay state
+ * are not fields here.
+ * proof-of-work: SHA-256 of the length-prefixed fields
+ * "s3rch-inbox-pow-v1", challenge.nonce, row.entryId, solution
+ * has at least challenge.difficulty leading zero bits.
+ * stamp: signature by a trusted issuer over the length-prefixed
+ * fields "s3rch-inbox-stamp-v1" and row.entryId.
  * A stamp is not a grant.
+ */
+export type AdmissionEvidence =
+  | { kind: "proof-of-work"; solution: string }
+  | { kind: "stamp"; issuer: string; signature: string };
+
+/**
+ * Verifier-held admission state. The writer does not supply it.
+ * senderRemaining and readerRemaining are this verifier's counters.
+ * spent holds challenge nonces and stamp signatures already used.
+ */
+export type VerifierAdmissionState = {
+  challenge?: AdmissionChallenge;
+  stampIssuers: readonly string[];
+  spent: readonly string[];
+  senderRemaining: number;
+  readerRemaining: number;
+};
+
+/**
+ * Admission beside an append. Evidence is checked against
+ * VerifierAdmissionState. A claimed quota on this object is
+ * not a field and is ignored if a caller adds one.
  */
 export type InboxAdmission = {
   firstContact: boolean;
-  stamp?: {
-    kind: "proof-of-work" | "stamp";
-    token: string;
-    boundEntryId: string;
-  };
-  senderRemaining: number;
-  readerRemaining: number;
+  evidence?: AdmissionEvidence;
+};
+
+/**
+ * filterInboxAppend result. state is the verifier's counters
+ * after the call, with a used nonce or stamp signature spent.
+ */
+export type InboxAppendResult = {
+  decision: InboxWriteDecision;
+  state: VerifierAdmissionState;
 };
 
 export type InboxWriteDecision = {
@@ -825,6 +934,7 @@ export type InboxWriteDecision = {
     | "unnamed-writer"
     | "stamp-required"
     | "stamp-mismatch"
+    | "replay"
     | "sender-quota"
     | "reader-capacity";
 };
@@ -832,21 +942,28 @@ export type InboxWriteDecision = {
 /**
  * Spec signature. The reference crate does not run this.
  * public-filtered is the default: any writer may append.
- * First contact then requires a stamp whose boundEntryId
- * equals row.entryId. Any other bound id is stamp-mismatch.
- * A sender over senderRemaining is sender-quota and does not
- * consume readerRemaining. The reader still drops oversized
- * rows and rows over reader capacity. named-writers refuses
- * anyone outside writers. Commitment mismatch is
- * checkPresentedGrant, not this hook. SociACL does not store
- * the filter. A passed hook is not a grant.
+ * state is the verifier's challenge, issuers, replay set, and
+ * quota counters. The writer does not pass those counters.
+ * First contact requires evidence that verifies against state
+ * and row.entryId. A proof-of-work solution for another entry,
+ * or a stamp signed over another entry, is stamp-mismatch.
+ * A nonce or stamp signature already in state.spent is replay.
+ * senderRemaining comes from state. At 0 the result is
+ * sender-quota and readerRemaining stays as it was.
+ * readerRemaining comes from state. At 0 the result is
+ * reader-capacity. named-writers refuses anyone outside
+ * writers. Commitment mismatch is checkPresentedGrant, not
+ * this hook. SociACL does not store the filter.
+ * A passed hook is not a grant.
  */
 export function filterInboxAppend(
   hook: InboxWriteHook,
   writer: AccessorId,
   row: BlindedGrantRow,
+  state: VerifierAdmissionState,
+  now: number,
   admission?: InboxAdmission,
-): InboxWriteDecision;
+): InboxAppendResult;
 
 /**
  * Direct membership. Hopcap 1. Jointly stated.
@@ -1004,6 +1121,12 @@ export type EncryptedDiscoveryVector =
   | "inbox-replace-rejected"
   | "inbox-wrap-swap"
   | "inbox-stamp-mismatch"
+  | "inbox-pow-verified"
+  | "inbox-fabricated-quota"
+  | "inbox-spent-challenge"
+  | "epoch-late-manifest"
+  | "id-sha256-canonical"
+  | "zookie-object-snapshot"
   | "intro-epub-required"
   | "intro-binding-ok"
   | "intro-binding-swap-epub"
