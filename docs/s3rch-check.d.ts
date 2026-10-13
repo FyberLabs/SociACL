@@ -493,6 +493,10 @@ export type ItemContentAuth = {
  * the same object and accessor, the greatest grantRevision
  * wins. A stated 1 payload does not undo a stated 0 payload
  * at a lower or equal grantRevision.
+ * itemCiphertextDigest is the SHA-256 lowercase hex of the
+ * item ciphertext when the grant names an encrypted item,
+ * and "" otherwise. The owner signature covers it. The
+ * destination compares it to the fetched item.
  * Not a merge field on the lane entry. Not a grant by itself.
  */
 export type SignedGrantPayload = {
@@ -504,6 +508,7 @@ export type SignedGrantPayload = {
   epoch: number;
   owner: AccessorId;
   grantRevision: number;
+  itemCiphertextDigest: string;
 };
 
 /**
@@ -631,21 +636,33 @@ export type PresenterBinding = {
 declare const presenterChannelBrand: unique symbol;
 
 /**
+ * Instances the transport constructor recorded. Not exported.
+ * A copy of the prototype is not in this set.
+ */
+declare const presenterChannelInstances: WeakSet<AuthenticatedPresenterChannel>;
+
+/**
  * Opaque capability. Only the authenticated transport can
- * construct a value. channelBrand is a private instance field
- * holding presenterChannelBrand, so a structural object literal
- * is not assignable. checkPresentedGrant also requires
+ * construct a value. The brand is the ECMAScript private field
+ * #channelBrand, not a TypeScript private keyword and not a
+ * reflectable property. presenterChannelInstances records the
+ * instance at construction. The constructor freezes the object.
+ * accessor and readerPub stay the values from that constructor.
+ * checkPresentedGrant accepts a channel only when
  * `channel instanceof AuthenticatedPresenterChannel`,
- * hasTransportBrand(), accessor equal to the grant accessor,
- * and readerPub equal to the enrolled SEA pub for that accessor.
- * hasTransportBrand is true only when channelBrand is that symbol.
- * A channel minted for another principal fails closed. Not a grant.
+ * hasTransportBrand() is true, the instance is in
+ * presenterChannelInstances, accessor equals the grant accessor,
+ * and readerPub equals the enrolled SEA pub for that accessor.
+ * hasTransportBrand is true only for that private field and set.
+ * Copying a brand value onto a new object fails the private
+ * field and the set. A channel minted for another principal
+ * fails closed. Not a grant.
  */
 export class AuthenticatedPresenterChannel {
   private constructor(accessor: AccessorId, readerPub: string);
   readonly accessor: AccessorId;
   readonly readerPub: string;
-  private readonly channelBrand: typeof presenterChannelBrand;
+  readonly #channelBrand: typeof presenterChannelBrand;
   hasTransportBrand(): boolean;
 }
 
@@ -670,11 +687,32 @@ export type VerifierChallengeState = {
 };
 
 /**
- * Result of checkPresentedGrant, including the spent challenge.
+ * Highest signed grant revision this verifier has accepted
+ * for one object and accessor. The presenter does not supply it.
+ */
+export type VerifierGrantRevision = {
+  object: CheckObjectId;
+  accessor: AccessorId;
+  grantRevision: number;
+  stated: 0 | 1;
+};
+
+/**
+ * Verifier-held grant order. checkPresentedGrant compares the
+ * presentation to current and returns the updated record.
+ */
+export type VerifierGrantRevisionState = {
+  current: readonly VerifierGrantRevision[];
+};
+
+/**
+ * Result of checkPresentedGrant, including the spent challenge
+ * and the updated grant-revision record.
  */
 export type PresentedGrantDecision = {
   result: CheckResult;
   challenges: VerifierChallengeState;
+  revisions: VerifierGrantRevisionState;
 };
 
 /**
@@ -725,11 +763,19 @@ export type EpochStatusProof = {
  * A channel argument must be an AuthenticatedPresenterChannel
  * instance whose hasTransportBrand() is true, whose accessor
  * equals the accessor argument, and whose readerPub equals the
- * enrolled SEA pub for that accessor. An object literal fails
- * instanceof and fails the brand check. A branded channel for
- * another principal fails closed. Omitted binding and omitted
+ * enrolled SEA pub for that accessor. The brand is an
+ * ECMAScript private field plus the module WeakSet. An object
+ * literal fails instanceof and fails the brand check. Copying
+ * the brand onto another object fails closed. A branded channel
+ * for another principal fails closed. Omitted binding and omitted
  * channel fails closed. Omitted, stale, future-dated beyond
  * skew, or superseded status fails closed.
+ * revisions is the verifier's highest accepted grantRevision
+ * for this object and accessor. A presented revision lower
+ * than that record fails closed. An equal revision whose
+ * recorded stated is 0 does not accept stated 1. A higher
+ * signed revision replaces the record in the returned state.
+ * The holder does not choose that record.
  * A proof alone grants nothing.
  * A hop, a hint, or a wrap never mints.
  */
@@ -741,6 +787,7 @@ export function checkPresentedGrant(
   now: number,
   skewAllowanceMs: number,
   challenges: VerifierChallengeState,
+  revisions: VerifierGrantRevisionState,
   hint?: HandoffHint,
   hop?: HopFactor,
   binding?: PresenterBinding,
@@ -1039,16 +1086,58 @@ export type SenderQuota = {
  * senderQuotas has one counter per sender. A missing sender
  * has remaining 0. laneRemaining is the one shared capacity
  * for this lane, not a copy per sender.
- * spent holds challenge nonces and stamp signatures already used.
+ * challenges holds every outstanding admission nonce. Issuing
+ * one does not drop another. spent holds challenge nonces and
+ * stamp signatures already used. Spending one nonce leaves
+ * the other challenges in place.
  */
 export type VerifierAdmissionState = {
-  challenge?: AdmissionChallenge;
+  challenges: readonly AdmissionChallenge[];
   stampIssuers: readonly string[];
   spent: readonly string[];
   knownSenders: readonly AccessorId[];
   senderQuotas: readonly SenderQuota[];
   laneRemaining: number;
 };
+
+declare const writerChannelBrand: unique symbol;
+
+/** Instances the transport constructor recorded. Not exported. */
+declare const writerChannelInstances: WeakSet<AuthenticatedWriterChannel>;
+
+/**
+ * Transport identity for an append. Same runtime brand as
+ * AuthenticatedPresenterChannel: ECMAScript #channelBrand,
+ * module WeakSet, frozen writer and writerPub. Not a grant.
+ * Not a writer pub on the stored row.
+ */
+export class AuthenticatedWriterChannel {
+  private constructor(writer: AccessorId, writerPub: string);
+  readonly writer: AccessorId;
+  readonly writerPub: string;
+  readonly #channelBrand: typeof writerChannelBrand;
+  hasTransportBrand(): boolean;
+}
+
+/**
+ * Signature over row.entryId by the writer's enrolled SEA pub.
+ * Checked at append. Not stored on the content-addressed row.
+ * Not a grant.
+ */
+export type WriterAppendProof = {
+  writer: AccessorId;
+  writerPub: string;
+  signature: string;
+};
+
+/**
+ * How filterInboxAppend learns the writer. A bare accessor
+ * is not a member of this union. channel or signature is
+ * checked before knownSenders, the allowlist, and quotas.
+ */
+export type WriterAppendAuth =
+  | { kind: "channel"; channel: AuthenticatedWriterChannel }
+  | { kind: "signature"; proof: WriterAppendProof };
 
 /**
  * Admission beside an append. Evidence is checked against
@@ -1076,6 +1165,7 @@ export type InboxWriteDecision = {
     | "ok"
     | "spam"
     | "unnamed-writer"
+    | "writer-auth"
     | "stamp-required"
     | "stamp-mismatch"
     | "replay"
@@ -1086,9 +1176,16 @@ export type InboxWriteDecision = {
 /**
  * Spec signature. The reference crate does not run this.
  * public-filtered is the default: any writer may append.
- * state is the verifier's challenge, issuers, replay set,
+ * state is the verifier's challenges, issuers, replay set,
  * known senders, per-sender quotas, and the one lane capacity.
- * The writer does not pass those.
+ * writerAuth is a transport channel or a signature over
+ * row.entryId. The writer id is taken only after that check
+ * matches the enrolled pub. A bare accessor is writer-auth
+ * and does not read knownSenders or quotas. The stored row
+ * still has no writer pub.
+ * The writer does not pass the counters.
+ * A matching challenge nonce is spent alone. Other outstanding
+ * challenges stay.
  * First contact is writer absent from state.knownSenders.
  * That writer requires evidence that verifies against state
  * and row.entryId. A proof-of-work solution for another entry,
@@ -1107,10 +1204,10 @@ export type InboxWriteDecision = {
  */
 export function filterInboxAppend(
   hook: InboxWriteHook,
-  writer: AccessorId,
   row: BlindedGrantRow,
   state: VerifierAdmissionState,
   now: number,
+  writerAuth: WriterAppendAuth,
   admission?: InboxAdmission,
 ): InboxAppendResult;
 
@@ -1283,6 +1380,12 @@ export type EncryptedDiscoveryVector =
   | "inbox-sender-quota-map"
   | "inbox-lane-capacity"
   | "grant-revision-order"
+  | "grant-revision-stale"
+  | "grant-item-digest"
+  | "writer-auth-required"
+  | "inbox-concurrent-challenges"
+  | "presenter-brand-unforgeable"
+  | "revoke-no-old-key-writes"
   | "epoch-late-manifest"
   | "epoch-arrival-order"
   | "epoch-settle-window"

@@ -75,7 +75,7 @@ The owner's SEA pub is not a field on that row. A signature over the grant, made
 
 The visible row holds:
 
-- ciphertext of the canonical grant (object, accessor, `from`, `until`, `stated`, epoch, the owner's id, and monotonic `grantRevision`). When the grant names an encrypted item, those bytes include the item ciphertext digest, so the commitment covers that digest. The signature covers `grantRevision`
+- ciphertext of the canonical grant (object, accessor, `from`, `until`, `stated`, epoch, the owner's id, monotonic `grantRevision`, and `itemCiphertextDigest`). When the grant names an encrypted item, `itemCiphertextDigest` is the SHA-256 of that item ciphertext, so the commitment and the owner signature cover it. The destination compares it to the fetched item. When the grant names no encrypted item, the field is empty
 - a `GrantCommitment`: the hash of those canonical bytes
 - the wrapped DEK, when this row carries a key
 - `entryId`: the hash of the canonical entry (`laneId`, ciphertext, commitment, wrap)
@@ -115,7 +115,9 @@ A `GrantPresentation` shows what was committed and which owner signed the grant.
 
 The destination issues a nonce and keeps it in `VerifierChallengeState`. That state is the verifier's, not a field the presenter supplies. The presenter signs the outstanding nonce with the reader's SEA key. The signed bytes are the nonce and the grant commitment hash. `checkPresentedGrant` accepts the signature only when the nonce is still outstanding, `now` is before `expiresAt`, and the signature matches the enrolled SEA `pub` for the accessor named in the opened grant. The call then marks that nonce spent. A second presentation of the same nonce fails closed. A bad signature, a different pub, an unknown nonce, or an expired challenge fails closed.
 
-`AuthenticatedPresenterChannel` is the other check. It is a class with a private `channelBrand` field set to a module-private symbol, and `hasTransportBrand()` reports that field. `checkPresentedGrant` accepts a channel only when `channel instanceof AuthenticatedPresenterChannel`, `hasTransportBrand()` is true, `channel.accessor` is the accessor named by the grant, and `channel.readerPub` is the enrolled SEA pub for that accessor. An object literal fails both the type checker and that runtime check. A transport-minted channel for a different principal fails closed. No nonce signature and no transport-minted channel fails closed.
+`AuthenticatedPresenterChannel` is the other check. Its brand is an ECMAScript private field `#channelBrand` and a module-private `WeakSet` filled by the constructor. The constructor freezes `accessor` and `readerPub`. `checkPresentedGrant` accepts a channel only when `channel instanceof AuthenticatedPresenterChannel`, `hasTransportBrand()` is true, the instance is in that set, `channel.accessor` is the accessor named by the grant, and `channel.readerPub` is the enrolled SEA pub for that accessor. An object literal fails the type checker and the runtime check. Copying the brand onto another object fails, because the private field is not a reflectable property and the copy is not in the set. A transport-minted channel for a different principal fails closed. No nonce signature and no transport-minted channel fails closed.
+
+`checkPresentedGrant` also takes `VerifierGrantRevisionState`, the highest signed `grantRevision` this verifier has accepted for that object and accessor. The presenter does not supply it. A presented revision lower than that record fails closed. An equal revision does not turn a recorded `stated: 0` back into `stated: 1`. A higher signed revision replaces the record. A holder who still has an older live row cannot pass it off as current.
 
 The binding is not a grant. Check still runs after it. A hop, a hint, or a wrap never mints. A valid binding does not set `allowed`.
 
@@ -169,7 +171,7 @@ The window never delays privilege-down. A `stated: 0` grant, a higher `grantRevi
 
 A member offline longer than the window still holds the last key they settled. A cancel they missed applies as soon as they see the higher `grantRevision`. It does not wait out the window. If they are still a member, their window starts when they first see the current winner. They keep the last settled key until that local window elapses, then switch. They do not skip the wait because other replicas already switched. A smaller `finalizationId` during their wait restarts it. If they were removed while offline, they receive no wrap for the pending candidate or for the key it settles to.
 
-Every `WrappedKey` carries its `revisionId` inside the authenticated wrap. A cleartext epoch number is not enough to tell two keys for the same epoch apart. While a candidate is pending, the current key is the last settled revision, not the pending winner. After the window, readers switch and reject further writes bound to a revision the recomputed winner has superseded, including when the epoch number matches. A device that lost adopts that settled result and does not keep publishing under the superseded revision. An offline device can still become the winner by publishing a smaller `finalizationId` that other replicas then see, and those replicas wait out the signed window before they switch.
+Every `WrappedKey` carries its `revisionId` inside the authenticated wrap. A cleartext epoch number is not enough to tell two keys for the same epoch apart. While a candidate is pending, readers still read ciphertext already written under the last settled revision. New writes use the candidate key, or they wait in a buffer. After the window, readers switch and reject further writes bound to a revision the recomputed winner has superseded, including when the epoch number matches. A device that lost adopts that settled result and does not keep publishing under the superseded revision. An offline device can still become the winner by publishing a smaller `finalizationId` that other replicas then see, and those replicas wait out the signed window before they switch.
 
 How long an epoch lasts is still open. See [Open choices](#open-choices).
 
@@ -190,19 +192,19 @@ The reader chooses who may append to their one lane. The hook is `filterInboxApp
 | `public-filtered` (default) | Any principal | Proof-of-work against a verifier-issued nonce and difficulty, or a stamp signed by an issuer the verifier trusts, both bound to the row's `entryId`. First contact means the writer is absent from the verifier's `knownSenders`. A caller flag is not that record. A self-signature is not enough | `senderQuotas` is one counter per `AccessorId`, and `laneRemaining` is one shared capacity for the lane. The writer does not claim either. A sender at 0 does not change any other sender and does not change `laneRemaining`. Spending a sender's quota does not give that sender a private copy of the lane capacity |
 | `named-writers` | Only principals listed on the hook | Unlisted first contact is refused before the row is a candidate grant | The same per-sender map and the same one lane capacity |
 
-The user sets the policy. `filterInboxAppend` takes the row and the verifier's `VerifierAdmissionState`: the outstanding challenge, the trusted stamp issuers, the spent set, `knownSenders`, `senderQuotas`, and `laneRemaining`. A writer-supplied token string, a self-chosen difficulty, a claimed remaining quota, or a first-contact flag is not evidence. A writer missing from `knownSenders` is first contact and needs a verified stamp or proof-of-work. Proof-of-work is SHA-256 over the verifier's nonce, the row's `entryId`, and the solution, with at least the issued number of leading zero bits. A stamp is a signature by a trusted issuer over that same `entryId`. The nonce or the stamp signature is spent on use. A repeat fails closed. The counter used is the `senderQuotas` entry for that writer. A missing entry has remaining 0. At 0 the result is `sender-quota`, and `laneRemaining` stays. `laneRemaining` at 0 is `reader-capacity`, and that sender's counter stays. On accept, that sender's remaining and `laneRemaining` each drop by one, and a new sender joins `knownSenders`. A relay may check that evidence, or that the body hashes to the entry key, without opening the grant. SociACL does not run the filter and does not store a spam score. Oversized rows and rows over the lane capacity are still local drops. A commitment mismatch is `checkPresentedGrant`, not a score. A row the hook accepts is still not a grant. A hop, a hint, a wrap, or a stamp never mints. Being allowed to append does not confer `see`.
+The user sets the policy. `filterInboxAppend` takes the row, the verifier's `VerifierAdmissionState`, and `WriterAppendAuth`. The writer id is not a bare argument. It is an `AuthenticatedWriterChannel`, with the same private-field and `WeakSet` brand as the presenter channel, or a signature over `row.entryId` that verifies under the enrolled SEA pub for the named writer. That check runs before `knownSenders`, the allowlist, and the quotas. A failed check is `writer-auth` and does not spend another sender's counter. The stored public row still has no writer pub. The state holds the outstanding challenges (one entry per nonce), the trusted stamp issuers, the spent set, `knownSenders`, `senderQuotas`, and `laneRemaining`. Issuing a second challenge does not drop the first. Spending one nonce leaves the others outstanding. A writer-supplied token string, a self-chosen difficulty, a claimed remaining quota, or a first-contact flag is not evidence. A writer missing from `knownSenders` is first contact and needs a verified stamp or proof-of-work. Proof-of-work is SHA-256 over the verifier's nonce, the row's `entryId`, and the solution, with at least the issued number of leading zero bits. A stamp is a signature by a trusted issuer over that same `entryId`. The nonce or the stamp signature is spent on use. A repeat fails closed. The counter used is the `senderQuotas` entry for that authenticated writer. A missing entry has remaining 0. At 0 the result is `sender-quota`, and `laneRemaining` stays. `laneRemaining` at 0 is `reader-capacity`, and that sender's counter stays. On accept, that sender's remaining and `laneRemaining` each drop by one, and a new sender joins `knownSenders`. A relay may check that evidence, or that the body hashes to the entry key, without opening the grant. SociACL does not run the filter and does not store a spam score. Oversized rows and rows over the lane capacity are still local drops. A commitment mismatch is `checkPresentedGrant`, not a score. A row the hook accepts is still not a grant. A hop, a hint, a wrap, or a stamp never mints. Being allowed to append does not confer `see`.
 
 ## Rotation on revoke
 
 Revoke of an encrypted object always starts with privilege-down, then a new epoch. The owner chooses what happens to ciphertext that already exists. `RevokeCipherMode` records the choice. `rotateOnRevoke` names the operation. The reference crate does not run it.
 
 1. **Privilege-down, immediate for a current verifier.** `stated: 0` on the grant (or on the direct membership) and a `hamState` bump, same as `cancelSee`. On a private row the same deny is a new append whose signed `grantRevision` is greater and whose `stated` is 0. The settle window does not delay this step. The next Check after that verifier has merged the cancel denies. Do not cache an allow across that merge. Freshness for every other verifier is [Revocation freshness](#revocation-freshness).
-2. **New epoch.** A new DEK, or a new group epoch key, wrapped only to the remaining readers. The revoked reader is left out of every candidate's wraps, including a candidate whose settle window has not elapsed. Remaining readers keep the last settled key while the candidate is pending and switch once the signed window passes. The epoch is the winning [epoch manifest](#epoch-manifest). A second key under the same epoch number does not become current.
+2. **New epoch.** A new DEK, or a new group epoch key, wrapped only to the remaining readers. The revoked reader is left out of every candidate's wraps, including a candidate whose settle window has not elapsed. Remaining readers still read ciphertext already written under the last settled key while the candidate is pending, and they switch reads once the signed window passes. They do not encrypt new writes under that last settled key after the cancel. New writes are encrypted under the candidate key, which the revoked reader cannot unwrap, or they are buffered until that key is available. The epoch is the winning [epoch manifest](#epoch-manifest). A second key under the same epoch number does not become current.
 3. **Ciphertext choice**, one of:
 
 | Mode | What the owner does | What remaining readers do during the window | What a revoked reader can still read |
 | --- | --- | --- | --- |
-| `forward-only` | Leaves existing ciphertext under the last settled DEK. Only later writes use the new epoch, and those writes wait until the candidate settles | Keep reading and writing with the last settled key. Switch new writes to the candidate after the window | Old ciphertext, if they already unwrapped the old DEK or saved the old bytes. Not the candidate epoch, and not the key it settles to |
+| `forward-only` | Leaves ciphertext already written under the last settled DEK. New writes use the candidate key, or wait in a buffer until that key is available | Keep reading old ciphertext with the last settled key. Do not append new ciphertext under that key. Read the new writes with the candidate wrap, and treat that key as current after the window | Old ciphertext, if they already unwrapped the old DEK or saved the old bytes. Not new writes, and not the candidate key |
 | `re-encrypt` | Rewrites existing ciphertext under the candidate DEK and bumps merge state so the new ciphertext wins | Keep the copy they already unwrapped under the last settled key until the window passes, then switch to the rewritten ciphertext. A peer that only has the rewritten soul opens it after they hold that settled key | A local copy, or plaintext they already unwrapped. The replaced soul no longer serves the old ciphertext to peers that merged the new record. They receive no wrap for the candidate |
 
 A wrap for an older epoch does not mint a grant. Check denies the revoked accessor after step 1 even when they still hold the old DEK. The settle window does not keep that grant live.
@@ -272,18 +274,18 @@ Copy or re-type [s3rch-check.d.ts](s3rch-check.d.ts). Do not `npm install sociac
 | `WrappedKey` | DEK or group key wrap. `revisionId` sits inside the authenticated payload |
 | `GrantCommitment` | Hash of the canonical grant. Covers the item ciphertext digest when the grant names an encrypted item. Not an owner SEA pub |
 | `ItemContentAuth` | Owner signature over item id, epoch, version, plaintext digest, and `revisionId`. Signed before encryption. Inside the encrypted item |
-| `SignedGrantPayload` | Grant bytes inside the ciphertext, including monotonic `grantRevision`. The greatest revision wins. A lower live row does not undo a cancel |
+| `SignedGrantPayload` | Grant bytes inside the ciphertext, including monotonic `grantRevision` and `itemCiphertextDigest`. The greatest revision wins. The verifier holds that high-water mark. A lower live row does not undo a cancel |
 | `InboxEnvelope` | Optional writer-signed outer envelope for `named-writers`. Relays verify it without opening the grant |
 | `GrantPresentation` | What the holder shows the destination. Not written to Gun. A proof alone grants nothing |
 | `PresenterBinding` / `VerifierChallengeState` | Verifier-issued nonce, single use, with expiry. The presenter does not supply the challenge store |
 | `BlindedGrantRow` / `inboxEntryId` | One append-only lane entry. `entryId` hashes lane, ciphertext, commitment, and wrap. No owner field. No `hamState` on the entry |
-| `AuthenticatedPresenterChannel` | Transport capability with a private brand. `accessor` and `readerPub` must match the grant's accessor and enrolled pub |
-| `checkPresentedGrant` | Commitment, owner signature, presenter binding, fresh status proof against `SeeGraph`, then Check |
+| `AuthenticatedPresenterChannel` | Transport capability. Brand is an ECMAScript private field and a module `WeakSet`. `accessor` and `readerPub` are frozen and must match the grant |
+| `checkPresentedGrant` | Commitment, owner signature, presenter binding, verifier-held `grantRevision`, fresh status proof against `SeeGraph`, then Check |
 | `RecipientInbox` | The one lane for that account. Not a shared bucket |
 | `DailyShardScan` | Whole-shard rescan with dedup. Not a per-device cursor. Not a second lane |
 | `AuthorFastUnwrap` | Local author DEK. Not a grant row |
 | `FirstContactIntro` / `AccountKeyBinding` | Sender `pub` and `epub`, bound by enrollment or by the account identity. Not a self-signature |
-| `InboxWriteHook` / `filterInboxAppend` | Who may append. Verifier holds known senders, one quota per sender, and one lane capacity. Default `public-filtered` |
+| `WriterAppendAuth` / `filterInboxAppend` | Who may append. Writer id comes from a branded channel or a signature, before quotas. Verifier holds one challenge per nonce, known senders, one quota per sender, and one lane capacity. Default `public-filtered` |
 | `EpochManifest` / `epochRevisionId` | SHA-256 of the length-prefixed manifest body, including the owner-signed `settleWindowMs`. The current revision is the recomputed epoch winner |
 | `GroupEpochConfig` | Owner-signed settle window for one group or circle. A group epoch manifest repeats it. Minimum 1 hour, maximum 72 hours, default 24 hours |
 | `EpochFinalization` / `EpochReplicaView` | Candidates for one step. Smallest `finalizationId` seen wins. Readers keep the last settled key until the signed window elapses, then switch. The window does not delay privilege-down |
@@ -359,11 +361,23 @@ Stubs only. The names are `EncryptedDiscoveryVector` in [s3rch-check.d.ts](s3rch
 
 `grant-revision-order`. A signed payload with `stated: 0` and `grantRevision` 2 is already open. A signed payload with `stated: 1` and `grantRevision` 1 arrives later. Both signatures match. The cancel stands.
 
+`grant-revision-stale`. The verifier's record for this object and accessor is `grantRevision` 2 and `stated: 0`. The holder presents an older live row at revision 1 with a valid signature and a fresh proof. `checkPresentedGrant` fails closed. The holder does not supply the record.
+
+`grant-item-digest`. The grant names an encrypted item. `SignedGrantPayload.itemCiphertextDigest` is the SHA-256 of a different ciphertext than the fetched item. The commitment check fails closed.
+
+`writer-auth-required`. The caller names an accessor that is already in `knownSenders` and passes no channel and no signature. The append is `writer-auth`. That sender's quota and `laneRemaining` stay as they were. The stored row still has no writer pub.
+
+`inbox-concurrent-challenges`. Two first-contact writers each hold a distinct outstanding nonce. One append spends its nonce. The other nonce stays outstanding and still verifies.
+
+`presenter-brand-unforgeable`. A caller copies the brand off a genuine channel, builds a new object with the victim's accessor and pub, and offers it. The private field is absent and the object is not in the module `WeakSet`. The check fails closed.
+
+`revoke-no-old-key-writes`. Privilege-down has landed and the candidate window is still running. A new write encrypted under the last settled key is not current. A new write encrypted under the candidate key is unreadable to the revoked reader, who has no wrap for it.
+
 `epoch-late-manifest`. A replica's winner is one finalization. A later finalization with a smaller `finalizationId` arrives. The replica adopts it and keeps the last settled key. The step switches only after the new winner's signed `settleWindowMs` has passed.
 
 `epoch-arrival-order`. Two replicas receive the same two finalizations in opposite orders. Both compute the same winner, the smaller `finalizationId`.
 
-`epoch-settle-window`. The smallest finalization has been the winner for less than the owner-signed `settleWindowMs`. Readers still use the last settled key. New writes under the pending revision are not current yet.
+`epoch-settle-window`. The smallest finalization has been the winner for less than the owner-signed `settleWindowMs`. Readers still read with the last settled key. New writes are encrypted under the candidate key, not under that settled key.
 
 `epoch-settle-bounds`. A manifest signs a window below 3600000 or above 259200000. That manifest is ignored. A manifest that signs 86400000 is the default and stays in range.
 
@@ -433,6 +447,9 @@ Not decided:
 - Accept a settle window below 1 hour or above 72 hours
 - Let one sender's quota counter stand in for every sender, or give each sender a private copy of the lane capacity
 - Let a live private grant with a lower or equal signed `grantRevision` undo a cancel
+- Accept a presentation whose `grantRevision` is below the verifier's record
+- Take a bare accessor as the writer for quotas or the allowlist
+- Encrypt a post-revoke write under the last settled key
 - Allow a reader to scan a shared bucket
 - Claim private information retrieval or a zero-knowledge proof (future work only)
 - Add an index, or a group search-token scheme, to SociACL
