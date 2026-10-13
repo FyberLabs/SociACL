@@ -179,6 +179,17 @@ export type SeeGraph = {
   hasObject(object: CheckObjectId): boolean;
   ownerOf(object: CheckObjectId): AccessorId | undefined;
   seeGrants(object: CheckObjectId): readonly IdentitySeeGrant[];
+  /**
+   * Object version this verifier has merged. Absent when the
+   * object is missing. Encrypted re-check compares a zookie to
+   * this value. A presenter-supplied version is not a substitute.
+   */
+  objectVersion(object: CheckObjectId): number | undefined;
+  /**
+   * Snapshot hash of this verifier's merged graph.
+   * A zookie whose snapshotHash differs fails closed.
+   */
+  snapshotHash(): string;
 };
 
 /** Writable dest ACL. Cancel and admit land here, not on a URL. */
@@ -402,6 +413,10 @@ export type LightPredicate =
  * scope item-dek + reader-epub: per-item DEK to one reader.
  * scope group-key + reader-epub: group epoch key to one member.
  * scope item-dek + group-epoch: item DEK to the group's epoch key.
+ * revisionId is sealed inside the authenticated payload.
+ * A cleartext label a peer can swap is not this field.
+ * Readers reject a wrap whose revisionId is not the winning
+ * EpochManifest revision. Not a grant.
  */
 export type WrappedKey = {
   scope: "item-dek" | "group-key";
@@ -411,6 +426,8 @@ export type WrappedKey = {
   targetId: string;
   object?: CheckObjectId;
   group?: string;
+  /** EpochManifest.revisionId covered by the wrap authentication. */
+  revisionId: string;
   wrappedKey: string;
 };
 
@@ -445,12 +462,12 @@ export type GrantCommitment = {
 
 /**
  * Owner signature over item authenticity.
- * Signed bytes: item id, epoch, version, ciphertext digest.
+ * Signed bytes, in order: item id, epoch, version, ciphertext
+ * digest, revisionId. revisionId is part of that tuple.
  * The signature sits inside the encrypted item. The visible
  * grant row does not carry it and does not carry the owner pub.
- * revisionId binds the body to the winning EpochManifest.
  * Not a grant. A reader who holds the DEK cannot produce this
- * signature.
+ * signature, and cannot relabel revisionId under it.
  */
 export type ItemContentAuth = {
   object: CheckObjectId;
@@ -462,18 +479,38 @@ export type ItemContentAuth = {
 };
 
 /**
+ * Canonical bytes for an inbox entry id.
+ * Order: laneId, grantCiphertext, commitment hash, wrap.
+ * entryId is the hash of that encoding. A change to the
+ * ciphertext, the commitment, the wrap, or the lane is a new id.
+ */
+export type InboxEntryBody = {
+  laneId: string;
+  grantCiphertext: string;
+  commitment: GrantCommitment;
+  wrap?: WrappedKey;
+};
+
+/**
+ * Spec signature. The reference crate does not run this.
+ * Lowercase hex of the canonical InboxEntryBody encoding.
+ * Does not mint.
+ */
+export function inboxEntryId(body: InboxEntryBody): string;
+
+/**
  * Visible lane entry. Replaces plaintext enumeration of
  * grantSoul for private items. No owner field.
- * Append-only and content-addressed: entryId is the hash of
- * grantCiphertext. A different ciphertext is a different key.
- * A body that does not hash to entryId is rejected. No hamState
- * contest and no last-write-wins replacement.
+ * Append-only and content-addressed: entryId is inboxEntryId
+ * of the lane, ciphertext, commitment, and wrap. A body that
+ * does not hash to entryId is rejected. No hamState contest
+ * and no in-place replacement.
  * A wrap on the row is not a grant.
  * laneId is the reader's one lane, not a shared bucket.
  */
 export type BlindedGrantRow = {
   laneId: string;
-  /** Hash of grantCiphertext. Not a mutable slot. */
+  /** Hash of the canonical InboxEntryBody. Not a mutable slot. */
   entryId: string;
   /** Ciphertext of the canonical grant, including the owner id and the signature. */
   grantCiphertext: string;
@@ -538,12 +575,42 @@ export type PresenterBinding = {
 };
 
 /**
- * Channel that already proves the presenter holds the reader's
- * SEA key. Equivalent to PresenterBinding. Not a grant.
+ * Opaque capability. Only the authenticated transport can
+ * construct a value. A caller-built pair of public identifiers
+ * is not this type and fails closed. Not a grant.
  */
-export type AuthenticatedPresenterChannel = {
-  accessor: AccessorId;
-  readerPub: string;
+export class AuthenticatedPresenterChannel {
+  private constructor(accessor: AccessorId, readerPub: string);
+  readonly accessor: AccessorId;
+  readonly readerPub: string;
+}
+
+/**
+ * Outstanding nonce this verifier issued for one presentation.
+ * The presenter does not supply this object.
+ * Single use. Dead when now >= expiresAt.
+ */
+export type PresenterChallenge = {
+  nonce: string;
+  expiresAt: number;
+};
+
+/**
+ * Verifier-held challenge state. checkPresentedGrant consumes
+ * the matching nonce: it leaves outstanding and is recorded spent.
+ * A second use of that nonce fails closed.
+ */
+export type VerifierChallengeState = {
+  outstanding: readonly PresenterChallenge[];
+  spent: readonly string[];
+};
+
+/**
+ * Result of checkPresentedGrant, including the spent challenge.
+ */
+export type PresentedGrantDecision = {
+  result: CheckResult;
+  challenges: VerifierChallengeState;
 };
 
 /**
@@ -563,10 +630,16 @@ export type LightZookie = {
  * at destination re-check of an encrypted grant.
  * The signature is checked with the enrolled owner pub from the
  * presentation, not from a field on the visible row.
- * now - signedAt must be <= maxAgeMs. Otherwise fail closed.
+ * Freshness, with the verifier's skewAllowanceMs:
+ * signedAt <= now + skewAllowanceMs, and
+ * now - signedAt <= maxAgeMs. Otherwise fail closed.
+ * The zookie is compared to SeeGraph.objectVersion and
+ * SeeGraph.snapshotHash. An older object version, a newer
+ * version this graph has not merged, or a different snapshot
+ * hash fails closed.
  * Revocation is immediate only for a current verifier (merged
- * privilege-down, and a proof inside max-age). Otherwise it is
- * bounded by max-age. Not a grant.
+ * privilege-down, and a proof inside max-age and skew).
+ * Otherwise it is bounded by max-age. Not a grant.
  */
 export type EpochStatusProof = {
   object: CheckObjectId;
@@ -582,8 +655,13 @@ export type EpochStatusProof = {
 /**
  * Spec signature. The reference crate does not run this.
  * Commitment mismatch or a bad owner signature fails closed.
- * Omitted binding and omitted channel fails closed.
- * Omitted, stale, or superseded status fails closed.
+ * challenges is the verifier's outstanding nonce set.
+ * A binding nonce must match one outstanding challenge,
+ * now must be before expiresAt, and that nonce is then spent.
+ * A channel argument must be an AuthenticatedPresenterChannel
+ * the transport constructed. Omitted binding and omitted
+ * channel fails closed. Omitted, stale, future-dated beyond
+ * skew, or superseded status fails closed.
  * A proof alone grants nothing.
  * A hop, a hint, or a wrap never mints.
  */
@@ -593,12 +671,14 @@ export function checkPresentedGrant(
   graph: SeeGraph,
   accessor: AccessorId,
   now: number,
+  skewAllowanceMs: number,
+  challenges: VerifierChallengeState,
   hint?: HandoffHint,
   hop?: HopFactor,
   binding?: PresenterBinding,
   channel?: AuthenticatedPresenterChannel,
   status?: EpochStatusProof,
-): CheckResult;
+): PresentedGrantDecision;
 
 /**
  * Author-only local DEK. Not a Gun row and not a grant.
@@ -613,10 +693,23 @@ export type AuthorFastUnwrap = {
 };
 
 /**
+ * How the introduction binds SEA keys to the account.
+ * enrollment: the reader's trusted enrollment record for
+ * account already names this pub and this epub.
+ * account-signature: signature by the account identity
+ * (the key already enrolled for that AccessorId), over pub
+ * and epub. A signature by the introduced pub is not this
+ * binding. A missing epub or a swapped epub fails closed.
+ * Not a grant.
+ */
+export type AccountKeyBinding =
+  | { kind: "enrollment" }
+  | { kind: "account-signature"; signature: string };
+
+/**
  * First introduction on the one lane.
- * Carries the sender SEA pub and epub. binding is a signature
- * by pub over (account, pub, epub). A missing epub, a missing
- * binding, or a swapped epub fails closed.
+ * Carries the sender SEA pub and epub, plus an account binding
+ * from enrollment or from the account identity. Not a self-signature.
  * Not a grant. Does not open a second lane. Does not mint.
  * priv and epriv never go on Gun.
  */
@@ -624,19 +717,23 @@ export type FirstContactIntro = {
   account: AccessorId;
   pub: string;
   epub: string;
-  binding: string;
+  binding: AccountKeyBinding;
 };
 
 /**
  * Owner-signed epoch revision. Devices that share the account
  * key can mint different keys for the same next epoch.
- * revisionId = epochRevisionId(previousEpoch, deviceId).
+ * revisionId = epochRevisionId of the canonical body:
+ * object, epoch, previousEpoch, deviceId, keyCommitment.
+ * A new key commitment is a new revision id.
  * deviceId is a local enrollment id. Not a Gun device
  * record, not a second SEA keypair, and not a grant.
  * Winner: lexicographically smallest revisionId among manifests
  * that verify under the account pub and name the same object,
  * next epoch, and previous epoch. Readers reject content under
  * a superseded revision or a superseded epoch.
+ * Every WrappedKey for that epoch carries the same revisionId
+ * inside the authenticated payload.
  * Self-wrap in the author lane, or inside the encrypted item.
  * Not an owner pub on a visible grant row. Not a grant.
  */
@@ -652,30 +749,31 @@ export type EpochManifest = {
 };
 
 /**
- * Spec signature. The reference crate does not run this.
- * Lowercase hex of hash(utf8(previousEpoch) || 0x00 || utf8(deviceId)).
- * Does not mint.
+ * Canonical manifest body. revisionId is the hash of this
+ * encoding, not of the signature and not of revisionId itself.
  */
-export function epochRevisionId(
-  previousEpoch: number,
-  deviceId: string,
-): string;
+export type EpochManifestBody = {
+  object: CheckObjectId;
+  epoch: number;
+  previousEpoch: number;
+  deviceId: string;
+  keyCommitment: string;
+};
 
 /**
- * Scan position inside the one lane, for one sender device.
- * Not a second lane. Not a grant.
+ * Spec signature. The reference crate does not run this.
+ * Lowercase hex of the canonical EpochManifestBody encoding.
+ * Does not mint.
  */
-export type LaneScanCursor = {
-  laneId: string;
-  deviceId: string;
-  cursor: string;
-};
+export function epochRevisionId(body: EpochManifestBody): string;
 
 /**
  * Rescan of one UTC day shard of the one lane.
  * day is YYYY-MM-DD. seen holds entry ids already accepted.
- * Dedup by entryId. A single greatest-observed clock is not a cursor.
- * Not a second lane. Not a grant.
+ * Dedup by entryId. This is the lane scan. A per-device cursor
+ * is not part of this contract: the visible row has no device
+ * id, and opening ciphertext to learn one does not yield a
+ * lossless cursor. Not a second lane. Not a grant.
  */
 export type DailyShardScan = {
   laneId: string;
@@ -726,6 +824,7 @@ export type InboxWriteDecision = {
     | "spam"
     | "unnamed-writer"
     | "stamp-required"
+    | "stamp-mismatch"
     | "sender-quota"
     | "reader-capacity";
 };
@@ -733,18 +832,19 @@ export type InboxWriteDecision = {
 /**
  * Spec signature. The reference crate does not run this.
  * public-filtered is the default: any writer may append.
- * First contact then requires a stamp. A sender over
- * senderRemaining is sender-quota and does not consume
- * readerRemaining. The reader still drops oversized rows and
- * rows over reader capacity. named-writers refuses anyone
- * outside writers. Commitment mismatch is checkPresentedGrant,
- * not this hook. SociACL does not store the filter.
- * A passed hook is not a grant.
+ * First contact then requires a stamp whose boundEntryId
+ * equals row.entryId. Any other bound id is stamp-mismatch.
+ * A sender over senderRemaining is sender-quota and does not
+ * consume readerRemaining. The reader still drops oversized
+ * rows and rows over reader capacity. named-writers refuses
+ * anyone outside writers. Commitment mismatch is
+ * checkPresentedGrant, not this hook. SociACL does not store
+ * the filter. A passed hook is not a grant.
  */
 export function filterInboxAppend(
   hook: InboxWriteHook,
   writer: AccessorId,
-  rowBytes: number,
+  row: BlindedGrantRow,
   admission?: InboxAdmission,
 ): InboxWriteDecision;
 
@@ -851,11 +951,24 @@ export type EpochRotation = {
 export function rotateOnRevoke(rotation: EpochRotation): void;
 
 /**
+ * One current reader during migration. Plaintext for this
+ * reader stays until acknowledged is set, or atGate is set
+ * because readerVersion >= ProtocolMigration.versionGate.
+ * One reader's ack does not clear another reader's copy.
+ */
+export type ReaderMigration = {
+  accessor: AccessorId;
+  acknowledged: boolean;
+  atGate: boolean;
+};
+
+/**
  * In-place encryption when a protocol version is applied.
  * Only the owner re-encrypts a shared item and issues wraps.
- * Readers keep the old copy until that migration arrives.
- * Plaintext removal waits until ownerMigrationArrived is set.
- * Readers do not set that flag and do not issue wraps.
+ * Plaintext removal is per reader: after that reader's ack,
+ * or when that reader is at or above versionGate.
+ * There is no single flag for every reader.
+ * Readers do not issue wraps.
  * Plaintext already replicated elsewhere is a historical leak.
  * Not a grant.
  */
@@ -864,7 +977,8 @@ export type ProtocolMigration = {
   fromVersion: number;
   toVersion: number;
   rewrapped: readonly WrappedKey[];
-  ownerMigrationArrived: boolean;
+  readers: readonly ReaderMigration[];
+  versionGate: number;
 };
 
 /**
@@ -884,14 +998,21 @@ export type ContentIndexTier = "public" | "private-group" | "local";
 export type EncryptedDiscoveryVector =
   | "content-auth-accept"
   | "content-auth-reader-forge"
+  | "content-auth-revision-relabel"
   | "content-auth-owner-pub-hidden"
   | "inbox-content-address-distinct"
   | "inbox-replace-rejected"
+  | "inbox-wrap-swap"
+  | "inbox-stamp-mismatch"
   | "intro-epub-required"
   | "intro-binding-ok"
   | "intro-binding-swap-epub"
+  | "intro-self-signature-rejected"
   | "intro-not-a-grant"
   | "presenter-proof-alone"
   | "presenter-nonce-ok"
   | "presenter-bad-key"
+  | "presenter-spent-nonce"
+  | "presenter-expired-challenge"
+  | "presenter-forged-channel"
   | "presenter-binding-not-a-grant";
