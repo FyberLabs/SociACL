@@ -682,6 +682,11 @@ export type GrantPresentation = {
  * 1. "s3rch-presenter-binding-v1"
  * 2. nonce
  * 3. commitment hash
+ * 4. audience
+ * audience is the string on the outstanding challenge.
+ * The verifier chooses it and it names that verifier.
+ * A signature that omits it, or names a different audience,
+ * does not verify. The nonce is not spent.
  * A concatenated string with no lengths, or another framing,
  * does not verify.
  * readerPub is checked against VerifierEnrollmentState.
@@ -731,10 +736,14 @@ export class AuthenticatedPresenterChannel {
  * Outstanding nonce this verifier issued for one presentation.
  * The presenter does not supply this object.
  * Single use. Dead when now >= expiresAt.
+ * audience is chosen by this verifier. It names that verifier.
+ * The presenter signs it with the nonce. A signature for
+ * another verifier's audience does not match this challenge.
  */
 export type PresenterChallenge = {
   nonce: string;
   expiresAt: number;
+  audience: string;
 };
 
 /**
@@ -864,7 +873,10 @@ export type PresentedGroup = {
  * Commitment mismatch or a bad owner signature fails closed.
  * challenges is the verifier's outstanding nonce set.
  * A binding nonce must match one outstanding challenge,
- * now must be before expiresAt, and that nonce is then spent.
+ * now must be before expiresAt, the signed audience must
+ * equal that challenge's audience, and that nonce is then
+ * spent. A different audience fails closed and the nonce
+ * stays outstanding.
  * A channel argument must be an AuthenticatedPresenterChannel
  * instance whose hasTransportBrand() is true, whose accessor
  * equals the accessor argument, and whose readerPub equals the
@@ -1106,6 +1118,8 @@ export type EpochManifestBody = {
  * stated 0 is a cancel at grantRevision and receives none.
  * A stated-1 entry with until <= now is expired. The candidate
  * that names it does not settle. The buffer stays buffered.
+ * The same expiry closes a key that has already settled.
+ * settledKeyOpen is then false, and new writes stay buffered.
  * The owner publishes a new revision whose key was not wrapped
  * to that accessor, and whose snapshot lists that accessor
  * stated 0. That replacement starts its own settle window.
@@ -1358,6 +1372,9 @@ export type EpochReplicaView = {
  * the new window elapses, and then switch.
  * The buffer stays buffered until a snapshot that excludes
  * each expired or cancelled accessor settles.
+ * settledKeyOpen repeats that expiry check on the key that
+ * has already settled. An until that passes after settlement
+ * does not leave new writes on that key.
  * A cancel or a higher grantRevision applies when seen.
  * This wait does not delay that. Does not mint.
  */
@@ -1365,6 +1382,27 @@ export function epochStepCurrent(
   view: EpochReplicaView,
   snapshot: AclSnapshotBody,
   current: AclSnapshotBody,
+  now: number,
+): boolean;
+
+/**
+ * Whether new ciphertext may use the settled key.
+ * settled is the ACL snapshot of view.settledRevisionId.
+ * The writer does not supply it.
+ * False when any stated-1 entry has until <= now or from > now.
+ * While false, new writes are buffered. They are not encrypted
+ * under settledRevisionId. The owner publishes a new revision
+ * whose key was not wrapped to that accessor, and whose
+ * snapshot lists that accessor stated 0. That replacement
+ * starts its own settle window.
+ * Ciphertext already written under the settled key stays.
+ * Readers keep bytes they already unwrapped.
+ * This check runs after settlement, not only when a candidate
+ * is about to settle. Does not mint.
+ */
+export function settledKeyOpen(
+  view: EpochReplicaView,
+  settled: AclSnapshotBody,
   now: number,
 ): boolean;
 
@@ -1881,6 +1919,8 @@ export type EncryptedDiscoveryVector =
   | "presenter-proof-alone"
   | "presenter-nonce-ok"
   | "presenter-binding-canonical"
+  | "presenter-audience"
+  | "epoch-settled-expiry"
   | "presented-enrollment"
   | "presented-graph-owner"
   | "presenter-bad-key"
