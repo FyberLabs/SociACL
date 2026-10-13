@@ -672,8 +672,14 @@ export type GrantPresentation = {
 
 /**
  * Destination nonce signed by the reader's SEA key.
- * Signed bytes: nonce and the grant commitment hash.
- * readerPub is the enrolled pub for the accessor.
+ * Signed bytes, length-prefixed:
+ * 1. "s3rch-presenter-binding-v1"
+ * 2. nonce
+ * 3. commitment hash
+ * A concatenated string with no lengths, or another framing,
+ * does not verify.
+ * readerPub is checked against VerifierEnrollmentState.
+ * It is not the enrollment record.
  * Not a grant. A valid binding does not set allowed.
  */
 export type PresenterBinding = {
@@ -914,6 +920,14 @@ export type PresentedGroup = {
  * The owner does not set it. A proof older than that bound
  * fails closed.
  * A proof alone grants nothing.
+ * enrollment is the verifier's account-to-pub map. The
+ * presenter does not supply it. presentation.seaPub must
+ * equal the enrolled pub for presentation.owner.
+ * binding.readerPub and channel.readerPub must equal the
+ * enrolled pub for the grant accessor. A missing account or
+ * a different pub fails closed before challenges are spent
+ * and before revisions change. A signature that verifies
+ * under some other key is not enough.
  * A hop, a hint, or a wrap never mints.
  */
 export function checkPresentedGrant(
@@ -927,6 +941,7 @@ export function checkPresentedGrant(
   revisions: VerifierGrantRevisionState,
   epochView: EpochReplicaView,
   policyMaxAgeMs: number,
+  enrollment: VerifierEnrollmentState,
   hint?: HandoffHint,
   hop?: HopFactor,
   binding?: PresenterBinding,
@@ -1103,19 +1118,40 @@ export type AclSnapshotEntry = {
  * For a group or circle entry, the same rule uses hamState
  * on that predicate and setId. A lower hamState does not hide
  * a removal this replica has already merged.
+ * objectSet is the object-to-set edge. Member hamState does
+ * not stand in for it. A replica that has merged a newer
+ * ObjectSetName ignores a snapshot whose predicate, setId,
+ * or stated disagrees, or whose hamState is lower, or that
+ * omits the edge this replica has.
  * A stated-1 entry with until <= now does not settle. Not a grant.
  */
+export type AclObjectSet = {
+  predicate: "same-group" | "named-circle";
+  setId: string;
+  stated: 0 | 1;
+  /** ObjectSetName.hamState. Not a member hamState. */
+  hamState: number;
+};
+
 export type AclSnapshotBody = {
+  /** Absent for a direct-grant object. */
+  objectSet?: AclObjectSet;
   entries: readonly AclSnapshotEntry[];
 };
 
 /**
  * Spec signature. The reference crate does not run this.
  * SHA-256, lowercase hex, of the length-prefixed UTF-8
- * encoding. Fields: "s3rch-acl-snapshot-v1", then each
- * entry in accessor order as accessor, decimal grantRevision,
- * decimal stated, decimal from, decimal until, scope, setId,
- * decimal hamState. Does not mint.
+ * encoding. Fields:
+ * 1. "s3rch-acl-snapshot-v1"
+ * 2. "1" when objectSet is present, otherwise "0"
+ * 3. objectSet.predicate, or empty
+ * 4. objectSet.setId, or empty
+ * 5. decimal objectSet.stated, or empty
+ * 6. decimal objectSet.hamState, or empty
+ * then each entry in accessor order as accessor, decimal
+ * grantRevision, decimal stated, decimal from, decimal until,
+ * scope, setId, decimal hamState. Does not mint.
  */
 export function aclSnapshotId(body: AclSnapshotBody): string;
 
@@ -1205,8 +1241,13 @@ export type GroupEpochConfig = {
  * settle window. Content bound to a displaced descendant is
  * not current. The owner re-encrypts it under the rebuilt
  * winner after that window, and issues wraps for the new
- * snapshot. Readers stay on the last settled revision that
- * still sits on the current chain.
+ * snapshot. Each remaining accessor gets a new signed payload
+ * whose grantRevision is greater than that accessor's previous
+ * record, and an EpochStatusProof that names that new
+ * grantRevision and stated 1. The old payload stays at the
+ * lower revision. An equal-revision digest comparison does
+ * not keep the displaced ciphertext. Readers stay on the last
+ * settled revision that still sits on the current chain.
  * Not a grant. Not an owner pub on a visible grant row.
  */
 export type EpochFinalization = {
@@ -1268,8 +1309,11 @@ export type EpochReplicaView = {
  * False when snapshot has a stated-1 entry with until <= now,
  * or from > now.
  * False when current knows a higher grantRevision cancel, a
- * higher membership hamState cancel, or a past until for an
- * accessor snapshot still lists as stated 1.
+ * higher membership hamState cancel, a higher object-set
+ * hamState, a different object-set predicate or setId, or a
+ * past until for an accessor snapshot still lists as stated 1.
+ * False when one of snapshot and current has objectSet and
+ * the other does not.
  * True only when view.seen has a winner, the snapshot still
  * matches current, and now >= winnerSeenAt + settleWindowMs.
  * While false, readers keep settledRevisionId and settledEpoch.
@@ -1333,15 +1377,20 @@ export type AdmissionChallenge = {
 /**
  * What the writer shows. Quotas, difficulty, and replay state
  * are not fields here.
- * proof-of-work: SHA-256 of the length-prefixed fields
- * "s3rch-inbox-pow-v1", challenge.nonce, row.entryId, solution
- * has at least challenge.difficulty leading zero bits.
+ * proof-of-work: nonce names exactly one outstanding
+ * AdmissionChallenge. SHA-256 of the length-prefixed fields
+ * "s3rch-inbox-pow-v1", that nonce, row.entryId, solution
+ * has at least that challenge's difficulty leading zero bits.
+ * Only that nonce is spent. A solution that also meets
+ * another challenge does not spend the other nonce. A nonce
+ * that is not outstanding fails closed. Difficulty 0 still
+ * names one nonce.
  * stamp: signature by a trusted issuer over the length-prefixed
  * fields "s3rch-inbox-stamp-v1" and row.entryId.
  * A stamp is not a grant.
  */
 export type AdmissionEvidence =
-  | { kind: "proof-of-work"; solution: string }
+  | { kind: "proof-of-work"; nonce: string; solution: string }
   | { kind: "stamp"; issuer: string; signature: string };
 
 /**
@@ -1681,6 +1730,7 @@ export type EncryptedDiscoveryVector =
   | "inbox-wrap-swap"
   | "inbox-stamp-mismatch"
   | "inbox-pow-verified"
+  | "inbox-pow-nonce"
   | "inbox-fabricated-quota"
   | "inbox-spent-challenge"
   | "inbox-known-sender"
@@ -1703,6 +1753,7 @@ export type EncryptedDiscoveryVector =
   | "epoch-buffer-until-settle"
   | "epoch-stale-acl"
   | "epoch-reencrypt-displaced"
+  | "epoch-object-set"
   | "epoch-rebuild-descendants"
   | "epoch-finalization-sig"
   | "epoch-expire-before-settle"
@@ -1735,6 +1786,8 @@ export type EncryptedDiscoveryVector =
   | "intro-not-a-grant"
   | "presenter-proof-alone"
   | "presenter-nonce-ok"
+  | "presenter-binding-canonical"
+  | "presented-enrollment"
   | "presenter-bad-key"
   | "presenter-spent-nonce"
   | "presenter-expired-challenge"
