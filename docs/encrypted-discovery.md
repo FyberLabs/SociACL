@@ -85,7 +85,7 @@ There is no `hamState` on the entry. A later grant is a new entry. See [Append-o
 The holder presents a `GrantPresentation` to the destination. The presentation is not written back to Gun. It contains the opened grant, the commitment blinding, the owner id, the signature, and the owner's SEA pub. The blinding is not a field of the visible row. An unsalted hash of the grant bytes is not the commitment. Guessing the owner, the window, the epoch, or the revision does not open the row. The destination:
 
 1. Recomputes the commitment from the blinding and the opened grant and checks it against the row. A mismatch fails closed. The presented grant is then the grant that was committed, not a substitute. When the grant names an encrypted item, the destination also passes the SHA-256 of the fetched ciphertext into `checkPresentedGrant`. A mismatch with `itemCiphertextDigest` fails closed. `SeeGraph.snapshotHash` is not that digest.
-2. Verifies the signature with the SEA pub in the presentation, and checks that pub against `VerifierEnrollmentState` for the owner named in the opened grant. The same map checks the presenter-binding pub and the channel pub for the accessor. A missing account or a different pub fails closed. The presenter does not supply the map. The pub is not a copy on the row.
+2. Checks that the owner named in the opened grant equals `graph.ownerOf(object)`. A missing owner or a different account fails closed before the signature is accepted and before verifier state changes. Then verifies the signature with the SEA pub in the presentation, and checks that pub against `VerifierEnrollmentState` for that graph owner. The status proof uses the same pub. The same map checks the presenter-binding pub and the channel pub for the accessor. A missing account or a different pub fails closed. The presenter does not supply the map. The pub is not a copy on the row.
 3. Checks [presenter binding](#presenter-binding). A proof alone grants nothing.
 4. Checks a fresh [epoch/status proof](#revocation-freshness) beside the zookie. A missing or stale proof fails closed.
 5. Runs `checkSee` / `checkSeeGrant` (or `checkGroupSee`) on the opened grant. A hop, a hint, or a wrap still never mints.
@@ -134,7 +134,7 @@ Every reader of an item holds that item's DEK, so authenticated encryption shows
 
 The owner signs a length-prefixed encoding: domain `s3rch-item-auth-v1`, item id, epoch, version, SHA-256 of the raw plaintext, and `revisionId`. `ItemContentAuth` is that signature. The owner produces the signature first, then encrypts the plaintext and the signature together. The ciphertext digest is not an input to the signature, so constructing the item does not need a fixed point. The signature lives **inside** the encrypted item. The visible grant row does not carry it and does not carry the owner's SEA pub. When the grant names the item, the canonical grant bytes include the ciphertext digest, computed after encryption, so `GrantCommitment` covers those bytes. The signature covers the plaintext digest.
 
-A reader decrypts, recomputes the plaintext digest, and checks the signature with the enrolled owner pub they already have to open the grant. A mismatch fails closed, including when only `revisionId` changed. Other readers reject the replacement. The signature is not a grant. Holding the DEK does not mint one. Check still runs.
+A reader decrypts, recomputes the plaintext digest, and checks the signature with the enrolled pub of `graph.ownerOf(object)`, the same pub used to open the grant. A pub the presenter names in place of that graph owner does not verify. A mismatch fails closed, including when only `revisionId` changed. Other readers reject the replacement. The signature is not a grant. Holding the DEK does not mint one. Check still runs.
 
 `revisionId` is the winning revision from [Epoch manifest](#epoch-manifest). A body bound to a superseded revision fails this check.
 
@@ -287,7 +287,7 @@ Copy or re-type [s3rch-check.d.ts](s3rch-check.d.ts). Do not `npm install sociac
 | `PresenterBinding` / `VerifierChallengeState` | Verifier-issued nonce, single use, with expiry. The presenter does not supply the challenge store |
 | `BlindedGrantRow` / `inboxEntryId` | One append-only lane entry. `entryId` hashes lane, ciphertext, commitment, and wrap. No owner field. No `hamState` on the entry |
 | `AuthenticatedPresenterChannel` | Transport capability. Brand is an ECMAScript private field and a module `WeakSet`. `accessor` and `readerPub` are frozen and must match the grant |
-| `checkPresentedGrant` | Commitment, owner signature, presenter binding, verifier-held enrollment, `grantRevision`, winning snapshot, and replica ACL, fetched item digest, fresh status proof, then Check. A group grant runs `checkGroupSee` |
+| `checkPresentedGrant` | Commitment, graph owner, owner signature, presenter binding, verifier-held enrollment, `grantRevision`, winning snapshot, and replica ACL, fetched item digest, fresh status proof, then Check. A group grant runs `checkGroupSee` |
 | `RecipientInbox` | The one lane for that account. Not a shared bucket |
 | `DailyShardScan` | Whole-shard rescan with dedup. Not a per-device cursor. Not a second lane |
 | `AuthorFastUnwrap` | Local author DEK. Not a grant row |
@@ -490,6 +490,8 @@ Stubs only. The names are `EncryptedDiscoveryVector` in [s3rch-check.d.ts](s3rch
 
 `presented-enrollment`. The presentation's `seaPub` verifies the owner signature, and it is not the pub in `VerifierEnrollmentState` for that owner. `checkPresentedGrant` fails closed before a nonce is spent. The same failure applies when the binding pub is not the enrolled pub for the accessor.
 
+`presented-graph-owner`. The signature verifies under `presentation.seaPub`, and that pub is the enrolled pub for `presentation.owner`. `graph.ownerOf(object)` is absent or names a different account. `checkPresentedGrant` fails closed before the signature is accepted, before a nonce is spent, and before the revision record changes. A reader signing as owner does not raise that record and does not refresh the status proof.
+
 `presenter-bad-key`. The nonce signature verifies under a different key. The destination rejects it.
 
 `presenter-spent-nonce`. The same nonce is presented again after it was spent. The second check fails closed.
@@ -547,6 +549,7 @@ Not decided:
 - Accept an account binding that omits the account or drops the length prefixes on `pub` and `epub`
 - Re-encrypt displaced content under the same `grantRevision`
 - Trust a presenter-supplied pub as the enrolled key
+- Accept a named owner that is not `graph.ownerOf` for that object
 - Spend an unnamed proof-of-work nonce when several challenges are outstanding
 - Settle a snapshot whose object-set edge is older than the one this replica has merged
 - Accept a presenter binding that is not the length-prefixed domain

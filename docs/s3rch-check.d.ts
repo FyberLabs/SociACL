@@ -500,6 +500,8 @@ export type GrantCommitment = {
  * after encryption.
  * Not a grant. A reader who holds the DEK cannot produce this
  * signature, and cannot relabel revisionId under it.
+ * The verifying pub is the enrolled pub of graph.ownerOf(object).
+ * A signature under a reader's own key does not pass.
  */
 export type ItemContentAuth = {
   object: CheckObjectId;
@@ -648,8 +650,9 @@ export type RecipientInbox = {
 /**
  * Opened grant the holder shows to the destination.
  * Not written to Gun. The destination recomputes GrantCommitment
- * from blinding and grantBytes, checks the signature with seaPub,
- * and checks that seaPub is the enrolled key for owner.
+ * from blinding and grantBytes, checks that owner equals
+ * graph.ownerOf(object), checks the signature with seaPub,
+ * and checks that seaPub is the enrolled key for that owner.
  * grantBytes decode to one SignedGrantPayload. grant, owner, and
  * grantRevision must match that payload. A mismatch fails closed
  * before verifier state changes. Then presenter binding and a fresh
@@ -803,8 +806,9 @@ export type LightZookie = {
  * Fresh owner-signed epoch/status, required beside the zookie
  * at destination re-check of an encrypted grant.
  * Names this accessor and this grantRevision, not only the object.
- * The signature is checked with the enrolled owner pub from the
- * presentation, not from a field on the visible row.
+ * The signature is checked with the enrolled pub of
+ * graph.ownerOf(object), not with a pub the presenter names
+ * and not from a field on the visible row.
  * Signed bytes use the length-prefixed UTF-8 encoding:
  * 1. "s3rch-epoch-status-v1"
  * 2. object
@@ -928,13 +932,19 @@ export type PresentedGroup = {
  * fails closed.
  * A proof alone grants nothing.
  * enrollment is the verifier's account-to-pub map. The
- * presenter does not supply it. presentation.seaPub must
- * equal the enrolled pub for presentation.owner.
+ * presenter does not supply it. Decode the payload first.
+ * graph.ownerOf(decoded.object) must be present and must
+ * equal the decoded owner and presentation.owner. A missing
+ * owner or a different account fails closed before the
+ * signature is accepted, before challenges are spent, and
+ * before revisions change. presentation.seaPub must then
+ * equal the enrolled pub for that graph owner. The status
+ * proof is checked with that same pub.
  * binding.readerPub and channel.readerPub must equal the
  * enrolled pub for the grant accessor. A missing account or
- * a different pub fails closed before challenges are spent
- * and before revisions change. A signature that verifies
- * under some other key is not enough.
+ * a different pub fails closed the same way. A signature
+ * that verifies under some other key, including a reader's
+ * own key, is not enough.
  * A hop, a hint, or a wrap never mints.
  */
 export function checkPresentedGrant(
@@ -1864,6 +1874,7 @@ export type EncryptedDiscoveryVector =
   | "presenter-nonce-ok"
   | "presenter-binding-canonical"
   | "presented-enrollment"
+  | "presented-graph-owner"
   | "presenter-bad-key"
   | "presenter-spent-nonce"
   | "presenter-expired-challenge"
