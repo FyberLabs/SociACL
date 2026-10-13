@@ -617,9 +617,12 @@ export type BlindedGrantRow = {
  * Optional outer envelope when the writer is already known
  * (named-writers). body is the full InboxEntryBody. The relay
  * recomputes inboxEntryId(body), checks it equals entryId, and
- * verifies writerSignature over that id, without opening the
- * grant. The default public lane stays content-addressed and
- * does not carry writerPub.
+ * verifies writerSignature over the length-prefixed fields
+ * "s3rch-writer-append-v1" and entryId, without opening the
+ * grant. The same bytes as WriterAppendProof. The default
+ * public lane stays content-addressed and does not carry
+ * writerPub. A replicated public row is not admitted until
+ * this verifier runs filterInboxAppend and records entryId.
  * Not a grant.
  */
 export type InboxEnvelope = {
@@ -905,11 +908,15 @@ export type PresentedGroup = {
  * revisions changes. SeeGraph.snapshotHash is not this digest.
  * When the payload field is empty, fetchedItemDigest is omitted.
  * epochView is the verifier's epoch state for that same object.
- * status.revisionId must be the read key: settledRevisionId
- * while epochStepCurrent is false, and the recomputed winner
- * once it is true. Any other revision fails closed. The
- * presenter does not supply epochView, the winning snapshot,
- * or the verifier ACL.
+ * snapshot and currentAcl are the same inputs epochStepCurrent
+ * uses. The presenter does not supply them.
+ * The read key is settledRevisionId while that function is
+ * false, including when the timer has elapsed and the snapshot
+ * still names an expired or cancelled recipient. status.revisionId
+ * must be that read key. A proof for the pending candidate
+ * while the function is false fails closed. Once the function
+ * is true, the read key is the recomputed winner. Any other
+ * revision fails closed.
  * When group is set, graph is a GroupSeeGraph and this
  * function runs checkGroupSee after the same binding,
  * revision, and freshness checks. When group is omitted,
@@ -942,6 +949,8 @@ export function checkPresentedGrant(
   epochView: EpochReplicaView,
   policyMaxAgeMs: number,
   enrollment: VerifierEnrollmentState,
+  snapshot: AclSnapshotBody,
+  currentAcl: AclSnapshotBody,
   hint?: HandoffHint,
   hop?: HopFactor,
   binding?: PresenterBinding,
@@ -1195,24 +1204,34 @@ export const SETTLE_WINDOW_DEFAULT_MS: 86400000;
 /**
  * Owner-signed settle window for one group or circle.
  * Signed bytes, length-prefixed: "s3rch-group-epoch-config-v1",
- * setId, predicate, decimal settleWindowMs.
- * A group epoch manifest carries this same settleWindowMs.
- * A mismatch is ignored. Sits with the manifest, in the author
- * lane or inside the encrypted item. Not an owner pub on a
- * visible grant row. Not a grant.
+ * setId, predicate, decimal settleWindowMs, decimal configRevision.
+ * configRevision is monotonic for that set and predicate.
+ * The greatest configRevision wins. A lower revision is ignored.
+ * At the same configRevision, the smaller digest of those
+ * signed bytes wins. Arrival order does not pick the config.
+ * A group epoch manifest repeats the settleWindowMs of that
+ * winning config. A manifest that repeats an older window
+ * is ignored. Sits with the manifest, in the author lane or
+ * inside the encrypted item. Not an owner pub on a visible
+ * grant row. Not a grant.
  */
 export type GroupEpochConfig = {
   setId: string;
   predicate: "same-group" | "named-circle";
   settleWindowMs: number;
+  /** Monotonic for this set and predicate. */
+  configRevision: number;
   signature: string;
 };
 
 /**
  * Owner-signed candidate for one epoch step. The named
- * revisionId must be the lexicographically smallest id in
- * candidateRevisionIds. A finalization that fails that check
- * is ignored.
+ * revisionId must be the lexicographically smallest id among
+ * candidateRevisionIds that each resolve to a verified
+ * EpochManifest with this same object, epoch, and previousEpoch.
+ * An id that does not resolve, or that names another object
+ * or epoch, is not in that minimum. A finalization that fails
+ * that check is ignored.
  * Replicas keep every verified finalization for the same
  * object, epoch, and previousFinalizationId. The winner is
  * the smallest finalizationId in that set. A later smaller
@@ -1407,9 +1426,18 @@ export type SenderQuota = {
  * knownSenders is the record this verifier already trusts.
  * A writer absent from that list is first contact. A caller
  * flag is not a field and does not change that.
- * senderQuotas has one counter per sender. A missing sender
- * has remaining 0. laneRemaining is the one shared capacity
- * for this lane, not a copy per sender.
+ * senderQuotas has one counter per known sender. A known
+ * sender with no row has remaining 0.
+ * firstContactRemaining is the verifier-chosen start for a
+ * sender absent from knownSenders, after their evidence
+ * verifies. The writer does not set it. 0 rejects that
+ * first contact as sender-quota and does not add the sender.
+ * Above 0, the counter is created at that value.
+ * admitted lists entryIds this verifier has accepted. A
+ * replicated row is not admitted until this check records
+ * it. admitted is not a field of the stored row.
+ * laneRemaining is the one shared capacity for this lane,
+ * not a copy per sender.
  * challenges holds every outstanding admission nonce. Issuing
  * one does not drop another. spent holds challenge nonces and
  * stamp signatures already used. Spending one nonce leaves
@@ -1421,6 +1449,10 @@ export type VerifierAdmissionState = {
   spent: readonly string[];
   knownSenders: readonly AccessorId[];
   senderQuotas: readonly SenderQuota[];
+  /** Verifier-chosen. Not a writer claim. */
+  firstContactRemaining: number;
+  /** Entry ids this verifier has admitted. Not on the row. */
+  admitted: readonly string[];
   laneRemaining: number;
 };
 
@@ -1444,7 +1476,13 @@ export class AuthenticatedWriterChannel {
 }
 
 /**
- * Signature over row.entryId by the writer's enrolled SEA pub.
+ * Signature by the writer's enrolled SEA pub.
+ * Signed bytes, length-prefixed:
+ * 1. "s3rch-writer-append-v1"
+ * 2. row.entryId
+ * InboxEnvelope.writerSignature covers those same bytes.
+ * A bare hex string, raw digest bytes, or another framing
+ * does not verify.
  * Checked at append. writerPub is the claimed key. It is not
  * the enrollment record. Not stored on the content-addressed
  * row. Not a grant.
@@ -1480,7 +1518,9 @@ export type VerifierEnrollmentState = {
  * that enrollment record.
  * The relay that runs this check learns the writer id for
  * that entryId. The stored public row still has no writer
- * pub. A peer that only replicates the row does not.
+ * pub and no admission receipt. A peer that only replicates
+ * the row does not learn the writer, and that replica is
+ * not an admitted append.
  */
 export type WriterAppendAuth =
   | { kind: "channel"; channel: AuthenticatedWriterChannel }
@@ -1527,7 +1567,8 @@ export type InboxWriteDecision = {
  * known senders, per-sender quotas, and the one lane capacity.
  * enrollment is the verifier's account-to-pub map. The writer
  * does not pass it. writerAuth is a transport channel or a
- * signature over row.entryId. The claimed writerPub must
+ * signature over the length-prefixed writer-append bytes.
+ * The claimed writerPub must
  * equal the enrolled pub for that writer. A missing account
  * or a different pub is writer-auth and does not read
  * knownSenders, the allowlist, or quotas. A bare accessor is
@@ -1542,13 +1583,23 @@ export type InboxWriteDecision = {
  * and row.entryId. A proof-of-work solution for another entry,
  * or a stamp signed over another entry, is stamp-mismatch.
  * A nonce or stamp signature already in state.spent is replay.
- * The counter for this writer is the senderQuotas entry with
- * that sender. Missing or remaining 0 is sender-quota. Other
- * senders and laneRemaining stay as they were.
+ * A known sender uses the senderQuotas entry for that sender.
+ * A missing row or remaining 0 is sender-quota. Other senders
+ * and laneRemaining stay as they were.
+ * A sender absent from knownSenders is first contact. After
+ * evidence verifies, remaining starts at firstContactRemaining.
+ * At 0 the result is sender-quota and the sender is not added.
+ * Above 0 the counter is created at that value, then the
+ * accept below drops it by 1.
  * laneRemaining at 0 is reader-capacity. That sender's counter
  * stays as it was. On ok, that sender's remaining and
- * laneRemaining each drop by 1, and a new sender is added to
- * knownSenders. named-writers refuses anyone outside writers.
+ * laneRemaining each drop by 1, the sender is in knownSenders,
+ * and row.entryId is in admitted. An entryId already in
+ * admitted is not a new append. The counters stay.
+ * A replicated row whose entryId is absent from admitted is
+ * not admitted. The auth and the evidence are presented at
+ * this check. They are not fields of the stored row.
+ * named-writers refuses anyone outside writers.
  * Commitment mismatch is checkPresentedGrant, not this hook.
  * SociACL does not store the filter.
  * A passed hook is not a grant.
@@ -1646,11 +1697,30 @@ export type CancelledGrant = {
 export type RevokeCipherMode = "forward-only" | "re-encrypt";
 
 /**
+ * Plaintext edge, or a private-row cancel.
+ * plain carries CancelledGrant: stated 0 and a bumped hamState.
+ * private-row carries a signed payload with stated 0 and a
+ * grantRevision greater than the live row, plus an
+ * EpochStatusProof for that accessor, that grantRevision, and
+ * stated 0. A plain edge does not cancel a private row.
+ * Not a grant by itself.
+ */
+export type RotationCancel =
+  | { kind: "plain"; grant: CancelledGrant }
+  | {
+      kind: "private-row";
+      payload: SignedGrantPayload;
+      signature: string;
+      status: EpochStatusProof;
+    };
+
+/**
  * Revoke record for an encrypted object.
- * Order: stated 0 and a hamState bump, then rewrapped keys for
- * the winning revision of the next epoch, remaining readers only,
- * then cipher mode. Immediate deny is for a current verifier.
- * Other verifiers are bounded by EpochStatusProof.maxAgeMs.
+ * Order: the RotationCancel, then rewrapped keys for the winning
+ * revision of the next epoch, remaining readers only, then cipher
+ * mode. A private-row object uses kind private-row. Immediate deny
+ * is for a current verifier. Other verifiers are bounded by
+ * EpochStatusProof.maxAgeMs.
  */
 export type EpochRotation = {
   object: CheckObjectId;
@@ -1658,7 +1728,7 @@ export type EpochRotation = {
   nextEpoch: number;
   /** Winning EpochManifest.revisionId for nextEpoch. */
   revisionId: string;
-  cancelled: readonly CancelledGrant[];
+  cancelled: readonly RotationCancel[];
   rewrapped: readonly WrappedKey[];
   cipher: RevokeCipherMode;
 };
@@ -1776,6 +1846,12 @@ export type EncryptedDiscoveryVector =
   | "epoch-settle-pending-key"
   | "epoch-settle-skips-revoke"
   | "epoch-group-window"
+  | "epoch-candidate-scope"
+  | "presented-settlement-acl"
+  | "inbox-first-contact-quota"
+  | "writer-append-canonical"
+  | "inbox-replicated-row"
+  | "rotate-private-cancel"
   | "id-sha256-canonical"
   | "zookie-object-snapshot"
   | "intro-epub-required"
