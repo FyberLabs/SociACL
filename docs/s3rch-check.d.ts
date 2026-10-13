@@ -452,11 +452,26 @@ export type AccountSeaKey = {
 export type GrantStorage = "public-plain" | "private-row";
 
 /**
- * Hash of the canonical grant bytes. Stored on the visible row.
- * Not an owner id and not an owner SEA pub.
+ * Randomized commitment to the canonical grant. The visible
+ * row stores hash only. Not an owner id and not an owner SEA pub.
+ * hash is SHA-256, lowercase hex, of the length-prefixed fields:
+ * 1. "s3rch-grant-commitment-v1"
+ * 2. blinding (64 lowercase hex chars from 32 fresh random bytes)
+ * 3. object
+ * 4. accessor
+ * 5. decimal from
+ * 6. decimal until
+ * 7. decimal stated
+ * 8. decimal epoch
+ * 9. owner
+ * 10. decimal grantRevision
+ * 11. itemCiphertextDigest
+ * blinding is fresh per row. It sits inside the ciphertext and
+ * in GrantPresentation. It is not a field of the visible row.
+ * An unsalted hash of the grant bytes is not this commitment.
+ * Guessing the owner, the window, the epoch, or the revision
+ * does not open the row.
  * The signature over the grant stays inside the ciphertext.
- * When the grant names an encrypted item, the canonical bytes
- * include the item ciphertext digest, so this hash covers it.
  */
 export type GrantCommitment = {
   hash: string;
@@ -506,7 +521,9 @@ export type ItemContentAuth = {
  * itemCiphertextDigest is the SHA-256 lowercase hex of the
  * item ciphertext when the grant names an encrypted item,
  * and "" otherwise. The owner signature covers it. The
- * destination compares it to the fetched item.
+ * destination hashes the fetched ciphertext and passes that
+ * digest to checkPresentedGrant. SeeGraph.snapshotHash is
+ * not this comparison.
  * payload digest is SHA-256, lowercase hex, of the
  * length-prefixed fields "s3rch-grant-payload-v1", object,
  * accessor, decimal from, decimal until, decimal stated,
@@ -628,11 +645,11 @@ export type RecipientInbox = {
 /**
  * Opened grant the holder shows to the destination.
  * Not written to Gun. The destination recomputes GrantCommitment
- * from grantBytes, checks the signature with seaPub, and checks
- * that seaPub is the enrolled key for owner. grantBytes decode
- * to one SignedGrantPayload. grant, owner, and grantRevision
- * must match that payload. A mismatch fails closed before
- * verifier state changes. Then presenter binding and a fresh
+ * from blinding and grantBytes, checks the signature with seaPub,
+ * and checks that seaPub is the enrolled key for owner.
+ * grantBytes decode to one SignedGrantPayload. grant, owner, and
+ * grantRevision must match that payload. A mismatch fails closed
+ * before verifier state changes. Then presenter binding and a fresh
  * EpochStatusProof, then Check.
  * A presentation alone grants nothing. A presentation is not a grant.
  */
@@ -641,8 +658,13 @@ export type GrantPresentation = {
   grant: MeshSeeGrant;
   /** Monotonic order inside the signed payload. */
   grantRevision: number;
-  /** Canonical bytes the commitment hashes. Covers grantRevision. */
+  /** Canonical grant fields. The commitment also takes blinding. */
   grantBytes: string;
+  /**
+   * Opening for GrantCommitment. Fresh per row. Not a field of
+   * BlindedGrantRow. Not an owner id.
+   */
+  blinding: string;
   signature: string;
   /** Enrolled account SEA pub. Not a field of BlindedGrantRow. */
   seaPub: string;
@@ -723,10 +745,17 @@ export type VerifierGrantRevision = {
   grantRevision: number;
   stated: 0 | 1;
   /**
-   * Smaller digest wins when grantRevision and stated tie.
+   * Smaller digest wins when grantRevision and stated tie
+   * and this field already holds a digest.
    * stated 0 wins over stated 1 at the same revision.
    * Empty when the record was raised from an EpochStatusProof
    * that names the revision and stated without the payload.
+   * An empty digest is unknown. It is not the smallest digest.
+   * The first payload whose grantRevision and stated match
+   * this record is accepted, and its digest is stored here.
+   * A payload whose stated does not match still follows the
+   * stated-0 rule. Later payloads at that revision use the
+   * stored digest.
    */
   payloadDigest: string;
 };
@@ -851,10 +880,20 @@ export type PresentedGroup = {
  * A presented revision lower than the record fails closed.
  * At an equal revision, stated 0 wins before digest order.
  * A live payload does not replace a stored cancellation.
- * When stated matches, a larger payloadDigest fails closed
- * and a smaller one replaces the record. A higher signed
- * revision replaces the record. The holder does not choose
- * that record.
+ * When stated matches and the stored payloadDigest is already
+ * a digest, a larger payloadDigest fails closed and a smaller
+ * one replaces the record. An empty stored payloadDigest is
+ * unknown. It does not count as a smaller digest. The first
+ * payload with the same grantRevision and the same stated is
+ * stored. A cancel at that revision still beats a live payload.
+ * A higher signed revision replaces the record. The holder
+ * does not choose that record.
+ * When the decoded payload names an item ciphertext digest,
+ * fetchedItemDigest is the SHA-256 lowercase hex of the
+ * ciphertext the destination fetched. It must equal that
+ * field. A mismatch or a missing argument fails closed before
+ * revisions changes. SeeGraph.snapshotHash is not this digest.
+ * When the payload field is empty, fetchedItemDigest is omitted.
  * epochView is the verifier's epoch state for that same object.
  * status.revisionId must be the read key: settledRevisionId
  * while epochStepCurrent(epochView, now) is false, and the
@@ -889,6 +928,7 @@ export function checkPresentedGrant(
   channel?: AuthenticatedPresenterChannel,
   status?: EpochStatusProof,
   group?: PresentedGroup,
+  fetchedItemDigest?: string,
 ): PresentedGrantDecision;
 
 /**
@@ -999,14 +1039,23 @@ export type EpochManifestBody = {
 };
 
 /**
- * One accessor in an ACL snapshot. stated 1 receives a wrap.
+ * One accessor in an ACL snapshot. stated 1 receives a wrap
+ * only while now is inside from and until.
  * stated 0 is a cancel at grantRevision and receives none.
+ * A stated-1 entry with until <= now is expired. The candidate
+ * that names it does not settle. The buffer stays buffered.
+ * The owner publishes a new revision whose key was not wrapped
+ * to that accessor, and whose snapshot lists that accessor
+ * stated 0. That replacement starts its own settle window.
  * Not a grant.
  */
 export type AclSnapshotEntry = {
   accessor: AccessorId;
   grantRevision: number;
   stated: 0 | 1;
+  /** Grant window. Covered by aclSnapshotId. */
+  from: number;
+  until: number;
 };
 
 /**
@@ -1015,7 +1064,8 @@ export type AclSnapshotEntry = {
  * There is no single cancel high-water across accessors.
  * A replica that knows accessor A is cancelled at revision R
  * ignores a snapshot that lists A as stated 1, omits A, or
- * lists A cancelled below R. Not a grant.
+ * lists A cancelled below R.
+ * A stated-1 entry with until <= now does not settle. Not a grant.
  */
 export type AclSnapshotBody = {
   entries: readonly AclSnapshotEntry[];
@@ -1026,7 +1076,7 @@ export type AclSnapshotBody = {
  * SHA-256, lowercase hex, of the length-prefixed UTF-8
  * encoding. Fields: "s3rch-acl-snapshot-v1", then each
  * entry in accessor order as accessor, decimal grantRevision,
- * decimal stated. Does not mint.
+ * decimal stated, decimal from, decimal until. Does not mint.
  */
 export function aclSnapshotId(body: AclSnapshotBody): string;
 
@@ -1093,6 +1143,31 @@ export type GroupEpochConfig = {
  * the smallest finalizationId in that set. A later smaller
  * finalizationId replaces the previous winner. Arrival order
  * does not pick a different winner.
+ * The signature covers finalizationId, not revisionId alone.
+ * Signed bytes, length-prefixed:
+ * 1. "s3rch-epoch-finalization-sig-v1"
+ * 2. finalizationId
+ * finalizationId already covers the candidate list and
+ * previousFinalizationId. A signature over revisionId alone
+ * does not verify. Changing the parent or the candidate list
+ * changes finalizationId, so the old signature fails.
+ * A finalization is on the current chain only when
+ * previousFinalizationId is the winner of the previous epoch,
+ * or "" for the first epoch. A later smaller finalizationId
+ * at an epoch drops every later finalization that names the
+ * displaced id, or names a descendant of that id, off the
+ * current chain. Replicas keep those finalizations. They are
+ * not the winner and they do not extend the chain.
+ * The owner rebuilds outward. Each invalidated epoch, parent
+ * before child, gets a new finalization. Its
+ * previousFinalizationId is the new parent winner. Its
+ * revisionId is a new manifest. It does not reuse the
+ * displaced finalizationId. That candidate starts its own
+ * settle window. Content bound to a displaced descendant is
+ * not current. The owner re-encrypts it under the rebuilt
+ * winner after that window, and issues wraps for the new
+ * snapshot. Readers stay on the last settled revision that
+ * still sits on the current chain.
  * Not a grant. Not an owner pub on a visible grant row.
  */
 export type EpochFinalization = {
@@ -1149,6 +1224,10 @@ export type EpochReplicaView = {
  * A smaller finalizationId after that instant still replaces
  * the winner. Readers then stay on settledRevisionId until
  * the new window elapses, and then switch.
+ * A candidate with a stated-1 snapshot entry whose until is
+ * <= now is not current, even after the window. The buffer
+ * stays buffered until a replacement that excludes that
+ * accessor settles.
  * A cancel or a higher grantRevision applies when seen.
  * This wait does not delay that. Does not mint.
  */
@@ -1513,6 +1592,7 @@ export type EncryptedDiscoveryVector =
   | "content-auth-revision-relabel"
   | "content-auth-owner-pub-hidden"
   | "content-auth-sign-then-encrypt"
+  | "commitment-blinding"
   | "inbox-content-address-distinct"
   | "inbox-replace-rejected"
   | "inbox-wrap-swap"
@@ -1533,10 +1613,14 @@ export type EncryptedDiscoveryVector =
   | "grant-payload-mismatch"
   | "grant-revision-tie"
   | "grant-revision-digest-tie"
+  | "grant-empty-digest"
   | "epoch-proof-matches-winner"
   | "epoch-buffer-until-settle"
   | "epoch-stale-acl"
   | "epoch-reencrypt-displaced"
+  | "epoch-rebuild-descendants"
+  | "epoch-finalization-sig"
+  | "epoch-expire-before-settle"
   | "inbox-envelope-body"
   | "item-auth-canonical"
   | "status-policy-max-age"

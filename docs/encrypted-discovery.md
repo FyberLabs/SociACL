@@ -39,7 +39,7 @@ SociACL decides who receives a wrap. A wrap is written only for a principal the 
 
 A wrap is not a grant. `checkSee` and `checkSeeGrant` do not take wrap bytes and do not read them when setting `allowed`. Check must still pass before a destination treats the item as granted (show it, reply, re-share, or write). Holding a DEK decrypts bytes the holder already fetched. It does not make Check allow. A hop, a hint, or a wrap never mints.
 
-`WrappedKey` is the key material. A visible `BlindedGrantRow` may carry one beside ciphertext of the grant. The row stores a `GrantCommitment` (a hash). It does not store the owner's SEA pub. The holder opens that commitment in a `GrantPresentation` at the destination. See [Hidden authorship](#hidden-authorship).
+`WrappedKey` is the key material. A visible `BlindedGrantRow` may carry one beside ciphertext of the grant. The row stores a `GrantCommitment` (a blinded hash). The blinding is not on the row. It does not store the owner's SEA pub. The holder opens that commitment in a `GrantPresentation` at the destination. See [Hidden authorship](#hidden-authorship).
 
 ## One inbox lane
 
@@ -76,15 +76,15 @@ The owner's SEA pub is not a field on that row. A signature over the grant, made
 The visible row holds:
 
 - ciphertext of the canonical grant (object, accessor, `from`, `until`, `stated`, epoch, the owner's id, monotonic `grantRevision`, and `itemCiphertextDigest`). When the grant names an encrypted item, `itemCiphertextDigest` is the SHA-256 of that item ciphertext, so the commitment and the owner signature cover it. The destination compares it to the fetched item. When the grant names no encrypted item, the field is empty
-- a `GrantCommitment`: the hash of those canonical bytes
+- a `GrantCommitment`: SHA-256 of a fresh 32-byte blinding plus those canonical fields, including the item ciphertext digest. The blinding is inside the ciphertext. The visible row stores the hash only
 - the wrapped DEK, when this row carries a key
 - `entryId`: the hash of the canonical entry (`laneId`, ciphertext, commitment, wrap)
 
 There is no `hamState` on the entry. A later grant is a new entry. See [Append-only inbox entries](#append-only-inbox-entries).
 
-The holder presents a `GrantPresentation` to the destination. The presentation is not written back to Gun. It contains the opened grant, the owner id, the signature, and the owner's SEA pub. The destination:
+The holder presents a `GrantPresentation` to the destination. The presentation is not written back to Gun. It contains the opened grant, the commitment blinding, the owner id, the signature, and the owner's SEA pub. The blinding is not a field of the visible row. An unsalted hash of the grant bytes is not the commitment. Guessing the owner, the window, the epoch, or the revision does not open the row. The destination:
 
-1. Recomputes the commitment from the opened grant and checks it against the row. A mismatch fails closed. The presented grant is then the grant that was committed, not a substitute.
+1. Recomputes the commitment from the blinding and the opened grant and checks it against the row. A mismatch fails closed. The presented grant is then the grant that was committed, not a substitute. When the grant names an encrypted item, the destination also passes the SHA-256 of the fetched ciphertext into `checkPresentedGrant`. A mismatch with `itemCiphertextDigest` fails closed. `SeeGraph.snapshotHash` is not that digest.
 2. Verifies the signature with the SEA pub in the presentation, and checks that pub is the one enrolled for the owner named in the opened grant. The pub comes from the presentation and the account enrollment, not from a copy on the row.
 3. Checks [presenter binding](#presenter-binding). A proof alone grants nothing.
 4. Checks a fresh [epoch/status proof](#revocation-freshness) beside the zookie. A missing or stale proof fails closed.
@@ -119,7 +119,7 @@ The destination issues a nonce and keeps it in `VerifierChallengeState`. That st
 
 `checkPresentedGrant` decodes one `SignedGrantPayload` from `grantBytes`. `grant`, `owner`, and `grantRevision` must match that payload. A mismatch fails closed before verifier state changes. Check uses the decoded payload.
 
-It also takes `VerifierGrantRevisionState`, the highest signed `grantRevision` this verifier has accepted for that object and accessor, and the payload digest of that record. The presenter does not supply it. A presented revision lower than that record fails closed. At the same revision, `stated: 0` wins before any digest comparison. A live payload does not replace a cancellation. When `stated` matches, the smaller payload digest wins. A higher signed revision replaces the record.
+It also takes `VerifierGrantRevisionState`, the highest signed `grantRevision` this verifier has accepted for that object and accessor, and the payload digest of that record. The presenter does not supply it. A presented revision lower than that record fails closed. At the same revision, `stated: 0` wins before any digest comparison. A live payload does not replace a cancellation. When `stated` matches and the stored digest is already a digest, the smaller payload digest wins. An empty digest raised from a status proof is unknown. It is not the smallest digest. The first payload with the same `grantRevision` and the same `stated` is accepted, and its digest is stored. A cancel at that revision still beats a live payload. A higher signed revision replaces the record.
 
 The status proof names this accessor and this `grantRevision`, and the signature covers those fields plus `stated`, the epoch, the revision, the times, and the zookie. The decoded grant, the proof, the zookie, and `EpochReplicaView` name the same object and the same epoch. The proof's accessor is the grant's accessor. A mismatch fails closed before the verifier spends a nonce or changes its record. A verified proof that carries a higher `grantRevision`, or `stated: 0` at the same revision as a stored live row, updates the record from the proof. The holder cannot keep that record on an older live row by withholding the cancel.
 
@@ -157,7 +157,7 @@ Those devices share the account key, so two of them can each mint a different ke
 
 The owner device publishes an `EpochManifest`, signed with the account SEA key. Devices check that signature with the account `pub` they already hold. The manifest is a self-wrap in the author's one lane, or it sits inside the encrypted item. It is not an owner pub on a visible grant row. It is not a grant. Publishing it does not mint.
 
-`revisionId` is the hash of the canonical manifest body: object, epoch, previous epoch, device id, key commitment, `settleWindowMs`, and `aclSnapshot`. It is not a hash of the device id alone. `aclSnapshot` is the SHA-256 of one row per accessor: the accessor, that accessor's `grantRevision`, and `stated`. There is no single cancel number across accessors. A replica that knows accessor A is cancelled at revision R ignores a snapshot that lists A as live, omits A, or cancels A below R. A finalization that names that snapshot is ignored too. The winner is recomputed over the finalizations that remain. An offline device that wrapped a reader before learning of the cancel cannot win once replicas have seen that cancel. A retry that mints a new key commitment gets a new `revisionId`. The device id is local to that enrollment. It is not a Gun device record, not a second SEA keypair, and not a grant. Enrollment still does not mint.
+`revisionId` is the hash of the canonical manifest body: object, epoch, previous epoch, device id, key commitment, `settleWindowMs`, and `aclSnapshot`. It is not a hash of the device id alone. `aclSnapshot` is the SHA-256 of one row per accessor: the accessor, that accessor's `grantRevision`, `stated`, `from`, and `until`. There is no single cancel number across accessors. A replica that knows accessor A is cancelled at revision R ignores a snapshot that lists A as live, omits A, or cancels A below R. A stated-1 entry whose `until` is at or before now does not settle. The buffer stays buffered. The owner publishes a new revision whose key was not wrapped to that accessor, and whose snapshot lists that accessor `stated: 0`. That replacement starts its own settle window. A finalization that names that snapshot is ignored too. The winner is recomputed over the finalizations that remain. An offline device that wrapped a reader before learning of the cancel cannot win once replicas have seen that cancel. A retry that mints a new key commitment gets a new `revisionId`. The device id is local to that enrollment. It is not a Gun device record, not a second SEA keypair, and not a grant. Enrollment still does not mint.
 
 `settleWindowMs` is the owner-signed wait before readers switch to this candidate. The owner signs it in the manifest for one object. For a group or circle, the owner signs the same number in `GroupEpochConfig`, and every group-epoch manifest repeats it. A manifest that disagrees with that config is ignored. The config sits with the manifest, in the author lane or inside the encrypted item. It is not an owner pub on a visible grant row.
 
@@ -165,11 +165,11 @@ The bounds are fixed. The minimum is `SETTLE_WINDOW_MIN_MS`, 3600000 (1 hour). A
 
 Two devices racing the same next epoch produce two revision ids, because the key commitments differ. Each manifest is append-only and content-addressed by `revisionId` (SHA-256 of the canonical body, lowercase hex). A body that does not hash to its `revisionId` is rejected. A merge cannot swap the key commitment.
 
-Each owner device may publish an `EpochFinalization` for that object and epoch step. It names its candidate revision ids and the winner inside that list, which is the lexicographically smallest `revisionId` in the list. It chains to a parent finalization (`previousFinalizationId`, empty for the first). A finalization whose named `revisionId` is not that minimum is ignored.
+Each owner device may publish an `EpochFinalization` for that object and epoch step. It names its candidate revision ids and the winner inside that list, which is the lexicographically smallest `revisionId` in the list. It chains to a parent finalization (`previousFinalizationId`, empty for the first). A finalization whose named `revisionId` is not that minimum is ignored. The owner signature covers `finalizationId`, using the length-prefixed domain `s3rch-epoch-finalization-sig-v1` and that id. `finalizationId` already covers the candidate list and `previousFinalizationId`. A signature over `revisionId` alone does not verify.
 
-Replicas do not keep the first finalization they see. Each replica keeps every verified finalization for the same object, epoch, and parent, and recomputes the winner as the lexicographically smallest `finalizationId` in that set. Two replicas that have seen the same set compute the same winner, whichever message arrived first. When a smaller `finalizationId` arrives later, the replica adopts it and drops the previous winner.
+Replicas do not keep the first finalization they see. Each replica keeps every verified finalization for the same object, epoch, and parent, and recomputes the winner as the lexicographically smallest `finalizationId` in that set. Two replicas that have seen the same set compute the same winner, whichever message arrived first. When a smaller `finalizationId` arrives later, the replica adopts it and drops the previous winner. A finalization is on the current chain only when its `previousFinalizationId` is the winner of the previous epoch, or empty for the first epoch. Replacing the winner of an epoch takes every later finalization that names the displaced id, or names a descendant of that id, off the current chain. Replicas keep those finalizations. They are not the winner, and they do not extend the chain. The owner rebuilds outward. Each invalidated epoch, parent before child, gets a new finalization whose `previousFinalizationId` is the new parent winner and whose `revisionId` is a new manifest. That candidate starts its own settle window. Content bound to a displaced descendant is not current. The owner re-encrypts it under the rebuilt winner after that window and issues wraps for the new snapshot. Readers stay on the last settled revision that still sits on the current chain.
 
-Readers take the window from the winning manifest. New writes for the step become current only after that winning id has stayed the winner for the whole signed window (`now >= winnerSeenAt + settleWindowMs`). `winnerSeenAt` is the time this replica first saw that id. A new winner starts the window again, using the window signed on the new winner's manifest. While the window has not elapsed, readers keep the last settled key (`settledRevisionId`) and do not switch. When it elapses, they switch to the winner.
+Readers take the window from the winning manifest. New writes for the step become current only after that winning id has stayed the winner for the whole signed window (`now >= winnerSeenAt + settleWindowMs`). `winnerSeenAt` is the time this replica first saw that id. A new winner starts the window again, using the window signed on the new winner's manifest. While the window has not elapsed, readers keep the last settled key (`settledRevisionId`) and do not switch. When it elapses, they switch to the winner only when every stated-1 snapshot entry is still inside its window. An expired stated-1 entry does not settle, and the buffer stays buffered until a replacement that excludes that accessor settles.
 
 The window never delays privilege-down. A `stated: 0` grant, a higher `grantRevision` cancel, and removal from a group apply when the replica sees them. A revoked reader is left out of every candidate epoch's wraps, including a candidate whose window is still running. See [Rotation on revoke](#rotation-on-revoke).
 
@@ -177,7 +177,7 @@ The window never delays privilege-down. A `stated: 0` grant, a higher `grantRevi
 
 A member offline longer than the window still holds the last key they settled. A cancel they missed applies as soon as they see the higher `grantRevision`. It does not wait out the window. If they are still a member, their window starts when they first see the current winner. They keep the last settled key until that local window elapses, then switch. They do not skip the wait because other replicas already switched. A smaller `finalizationId` during their wait restarts it. If they were removed while offline, they receive no wrap for the pending candidate or for the key it settles to.
 
-Every `WrappedKey` carries its `revisionId` inside the authenticated wrap. A cleartext epoch number is not enough to tell two keys for the same epoch apart. While a candidate is pending, readers still read ciphertext already written under the last settled revision. New writes stay in a buffer. They are not encrypted under the last settled key, and they are not encrypted under the pending candidate, because a later smaller `finalizationId` can replace that candidate. When the window elapses, the buffer is encrypted under the winner that settled. Wraps follow that winner's per-accessor snapshot. If a smaller `finalizationId` later displaces that winner, the owner re-encrypts those writes under the new winner before they are current again. After each switch, readers reject further writes bound to a revision the recomputed winner has superseded, including when the epoch number matches. A device that lost adopts that settled result and does not keep publishing under the superseded revision. An offline device can still become the winner by publishing a smaller `finalizationId` that other replicas then see, and those replicas wait out the signed window before they switch.
+Every `WrappedKey` carries its `revisionId` inside the authenticated wrap. A cleartext epoch number is not enough to tell two keys for the same epoch apart. While a candidate is pending, readers still read ciphertext already written under the last settled revision. New writes stay in a buffer. They are not encrypted under the last settled key, and they are not encrypted under the pending candidate, because a later smaller `finalizationId` can replace that candidate. When the window elapses, the owner revalidates every stated-1 snapshot entry. An entry whose `until` is at or before now is expired, and that candidate does not receive the buffer, because the expired reader may already hold its wrap. The buffer is encrypted under a later winner whose snapshot excludes that accessor. Otherwise the buffer is encrypted under the winner that settled. Wraps follow that winner's per-accessor snapshot. If a smaller `finalizationId` later displaces that winner, the owner re-encrypts those writes under the new winner before they are current again. After each switch, readers reject further writes bound to a revision the recomputed winner has superseded, including when the epoch number matches. A device that lost adopts that settled result and does not keep publishing under the superseded revision. An offline device can still become the winner by publishing a smaller `finalizationId` that other replicas then see, and those replicas wait out the signed window before they switch.
 
 How long an epoch lasts is still open. See [Open choices](#open-choices).
 
@@ -187,7 +187,7 @@ A first introduction on the one lane carries the sender's SEA `epub` and SEA `pu
 
 The binding is one of two checks. An enrollment lookup reads the record the reader already trusts for that account, and the record's `pub` and `epub` must be the ones in the introduction. Or the account identity, the key already enrolled for that account id, signs `pub` and `epub`. The reader verifies that signature with the enrolled account key. A signature made by the introduced `pub` fails closed. A missing `epub`, a missing binding, or an `epub` that was not the one enrolled or signed fails closed. `pub` alone can verify a self-signature and still leave the reader unable to wrap to the account that was claimed.
 
-The introduction is not a grant. It does not open a second lane. It does not mint. Later wraps to that sender use the bound `epub`. `priv` and `epriv` still never go on Gun. First contact under the public policy also needs a stamp. See [Inbox write policy](#inbox-write-policy).
+The introduction is not a grant. It does not open a second lane. It does not mint. Later wraps to that sender use the bound `epub`. `priv` and `epriv` still never go on Gun. First contact under the public policy also needs proof-of-work or a trusted stamp. See [Inbox write policy](#inbox-write-policy).
 
 ## Inbox write policy
 
@@ -205,7 +205,7 @@ The user sets the policy. `filterInboxAppend` takes the row, the verifier's `Ver
 Revoke of an encrypted object always starts with privilege-down, then a new epoch. The owner chooses what happens to ciphertext that already exists. `RevokeCipherMode` records the choice. `rotateOnRevoke` names the operation. The reference crate does not run it.
 
 1. **Privilege-down, immediate for a current verifier.** `stated: 0` on the grant (or on the direct membership) and a `hamState` bump, same as `cancelSee`. On a private row the same deny is a new append whose signed `grantRevision` is greater and whose `stated` is 0. The settle window does not delay this step. The next Check after that verifier has merged the cancel denies. Do not cache an allow across that merge. Freshness for every other verifier is [Revocation freshness](#revocation-freshness).
-2. **New epoch.** A new DEK, or a new group epoch key, wrapped only to the remaining readers. The revoked reader is left out of every candidate's wraps, including a candidate whose settle window has not elapsed. A candidate whose `aclSnapshot` still names that reader is ignored. Remaining readers still read ciphertext already written under the last settled key while the candidate is pending, and they switch reads once the signed window passes. They do not encrypt new writes under that last settled key, and they do not encrypt new writes under the pending candidate. New writes stay buffered until the winner settles, then they are encrypted under that settled key. The epoch is the winning [epoch manifest](#epoch-manifest). A second key under the same epoch number does not become current.
+2. **New epoch.** A new DEK, or a new group epoch key, wrapped only to the remaining readers. The revoked reader is left out of every candidate's wraps, including a candidate whose settle window has not elapsed. A candidate whose `aclSnapshot` still names that reader is ignored. Remaining readers still read ciphertext already written under the last settled key while the candidate is pending, and they switch reads once the signed window passes. They do not encrypt new writes under that last settled key, and they do not encrypt new writes under the pending candidate. New writes stay buffered until the winner settles, then they are encrypted under that settled key, unless a stated-1 recipient's `until` has passed. In that case the owner publishes a new key that was not wrapped to that accessor, and the buffer waits for that replacement. The epoch is the winning [epoch manifest](#epoch-manifest). A second key under the same epoch number does not become current.
 3. **Ciphertext choice**, one of:
 
 | Mode | What the owner does | What remaining readers do during the window | What a revoked reader can still read |
@@ -278,7 +278,7 @@ Copy or re-type [s3rch-check.d.ts](s3rch-check.d.ts). Do not `npm install sociac
 | --- | --- |
 | `AccountSeaKey` | One SEA keypair per account. Devices inherit it through enrollment. `priv` / `epriv` stay off Gun |
 | `WrappedKey` | DEK or group key wrap. `revisionId` sits inside the authenticated payload |
-| `GrantCommitment` | Hash of the canonical grant. Covers the item ciphertext digest when the grant names an encrypted item. Not an owner SEA pub |
+| `GrantCommitment` | SHA-256 of a fresh blinding plus the canonical grant, including the item ciphertext digest. The blinding is not on the visible row. Not an owner SEA pub |
 | `ItemContentAuth` | Owner signature over item id, epoch, version, plaintext digest, and `revisionId`. Signed before encryption. Inside the encrypted item |
 | `SignedGrantPayload` | Grant bytes inside the ciphertext, including monotonic `grantRevision` and `itemCiphertextDigest`. The greatest revision wins. At the same revision, `stated: 0` wins before the payload digest. The verifier holds that record. A lower live row does not undo a cancel |
 | `InboxEnvelope` | Optional writer-signed outer envelope for `named-writers`. Carries the full `InboxEntryBody`. The relay recomputes `entryId` |
@@ -286,15 +286,15 @@ Copy or re-type [s3rch-check.d.ts](s3rch-check.d.ts). Do not `npm install sociac
 | `PresenterBinding` / `VerifierChallengeState` | Verifier-issued nonce, single use, with expiry. The presenter does not supply the challenge store |
 | `BlindedGrantRow` / `inboxEntryId` | One append-only lane entry. `entryId` hashes lane, ciphertext, commitment, and wrap. No owner field. No `hamState` on the entry |
 | `AuthenticatedPresenterChannel` | Transport capability. Brand is an ECMAScript private field and a module `WeakSet`. `accessor` and `readerPub` are frozen and must match the grant |
-| `checkPresentedGrant` | Commitment, owner signature, presenter binding, verifier-held `grantRevision`, fresh status proof bound to the same object, epoch, and accessor, then Check. A group grant runs `checkGroupSee` |
+| `checkPresentedGrant` | Commitment, owner signature, presenter binding, verifier-held `grantRevision`, fetched item digest, fresh status proof bound to the same object, epoch, and accessor, then Check. A group grant runs `checkGroupSee` |
 | `RecipientInbox` | The one lane for that account. Not a shared bucket |
 | `DailyShardScan` | Whole-shard rescan with dedup. Not a per-device cursor. Not a second lane |
 | `AuthorFastUnwrap` | Local author DEK. Not a grant row |
 | `FirstContactIntro` / `AccountKeyBinding` | Sender `pub` and `epub`, bound by enrollment or by the account identity. Not a self-signature |
 | `WriterAppendAuth` / `filterInboxAppend` | Who may append. Writer id comes from a branded channel or a signature, before quotas. Verifier holds one challenge per nonce, known senders, one quota per sender, and one lane capacity. Default `public-filtered` |
-| `EpochManifest` / `epochRevisionId` | SHA-256 of the length-prefixed manifest body, including `settleWindowMs` and `aclSnapshot`. One row per accessor. A snapshot that misses a cancel this replica already has for that accessor is ignored |
+| `EpochManifest` / `epochRevisionId` | SHA-256 of the length-prefixed manifest body, including `settleWindowMs` and `aclSnapshot`. One row per accessor, including `from` and `until`. A snapshot that misses a cancel, or a stated-1 row past `until`, does not settle |
 | `GroupEpochConfig` | Owner-signed settle window for one group or circle. A group epoch manifest repeats it. Minimum 1 hour, maximum 72 hours, default 24 hours |
-| `EpochFinalization` / `EpochReplicaView` | Candidates for one step. Smallest `finalizationId` seen wins. Readers keep the last settled key until the signed window elapses, then switch. The window does not delay privilege-down |
+| `EpochFinalization` / `EpochReplicaView` | Candidates for one step. Smallest `finalizationId` seen wins. The signature covers `finalizationId`. A displaced parent drops descendants off the chain, and the owner rebuilds them outward. Readers keep the last settled key until the signed window elapses, then switch. The window does not delay privilege-down |
 | `GrantStorage` | `public-plain` or `private-row` (whether public-plain stays is open) |
 | `MeshMembership` | Direct `same-group` or `named-circle` edge. Hopcap 1 |
 | `ObjectSetName` | The group or circle an object names |
@@ -343,6 +343,8 @@ Stubs only. The names are `EncryptedDiscoveryVector` in [s3rch-check.d.ts](s3rch
 
 `content-auth-sign-then-encrypt`. The signed tuple is the plaintext digest. The ciphertext is built after that signature exists. The signed tuple does not include the ciphertext digest. The visible row still has no owner pub.
 
+`commitment-blinding`. The same grant bytes with two blindings produce two commitment hashes. An unsalted hash of the grant bytes does not match the row. The presentation carries the blinding and recomputes the row hash. The visible row does not contain the blinding or the owner.
+
 ### Inbox replacement
 
 `inbox-content-address-distinct`. Two entries that differ in ciphertext, commitment, wrap, or `laneId` have two entry ids. Each id is the hash of that canonical entry.
@@ -369,7 +371,7 @@ Stubs only. The names are `EncryptedDiscoveryVector` in [s3rch-check.d.ts](s3rch
 
 `grant-revision-stale`. The verifier's record for this object and accessor is `grantRevision` 2 and `stated: 0`. The holder presents an older live row at revision 1 with a valid signature and a fresh proof. `checkPresentedGrant` fails closed. The holder does not supply the record.
 
-`grant-item-digest`. The grant names an encrypted item. `SignedGrantPayload.itemCiphertextDigest` is the SHA-256 of a different ciphertext than the fetched item. The commitment check fails closed.
+`grant-item-digest`. The grant names an encrypted item. The destination passes `fetchedItemDigest`, the SHA-256 of the ciphertext it fetched. That digest differs from `SignedGrantPayload.itemCiphertextDigest`. `checkPresentedGrant` fails closed before the revision record changes. `SeeGraph.snapshotHash` is not this comparison.
 
 `writer-auth-required`. The caller names an accessor that is already in `knownSenders` and passes no channel and no signature. The append is `writer-auth`. That sender's quota and `laneRemaining` stay as they were. The stored row still has no writer pub.
 
@@ -385,6 +387,8 @@ Stubs only. The names are `EncryptedDiscoveryVector` in [s3rch-check.d.ts](s3rch
 
 `grant-revision-digest-tie`. Two live payloads at `grantRevision` 4. The smaller payload digest is the current one. A later arrival of that smaller digest replaces a stored larger digest. The larger digest does not replace the smaller one. A cancel at that revision still wins over either live payload.
 
+`grant-empty-digest`. A verified status proof raises the record to `grantRevision` 5, `stated: 1`, with an empty payload digest. The first live payload at that revision is accepted and its digest is stored. The empty string does not reject that payload as a larger digest. A `stated: 0` payload at that same revision still replaces the live record.
+
 `epoch-proof-matches-winner`. The verifier's read key is the settled revision. The holder presents a fresh owner-signed proof for a different revision. The check fails closed.
 
 `epoch-buffer-until-settle`. A candidate is pending. A new write is buffered. A later smaller `finalizationId` replaces that candidate. The buffer is encrypted only under the winner that settles, not under the candidate that lost.
@@ -392,6 +396,12 @@ Stubs only. The names are `EncryptedDiscoveryVector` in [s3rch-check.d.ts](s3rch
 `epoch-stale-acl`. This replica has accessor A cancelled at revision 10 and accessor B cancelled at revision 2. An offline device finalizes a snapshot that lists A as live, omits B, or cancels B below 2. That finalization is ignored. A's cancel does not hide B's. The revoked readers cannot unwrap the writes that settle afterward.
 
 `epoch-reencrypt-displaced`. The window elapsed and writes were encrypted under winner W. A smaller `finalizationId` arrives and replaces W. Those writes are not current. The owner re-encrypts them under the new winner and issues wraps that match the new snapshot. Readers keep bytes they already unwrapped.
+
+`epoch-rebuild-descendants`. Epoch E+1 has finalized against parent P. A smaller finalization replaces P. The E+1 finalization that names P leaves the current chain. The owner publishes a new E+1 finalization whose `previousFinalizationId` is the new parent and whose `revisionId` is a new manifest. That candidate starts its own settle window. Readers stay on the last settled revision that still sits on the current chain.
+
+`epoch-finalization-sig`. The owner signature covers `finalizationId`. A signature over `revisionId` alone does not verify. Changing `previousFinalizationId` or the candidate list changes `finalizationId`, so the old signature fails.
+
+`epoch-expire-before-settle`. A stated-1 snapshot entry has `until` before the settle instant, and that reader already holds the candidate wrap. The candidate does not settle. The buffer stays buffered. The owner publishes a new revision whose key was not wrapped to that accessor.
 
 `inbox-envelope-body`. A `named-writers` envelope carries `InboxEntryBody`. The relay recomputes `inboxEntryId`. A body that does not hash to `entryId` is rejected even when the writer signature matches the claimed id.
 
@@ -487,6 +497,12 @@ Not decided:
 - Use one cancel number for every recipient
 - Treat ciphertext bound to a displaced settled revision as current
 - Accept a status proof for a different object, epoch, or accessor
+- Treat an empty payload digest as the smallest digest
+- Put the commitment blinding on the visible row, or use an unsalted hash of the grant bytes as the commitment
+- Leave a descendant epoch current after its parent finalization is displaced
+- Settle a candidate whose stated-1 recipient is past `until`
+- Accept an epoch finalization signature that covers only `revisionId`
+- Compare `SeeGraph.snapshotHash` to the item ciphertext digest
 - Accept a presentation whose `grantRevision` is below the verifier's record
 - Take a bare accessor as the writer for quotas or the allowlist
 - Encrypt a post-revoke write under the last settled key
