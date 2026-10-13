@@ -149,7 +149,11 @@ Those devices share the account key, so two of them can each mint a different ke
 
 The owner device publishes an `EpochManifest`, signed with the account SEA key. Devices check that signature with the account `pub` they already hold. The manifest is a self-wrap in the author's one lane, or it sits inside the encrypted item. It is not an owner pub on a visible grant row. It is not a grant. Publishing it does not mint.
 
-`revisionId` is the hash of the canonical manifest body: object, epoch, previous epoch, device id, and key commitment. It is not a hash of the device id alone. A retry that mints a new key commitment gets a new `revisionId`. The device id is local to that enrollment. It is not a Gun device record, not a second SEA keypair, and not a grant. Enrollment still does not mint.
+`revisionId` is the hash of the canonical manifest body: object, epoch, previous epoch, device id, key commitment, and `settleWindowMs`. It is not a hash of the device id alone. A retry that mints a new key commitment gets a new `revisionId`. The device id is local to that enrollment. It is not a Gun device record, not a second SEA keypair, and not a grant. Enrollment still does not mint.
+
+`settleWindowMs` is the owner-signed wait before readers switch to this candidate. The owner signs it in the manifest for one object. For a group or circle, the owner signs the same number in `GroupEpochConfig`, and every group-epoch manifest repeats it. A manifest that disagrees with that config is ignored. The config sits with the manifest, in the author lane or inside the encrypted item. It is not an owner pub on a visible grant row.
+
+The bounds are fixed. The minimum is `SETTLE_WINDOW_MIN_MS`, 3600000 (1 hour). A shorter wait lets one replica switch keys before a competing finalization arrives over an ordinary delay. Re-convergence would still correct the winner, and readers would churn keys in the meantime. The maximum is `SETTLE_WINDOW_MAX_MS`, 259200000 (72 hours). A longer wait holds remaining readers on the previous key through a long weekend partition. Past three days the delay is an availability stall, not a race buffer. The default is `SETTLE_WINDOW_DEFAULT_MS`, 86400000 (24 hours). One day covers devices that publish a few hours apart, including a device offline overnight, and it stays under the maximum. The owner signs the default by writing that number. An omitted number is that same decimal in the canonical body. A signed value outside the bounds is ignored.
 
 Two devices racing the same next epoch produce two revision ids, because the key commitments differ. Each manifest is append-only and content-addressed by `revisionId` (SHA-256 of the canonical body, lowercase hex). A body that does not hash to its `revisionId` is rejected. A merge cannot swap the key commitment.
 
@@ -157,11 +161,15 @@ Each owner device may publish an `EpochFinalization` for that object and epoch s
 
 Replicas do not keep the first finalization they see. Each replica keeps every verified finalization for the same object, epoch, and parent, and recomputes the winner as the lexicographically smallest `finalizationId` in that set. Two replicas that have seen the same set compute the same winner, whichever message arrived first. When a smaller `finalizationId` arrives later, the replica adopts it and drops the previous winner.
 
-`EPOCH_SETTLE_WINDOW_MS` is 86400000, twenty-four hours, the same constant on every replica. New writes for the step are current only after the winning id has stayed the winner for that whole window (`now >= winnerSeenAt + EPOCH_SETTLE_WINDOW_MS`). `winnerSeenAt` is the time this replica first saw that id. A new winner starts the window again.
+Readers take the window from the winning manifest. New writes for the step become current only after that winning id has stayed the winner for the whole signed window (`now >= winnerSeenAt + settleWindowMs`). `winnerSeenAt` is the time this replica first saw that id. A new winner starts the window again, using the window signed on the new winner's manifest. While the window has not elapsed, readers keep the last settled key (`settledRevisionId`) and do not switch. When it elapses, they switch to the winner.
 
-**Honest limit.** Agreement does not depend on arrival order, and a replica that later sees a smaller id re-converges instead of forking. The window only delays use. It does not freeze the set. A smaller `finalizationId` after the window still replaces the winner, including on a replica that already treated the previous winner as current. Bytes already unwrapped under the previous winner stay readable, as in [Rotation on revoke](#rotation-on-revoke). Closing the set on a local clock would leave two replicas that missed different messages with different winners. Replicas that have not yet seen the same finalizations disagree until they do.
+The window never delays privilege-down. A `stated: 0` grant, a higher `grantRevision` cancel, and removal from a group apply when the replica sees them. A revoked reader is left out of every candidate epoch's wraps, including a candidate whose window is still running. See [Rotation on revoke](#rotation-on-revoke).
 
-Every `WrappedKey` carries the current winner's `revisionId` inside the authenticated wrap. A cleartext epoch number is not enough to tell two keys for the same epoch apart. Readers reject a wrap whose authenticated `revisionId` is not that winner. They reject current content and further writes bound to a revision the recomputed winner has superseded, including when the epoch number matches. A device that lost adopts the recomputed winner and does not keep publishing under the superseded revision. An offline device can still become current by publishing a smaller `finalizationId` that other replicas then see.
+**Honest limit.** Agreement does not depend on arrival order, and a replica that later sees a smaller id re-converges instead of forking. The window only delays the key switch. It does not freeze the set, and it does not delay a cancel. A smaller `finalizationId` after the window still replaces the winner. Readers who already switched keep using that key until the new window elapses, then switch again. Bytes already unwrapped under the previous key stay readable, as in [Rotation on revoke](#rotation-on-revoke). Closing the set on a local clock would leave two replicas that missed different messages with different winners. Replicas that have not yet seen the same finalizations disagree until they do.
+
+A member offline longer than the window still holds the last key they settled. A cancel they missed applies as soon as they see the higher `grantRevision`. It does not wait out the window. If they are still a member, their window starts when they first see the current winner. They keep the last settled key until that local window elapses, then switch. They do not skip the wait because other replicas already switched. A smaller `finalizationId` during their wait restarts it. If they were removed while offline, they receive no wrap for the pending candidate or for the key it settles to.
+
+Every `WrappedKey` carries its `revisionId` inside the authenticated wrap. A cleartext epoch number is not enough to tell two keys for the same epoch apart. While a candidate is pending, the current key is the last settled revision, not the pending winner. After the window, readers switch and reject further writes bound to a revision the recomputed winner has superseded, including when the epoch number matches. A device that lost adopts that settled result and does not keep publishing under the superseded revision. An offline device can still become the winner by publishing a smaller `finalizationId` that other replicas then see, and those replicas wait out the signed window before they switch.
 
 How long an epoch lasts is still open. See [Open choices](#open-choices).
 
@@ -188,18 +196,18 @@ The user sets the policy. `filterInboxAppend` takes the row and the verifier's `
 
 Revoke of an encrypted object always starts with privilege-down, then a new epoch. The owner chooses what happens to ciphertext that already exists. `RevokeCipherMode` records the choice. `rotateOnRevoke` names the operation. The reference crate does not run it.
 
-1. **Privilege-down, immediate for a current verifier.** `stated: 0` on the grant (or on the direct membership) and a `hamState` bump, same as `cancelSee`. The next Check after that verifier has merged the cancel denies. Do not cache an allow across that merge. Freshness for every other verifier is [Revocation freshness](#revocation-freshness).
-2. **New epoch.** A new DEK, or a new group epoch key, wrapped only to the remaining readers. New ciphertext uses the new key. The epoch is the winning [epoch manifest](#epoch-manifest). A second key under the same epoch number does not become current.
+1. **Privilege-down, immediate for a current verifier.** `stated: 0` on the grant (or on the direct membership) and a `hamState` bump, same as `cancelSee`. On a private row the same deny is a new append whose signed `grantRevision` is greater and whose `stated` is 0. The settle window does not delay this step. The next Check after that verifier has merged the cancel denies. Do not cache an allow across that merge. Freshness for every other verifier is [Revocation freshness](#revocation-freshness).
+2. **New epoch.** A new DEK, or a new group epoch key, wrapped only to the remaining readers. The revoked reader is left out of every candidate's wraps, including a candidate whose settle window has not elapsed. Remaining readers keep the last settled key while the candidate is pending and switch once the signed window passes. The epoch is the winning [epoch manifest](#epoch-manifest). A second key under the same epoch number does not become current.
 3. **Ciphertext choice**, one of:
 
-| Mode | What the owner does | What a revoked reader can still read |
-| --- | --- | --- |
-| `forward-only` | Leaves existing ciphertext under the old DEK. Only later writes use the new epoch | Old ciphertext, if they already unwrapped the old DEK or saved the old bytes. Not the new epoch |
-| `re-encrypt` | Rewrites existing ciphertext in place under the new DEK and bumps merge state so the new ciphertext wins | A local copy, or plaintext they already unwrapped. The replaced soul no longer serves the old ciphertext to peers that merged the new record |
+| Mode | What the owner does | What remaining readers do during the window | What a revoked reader can still read |
+| --- | --- | --- | --- |
+| `forward-only` | Leaves existing ciphertext under the last settled DEK. Only later writes use the new epoch, and those writes wait until the candidate settles | Keep reading and writing with the last settled key. Switch new writes to the candidate after the window | Old ciphertext, if they already unwrapped the old DEK or saved the old bytes. Not the candidate epoch, and not the key it settles to |
+| `re-encrypt` | Rewrites existing ciphertext under the candidate DEK and bumps merge state so the new ciphertext wins | Keep the copy they already unwrapped under the last settled key until the window passes, then switch to the rewritten ciphertext. A peer that only has the rewritten soul opens it after they hold that settled key | A local copy, or plaintext they already unwrapped. The replaced soul no longer serves the old ciphertext to peers that merged the new record. They receive no wrap for the candidate |
 
-A wrap for an older epoch does not mint a grant. Check denies the revoked accessor after step 1 even when they still hold the old DEK.
+A wrap for an older epoch does not mint a grant. Check denies the revoked accessor after step 1 even when they still hold the old DEK. The settle window does not keep that grant live.
 
-**Honest limit, both modes.** Content the revoked party already unwrapped stays readable to them. `re-encrypt` replaces the soul's ciphertext. It does not erase a copy or a DEK they already hold. `forward-only` does not pretend to hide the old epoch.
+**Honest limit, both modes.** Content the revoked party already unwrapped stays readable to them. `re-encrypt` replaces the soul's ciphertext. It does not erase a copy or a DEK they already hold, and the window does not postpone the deny while remaining readers finish the wait. `forward-only` does not pretend to hide the old epoch. A member who was offline for the whole window learns the cancel as soon as they see it, and learns the new key only if they are still a member, after their own observation of the winner has lasted the signed window.
 
 Removing a reader is this revoke, including the owner's choice of mode. Whether adding a member, or a quiet boundary with no removal, also starts a new group epoch is open. See [Open choices](#open-choices).
 
@@ -276,8 +284,9 @@ Copy or re-type [s3rch-check.d.ts](s3rch-check.d.ts). Do not `npm install sociac
 | `AuthorFastUnwrap` | Local author DEK. Not a grant row |
 | `FirstContactIntro` / `AccountKeyBinding` | Sender `pub` and `epub`, bound by enrollment or by the account identity. Not a self-signature |
 | `InboxWriteHook` / `filterInboxAppend` | Who may append. Verifier holds known senders, one quota per sender, and one lane capacity. Default `public-filtered` |
-| `EpochManifest` / `epochRevisionId` | SHA-256 of the length-prefixed manifest body. The current revision is the recomputed epoch winner |
-| `EpochFinalization` / `EpochReplicaView` | Candidates for one step. Smallest `finalizationId` seen wins. `EPOCH_SETTLE_WINDOW_MS` delays current use and does not freeze the set |
+| `EpochManifest` / `epochRevisionId` | SHA-256 of the length-prefixed manifest body, including the owner-signed `settleWindowMs`. The current revision is the recomputed epoch winner |
+| `GroupEpochConfig` | Owner-signed settle window for one group or circle. A group epoch manifest repeats it. Minimum 1 hour, maximum 72 hours, default 24 hours |
+| `EpochFinalization` / `EpochReplicaView` | Candidates for one step. Smallest `finalizationId` seen wins. Readers keep the last settled key until the signed window elapses, then switch. The window does not delay privilege-down |
 | `GrantStorage` | `public-plain` or `private-row` (whether public-plain stays is open) |
 | `MeshMembership` | Direct `same-group` or `named-circle` edge. Hopcap 1 |
 | `ObjectSetName` | The group or circle an object names |
@@ -350,11 +359,19 @@ Stubs only. The names are `EncryptedDiscoveryVector` in [s3rch-check.d.ts](s3rch
 
 `grant-revision-order`. A signed payload with `stated: 0` and `grantRevision` 2 is already open. A signed payload with `stated: 1` and `grantRevision` 1 arrives later. Both signatures match. The cancel stands.
 
-`epoch-late-manifest`. A replica's winner is one finalization. A later finalization with a smaller `finalizationId` arrives. The replica adopts it. The step is not current again until `EPOCH_SETTLE_WINDOW_MS` has passed for the new winner.
+`epoch-late-manifest`. A replica's winner is one finalization. A later finalization with a smaller `finalizationId` arrives. The replica adopts it and keeps the last settled key. The step switches only after the new winner's signed `settleWindowMs` has passed.
 
 `epoch-arrival-order`. Two replicas receive the same two finalizations in opposite orders. Both compute the same winner, the smaller `finalizationId`.
 
-`epoch-settle-window`. The smallest finalization has been the winner for less than `EPOCH_SETTLE_WINDOW_MS`. New writes under that revision are not current yet.
+`epoch-settle-window`. The smallest finalization has been the winner for less than the owner-signed `settleWindowMs`. Readers still use the last settled key. New writes under the pending revision are not current yet.
+
+`epoch-settle-bounds`. A manifest signs a window below 3600000 or above 259200000. That manifest is ignored. A manifest that signs 86400000 is the default and stays in range.
+
+`epoch-settle-pending-key`. A candidate has been the winner for less than its signed window. Readers open and write with `settledRevisionId`. After `winnerSeenAt + settleWindowMs` they switch to the winner.
+
+`epoch-settle-skips-revoke`. A candidate window is still running. A `stated: 0` payload with a higher `grantRevision` arrives. The cancel applies at once. The revoked reader has no wrap for that candidate.
+
+`epoch-group-window`. `GroupEpochConfig` signs 7200000 for a set. A group-epoch manifest that repeats 7200000 uses that window. A manifest that signs a different in-range number is ignored.
 
 `id-sha256-canonical`. `inboxEntryId` and `epochRevisionId` are SHA-256 of the length-prefixed UTF-8 fields, written as lowercase hex. A hex encoding of the raw body is not the id.
 
@@ -412,6 +429,8 @@ Not decided:
 - Treat a signature by the introduced SEA `pub` as the account binding
 - Accept a writer-claimed quota, a self-chosen difficulty, a first-contact flag, or an unverified token as admission evidence
 - Freeze an epoch winner on the first finalization a replica happened to see
+- Delay privilege-down, or a higher `grantRevision` cancel, until an epoch settle window elapses
+- Accept a settle window below 1 hour or above 72 hours
 - Let one sender's quota counter stand in for every sender, or give each sender a private copy of the lane capacity
 - Let a live private grant with a lower or equal signed `grantRevision` undo a cancel
 - Allow a reader to scan a shared bucket

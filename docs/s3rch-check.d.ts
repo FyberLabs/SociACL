@@ -792,15 +792,22 @@ export type FirstContactIntro = {
  * Owner-signed epoch revision. Devices that share the account
  * key can mint different keys for the same next epoch.
  * revisionId = epochRevisionId of the canonical body:
- * object, epoch, previousEpoch, deviceId, keyCommitment.
+ * object, epoch, previousEpoch, deviceId, keyCommitment,
+ * settleWindowMs.
  * A new key commitment is a new revision id.
+ * settleWindowMs is the owner-signed wait for this object,
+ * or the same number as GroupEpochConfig for a group epoch.
+ * In range SETTLE_WINDOW_MIN_MS through SETTLE_WINDOW_MAX_MS.
+ * The default the owner signs is SETTLE_WINDOW_DEFAULT_MS.
+ * Out of range, the manifest is ignored.
  * deviceId is a local enrollment id. Not a Gun device
  * record, not a second SEA keypair, and not a grant.
- * The current revisionId is the one named by the epoch winner.
- * The winner is recomputed from every verified finalization
- * this replica has seen. A later smaller finalizationId
- * replaces it. Readers reject content under a revision that
- * is not that winner.
+ * The pending winner is recomputed from every verified
+ * finalization this replica has seen. A later smaller
+ * finalizationId replaces it. Readers use the last settled
+ * revision until that winner's settle window elapses, then
+ * switch. They reject further writes under a revision the
+ * settled result has superseded.
  * Every WrappedKey for that epoch carries the same revisionId
  * inside the authenticated payload.
  * Self-wrap in the author lane, or inside the encrypted item.
@@ -814,6 +821,11 @@ export type EpochManifest = {
   revisionId: string;
   /** Commitment to the epoch key. Not the key. */
   keyCommitment: string;
+  /**
+   * Owner-signed settle window for this object, in milliseconds.
+   * Group epochs repeat GroupEpochConfig.settleWindowMs.
+   */
+  settleWindowMs: number;
   signature: string;
 };
 
@@ -827,6 +839,8 @@ export type EpochManifestBody = {
   previousEpoch: number;
   deviceId: string;
   keyCommitment: string;
+  /** Decimal milliseconds. Covered by revisionId. */
+  settleWindowMs: number;
 };
 
 /**
@@ -841,8 +855,45 @@ export type EpochManifestBody = {
  * 4. decimal previousEpoch
  * 5. deviceId
  * 6. keyCommitment
+ * 7. decimal settleWindowMs
  */
 export function epochRevisionId(body: EpochManifestBody): string;
+
+/**
+ * Bounds for an owner-signed settle window.
+ * Minimum is 1 hour. A shorter wait lets one replica switch
+ * keys before a competing finalization arrives over an ordinary
+ * delay. Re-convergence would still correct the winner, and
+ * readers would churn keys in the meantime.
+ * Maximum is 72 hours. A longer wait holds remaining readers
+ * on the previous key through a long weekend partition. Past
+ * three days the delay is an availability stall, not a race
+ * buffer. Privilege-down is not part of this wait.
+ * Default is 24 hours. One day covers devices that publish a
+ * few hours apart, including a device offline overnight, and
+ * it stays under the maximum. The owner signs the default by
+ * writing SETTLE_WINDOW_DEFAULT_MS. An omitted number is that
+ * same decimal in the canonical body.
+ */
+export const SETTLE_WINDOW_MIN_MS: 3600000;
+export const SETTLE_WINDOW_MAX_MS: 259200000;
+export const SETTLE_WINDOW_DEFAULT_MS: 86400000;
+
+/**
+ * Owner-signed settle window for one group or circle.
+ * Signed bytes, length-prefixed: "s3rch-group-epoch-config-v1",
+ * setId, predicate, decimal settleWindowMs.
+ * A group epoch manifest carries this same settleWindowMs.
+ * A mismatch is ignored. Sits with the manifest, in the author
+ * lane or inside the encrypted item. Not an owner pub on a
+ * visible grant row. Not a grant.
+ */
+export type GroupEpochConfig = {
+  setId: string;
+  predicate: "same-group" | "named-circle";
+  settleWindowMs: number;
+  signature: string;
+};
 
 /**
  * Owner-signed candidate for one epoch step. The named
@@ -876,20 +927,19 @@ export type EpochFinalization = {
 };
 
 /**
- * Protocol delay before a winning finalization is current.
- * 24 hours. Every replica uses this same constant.
- * The window restarts when a smaller finalizationId becomes
- * the winner. It does not freeze the set.
- */
-export const EPOCH_SETTLE_WINDOW_MS: 86400000;
-
-/**
  * One replica's view of one epoch step.
  * seen is every verified EpochFinalization for this parent.
  * The winner is the smallest finalizationId in seen.
  * winnerSeenAt is when this replica first observed that id.
  * A later smaller id replaces the winner and sets a new
- * winnerSeenAt. Not a grant.
+ * winnerSeenAt.
+ * settleWindowMs is the in-range value from the winning
+ * manifest, which matches GroupEpochConfig for a group epoch.
+ * settledRevisionId is the last revision whose window already
+ * elapsed. Readers use that key while a candidate is pending
+ * and switch to the winner once the window elapses.
+ * The window does not delay privilege-down or grantRevision.
+ * Not a grant.
  */
 export type EpochReplicaView = {
   object: CheckObjectId;
@@ -897,15 +947,22 @@ export type EpochReplicaView = {
   previousFinalizationId: string;
   seen: readonly EpochFinalization[];
   winnerSeenAt: number;
+  settleWindowMs: number;
+  settledRevisionId: string;
 };
 
 /**
  * Spec signature. The reference crate does not run this.
+ * False when settleWindowMs is outside SETTLE_WINDOW_MIN_MS
+ * through SETTLE_WINDOW_MAX_MS.
  * True only when view.seen has a winner and
- * now >= winnerSeenAt + EPOCH_SETTLE_WINDOW_MS.
+ * now >= winnerSeenAt + settleWindowMs.
+ * While false, readers keep settledRevisionId.
  * A smaller finalizationId after that instant still replaces
- * the winner, and this function is then false until the new
- * window elapses. Does not mint.
+ * the winner. Readers then stay on settledRevisionId until
+ * the new window elapses, and then switch.
+ * A cancel or a higher grantRevision applies when seen.
+ * This wait does not delay that. Does not mint.
  */
 export function epochStepCurrent(view: EpochReplicaView, now: number): boolean;
 
@@ -1127,10 +1184,15 @@ export type CancelledGrant = {
 
 /**
  * Owner's choice at revoke, after stated 0 and the hamState bump.
- * forward-only: new epoch for later writes; old ciphertext stays.
- * re-encrypt: rewrite existing ciphertext in place under the new DEK.
- * Either way, bytes a revoked reader already unwrapped stay readable
- * to them. An older epoch wrap does not mint.
+ * The settle window does not delay that privilege-down.
+ * A revoked reader is absent from every candidate epoch's wraps.
+ * forward-only: new epoch for later writes; old ciphertext stays
+ * under the last settled key while the candidate is pending.
+ * re-encrypt: rewrite existing ciphertext under the candidate DEK.
+ * Remaining readers keep the last settled key until the window
+ * elapses, then switch. Either way, bytes a revoked reader
+ * already unwrapped stay readable to them. An older epoch wrap
+ * does not mint.
  */
 export type RevokeCipherMode = "forward-only" | "re-encrypt";
 
@@ -1224,6 +1286,10 @@ export type EncryptedDiscoveryVector =
   | "epoch-late-manifest"
   | "epoch-arrival-order"
   | "epoch-settle-window"
+  | "epoch-settle-bounds"
+  | "epoch-settle-pending-key"
+  | "epoch-settle-skips-revoke"
+  | "epoch-group-window"
   | "id-sha256-canonical"
   | "zookie-object-snapshot"
   | "intro-epub-required"
