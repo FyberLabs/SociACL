@@ -124,7 +124,7 @@ It also takes `VerifierGrantRevisionState`, the highest signed `grantRevision` t
 
 The status proof names this accessor and this `grantRevision`, and the signature covers those fields plus `stated`, the epoch, the revision, the times, and the zookie. The decoded grant, the proof, the zookie, and `EpochReplicaView` name the same object. The proof's accessor is the grant's accessor. While the settle window is open and a settled revision exists, the grant epoch and the proof epoch are `settledEpoch`, the epoch of that settled key, not the pending candidate epoch. After the window elapses they match the candidate epoch. A mismatch fails closed before the verifier spends a nonce or changes its record. A verified proof that carries a higher `grantRevision`, or `stated: 0` at the same revision as a stored live row, updates the record from the proof. The holder cannot keep that record on an older live row by withholding the cancel.
 
-`status.revisionId` must be the read key from `epochStepCurrent`, which takes the winning snapshot and the replica's ACL. While that function is false, including when the timer has elapsed and the snapshot still names an expired or cancelled recipient, the read key is `settledRevisionId`. A proof for the pending candidate fails closed. After the function is true, the read key is the recomputed winner. A proof for any other revision fails closed. When the grant is `same-group` or `named-circle`, the same call takes `PresentedGroup` and runs `checkGroupSee` on a `GroupSeeGraph` after those checks. A group object with no `PresentedGroup` fails closed. An ordinary see grant omits `PresentedGroup` and runs `checkSee`.
+`status.revisionId` must be the read key from `epochStepCurrent`, which takes the winning snapshot and the replica's ACL. While that function is false, including when the timer has elapsed and the snapshot still names an expired or cancelled recipient, the read key is `settledRevisionId`. A proof for the pending candidate fails closed. After the function is true, the read key is the recomputed winner. A proof for any other revision fails closed. When the grant is `same-group` or `named-circle`, the same call takes `PresentedGroup` and runs `checkGroupSee` on a `GroupSeeGraph` after those checks. `checkGroupSee` does not see `stated`, `from`, or `until`. The decision is that call together with the decoded payload. `stated` must be 1 and `now` must sit in `[from, until)`, `from` inclusive and `until` exclusive. A cancel or a payload outside that window stays a deny while a stale membership edge is still live. The revision record may store the cancel. A group object with no `PresentedGroup` fails closed. An ordinary see grant omits `PresentedGroup` and runs `checkSee`.
 
 The binding is not a grant. Check still runs after it. A hop, a hint, or a wrap never mints. A valid binding does not set `allowed`.
 
@@ -287,7 +287,7 @@ Copy or re-type [s3rch-check.d.ts](s3rch-check.d.ts). Do not `npm install sociac
 | `PresenterBinding` / `VerifierChallengeState` | Verifier-issued nonce, single use, with expiry. The presenter does not supply the challenge store |
 | `BlindedGrantRow` / `inboxEntryId` | One append-only lane entry. `entryId` hashes lane, ciphertext, commitment, and wrap. No owner field. No `hamState` on the entry |
 | `AuthenticatedPresenterChannel` | Transport capability. Brand is an ECMAScript private field and a module `WeakSet`. `accessor` and `readerPub` are frozen and must match the grant |
-| `checkPresentedGrant` | Commitment, graph owner, owner signature, presenter binding, verifier-held enrollment, `grantRevision`, winning snapshot, and replica ACL, fetched item digest, fresh status proof, then Check. A group grant runs `checkGroupSee` |
+| `checkPresentedGrant` | Commitment, graph owner, owner signature, presenter binding, verifier-held enrollment, `grantRevision`, winning snapshot, and replica ACL, fetched item digest, fresh status proof, then Check. A group grant runs `checkGroupSee` and still requires a live payload inside `[from, until)` |
 | `RecipientInbox` | The one lane for that account. Not a shared bucket |
 | `DailyShardScan` | Whole-shard rescan with dedup. Not a per-device cursor. Not a second lane |
 | `AuthorFastUnwrap` | Local author DEK. Not a grant row |
@@ -434,6 +434,8 @@ Stubs only. The names are `EncryptedDiscoveryVector` in [s3rch-check.d.ts](s3rch
 
 `presented-group-check`. `PresentedGroup` is set. The graph is a `GroupSeeGraph`. After the binding, revision, and freshness checks, `checkGroupSee` runs. A group object with no group argument fails closed. An ordinary see grant omits the argument and runs `checkSee`.
 
+`presented-group-cancel`. The opened payload has `stated: 0`, or `now` is outside `[from, until)`. `PresentedGroup` is set and `checkGroupSee` would allow because the membership edge is still stated 1. `checkPresentedGrant` returns `allowed: false`. The revision record may store that cancel. A live membership edge does not override the payload.
+
 `migration-wrap-receipt`. A reader's version is at `versionGate` and that reader has not acknowledged the wrap. Plaintext for that reader stays.
 
 `epoch-late-manifest`. A replica's winner is one finalization. A later finalization with a smaller `finalizationId` arrives. The replica adopts it and keeps the last settled key. The step switches only after the new winner's signed `settleWindowMs` has passed.
@@ -550,6 +552,7 @@ Not decided:
 - Re-encrypt displaced content under the same `grantRevision`
 - Trust a presenter-supplied pub as the enrolled key
 - Accept a named owner that is not `graph.ownerOf` for that object
+- Treat a live group or circle edge as an allow for a payload whose `stated` is 0 or whose window has passed
 - Spend an unnamed proof-of-work nonce when several challenges are outstanding
 - Settle a snapshot whose object-set edge is older than the one this replica has merged
 - Accept a presenter binding that is not the length-prefixed domain

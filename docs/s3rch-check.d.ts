@@ -923,7 +923,14 @@ export type PresentedGroup = {
  * revision fails closed.
  * When group is set, graph is a GroupSeeGraph and this
  * function runs checkGroupSee after the same binding,
- * revision, and freshness checks. When group is omitted,
+ * revision, and freshness checks. checkGroupSee does not
+ * read the decoded payload. allowed is true only when that
+ * call allows, the decoded payload has stated 1, and now
+ * is in [from, until). from is inclusive and until is
+ * exclusive, same as MeshSeeGrant. stated 0 denies. A
+ * payload outside that window denies. A live membership
+ * edge does not override either deny. The revision record
+ * may still store the cancel. When group is omitted,
  * it runs checkSee / checkSeeGrant. A group object with
  * no group argument fails closed.
  * The age bound is the smaller of status.maxAgeMs and
@@ -1848,6 +1855,7 @@ export type EncryptedDiscoveryVector =
   | "status-object-match"
   | "status-signed-encoding"
   | "presented-group-check"
+  | "presented-group-cancel"
   | "migration-wrap-receipt"
   | "epoch-late-manifest"
   | "epoch-arrival-order"
