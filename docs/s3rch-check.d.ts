@@ -994,10 +994,16 @@ export function checkPresentedGrant(
  * Other readers do not use this path. Enrolled devices of the
  * same account share the one SEA keypair and may unwrap a
  * self-wrap in the author's single lane.
+ * revisionId is the EpochManifest this DEK belongs to.
+ * The epoch number is not enough. A DEK for another revision,
+ * including a displaced manifest of the same epoch, is not
+ * this record. The author does not open superseded content
+ * with it.
  */
 export type AuthorFastUnwrap = {
   object: CheckObjectId;
   epoch: number;
+  revisionId: string;
   dek: string;
 };
 
@@ -1005,14 +1011,20 @@ export type AuthorFastUnwrap = {
  * How the introduction binds SEA keys to the account.
  * enrollment: the reader's trusted enrollment record for
  * account already names this pub and this epub.
- * account-signature: signature by the account identity
- * (the key already enrolled for that AccessorId).
+ * account-signature: signature by the account identity.
+ * The verification key is EnrolledSeaPub.identityPub for
+ * that account. The introduction does not supply it.
+ * It is the account's one SEA pub, not a second keypair.
+ * A missing identityPub fails closed.
  * Signed bytes, length-prefixed:
  * 1. "s3rch-account-binding-v1"
  * 2. account
  * 3. pub
  * 4. epub
- * A signature by the introduced pub is not this binding.
+ * The signed pub must equal identityPub, and the signed
+ * epub must equal the enrolled epub.
+ * A check that uses the introduced pub as the verification
+ * key is not this binding.
  * A signature that omits account, or concatenates pub and
  * epub with no lengths, does not verify. A missing epub
  * or a swapped epub fails closed.
@@ -1406,6 +1418,13 @@ export function epochStepCurrent(
  * until, or a later from.
  * False on the same membership and object-set mismatches
  * as epochStepCurrent.
+ * False when view.seen has a winner and that winner's
+ * revisionId is not view.settledRevisionId, or when
+ * now < view.winnerSeenAt + view.settleWindowMs.
+ * The winner is the smallest finalizationId in seen.
+ * A pending successor, including a late smaller id still
+ * inside its settle window, does not leave the old key
+ * writable.
  * While false, new writes are buffered. They are not encrypted
  * under settledRevisionId. The owner publishes a new revision
  * whose key was not wrapped to that accessor, and whose
@@ -1568,12 +1587,17 @@ export type WriterAppendProof = {
 /**
  * One enrolled account SEA pair. The writer does not supply it.
  * pub is the signing key. epub is the encryption key.
- * An introduction compares both. An append compares pub.
+ * identityPub is that same SEA pub, held by the verifier
+ * before the introduction. It is not a second keypair.
+ * account-signature is checked under identityPub.
+ * An introduction compares pub and epub. An append compares pub.
  */
 export type EnrolledSeaPub = {
   account: AccessorId;
   pub: string;
   epub: string;
+  /** Account-identity verification key. The one SEA pub. */
+  identityPub: string;
 };
 
 /**
@@ -1581,8 +1605,10 @@ export type EnrolledSeaPub = {
  * pub is the enrolled SEA pub for that account.
  * epub is the enrolled SEA epub for that account.
  * An introduction's enrollment binding requires both to match.
- * A swapped epub fails closed. An append compares writerPub
- * to pub. Not a field of the stored row. Not a grant.
+ * A swapped epub fails closed. account-signature is checked
+ * under identityPub, not under the introduced pub.
+ * An append compares writerPub to pub.
+ * Not a field of the stored row. Not a grant.
  */
 export type VerifierEnrollmentState = {
   accounts: readonly EnrolledSeaPub[];
@@ -1956,6 +1982,9 @@ export type EncryptedDiscoveryVector =
   | "epoch-settled-cancel"
   | "epoch-live-revision-window"
   | "intro-enrolled-epub"
+  | "intro-account-identity"
+  | "epoch-settled-pending"
+  | "author-fast-revision"
   | "epoch-group-owner"
   | "presented-enrollment"
   | "presented-graph-owner"

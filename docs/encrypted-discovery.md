@@ -142,7 +142,7 @@ A reader decrypts, recomputes the plaintext digest, and checks the signature wit
 
 The author has a local path that does not scan a lane and does not present a commitment.
 
-The author keeps the item DEK on the device that encrypted it. Unwrap uses that local DEK. The fast path is not a Gun row and not a grant. Check for the author remains the owner path. The visible row still does not name the owner.
+The author keeps the item DEK on the device that encrypted it, together with the `revisionId` of the manifest that DEK belongs to. Unwrap uses that local DEK only for that revision. The epoch number is not enough: a DEK cached for a displaced manifest of the same epoch does not open the winning body. The fast path is not a Gun row and not a grant. Check for the author remains the owner path. The visible row still does not name the owner.
 
 A device enrolled to the same account holds the same SEA keypair, so it can unwrap a self-wrap addressed to that `epub`. The self-wrap, if the author writes one, goes in the author's single lane like any other wrap and still omits the owner pub. Other readers do not use this path. Holding the author's DEK is not a way for them to skip Check, and it is not a way to forge a body that passes [item content authenticity](#item-content-authenticity).
 
@@ -178,7 +178,7 @@ The window never delays privilege-down. A `stated: 0` grant, a higher `grantRevi
 
 A member offline longer than the window still holds the last key they settled. A cancel they missed applies as soon as they see the higher `grantRevision`. It does not wait out the window. If they are still a member, their window starts when they first see the current winner. They keep the last settled key until that local window elapses, then switch. They do not skip the wait because other replicas already switched. A smaller `finalizationId` during their wait restarts it. If they were removed while offline, they receive no wrap for the pending candidate or for the key it settles to.
 
-Every `WrappedKey` carries its `revisionId` inside the authenticated wrap. A cleartext epoch number is not enough to tell two keys for the same epoch apart. While a candidate is pending, readers still read ciphertext already written under the last settled revision. New writes stay in a buffer. They are not encrypted under the last settled key, and they are not encrypted under the pending candidate, because a later smaller `finalizationId` can replace that candidate. When the window elapses, the owner revalidates every stated-1 snapshot entry. An entry whose `until` is at or before now is expired, and that candidate does not receive the buffer, because the expired reader may already hold its wrap. The buffer is encrypted under a later winner whose snapshot excludes that accessor. Otherwise the buffer is encrypted under the winner that settled. Wraps follow that winner's per-accessor snapshot. If a smaller `finalizationId` later displaces that winner, the owner re-encrypts those writes under the new winner before they are current again. After each switch, readers reject further writes bound to a revision the recomputed winner has superseded, including when the epoch number matches. A device that lost adopts that settled result and does not keep publishing under the superseded revision. An offline device can still become the winner by publishing a smaller `finalizationId` that other replicas then see, and those replicas wait out the signed window before they switch. Expiry does not stop at settlement. `settledKeyOpen` reads the snapshot of `settledRevisionId` and the ACL this replica has merged. It is false when a stated-1 entry has `until` at or before now, or `from` after now. It is also false when that ACL has cancelled the recipient, raised `grantRevision`, moved `until` earlier, or moved `from` later, even while the settled snapshot still lists the recipient live. New writes then stay buffered. They are not encrypted under that settled key. The owner publishes a new revision whose key was not wrapped to that accessor. Ciphertext already written under the old key stays, and readers keep bytes they already unwrapped.
+Every `WrappedKey` carries its `revisionId` inside the authenticated wrap. A cleartext epoch number is not enough to tell two keys for the same epoch apart. While a candidate is pending, readers still read ciphertext already written under the last settled revision. New writes stay in a buffer. They are not encrypted under the last settled key, and they are not encrypted under the pending candidate, because a later smaller `finalizationId` can replace that candidate. When the window elapses, the owner revalidates every stated-1 snapshot entry. An entry whose `until` is at or before now is expired, and that candidate does not receive the buffer, because the expired reader may already hold its wrap. The buffer is encrypted under a later winner whose snapshot excludes that accessor. Otherwise the buffer is encrypted under the winner that settled. Wraps follow that winner's per-accessor snapshot. If a smaller `finalizationId` later displaces that winner, the owner re-encrypts those writes under the new winner before they are current again. After each switch, readers reject further writes bound to a revision the recomputed winner has superseded, including when the epoch number matches. A device that lost adopts that settled result and does not keep publishing under the superseded revision. An offline device can still become the winner by publishing a smaller `finalizationId` that other replicas then see, and those replicas wait out the signed window before they switch. Expiry does not stop at settlement. `settledKeyOpen` reads the snapshot of `settledRevisionId` and the ACL this replica has merged. It is false when a stated-1 entry has `until` at or before now, or `from` after now. It is also false when that ACL has cancelled the recipient, raised `grantRevision`, moved `until` earlier, or moved `from` later, even while the settled snapshot still lists the recipient live. It is false while `seen` has a winner whose `revisionId` is not `settledRevisionId`, and while `now` is before `winnerSeenAt + settleWindowMs`. A pending successor, including a late smaller id still inside its window, does not leave the old key writable. New writes then stay buffered. They are not encrypted under that settled key. The owner publishes a new revision whose key was not wrapped to that accessor. Ciphertext already written under the old key stays, and readers keep bytes they already unwrapped.
 
 How long an epoch lasts is still open. See [Open choices](#open-choices).
 
@@ -186,7 +186,7 @@ How long an epoch lasts is still open. See [Open choices](#open-choices).
 
 A first introduction on the one lane carries the sender's SEA `epub` and SEA `pub`, and an account binding that is not a signature by that `pub`.
 
-The binding is one of two checks. An enrollment lookup reads `VerifierEnrollmentState` for that account. The record holds `pub` and `epub`. Both must be the ones in the introduction. The introduction does not supply the record. Or the account identity, the key already enrolled for that account id, signs the length-prefixed fields `s3rch-account-binding-v1`, the account, `pub`, and `epub`. A signature that omits the account, or concatenates `pub` and `epub` with no lengths, does not verify. The reader verifies that signature with the enrolled account key. A signature made by the introduced `pub` fails closed. A missing `epub`, a missing binding, or an `epub` that was not the one enrolled or signed fails closed. `pub` alone can verify a self-signature and still leave the reader unable to wrap to the account that was claimed.
+The binding is one of two checks. An enrollment lookup reads `VerifierEnrollmentState` for that account. The record holds `pub` and `epub`. Both must be the ones in the introduction. The introduction does not supply the record. Or the account identity signs the length-prefixed fields `s3rch-account-binding-v1`, the account, `pub`, and `epub`. The verification key is `identityPub` on the enrolled record, the account's one SEA `pub`. The introduction does not supply that key, and it is not a second keypair. A missing `identityPub` fails closed. The signed `pub` must equal `identityPub`, and the signed `epub` must equal the enrolled `epub`. A signature that omits the account, or concatenates `pub` and `epub` with no lengths, does not verify. A check that uses the introduced `pub` as the verification key fails closed. A missing `epub`, a missing binding, or an `epub` that was not the one enrolled or signed fails closed. `pub` alone can verify a self-signature and still leave the reader unable to wrap to the account that was claimed.
 
 The introduction is not a grant. It does not open a second lane. It does not mint. Later wraps to that sender use the bound `epub`. `priv` and `epriv` still never go on Gun. First contact under the public policy also needs proof-of-work or a trusted stamp. See [Inbox write policy](#inbox-write-policy).
 
@@ -290,8 +290,8 @@ Copy or re-type [s3rch-check.d.ts](s3rch-check.d.ts). Do not `npm install sociac
 | `checkPresentedGrant` | Commitment, graph owner, owner signature, presenter binding, verifier-held enrollment, `grantRevision`, winning snapshot, and replica ACL, fetched item digest, fresh status proof, then Check. A group grant runs `checkGroupSee` and still requires a live payload inside `[from, until)` |
 | `RecipientInbox` | The one lane for that account. Not a shared bucket |
 | `DailyShardScan` | Whole-shard rescan with dedup. Not a per-device cursor. Not a second lane |
-| `AuthorFastUnwrap` | Local author DEK. Not a grant row |
-| `FirstContactIntro` / `AccountKeyBinding` | Sender `pub` and `epub`, bound by enrollment or by the account identity. Enrollment stores both. Not a self-signature |
+| `AuthorFastUnwrap` | Local author DEK bound to `revisionId`. Not a grant row. The epoch number is not enough |
+| `FirstContactIntro` / `AccountKeyBinding` | Sender `pub` and `epub`, bound by enrollment or by the account identity. Enrollment stores `pub`, `epub`, and `identityPub`. The signature is checked under `identityPub`. Not a self-signature |
 | `WriterAppendAuth` / `filterInboxAppend` | Who may append. Writer id comes from a branded channel or a signature, checked against verifier-held enrollment, before quotas. The accepting relay learns that writer. The stored row does not. Default `public-filtered` |
 | `EpochManifest` / `epochRevisionId` | SHA-256 of the length-prefixed manifest body, including `settleWindowMs` and `aclSnapshot`. The signature covers `revisionId`. One row per accessor, including `from`, `until`, scope, and membership `hamState`, plus the object-set edge. A snapshot that misses a cancel, a membership removal, an object-set update, or a stated-1 row past `until`, does not settle |
 | `GroupEpochConfig` | Owner-signed settle window for one group or circle, ordered by `configRevision`. `owner` is in the signed bytes and must equal `ownerOfSet`. A group epoch manifest repeats the winning window. Minimum 1 hour, maximum 72 hours, default 24 hours |
@@ -335,6 +335,8 @@ Stubs only. The names are `EncryptedDiscoveryVector` in [s3rch-check.d.ts](s3rch
 ### Content authenticity
 
 `content-auth-accept`. The plaintext digest matches the owner signature over (item id, epoch, version, plaintext digest, `revisionId`). The signature was produced before encryption and sits inside the encrypted item. The row commitment covers the ciphertext digest. The reader accepts the body as authentic. Accepting it is not a grant.
+
+`author-fast-revision`. The author's local DEK is stored with a `revisionId`. A DEK whose `revisionId` is a displaced manifest of the same epoch does not unwrap the winning body. The epoch number alone does not pick the DEK.
 
 `content-auth-reader-forge`. A reader who holds the item DEK writes a different plaintext at the item soul. The plaintext digest no longer matches the owner signature, and the commitment does not cover the new ciphertext. Other readers reject the body.
 
@@ -484,6 +486,8 @@ Stubs only. The names are `EncryptedDiscoveryVector` in [s3rch-check.d.ts](s3rch
 
 `intro-self-signature-rejected`. The introduced `pub` signs the account, `pub`, and `epub`. That signature is not an account binding. The introduction fails closed.
 
+`intro-account-identity`. The binding is `account-signature`. The verifier has no `identityPub` for that account, or the check uses the introduced `pub` instead of `identityPub`. The introduction fails closed. A signed `pub` that differs from `identityPub` fails closed. There is still one SEA keypair.
+
 `intro-not-a-grant`. A valid introduction does not set `allowed`.
 
 ### Presenter binding
@@ -499,6 +503,8 @@ Stubs only. The names are `EncryptedDiscoveryVector` in [s3rch-check.d.ts](s3rch
 `epoch-settled-expiry`. A revision has settled with a stated-1 recipient whose `until` is still ahead. When `until` passes, `settledKeyOpen` is false. New writes are buffered and are not encrypted under `settledRevisionId`. The owner publishes a replacement that does not wrap that accessor. Ciphertext already written under the old key stays.
 
 `epoch-settled-cancel`. The same revision has settled with the recipient still inside the window. The replica then merges a cancel for that accessor. `settledKeyOpen` is false. New writes are not encrypted under that key.
+
+`epoch-settled-pending`. A successor finalization is inside its settle window, and every recipient window on the settled snapshot is still open. `settledKeyOpen` is false. New writes stay buffered. They are not encrypted under `settledRevisionId`, including when a later smaller `finalizationId` has replaced the winner.
 
 `epoch-live-revision-window`. The merged ACL has a higher live `grantRevision` whose `until` is earlier than the snapshot. `epochStepCurrent` is false, and `settledKeyOpen` is false. The snapshot's longer window is not used for new ciphertext.
 
@@ -563,6 +569,9 @@ Not decided:
 - Accept an account binding that omits the account or drops the length prefixes on `pub` and `epub`
 - Re-encrypt displaced content under the same `grantRevision`
 - Trust a presenter-supplied pub as the enrolled key
+- Check an account-signature under the introduced `pub`
+- Leave the settled key writable while a successor finalization is still pending
+- Open an author fast unwrap whose `revisionId` is not the manifest that DEK belongs to
 - Accept a named owner that is not `graph.ownerOf` for that object
 - Treat a live group or circle edge as an allow for a payload whose `stated` is 0 or whose window has passed
 - Spend an unnamed proof-of-work nonce when several challenges are outstanding
