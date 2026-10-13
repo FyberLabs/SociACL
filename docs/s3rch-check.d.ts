@@ -464,10 +464,15 @@ export type GrantCommitment = {
 
 /**
  * Owner signature over item authenticity.
- * Signed bytes, in order: item id, epoch, version, ciphertext
+ * Signed bytes, in order: item id, epoch, version, plaintext
  * digest, revisionId. revisionId is part of that tuple.
- * The signature sits inside the encrypted item. The visible
- * grant row does not carry it and does not carry the owner pub.
+ * The owner signs that tuple, then encrypts the plaintext and
+ * this signature together. The ciphertext digest is not an
+ * input to the signature. The signature sits inside the
+ * encrypted item. The visible grant row does not carry it
+ * and does not carry the owner pub.
+ * GrantCommitment still covers the ciphertext digest, computed
+ * after encryption.
  * Not a grant. A reader who holds the DEK cannot produce this
  * signature, and cannot relabel revisionId under it.
  */
@@ -475,9 +480,30 @@ export type ItemContentAuth = {
   object: CheckObjectId;
   epoch: number;
   version: number;
-  ciphertextDigest: string;
+  plaintextDigest: string;
   revisionId: string;
   signature: string;
+};
+
+/**
+ * Canonical grant inside the ciphertext. The owner signature
+ * covers these fields, including grantRevision.
+ * grantRevision is monotonic for one object and accessor.
+ * The visible row has no hamState. Among opened entries for
+ * the same object and accessor, the greatest grantRevision
+ * wins. A stated 1 payload does not undo a stated 0 payload
+ * at a lower or equal grantRevision.
+ * Not a merge field on the lane entry. Not a grant by itself.
+ */
+export type SignedGrantPayload = {
+  object: CheckObjectId;
+  accessor: AccessorId;
+  from: number;
+  until: number;
+  stated: 0 | 1;
+  epoch: number;
+  owner: AccessorId;
+  grantRevision: number;
 };
 
 /**
@@ -528,7 +554,8 @@ export function inboxEntryId(body: InboxEntryBody): string;
  * Append-only and content-addressed: entryId is inboxEntryId
  * of the lane, ciphertext, commitment, and wrap. A body that
  * does not hash to entryId is rejected. No hamState contest
- * and no in-place replacement.
+ * and no in-place replacement. Order between a live grant and
+ * a cancel is grantRevision inside SignedGrantPayload.
  * A wrap on the row is not a grant.
  * laneId is the reader's one lane, not a shared bucket.
  */
@@ -572,14 +599,17 @@ export type RecipientInbox = {
  * Opened grant the holder shows to the destination.
  * Not written to Gun. The destination recomputes GrantCommitment
  * from grantBytes, checks the signature with seaPub, and checks
- * that seaPub is the enrolled key for owner. Then presenter
- * binding and a fresh EpochStatusProof, then Check.
+ * that seaPub is the enrolled key for owner. grantBytes include
+ * grantRevision. Then presenter binding and a fresh
+ * EpochStatusProof, then Check.
  * A presentation alone grants nothing. A presentation is not a grant.
  */
 export type GrantPresentation = {
   owner: AccessorId;
   grant: MeshSeeGrant;
-  /** Canonical bytes the commitment hashes. */
+  /** Monotonic order inside the signed payload. */
+  grantRevision: number;
+  /** Canonical bytes the commitment hashes. Covers grantRevision. */
   grantBytes: string;
   signature: string;
   /** Enrolled account SEA pub. Not a field of BlindedGrantRow. */
@@ -605,9 +635,11 @@ declare const presenterChannelBrand: unique symbol;
  * construct a value. channelBrand is a private instance field
  * holding presenterChannelBrand, so a structural object literal
  * is not assignable. checkPresentedGrant also requires
- * `channel instanceof AuthenticatedPresenterChannel` and
- * hasTransportBrand(). hasTransportBrand is true only when
- * channelBrand is that symbol. Not a grant.
+ * `channel instanceof AuthenticatedPresenterChannel`,
+ * hasTransportBrand(), accessor equal to the grant accessor,
+ * and readerPub equal to the enrolled SEA pub for that accessor.
+ * hasTransportBrand is true only when channelBrand is that symbol.
+ * A channel minted for another principal fails closed. Not a grant.
  */
 export class AuthenticatedPresenterChannel {
   private constructor(accessor: AccessorId, readerPub: string);
@@ -691,8 +723,11 @@ export type EpochStatusProof = {
  * A binding nonce must match one outstanding challenge,
  * now must be before expiresAt, and that nonce is then spent.
  * A channel argument must be an AuthenticatedPresenterChannel
- * instance whose hasTransportBrand() is true. An object literal
- * fails instanceof and fails the brand check. Omitted binding and omitted
+ * instance whose hasTransportBrand() is true, whose accessor
+ * equals the accessor argument, and whose readerPub equals the
+ * enrolled SEA pub for that accessor. An object literal fails
+ * instanceof and fails the brand check. A branded channel for
+ * another principal fails closed. Omitted binding and omitted
  * channel fails closed. Omitted, stale, future-dated beyond
  * skew, or superseded status fails closed.
  * A proof alone grants nothing.
@@ -761,11 +796,11 @@ export type FirstContactIntro = {
  * A new key commitment is a new revision id.
  * deviceId is a local enrollment id. Not a Gun device
  * record, not a second SEA keypair, and not a grant.
- * The minimum revisionId is the winner only inside an
- * EpochFinalization candidate set. After that finalization
- * is accepted, a later smaller revisionId does not replace it.
- * Readers reject content under a superseded revision or a
- * superseded epoch.
+ * The current revisionId is the one named by the epoch winner.
+ * The winner is recomputed from every verified finalization
+ * this replica has seen. A later smaller finalizationId
+ * replaces it. Readers reject content under a revision that
+ * is not that winner.
  * Every WrappedKey for that epoch carries the same revisionId
  * inside the authenticated payload.
  * Self-wrap in the author lane, or inside the encrypted item.
@@ -810,12 +845,15 @@ export type EpochManifestBody = {
 export function epochRevisionId(body: EpochManifestBody): string;
 
 /**
- * Owner-signed close of one epoch step. Readers accept current
- * content for that step only after this verifies. The named
- * revisionId is the lexicographically smallest id in
- * candidateRevisionIds. A later manifest is not added.
- * A second finalization for the same previousFinalizationId
- * does not replace one already accepted.
+ * Owner-signed candidate for one epoch step. The named
+ * revisionId must be the lexicographically smallest id in
+ * candidateRevisionIds. A finalization that fails that check
+ * is ignored.
+ * Replicas keep every verified finalization for the same
+ * object, epoch, and previousFinalizationId. The winner is
+ * the smallest finalizationId in that set. A later smaller
+ * finalizationId replaces the previous winner. Arrival order
+ * does not pick a different winner.
  * Not a grant. Not an owner pub on a visible grant row.
  */
 export type EpochFinalization = {
@@ -823,7 +861,7 @@ export type EpochFinalization = {
   previousEpoch: number;
   epoch: number;
   revisionId: string;
-  /** Sorted ascending. The closed candidate set. */
+  /** Sorted ascending. This finalization's candidate ids. */
   candidateRevisionIds: readonly string[];
   /** Accepted finalization of the previous epoch, or "". */
   previousFinalizationId: string;
@@ -836,6 +874,40 @@ export type EpochFinalization = {
   finalizationId: string;
   signature: string;
 };
+
+/**
+ * Protocol delay before a winning finalization is current.
+ * 24 hours. Every replica uses this same constant.
+ * The window restarts when a smaller finalizationId becomes
+ * the winner. It does not freeze the set.
+ */
+export const EPOCH_SETTLE_WINDOW_MS: 86400000;
+
+/**
+ * One replica's view of one epoch step.
+ * seen is every verified EpochFinalization for this parent.
+ * The winner is the smallest finalizationId in seen.
+ * winnerSeenAt is when this replica first observed that id.
+ * A later smaller id replaces the winner and sets a new
+ * winnerSeenAt. Not a grant.
+ */
+export type EpochReplicaView = {
+  object: CheckObjectId;
+  epoch: number;
+  previousFinalizationId: string;
+  seen: readonly EpochFinalization[];
+  winnerSeenAt: number;
+};
+
+/**
+ * Spec signature. The reference crate does not run this.
+ * True only when view.seen has a winner and
+ * now >= winnerSeenAt + EPOCH_SETTLE_WINDOW_MS.
+ * A smaller finalizationId after that instant still replaces
+ * the winner, and this function is then false until the new
+ * window elapses. Does not mint.
+ */
+export function epochStepCurrent(view: EpochReplicaView, now: number): boolean;
 
 /**
  * Rescan of one UTC day shard of the one lane.
@@ -894,25 +966,40 @@ export type AdmissionEvidence =
   | { kind: "stamp"; issuer: string; signature: string };
 
 /**
+ * One sender's remaining appends. Keyed by AccessorId.
+ * The writer does not supply this entry.
+ */
+export type SenderQuota = {
+  sender: AccessorId;
+  remaining: number;
+};
+
+/**
  * Verifier-held admission state. The writer does not supply it.
- * senderRemaining and readerRemaining are this verifier's counters.
+ * knownSenders is the record this verifier already trusts.
+ * A writer absent from that list is first contact. A caller
+ * flag is not a field and does not change that.
+ * senderQuotas has one counter per sender. A missing sender
+ * has remaining 0. laneRemaining is the one shared capacity
+ * for this lane, not a copy per sender.
  * spent holds challenge nonces and stamp signatures already used.
  */
 export type VerifierAdmissionState = {
   challenge?: AdmissionChallenge;
   stampIssuers: readonly string[];
   spent: readonly string[];
-  senderRemaining: number;
-  readerRemaining: number;
+  knownSenders: readonly AccessorId[];
+  senderQuotas: readonly SenderQuota[];
+  laneRemaining: number;
 };
 
 /**
  * Admission beside an append. Evidence is checked against
- * VerifierAdmissionState. A claimed quota on this object is
- * not a field and is ignored if a caller adds one.
+ * VerifierAdmissionState. First contact is not a field here.
+ * A claimed quota on this object is not a field and is ignored
+ * if a caller adds one.
  */
 export type InboxAdmission = {
-  firstContact: boolean;
   evidence?: AdmissionEvidence;
 };
 
@@ -942,18 +1029,23 @@ export type InboxWriteDecision = {
 /**
  * Spec signature. The reference crate does not run this.
  * public-filtered is the default: any writer may append.
- * state is the verifier's challenge, issuers, replay set, and
- * quota counters. The writer does not pass those counters.
- * First contact requires evidence that verifies against state
+ * state is the verifier's challenge, issuers, replay set,
+ * known senders, per-sender quotas, and the one lane capacity.
+ * The writer does not pass those.
+ * First contact is writer absent from state.knownSenders.
+ * That writer requires evidence that verifies against state
  * and row.entryId. A proof-of-work solution for another entry,
  * or a stamp signed over another entry, is stamp-mismatch.
  * A nonce or stamp signature already in state.spent is replay.
- * senderRemaining comes from state. At 0 the result is
- * sender-quota and readerRemaining stays as it was.
- * readerRemaining comes from state. At 0 the result is
- * reader-capacity. named-writers refuses anyone outside
- * writers. Commitment mismatch is checkPresentedGrant, not
- * this hook. SociACL does not store the filter.
+ * The counter for this writer is the senderQuotas entry with
+ * that sender. Missing or remaining 0 is sender-quota. Other
+ * senders and laneRemaining stay as they were.
+ * laneRemaining at 0 is reader-capacity. That sender's counter
+ * stays as it was. On ok, that sender's remaining and
+ * laneRemaining each drop by 1, and a new sender is added to
+ * knownSenders. named-writers refuses anyone outside writers.
+ * Commitment mismatch is checkPresentedGrant, not this hook.
+ * SociACL does not store the filter.
  * A passed hook is not a grant.
  */
 export function filterInboxAppend(
@@ -1117,6 +1209,7 @@ export type EncryptedDiscoveryVector =
   | "content-auth-reader-forge"
   | "content-auth-revision-relabel"
   | "content-auth-owner-pub-hidden"
+  | "content-auth-sign-then-encrypt"
   | "inbox-content-address-distinct"
   | "inbox-replace-rejected"
   | "inbox-wrap-swap"
@@ -1124,7 +1217,13 @@ export type EncryptedDiscoveryVector =
   | "inbox-pow-verified"
   | "inbox-fabricated-quota"
   | "inbox-spent-challenge"
+  | "inbox-known-sender"
+  | "inbox-sender-quota-map"
+  | "inbox-lane-capacity"
+  | "grant-revision-order"
   | "epoch-late-manifest"
+  | "epoch-arrival-order"
+  | "epoch-settle-window"
   | "id-sha256-canonical"
   | "zookie-object-snapshot"
   | "intro-epub-required"
@@ -1138,4 +1237,5 @@ export type EncryptedDiscoveryVector =
   | "presenter-spent-nonce"
   | "presenter-expired-challenge"
   | "presenter-forged-channel"
+  | "presenter-channel-wrong-principal"
   | "presenter-binding-not-a-grant";
