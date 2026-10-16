@@ -336,6 +336,34 @@ def main() -> None:
             "group-epoch-config-tie",
             ["s3rch-group-epoch-config-v1", "alice", "crew", "named-circle", "86400000", "2"],
         ),
+        # U+E000 then U+10000 is bytewise UTF-8 order. UTF-16 sorts them the other way.
+        case_fields(
+            "acl-snapshot-utf8-order",
+            [
+                "s3rch-acl-snapshot-v1",
+                "0",
+                "",
+                "",
+                "",
+                "",
+                "\ue000",
+                "1",
+                "1",
+                "0",
+                "4000000000000",
+                "direct",
+                "",
+                "0",
+                "\U00010000",
+                "2",
+                "0",
+                "0",
+                "4000000000000",
+                "direct",
+                "",
+                "0",
+            ],
+        ),
     ]
 
     # Absent group and empty group are one encoding.
@@ -370,6 +398,7 @@ def main() -> None:
             "keyCommitment in these vectors is an opaque string. This slice does not define that commitment.",
             "epoch-max-safe uses 9007199254740991, the largest integer Number.isSafeInteger accepts. 9007199254740992 is rejected and has no id.",
             "inbox-real-wrap hashes the wrappedKey blob in wrap.json. The short aa and ab wraps are id cases only.",
+            "acl-snapshot-utf8-order sorts accessors by UTF-8 bytes. U+E000 precedes U+10000.",
         ],
         "cases": cases,
     }

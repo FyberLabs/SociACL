@@ -16,7 +16,7 @@ use crate::error::EncDiscError;
 use crate::grant::{GrantStated, MeshSeeGrant, SignedGrantPayload};
 use crate::sea;
 use crate::see::MeshMembership;
-use crate::wrap::{WrapTarget, WrappedKey};
+use crate::wrap::{WrapScope, WrapTarget, WrappedKey};
 
 /// Owner's choice for ciphertext that already exists.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -80,11 +80,15 @@ pub struct EpochRotation {
     pub cipher: RevokeCipherMode,
 }
 
-/// Verifier-held prior revision for one accessor. The presenter does not supply it.
+/// Verifier-held prior row for one accessor. The presenter does not supply it.
+///
+/// `grant_revision` is the private-row high water. `ham_state` is the
+/// merged live plaintext edge. A cancel must be strictly newer.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PriorRevision {
     pub accessor: String,
     pub grant_revision: u64,
+    pub ham_state: u64,
 }
 
 /// Owner state the rotation is checked against. Not a presenter argument.
@@ -235,7 +239,7 @@ fn require_cancel(
 ) -> Result<String, EncDiscError> {
     match (context.storage, cancel) {
         (GrantStorage::PublicPlain, RotationCancel::Plain { grant }) => {
-            plain_accessor(rotation, grant)
+            plain_accessor(rotation, context, grant)
         }
         (
             GrantStorage::PrivateRow,
@@ -251,13 +255,14 @@ fn require_cancel(
 
 fn plain_accessor(
     rotation: &EpochRotation,
+    context: &RotationContext<'_>,
     grant: &CancelledGrant,
 ) -> Result<String, EncDiscError> {
     if grant.ham_state == 0 {
         return Err(EncDiscError::RotationRejected);
     }
     let _ = canonical::canonical_decimal(grant.ham_state)?;
-    match &grant.grant {
+    let accessor = match &grant.grant {
         PlainGrant::See(see) => {
             if see.object != rotation.object
                 || see.accessor.is_empty()
@@ -265,7 +270,7 @@ fn plain_accessor(
             {
                 return Err(EncDiscError::RotationRejected);
             }
-            Ok(see.accessor.clone())
+            see.accessor.clone()
         }
         PlainGrant::Membership(edge) => {
             if edge.accessor.is_empty()
@@ -275,9 +280,21 @@ fn plain_accessor(
             {
                 return Err(EncDiscError::RotationRejected);
             }
-            Ok(edge.accessor.clone())
+            edge.accessor.clone()
         }
+    };
+    let Some(prior) = context
+        .prior_revision
+        .iter()
+        .find(|row| row.accessor == accessor)
+    else {
+        return Err(EncDiscError::RotationRejected);
+    };
+    let _ = canonical::canonical_decimal(prior.ham_state)?;
+    if grant.ham_state <= prior.ham_state {
+        return Err(EncDiscError::RotationRejected);
     }
+    Ok(accessor)
 }
 
 fn private_accessor(
@@ -414,15 +431,13 @@ fn require_wraps(
         {
             return Err(EncDiscError::RotationRejected);
         }
-        if wrap
-            .object
-            .as_deref()
-            .is_some_and(|object| object != rotation.object)
-        {
-            return Err(EncDiscError::RotationRejected);
-        }
-        match wrap.target {
-            WrapTarget::ReaderEpub => {
+        match (wrap.scope, wrap.target) {
+            (WrapScope::ItemDek, WrapTarget::ReaderEpub) => {
+                if wrap.object.as_deref() != Some(rotation.object.as_str())
+                    || !wrap.group.as_deref().unwrap_or("").is_empty()
+                {
+                    return Err(EncDiscError::RotationRejected);
+                }
                 let Some(accessor) = reader_account(context.readers, &wrap.target_id) else {
                     return Err(EncDiscError::RotationRejected);
                 };
@@ -434,14 +449,23 @@ fn require_wraps(
                 }
                 wrapped.push(accessor.to_string());
             }
-            WrapTarget::GroupEpoch => {
+            (WrapScope::ItemDek, WrapTarget::GroupEpoch) => {
                 let Some(set) = &context.snapshot.object_set else {
                     return Err(EncDiscError::RotationRejected);
                 };
-                if seen_group || wrap.target_id != set.set_id || set.stated != GrantStated::Live {
+                if seen_group
+                    || wrap.target_id != set.set_id
+                    || wrap.group.as_deref() != Some(set.set_id.as_str())
+                    || wrap.object.as_deref() != Some(rotation.object.as_str())
+                    || set.stated != GrantStated::Live
+                {
                     return Err(EncDiscError::RotationRejected);
                 }
                 seen_group = true;
+            }
+            (WrapScope::GroupKey, WrapTarget::ReaderEpub)
+            | (WrapScope::GroupKey, WrapTarget::GroupEpoch) => {
+                return Err(EncDiscError::RotationRejected);
             }
         }
     }

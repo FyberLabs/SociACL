@@ -453,7 +453,7 @@ fn snapshot_matches(snapshot: &AclSnapshotBody, current: &AclSnapshotBody, now: 
 
 fn normalize(entries: &[AclSnapshotEntry]) -> Result<Vec<AclSnapshotEntry>, ()> {
     let mut rows = entries.to_vec();
-    rows.sort_by(|left, right| left.accessor.cmp(&right.accessor));
+    rows.sort_by(|left, right| accessor_cmp(&left.accessor, &right.accessor));
     if rows
         .windows(2)
         .any(|pair| pair[0].accessor == pair[1].accessor)
@@ -513,6 +513,11 @@ pub fn acl_snapshot_bytes(body: &AclSnapshotBody) -> Result<Vec<u8>, EncDiscErro
     canonical::length_prefixed(&borrowed)
 }
 
+/// Bytewise UTF-8 order. JavaScript `<` is UTF-16 and disagrees past U+FFFF.
+fn accessor_cmp(left: &str, right: &str) -> std::cmp::Ordering {
+    left.as_bytes().cmp(right.as_bytes())
+}
+
 fn validate_snapshot_shape(body: &AclSnapshotBody) -> Result<(), EncDiscError> {
     if let Some(set) = &body.object_set {
         if set.set_id.is_empty() {
@@ -525,7 +530,7 @@ fn validate_snapshot_shape(body: &AclSnapshotBody) -> Result<(), EncDiscError> {
             return Err(EncDiscError::EpochRejected);
         }
         if let Some(prior) = previous {
-            if entry.accessor.as_str() <= prior {
+            if accessor_cmp(&entry.accessor, prior) != std::cmp::Ordering::Greater {
                 return Err(EncDiscError::EpochRejected);
             }
         }
@@ -654,17 +659,27 @@ impl GroupEpochConfig {
     }
 }
 
-/// Greatest `configRevision` wins. At a tie, the smaller signed digest wins.
+/// Greatest `configRevision` for this predicate and set wins.
 ///
-/// A missing set owner, a different owner, an out-of-range window, or a
-/// signature under some other key is ignored.
+/// At a tie, the smaller signed digest wins. A higher revision for
+/// another predicate or set is ignored. A missing set owner, a different
+/// owner, an out-of-range window, or a signature under some other key
+/// is ignored.
 pub fn select_group_epoch_config<'a>(
     configs: &'a [GroupEpochConfig],
+    predicate: GroupPredicate,
+    set_id: &str,
     owner_pub: &str,
     owner_of_set: Option<&str>,
 ) -> Option<&'a GroupEpochConfig> {
+    if set_id.is_empty() {
+        return None;
+    }
     let mut best: Option<(&GroupEpochConfig, String)> = None;
     for config in configs {
+        if config.predicate != predicate || config.set_id != set_id {
+            continue;
+        }
         if config.verify(owner_pub, owner_of_set).is_err() {
             continue;
         }
@@ -788,11 +803,7 @@ impl EpochChain {
                 .iter()
                 .copied()
                 .filter(|row| row.finalization.previous_finalization_id == parent)
-                .filter(|row| {
-                    parent_epoch
-                        .map(|epoch| row.finalization.epoch > epoch)
-                        .unwrap_or(true)
-                })
+                .filter(|row| child_follows(parent_epoch, &row.finalization))
                 .collect();
             if step.is_empty() {
                 break;
@@ -872,7 +883,6 @@ impl EpochChain {
         now: u64,
         group_window: Option<u64>,
         settled_revision_id: &str,
-        settled_epoch: u64,
     ) -> EpochReplicaView {
         let winners: Vec<(u64, String, String, String)> = self
             .on_chain_winners(current, now, group_window)
@@ -920,8 +930,13 @@ impl EpochChain {
                     .map(|row| row.seen_at)
             })
             .unwrap_or(0);
-        let settled_ok = !settled_revision_id.is_empty()
-            && self.revision_on_chain(settled_revision_id, current, now, group_window);
+        let settled = if settled_revision_id.is_empty() {
+            None
+        } else {
+            winners
+                .iter()
+                .find(|row| row.2.as_str() == settled_revision_id)
+        };
         EpochReplicaView {
             object: self.object.clone(),
             epoch,
@@ -929,12 +944,8 @@ impl EpochChain {
             seen,
             winner_seen_at,
             settle_window_ms,
-            settled_revision_id: if settled_ok {
-                settled_revision_id.to_string()
-            } else {
-                String::new()
-            },
-            settled_epoch: if settled_ok { settled_epoch } else { 0 },
+            settled_revision_id: settled.map(|row| row.2.clone()).unwrap_or_default(),
+            settled_epoch: settled.map(|row| row.0).unwrap_or(0),
         }
     }
 
@@ -1009,19 +1020,43 @@ impl EpochChain {
         }
         let message = canonical::epoch_finalization_sig_bytes(&fin.finalization_id)?;
         sea::verify_sea(owner_pub, &message, &fin.signature)?;
-        let Some(stored) = self
-            .manifests
-            .iter()
-            .find(|row| row.manifest.revision_id == fin.revision_id)
-        else {
-            return Err(EncDiscError::EpochRejected);
-        };
-        if stored.manifest.object != fin.object
-            || stored.manifest.epoch != fin.epoch
-            || stored.manifest.previous_epoch != fin.previous_epoch
-        {
-            return Err(EncDiscError::EpochRejected);
+        if !fin.previous_finalization_id.is_empty() {
+            if let Some(parent) = self
+                .finalizations
+                .iter()
+                .find(|row| row.finalization.finalization_id == fin.previous_finalization_id)
+            {
+                if !child_follows(Some(parent.finalization.epoch), fin) {
+                    return Err(EncDiscError::EpochRejected);
+                }
+            }
+        }
+        for revision in &fin.candidate_revision_ids {
+            let Some(stored) = self
+                .manifests
+                .iter()
+                .find(|row| row.manifest.revision_id == *revision)
+            else {
+                return Err(EncDiscError::EpochRejected);
+            };
+            if stored.manifest.object != fin.object
+                || stored.manifest.epoch != fin.epoch
+                || stored.manifest.previous_epoch != fin.previous_epoch
+            {
+                return Err(EncDiscError::EpochRejected);
+            }
         }
         Ok(())
     }
+}
+
+/// A child names the parent epoch and is the next epoch number.
+fn child_follows(parent_epoch: Option<u64>, fin: &EpochFinalization) -> bool {
+    let Some(epoch) = parent_epoch else {
+        return true;
+    };
+    let Some(next) = epoch.checked_add(1) else {
+        return false;
+    };
+    fin.previous_epoch == epoch && fin.epoch == next
 }

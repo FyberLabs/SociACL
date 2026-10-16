@@ -31,6 +31,21 @@ export const SETTLE_WINDOW_MIN_MS = 3_600_000;
 export const SETTLE_WINDOW_MAX_MS = 259_200_000;
 export const SETTLE_WINDOW_DEFAULT_MS = 86_400_000;
 
+/** Bytewise UTF-8 order. JavaScript `<` follows UTF-16 and disagrees past U+FFFF. */
+function utf8Compare(left: string, right: string): number {
+  const encodedLeft = new TextEncoder().encode(left);
+  const encodedRight = new TextEncoder().encode(right);
+  const length = Math.min(encodedLeft.length, encodedRight.length);
+  for (let index = 0; index < length; index += 1) {
+    const leftByte = encodedLeft[index] ?? 0;
+    const rightByte = encodedRight[index] ?? 0;
+    if (leftByte !== rightByte) {
+      return leftByte - rightByte;
+    }
+  }
+  return encodedLeft.length - encodedRight.length;
+}
+
 function safe(value: number): boolean {
   return Number.isSafeInteger(value) && value >= 0;
 }
@@ -110,7 +125,7 @@ export function aclSnapshotBytes(body: AclSnapshotBody): Uint8Array {
   let previous: string | undefined;
   for (const entry of body.entries) {
     entryShape(entry, body);
-    if (previous !== undefined && entry.accessor <= previous) {
+    if (previous !== undefined && utf8Compare(entry.accessor, previous) <= 0) {
       rejectEpoch();
     }
     previous = entry.accessor;
@@ -200,15 +215,7 @@ export function groupEpochConfigDigest(
 }
 
 function normalized(entries: readonly AclSnapshotEntry[]): AclSnapshotEntry[] | undefined {
-  const rows = [...entries].sort((left, right) => {
-    if (left.accessor < right.accessor) {
-      return -1;
-    }
-    if (left.accessor > right.accessor) {
-      return 1;
-    }
-    return 0;
-  });
+  const rows = [...entries].sort((left, right) => utf8Compare(left.accessor, right.accessor));
   for (let index = 1; index < rows.length; index += 1) {
     const prior = rows[index - 1];
     const row = rows[index];
@@ -449,7 +456,21 @@ function isSeeGrant(grant: MeshSeeGrant | MeshMembership): grant is MeshSeeGrant
   return "object" in grant && !("predicate" in grant);
 }
 
-function plainAccessor(rotation: EpochRotation, cancel: RotationCancel & { kind: "plain" }): string {
+export type RotationReader = {
+  account: string;
+  epub: string;
+};
+
+export type PriorHamState = {
+  accessor: string;
+  hamState: number;
+};
+
+function plainAccessor(
+  rotation: EpochRotation,
+  priorHam: readonly PriorHamState[],
+  cancel: RotationCancel & { kind: "plain" },
+): string {
   const record = cancel.grant;
   if (!safe(record.hamState) || record.hamState === 0) {
     rejectRotation();
@@ -465,7 +486,7 @@ function plainAccessor(rotation: EpochRotation, cancel: RotationCancel & { kind:
     ) {
       rejectRotation();
     }
-    return grant.accessor;
+    return requireNewerHam(priorHam, grant.accessor, record.hamState);
   }
   if (!isMembership(grant)) {
     rejectRotation();
@@ -480,7 +501,19 @@ function plainAccessor(rotation: EpochRotation, cancel: RotationCancel & { kind:
   ) {
     rejectRotation();
   }
-  return grant.accessor;
+  return requireNewerHam(priorHam, grant.accessor, record.hamState);
+}
+
+function requireNewerHam(
+  priorHam: readonly PriorHamState[],
+  accessor: string,
+  hamState: number,
+): string {
+  const prior = priorHam.find((row) => row.accessor === accessor);
+  if (prior === undefined || !safe(prior.hamState) || hamState <= prior.hamState) {
+    rejectRotation();
+  }
+  return accessor;
 }
 
 function privateAccessor(
@@ -522,9 +555,13 @@ function privateAccessor(
   return payload.accessor;
 }
 
-function structuralCancel(rotation: EpochRotation, cancel: RotationCancel): string {
+function structuralCancel(
+  rotation: EpochRotation,
+  priorHam: readonly PriorHamState[],
+  cancel: RotationCancel,
+): string {
   if (cancel.kind === "plain") {
-    return plainAccessor(rotation, cancel);
+    return plainAccessor(rotation, priorHam, cancel);
   }
   if (cancel.kind === "private-row") {
     return privateAccessor(rotation, cancel);
@@ -532,31 +569,62 @@ function structuralCancel(rotation: EpochRotation, cancel: RotationCancel): stri
   rejectRotation();
 }
 
-function structuralWraps(rotation: EpochRotation, revoked: readonly string[]): void {
+function accountForEpub(readers: readonly RotationReader[], epub: string): string | undefined {
+  let account: string | undefined;
+  for (const reader of readers) {
+    if (reader.epub !== epub) {
+      continue;
+    }
+    if (account !== undefined) {
+      return undefined;
+    }
+    account = reader.account;
+  }
+  return account;
+}
+
+function blank(value: string | undefined): boolean {
+  return value === undefined || value.length === 0;
+}
+
+function structuralWraps(
+  rotation: EpochRotation,
+  readers: readonly RotationReader[],
+  revoked: readonly string[],
+): void {
   const seenReaders: string[] = [];
   let seenGroup = false;
   for (const wrap of rotation.rewrapped) {
     if (
       wrap.epoch !== rotation.nextEpoch ||
       wrap.revisionId !== rotation.revisionId ||
-      !/^[0-9a-f]+$/.test(wrap.wrappedKey) ||
-      (wrap.object !== undefined && wrap.object !== rotation.object)
+      !/^[0-9a-f]+$/.test(wrap.wrappedKey)
     ) {
       rejectRotation();
     }
-    if (wrap.target === "reader-epub") {
+    if (wrap.scope === "item-dek" && wrap.target === "reader-epub") {
+      if (wrap.object !== rotation.object || !blank(wrap.group)) {
+        rejectRotation();
+      }
+      const accessor = accountForEpub(readers, wrap.targetId);
       if (
-        wrap.targetId.length === 0 ||
-        revoked.includes(wrap.targetId) ||
-        seenReaders.includes(wrap.targetId)
+        accessor === undefined ||
+        accessor.length === 0 ||
+        revoked.includes(accessor) ||
+        seenReaders.includes(accessor)
       ) {
         rejectRotation();
       }
-      seenReaders.push(wrap.targetId);
+      seenReaders.push(accessor);
       continue;
     }
-    if (wrap.target === "group-epoch") {
-      if (seenGroup || wrap.targetId.length === 0) {
+    if (wrap.scope === "item-dek" && wrap.target === "group-epoch") {
+      if (
+        seenGroup ||
+        wrap.targetId.length === 0 ||
+        wrap.object !== rotation.object ||
+        wrap.group !== wrap.targetId
+      ) {
         rejectRotation();
       }
       seenGroup = true;
@@ -568,10 +636,16 @@ function structuralWraps(rotation: EpochRotation, revoked: readonly string[]): v
 
 /**
  * Structural privilege-down check. SEA verification stays in Rust.
- * The settle window is not an argument, so this check cannot delay it.
+ * readers maps each enrolled epub to its accessor before a revoked
+ * reader is excluded. priorHam is the merged live hamState. The
+ * settle window is not an argument, so this check cannot delay it.
  * Returns nothing. A wrap named here is not a grant.
  */
-export function rotateOnRevoke(rotation: EpochRotation): void {
+export function rotateOnRevoke(
+  rotation: EpochRotation,
+  readers: readonly RotationReader[],
+  priorHam: readonly PriorHamState[],
+): void {
   if (rotation.object.length === 0) {
     rejectRotation();
   }
@@ -587,16 +661,32 @@ export function rotateOnRevoke(rotation: EpochRotation): void {
   if (rotation.cipher !== "forward-only" && rotation.cipher !== "re-encrypt") {
     rejectRotation();
   }
-  if (rotation.cancelled.length === 0) {
+  if (readersConflict(readers) || rotation.cancelled.length === 0) {
     rejectRotation();
   }
   const revoked: string[] = [];
   for (const cancel of rotation.cancelled) {
-    const accessor = structuralCancel(rotation, cancel);
+    const accessor = structuralCancel(rotation, priorHam, cancel);
     if (revoked.includes(accessor)) {
       rejectRotation();
     }
     revoked.push(accessor);
   }
-  structuralWraps(rotation, revoked);
+  structuralWraps(rotation, readers, revoked);
+}
+
+function readersConflict(readers: readonly RotationReader[]): boolean {
+  for (let index = 0; index < readers.length; index += 1) {
+    const reader = readers[index];
+    if (reader === undefined || reader.account.length === 0 || reader.epub.length === 0) {
+      return true;
+    }
+    for (let later = index + 1; later < readers.length; later += 1) {
+      const other = readers[later];
+      if (other !== undefined && (other.account === reader.account || other.epub === reader.epub)) {
+        return true;
+      }
+    }
+  }
+  return false;
 }

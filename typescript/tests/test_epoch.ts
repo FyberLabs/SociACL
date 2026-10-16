@@ -28,6 +28,8 @@ import {
   settleWindowInRange,
   settleWindowOrDefault,
   statusIsFresh,
+  type PriorHamState,
+  type RotationReader,
 } from "../contract/epoch.ts";
 
 const REV = "ab".repeat(32);
@@ -132,7 +134,13 @@ function proof(signedAt: number): EpochStatusProof {
   };
 }
 
-function rotation(cipher: EpochRotation["cipher"], targetId = "carol"): EpochRotation {
+const READERS: readonly RotationReader[] = [
+  { account: "bob", epub: "bob-epub" },
+  { account: "carol", epub: "carol-epub" },
+];
+const PRIOR: readonly PriorHamState[] = [{ accessor: "bob", hamState: 1 }];
+
+function rotation(cipher: EpochRotation["cipher"], targetId = "carol-epub"): EpochRotation {
   return {
     object: "item-1",
     revokedEpoch: 1,
@@ -160,6 +168,14 @@ function rotation(cipher: EpochRotation["cipher"], targetId = "carol"): EpochRot
     ],
     cipher,
   };
+}
+
+function accept(row: EpochRotation, prior: readonly PriorHamState[] = PRIOR): void {
+  assert.equal(rotateOnRevoke(row, READERS, prior), undefined);
+}
+
+function reject(row: EpochRotation, prior: readonly PriorHamState[] = PRIOR): void {
+  assert.throws(() => rotateOnRevoke(row, READERS, prior), /rotation rejected/);
 }
 
 test("epoch canonical bodies match the shared fixture", () => {
@@ -233,6 +249,27 @@ test("epoch canonical bodies match the shared fixture", () => {
       entries: [directEntry("bob", 1, 1), directEntry("amy", 1, 1)],
     }),
   );
+  const low = "\uE000";
+  const high = "\u{10000}";
+  assert.equal(high < low, true);
+  assert.equal(low < high, false);
+  assertHash(
+    "acl-snapshot-utf8-order",
+    aclSnapshotBytes({
+      entries: [
+        { ...directEntry(low, 1), until: FAR, grantRevision: 1 },
+        { ...directEntry(high, 0, 2), until: FAR },
+      ],
+    }),
+  );
+  assert.throws(() =>
+    aclSnapshotId({
+      entries: [
+        { ...directEntry(high, 0, 2), until: FAR },
+        { ...directEntry(low, 1), until: FAR, grantRevision: 1 },
+      ],
+    }),
+  );
 });
 
 test("settle window stays inside the signed bounds", () => {
@@ -304,34 +341,42 @@ test("status freshness uses the tighter max age and the skew allowance", () => {
 });
 
 test("rotateOnRevoke accepts both cipher modes and fails closed", () => {
-  assert.equal(rotateOnRevoke.length, 1);
-  assert.equal(rotateOnRevoke(rotation("forward-only")), undefined);
-  assert.equal(rotateOnRevoke(rotation("re-encrypt")), undefined);
+  assert.equal(rotateOnRevoke.length, 3);
+  accept(rotation("forward-only"));
+  accept(rotation("re-encrypt"));
   const skipped = rotation("forward-only");
   skipped.nextEpoch = 3;
-  assert.throws(() => rotateOnRevoke(skipped), /rotation rejected/);
+  reject(skipped);
   const live = rotation("re-encrypt");
   const cancel = live.cancelled[0];
   assert.ok(cancel && cancel.kind === "plain");
   if (cancel.kind === "plain" && "object" in cancel.grant.grant) {
     cancel.grant.grant.stated = 1;
   }
-  assert.throws(() => rotateOnRevoke(live), /rotation rejected/);
+  reject(live);
   const quiet = rotation("forward-only");
   const quietCancel = quiet.cancelled[0];
   assert.ok(quietCancel && quietCancel.kind === "plain");
   quietCancel.grant.hamState = 0;
-  assert.throws(() => rotateOnRevoke(quiet), /rotation rejected/);
-  assert.throws(() => rotateOnRevoke(rotation("forward-only", "bob")), /rotation rejected/);
-  assert.throws(() => rotateOnRevoke(rotation("re-encrypt", "bob")), /rotation rejected/);
+  reject(quiet);
+  reject(rotation("forward-only"), [{ accessor: "bob", hamState: 10 }]);
+  reject(rotation("forward-only"), []);
+  reject(rotation("forward-only", "bob-epub"));
+  reject(rotation("re-encrypt", "bob-epub"));
+  reject(rotation("forward-only", "bob"));
   const blank = rotation("forward-only");
   const wrap = blank.rewrapped[0];
   assert.ok(wrap);
   wrap.wrappedKey = "";
-  assert.throws(() => rotateOnRevoke(blank), /rotation rejected/);
+  reject(blank);
+  const groupKey = rotation("forward-only");
+  const keyWrap = groupKey.rewrapped[0];
+  assert.ok(keyWrap);
+  keyWrap.scope = "group-key";
+  reject(groupKey);
   const doubled = rotation("forward-only");
   doubled.cancelled = [...doubled.cancelled, ...doubled.cancelled];
-  assert.throws(() => rotateOnRevoke(doubled), /rotation rejected/);
+  reject(doubled);
   const group = rotation("re-encrypt");
   const groupWrap = {
     scope: "item-dek" as const,
@@ -339,13 +384,14 @@ test("rotateOnRevoke accepts both cipher modes and fails closed", () => {
     target: "group-epoch" as const,
     targetId: "crew",
     object: "item-1",
+    group: "crew",
     revisionId: REV,
     wrappedKey: "bb",
   };
   group.rewrapped = [...group.rewrapped, groupWrap];
-  assert.equal(rotateOnRevoke(group), undefined);
-  group.rewrapped = [...group.rewrapped, { ...groupWrap }];
-  assert.throws(() => rotateOnRevoke(group), /rotation rejected/);
+  accept(group);
+  group.rewrapped = [...group.rewrapped, { ...groupWrap, scope: "group-key" }];
+  reject(group);
 
   const privateRow: EpochRotation = {
     object: "item-1",
@@ -373,15 +419,15 @@ test("rotateOnRevoke accepts both cipher modes and fails closed", () => {
     rewrapped: [],
     cipher: "forward-only",
   };
-  assert.equal(rotateOnRevoke(privateRow), undefined);
+  assert.equal(rotateOnRevoke(privateRow, READERS, PRIOR), undefined);
   const stale = structuredClone(privateRow);
   const staleCancel = stale.cancelled[0];
   assert.ok(staleCancel && staleCancel.kind === "private-row");
   staleCancel.status.epoch = 9;
-  assert.throws(() => rotateOnRevoke(stale), /rotation rejected/);
+  assert.throws(() => rotateOnRevoke(stale, READERS, PRIOR), /rotation rejected/);
   const badSig = structuredClone(privateRow);
   const badCancel = badSig.cancelled[0];
   assert.ok(badCancel && badCancel.kind === "private-row");
   badCancel.signature = "abcd";
-  assert.throws(() => rotateOnRevoke(badSig), /rotation rejected/);
+  assert.throws(() => rotateOnRevoke(badSig, READERS, PRIOR), /rotation rejected/);
 });

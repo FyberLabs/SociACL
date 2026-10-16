@@ -1213,7 +1213,8 @@ export type AclSnapshotEntry = {
 
 /**
  * Who receives a wrap for this candidate, and the cancel
- * applied for each accessor. Entries are sorted by accessor.
+ * applied for each accessor. Entries are sorted by accessor
+ * in bytewise UTF-8 order. U+E000 precedes U+10000.
  * There is no single cancel high-water across accessors.
  * A replica that knows accessor A is cancelled at revision R
  * ignores a snapshot that lists A as stated 1, omits A, or
@@ -1252,7 +1253,7 @@ export type AclSnapshotBody = {
  * 4. objectSet.setId, or empty
  * 5. decimal objectSet.stated, or empty
  * 6. decimal objectSet.hamState, or empty
- * then each entry in accessor order as accessor, decimal
+ * then each entry in bytewise UTF-8 accessor order as accessor, decimal
  * grantRevision, decimal stated, decimal from, decimal until,
  * scope, setId, decimal hamState. Does not mint.
  */
@@ -1306,8 +1307,10 @@ export const SETTLE_WINDOW_DEFAULT_MS: 86400000;
  * The signature is checked with the enrolled pub of that
  * account. A missing set owner, a different owner, or a
  * signature under some other key fails closed.
- * configRevision is monotonic for that set and predicate.
- * The greatest configRevision wins. A lower revision is ignored.
+ * configRevision is monotonic for that predicate and setId.
+ * The greatest configRevision for that pair wins. A higher
+ * revision for another predicate or setId does not. A lower
+ * revision is ignored.
  * At the same configRevision, the smaller digest of those
  * signed bytes wins. Arrival order does not pick the config.
  * A group epoch manifest repeats the settleWindowMs of that
@@ -1350,7 +1353,10 @@ export type GroupEpochConfig = {
  * changes finalizationId, so the old signature fails.
  * A finalization is on the current chain only when
  * previousFinalizationId is the winner of the previous epoch,
- * or "" for the first epoch. A later smaller finalizationId
+ * or "" for the first epoch. A child names previousEpoch equal
+ * to that parent epoch, and its own epoch is the next number.
+ * A later epoch does not attach by previousFinalizationId alone.
+ * A later smaller finalizationId
  * at an epoch drops every later finalization that names the
  * displaced id, or names a descendant of that id, off the
  * current chain. Replicas keep those finalizations. They are
@@ -1401,7 +1407,9 @@ export type EpochFinalization = {
  * settleWindowMs is the in-range value from the winning
  * manifest, which matches GroupEpochConfig for a group epoch.
  * settledRevisionId is the last revision whose window already
- * elapsed. settledEpoch is the epoch number of that revision.
+ * elapsed. settledEpoch is the epoch of the on-chain
+ * finalization for settledRevisionId. A separate caller epoch
+ * does not replace that number.
  * Readers use that key while a candidate is pending and switch
  * to the winner once the window elapses. A presentation during
  * the window names settledEpoch, not the pending epoch.
@@ -1985,12 +1993,27 @@ export type EpochRotation = {
 };
 
 /**
+ * Merged live hamState for one accessor. The presenter does not
+ * supply it. A plaintext cancel must be strictly greater.
+ */
+export type PriorHamState = {
+  accessor: AccessorId;
+  hamState: number;
+};
+
+/**
  * crates/sociacl-encdisc runs this check. Privilege-down first
- * (stated 0, hamState bump), then wraps of the winning next-epoch
- * revision. The settle window does not delay that. A wrap written
+ * (stated 0, hamState strictly greater than priorHam), then wraps
+ * of the winning next-epoch revision. readers maps each enrolled
+ * epub to its accessor before a revoked accessor is excluded.
+ * The settle window does not delay privilege-down. A wrap written
  * here is not a grant.
  */
-export function rotateOnRevoke(rotation: EpochRotation): void;
+export function rotateOnRevoke(
+  rotation: EpochRotation,
+  readers: readonly EnrolledSeaPub[],
+  priorHam: readonly PriorHamState[],
+): void;
 
 /**
  * One current reader during migration. acknowledged is an

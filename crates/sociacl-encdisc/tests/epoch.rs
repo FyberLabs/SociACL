@@ -13,8 +13,8 @@ use sociacl_encdisc::{
     EpochFinalization, EpochManifest, EpochManifestBody, EpochReplicaView, EpochRotation,
     EpochStatusProof, GrantStated, GrantStorage, GroupEpochConfig, GroupPredicate, ItemDek,
     LightZookie, MeshSeeGrant, NamedSet, PlainGrant, PriorRevision, RevokeCipherMode,
-    RotationCancel, RotationContext, SignedGrantPayload, WriteDisposition, JS_SAFE_INTEGER_MAX,
-    SETTLE_WINDOW_DEFAULT_MS, SETTLE_WINDOW_MAX_MS, SETTLE_WINDOW_MIN_MS,
+    RotationCancel, RotationContext, SignedGrantPayload, WrapScope, WrapTarget, WriteDisposition,
+    JS_SAFE_INTEGER_MAX, SETTLE_WINDOW_DEFAULT_MS, SETTLE_WINDOW_MAX_MS, SETTLE_WINDOW_MIN_MS,
 };
 
 const CANONICAL: &str = include_str!("../../../vectors/encrypted-discovery/canonical.json");
@@ -189,6 +189,31 @@ fn canonical_epoch_bodies_match_the_shared_fixture() {
     unsorted
         .entries
         .push(direct_entry("amy", 1, GrantStated::Live));
+    let low_accessor = "\u{E000}";
+    let high_accessor = "\u{10000}";
+    assert!(low_accessor.as_bytes() < high_accessor.as_bytes());
+    assert!(
+        high_accessor.encode_utf16().next().unwrap() < low_accessor.encode_utf16().next().unwrap()
+    );
+    let utf8_order = AclSnapshotBody {
+        object_set: None,
+        entries: vec![
+            direct_entry(low_accessor, 1, GrantStated::Live),
+            direct_entry(high_accessor, 2, GrantStated::Cancelled),
+        ],
+    };
+    assert_eq!(
+        acl_snapshot_id(&utf8_order).unwrap(),
+        vector_hash("acl-snapshot-utf8-order")
+    );
+    let utf16_order = AclSnapshotBody {
+        object_set: None,
+        entries: vec![
+            direct_entry(high_accessor, 2, GrantStated::Cancelled),
+            direct_entry(low_accessor, 1, GrantStated::Live),
+        ],
+    };
+    assert!(acl_snapshot_id(&utf16_order).is_err());
     assert!(acl_snapshot_id(&unsorted).is_err());
     assert!(acl_snapshot_id(&AclSnapshotBody {
         object_set: None,
@@ -335,17 +360,17 @@ fn two_devices_converge_on_the_smaller_finalization_id() {
     late_chain
         .insert_finalization(early, 10, owner.sea_pub())
         .unwrap();
-    let pending = late_chain.replica_view(1, &snapshot, 10, None, "", 0);
+    let pending = late_chain.replica_view(1, &snapshot, 10, None, "");
     assert_eq!(pending.winner_seen_at, 10);
     assert!(!epoch_step_current(&pending, &snapshot, &snapshot, 10));
     late_chain
         .insert_finalization(late, 4_000, owner.sea_pub())
         .unwrap();
-    let replaced = late_chain.replica_view(1, &snapshot, 4_000, None, "", 0);
+    let replaced = late_chain.replica_view(1, &snapshot, 4_000, None, "");
     assert_eq!(replaced.winner_seen_at, 4_000);
     assert!(!epoch_step_current(&replaced, &snapshot, &snapshot, 4_000));
     let ready_at = 4_000 + SETTLE_WINDOW_DEFAULT_MS;
-    let ready = late_chain.replica_view(1, &snapshot, ready_at, None, "", 0);
+    let ready = late_chain.replica_view(1, &snapshot, ready_at, None, "");
     assert!(epoch_step_current(&ready, &snapshot, &snapshot, ready_at));
 }
 
@@ -421,8 +446,13 @@ fn a_smaller_parent_drops_descendants_and_needs_a_higher_grant_revision() {
     let displaced = chain.displaced_finalizations(&snapshot, 5, None);
     assert_eq!(displaced.len(), 1);
     assert_eq!(displaced[0].finalization_id, child.finalization_id);
-    let view = chain.replica_view(1, &snapshot, 5, None, &loser.revision_id, 1);
+    let view = chain.replica_view(1, &snapshot, 5, None, &loser.revision_id);
     assert!(view.settled_revision_id.is_empty());
+    assert_eq!(view.settled_epoch, 0);
+    let settled = chain.replica_view(2, &snapshot, 5, None, &winner.revision_id);
+    assert_eq!(settled.settled_revision_id, winner.revision_id);
+    assert_eq!(settled.settled_epoch, winner.epoch);
+    assert_ne!(settled.epoch, settled.settled_epoch);
     assert!(rebuild_grant_revision(4, 4).is_err());
     assert_eq!(rebuild_grant_revision(4, 5).unwrap(), 5);
 }
@@ -507,31 +537,100 @@ fn group_window_follows_the_highest_config_revision() {
         wrong_owner,
         wrong_key,
     ];
-    let selected =
-        select_group_epoch_config(&configs, owner.sea_pub(), Some(owner.account())).unwrap();
+    let selected = select_group_epoch_config(
+        &configs,
+        GroupPredicate::SameGroup,
+        "crew",
+        owner.sea_pub(),
+        Some(owner.account()),
+    )
+    .unwrap();
     assert_eq!(selected.config_revision, 2);
     assert_eq!(selected.settle_window_ms, 7_200_000);
     assert!(!selected.grants_see());
     let reversed: Vec<_> = configs.clone().into_iter().rev().collect();
     assert_eq!(
-        select_group_epoch_config(&reversed, owner.sea_pub(), Some(owner.account()))
-            .unwrap()
-            .config_revision,
+        select_group_epoch_config(
+            &reversed,
+            GroupPredicate::SameGroup,
+            "crew",
+            owner.sea_pub(),
+            Some(owner.account()),
+        )
+        .unwrap()
+        .config_revision,
         2
     );
-    assert!(select_group_epoch_config(&configs, owner.sea_pub(), None).is_none());
-    assert!(select_group_epoch_config(&configs, other.sea_pub(), Some(owner.account())).is_none());
+    assert!(select_group_epoch_config(
+        &configs,
+        GroupPredicate::SameGroup,
+        "crew",
+        owner.sea_pub(),
+        None,
+    )
+    .is_none());
+    assert!(select_group_epoch_config(
+        &configs,
+        GroupPredicate::SameGroup,
+        "crew",
+        other.sea_pub(),
+        Some(owner.account()),
+    )
+    .is_none());
+    let foreign = GroupEpochConfig {
+        owner: owner.account().to_string(),
+        set_id: "other".to_string(),
+        predicate: GroupPredicate::SameGroup,
+        settle_window_ms: SETTLE_WINDOW_DEFAULT_MS,
+        config_revision: 99,
+        signature: owner
+            .sign_group_epoch_config("other", "same-group", SETTLE_WINDOW_DEFAULT_MS, 99)
+            .unwrap(),
+    };
+    let circle = GroupEpochConfig {
+        owner: owner.account().to_string(),
+        set_id: "crew".to_string(),
+        predicate: GroupPredicate::NamedCircle,
+        settle_window_ms: SETTLE_WINDOW_DEFAULT_MS,
+        config_revision: 99,
+        signature: owner
+            .sign_group_epoch_config("crew", "named-circle", SETTLE_WINDOW_DEFAULT_MS, 99)
+            .unwrap(),
+    };
+    let mixed = [high.clone(), foreign, circle];
+    assert_eq!(
+        select_group_epoch_config(
+            &mixed,
+            GroupPredicate::SameGroup,
+            "crew",
+            owner.sea_pub(),
+            Some(owner.account()),
+        )
+        .unwrap()
+        .config_revision,
+        2
+    );
 
     let tie_a = signed_config(&owner, 5, 7_200_000);
     let tie_b = signed_config(&owner, 5, SETTLE_WINDOW_DEFAULT_MS);
     let forward_configs = [tie_a.clone(), tie_b.clone()];
     let backward_configs = [tie_b.clone(), tie_a.clone()];
-    let forward =
-        select_group_epoch_config(&forward_configs, owner.sea_pub(), Some(owner.account()))
-            .unwrap();
-    let backward =
-        select_group_epoch_config(&backward_configs, owner.sea_pub(), Some(owner.account()))
-            .unwrap();
+    let forward = select_group_epoch_config(
+        &forward_configs,
+        GroupPredicate::SameGroup,
+        "crew",
+        owner.sea_pub(),
+        Some(owner.account()),
+    )
+    .unwrap();
+    let backward = select_group_epoch_config(
+        &backward_configs,
+        GroupPredicate::SameGroup,
+        "crew",
+        owner.sea_pub(),
+        Some(owner.account()),
+    )
+    .unwrap();
     assert_eq!(forward.digest().unwrap(), backward.digest().unwrap());
     let smaller = if tie_a.digest().unwrap() < tie_b.digest().unwrap() {
         &tie_a
@@ -758,6 +857,11 @@ fn rotate_on_revoke_is_immediate_for_both_cipher_modes() {
             ham_state: 3,
         },
     };
+    let prior = [PriorRevision {
+        accessor: bob.account().to_string(),
+        grant_revision: 1,
+        ham_state: 1,
+    }];
     for cipher in [RevokeCipherMode::ForwardOnly, RevokeCipherMode::ReEncrypt] {
         let rotation = EpochRotation {
             object: "item-1".to_string(),
@@ -770,7 +874,7 @@ fn rotate_on_revoke_is_immediate_for_both_cipher_modes() {
         };
         let outcome = rotate_on_revoke(
             &rotation,
-            &context(&owner, &manifest, &snapshot, &readers, &[], 1_000),
+            &context(&owner, &manifest, &snapshot, &readers, &prior, 1_000),
         )
         .unwrap();
         assert!(!outcome.grants_see());
@@ -804,13 +908,61 @@ fn rotate_on_revoke_is_immediate_for_both_cipher_modes() {
         revoked_epoch: 2,
         next_epoch: 3,
         revision_id: manifest.revision_id.clone(),
-        cancelled: vec![cancel],
+        cancelled: vec![cancel.clone()],
         rewrapped: with_bob,
         cipher: RevokeCipherMode::ReEncrypt,
     };
     assert!(rotate_on_revoke(
         &rotation,
+        &context(&owner, &manifest, &snapshot, &readers, &prior, 1_000),
+    )
+    .is_err());
+
+    let stale = [PriorRevision {
+        accessor: bob.account().to_string(),
+        grant_revision: 1,
+        ham_state: 10,
+    }];
+    let kept = EpochRotation {
+        object: "item-1".to_string(),
+        revoked_epoch: 2,
+        next_epoch: 3,
+        revision_id: manifest.revision_id.clone(),
+        cancelled: vec![cancel],
+        rewrapped: fresh.clone(),
+        cipher: RevokeCipherMode::ForwardOnly,
+    };
+    assert!(rotate_on_revoke(
+        &kept,
+        &context(&owner, &manifest, &snapshot, &readers, &stale, 1_000),
+    )
+    .is_err());
+    assert!(rotate_on_revoke(
+        &kept,
         &context(&owner, &manifest, &snapshot, &readers, &[], 1_000),
+    )
+    .is_err());
+    let mut group_key = fresh[0].clone();
+    group_key.scope = WrapScope::GroupKey;
+    let group_key_rotation = EpochRotation {
+        rewrapped: vec![group_key],
+        ..kept.clone()
+    };
+    assert!(rotate_on_revoke(
+        &group_key_rotation,
+        &context(&owner, &manifest, &snapshot, &readers, &prior, 1_000),
+    )
+    .is_err());
+    let mut group_epoch = fresh[0].clone();
+    group_epoch.scope = WrapScope::GroupKey;
+    group_epoch.target = WrapTarget::GroupEpoch;
+    let group_epoch_rotation = EpochRotation {
+        rewrapped: vec![group_epoch],
+        ..kept
+    };
+    assert!(rotate_on_revoke(
+        &group_epoch_rotation,
+        &context(&owner, &manifest, &snapshot, &readers, &prior, 1_000),
     )
     .is_err());
 }
@@ -901,6 +1053,7 @@ fn a_plaintext_edge_does_not_cancel_a_private_row() {
     let prior = [PriorRevision {
         accessor: bob.account().to_string(),
         grant_revision: 4,
+        ham_state: 1,
     }];
     let mut private = context(&owner, &manifest, &snapshot, &readers, &prior, 1_000);
     private.storage = GrantStorage::PrivateRow;
@@ -1016,13 +1169,181 @@ fn a_group_epoch_wrap_follows_the_signed_window_and_skips_the_revoked_member() {
         rewrapped,
         cipher: RevokeCipherMode::ForwardOnly,
     };
-    let mut ctx = context(&owner, &manifest, &snapshot, &readers, &[], 1_000);
+    let prior = [PriorRevision {
+        accessor: bob.account().to_string(),
+        grant_revision: 1,
+        ham_state: 2,
+    }];
+    let mut ctx = context(&owner, &manifest, &snapshot, &readers, &prior, 1_000);
     ctx.group_config = Some(&config);
     ctx.owner_of_set = Some(owner.account());
     let outcome = rotate_on_revoke(&rotation, &ctx).unwrap();
     assert_eq!(outcome.wrapped_accessors, vec![carol.account().to_string()]);
     assert!(!outcome.delays_privilege_down());
     assert_eq!(outcome.cipher.as_str(), "forward-only");
+}
+
+#[test]
+fn every_candidate_resolves_and_a_child_names_the_parent_epoch() {
+    let owner = AccountSeaSecret::generate("0xalice").unwrap();
+    let snapshot = empty_acl();
+    let first = manifest_for(
+        &owner,
+        "item-1",
+        1,
+        0,
+        "laptop",
+        "key-a",
+        SETTLE_WINDOW_DEFAULT_MS,
+        &snapshot,
+    );
+    let second = manifest_for(
+        &owner,
+        "item-1",
+        1,
+        0,
+        "phone",
+        "key-b",
+        SETTLE_WINDOW_DEFAULT_MS,
+        &snapshot,
+    );
+    let child_manifest = manifest_for(
+        &owner,
+        "item-1",
+        2,
+        1,
+        "tablet",
+        "key-c",
+        SETTLE_WINDOW_DEFAULT_MS,
+        &snapshot,
+    );
+    let skipped_manifest = manifest_for(
+        &owner,
+        "item-1",
+        3,
+        2,
+        "desk",
+        "key-d",
+        SETTLE_WINDOW_DEFAULT_MS,
+        &snapshot,
+    );
+    let jumped_manifest = manifest_for(
+        &owner,
+        "item-1",
+        3,
+        1,
+        "radio",
+        "key-e",
+        SETTLE_WINDOW_DEFAULT_MS,
+        &snapshot,
+    );
+    let mut chain = chain_with(&owner, &first, &snapshot);
+    for manifest in [
+        &second,
+        &child_manifest,
+        &skipped_manifest,
+        &jumped_manifest,
+    ] {
+        chain
+            .insert_manifest(manifest.clone(), snapshot.clone(), owner.sea_pub())
+            .unwrap();
+    }
+    let (low, high) = if first.revision_id < second.revision_id {
+        (&first, &second)
+    } else {
+        (&second, &first)
+    };
+    let mut both = EpochFinalization::seal(
+        "item-1",
+        0,
+        1,
+        &low.revision_id,
+        vec![low.revision_id.clone(), high.revision_id.clone()],
+        "",
+        "",
+    )
+    .unwrap();
+    both.signature = owner
+        .sign_epoch_finalization(&both.finalization_id)
+        .unwrap();
+    chain
+        .insert_finalization(both.clone(), 1, owner.sea_pub())
+        .unwrap();
+
+    let ghost = "f".repeat(64);
+    assert!(ghost.as_str() > low.revision_id.as_str());
+    let mut unresolved = EpochFinalization::seal(
+        "item-1",
+        0,
+        1,
+        &low.revision_id,
+        vec![low.revision_id.clone(), ghost],
+        "",
+        "",
+    )
+    .unwrap();
+    unresolved.signature = owner
+        .sign_epoch_finalization(&unresolved.finalization_id)
+        .unwrap();
+    assert!(chain
+        .insert_finalization(unresolved, 2, owner.sea_pub())
+        .is_err());
+
+    let mut crossed_ids = vec![low.revision_id.clone(), child_manifest.revision_id.clone()];
+    crossed_ids.sort();
+    let named = crossed_ids[0].clone();
+    let mut crossed = EpochFinalization::seal("item-1", 0, 1, &named, crossed_ids, "", "").unwrap();
+    crossed.signature = owner
+        .sign_epoch_finalization(&crossed.finalization_id)
+        .unwrap();
+    assert!(chain
+        .insert_finalization(crossed, 3, owner.sea_pub())
+        .is_err());
+
+    let skip = fin_for(
+        &owner,
+        "item-1",
+        2,
+        3,
+        &skipped_manifest.revision_id,
+        &both.finalization_id,
+    );
+    assert!(chain
+        .insert_finalization(skip.clone(), 4, owner.sea_pub())
+        .is_err());
+    let jump = fin_for(
+        &owner,
+        "item-1",
+        1,
+        3,
+        &jumped_manifest.revision_id,
+        &both.finalization_id,
+    );
+    assert!(chain.insert_finalization(jump, 5, owner.sea_pub()).is_err());
+    let child = fin_for(
+        &owner,
+        "item-1",
+        1,
+        2,
+        &child_manifest.revision_id,
+        &both.finalization_id,
+    );
+    chain
+        .insert_finalization(child, 6, owner.sea_pub())
+        .unwrap();
+    assert!(chain.revision_on_chain(&child_manifest.revision_id, &snapshot, 7, None));
+    assert!(!chain.revision_on_chain(&skipped_manifest.revision_id, &snapshot, 7, None));
+
+    let mut early = EpochChain::new("item-1").unwrap();
+    for manifest in [&first, &second, &skipped_manifest] {
+        early
+            .insert_manifest(manifest.clone(), snapshot.clone(), owner.sea_pub())
+            .unwrap();
+    }
+    early.insert_finalization(skip, 1, owner.sea_pub()).unwrap();
+    early.insert_finalization(both, 2, owner.sea_pub()).unwrap();
+    assert!(early.revision_on_chain(&low.revision_id, &snapshot, 3, None));
+    assert!(!early.revision_on_chain(&skipped_manifest.revision_id, &snapshot, 3, None));
 }
 
 fn context<'a>(

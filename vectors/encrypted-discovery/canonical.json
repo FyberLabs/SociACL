@@ -13,7 +13,8 @@
     "itemAuth and accountBinding hashes cover the signed bytes. They are not signatures.",
     "keyCommitment in these vectors is an opaque string. This slice does not define that commitment.",
     "epoch-max-safe uses 9007199254740991, the largest integer Number.isSafeInteger accepts. 9007199254740992 is rejected and has no id.",
-    "inbox-real-wrap hashes the wrappedKey blob in wrap.json. The short aa and ab wraps are id cases only."
+    "inbox-real-wrap hashes the wrappedKey blob in wrap.json. The short aa and ab wraps are id cases only.",
+    "acl-snapshot-utf8-order sorts accessors by UTF-8 bytes. U+E000 precedes U+10000."
   ],
   "cases": [
     {
@@ -389,6 +390,36 @@
       ],
       "encodedLen": 81,
       "sha256": "b381336b208ba5aa31859574437f41b2bff50e1417fe491861a4bbbed3d360d1"
+    },
+    {
+      "name": "acl-snapshot-utf8-order",
+      "kind": "fields",
+      "fields": [
+        "s3rch-acl-snapshot-v1",
+        "0",
+        "",
+        "",
+        "",
+        "",
+        "\ue000",
+        "1",
+        "1",
+        "0",
+        "4000000000000",
+        "direct",
+        "",
+        "0",
+        "\ud800\udc00",
+        "2",
+        "0",
+        "0",
+        "4000000000000",
+        "direct",
+        "",
+        "0"
+      ],
+      "encodedLen": 163,
+      "sha256": "52e3fad7030a69857da2efa49ee5527705723f421c937e62b7929da97594838d"
     }
   ]
 }
