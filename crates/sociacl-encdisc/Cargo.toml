@@ -13,7 +13,7 @@ deterministic-wrap = []
 
 [dependencies]
 # Pinned for Rust 1.83. Newer aead and p256 releases set edition 2024.
-aes-gcm = { version = "=0.10.3", default-features = false, features = ["alloc", "aes", "std"] }
+aes-gcm = { version = "=0.10.3", default-features = false, features = ["alloc", "aes", "std", "zeroize"] }
 base64ct = "=1.6.0"
 p256 = { version = "=0.13.2", default-features = false, features = ["arithmetic", "ecdh", "ecdsa", "std"] }
 rand = "0.8"

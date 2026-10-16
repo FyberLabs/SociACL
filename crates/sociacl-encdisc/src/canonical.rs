@@ -7,6 +7,7 @@
 //! hex. A hex encoding of the raw body is not the id.
 
 use sha2::{Digest, Sha256};
+use zeroize::Zeroize;
 
 use crate::error::EncDiscError;
 
@@ -66,9 +67,10 @@ pub struct ItemAuthFields {
 }
 
 pub fn sha256(bytes: &[u8]) -> [u8; 32] {
-    let digest = Sha256::digest(bytes);
+    let mut digest = Sha256::digest(bytes);
     let mut out = [0u8; 32];
     out.copy_from_slice(&digest);
+    digest.zeroize();
     out
 }
 

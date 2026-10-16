@@ -35,6 +35,7 @@ npm ci --prefix typescript
 npx --prefix typescript tsc --strict --noEmit -p typescript/contract
 node --experimental-strip-types --test --experimental-test-coverage \
   --test-coverage-include='typescript/src/**' \
+  --test-coverage-include='typescript/contract/**' \
   --test-reporter=spec \
   typescript/tests/*.js \
   typescript/tests/test_encdisc_vectors.ts \

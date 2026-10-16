@@ -15,7 +15,7 @@ use p256::ecdsa::signature::{Signer, Verifier};
 use p256::ecdsa::{Signature, SigningKey, VerifyingKey};
 use p256::elliptic_curve::sec1::ToEncodedPoint;
 use p256::{PublicKey, SecretKey};
-use zeroize::Zeroizing;
+use zeroize::{Zeroize, Zeroizing};
 
 use crate::error::EncDiscError;
 use crate::hexutil::encode_hex;
@@ -51,7 +51,10 @@ pub fn sea_pub_from_signing(signing: &SigningKey) -> Result<String, EncDiscError
 }
 
 pub fn sea_priv_from_signing(signing: &SigningKey) -> Result<Zeroizing<String>, EncDiscError> {
-    scalar_to_sea(signing.to_bytes().as_slice())
+    let mut raw = signing.to_bytes();
+    let encoded = scalar_to_sea(raw.as_slice());
+    raw.zeroize();
+    encoded
 }
 
 pub fn sea_pub_from_secret(secret: &SecretKey) -> Result<String, EncDiscError> {
@@ -59,7 +62,10 @@ pub fn sea_pub_from_secret(secret: &SecretKey) -> Result<String, EncDiscError> {
 }
 
 pub fn sea_priv_from_secret(secret: &SecretKey) -> Result<Zeroizing<String>, EncDiscError> {
-    scalar_to_sea(secret.to_bytes().as_slice())
+    let mut raw = secret.to_bytes();
+    let encoded = scalar_to_sea(raw.as_slice());
+    raw.zeroize();
+    encoded
 }
 
 pub fn signing_key(sea_priv: &str) -> Result<SigningKey, EncDiscError> {
@@ -86,13 +92,13 @@ pub fn parse_sea_point(sea_pub: &str) -> Result<PublicKey, EncDiscError> {
     PublicKey::from_sec1_bytes(&uncompressed).map_err(|_| EncDiscError::BadKey)
 }
 
-pub fn ecdh_x(secret: &SecretKey, peer: &PublicKey) -> Result<[u8; 32], EncDiscError> {
+pub fn ecdh_x(secret: &SecretKey, peer: &PublicKey) -> Result<Zeroizing<[u8; 32]>, EncDiscError> {
     let shared = p256::ecdh::diffie_hellman(secret.to_nonzero_scalar(), *peer.as_affine());
     let raw = shared.raw_secret_bytes();
     if raw.len() != 32 {
         return Err(EncDiscError::BadKey);
     }
-    let mut out = [0u8; 32];
+    let mut out = Zeroizing::new([0u8; 32]);
     out.copy_from_slice(raw);
     Ok(out)
 }

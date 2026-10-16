@@ -1,13 +1,13 @@
 # Coverage
 
-Measured **2026-09-20** by `scripts/coverage.sh`.
+Measured **2026-10-16** by `scripts/coverage.sh`.
 
 | Surface | Result | Line coverage | Tool |
 | --- | --- | ---: | --- |
-| Rust workspace | 229 tests + 6 examples | 85.50% | cargo-llvm-cov |
-| C FFI | 12 unit + 6 examples | 82.71% (`sociacl-c`) | same llvm-cov |
+| Rust workspace | 254 tests + 6 examples | 86.24% | cargo-llvm-cov |
+| C FFI | 12 unit + 6 examples | 84.56% (`sociacl-c`) | same llvm-cov |
 | Python | 28 tests | 86.6% | coverage.py or stdlib trace |
-| TypeScript | 20 tests | 85.8% | node --experimental-test-coverage |
+| TypeScript | 22 tests | 87.3% | node --experimental-test-coverage |
 
 C examples are smoke tests against `libsociacl`. Their line hits land in the Rust FFI crate.
 
@@ -15,31 +15,36 @@ C examples are smoke tests against `libsociacl`. Their line hits land in the Rus
 
 | File | Lines | Cover |
 | --- | ---: | ---: |
-| `sociacl-c/src/lib.rs` | 2649 | 82.71% |
-| `sociacl-core/src/attestation.rs` | 209 | 80.38% |
-| `sociacl-core/src/bundle.rs` | 288 | 90.62% |
+| `sociacl-c/src/lib.rs` | 3090 | 84.56% |
+| `sociacl-core/src/attestation.rs` | 215 | 78.14% |
+| `sociacl-core/src/bundle.rs` | 296 | 90.20% |
 | `sociacl-core/src/cache.rs` | 49 | 91.84% |
-| `sociacl-core/src/channel.rs` | 218 | 76.15% |
-| `sociacl-core/src/check.rs` | 231 | 92.21% |
-| `sociacl-core/src/client.rs` | 242 | 87.19% |
-| `sociacl-core/src/codec.rs` | 725 | 87.31% |
-| `sociacl-core/src/graph.rs` | 799 | 88.74% |
-| `sociacl-core/src/hop.rs` | 253 | 92.09% |
-| `sociacl-core/src/network.rs` | 69 | 92.75% |
-| `sociacl-core/src/types.rs` | 343 | 79.59% |
-| `sociacl-core/src/verbs.rs` | 299 | 90.30% |
-| `sociacl-core/src/will.rs` | 523 | 81.07% |
-| `sociacl-gun/src/adapter.rs` | 217 | 94.47% |
+| `sociacl-core/src/channel.rs` | 219 | 75.80% |
+| `sociacl-core/src/check.rs` | 236 | 92.37% |
+| `sociacl-core/src/client.rs` | 244 | 87.30% |
+| `sociacl-core/src/codec.rs` | 743 | 86.68% |
+| `sociacl-core/src/graph.rs` | 811 | 88.53% |
+| `sociacl-core/src/hop.rs` | 255 | 92.16% |
+| `sociacl-core/src/network.rs` | 70 | 92.86% |
+| `sociacl-core/src/types.rs` | 348 | 79.89% |
+| `sociacl-core/src/verbs.rs` | 302 | 90.40% |
+| `sociacl-core/src/will.rs` | 544 | 81.25% |
+| `sociacl-encdisc/src/account.rs` | 251 | 93.23% |
+| `sociacl-encdisc/src/canonical.rs` | 149 | 97.32% |
+| `sociacl-encdisc/src/hexutil.rs` | 60 | 95.00% |
+| `sociacl-encdisc/src/sea.rs` | 204 | 92.65% |
+| `sociacl-encdisc/src/wrap.rs` | 707 | 83.45% |
+| `sociacl-gun/src/adapter.rs` | 218 | 94.50% |
 | `sociacl-gun/src/error.rs` | 6 | 0.00% |
-| `sociacl-gun/src/feed.rs` | 178 | 66.85% |
-| `sociacl-gun/src/hint.rs` | 154 | 87.01% |
+| `sociacl-gun/src/feed.rs` | 179 | 67.04% |
+| `sociacl-gun/src/hint.rs` | 157 | 86.62% |
 | `sociacl-gun/src/hop.rs` | 25 | 84.00% |
 | `sociacl-gun/src/leaf.rs` | 77 | 88.31% |
-| `sociacl-gun/src/mesh.rs` | 349 | 95.42% |
-| `sociacl-gun/src/soul.rs` | 144 | 95.83% |
-| `social-light/src/lib.rs` | 269 | 86.62% |
+| `sociacl-gun/src/mesh.rs` | 357 | 94.68% |
+| `sociacl-gun/src/soul.rs` | 147 | 95.92% |
+| `social-light/src/lib.rs` | 270 | 86.67% |
 | `social-light/src/localhost.rs` | 40 | 80.00% |
-| **TOTAL** | 8356 | **85.50%** |
+| **TOTAL** | 10269 | **86.24%** |
 
 ## How to refresh
 

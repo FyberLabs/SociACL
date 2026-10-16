@@ -10,11 +10,11 @@
 
 use rand::rngs::OsRng;
 use rand::RngCore;
-use zeroize::Zeroizing;
+use zeroize::{Zeroize, Zeroizing};
 
 use crate::canonical::{self, ItemAuthFields};
 use crate::error::EncDiscError;
-use crate::hexutil::encode_hex;
+use crate::hexutil::encode_secret_hex;
 use crate::sea::{self, ecdh_secret, signing_key};
 
 /// Device-local account key. `priv` and `epriv` are not on the Gun view.
@@ -101,7 +101,9 @@ impl AccountSeaSecret {
         let encryption = p256::SecretKey::random(&mut rng);
         let mut lane = [0u8; 32];
         rng.fill_bytes(&mut lane);
-        Self::from_generated(account, &encode_hex(&lane), &signing, &encryption)
+        let lane_hex = encode_secret_hex(&lane);
+        lane.zeroize();
+        Self::from_generated(account, lane_hex.as_str(), &signing, &encryption)
     }
 
     /// Restore a device-local copy. Rejects a `pub` that does not match

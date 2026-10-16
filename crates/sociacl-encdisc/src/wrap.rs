@@ -14,12 +14,12 @@ use aes_gcm::aead::{Aead, KeyInit};
 use aes_gcm::{Aes256Gcm, Nonce};
 use rand::rngs::OsRng;
 use rand::RngCore;
-use zeroize::Zeroizing;
+use zeroize::{Zeroize, Zeroizing};
 
 use crate::account::EnrolledSeaPub;
 use crate::canonical::{self, DOMAIN_GROUP_WRAP, DOMAIN_SEA_SECRET, DOMAIN_WRAPPED_KEY};
 use crate::error::EncDiscError;
-use crate::hexutil::{decode_hex, encode_hex};
+use crate::hexutil::{self, decode_hex, encode_hex, encode_secret_hex};
 use crate::sea::{self, ecdh_secret, ecdh_x, parse_sea_point, uncompressed_point};
 
 const MAX_WRAP_BYTES: usize = 8192;
@@ -114,15 +114,15 @@ impl ItemDek {
     pub fn generate() -> Self {
         let mut bytes = [0u8; 32];
         OsRng.fill_bytes(&mut bytes);
-        Self {
-            bytes: Zeroizing::new(bytes),
-        }
+        let held = Zeroizing::new(bytes);
+        bytes.zeroize();
+        Self { bytes: held }
     }
 
-    pub fn from_bytes(bytes: [u8; 32]) -> Self {
-        Self {
-            bytes: Zeroizing::new(bytes),
-        }
+    pub fn from_bytes(mut bytes: [u8; 32]) -> Self {
+        let held = Zeroizing::new(bytes);
+        bytes.zeroize();
+        Self { bytes: held }
     }
 
     pub fn as_bytes(&self) -> &[u8; 32] {
@@ -140,15 +140,15 @@ impl GroupEpochKey {
     pub fn generate() -> Self {
         let mut bytes = [0u8; 32];
         OsRng.fill_bytes(&mut bytes);
-        Self {
-            bytes: Zeroizing::new(bytes),
-        }
+        let held = Zeroizing::new(bytes);
+        bytes.zeroize();
+        Self { bytes: held }
     }
 
-    pub fn from_bytes(bytes: [u8; 32]) -> Self {
-        Self {
-            bytes: Zeroizing::new(bytes),
-        }
+    pub fn from_bytes(mut bytes: [u8; 32]) -> Self {
+        let held = Zeroizing::new(bytes);
+        bytes.zeroize();
+        Self { bytes: held }
     }
 
     pub fn as_bytes(&self) -> &[u8; 32] {
@@ -532,8 +532,8 @@ pub fn open_reader_wrap(
         .map_err(|_| EncDiscError::WrapRejected)?;
     let ciphertext = &blob[78..];
     let shared = ecdh_x(&secret, &ephemeral.public).map_err(|_| EncDiscError::WrapRejected)?;
-    let aes_key = Zeroizing::new(kdf_reader(&shared)?);
-    let plain = Zeroizing::new(decrypt(&aes_key, &nonce, ciphertext)?);
+    let aes_key = kdf_reader(&shared)?;
+    let plain = decrypt(&aes_key, &nonce, ciphertext)?;
     parse_opened(&plain, wrapped)
 }
 
@@ -557,8 +557,8 @@ pub fn open_group_epoch_wrap(
         .try_into()
         .map_err(|_| EncDiscError::WrapRejected)?;
     let ciphertext = &blob[13..];
-    let aes_key = Zeroizing::new(kdf_group(group_key.as_bytes())?);
-    let plain = Zeroizing::new(decrypt(&aes_key, &nonce, ciphertext)?);
+    let aes_key = kdf_group(group_key.as_bytes())?;
+    let plain = decrypt(&aes_key, &nonce, ciphertext)?;
     parse_opened(&plain, wrapped)
 }
 
@@ -630,8 +630,8 @@ fn seal_reader(
     let secret = ecdh_secret(epriv)?;
     let peer = parse_sea_point(recipient_epub)?;
     let shared = ecdh_x(&secret, &peer)?;
-    let aes_key = Zeroizing::new(kdf_reader(&shared)?);
-    let plain = Zeroizing::new(sealed_plain(key, plan)?);
+    let aes_key = kdf_reader(&shared)?;
+    let plain = sealed_plain(key, plan)?;
     let ciphertext = encrypt(&aes_key, nonce, &plain)?;
     let ephemeral = uncompressed_point(&secret.public_key())?;
     let mut blob = Vec::with_capacity(1 + 65 + 12 + ciphertext.len());
@@ -648,8 +648,8 @@ fn seal_group(
     plan: &Plan,
     nonce: &[u8; 12],
 ) -> Result<WrappedKey, EncDiscError> {
-    let aes_key = Zeroizing::new(kdf_group(group_key.as_bytes())?);
-    let plain = Zeroizing::new(sealed_plain(key, plan)?);
+    let aes_key = kdf_group(group_key.as_bytes())?;
+    let plain = sealed_plain(key, plan)?;
     let ciphertext = encrypt(&aes_key, nonce, &plain)?;
     let mut blob = Vec::with_capacity(1 + 12 + ciphertext.len());
     blob.push(VER_GROUP);
@@ -674,12 +674,12 @@ fn finish_blob(plan: &Plan, blob: Vec<u8>) -> Result<WrappedKey, EncDiscError> {
     })
 }
 
-fn sealed_plain(key: &[u8; 32], plan: &Plan) -> Result<Vec<u8>, EncDiscError> {
+fn sealed_plain(key: &[u8; 32], plan: &Plan) -> Result<Zeroizing<Vec<u8>>, EncDiscError> {
     let epoch = canonical::canonical_decimal(plan.epoch)?;
     let object = plan.object.as_deref().unwrap_or("");
     let group = plan.group.as_deref().unwrap_or("");
-    let key_hex = encode_hex(key);
-    canonical::length_prefixed(&[
+    let key_hex = encode_secret_hex(key);
+    let bytes = canonical::length_prefixed(&[
         DOMAIN_WRAPPED_KEY,
         plan.scope.as_str(),
         &epoch,
@@ -688,20 +688,26 @@ fn sealed_plain(key: &[u8; 32], plan: &Plan) -> Result<Vec<u8>, EncDiscError> {
         object,
         group,
         &plan.revision_id,
-        &key_hex,
-    ])
+        key_hex.as_str(),
+    ])?;
+    Ok(Zeroizing::new(bytes))
 }
 
-fn kdf_reader(shared_x: &[u8; 32]) -> Result<[u8; 32], EncDiscError> {
-    let hex = encode_hex(shared_x);
-    let bytes = canonical::length_prefixed(&[DOMAIN_SEA_SECRET, &hex])?;
-    Ok(canonical::sha256(&bytes))
+fn kdf(domain: &str, material: &[u8; 32]) -> Result<Zeroizing<[u8; 32]>, EncDiscError> {
+    let hex = encode_secret_hex(material);
+    let bytes = Zeroizing::new(canonical::length_prefixed(&[domain, hex.as_str()])?);
+    let mut digest = canonical::sha256(&bytes);
+    let held = Zeroizing::new(digest);
+    digest.zeroize();
+    Ok(held)
 }
 
-fn kdf_group(group_key: &[u8; 32]) -> Result<[u8; 32], EncDiscError> {
-    let hex = encode_hex(group_key);
-    let bytes = canonical::length_prefixed(&[DOMAIN_GROUP_WRAP, &hex])?;
-    Ok(canonical::sha256(&bytes))
+fn kdf_reader(shared_x: &[u8; 32]) -> Result<Zeroizing<[u8; 32]>, EncDiscError> {
+    kdf(DOMAIN_SEA_SECRET, shared_x)
+}
+
+fn kdf_group(group_key: &[u8; 32]) -> Result<Zeroizing<[u8; 32]>, EncDiscError> {
+    kdf(DOMAIN_GROUP_WRAP, group_key)
 }
 
 fn encrypt(key: &[u8; 32], nonce: &[u8; 12], plaintext: &[u8]) -> Result<Vec<u8>, EncDiscError> {
@@ -711,11 +717,16 @@ fn encrypt(key: &[u8; 32], nonce: &[u8; 12], plaintext: &[u8]) -> Result<Vec<u8>
         .map_err(|_| EncDiscError::WrapRejected)
 }
 
-fn decrypt(key: &[u8; 32], nonce: &[u8; 12], ciphertext: &[u8]) -> Result<Vec<u8>, EncDiscError> {
+fn decrypt(
+    key: &[u8; 32],
+    nonce: &[u8; 12],
+    ciphertext: &[u8],
+) -> Result<Zeroizing<Vec<u8>>, EncDiscError> {
     let cipher = Aes256Gcm::new_from_slice(key).map_err(|_| EncDiscError::WrapRejected)?;
-    cipher
+    let plain = cipher
         .decrypt(Nonce::from_slice(nonce), ciphertext)
-        .map_err(|_| EncDiscError::WrapRejected)
+        .map_err(|_| EncDiscError::WrapRejected)?;
+    Ok(Zeroizing::new(plain))
 }
 
 fn decode_blob(hex_text: &str) -> Result<Vec<u8>, EncDiscError> {
@@ -757,9 +768,9 @@ fn parse_opened(plain: &[u8], wrapped: &WrappedKey) -> Result<OpenedWrap, EncDis
         return Err(EncDiscError::WrapRejected);
     }
     let key =
-        crate::hexutil::decode_hex_array::<32>(key_hex).map_err(|_| EncDiscError::WrapRejected)?;
+        hexutil::decode_secret_array::<32>(key_hex).map_err(|_| EncDiscError::WrapRejected)?;
     Ok(OpenedWrap {
-        key: Zeroizing::new(key),
+        key,
         revision_id: revision.to_string(),
         scope: parsed_scope,
     })
@@ -814,9 +825,9 @@ mod tests {
         .unwrap();
         let blob = decode_blob(&wrapped.wrapped_key).unwrap();
         assert_eq!(blob[0], 2);
-        let aes = kdf_group(group.as_bytes()).unwrap();
+        let aes: zeroize::Zeroizing<[u8; 32]> = kdf_group(group.as_bytes()).unwrap();
         let plain = decrypt(&aes, &nonce, &blob[13..]).unwrap();
-        let text = String::from_utf8(plain).unwrap();
+        let text = String::from_utf8(plain.to_vec()).unwrap();
         assert!(text.contains(&revision));
         assert!(text.contains("s3rch-wrapped-key-v1"));
         assert!(!text.contains("priv"));
