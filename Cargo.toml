@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
-members = ["crates/sociacl-core", "crates/sociacl-c", "crates/social-light", "crates/sociacl-gun"]
-default-members = ["crates/sociacl-core", "crates/sociacl-c", "crates/social-light", "crates/sociacl-gun"]
+members = ["crates/sociacl-core", "crates/sociacl-c", "crates/social-light", "crates/sociacl-gun", "crates/sociacl-encdisc"]
+default-members = ["crates/sociacl-core", "crates/sociacl-c", "crates/social-light", "crates/sociacl-gun", "crates/sociacl-encdisc"]
 
 [workspace.package]
 version = "0.1.0"

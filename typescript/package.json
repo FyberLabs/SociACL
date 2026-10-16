@@ -18,6 +18,7 @@
     "typecheck": "tsc --strict --noEmit -p tsconfig.json"
   },
   "devDependencies": {
+    "@types/node": "24.7.0",
     "typescript": "5.9.3"
   }
 }

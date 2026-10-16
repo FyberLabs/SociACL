@@ -1,0 +1,287 @@
+{
+  "encoding": "uint32-le-length-prefixed-utf8",
+  "hash": "sha256-lowercase-hex",
+  "safeInteger": {
+    "maxInclusive": 9007199254740991,
+    "rejected": "9007199254740992"
+  },
+  "notes": [
+    "An empty field is four zero bytes.",
+    "Integers are ASCII decimal with no sign and no leading zeros. Zero is 0.",
+    "A missing wrap.object or wrap.group encodes the same as an empty string.",
+    "fields-empty is SHA-256 of the empty byte string.",
+    "itemAuth and accountBinding hashes cover the signed bytes. They are not signatures.",
+    "keyCommitment in these vectors is an opaque string. This slice does not define that commitment.",
+    "epoch-max-safe uses 9007199254740991, the largest integer Number.isSafeInteger accepts. 9007199254740992 is rejected and has no id.",
+    "inbox-real-wrap hashes the wrappedKey blob in wrap.json. The short aa and ab wraps are id cases only."
+  ],
+  "cases": [
+    {
+      "name": "fields-empty",
+      "kind": "fields",
+      "fields": [],
+      "encodedLen": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "fields-ab-c",
+      "kind": "fields",
+      "fields": [
+        "ab",
+        "c"
+      ],
+      "encodedLen": 11,
+      "sha256": "60014a36d7b05b0730e42a8b96faa1ffb4bd28469aea4000191179f01561ddb7"
+    },
+    {
+      "name": "fields-a-bc",
+      "kind": "fields",
+      "fields": [
+        "a",
+        "bc"
+      ],
+      "encodedLen": 11,
+      "sha256": "47ea6f805c5b663e33012cd34184e1398ad81a0dcea50071346f05d26692e843"
+    },
+    {
+      "name": "fields-decimal-zero",
+      "kind": "fields",
+      "fields": [
+        "0"
+      ],
+      "encodedLen": 5,
+      "sha256": "f851a9ebcfca42f79e2967ec21e742baf3c2870f44e077a55d0edad0d74b39eb"
+    },
+    {
+      "name": "fields-decimal-ten",
+      "kind": "fields",
+      "fields": [
+        "10"
+      ],
+      "encodedLen": 6,
+      "sha256": "3f89b6356509fdeabde81b64e8fb09a24d5e843b6d491dc7d1d0c016965f8977"
+    },
+    {
+      "name": "fields-decimal-leading-zero",
+      "kind": "fields",
+      "fields": [
+        "010"
+      ],
+      "encodedLen": 7,
+      "sha256": "110dc567957e95a05d48238a8d9d887d8ec9fdfb588fd3eea711b42e36d64585"
+    },
+    {
+      "name": "inbox-no-wrap",
+      "kind": "inboxEntryId",
+      "body": {
+        "laneId": "lane-a",
+        "grantCiphertext": "ct-1",
+        "commitment": {
+          "hash": "ae91fbe4909bbb7764797dcc6c8bca4ded3cedd03d9e97d78be9182758bb6ab9"
+        },
+        "wrap": null
+      },
+      "encodedLen": 147,
+      "sha256": "0e77455659d21063743d2a59c454e3a498c22a246b0ed3459a54c527f9f5c77c"
+    },
+    {
+      "name": "inbox-empty",
+      "kind": "inboxEntryId",
+      "body": {
+        "laneId": "",
+        "grantCiphertext": "",
+        "commitment": {
+          "hash": ""
+        },
+        "wrap": null
+      },
+      "encodedLen": 73,
+      "sha256": "f5175d378090c08abcdb6cf230ed19c146c29f7eb0c3d67e3c5677a4b6959a00"
+    },
+    {
+      "name": "inbox-unicode-lane",
+      "kind": "inboxEntryId",
+      "body": {
+        "laneId": "lane-\u03bb",
+        "grantCiphertext": "ct-1",
+        "commitment": {
+          "hash": "ae91fbe4909bbb7764797dcc6c8bca4ded3cedd03d9e97d78be9182758bb6ab9"
+        },
+        "wrap": null
+      },
+      "encodedLen": 148,
+      "sha256": "e6b5110ff585ee110238ed9c1463d860e5345cd476f9970c781c12b4daa42fa1"
+    },
+    {
+      "name": "inbox-with-wrap",
+      "kind": "inboxEntryId",
+      "body": {
+        "laneId": "lane-a",
+        "grantCiphertext": "ct-1",
+        "commitment": {
+          "hash": "ae91fbe4909bbb7764797dcc6c8bca4ded3cedd03d9e97d78be9182758bb6ab9"
+        },
+        "wrap": {
+          "scope": "item-dek",
+          "epoch": 3,
+          "target": "reader-epub",
+          "targetId": "EMvdmXTv89JPyMx5n3blU3L_D70U-6JoVaVzTvSzgYg.B_b0CP3o9X3I7tWrxA_F1VhXpjeMuIJCtQWnOh7LN5c",
+          "object": "s3rch/items/post",
+          "revisionId": "7959127078e9212a046160203b536df084c7884f9f1c18f439fda77f28450008",
+          "wrappedKey": "aa"
+        }
+      },
+      "encodedLen": 336,
+      "sha256": "f1c3ff60f643e742f0cb2ae9eff8013507e6ae83b9d8b91bb99bbaf839fa62f1"
+    },
+    {
+      "name": "inbox-group-empty",
+      "kind": "inboxEntryId",
+      "body": {
+        "laneId": "lane-a",
+        "grantCiphertext": "ct-1",
+        "commitment": {
+          "hash": "ae91fbe4909bbb7764797dcc6c8bca4ded3cedd03d9e97d78be9182758bb6ab9"
+        },
+        "wrap": {
+          "scope": "item-dek",
+          "epoch": 3,
+          "target": "reader-epub",
+          "targetId": "EMvdmXTv89JPyMx5n3blU3L_D70U-6JoVaVzTvSzgYg.B_b0CP3o9X3I7tWrxA_F1VhXpjeMuIJCtQWnOh7LN5c",
+          "object": "s3rch/items/post",
+          "revisionId": "7959127078e9212a046160203b536df084c7884f9f1c18f439fda77f28450008",
+          "wrappedKey": "aa",
+          "group": ""
+        }
+      },
+      "encodedLen": 336,
+      "sha256": "f1c3ff60f643e742f0cb2ae9eff8013507e6ae83b9d8b91bb99bbaf839fa62f1"
+    },
+    {
+      "name": "inbox-wrap-byte",
+      "kind": "inboxEntryId",
+      "body": {
+        "laneId": "lane-a",
+        "grantCiphertext": "ct-1",
+        "commitment": {
+          "hash": "ae91fbe4909bbb7764797dcc6c8bca4ded3cedd03d9e97d78be9182758bb6ab9"
+        },
+        "wrap": {
+          "scope": "item-dek",
+          "epoch": 3,
+          "target": "reader-epub",
+          "targetId": "EMvdmXTv89JPyMx5n3blU3L_D70U-6JoVaVzTvSzgYg.B_b0CP3o9X3I7tWrxA_F1VhXpjeMuIJCtQWnOh7LN5c",
+          "object": "s3rch/items/post",
+          "revisionId": "7959127078e9212a046160203b536df084c7884f9f1c18f439fda77f28450008",
+          "wrappedKey": "ab"
+        }
+      },
+      "encodedLen": 336,
+      "sha256": "52d6de415a7c6e258a444a98bda1a18a99c930bef882b63de5b216985f7bbed2"
+    },
+    {
+      "name": "epoch-default-window",
+      "kind": "epochRevisionId",
+      "body": {
+        "object": "s3rch/items/post",
+        "epoch": 1,
+        "previousEpoch": 0,
+        "deviceId": "device-1",
+        "keyCommitment": "opaque-commitment",
+        "settleWindowMs": 86400000,
+        "aclSnapshot": "f9ac289c45e5e277cf0ecee22616a46b07d5ff92b83df0b13cacf8a9b5097449"
+      },
+      "encodedLen": 170,
+      "sha256": "51cdff62ce864c5b4af211d6b9360052a159cf25f81dbb612010a70226ca61ec"
+    },
+    {
+      "name": "epoch-zero",
+      "kind": "epochRevisionId",
+      "body": {
+        "object": "s3rch/items/post",
+        "epoch": 0,
+        "previousEpoch": 0,
+        "deviceId": "device-1",
+        "keyCommitment": "opaque-commitment",
+        "settleWindowMs": 0,
+        "aclSnapshot": "f9ac289c45e5e277cf0ecee22616a46b07d5ff92b83df0b13cacf8a9b5097449"
+      },
+      "encodedLen": 163,
+      "sha256": "6099f08740ea5b19df5d0bb25d7486e4a4152968f1a3db80adf79c88cff0f94c"
+    },
+    {
+      "name": "epoch-max-safe",
+      "kind": "epochRevisionId",
+      "body": {
+        "object": "s3rch/items/post",
+        "epoch": 9007199254740991,
+        "previousEpoch": 9007199254740991,
+        "deviceId": "device-1",
+        "keyCommitment": "opaque-commitment",
+        "settleWindowMs": 9007199254740991,
+        "aclSnapshot": "f9ac289c45e5e277cf0ecee22616a46b07d5ff92b83df0b13cacf8a9b5097449"
+      },
+      "encodedLen": 208,
+      "sha256": "c25b62b1a7773a9bef666191831d6ff77d1e999ba2717bfb19344def9a881099"
+    },
+    {
+      "name": "item-auth-hello",
+      "kind": "itemAuth",
+      "body": {
+        "object": "s3rch/items/post",
+        "epoch": 1,
+        "version": 2,
+        "plaintextDigest": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824",
+        "revisionId": "7959127078e9212a046160203b536df084c7884f9f1c18f439fda77f28450008"
+      },
+      "encodedLen": 188,
+      "sha256": "cb824509abade5837cdd6bfb614a1d0e09ec5569c6ea2a671fbb793e34a0a160"
+    },
+    {
+      "name": "item-auth-zero",
+      "kind": "itemAuth",
+      "body": {
+        "object": "s3rch/items/post",
+        "epoch": 0,
+        "version": 0,
+        "plaintextDigest": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824",
+        "revisionId": "7959127078e9212a046160203b536df084c7884f9f1c18f439fda77f28450008"
+      },
+      "encodedLen": 188,
+      "sha256": "6b146812625f6ff761b8f73273a462bee93e83762cba6f5b682b621a814df76e"
+    },
+    {
+      "name": "account-binding",
+      "kind": "accountBinding",
+      "body": {
+        "account": "0xalice",
+        "pub": "YP7UuiVanTHJYet0xjVtaMBJuJI7Yfps5mliLmDyn7Y.eQP-EAi4vJmkGunpVii8ZPLxsgwtfp9Rd6PClNRGIpk",
+        "epub": "EMvdmXTv89JPyMx5n3blU3L_D70U-6JoVaVzTvSzgYg.B_b0CP3o9X3I7tWrxA_F1VhXpjeMuIJCtQWnOh7LN5c"
+      },
+      "encodedLen": 221,
+      "sha256": "5465333df31bcf7eb5786949e9bc2830aaba0f322127f6de8419392a8b9b4842"
+    },
+    {
+      "name": "inbox-real-wrap",
+      "kind": "inboxEntryId",
+      "body": {
+        "laneId": "lane-a",
+        "grantCiphertext": "ct-1",
+        "commitment": {
+          "hash": "ae91fbe4909bbb7764797dcc6c8bca4ded3cedd03d9e97d78be9182758bb6ab9"
+        },
+        "wrap": {
+          "scope": "item-dek",
+          "epoch": 3,
+          "target": "reader-epub",
+          "targetId": "EMvdmXTv89JPyMx5n3blU3L_D70U-6JoVaVzTvSzgYg.B_b0CP3o9X3I7tWrxA_F1VhXpjeMuIJCtQWnOh7LN5c",
+          "object": "s3rch/items/post",
+          "revisionId": "7959127078e9212a046160203b536df084c7884f9f1c18f439fda77f28450008",
+          "wrappedKey": "010460fed4ba255a9d31c961eb74c6356d68c049b8923b61fa6ce669622e60f29fb67903fe1008b8bc99a41ae9e95628bc64f2f1b20c2d7e9f5177a3c294d44622992222222222222222222222229f4cce0f8eeac218f2cdc739e833f4c63e8f82d3113b5f6509bab79c0c5aa351d2310666fddd5a247459f7199887555eafca9c3b32b3500dc7e3eddd2058c095e650afe733bba9518d831ad08edfe4b7237a6ae186406d502d184cd8f278960ff46485b7a9e4e076c31427f66aa4a7f0694dd35c03fb978c23635299ec445a8b0db83eddeaea649f0a40f6f4f590dd2a9c23c0761cc4cd2f0f2540a698e76ab51f1735e451e2aa1fbd682130637e6de2a516c83858e537b7eb75cf6a7893d5231892118df221c580dc259942e3bc4e7e829baf09b515120cb086c0c08ac3cff927a95e0f5827b581356b3cb7888609c5f9ba5b24511fc7b2f95380a38bcacff2ebd1ceef53baa54584788571f5a70f1378bc8158ac3291364ef2733d46441114c0eef67867bb9fc47d9fa53652ec8e45a51ab2ef6ab4cd676e210b882718b19fc799d8"
+        }
+      },
+      "encodedLen": 1136,
+      "sha256": "fd5da80c6b1eff69f045e836bcd83ddb7651056fc04c3a619a32802578754bab"
+    }
+  ]
+}

@@ -31,10 +31,14 @@ echo "==> Python"
 python3 scripts/run_python_coverage.py
 
 echo "==> TypeScript (Node 24+)"
-node --test --experimental-test-coverage \
+npm ci --prefix typescript
+npx --prefix typescript tsc --strict --noEmit -p typescript/contract
+node --experimental-strip-types --test --experimental-test-coverage \
   --test-coverage-include='typescript/src/**' \
+  --test-coverage-include='typescript/contract/**' \
   --test-reporter=spec \
   typescript/tests/*.js \
+  typescript/tests/test_encdisc_vectors.ts \
   > target/coverage/typescript-report.txt 2>&1 || {
   cat target/coverage/typescript-report.txt
   exit 1

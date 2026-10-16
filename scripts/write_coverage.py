@@ -97,8 +97,10 @@ def counts() -> dict[str, int]:
     for path in (ROOT / "python" / "tests").glob("test_*.py"):
         py += sum(1 for line in path.read_text().splitlines() if re.match(r"def test_", line))
     ts = 0
-    for path in (ROOT / "typescript" / "tests").glob("test_*.js"):
-        ts += sum(1 for line in path.read_text().splitlines() if re.match(r"test\(", line))
+    tests = ROOT / "typescript" / "tests"
+    for pattern in ("test_*.js", "test_*.ts"):
+        for path in tests.glob(pattern):
+            ts += sum(1 for line in path.read_text().splitlines() if re.match(r"test\(", line))
     c_examples = len(list((ROOT / "examples").glob("*.c")))
     rust_examples = len(list((ROOT / "examples").glob("*.rs")))
     c_unit = 0
@@ -128,7 +130,7 @@ Measured **{day}** by `scripts/coverage.sh`. CI publishes the same table on the 
 | Rust workspace | {rust_n} tests + {n["rust_examples"]} examples | {rust} |
 | C FFI (`sociacl-c`) | {n["c_unit"]} unit + {n["c_examples"]} examples | {c} |
 | Python `python/sociacl` | {n["python"]} tests | {py} |
-| TypeScript `typescript/src` | {n["typescript"]} tests | {ts} |
+| TypeScript `typescript/src` and `typescript/contract` | {n["typescript"]} tests | {ts} |
 
 C example hits land in `libsociacl`, not in the `.c` files. Full crate table: [docs/coverage.md](docs/coverage.md).
 {END}

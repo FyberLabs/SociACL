@@ -1,6 +1,6 @@
 # Encrypted discovery (spec)
 
-Status: wrapped keys, private rows, and rotation stay spec. The reference crate evaluates plaintext dest-ACL grants and direct `same-group` / `named-circle` edges (`checkGroupSee`). It does not evaluate a wrap.
+Status: spec. `crates/sociacl-encdisc` implements the first slice: one SEA keypair per account, device enrollment, the wrapped-key edge, and the length-prefixed SHA-256 ids for `inboxEntryId`, `epochRevisionId`, the item-auth tuple, and the account-binding tuple. `crates/sociacl-gun` evaluates plaintext `MeshSeeGrant` rows and direct `same-group` / `named-circle` edges (`checkGroupSee`). It does not evaluate a wrap. Nothing on this page changes Check or the plaintext dest-ACL path. This page adds no verb.
 
 s3r.ch product draft: [FyberLabs/s3r.ch#108](https://github.com/FyberLabs/s3r.ch/pull/108) (`docs/encrypted-discovery.md` on that branch). This repository does not edit s3r.ch. Where the two pages differ, this page is the SociACL contract and that pull request is the product draft. The hardening on this page answers the Codex review on that pull request. It adds no verb.
 
@@ -306,7 +306,7 @@ Copy or re-type [s3rch-check.d.ts](s3rch-check.d.ts). Do not `npm install sociac
 | `EpochStatusProof` | Owner-signed epoch/status beside the zookie. Names the accessor and that accessor's `grantRevision`. Length-prefixed signature. Age bound plus the verifier's skew allowance |
 | `ProtocolMigration` / `ReaderMigration` | Owner-only. Plaintext drops per reader after that reader's authenticated wrap receipt. The version gate alone does not drop it |
 | `ContentIndexTier` | `public`, `private-group`, or `local`. SociACL does not store it |
-| `EncryptedDiscoveryVector` | Stub names for the conformance cases below. The reference crate does not run them |
+| `EncryptedDiscoveryVector` | Conformance names below. `sociacl-encdisc` runs the canonical ids and the reader-wrap vector. It does not run inbox admission, presenter binding, epoch settlement, rotation, or migration |
 
 `GunFeedNode` and `GunUserNode` are unchanged. Predicate and membership are ACL rows, not feed fields. The user node may carry the account SEA `pub` and `epub`. It does not carry `priv`, `epriv`, or a copy of a grant row's owner field.
 
@@ -330,7 +330,7 @@ Items the owner keeps on the public plaintext path are not rewritten. Whether th
 
 ## Conformance vectors
 
-Stubs only. The names are `EncryptedDiscoveryVector` in [s3rch-check.d.ts](s3rch-check.d.ts). The reference crate does not run them. In every vector, a wrap, a hop, a hint, an introduction, a binding, or a stamp never mints.
+The names are `EncryptedDiscoveryVector` in [s3rch-check.d.ts](s3rch-check.d.ts). `crates/sociacl-encdisc` and the TypeScript contract both load `vectors/encrypted-discovery/canonical.json` for `inboxEntryId`, `epochRevisionId`, the item-auth bytes, and the account-binding bytes. The reader wrap in `vectors/encrypted-discovery/wrap.json` is checked by the Rust crate. Inbox admission, presenter binding, epoch settlement, rotation, and migration are not in this slice. In every vector, a wrap, a hop, a hint, an introduction, a binding, or a stamp never mints.
 
 ### Content authenticity
 

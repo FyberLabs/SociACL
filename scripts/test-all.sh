@@ -43,9 +43,8 @@ PYTHONPATH=python python3 python/tests/test_gun.py
 PYTHONPATH=python python3 python/tests/test_verbs.py
 PYTHONPATH=python python3 python/tests/test_network.py
 
+npm ci --prefix typescript
+npx --prefix typescript tsc --strict --noEmit -p typescript/contract
 node --test typescript/tests/*.js
-
-if [[ ! -d typescript/node_modules/typescript ]]; then
-  npm ci --prefix typescript --ignore-scripts
-fi
+node --experimental-strip-types --test typescript/tests/test_encdisc_vectors.ts
 npm run --prefix typescript typecheck
