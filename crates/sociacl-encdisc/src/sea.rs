@@ -15,6 +15,7 @@ use p256::ecdsa::signature::{Signer, Verifier};
 use p256::ecdsa::{Signature, SigningKey, VerifyingKey};
 use p256::elliptic_curve::sec1::ToEncodedPoint;
 use p256::{PublicKey, SecretKey};
+use zeroize::Zeroizing;
 
 use crate::error::EncDiscError;
 use crate::hexutil::encode_hex;
@@ -63,12 +64,12 @@ pub fn sea_priv_from_secret(secret: &SecretKey) -> Result<String, EncDiscError> 
 
 pub fn signing_key(sea_priv: &str) -> Result<SigningKey, EncDiscError> {
     let scalar = decode_scalar(sea_priv)?;
-    SigningKey::from_slice(&scalar).map_err(|_| EncDiscError::BadKey)
+    SigningKey::from_slice(scalar.as_slice()).map_err(|_| EncDiscError::BadKey)
 }
 
 pub fn ecdh_secret(sea_epriv: &str) -> Result<SecretKey, EncDiscError> {
     let scalar = decode_scalar(sea_epriv)?;
-    SecretKey::from_slice(&scalar).map_err(|_| EncDiscError::BadKey)
+    SecretKey::from_slice(scalar.as_slice()).map_err(|_| EncDiscError::BadKey)
 }
 
 pub fn parse_sea_point(sea_pub: &str) -> Result<PublicKey, EncDiscError> {
@@ -133,24 +134,26 @@ fn encode_b64(bytes: &[u8]) -> Result<String, EncDiscError> {
     Ok(encoded.to_string())
 }
 
-fn decode_scalar(text: &str) -> Result<[u8; 32], EncDiscError> {
+fn decode_scalar(text: &str) -> Result<Zeroizing<[u8; 32]>, EncDiscError> {
     let bytes = decode_b64(text)?;
     if bytes.len() != 32 {
         return Err(EncDiscError::BadKey);
     }
-    let mut out = [0u8; 32];
+    let mut out = Zeroizing::new([0u8; 32]);
     out.copy_from_slice(&bytes);
     Ok(out)
 }
 
 fn decode_coord(text: &str) -> Result<[u8; 32], EncDiscError> {
-    decode_scalar(text)
+    let scalar = decode_scalar(text)?;
+    Ok(*scalar)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{sign_sea, verify_sea};
+    use super::{decode_b64, decode_scalar, sign_sea, signing_key, verify_sea};
     use serde::Deserialize;
+    use zeroize::Zeroizing;
 
     #[derive(Deserialize)]
     struct Fixture {
@@ -193,10 +196,32 @@ mod tests {
         )
         .is_err());
     }
+
+    #[test]
+    fn decoded_private_scalar_stays_in_zeroizing_storage() {
+        let fixture: Fixture = serde_json::from_str(include_str!(
+            "../../../vectors/encrypted-discovery/sea-fixture.json"
+        ))
+        .unwrap();
+        let scalar = decode_scalar(&fixture.signing.sea_priv).unwrap();
+        let held: &Zeroizing<[u8; 32]> = &scalar;
+        assert_eq!(held.len(), 32);
+        assert_ne!(held.as_slice(), &[0u8; 32]);
+        let signing = signing_key(&fixture.signing.sea_priv).unwrap();
+        assert_eq!(signing.to_bytes().as_slice(), held.as_slice());
+        let decoded = decode_b64(&fixture.signing.sea_priv).unwrap();
+        let _: &Zeroizing<Vec<u8>> = &decoded;
+        assert_eq!(decoded.as_slice(), held.as_slice());
+    }
 }
 
-fn decode_b64(text: &str) -> Result<Vec<u8>, EncDiscError> {
-    let mut buf = vec![0u8; text.len()];
-    let decoded = Base64UrlUnpadded::decode(text, &mut buf).map_err(|_| EncDiscError::BadKey)?;
-    Ok(decoded.to_vec())
+fn decode_b64(text: &str) -> Result<Zeroizing<Vec<u8>>, EncDiscError> {
+    let mut buf = Zeroizing::new(vec![0u8; text.len()]);
+    let decoded_len = {
+        let decoded =
+            Base64UrlUnpadded::decode(text, &mut buf).map_err(|_| EncDiscError::BadKey)?;
+        decoded.len()
+    };
+    buf.truncate(decoded_len);
+    Ok(buf)
 }

@@ -6,6 +6,11 @@ license.workspace = true
 repository.workspace = true
 description = "Encrypted-discovery reference slice: account SEA key, wrapped DEK, canonical ids"
 
+[features]
+# Caller-chosen nonce for the group-epoch wrap. Off in production:
+# repeating a group key and a nonce reuses an AES-GCM nonce.
+deterministic-wrap = []
+
 [dependencies]
 # Pinned for Rust 1.83. Newer aead and p256 releases set edition 2024.
 aes-gcm = { version = "=0.10.3", default-features = false, features = ["alloc", "aes", "std"] }

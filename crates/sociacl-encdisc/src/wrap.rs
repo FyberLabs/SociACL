@@ -383,6 +383,8 @@ pub fn wrap_group_key_to_members_with(
 }
 
 /// Wrap the item DEK once to the group epoch key. Not once per member.
+///
+/// The nonce is fresh for this call. A caller does not supply it.
 pub fn wrap_item_dek_to_group_epoch(
     dek: &ItemDek,
     group_key: &GroupEpochKey,
@@ -393,10 +395,29 @@ pub fn wrap_item_dek_to_group_epoch(
 ) -> Result<WrappedKey, EncDiscError> {
     let mut nonce = [0u8; 12];
     OsRng.fill_bytes(&mut nonce);
-    wrap_item_dek_to_group_epoch_with(dek, group_key, epoch, object, group_id, revision_id, &nonce)
+    seal_item_dek_to_group_epoch(dek, group_key, epoch, object, group_id, revision_id, &nonce)
 }
 
+/// Same wrap with a caller-chosen nonce.
+///
+/// Not part of the production API. The AES key is the group epoch key,
+/// so two calls with the same key and nonce reuse an AES-GCM nonce.
+/// Unit tests compile this. A production build includes it only with
+/// the `deterministic-wrap` feature.
+#[cfg(any(test, feature = "deterministic-wrap"))]
 pub fn wrap_item_dek_to_group_epoch_with(
+    dek: &ItemDek,
+    group_key: &GroupEpochKey,
+    epoch: u64,
+    object: &str,
+    group_id: &str,
+    revision_id: &str,
+    nonce: &[u8; 12],
+) -> Result<WrappedKey, EncDiscError> {
+    seal_item_dek_to_group_epoch(dek, group_key, epoch, object, group_id, revision_id, nonce)
+}
+
+fn seal_item_dek_to_group_epoch(
     dek: &ItemDek,
     group_key: &GroupEpochKey,
     epoch: u64,
@@ -457,7 +478,11 @@ pub fn open_group_epoch_wrap(
     group_id: &str,
     group_key: &GroupEpochKey,
 ) -> Result<OpenedWrap, EncDiscError> {
-    if wrapped.target != WrapTarget::GroupEpoch || wrapped.target_id != group_id {
+    // Group-epoch wraps carry an item DEK. group-key + group-epoch is not a pair.
+    if wrapped.target != WrapTarget::GroupEpoch
+        || wrapped.target_id != group_id
+        || wrapped.scope != WrapScope::ItemDek
+    {
         return Err(EncDiscError::WrapRejected);
     }
     let blob = decode_blob(&wrapped.wrapped_key)?;
@@ -696,8 +721,11 @@ fn read_field<'a>(input: &mut &'a [u8]) -> Result<&'a str, EncDiscError> {
 
 #[cfg(test)]
 mod tests {
-    use super::{decode_blob, decrypt, kdf_group, wrap_item_dek_to_group_epoch_with};
-    use crate::wrap::{GroupEpochKey, ItemDek};
+    use super::{
+        decode_blob, decrypt, kdf_group, seal_group, wrap_item_dek_to_group_epoch_with, Plan,
+    };
+    use crate::error::EncDiscError;
+    use crate::wrap::{open_group_epoch_wrap, GroupEpochKey, ItemDek, WrapScope, WrapTarget};
 
     #[test]
     fn revision_id_is_inside_the_plaintext() {
@@ -723,5 +751,42 @@ mod tests {
         assert!(text.contains(&revision));
         assert!(text.contains("s3rch-wrapped-key-v1"));
         assert!(!text.contains("priv"));
+    }
+
+    #[test]
+    fn group_epoch_open_rejects_a_group_key_scope() {
+        let dek = ItemDek::from_bytes([7u8; 32]);
+        let group = GroupEpochKey::from_bytes([9u8; 32]);
+        let revision = "ab".repeat(32);
+        let nonce = [3u8; 12];
+        let plan = Plan {
+            scope: WrapScope::GroupKey,
+            epoch: 4,
+            target: WrapTarget::GroupEpoch,
+            target_id: "circle-1".to_string(),
+            object: Some("s3rch/items/post".to_string()),
+            group: Some("circle-1".to_string()),
+            revision_id: revision.clone(),
+        };
+        let wrapped = seal_group(dek.as_bytes(), &group, &plan, &nonce).unwrap();
+        assert_eq!(wrapped.scope, WrapScope::GroupKey);
+        assert_eq!(wrapped.target, WrapTarget::GroupEpoch);
+        assert_eq!(
+            open_group_epoch_wrap(&wrapped, "circle-1", &group).unwrap_err(),
+            EncDiscError::WrapRejected
+        );
+        let item = wrap_item_dek_to_group_epoch_with(
+            &dek,
+            &group,
+            4,
+            "s3rch/items/post",
+            "circle-1",
+            &revision,
+            &nonce,
+        )
+        .unwrap();
+        let opened = open_group_epoch_wrap(&item, "circle-1", &group).unwrap();
+        assert_eq!(opened.key_bytes(), dek.as_bytes());
+        assert!(!opened.grants_see());
     }
 }

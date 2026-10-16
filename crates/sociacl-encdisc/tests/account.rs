@@ -64,7 +64,13 @@ fn one_keypair_is_inherited_and_stays_off_gun() {
     let rendered = format!("{secret:?}");
     assert!(!rendered.contains(secret.local_priv()));
     assert!(!rendered.contains(secret.local_epriv()));
+    assert!(!rendered.contains(&secret.inbox().lane_id));
     assert!(rendered.contains("<redacted>"));
+    let enrolled = format!("{phone:?}");
+    assert!(!enrolled.contains(secret.local_priv()));
+    assert!(!enrolled.contains(secret.local_epriv()));
+    assert!(!enrolled.contains(&secret.inbox().lane_id));
+    assert!(enrolled.contains("<redacted>"));
 }
 
 #[test]

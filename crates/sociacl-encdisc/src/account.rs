@@ -225,7 +225,7 @@ impl std::fmt::Debug for AccountSeaSecret {
         formatter
             .debug_struct("AccountSeaSecret")
             .field("account", &self.account)
-            .field("lane_id", &self.lane_id)
+            .field("lane_id", &"<redacted>")
             .field("pub", &self.sea_pub)
             .field("epub", &self.epub)
             .field("priv", &"<redacted>")

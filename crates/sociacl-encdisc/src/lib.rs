@@ -66,10 +66,11 @@ pub use canonical::{
 };
 pub use error::EncDiscError;
 pub use sea::{sign_sea, verify_sea};
+#[cfg(any(test, feature = "deterministic-wrap"))]
+pub use wrap::wrap_item_dek_to_group_epoch_with;
 pub use wrap::{
     open_group_epoch_wrap, open_reader_wrap, wrap_group_key_to_members,
-    wrap_group_key_to_members_with, wrap_item_dek_to_group_epoch,
-    wrap_item_dek_to_group_epoch_with, wrap_item_dek_to_readers, wrap_item_dek_to_readers_with,
-    DetachedEphemeral, GroupEpochKey, ItemDek, NamedSet, OpenedWrap, WrapScope, WrapTarget,
-    WrappedKey,
+    wrap_group_key_to_members_with, wrap_item_dek_to_group_epoch, wrap_item_dek_to_readers,
+    wrap_item_dek_to_readers_with, DetachedEphemeral, GroupEpochKey, ItemDek, NamedSet, OpenedWrap,
+    WrapScope, WrapTarget, WrappedKey,
 };

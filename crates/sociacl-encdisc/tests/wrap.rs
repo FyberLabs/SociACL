@@ -207,6 +207,30 @@ fn group_epoch_key_wraps_per_member_and_the_item_dek_wraps_once() {
     let mut label = item.clone();
     label.revision_id = other_revision();
     assert!(open_group_epoch_wrap(&label, "circle-1", &got).is_err());
+
+    let again = wrap_item_dek_to_group_epoch(
+        &dek,
+        &group_key,
+        2,
+        "s3rch/items/post",
+        "circle-1",
+        &revision(),
+    )
+    .unwrap();
+    assert_ne!(item.wrapped_key, again.wrapped_key);
+    assert_eq!(
+        open_group_epoch_wrap(&again, "circle-1", &group_key)
+            .unwrap()
+            .key_bytes(),
+        dek.as_bytes()
+    );
+
+    let mut group_key_scope = item.clone();
+    group_key_scope.scope = WrapScope::GroupKey;
+    assert_eq!(
+        open_group_epoch_wrap(&group_key_scope, "circle-1", &got).unwrap_err(),
+        EncDiscError::WrapRejected
+    );
 }
 
 #[test]
