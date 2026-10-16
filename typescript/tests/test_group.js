@@ -762,6 +762,216 @@ test("equal ham see grants keep the narrower window", () => {
   }
 });
 
+function memberKey() {
+  return `same-group${"\u0000"}${aclKey("0xalice/ops")}${"\u0000"}0xbob`;
+}
+
+test("a respelling of a cancel id does not cancel a live edge", () => {
+  const cancelled = liveGraph();
+  cancelled.cancelMembership("0xalice", "same-group", "0xalice/ops", "0xbob", secret("0xalice").privateKey);
+  cancelled.cancelMembership("0xalice", "same-group", "0xalice/ops", "0xbob", secret("0xalice").privateKey);
+  const source = cancelled.memberships.get(memberKey());
+  const original = structuredClone(source.cancels);
+  assert.equal(original.length, 2);
+  assert.match(original[0].id, /^[0-9a-f]{64}$/);
+  assert.match(original[1].id, /^[0-9a-f]{64}$/);
+
+  const live = liveGraph();
+  const liveRow = live.memberships.get(memberKey());
+  liveRow.cancels.push(
+    { ...structuredClone(original[0]), id: original[0].id.toUpperCase() },
+    { ...structuredClone(original[0]), id: `${original[0].id}a` },
+  );
+  const alias = liveGraph();
+  alias.mergeFrom(live);
+  assert.equal(alias.membership("same-group", "0xalice/ops", "0xbob")?.stated, 1);
+  assert.equal(alias.membership("same-group", "0xalice/ops", "0xbob")?.cancels?.length, 0);
+  assert.equal(checkGroupSee(alias, "same-group", "doc", "0xbob", 1).allowed, true);
+
+  const cased = liveGraph();
+  cased.cancelMembership("0xalice", "same-group", "0xalice/ops", "0xbob", secret("0xalice").privateKey);
+  cased.cancelMembership("0xalice", "same-group", "0xalice/ops", "0xbob", secret("0xalice").privateKey);
+  const casedRow = cased.memberships.get(memberKey());
+  const expectedPrior = [...casedRow.cancels[1].prior];
+  casedRow.cancels[1] = {
+    ...structuredClone(casedRow.cancels[1]),
+    prior: expectedPrior.map((id) => id.toUpperCase()),
+  };
+  const fromCase = openGraph();
+  fromCase.putObject("doc", "0xalice");
+  fromCase.recordSetOwner("0xalice", "same-group", "0xalice/ops");
+  fromCase.mergeFrom(cased);
+  const kept = fromCase.membership("same-group", "0xalice/ops", "0xbob");
+  assert.equal(kept?.stated, 0);
+  assert.equal(checkGroupSee(fromCase, "same-group", "doc", "0xbob", 1).reason, "cancelled");
+  assert.deepEqual(
+    kept?.cancels?.find((cancel) => cancel.id === casedRow.cancels[1].id)?.prior,
+    expectedPrior,
+  );
+  for (const cancel of kept?.cancels ?? []) {
+    assert.match(cancel.id, /^[0-9a-f]{64}$/);
+    for (const prior of cancel.prior) assert.match(prior, /^[0-9a-f]{64}$/);
+  }
+
+  const odd = liveGraph();
+  odd.cancelMembership("0xalice", "same-group", "0xalice/ops", "0xbob", secret("0xalice").privateKey);
+  odd.cancelMembership("0xalice", "same-group", "0xalice/ops", "0xbob", secret("0xalice").privateKey);
+  const oddRow = odd.memberships.get(memberKey());
+  const second = structuredClone(oddRow.cancels[1]);
+  oddRow.cancels[1] = { ...second, prior: second.prior.map((id) => `${id}a`) };
+  const fromOdd = openGraph();
+  fromOdd.putObject("doc", "0xalice");
+  fromOdd.recordSetOwner("0xalice", "same-group", "0xalice/ops");
+  fromOdd.mergeFrom(odd);
+  const oddKept = fromOdd.membership("same-group", "0xalice/ops", "0xbob");
+  assert.equal(oddKept?.cancels?.some((cancel) => cancel.id === second.id), false);
+  assert.equal(oddKept?.cancels?.some((cancel) => cancel.id === oddRow.cancels[0].id), true);
+  assert.equal(oddKept?.stated, 0);
+  assert.equal(checkGroupSee(fromOdd, "same-group", "doc", "0xbob", 1).reason, "cancelled");
+
+  const cleared = liveGraph();
+  cleared.clearObjectSet("0xalice", "doc", secret("0xalice").privateKey);
+  const clearCancel = cleared.objectSets.get(aclKey("doc")).cancels[0];
+  const named = liveGraph();
+  named.objectSets.get(aclKey("doc")).cancels.push(
+    { ...structuredClone(clearCancel), id: clearCancel.id.toUpperCase() },
+    { ...structuredClone(clearCancel), id: `${clearCancel.id}a` },
+  );
+  const stillNamed = liveGraph();
+  stillNamed.mergeFrom(named);
+  assert.equal(stillNamed.objectSet("doc")?.stated, 1);
+  assert.equal(checkGroupSee(stillNamed, "same-group", "doc", "0xbob", 1).allowed, true);
+  const sunk = liveGraph();
+  sunk.mergeFrom(cleared);
+  assert.equal(sunk.objectSet("doc")?.stated, 0);
+  assert.equal(checkGroupSee(sunk, "same-group", "doc", "0xbob", 1).reason, "cancelled");
+});
+
+test("a duplicated cancel does not drop the next cancel", () => {
+  const base = liveGraph();
+  base.cancelMembership("0xalice", "same-group", "0xalice/ops", "0xbob", secret("0xalice").privateKey);
+  const firstId = base.membership("same-group", "0xalice/ops", "0xbob")?.cancels?.[0]?.id;
+  assert.match(firstId, /^[0-9a-f]{64}$/);
+
+  const restated = liveGraph();
+  restated.mergeFrom(base);
+  restated.stateMembership("0xbob", "same-group", "0xalice/ops", "0xbob", secret("0xbob").privateKey);
+  restated.stateMembership("0xalice", "same-group", "0xalice/ops", "0xbob", secret("0xalice").privateKey);
+  assert.equal(restated.membership("same-group", "0xalice/ops", "0xbob")?.stated, 1);
+
+  const newer = liveGraph();
+  newer.mergeFrom(base);
+  const row = newer.memberships.get(memberKey());
+  row.cancels.push(structuredClone(row.cancels[0]));
+  newer.cancelMembership("0xalice", "same-group", "0xalice/ops", "0xbob", secret("0xalice").privateKey);
+  const issued = newer.membership("same-group", "0xalice/ops", "0xbob")?.cancels ?? [];
+  assert.equal(issued.filter((cancel) => cancel.id === firstId).length, 1);
+  const next = issued.find((cancel) => cancel.id !== firstId);
+  assert.ok(next);
+  assert.deepEqual(next.prior, [firstId]);
+
+  const fromNewer = liveGraph();
+  fromNewer.mergeFrom(newer);
+  fromNewer.mergeFrom(restated);
+  const fromRestated = liveGraph();
+  fromRestated.mergeFrom(restated);
+  fromRestated.mergeFrom(newer);
+  for (const graph of [fromNewer, fromRestated]) {
+    const kept = graph.membership("same-group", "0xalice/ops", "0xbob");
+    assert.equal(kept?.stated, 0);
+    assert.equal(checkGroupSee(graph, "same-group", "doc", "0xbob", 1).reason, "cancelled");
+    assert.equal(kept?.cancels?.filter((cancel) => cancel.id === firstId).length, 1);
+    assert.deepEqual(
+      kept?.cancels?.find((cancel) => cancel.id === next.id)?.prior,
+      [firstId],
+    );
+  }
+
+  const cleared = liveGraph();
+  cleared.clearObjectSet("0xalice", "doc", secret("0xalice").privateKey);
+  const edgeId = cleared.objectSet("doc")?.cancels?.[0]?.id;
+  const renamed = liveGraph();
+  renamed.mergeFrom(cleared);
+  renamed.nameObjectSet("0xalice", "doc", "same-group", "0xalice/ops", secret("0xalice").privateKey);
+  assert.equal(renamed.objectSet("doc")?.stated, 1);
+
+  const clearedAgain = liveGraph();
+  clearedAgain.mergeFrom(cleared);
+  const edge = clearedAgain.objectSets.get(aclKey("doc"));
+  edge.cancels.push(structuredClone(edge.cancels[0]));
+  clearedAgain.clearObjectSet("0xalice", "doc", secret("0xalice").privateKey);
+  const edgeCancels = clearedAgain.objectSet("doc")?.cancels ?? [];
+  assert.equal(edgeCancels.filter((cancel) => cancel.id === edgeId).length, 1);
+  const edgeNext = edgeCancels.find((cancel) => cancel.id !== edgeId);
+  assert.deepEqual(edgeNext?.prior, [edgeId]);
+
+  const fromClear = liveGraph();
+  fromClear.mergeFrom(clearedAgain);
+  fromClear.mergeFrom(renamed);
+  const fromRename = liveGraph();
+  fromRename.mergeFrom(renamed);
+  fromRename.mergeFrom(clearedAgain);
+  for (const graph of [fromClear, fromRename]) {
+    assert.equal(graph.objectSet("doc")?.stated, 0);
+    assert.equal(checkGroupSee(graph, "same-group", "doc", "0xbob", 1).reason, "cancelled");
+    assert.equal(graph.objectSet("doc")?.cancels?.filter((cancel) => cancel.id === edgeId).length, 1);
+    assert.deepEqual(
+      graph.objectSet("doc")?.cancels?.find((cancel) => cancel.id === edgeNext.id)?.prior,
+      [edgeId],
+    );
+  }
+});
+
+test("an unauthenticated object-set edge does not force the group path", () => {
+  const graph = openGraph();
+  graph.putObject("doc", "0xalice");
+  graph.stateSeeGrant("0xalice", { object: "doc", accessor: "0xbob", from: 0, until: 80 });
+  const forged = {
+    object: "doc",
+    predicate: "same-group",
+    setId: "0xalice/ops",
+    stated: 1,
+    hamState: 1,
+    objectOwner: "0xalice",
+    signedStated: 1,
+    observed: [],
+    signature: new Uint8Array(64),
+    cancels: [],
+  };
+  const hop = { channel: "convention-badge" };
+  const adapter = {
+    ownerOf: (object) => graph.ownerOf(object),
+    ownerOfSet: () => undefined,
+    objectSet: () => forged,
+    seeGrants: (object) => graph.seeGrants(object),
+    enrolledKey: (principal) => graph.enrolledKey(principal),
+    membership: () => undefined,
+  };
+  const payload = { stated: 1, from: 0, until: 80 };
+  const owner = checkGroupPresentation(adapter, null, "doc", "0xalice", payload, 1, null, hop);
+  assert.equal(owner.allowed, true);
+  assert.equal(owner.reason, "owner");
+  assert.equal(owner.hop, hop);
+  const delegate = checkGroupPresentation(adapter, null, "doc", "0xbob", payload, 1);
+  assert.equal(delegate.allowed, true);
+  assert.equal(delegate.reason, "delegate");
+  const stranger = checkGroupPresentation(adapter, null, "doc", "0xcarol", payload, 1, null, hop);
+  assert.equal(stranger.allowed, false);
+  assert.equal(stranger.hop, hop);
+  assert.equal(checkGroupSee(adapter, "same-group", "doc", "0xbob", 1).allowed, false);
+  assert.equal(checkGroupSee(adapter, "same-group", "doc", "0xbob", 1).reason, "missing");
+
+  const named = liveGraph();
+  named.stateSeeGrant("0xalice", { object: "doc", accessor: "0xbob", from: 0, until: 80 });
+  const blocked = checkGroupPresentation(named, null, "doc", "0xbob", payload, 1, null, hop);
+  assert.equal(blocked.allowed, false);
+  assert.equal(blocked.reason, "missing");
+  assert.equal(blocked.hop, hop);
+  const blockedOwner = checkGroupPresentation(named, null, "doc", "0xalice", payload, 1);
+  assert.equal(blockedOwner.allowed, false);
+  assert.equal(blockedOwner.reason, "missing");
+});
+
 test("a corrupt party signature does not drop a valid cancel", () => {
   const live = liveGraph();
   const cancelled = liveGraph();

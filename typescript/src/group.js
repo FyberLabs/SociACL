@@ -4,9 +4,11 @@
  * and is not a grant. A hop, a hint, or a wrap never mints.
  * A lower hamState does not hide a removal.
  *
- * Cancels are a grow-only set of collision-free ids. A live assent or
- * edge lists every known cancel. Object-set rows are signed by the
- * object owner. Membership assents are signed by that party.
+ * Cancels are a grow-only set of collision-free ids. Each id is
+ * exactly 64 lowercase hex characters. Prior ids are canonicalized
+ * before the signature is checked. A live assent or edge lists every
+ * known cancel. Object-set rows are signed by the object owner.
+ * Membership assents are signed by that party.
  *
  * @typedef {"same-group" | "named-circle"} GroupPredicate
  * @typedef {import("node:crypto").KeyObject} KeyObject
@@ -149,11 +151,11 @@ function signBytes(privateKey, message) {
 
 /**
  * @param {Uint8Array | undefined} publicKey
- * @param {Uint8Array} message
+ * @param {Uint8Array | null} message
  * @param {Uint8Array | null | undefined} signature
  */
 function verifyBytes(publicKey, message, signature) {
-  if (!publicKey || !signature || signature.length !== 64) return false;
+  if (!publicKey || !message || !signature || signature.length !== 64) return false;
   try {
     return verify(null, message, publicKeyFromRaw(publicKey), signature);
   } catch {
@@ -168,11 +170,48 @@ function bytesToHex(bytes) {
   return out;
 }
 
+const CANCEL_ID = /^[0-9a-f]{64}$/;
+
+/**
+ * Exactly 64 lowercase hex characters. Uppercase and a trailing
+ * nibble are different spellings of the same bytes, so they are not ids.
+ * @param {string} id
+ * @returns {string | null}
+ */
+function canonicalCancelId(id) {
+  return typeof id === "string" && CANCEL_ID.test(id) ? id : null;
+}
+
+/**
+ * Prior ids are a set. Case is folded before the signature bytes
+ * are built, so a respelling is the same prior and not a new cancel.
+ * A length other than 64, or a non-hex character, fails closed.
+ * @param {readonly string[] | undefined | null} prior
+ * @returns {string[] | null}
+ */
+function canonicalPriorIds(prior) {
+  if (!Array.isArray(prior)) return null;
+  /** @type {string[]} */
+  const out = [];
+  const seen = new Set();
+  for (const raw of prior) {
+    if (typeof raw !== "string" || raw.length !== 64) return null;
+    const id = canonicalCancelId(raw.toLowerCase());
+    if (!id) return null;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    out.push(id);
+  }
+  return out;
+}
+
 /** @param {string} hex */
-function hexToBytes(hex) {
-  const out = new Uint8Array(hex.length / 2);
+function decodeCanonicalHex(hex) {
+  const id = canonicalCancelId(hex);
+  if (!id) return null;
+  const out = new Uint8Array(32);
   for (let i = 0; i < out.length; i += 1) {
-    out[i] = Number.parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+    out[i] = Number.parseInt(id.slice(i * 2, i * 2 + 2), 16);
   }
   return out;
 }
@@ -197,13 +236,22 @@ function pushStr(parts, value) {
   parts.push(len, bytes);
 }
 
-/** @param {Uint8Array[]} parts @param {readonly string[]} ids */
+/**
+ * @param {Uint8Array[]} parts
+ * @param {readonly string[]} ids
+ * @returns {boolean}
+ */
 function pushIds(parts, ids) {
   const sorted = [...ids].sort();
   const len = new Uint8Array(4);
   new DataView(len.buffer).setUint32(0, sorted.length);
   parts.push(len);
-  for (const id of sorted) parts.push(hexToBytes(id));
+  for (const id of sorted) {
+    const bytes = decodeCanonicalHex(id);
+    if (!bytes) return false;
+    parts.push(bytes);
+  }
+  return true;
 }
 
 /** @param {string} domain */
@@ -312,9 +360,38 @@ function covers(observed, ids) {
   return ids.every((id) => have.has(id));
 }
 
-/** @param {readonly SignedCancel[]} cancels */
+/**
+ * One canonical id per cancel. Duplicates are the same id, not a second prior.
+ * @param {readonly SignedCancel[]} cancels
+ */
 function cancelIds(cancels) {
-  return cancels.map((cancel) => cancel.id).sort();
+  /** @type {string[]} */
+  const ids = [];
+  const seen = new Set();
+  for (const cancel of cancels) {
+    const id = canonicalCancelId(cancel?.id);
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    ids.push(id);
+  }
+  ids.sort();
+  return ids;
+}
+
+/**
+ * @param {readonly SignedCancel[]} cancels
+ * @returns {SignedCancel[]}
+ */
+function uniqueCancels(cancels) {
+  /** @type {SignedCancel[]} */
+  const out = [];
+  const seen = new Set();
+  for (const cancel of cancels) {
+    if (!cancel || seen.has(cancel.id)) continue;
+    seen.add(cancel.id);
+    out.push(cancel);
+  }
+  return out;
 }
 
 /**
@@ -322,15 +399,21 @@ function cancelIds(cancels) {
  * @param {readonly string[]} prior
  */
 function newCancelId(replicaId, prior) {
+  const canon = canonicalPriorIds(prior);
+  if (!canon) throw new Error("cancel id is not 64 lowercase hex");
   const hash = createHash("sha256");
   hash.update(domainBytes("sociacl-cancel-id-v1"));
   hash.update(replicaId);
   hash.update(randomBytes(16));
-  const sorted = [...prior].sort();
+  const sorted = [...canon].sort();
   const len = new Uint8Array(8);
   new DataView(len.buffer).setBigUint64(0, BigInt(sorted.length));
   hash.update(len);
-  for (const id of sorted) hash.update(hexToBytes(id));
+  for (const id of sorted) {
+    const bytes = decodeCanonicalHex(id);
+    if (!bytes) throw new Error("cancel id is not 64 lowercase hex");
+    hash.update(bytes);
+  }
   return bytesToHex(hash.digest());
 }
 
@@ -353,7 +436,7 @@ function partyMessage(record, role, stated, hamState, observed) {
   const ham = new Uint8Array(8);
   new DataView(ham.buffer).setBigUint64(0, BigInt(hamState));
   parts.push(ham);
-  pushIds(parts, observed);
+  if (!pushIds(parts, observed)) return null;
   return concatBytes(parts);
 }
 
@@ -369,7 +452,7 @@ function objectMessage(record) {
   const ham = new Uint8Array(8);
   new DataView(ham.buffer).setBigUint64(0, BigInt(record.name.hamState));
   parts.push(ham);
-  pushIds(parts, record.observed);
+  if (!pushIds(parts, record.observed)) return null;
   return concatBytes(parts);
 }
 
@@ -380,12 +463,14 @@ function objectMessage(record) {
  * @param {readonly string[]} prior
  */
 function cancelMessage(kind, rowKey, id, prior) {
+  const idBytes = decodeCanonicalHex(id);
+  if (!idBytes) return null;
   /** @type {Uint8Array[]} */
   const parts = [domainBytes("sociacl-cancel-v1")];
   pushStr(parts, kind);
   pushStr(parts, rowKey);
-  parts.push(hexToBytes(id));
-  pushIds(parts, prior);
+  parts.push(idBytes);
+  if (!pushIds(parts, prior)) return null;
   return concatBytes(parts);
 }
 
@@ -416,8 +501,28 @@ function graphLookup(graph) {
  * @param {(signer: string) => boolean} allow
  */
 function cancelVerifies(lookup, cancel, kind, rowKey, allow) {
-  if (!allow(cancel.signer)) return false;
-  return verifyBytes(lookup(cancel.signer), cancelMessage(kind, rowKey, cancel.id, cancel.prior), cancel.signature);
+  if (!cancel || !allow(cancel.signer)) return false;
+  const id = canonicalCancelId(cancel.id);
+  const prior = canonicalPriorIds(cancel.prior);
+  if (!id || !prior) return false;
+  return verifyBytes(lookup(cancel.signer), cancelMessage(kind, rowKey, id, prior), cancel.signature);
+}
+
+/**
+ * A verified cancel stored under its canonical id and prior.
+ * @param {KeyLookup} lookup
+ * @param {SignedCancel} cancel
+ * @param {string} kind
+ * @param {string} rowKey
+ * @param {(signer: string) => boolean} allow
+ * @returns {SignedCancel | null}
+ */
+function acceptedCancel(lookup, cancel, kind, rowKey, allow) {
+  if (!cancelVerifies(lookup, cancel, kind, rowKey, allow)) return null;
+  const id = canonicalCancelId(cancel.id);
+  const prior = canonicalPriorIds(cancel.prior);
+  if (!id || !prior) return null;
+  return { id, prior, signer: cancel.signer, signature: cancel.signature };
 }
 
 /**
@@ -447,7 +552,9 @@ function partySignatureOk(lookup, party, role, record) {
   if (!party.spoken) return true;
   const principal = role === "member" ? record.membership.accessor : record.setOwner;
   if (!party.signature) return false;
-  return verifyBytes(lookup(principal), partyMessage(record, role, party.stated, party.hamState, party.observed), party.signature);
+  const message = partyMessage(record, role, party.stated, party.hamState, party.observed);
+  if (!message) return false;
+  return verifyBytes(lookup(principal), message, party.signature);
 }
 
 /**
@@ -479,7 +586,9 @@ function publishMembership(lookup, record) {
  * @param {ObjectSetRecord} record
  */
 function objectSignatureOk(lookup, record) {
-  return verifyBytes(lookup(record.objectOwner), objectMessage(record), record.signature);
+  const message = objectMessage(record);
+  if (!message) return false;
+  return verifyBytes(lookup(record.objectOwner), message, record.signature);
 }
 
 /**
@@ -525,10 +634,13 @@ function pickParty(local, incoming, ids, localOk, incomingOk) {
  * @param {MembershipRecord} record
  */
 function retainAuthenticMembership(lookup, record) {
-  record.cancels = record.cancels.filter((cancel) =>
-    cancelVerifies(lookup, cancel, "membership", membershipRowKey(record), (signer) =>
-      membershipCancelSigner(record, signer),
-    ),
+  const rowKey = membershipRowKey(record);
+  const allow = (/** @type {string} */ signer) => membershipCancelSigner(record, signer);
+  record.cancels = uniqueCancels(
+    record.cancels.flatMap((cancel) => {
+      const accepted = acceptedCancel(lookup, cancel, "membership", rowKey, allow);
+      return accepted ? [accepted] : [];
+    }),
   );
   if (record.member.spoken && !partySignatureOk(lookup, record.member, "member", record)) {
     record.member = absentParty();
@@ -548,16 +660,12 @@ function retainAuthenticMembership(lookup, record) {
  */
 function mergeMembership(lookup, local, incoming) {
   /** @type {SignedCancel[]} */
-  const cancels = structuredClone(local.cancels);
+  const cancels = uniqueCancels(structuredClone(local.cancels));
+  const rowKey = membershipRowKey(incoming);
+  const allow = (/** @type {string} */ signer) => membershipCancelSigner(incoming, signer);
   for (const cancel of incoming.cancels) {
-    if (
-      cancelVerifies(lookup, cancel, "membership", membershipRowKey(incoming), (signer) =>
-        membershipCancelSigner(incoming, signer),
-      ) &&
-      !cancels.some((row) => row.id === cancel.id)
-    ) {
-      cancels.push(structuredClone(cancel));
-    }
+    const accepted = acceptedCancel(lookup, cancel, "membership", rowKey, allow);
+    if (accepted && !cancels.some((row) => row.id === accepted.id)) cancels.push(accepted);
   }
   const ids = cancelIds(cancels);
   const merged = structuredClone(local);
@@ -610,9 +718,12 @@ function pickObject(lookup, local, incoming, ids) {
  * @param {ObjectSetRecord} record
  */
 function retainAuthenticObject(lookup, record) {
-  record.cancels = record.cancels.filter((cancel) =>
-    cancelVerifies(lookup, cancel, "object-set", aclKey(record.name.object), (signer) => {
-      return aclPrincipalKey(signer) === aclPrincipalKey(record.objectOwner);
+  const rowKey = aclKey(record.name.object);
+  const allow = (/** @type {string} */ signer) => aclPrincipalKey(signer) === aclPrincipalKey(record.objectOwner);
+  record.cancels = uniqueCancels(
+    record.cancels.flatMap((cancel) => {
+      const accepted = acceptedCancel(lookup, cancel, "object-set", rowKey, allow);
+      return accepted ? [accepted] : [];
     }),
   );
   if (!objectSignatureOk(lookup, record)) {
@@ -632,17 +743,13 @@ function retainAuthenticObject(lookup, record) {
  */
 function mergeObjectSet(lookup, local, incoming) {
   /** @type {SignedCancel[]} */
-  const cancels = structuredClone(local.cancels);
+  const cancels = uniqueCancels(structuredClone(local.cancels));
   const rowKey = aclKey(incoming.name.object);
+  const allow = (/** @type {string} */ signer) =>
+    aclPrincipalKey(signer) === aclPrincipalKey(incoming.objectOwner);
   for (const cancel of incoming.cancels) {
-    if (
-      cancelVerifies(lookup, cancel, "object-set", rowKey, (signer) => {
-        return aclPrincipalKey(signer) === aclPrincipalKey(incoming.objectOwner);
-      }) &&
-      !cancels.some((row) => row.id === cancel.id)
-    ) {
-      cancels.push(structuredClone(cancel));
-    }
+    const accepted = acceptedCancel(lookup, cancel, "object-set", rowKey, allow);
+    if (accepted && !cancels.some((row) => row.id === accepted.id)) cancels.push(accepted);
   }
   const picked = pickObject(lookup, local, incoming, cancelIds(cancels));
   picked.cancels = cancels;
@@ -835,13 +942,19 @@ export class MemoryGroupGraph {
    * @param {KeyObject} secret
    */
   #pushCancel(cancels, kind, rowKey, signer, secret) {
-    const prior = cancelIds(cancels);
+    const kept = uniqueCancels(cancels);
+    cancels.length = 0;
+    cancels.push(...kept);
+    const prior = canonicalPriorIds(cancelIds(cancels));
+    if (!prior) throw new Error("cancel id is not 64 lowercase hex");
     const id = newCancelId(this.replicaId, prior);
+    const message = cancelMessage(kind, rowKey, id, prior);
+    if (!message) throw new Error("cancel id is not 64 lowercase hex");
     cancels.push({
       id,
       prior,
       signer: signer.trim(),
-      signature: signBytes(secret, cancelMessage(kind, rowKey, id, prior)),
+      signature: signBytes(secret, message),
     });
   }
 
@@ -933,6 +1046,7 @@ export class MemoryGroupGraph {
   #signParty(record, party, role, stated, observed, secret) {
     const hamState = party.hamState + 1;
     const message = partyMessage(record, role, stated, hamState, observed);
+    if (!message) throw new Error("cancel id is not 64 lowercase hex");
     party.stated = stated;
     party.hamState = hamState;
     party.observed = [...observed];
@@ -1119,7 +1233,9 @@ export class MemoryGroupGraph {
       signature: new Uint8Array(),
       cancels,
     };
-    record.signature = signBytes(secret, objectMessage(record));
+    const message = objectMessage(record);
+    if (!message) throw new Error("cancel id is not 64 lowercase hex");
+    record.signature = signBytes(secret, message);
     refreshObject(mapLookup(this.enrolled), record);
     this.objectSets.set(key, record);
   }
@@ -1211,6 +1327,21 @@ function edgeAuthentic(graph, edge, owner) {
     covers(record.observed, ids) &&
     objectSignatureOk(lookup, record)
   );
+}
+
+/**
+ * Authenticated, currently grantable edge for this object.
+ * A stated bit alone does not name it. Matches Rust `object_set_grantable`.
+ * @param {GroupSeeGraph} graph
+ * @param {string} object
+ */
+function objectSetGrantable(graph, object) {
+  const requested = String(object).trim();
+  const edge = graph.objectSet(requested);
+  if (!edge || !edge.object || aclKey(edge.object) !== aclKey(requested)) return false;
+  const owner = graph.ownerOf(requested);
+  if (!owner) return false;
+  return edgeAuthentic(graph, edge, owner);
 }
 
 /**
@@ -1321,6 +1452,8 @@ export function checkGroupSee(graph, predicate, object, accessor, now, hint, hop
  * Group tail of a presentation. Binding and key unwrap stay outside.
  * Allowed only when checkGroupSee allows and the payload is stated 1
  * with now in [from, until). A live edge does not override a cancel.
+ * Only an authenticated, currently grantable object-set edge forces
+ * the group path. A stated bit alone does not.
  *
  * @param {GroupSeeGraph} graph
  * @param {PresentedGroup | null | undefined} group
@@ -1337,7 +1470,7 @@ export function checkGroupPresentation(graph, group, object, accessor, payload, 
   const echoed = { hint: hint ?? null, hop: hop ?? null, storeCancel };
   const edge = graph.objectSet(String(object));
   if (!group) {
-    if (edge && edge.stated === 1) return { allowed: false, reason: "missing", ...echoed };
+    if (objectSetGrantable(graph, object)) return { allowed: false, reason: "missing", ...echoed };
     const dest = checkSee(graph, object, accessor, now);
     if (dest.allowed && payloadLive(payload, now)) {
       return { allowed: true, reason: dest.reason, ...echoed };
