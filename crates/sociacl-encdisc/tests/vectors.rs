@@ -2,7 +2,7 @@ use serde::Deserialize;
 use sociacl_encdisc::{
     account_binding_sha256, canonical_decimal, epoch_revision_id, inbox_entry_id, item_auth_sha256,
     length_prefixed, parse_canonical_decimal, sha256_fields, EpochManifestBody, InboxEntryBody,
-    InboxWrapFields, ItemAuthFields,
+    InboxWrapFields, ItemAuthFields, JS_SAFE_INTEGER_MAX,
 };
 
 const CANONICAL: &str = include_str!("../../../vectors/encrypted-discovery/canonical.json");
@@ -83,7 +83,7 @@ struct AccountJson {
 #[test]
 fn canonical_vectors_match_the_shared_fixture() {
     let document: Document = serde_json::from_str(CANONICAL).unwrap();
-    assert!(document.cases.len() >= 18);
+    assert!(document.cases.len() >= 19);
     let mut hashes = std::collections::BTreeMap::new();
     for case in &document.cases {
         let (hash, len) = match case.kind.as_str() {
@@ -180,9 +180,19 @@ fn canonical_vectors_match_the_shared_fixture() {
 
 #[test]
 fn decimal_zero_has_no_leading_zero() {
-    assert_eq!(canonical_decimal(0), "0");
-    assert_eq!(canonical_decimal(10), "10");
+    assert_eq!(canonical_decimal(0).unwrap(), "0");
+    assert_eq!(canonical_decimal(10).unwrap(), "10");
+    assert_eq!(
+        canonical_decimal(JS_SAFE_INTEGER_MAX).unwrap(),
+        "9007199254740991"
+    );
+    assert!(canonical_decimal(JS_SAFE_INTEGER_MAX + 1).is_err());
     assert_eq!(parse_canonical_decimal("0").unwrap(), 0);
+    assert_eq!(
+        parse_canonical_decimal("9007199254740991").unwrap(),
+        JS_SAFE_INTEGER_MAX
+    );
+    assert!(parse_canonical_decimal("9007199254740992").is_err());
     assert!(parse_canonical_decimal("010").is_err());
     assert!(parse_canonical_decimal("").is_err());
     assert!(parse_canonical_decimal("-1").is_err());

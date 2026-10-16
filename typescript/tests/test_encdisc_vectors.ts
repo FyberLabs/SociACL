@@ -54,7 +54,8 @@ function requireBody(row: VectorCase): NonNullable<VectorCase["body"]> {
 }
 
 test("canonical vectors match the shared fixture", () => {
-  assert.ok(document.cases.length >= 18);
+  assert.ok(document.cases.length >= 19);
+  assert.ok(document.cases.some((row) => row.name === "epoch-max-safe"));
   const hashes = new Map<string, string>();
   for (const row of document.cases) {
     let bytes: Uint8Array;
@@ -131,6 +132,8 @@ test("canonical vectors match the shared fixture", () => {
 test("decimal zero has no leading zero", () => {
   assert.equal(canonicalDecimal(0), "0");
   assert.equal(canonicalDecimal(10), "10");
+  assert.equal(canonicalDecimal(Number.MAX_SAFE_INTEGER), "9007199254740991");
+  assert.throws(() => canonicalDecimal(Number.MAX_SAFE_INTEGER + 1));
   assert.throws(() => canonicalDecimal(-1));
   assert.throws(() => canonicalDecimal(1.5));
   assert.throws(() => canonicalDecimal(Number.NaN));

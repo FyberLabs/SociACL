@@ -74,10 +74,20 @@ pub struct NamedSet {
 }
 
 /// Fixed ephemeral scalar and nonce, for conformance vectors.
+///
+/// Not part of the production API. Reusing one value for the same
+/// recipient repeats an AES-GCM key and nonce. Unit tests compile this.
+/// A production build includes it only with `deterministic-wrap`.
+#[cfg(any(test, feature = "deterministic-wrap"))]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DetachedEphemeral {
     pub epriv: String,
     pub nonce: [u8; 12],
+}
+
+struct ReaderSeal {
+    epriv: Zeroizing<String>,
+    nonce: [u8; 12],
 }
 
 /// Key bytes opened from a wrap. Holding them does not make Check allow.
@@ -280,9 +290,13 @@ pub fn wrap_item_dek_to_readers(
     granted: &NamedSet,
 ) -> Result<Vec<WrappedKey>, EncDiscError> {
     let seals = fresh_seals(readers.len())?;
-    wrap_item_dek_to_readers_with(dek, epoch, object, revision_id, readers, granted, &seals)
+    seal_item_dek_to_readers(dek, epoch, object, revision_id, readers, granted, &seals)
 }
 
+/// Same reader wrap with caller-chosen ephemerals.
+///
+/// Not part of the production API. See [`DetachedEphemeral`].
+#[cfg(any(test, feature = "deterministic-wrap"))]
 pub fn wrap_item_dek_to_readers_with(
     dek: &ItemDek,
     epoch: u64,
@@ -291,6 +305,25 @@ pub fn wrap_item_dek_to_readers_with(
     readers: &[EnrolledSeaPub],
     granted: &NamedSet,
     seals: &[DetachedEphemeral],
+) -> Result<Vec<WrappedKey>, EncDiscError> {
+    let owned: Vec<ReaderSeal> = seals
+        .iter()
+        .map(|seal| ReaderSeal {
+            epriv: Zeroizing::new(seal.epriv.clone()),
+            nonce: seal.nonce,
+        })
+        .collect();
+    seal_item_dek_to_readers(dek, epoch, object, revision_id, readers, granted, &owned)
+}
+
+fn seal_item_dek_to_readers(
+    dek: &ItemDek,
+    epoch: u64,
+    object: &str,
+    revision_id: &str,
+    readers: &[EnrolledSeaPub],
+    granted: &NamedSet,
+    seals: &[ReaderSeal],
 ) -> Result<Vec<WrappedKey>, EncDiscError> {
     if object.is_empty() {
         return Err(EncDiscError::EmptyObject);
@@ -332,7 +365,7 @@ pub fn wrap_group_key_to_members(
     direct_members: &NamedSet,
 ) -> Result<Vec<WrappedKey>, EncDiscError> {
     let seals = fresh_seals(members.len())?;
-    wrap_group_key_to_members_with(
+    seal_group_key_to_members(
         group_key,
         epoch,
         group_id,
@@ -343,6 +376,10 @@ pub fn wrap_group_key_to_members(
     )
 }
 
+/// Same member wrap with caller-chosen ephemerals.
+///
+/// Not part of the production API. See [`DetachedEphemeral`].
+#[cfg(any(test, feature = "deterministic-wrap"))]
 pub fn wrap_group_key_to_members_with(
     group_key: &GroupEpochKey,
     epoch: u64,
@@ -351,6 +388,33 @@ pub fn wrap_group_key_to_members_with(
     members: &[EnrolledSeaPub],
     direct_members: &NamedSet,
     seals: &[DetachedEphemeral],
+) -> Result<Vec<WrappedKey>, EncDiscError> {
+    let owned: Vec<ReaderSeal> = seals
+        .iter()
+        .map(|seal| ReaderSeal {
+            epriv: Zeroizing::new(seal.epriv.clone()),
+            nonce: seal.nonce,
+        })
+        .collect();
+    seal_group_key_to_members(
+        group_key,
+        epoch,
+        group_id,
+        revision_id,
+        members,
+        direct_members,
+        &owned,
+    )
+}
+
+fn seal_group_key_to_members(
+    group_key: &GroupEpochKey,
+    epoch: u64,
+    group_id: &str,
+    revision_id: &str,
+    members: &[EnrolledSeaPub],
+    direct_members: &NamedSet,
+    seals: &[ReaderSeal],
 ) -> Result<Vec<WrappedKey>, EncDiscError> {
     if group_id.is_empty() {
         return Err(EncDiscError::EmptyGroup);
@@ -541,14 +605,14 @@ fn check_readers(readers: &[EnrolledSeaPub], named: &NamedSet) -> Result<(), Enc
     Ok(())
 }
 
-fn fresh_seals(count: usize) -> Result<Vec<DetachedEphemeral>, EncDiscError> {
+fn fresh_seals(count: usize) -> Result<Vec<ReaderSeal>, EncDiscError> {
     let mut rng = OsRng;
     let mut seals = Vec::with_capacity(count);
     for _ in 0..count {
         let secret = p256::SecretKey::random(&mut rng);
         let mut nonce = [0u8; 12];
         rng.fill_bytes(&mut nonce);
-        seals.push(DetachedEphemeral {
+        seals.push(ReaderSeal {
             epriv: sea::sea_priv_from_secret(&secret)?,
             nonce,
         });
@@ -611,7 +675,7 @@ fn finish_blob(plan: &Plan, blob: Vec<u8>) -> Result<WrappedKey, EncDiscError> {
 }
 
 fn sealed_plain(key: &[u8; 32], plan: &Plan) -> Result<Vec<u8>, EncDiscError> {
-    let epoch = canonical::canonical_decimal(plan.epoch);
+    let epoch = canonical::canonical_decimal(plan.epoch)?;
     let object = plan.object.as_deref().unwrap_or("");
     let group = plan.group.as_deref().unwrap_or("");
     let key_hex = encode_hex(key);
@@ -722,10 +786,15 @@ fn read_field<'a>(input: &mut &'a [u8]) -> Result<&'a str, EncDiscError> {
 #[cfg(test)]
 mod tests {
     use super::{
-        decode_blob, decrypt, kdf_group, seal_group, wrap_item_dek_to_group_epoch_with, Plan,
+        decode_blob, decrypt, kdf_group, seal_group, wrap_item_dek_to_group_epoch_with,
+        wrap_item_dek_to_readers_with, DetachedEphemeral, Plan,
     };
+    use crate::account::{AccountSeaSecret, EnrolledSeaPub};
     use crate::error::EncDiscError;
-    use crate::wrap::{open_group_epoch_wrap, GroupEpochKey, ItemDek, WrapScope, WrapTarget};
+    use crate::wrap::{
+        open_group_epoch_wrap, open_reader_wrap, GroupEpochKey, ItemDek, NamedSet, WrapScope,
+        WrapTarget,
+    };
 
     #[test]
     fn revision_id_is_inside_the_plaintext() {
@@ -787,6 +856,48 @@ mod tests {
         .unwrap();
         let opened = open_group_epoch_wrap(&item, "circle-1", &group).unwrap();
         assert_eq!(opened.key_bytes(), dek.as_bytes());
+        assert!(!opened.grants_see());
+    }
+
+    #[test]
+    fn deterministic_reader_wrap_matches_the_shared_vector() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../vectors/encrypted-discovery/sea-fixture.json"
+        ))
+        .unwrap();
+        let vector: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../vectors/encrypted-discovery/wrap.json"
+        ))
+        .unwrap();
+        let alice = AccountSeaSecret::import_local(
+            "0xalice",
+            fixture["laneId"].as_str().unwrap(),
+            fixture["signing"]["pub"].as_str().unwrap(),
+            fixture["signing"]["priv"].as_str().unwrap(),
+            fixture["encryption"]["epub"].as_str().unwrap(),
+            fixture["encryption"]["epriv"].as_str().unwrap(),
+        )
+        .unwrap();
+        let dek = ItemDek::from_bytes([0x11; 32]);
+        let granted = NamedSet::try_from_accessors([alice.account()]).unwrap();
+        let revision = fixture["revisionId"].as_str().unwrap();
+        let wraps = wrap_item_dek_to_readers_with(
+            &dek,
+            3,
+            "s3rch/items/post",
+            revision,
+            &[EnrolledSeaPub::from_account(&alice)],
+            &granted,
+            &[DetachedEphemeral {
+                epriv: fixture["signing"]["priv"].as_str().unwrap().to_string(),
+                nonce: [0x22; 12],
+            }],
+        )
+        .unwrap();
+        assert_eq!(wraps[0].wrapped_key, vector["wrappedKey"].as_str().unwrap());
+        let opened = open_reader_wrap(&wraps[0], alice.local_epriv(), alice.epub()).unwrap();
+        assert_eq!(opened.key_bytes(), dek.as_bytes());
+        assert_eq!(opened.revision_id(), revision);
         assert!(!opened.grants_see());
     }
 }

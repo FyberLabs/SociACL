@@ -205,6 +205,16 @@ def main() -> None:
         "settleWindowMs": 86400000,
         "aclSnapshot": acl,
     }
+    safe_max = 9007199254740991
+    epoch_max = {
+        "object": "s3rch/items/post",
+        "epoch": safe_max,
+        "previousEpoch": safe_max,
+        "deviceId": "device-1",
+        "keyCommitment": "opaque-commitment",
+        "settleWindowMs": safe_max,
+        "aclSnapshot": acl,
+    }
     epoch_zero = {
         "object": "s3rch/items/post",
         "epoch": 0,
@@ -255,6 +265,7 @@ def main() -> None:
         ),
         structured("epoch-default-window", "epochRevisionId", epoch, epoch_fields(epoch)),
         structured("epoch-zero", "epochRevisionId", epoch_zero, epoch_fields(epoch_zero)),
+        structured("epoch-max-safe", "epochRevisionId", epoch_max, epoch_fields(epoch_max)),
         structured("item-auth-hello", "itemAuth", item, item_fields(item)),
         structured("item-auth-zero", "itemAuth", item_zero, item_fields(item_zero)),
         structured("account-binding", "accountBinding", account, account_fields(account)),
@@ -288,6 +299,7 @@ def main() -> None:
     document = {
         "encoding": "uint32-le-length-prefixed-utf8",
         "hash": "sha256-lowercase-hex",
+        "safeInteger": {"maxInclusive": safe_max, "rejected": "9007199254740992"},
         "notes": [
             "An empty field is four zero bytes.",
             "Integers are ASCII decimal with no sign and no leading zeros. Zero is 0.",
@@ -295,6 +307,7 @@ def main() -> None:
             "fields-empty is SHA-256 of the empty byte string.",
             "itemAuth and accountBinding hashes cover the signed bytes. They are not signatures.",
             "keyCommitment in these vectors is an opaque string. This slice does not define that commitment.",
+            "epoch-max-safe uses 9007199254740991, the largest integer Number.isSafeInteger accepts. 9007199254740992 is rejected and has no id.",
             "inbox-real-wrap hashes the wrappedKey blob in wrap.json. The short aa and ab wraps are id cases only.",
         ],
         "cases": cases,

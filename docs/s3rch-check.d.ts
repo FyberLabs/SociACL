@@ -610,6 +610,8 @@ export type InboxEntryBody = {
  * bytes of that field. An empty field is 4 zero bytes.
  * Integers are ASCII decimal with no sign and no leading zeros.
  * The value 0 is the single byte 0x30.
+ * A value above 9007199254740991 (2^53-1) is rejected, the
+ * same bound as JavaScript Number.isSafeInteger.
  *
  * Fields:
  * 1. "s3rch-inbox-entry-v1"

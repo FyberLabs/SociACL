@@ -102,6 +102,24 @@ fn enrollment_binding_matches_pub_and_epub_and_is_not_a_grant() {
 }
 
 #[test]
+fn oversized_intro_pub_is_rejected() {
+    let secret = alice();
+    let enrolled = EnrolledSeaPub::from_account(&secret);
+    let mut presented = intro(&secret, AccountKeyBinding::Enrollment);
+    presented.epub = format!("{}{}", presented.epub, "A".repeat(10_000));
+    assert_eq!(
+        accept_first_contact(&presented, &enrolled).unwrap_err(),
+        EncDiscError::BadKey
+    );
+    presented = intro(&secret, AccountKeyBinding::Enrollment);
+    presented.sea_pub = format!("A{}", presented.sea_pub);
+    assert_eq!(
+        accept_first_contact(&presented, &enrolled).unwrap_err(),
+        EncDiscError::BadKey
+    );
+}
+
+#[test]
 fn introduction_without_epub_fails_closed() {
     let secret = alice();
     let enrolled = EnrolledSeaPub::from_account(&secret);

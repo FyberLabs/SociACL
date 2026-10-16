@@ -1,8 +1,7 @@
 use sociacl_encdisc::{
     open_group_epoch_wrap, open_reader_wrap, wrap_group_key_to_members,
-    wrap_item_dek_to_group_epoch, wrap_item_dek_to_readers, wrap_item_dek_to_readers_with,
-    AccountSeaSecret, DetachedEphemeral, EncDiscError, EnrolledSeaPub, GroupEpochKey, ItemDek,
-    NamedSet, WrapScope, WrapTarget,
+    wrap_item_dek_to_group_epoch, wrap_item_dek_to_readers, AccountSeaSecret, EncDiscError,
+    EnrolledSeaPub, GroupEpochKey, ItemDek, NamedSet, WrapScope, WrapTarget,
 };
 
 const FIXTURE: &str = include_str!("../../../vectors/encrypted-discovery/sea-fixture.json");
@@ -231,39 +230,4 @@ fn group_epoch_key_wraps_per_member_and_the_item_dek_wraps_once() {
         open_group_epoch_wrap(&group_key_scope, "circle-1", &got).unwrap_err(),
         EncDiscError::WrapRejected
     );
-}
-
-#[test]
-fn deterministic_reader_wrap_matches_the_shared_vector() {
-    let alice = alice();
-    let fixture: serde_json::Value = serde_json::from_str(FIXTURE).unwrap();
-    let vector: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../vectors/encrypted-discovery/wrap.json"
-    ))
-    .unwrap();
-    let dek = ItemDek::from_bytes([0x11; 32]);
-    assert_eq!(vector["dekHex"].as_str().unwrap(), "11".repeat(32));
-    assert_eq!(dek.as_bytes(), &[0x11; 32]);
-    let granted = NamedSet::try_from_accessors([alice.account()]).unwrap();
-    let wraps = wrap_item_dek_to_readers_with(
-        &dek,
-        3,
-        "s3rch/items/post",
-        &revision(),
-        &[EnrolledSeaPub::from_account(&alice)],
-        &granted,
-        &[DetachedEphemeral {
-            epriv: fixture["signing"]["priv"].as_str().unwrap().to_string(),
-            nonce: [0x22; 12],
-        }],
-    )
-    .unwrap();
-    assert_eq!(wraps.len(), 1);
-    assert_eq!(wraps[0].wrapped_key, vector["wrappedKey"].as_str().unwrap());
-    assert_eq!(wraps[0].epoch, vector["epoch"].as_u64().unwrap());
-    assert_eq!(wraps[0].object.as_deref(), vector["object"].as_str());
-    let opened = open_reader_wrap(&wraps[0], alice.local_epriv(), alice.epub()).unwrap();
-    assert_eq!(opened.key_bytes(), dek.as_bytes());
-    assert_eq!(opened.revision_id(), revision());
-    assert!(!opened.grants_see());
 }

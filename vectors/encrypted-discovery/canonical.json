@@ -1,6 +1,10 @@
 {
   "encoding": "uint32-le-length-prefixed-utf8",
   "hash": "sha256-lowercase-hex",
+  "safeInteger": {
+    "maxInclusive": 9007199254740991,
+    "rejected": "9007199254740992"
+  },
   "notes": [
     "An empty field is four zero bytes.",
     "Integers are ASCII decimal with no sign and no leading zeros. Zero is 0.",
@@ -8,6 +12,7 @@
     "fields-empty is SHA-256 of the empty byte string.",
     "itemAuth and accountBinding hashes cover the signed bytes. They are not signatures.",
     "keyCommitment in these vectors is an opaque string. This slice does not define that commitment.",
+    "epoch-max-safe uses 9007199254740991, the largest integer Number.isSafeInteger accepts. 9007199254740992 is rejected and has no id.",
     "inbox-real-wrap hashes the wrappedKey blob in wrap.json. The short aa and ab wraps are id cases only."
   ],
   "cases": [
@@ -203,6 +208,21 @@
       },
       "encodedLen": 163,
       "sha256": "6099f08740ea5b19df5d0bb25d7486e4a4152968f1a3db80adf79c88cff0f94c"
+    },
+    {
+      "name": "epoch-max-safe",
+      "kind": "epochRevisionId",
+      "body": {
+        "object": "s3rch/items/post",
+        "epoch": 9007199254740991,
+        "previousEpoch": 9007199254740991,
+        "deviceId": "device-1",
+        "keyCommitment": "opaque-commitment",
+        "settleWindowMs": 9007199254740991,
+        "aclSnapshot": "f9ac289c45e5e277cf0ecee22616a46b07d5ff92b83df0b13cacf8a9b5097449"
+      },
+      "encodedLen": 208,
+      "sha256": "c25b62b1a7773a9bef666191831d6ff77d1e999ba2717bfb19344def9a881099"
     },
     {
       "name": "item-auth-hello",

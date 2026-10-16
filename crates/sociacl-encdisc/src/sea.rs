@@ -50,7 +50,7 @@ pub fn sea_pub_from_signing(signing: &SigningKey) -> Result<String, EncDiscError
     point_to_sea(&signing.verifying_key().to_encoded_point(false))
 }
 
-pub fn sea_priv_from_signing(signing: &SigningKey) -> Result<String, EncDiscError> {
+pub fn sea_priv_from_signing(signing: &SigningKey) -> Result<Zeroizing<String>, EncDiscError> {
     scalar_to_sea(signing.to_bytes().as_slice())
 }
 
@@ -58,7 +58,7 @@ pub fn sea_pub_from_secret(secret: &SecretKey) -> Result<String, EncDiscError> {
     point_to_sea(&secret.public_key().to_encoded_point(false))
 }
 
-pub fn sea_priv_from_secret(secret: &SecretKey) -> Result<String, EncDiscError> {
+pub fn sea_priv_from_secret(secret: &SecretKey) -> Result<Zeroizing<String>, EncDiscError> {
     scalar_to_sea(secret.to_bytes().as_slice())
 }
 
@@ -120,18 +120,20 @@ fn point_to_sea(encoded: &p256::EncodedPoint) -> Result<String, EncDiscError> {
     if x.len() != 32 || y.len() != 32 {
         return Err(EncDiscError::BadKey);
     }
-    Ok(format!("{}.{}", encode_b64(x)?, encode_b64(y)?))
+    let x_text = encode_b64(x)?;
+    let y_text = encode_b64(y)?;
+    Ok(format!("{}.{}", x_text.as_str(), y_text.as_str()))
 }
 
-fn scalar_to_sea(scalar: &[u8]) -> Result<String, EncDiscError> {
+fn scalar_to_sea(scalar: &[u8]) -> Result<Zeroizing<String>, EncDiscError> {
     encode_b64(scalar)
 }
 
-fn encode_b64(bytes: &[u8]) -> Result<String, EncDiscError> {
+fn encode_b64(bytes: &[u8]) -> Result<Zeroizing<String>, EncDiscError> {
     let len = Base64UrlUnpadded::encoded_len(bytes);
-    let mut buf = vec![0u8; len];
+    let mut buf = Zeroizing::new(vec![0u8; len]);
     let encoded = Base64UrlUnpadded::encode(bytes, &mut buf).map_err(|_| EncDiscError::BadKey)?;
-    Ok(encoded.to_string())
+    Ok(Zeroizing::new(encoded.to_string()))
 }
 
 fn decode_scalar(text: &str) -> Result<Zeroizing<[u8; 32]>, EncDiscError> {
@@ -151,7 +153,10 @@ fn decode_coord(text: &str) -> Result<[u8; 32], EncDiscError> {
 
 #[cfg(test)]
 mod tests {
-    use super::{decode_b64, decode_scalar, sign_sea, signing_key, verify_sea};
+    use super::{
+        decode_b64, decode_scalar, parse_sea_point, sea_priv_from_signing, sign_sea, signing_key,
+        verify_sea, SEA_COMPONENT_B64_LEN,
+    };
     use serde::Deserialize;
     use zeroize::Zeroizing;
 
@@ -213,9 +218,46 @@ mod tests {
         let _: &Zeroizing<Vec<u8>> = &decoded;
         assert_eq!(decoded.as_slice(), held.as_slice());
     }
+
+    #[test]
+    fn generated_scalar_encoding_is_zeroizing() {
+        let fixture: Fixture = serde_json::from_str(include_str!(
+            "../../../vectors/encrypted-discovery/sea-fixture.json"
+        ))
+        .unwrap();
+        let signing = signing_key(&fixture.signing.sea_priv).unwrap();
+        let encoded = sea_priv_from_signing(&signing).unwrap();
+        let held: &Zeroizing<String> = &encoded;
+        assert_eq!(held.len(), SEA_COMPONENT_B64_LEN);
+        assert_eq!(held.as_str(), fixture.signing.sea_priv);
+    }
+
+    #[test]
+    fn oversized_sea_component_is_rejected_before_decode() {
+        let fixture: Fixture = serde_json::from_str(include_str!(
+            "../../../vectors/encrypted-discovery/sea-fixture.json"
+        ))
+        .unwrap();
+        let (x_text, y_text) = fixture.signing.sea_pub.split_once('.').unwrap();
+        assert_eq!(x_text.len(), SEA_COMPONENT_B64_LEN);
+        assert_eq!(y_text.len(), SEA_COMPONENT_B64_LEN);
+        assert!(parse_sea_point(&fixture.signing.sea_pub).is_ok());
+        assert!(decode_b64(&"A".repeat(SEA_COMPONENT_B64_LEN - 1)).is_err());
+        assert!(decode_b64(&"A".repeat(SEA_COMPONENT_B64_LEN + 1)).is_err());
+        assert!(decode_b64(&"A".repeat(1_000_000)).is_err());
+        let oversized = format!("{x_text}.{y_text}A");
+        assert!(parse_sea_point(&oversized).is_err());
+    }
 }
 
+/// base64url (no padding) of 32 bytes. A longer component is rejected
+/// before a buffer is allocated.
+const SEA_COMPONENT_B64_LEN: usize = 43;
+
 fn decode_b64(text: &str) -> Result<Zeroizing<Vec<u8>>, EncDiscError> {
+    if text.len() != SEA_COMPONENT_B64_LEN {
+        return Err(EncDiscError::BadKey);
+    }
     let mut buf = Zeroizing::new(vec![0u8; text.len()]);
     let decoded_len = {
         let decoded =

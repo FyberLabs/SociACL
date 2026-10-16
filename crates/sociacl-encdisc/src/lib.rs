@@ -62,15 +62,17 @@ pub use canonical::{
     length_prefixed, parse_canonical_decimal, plaintext_digest, sha256, sha256_fields, sha256_hex,
     EpochManifestBody, InboxEntryBody, InboxWrapFields, ItemAuthFields, DOMAIN_ACCOUNT_BINDING,
     DOMAIN_EPOCH, DOMAIN_GROUP_WRAP, DOMAIN_INBOX, DOMAIN_ITEM_AUTH, DOMAIN_SEA_SECRET,
-    DOMAIN_WRAPPED_KEY,
+    DOMAIN_WRAPPED_KEY, JS_SAFE_INTEGER_MAX,
 };
 pub use error::EncDiscError;
 pub use sea::{sign_sea, verify_sea};
-#[cfg(any(test, feature = "deterministic-wrap"))]
-pub use wrap::wrap_item_dek_to_group_epoch_with;
 pub use wrap::{
     open_group_epoch_wrap, open_reader_wrap, wrap_group_key_to_members,
-    wrap_group_key_to_members_with, wrap_item_dek_to_group_epoch, wrap_item_dek_to_readers,
-    wrap_item_dek_to_readers_with, DetachedEphemeral, GroupEpochKey, ItemDek, NamedSet, OpenedWrap,
-    WrapScope, WrapTarget, WrappedKey,
+    wrap_item_dek_to_group_epoch, wrap_item_dek_to_readers, GroupEpochKey, ItemDek, NamedSet,
+    OpenedWrap, WrapScope, WrapTarget, WrappedKey,
+};
+#[cfg(any(test, feature = "deterministic-wrap"))]
+pub use wrap::{
+    wrap_group_key_to_members_with, wrap_item_dek_to_group_epoch_with,
+    wrap_item_dek_to_readers_with, DetachedEphemeral,
 };

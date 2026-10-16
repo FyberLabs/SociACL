@@ -91,9 +91,19 @@ pub fn sha256_fields(fields: &[&str]) -> Result<String, EncDiscError> {
     Ok(sha256_hex(&length_prefixed(fields)?))
 }
 
+/// Largest integer JavaScript `Number.isSafeInteger` accepts.
+///
+/// Rust and the TypeScript contract both reject a larger decimal.
+pub const JS_SAFE_INTEGER_MAX: u64 = (1 << 53) - 1;
+
 /// ASCII decimal. `0` is `"0"`. No leading zeros.
-pub fn canonical_decimal(value: u64) -> String {
-    value.to_string()
+///
+/// Values above [`JS_SAFE_INTEGER_MAX`] are `BadDecimal`.
+pub fn canonical_decimal(value: u64) -> Result<String, EncDiscError> {
+    if value > JS_SAFE_INTEGER_MAX {
+        return Err(EncDiscError::BadDecimal);
+    }
+    Ok(value.to_string())
 }
 
 pub fn parse_canonical_decimal(text: &str) -> Result<u64, EncDiscError> {
@@ -103,7 +113,11 @@ pub fn parse_canonical_decimal(text: &str) -> Result<u64, EncDiscError> {
     if text.len() > 1 && text.starts_with('0') {
         return Err(EncDiscError::BadDecimal);
     }
-    text.parse::<u64>().map_err(|_| EncDiscError::BadDecimal)
+    let value = text.parse::<u64>().map_err(|_| EncDiscError::BadDecimal)?;
+    if value > JS_SAFE_INTEGER_MAX {
+        return Err(EncDiscError::BadDecimal);
+    }
+    Ok(value)
 }
 
 fn empty_as_blank(value: Option<&str>) -> &str {
@@ -115,7 +129,7 @@ fn empty_as_blank(value: Option<&str>) -> &str {
 
 pub fn inbox_entry_bytes(body: &InboxEntryBody) -> Result<Vec<u8>, EncDiscError> {
     let epoch = match &body.wrap {
-        Some(wrap) => canonical_decimal(wrap.epoch),
+        Some(wrap) => canonical_decimal(wrap.epoch)?,
         None => String::new(),
     };
     let (flag, scope, target, target_id, object, group, revision, wrapped) = match &body.wrap {
@@ -153,9 +167,9 @@ pub fn inbox_entry_id(body: &InboxEntryBody) -> Result<String, EncDiscError> {
 }
 
 pub fn epoch_revision_bytes(body: &EpochManifestBody) -> Result<Vec<u8>, EncDiscError> {
-    let epoch = canonical_decimal(body.epoch);
-    let previous = canonical_decimal(body.previous_epoch);
-    let window = canonical_decimal(body.settle_window_ms);
+    let epoch = canonical_decimal(body.epoch)?;
+    let previous = canonical_decimal(body.previous_epoch)?;
+    let window = canonical_decimal(body.settle_window_ms)?;
     length_prefixed(&[
         DOMAIN_EPOCH,
         &body.object,
@@ -173,8 +187,8 @@ pub fn epoch_revision_id(body: &EpochManifestBody) -> Result<String, EncDiscErro
 }
 
 pub fn item_auth_bytes(fields: &ItemAuthFields) -> Result<Vec<u8>, EncDiscError> {
-    let epoch = canonical_decimal(fields.epoch);
-    let version = canonical_decimal(fields.version);
+    let epoch = canonical_decimal(fields.epoch)?;
+    let version = canonical_decimal(fields.version)?;
     length_prefixed(&[
         DOMAIN_ITEM_AUTH,
         &fields.object,
