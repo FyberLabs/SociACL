@@ -21,6 +21,9 @@ const DOMAIN_GRANT_COMMITMENT = "s3rch-grant-commitment-v1";
 const DOMAIN_GRANT_PAYLOAD = "s3rch-grant-payload-v1";
 const DOMAIN_PRESENTER_BINDING = "s3rch-presenter-binding-v1";
 const DOMAIN_EPOCH_STATUS = "s3rch-epoch-status-v1";
+const DOMAIN_WRITER_APPEND = "s3rch-writer-append-v1";
+const DOMAIN_INBOX_POW = "s3rch-inbox-pow-v1";
+const DOMAIN_INBOX_STAMP = "s3rch-inbox-stamp-v1";
 
 export function sha256Hex(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");
@@ -222,6 +225,45 @@ export function epochStatusBytes(body: EpochStatusBody): Uint8Array {
 
 export function epochStatusSha256(body: EpochStatusBody): string {
   return sha256Hex(epochStatusBytes(body));
+}
+
+export function writerAppendBytes(entryId: string): Uint8Array {
+  return lengthPrefixed([DOMAIN_WRITER_APPEND, entryId]);
+}
+
+export function writerAppendSha256(entryId: string): string {
+  return sha256Hex(writerAppendBytes(entryId));
+}
+
+export function inboxPowBytes(nonce: string, entryId: string, solution: string): Uint8Array {
+  return lengthPrefixed([DOMAIN_INBOX_POW, nonce, entryId, solution]);
+}
+
+export function inboxPowSha256(nonce: string, entryId: string, solution: string): string {
+  return sha256Hex(inboxPowBytes(nonce, entryId, solution));
+}
+
+export function inboxStampBytes(entryId: string): Uint8Array {
+  return lengthPrefixed([DOMAIN_INBOX_STAMP, entryId]);
+}
+
+export function inboxStampSha256(entryId: string): string {
+  return sha256Hex(inboxStampBytes(entryId));
+}
+
+/** Leading zero bits of a lowercase hex SHA-256 digest. */
+export function leadingZeroBits(hex: string): number {
+  let count = 0;
+  for (let index = 0; index < hex.length; index += 2) {
+    const byte = Number.parseInt(hex.slice(index, index + 2), 16);
+    if (byte === 0) {
+      count += 8;
+    } else {
+      count += Math.clz32(byte) - 24;
+      break;
+    }
+  }
+  return count;
 }
 
 /** True only when the object and the manifest revision both match. */

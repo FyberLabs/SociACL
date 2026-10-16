@@ -411,6 +411,15 @@ impl AccountSeaSecret {
     }
 }
 
+pub fn inbox_body_of(row: &BlindedGrantRow) -> InboxEntryBody {
+    inbox_body(
+        &row.lane_id,
+        &row.grant_ciphertext,
+        &row.commitment,
+        row.wrap.as_ref(),
+    )
+}
+
 fn inbox_body(
     lane_id: &str,
     grant_ciphertext: &str,

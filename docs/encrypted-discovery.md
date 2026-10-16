@@ -1,6 +1,6 @@
 # Encrypted discovery (spec)
 
-Status: spec. `crates/sociacl-encdisc` implements the account SEA key, device enrollment, the wrapped-key edge, the length-prefixed SHA-256 ids, blinded grant rows, commitment opening, author fast unwrap, and `checkPresentedGrant` (verifier nonce, audience, and the branded presenter channel). `epochStepCurrent` runs as the read-key check inside that call. The crate does not run inbox admission, epoch publication, rotation, or migration. `crates/sociacl-gun` evaluates plaintext `MeshSeeGrant` rows and direct `same-group` / `named-circle` edges (`checkGroupSee`). It does not evaluate a wrap. Nothing on this page changes that Check or the plaintext dest-ACL path. This page adds no verb.
+Status: spec. `crates/sociacl-encdisc` implements the account SEA key, device enrollment, the wrapped-key edge, the length-prefixed SHA-256 ids, blinded grant rows, commitment opening, author fast unwrap, `checkPresentedGrant` (verifier nonce, audience, and the branded presenter channel), and inbox admission (one `RecipientInbox` per reader, `filterInboxAppend`, and the daily-shard rescan). `epochStepCurrent` runs as the read-key check inside that call. The crate does not run epoch publication, rotation, migration, or a shard-close watermark. `crates/sociacl-gun` evaluates plaintext `MeshSeeGrant` rows and direct `same-group` / `named-circle` edges (`checkGroupSee`). It does not evaluate a wrap. Nothing on this page changes that Check or the plaintext dest-ACL path. This page adds no verb.
 
 s3r.ch product draft: [FyberLabs/s3r.ch#108](https://github.com/FyberLabs/s3r.ch/pull/108) (`docs/encrypted-discovery.md` on that branch). This repository does not edit s3r.ch. Where the two pages differ, this page is the SociACL contract and that pull request is the product draft. The hardening on this page answers the Codex review on that pull request. It adds no verb.
 
@@ -66,6 +66,8 @@ The account still has one lane. A daily shard is a layout of that same lane, not
 The scan is a rescan of each whole daily shard, then dedup by `entryId`. Clock skew between a sender's devices, or a restored clock, can place a new entry at or below a saved high-water mark. Reading the whole shard still finds that entry.
 
 A cursor per sender device is not part of this contract. The visible row has no device id and no per-device sequence, because those fields would name the writer. Putting the same fields inside the ciphertext does not fix the cursor: the reader would have to open every entry to learn which cursor it belongs to, which is already a full read of the shard, and an entry opened under the wrong cursor would still be skipped. The shard rescan needs neither field. Authorship stays hidden. Dedup is the content-addressed `entryId`.
+
+The reference crate implements that rescan. A trusted shard-close watermark is not part of this spec and is not implemented.
 
 ## Hidden authorship
 
@@ -306,7 +308,7 @@ Copy or re-type [s3rch-check.d.ts](s3rch-check.d.ts). Do not `npm install sociac
 | `EpochStatusProof` | Owner-signed epoch/status beside the zookie. Names the accessor and that accessor's `grantRevision`. Length-prefixed signature. Age bound plus the verifier's skew allowance |
 | `ProtocolMigration` / `ReaderMigration` | Owner-only. Plaintext drops per reader after that reader's authenticated wrap receipt. The version gate alone does not drop it |
 | `ContentIndexTier` | `public`, `private-group`, or `local`. SociACL does not store it |
-| `EncryptedDiscoveryVector` | Conformance names below. `sociacl-encdisc` runs the canonical ids, the reader-wrap vector, blinded rows, commitment opening, author fast unwrap, and presenter binding through `checkPresentedGrant`. It does not run inbox admission, epoch publication, rotation, or migration |
+| `EncryptedDiscoveryVector` | Conformance names below. `sociacl-encdisc` runs the canonical ids, the reader-wrap vector, blinded rows, commitment opening, author fast unwrap, presenter binding through `checkPresentedGrant`, and inbox admission. It does not run epoch publication, rotation, migration, or a shard-close watermark |
 
 `GunFeedNode` and `GunUserNode` are unchanged. Predicate and membership are ACL rows, not feed fields. The user node may carry the account SEA `pub` and `epub`. It does not carry `priv`, `epriv`, or a copy of a grant row's owner field.
 
@@ -330,7 +332,7 @@ Items the owner keeps on the public plaintext path are not rewritten. Whether th
 
 ## Conformance vectors
 
-The names are `EncryptedDiscoveryVector` in [s3rch-check.d.ts](s3rch-check.d.ts). `crates/sociacl-encdisc` and the TypeScript contract both load `vectors/encrypted-discovery/canonical.json` for `inboxEntryId`, `epochRevisionId`, the item-auth bytes, and the account-binding bytes. They both load `vectors/encrypted-discovery/presentation.json` for the grant commitment, the grant payload digest, the presenter-binding bytes, the epoch-status bytes, and author fast unwrap. The reader wrap in `vectors/encrypted-discovery/wrap.json` is checked by the Rust crate. The TypeScript contract also checks the presenter-channel brand. Inbox admission, epoch publication, rotation, and migration are not in this slice. In every vector, a wrap, a hop, a hint, an introduction, a binding, or a stamp never mints.
+The names are `EncryptedDiscoveryVector` in [s3rch-check.d.ts](s3rch-check.d.ts). `crates/sociacl-encdisc` and the TypeScript contract both load `vectors/encrypted-discovery/canonical.json` for `inboxEntryId`, `epochRevisionId`, the item-auth bytes, and the account-binding bytes. They both load `vectors/encrypted-discovery/presentation.json` for the grant commitment, the grant payload digest, the presenter-binding bytes, the epoch-status bytes, and author fast unwrap. They both load `vectors/encrypted-discovery/inbox.json` for the whole-entry id, the writer-append bytes, the proof-of-work bytes, the stamp bytes, and the daily-shard dedup. The reader wrap in `vectors/encrypted-discovery/wrap.json` is checked by the Rust crate. The TypeScript contract also checks the presenter-channel brand and the writer-channel brand. The Rust crate runs `filterInboxAppend`. Epoch publication, rotation, migration, and a shard-close watermark are not in this slice. In every vector, a wrap, a hop, a hint, an introduction, a binding, an append, or a stamp never mints.
 
 ### Content authenticity
 

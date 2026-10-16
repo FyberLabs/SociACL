@@ -23,6 +23,9 @@ pub const DOMAIN_GRANT_PAYLOAD: &str = "s3rch-grant-payload-v1";
 pub const DOMAIN_PRESENTER_BINDING: &str = "s3rch-presenter-binding-v1";
 pub const DOMAIN_EPOCH_STATUS: &str = "s3rch-epoch-status-v1";
 pub const DOMAIN_EPOCH_FINALIZATION: &str = "s3rch-epoch-finalization-v1";
+pub const DOMAIN_WRITER_APPEND: &str = "s3rch-writer-append-v1";
+pub const DOMAIN_INBOX_POW: &str = "s3rch-inbox-pow-v1";
+pub const DOMAIN_INBOX_STAMP: &str = "s3rch-inbox-stamp-v1";
 
 /// Cleartext fields that `inboxEntryId` hashes. `wrap` is absent or present.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -424,6 +427,60 @@ pub fn epoch_finalization_bytes(
     fields.extend(candidates.iter().cloned());
     let borrowed: Vec<&str> = fields.iter().map(String::as_str).collect();
     length_prefixed(&borrowed)
+}
+
+pub fn writer_append_bytes(entry_id: &str) -> Result<Vec<u8>, EncDiscError> {
+    length_prefixed(&[DOMAIN_WRITER_APPEND, entry_id])
+}
+
+pub fn writer_append_sha256(entry_id: &str) -> Result<String, EncDiscError> {
+    Ok(sha256_hex(&writer_append_bytes(entry_id)?))
+}
+
+pub fn inbox_pow_bytes(
+    nonce: &str,
+    entry_id: &str,
+    solution: &str,
+) -> Result<Vec<u8>, EncDiscError> {
+    length_prefixed(&[DOMAIN_INBOX_POW, nonce, entry_id, solution])
+}
+
+pub fn inbox_pow_digest(
+    nonce: &str,
+    entry_id: &str,
+    solution: &str,
+) -> Result<[u8; 32], EncDiscError> {
+    Ok(sha256(&inbox_pow_bytes(nonce, entry_id, solution)?))
+}
+
+pub fn inbox_pow_sha256(
+    nonce: &str,
+    entry_id: &str,
+    solution: &str,
+) -> Result<String, EncDiscError> {
+    Ok(sha256_hex(&inbox_pow_bytes(nonce, entry_id, solution)?))
+}
+
+pub fn inbox_stamp_bytes(entry_id: &str) -> Result<Vec<u8>, EncDiscError> {
+    length_prefixed(&[DOMAIN_INBOX_STAMP, entry_id])
+}
+
+pub fn inbox_stamp_sha256(entry_id: &str) -> Result<String, EncDiscError> {
+    Ok(sha256_hex(&inbox_stamp_bytes(entry_id)?))
+}
+
+/// Leading zero bits in a SHA-256 digest. Difficulty 0 accepts any digest.
+pub fn leading_zero_bits(digest: &[u8]) -> u32 {
+    let mut count = 0u32;
+    for byte in digest {
+        if *byte == 0 {
+            count = count.saturating_add(8);
+        } else {
+            count = count.saturating_add(byte.leading_zeros());
+            break;
+        }
+    }
+    count
 }
 
 pub fn epoch_finalization_id(

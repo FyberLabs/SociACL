@@ -10,7 +10,7 @@
  *   crates/sociacl-gun — plaintext MeshSeeGrant Check
  *   crates/sociacl-encdisc — encrypted-discovery slice
  *     (account SEA key, enrollment, wrap edge, canonical ids,
- *      blinded rows, presenter binding)
+ *      blinded rows, presenter binding, inbox admission)
  *
  * CHECK(see, object, accessor) at now.
  *   object   = GunFeedNode | held claim id | later opaque post/room
@@ -28,9 +28,9 @@
  * docs/encrypted-discovery.md. sociacl-gun evaluates plaintext see
  * grants and direct same-group / named-circle edges. It does not
  * evaluate a wrap. sociacl-encdisc implements the account key, the
- * wrap edge, the canonical ids, blinded rows, and checkPresentedGrant.
- * It does not run inbox admission, epoch publication, rotation, or
- * migration.
+ * wrap edge, the canonical ids, blinded rows, checkPresentedGrant,
+ * and inbox admission. It does not run epoch publication, rotation,
+ * migration, or a shard-close watermark.
  * SEA priv and epriv never go on Gun.
  */
 
@@ -404,8 +404,9 @@ export function decodeHop(bytes: Uint8Array): HopFactor;
 /* sociacl-gun evaluates plaintext MeshSeeGrant rows and direct              */
 /* same-group / named-circle edges. It does not evaluate a wrap.             */
 /* sociacl-encdisc implements the account key, the wrap edge, the canonical   */
-/* ids, blinded rows, and checkPresentedGrant. It does not run admission,     */
-/* epoch publication, rotation, or migration. A wrap is not a grant.          */
+/* ids, blinded rows, checkPresentedGrant, and inbox admission. It does not   */
+/* run epoch publication, rotation, migration, or a shard-close watermark.    */
+/* A wrap is not a grant. An inbox append is not a grant.                     */
 /* SEA priv and epriv never go on Gun.                                        */
 /* same-group and named-circle: hopcap 1, jointly stated, no inheritance.    */
 /* -------------------------------------------------------------------------- */
@@ -1494,7 +1495,9 @@ export function settledKeyOpen(
  * Dedup by entryId. This is the lane scan. A per-device cursor
  * is not part of this contract: the visible row has no device
  * id, and opening ciphertext to learn one does not yield a
- * lossless cursor. Not a second lane. Not a grant.
+ * lossless cursor. crates/sociacl-encdisc rescans the whole shard.
+ * A shard-close watermark is not implemented. Not a second lane.
+ * Not a grant.
  */
 export type DailyShardScan = {
   laneId: string;
@@ -1693,6 +1696,12 @@ export type InboxAdmission = {
 export type InboxAppendResult = {
   decision: InboxWriteDecision;
   state: VerifierAdmissionState;
+  /**
+   * Writer id the accepting relay learned. Set only when
+   * allowAppend is true. Not a field of the stored row. A peer
+   * that only replicates the row does not receive this.
+   */
+  learnedWriter?: AccessorId;
 };
 
 export type InboxWriteDecision = {
@@ -1711,7 +1720,7 @@ export type InboxWriteDecision = {
 };
 
 /**
- * Spec signature. The reference crate does not run this.
+ * crates/sociacl-encdisc runs this. An append is not a grant.
  * public-filtered is the default: any writer may append.
  * state is the verifier's challenges, issuers, replay set,
  * known senders, per-sender quotas, and the one lane capacity.
@@ -1760,7 +1769,7 @@ export function filterInboxAppend(
   state: VerifierAdmissionState,
   now: number,
   enrollment: VerifierEnrollmentState,
-  writerAuth: WriterAppendAuth,
+  writerAuth?: WriterAppendAuth,
   admission?: InboxAdmission,
 ): InboxAppendResult;
 
