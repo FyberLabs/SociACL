@@ -2,7 +2,7 @@
  * Light Check consume implementation for s3r.ch.
  * Same names as docs/s3rch-check.d.ts. Copy or import from here.
  * Hint and hop never set allowed. A post grant is a separate row.
- * A hop, a hint, a wrap, or an inbox delivery never grants.
+ * A hop, a hint, a wrap, a request, or an inbox delivery never grants.
  */
 
 export {
@@ -13,6 +13,22 @@ export {
   postGrantSigningBytes,
   postSoul,
 } from "./post.js";
+
+export {
+  ACCESS_MESSAGE_MAX,
+  ACCESS_REQUEST_DOMAIN,
+  ACCESS_REQUEST_ID_DOMAIN,
+  ACCESS_SCOPE_READ,
+  ACCESS_SCOPE_READ_POST,
+  ACCESS_STATUS_PENDING,
+  ACCESS_STATUS_WITHDRAWN,
+  acceptAccessRequest,
+  accessRequestId,
+  accessRequestSigningBytes,
+  canonicalRequestAccessor,
+  canonicalRequestObject,
+  grantApprovedRequest,
+} from "./request.js";
 
 import { canonicalAccessorId, nextPostHam, postGrantKey, postRowEncodable, postSoul, sameObjectId } from "./post.js";
 

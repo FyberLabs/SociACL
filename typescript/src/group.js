@@ -1,7 +1,7 @@
 /**
  * Plaintext same-group and named-circle rows for the s3r.ch light Check.
  * Hopcap 1. Both edges must be stated 1. One-sided membership is stored
- * and is not a grant. A hop, a hint, or a wrap never mints.
+ * and is not a grant. A hop, a hint, a wrap, or a request never mints.
  * A lower hamState does not hide a removal.
  *
  * Cancels are a grow-only set of collision-free ids. Each id is
@@ -129,6 +129,22 @@ export {
   postGrantSigningBytes,
   postSoul,
 } from "./post.js";
+
+export {
+  ACCESS_MESSAGE_MAX,
+  ACCESS_REQUEST_DOMAIN,
+  ACCESS_REQUEST_ID_DOMAIN,
+  ACCESS_SCOPE_READ,
+  ACCESS_SCOPE_READ_POST,
+  ACCESS_STATUS_PENDING,
+  ACCESS_STATUS_WITHDRAWN,
+  acceptAccessRequest,
+  accessRequestId,
+  accessRequestSigningBytes,
+  canonicalRequestAccessor,
+  canonicalRequestObject,
+  grantApprovedRequest,
+} from "./request.js";
 
 const PKCS8_PREFIX = Uint8Array.from([
   0x30, 0x2e, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x04, 0x22, 0x04, 0x20,
@@ -898,6 +914,19 @@ export class MemoryGroupGraph {
   canonicalObjectId(object) {
     const text = String(object ?? "").trim();
     return this.objectRecord(text)?.id ?? text;
+  }
+
+  /**
+   * Members auto-approve gate. Same check as the free function.
+   * Hop and hint are not arguments.
+   * @param {GroupPredicate} predicate
+   * @param {string} object
+   * @param {string} accessor
+   * @param {number} now
+   */
+  checkGroupSee(predicate, object, accessor, now) {
+    const graph = /** @type {GroupSeeGraph} */ (/** @type {unknown} */ (this));
+    return checkGroupSee(graph, predicate, object, accessor, now, null, null);
   }
 
   /**

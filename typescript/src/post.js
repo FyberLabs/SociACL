@@ -3,8 +3,8 @@
  * Separate from the see grant. Same cancel rule: stated 0 and a
  * hamState bump. At an equal hamState a cancellation wins, then the
  * narrower window, then the smaller signing bytes.
- * Check does not verify a signature. A hop, a hint, a wrap, or an
- * inbox delivery never grants.
+ * Check does not verify a signature. A hop, a hint, a wrap, a request,
+ * or an inbox delivery never grants.
  *
  * @typedef {{
  *   object: string,
@@ -216,7 +216,7 @@ export function postGrantSigningBytes(edge) {
   ]);
 }
 
-/** A hop, a hint, a wrap, or an inbox delivery never grants. @param {string} _kind */
+/** A hop, a hint, a wrap, a request, or an inbox delivery never grants. @param {string} _kind */
 export function factorGrants(_kind) {
   return false;
 }

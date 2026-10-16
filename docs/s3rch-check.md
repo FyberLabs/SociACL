@@ -81,11 +81,23 @@ s3rch/acl/<aclPrincipalKey(owner)>/post/<aclKey(object)>/<aclPrincipalKey(access
 
 `postSoul(owner, object, accessor)`. Six segments, so it is not a see-grant soul and not a Check object.
 
-`checkPost(graph, object, accessor, now, hint?, hop?)` returns allow-post only when `checkSee` would allow that same triple. The object owner passes see and may post. Any other accessor also needs a live post row with `now` in `[from, until)`. A post row alone does not allow. A see row does not allow post. `checkGroupSee` is not this gate. Hopcap is **1**. Hop missing does not fail. Hop alone never allows. A hop, a hint, a wrap, or an inbox delivery never grants.
+`checkPost(graph, object, accessor, now, hint?, hop?)` returns allow-post only when `checkSee` would allow that same triple. The object owner passes see and may post. Any other accessor also needs a live post row with `now` in `[from, until)`. A post row alone does not allow. A see row does not allow post. `checkGroupSee` is not this gate. Hopcap is **1**. Hop missing does not fail. Hop alone never allows. A hop, a hint, a wrap, a request, or an inbox delivery never grants.
 
 `postGrantSigningBytes` is the length-prefixed encoding a later owner signature can cover: domain `s3rch-post-grant-v1`, `aclKey(object)`, `aclPrincipalKey(accessor)`, decimal `stated`, decimal `from`, decimal `until`, scope `post`, and decimal `hamState`. Lengths are uint32 little-endian. Integers have no leading zeros. This check does not verify a signature.
 
 Rust `sociacl-gun` and `typescript/src/post.js` both load `vectors/mesh/post-grant.json`.
+
+### Access request
+
+A request is an untrusted hint. It never grants. Check does not read it. The owner's own client may turn an approved pending request into owner-written grant rows. There is no hosted evaluator. Explicit deny and the policy queue are s3r.ch policy. SociACL has no standing deny. A withdrawal is not an approval.
+
+`accessRequestId(requester, source)` is the SHA-256 (lowercase hex, 64 characters) of a length-prefixed encoding: domain `s3rch-request`, the canonical accessor id, and the canonical object key. `canonicalRequestAccessor` is `canonical_accessor_id` / `aclPrincipalKey`, so `0xbob` and `s3rch/users/0xbob` are one requester. The object key is `aclKey`, and an item soul `s3rch/items/<encodeKey(id)>` uses that same key when the raw id may alias to the soul, so `room:alpha` and `s3rch/items/room:alpha` are one source. A held claim id (`ens:…` / `unstoppable:…` / `fc:…` / `lens:…` / `rss3:…` without `/`) does not alias to an item soul. `rss3:act/1#x` and `rss3:act_1_x` share `aclKey`. Scope, message, and status are not part of the id. `s3rch/meta`, a dest-ACL soul, and a URL leaf are not sources.
+
+`accessRequestSigningBytes` is the length-prefixed encoding a later signature can cover: domain `s3rch-access-request-v1`, the request id, scope `read` or `read+post`, the message, and status `pending` or `withdrawn`. The message is at most 280 Unicode scalar values and may be empty. Any other scope or status is rejected. Lengths are uint32 little-endian. This check does not verify a signature. Accepting the bytes does not grant.
+
+`grantApprovedRequest` runs on the owner's client. It writes a see grant for a pending request, and a post grant when the scope is `read+post`. The rows use the in-graph object id (`canonicalObjectId` / `objectRecord`) and the canonical accessor id, the same ids see and post writes already use. A raw id and its item soul share those rows. A withdrawn request writes nothing. A caller who is not the object owner writes nothing. Members auto-approve passes the requester and the source to `checkGroupSee` on that same client and writes only when `checkGroupSee` allows. Hop and hint are not inputs to that call. Hopcap stays **1**. A hop, a hint, a wrap, a request, or an inbox delivery never grants. The rows are unsigned. `postSigningBytes` on a `read+post` approval is `postGrantSigningBytes` for the post row a later owner signature can cover.
+
+Rust `sociacl-gun` and `typescript/src/request.js` both load `vectors/mesh/access-request.json`.
 
 `s3rch/acl` itself is not a Check object (same as `meta`).
 

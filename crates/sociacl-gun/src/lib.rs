@@ -15,7 +15,8 @@
 //!
 //! `same-group` and `named-circle` are direct edges on the mesh
 //! graph. Hopcap is 1. A post grant is a separate dest-ACL row from
-//! the see grant. A hop, a hint, a wrap, or an inbox delivery never mints.
+//! the see grant. An access request is an untrusted hint. A hop, a hint,
+//! a wrap, a request, or an inbox delivery never mints.
 //!
 //! s3r.ch copies [docs/s3rch-check.d.ts](../../docs/s3rch-check.d.ts)
 //! and runs light Check in the browser. It does not import this crate.
@@ -36,6 +37,7 @@ mod hop;
 mod leaf;
 mod mesh;
 mod post;
+mod request;
 mod soul;
 
 pub use adapter::{
@@ -65,6 +67,13 @@ pub use mesh::{
 pub use post::{
     post_grant_signing_bytes, post_soul, GunPostEdge, MeshPostGrant, MESH_REASON_POST,
     POST_GRANT_DOMAIN, POST_GRANT_SCOPE,
+};
+pub use request::{
+    accept_access_request, access_request_id, access_request_signing_bytes,
+    canonical_request_accessor, canonical_request_object, AccessRequest, AcceptedAccessRequest,
+    MembersAutoApprove, OwnerGrantRows, ACCESS_MESSAGE_MAX, ACCESS_REQUEST_DOMAIN,
+    ACCESS_REQUEST_ID_DOMAIN, ACCESS_SCOPE_READ, ACCESS_SCOPE_READ_POST, ACCESS_STATUS_PENDING,
+    ACCESS_STATUS_WITHDRAWN,
 };
 pub use soul::{
     acl_key, acl_principal_key, encode_key, GunNode, GunNodeKind, GunSoul, S3RCH_ACL, S3RCH_ITEMS,
