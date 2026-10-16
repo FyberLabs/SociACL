@@ -380,8 +380,13 @@ pub fn verify_item_auth(
     sea::verify_sea(owner_pub, &message, signature)
 }
 
+/// 32 bytes of lowercase hex. The same check account mint uses.
+pub(crate) fn lane_id_well_formed(lane_id: &str) -> bool {
+    lane_id.len() == 64 && crate::hexutil::decode_hex(lane_id).is_ok()
+}
+
 fn require_lane(lane_id: &str) -> Result<(), EncDiscError> {
-    if lane_id.len() != 64 || crate::hexutil::decode_hex(lane_id).is_err() {
+    if !lane_id_well_formed(lane_id) {
         return Err(EncDiscError::BadLane);
     }
     Ok(())

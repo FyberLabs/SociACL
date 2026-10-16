@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Encrypted-discovery reference slice: account key, blinded rows, presenter binding"
+description = "Encrypted-discovery reference slice: account key, blinded rows, presenter binding, inbox admission"
 
 [features]
 # Caller-chosen nonce for the group-epoch wrap. Off in production:

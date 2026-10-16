@@ -40,6 +40,7 @@ node --experimental-strip-types --test --experimental-test-coverage \
   typescript/tests/*.js \
   typescript/tests/test_encdisc_vectors.ts \
   typescript/tests/test_presentation.ts \
+  typescript/tests/test_inbox.ts \
   > target/coverage/typescript-report.txt 2>&1 || {
   cat target/coverage/typescript-report.txt
   exit 1

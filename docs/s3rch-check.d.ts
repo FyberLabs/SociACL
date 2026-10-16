@@ -10,7 +10,7 @@
  *   crates/sociacl-gun — plaintext MeshSeeGrant Check
  *   crates/sociacl-encdisc — encrypted-discovery slice
  *     (account SEA key, enrollment, wrap edge, canonical ids,
- *      blinded rows, presenter binding)
+ *      blinded rows, presenter binding, inbox admission)
  *
  * CHECK(see, object, accessor) at now.
  *   object   = GunFeedNode | held claim id | later opaque post/room
@@ -28,9 +28,9 @@
  * docs/encrypted-discovery.md. sociacl-gun evaluates plaintext see
  * grants and direct same-group / named-circle edges. It does not
  * evaluate a wrap. sociacl-encdisc implements the account key, the
- * wrap edge, the canonical ids, blinded rows, and checkPresentedGrant.
- * It does not run inbox admission, epoch publication, rotation, or
- * migration.
+ * wrap edge, the canonical ids, blinded rows, checkPresentedGrant,
+ * and inbox admission. It does not run epoch publication, rotation,
+ * migration, or a shard-close watermark.
  * SEA priv and epriv never go on Gun.
  */
 
@@ -404,8 +404,9 @@ export function decodeHop(bytes: Uint8Array): HopFactor;
 /* sociacl-gun evaluates plaintext MeshSeeGrant rows and direct              */
 /* same-group / named-circle edges. It does not evaluate a wrap.             */
 /* sociacl-encdisc implements the account key, the wrap edge, the canonical   */
-/* ids, blinded rows, and checkPresentedGrant. It does not run admission,     */
-/* epoch publication, rotation, or migration. A wrap is not a grant.          */
+/* ids, blinded rows, checkPresentedGrant, and inbox admission. It does not   */
+/* run epoch publication, rotation, migration, or a shard-close watermark.    */
+/* A wrap is not a grant. An inbox append is not a grant.                     */
 /* SEA priv and epriv never go on Gun.                                        */
 /* same-group and named-circle: hopcap 1, jointly stated, no inheritance.    */
 /* -------------------------------------------------------------------------- */
@@ -606,7 +607,8 @@ export type InboxEntryBody = {
 /**
  * SHA-256 of the canonical bytes below, as lowercase hex
  * (64 chars). Not a hex encoding of the raw body. Does not mint.
- * crates/sociacl-encdisc runs this hash. It does not admit the row.
+ * crates/sociacl-encdisc runs this hash. The hash does not admit
+ * the row. Admission is filterInboxAppend.
  *
  * Canonical bytes are the concatenation, for each field in
  * order, of a uint32 little-endian length and then the UTF-8
@@ -665,6 +667,7 @@ export type BlindedGrantRow = {
  * public lane stays content-addressed and does not carry
  * writerPub. A replicated public row is not admitted until
  * this verifier runs filterInboxAppend and records entryId.
+ * A body that no longer hashes to that entryId is not admitted.
  * Not a grant.
  */
 export type InboxEnvelope = {
@@ -679,8 +682,10 @@ export type InboxEnvelope = {
 /**
  * Exactly one private lane per reader account. Not a Check object.
  * Not a shared bucket. Not one lane per device, sender, or epoch.
- * laneId is not the plaintext accessor id. Scanning it is not Check
- * and does not mint.
+ * laneId is 32 bytes, lowercase hex, chosen when the account
+ * key is minted. It is not the plaintext accessor id. A shorter
+ * string, uppercase hex, or any other shape is rejected at
+ * registration. Scanning it is not Check and does not mint.
  */
 export type RecipientInbox = {
   accessor: AccessorId;
@@ -1494,7 +1499,9 @@ export function settledKeyOpen(
  * Dedup by entryId. This is the lane scan. A per-device cursor
  * is not part of this contract: the visible row has no device
  * id, and opening ciphertext to learn one does not yield a
- * lossless cursor. Not a second lane. Not a grant.
+ * lossless cursor. crates/sociacl-encdisc rescans the whole shard.
+ * A shard-close watermark is not implemented. Not a second lane.
+ * Not a grant.
  */
 export type DailyShardScan = {
   laneId: string;
@@ -1603,9 +1610,22 @@ declare const writerChannelInstances: WeakSet<AuthenticatedWriterChannel>;
  * AuthenticatedPresenterChannel: ECMAScript #channelBrand,
  * module WeakSet, frozen writer and writerPub. Not a grant.
  * Not a writer pub on the stored row.
+ * The constructor is private. openWithPossession mints a value
+ * only after `signature` verifies under writerPub. Signed bytes,
+ * length-prefixed:
+ * 1. "s3rch-writer-channel-v1"
+ * 2. writer
+ * A caller who knows writerPub and not the private key cannot
+ * mint. A forbidden writer name is the same reserved list as
+ * hop_forbidden.
  */
 export class AuthenticatedWriterChannel {
   private constructor(writer: AccessorId, writerPub: string);
+  static openWithPossession(
+    writer: AccessorId,
+    writerPub: string,
+    signature: string,
+  ): AuthenticatedWriterChannel;
   readonly writer: AccessorId;
   readonly writerPub: string;
   readonly #channelBrand: typeof writerChannelBrand;
@@ -1693,6 +1713,12 @@ export type InboxAdmission = {
 export type InboxAppendResult = {
   decision: InboxWriteDecision;
   state: VerifierAdmissionState;
+  /**
+   * Writer id the accepting relay learned. Set only when
+   * allowAppend is true. Not a field of the stored row. A peer
+   * that only replicates the row does not receive this.
+   */
+  learnedWriter?: AccessorId;
 };
 
 export type InboxWriteDecision = {
@@ -1711,7 +1737,7 @@ export type InboxWriteDecision = {
 };
 
 /**
- * Spec signature. The reference crate does not run this.
+ * crates/sociacl-encdisc runs this. An append is not a grant.
  * public-filtered is the default: any writer may append.
  * state is the verifier's challenges, issuers, replay set,
  * known senders, per-sender quotas, and the one lane capacity.
@@ -1760,7 +1786,7 @@ export function filterInboxAppend(
   state: VerifierAdmissionState,
   now: number,
   enrollment: VerifierEnrollmentState,
-  writerAuth: WriterAppendAuth,
+  writerAuth?: WriterAppendAuth,
   admission?: InboxAdmission,
 ): InboxAppendResult;
 

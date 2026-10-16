@@ -1,0 +1,100 @@
+{
+  "encoding": "uint32-le-length-prefixed-utf8",
+  "hash": "sha256-lowercase-hex",
+  "maxEntryBytes": 65536,
+  "perDeviceCursor": false,
+  "shardCloseWatermark": false,
+  "notes": [
+    "entryId is SHA-256 of the whole canonical entry: laneId, ciphertext, commitment, and wrap.",
+    "A per-device cursor is not a field of the row or of this scan.",
+    "A shard-close watermark is not in this vector. The scan reads the whole shard and dedups by entryId.",
+    "The relay that accepts an append learns the writer id. The stored row has no writerPub.",
+    "An append and an opened wrap never grant. s3r.ch does not import sociacl-encdisc."
+  ],
+  "bodies": [
+    {
+      "name": "plain",
+      "laneId": "05e57cbbd329896b1f6a2b13ce15cda256ed2fc854b3fb2edadd08933448e385",
+      "grantCiphertext": "ct-1",
+      "commitment": "ae91fbe4909bbb7764797dcc6c8bca4ded3cedd03d9e97d78be9182758bb6ab9",
+      "wrap": null,
+      "entryId": "8361e31d66576ee89e16e1a5c607fb5508e67f8f91b1ee53942b2707cf025268",
+      "encodedLen": 205
+    },
+    {
+      "name": "other-ciphertext",
+      "laneId": "05e57cbbd329896b1f6a2b13ce15cda256ed2fc854b3fb2edadd08933448e385",
+      "grantCiphertext": "ct-2",
+      "commitment": "ae91fbe4909bbb7764797dcc6c8bca4ded3cedd03d9e97d78be9182758bb6ab9",
+      "wrap": null,
+      "entryId": "4b7a476af5b199fbe8d2ebe4b389b793f39e04f06d88d050e039283976d850a3",
+      "encodedLen": 205
+    },
+    {
+      "name": "other-commitment",
+      "laneId": "05e57cbbd329896b1f6a2b13ce15cda256ed2fc854b3fb2edadd08933448e385",
+      "grantCiphertext": "ct-1",
+      "commitment": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "wrap": null,
+      "entryId": "d237aa9ecc8b6b0c13a5803d4d1f76087552c43dc207b257d80bc5910c96a6b0",
+      "encodedLen": 205
+    },
+    {
+      "name": "other-wrap",
+      "laneId": "05e57cbbd329896b1f6a2b13ce15cda256ed2fc854b3fb2edadd08933448e385",
+      "grantCiphertext": "ct-1",
+      "commitment": "ae91fbe4909bbb7764797dcc6c8bca4ded3cedd03d9e97d78be9182758bb6ab9",
+      "wrap": {
+        "scope": "item-dek",
+        "epoch": 3,
+        "target": "reader-epub",
+        "targetId": "reader-epub",
+        "object": "s3rch/items/post",
+        "revisionId": "abababababababababababababababababababababababababababababababab",
+        "wrappedKey": "aa"
+      },
+      "entryId": "9aeb321682696b5216673a8639dc3ef904dfdfb3817ef8f70836600db77f98e1",
+      "encodedLen": 318
+    }
+  ],
+  "pow": {
+    "domain": "s3rch-inbox-pow-v1",
+    "nonce": "pow-nonce-a",
+    "entryId": "8361e31d66576ee89e16e1a5c607fb5508e67f8f91b1ee53942b2707cf025268",
+    "solution": "2",
+    "weakSolution": "0",
+    "difficulty": 8,
+    "sha256": "00525aab3f2679efe9e7fc171fabc9c3fb62c0997d0b5e46dfab0fd99d4ec069",
+    "encodedLen": 110
+  },
+  "stamp": {
+    "domain": "s3rch-inbox-stamp-v1",
+    "entryId": "8361e31d66576ee89e16e1a5c607fb5508e67f8f91b1ee53942b2707cf025268",
+    "sha256": "1ac8d06466b2974cfdf02368d7967b23e4521214f33065b287d6c6a628b673c5",
+    "encodedLen": 92
+  },
+  "writerAppend": {
+    "domain": "s3rch-writer-append-v1",
+    "entryId": "8361e31d66576ee89e16e1a5c607fb5508e67f8f91b1ee53942b2707cf025268",
+    "sha256": "53d3fbaf3b7fd5fe9516c035bd674ba9163e9e74b6b5574a0de31cb64efe0b22",
+    "encodedLen": 94,
+    "bareSha256": "f8d88c18689a02157fc47134a558286baa46b9773c569c96f9c9666707b818de",
+    "concatenatedSha256": "1a07d40b7c7a99ac1a387f4590cdc39f506929627646d4487cac45e0c95a4076"
+  },
+  "shard": {
+    "day": "2026-10-16",
+    "seen": [
+      "8361e31d66576ee89e16e1a5c607fb5508e67f8f91b1ee53942b2707cf025268"
+    ],
+    "shard": [
+      "8361e31d66576ee89e16e1a5c607fb5508e67f8f91b1ee53942b2707cf025268",
+      "4b7a476af5b199fbe8d2ebe4b389b793f39e04f06d88d050e039283976d850a3",
+      "4b7a476af5b199fbe8d2ebe4b389b793f39e04f06d88d050e039283976d850a3",
+      "d237aa9ecc8b6b0c13a5803d4d1f76087552c43dc207b257d80bc5910c96a6b0"
+    ],
+    "fresh": [
+      "4b7a476af5b199fbe8d2ebe4b389b793f39e04f06d88d050e039283976d850a3",
+      "d237aa9ecc8b6b0c13a5803d4d1f76087552c43dc207b257d80bc5910c96a6b0"
+    ]
+  }
+}

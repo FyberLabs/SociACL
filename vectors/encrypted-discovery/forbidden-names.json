@@ -1,0 +1,32 @@
+{
+  "exact": [
+    "lightiff",
+    "light-iff",
+    "light_iff",
+    "field-iff",
+    "fieldiff",
+    "field_iff",
+    "iff",
+    "waveform",
+    "itar",
+    "saas",
+    "flash",
+    "ping",
+    "nearby",
+    "loud",
+    "silence"
+  ],
+  "contains": [
+    "lightiff",
+    "light-iff",
+    "light_iff",
+    "itar"
+  ],
+  "possession": {
+    "writer": "0xalice",
+    "writerPub": "YP7UuiVanTHJYet0xjVtaMBJuJI7Yfps5mliLmDyn7Y.eQP-EAi4vJmkGunpVii8ZPLxsgwtfp9Rd6PClNRGIpk",
+    "signature": "a3ad008e9bf8673ee39eae59db4bfe6845b409fb124183e53e4a5343f39542e024eb2abd905e187c79d46af4a55e6e9d722d6be70b4338a69cd7b503f4e5d8d9",
+    "sha256": "905478d3ae2e2d996fbbc7496cf075aedcd90c408a530449cfc69896301b19b6",
+    "encodedLen": 38
+  }
+}

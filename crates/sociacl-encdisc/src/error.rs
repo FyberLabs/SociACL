@@ -63,4 +63,6 @@ pub enum EncDiscError {
     DigestRejected,
     #[error("forbidden hop")]
     ForbiddenHop,
+    #[error("inbox append rejected")]
+    InboxRejected,
 }

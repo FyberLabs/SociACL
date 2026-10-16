@@ -203,33 +203,67 @@ fn closed_object(object: &str) -> Option<&'static str> {
     None
 }
 
+/// Reserved names shared with the TypeScript contract.
+///
+/// The list is `vectors/encrypted-discovery/forbidden-names.json`.
+/// Exact names match the whole trimmed lowercase string. `contains`
+/// matches a substring of that string. An empty name is not forbidden
+/// here; callers reject it on their own.
+const FORBIDDEN_NAMES: &str =
+    include_str!("../../../vectors/encrypted-discovery/forbidden-names.json");
+
+struct ForbiddenNames {
+    exact: Vec<String>,
+    contains: Vec<String>,
+}
+
+fn forbidden_names() -> &'static ForbiddenNames {
+    use std::sync::OnceLock;
+    static NAMES: OnceLock<ForbiddenNames> = OnceLock::new();
+    NAMES.get_or_init(|| ForbiddenNames {
+        exact: json_string_list(FORBIDDEN_NAMES, "exact"),
+        contains: json_string_list(FORBIDDEN_NAMES, "contains"),
+    })
+}
+
+fn json_string_list(document: &str, key: &str) -> Vec<String> {
+    let needle = format!("\"{key}\"");
+    let start = document
+        .find(&needle)
+        .unwrap_or_else(|| panic!("forbidden-names.json is missing {key}"));
+    let after_key = &document[start + needle.len()..];
+    let open = after_key
+        .find('[')
+        .unwrap_or_else(|| panic!("forbidden-names.json {key} is not an array"));
+    let body = &after_key[open + 1..];
+    let close = body
+        .find(']')
+        .unwrap_or_else(|| panic!("forbidden-names.json {key} is not closed"));
+    let mut out = Vec::new();
+    let mut rest = &body[..close];
+    while let Some(quote) = rest.find('"') {
+        let after = &rest[quote + 1..];
+        let end = after
+            .find('"')
+            .unwrap_or_else(|| panic!("forbidden-names.json has an open string"));
+        out.push(after[..end].to_string());
+        rest = &after[end + 1..];
+    }
+    out
+}
+
 /// Named channels this tree does not implement.
 pub fn hop_forbidden(name: &str) -> bool {
     let value = name.trim().to_ascii_lowercase();
     if value.is_empty() {
         return false;
     }
-    matches!(
-        value.as_str(),
-        "lightiff"
-            | "light-iff"
-            | "light_iff"
-            | "field-iff"
-            | "fieldiff"
-            | "field_iff"
-            | "iff"
-            | "waveform"
-            | "itar"
-            | "saas"
-            | "flash"
-            | "ping"
-            | "nearby"
-            | "loud"
-            | "silence"
-    ) || value.contains("lightiff")
-        || value.contains("light-iff")
-        || value.contains("light_iff")
-        || value.contains("itar")
+    let names = forbidden_names();
+    names.exact.iter().any(|item| item == &value)
+        || names
+            .contains
+            .iter()
+            .any(|item| value.contains(item.as_str()))
 }
 
 /// Optional hop. Bytes or a channel name. Never an allow by itself.
@@ -254,4 +288,30 @@ pub struct HandoffHint {
     pub target: String,
     pub verb: Option<String>,
     pub context: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::hop_forbidden;
+
+    #[test]
+    fn forbidden_names_follow_the_shared_vector() {
+        let names = super::forbidden_names();
+        assert!(names.exact.len() >= 15);
+        assert!(names.contains.len() >= 4);
+        for name in &names.exact {
+            assert!(hop_forbidden(name), "{name}");
+            assert!(hop_forbidden(&name.to_ascii_uppercase()), "{name}");
+        }
+        for needle in &names.contains {
+            assert!(hop_forbidden(&format!("zz{needle}zz")), "{needle}");
+        }
+        assert!(hop_forbidden(" Flash "));
+        assert!(hop_forbidden("ITAR"));
+        assert!(!hop_forbidden(""));
+        assert!(!hop_forbidden("   "));
+        assert!(!hop_forbidden("0xbob"));
+        assert!(!hop_forbidden("diff"));
+        assert!(!hop_forbidden("field-iff-extra"));
+    }
 }
