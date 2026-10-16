@@ -13,6 +13,9 @@
 //! grant. It does not add a Gun-only verb and it does not fork the
 //! locked s3r.ch graph.
 //!
+//! `same-group` and `named-circle` are direct edges on the mesh
+//! graph. Hopcap is 1. A hop, a hint, or a wrap never mints.
+//!
 //! s3r.ch copies [docs/s3rch-check.d.ts](../../docs/s3rch-check.d.ts)
 //! and runs light Check in the browser. It does not import this crate.
 //! The Gun adapter surface for that product is Check + `delegate`
@@ -26,6 +29,7 @@
 mod adapter;
 mod error;
 mod feed;
+mod group;
 mod hint;
 mod hop;
 mod leaf;
@@ -43,6 +47,10 @@ pub use feed::{
     from_gun_node, has_held_claim_prefix, item_key, to_gun_node, FeedItem, FeedMeta, FeedSource,
     FeedTab, GunFeedNode, GunUserNode, IdentityClaimKind, IdentitySeeGrant, OffGraphKind,
     HELD_CLAIM_PREFIXES,
+};
+pub use group::{
+    membership_soul, object_set_soul, DecodedGroupPayload, GroupPredicate, GroupPresentation,
+    GroupSnapshotMember, GroupSnapshotObjectSet, MeshMembership, ObjectSetName, PresentedGroup,
 };
 pub use hint::{HandoffHint, MAGIC as HINT_MAGIC, VERSION as HINT_VERSION};
 pub use hop::{accept_hop, accept_hop_bytes, decode_hop, HopFactor};

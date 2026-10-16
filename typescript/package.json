@@ -11,6 +11,13 @@
   "exports": {
     ".": "./src/index.js",
     "./gun": "./src/gun.js",
+    "./group": "./src/group.js",
     "./ir": "./src/ir.js"
+  },
+  "scripts": {
+    "typecheck": "tsc --strict --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3"
   }
 }

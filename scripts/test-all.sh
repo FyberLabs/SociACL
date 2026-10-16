@@ -44,3 +44,8 @@ PYTHONPATH=python python3 python/tests/test_verbs.py
 PYTHONPATH=python python3 python/tests/test_network.py
 
 node --test typescript/tests/*.js
+
+if [[ ! -d typescript/node_modules/typescript ]]; then
+  npm ci --prefix typescript --ignore-scripts
+fi
+npm run --prefix typescript typecheck

@@ -30,7 +30,7 @@ A Social Light hop can factor Check. It cannot mint. The consume contract names 
 
 Mesh see grants are Gun-native dest-ACL nodes under `s3rch/acl/<owner>/<object>/<accessor>`. They do not fork `items` or `users`. Each peer Checks its locally HAM-merged graph at now. Cancel is owner-only privilege-down and must be visible on the next Check after merge (no cached allow). Soul helpers: `aclKey`, `aclPrincipalKey`, `aclSoul`, `grantSoul` in [s3rch-check.d.ts](s3rch-check.d.ts).
 
-Wrapped-key grants, recipient-side discovery, rotation on revoke, and light-contract `same-group` / `named-circle` are specified in [encrypted-discovery.md](encrypted-discovery.md). That page is spec only. This crate still evaluates plaintext `MeshSeeGrant` rows. A wrap is not a grant. A hop, a hint, or a wrap never mints. SEA `priv` and `epriv` never go on Gun. SociACL runs no index. s3r.ch product draft: [FyberLabs/s3r.ch#108](https://github.com/FyberLabs/s3r.ch/pull/108). This repo does not edit s3r.ch.
+Wrapped-key grants, recipient-side discovery, and rotation on revoke are specified in [encrypted-discovery.md](encrypted-discovery.md). That part is spec only. This crate evaluates plaintext `MeshSeeGrant` rows and direct `same-group` / `named-circle` edges. A wrap is not a grant. A hop, a hint, or a wrap never mints. SEA `priv` and `epriv` never go on Gun. SociACL runs no index. s3r.ch product draft: [FyberLabs/s3r.ch#108](https://github.com/FyberLabs/s3r.ch/pull/108). This repo does not edit s3r.ch.
 
 Case C may Check a frozen bundle the way the rest of SociACL does. The client has no mint path for new Gun grants.
 
@@ -69,6 +69,23 @@ gun.get('s3rch').get('acl').get(aclPrincipalKey(owner))
 Arrays cannot live in Gun. Tags (and later indicators) are a comma-separated string on the wire.
 
 Graphs: public cache vs personal overlay vs later explicit share-into-mesh. Observing public traces is not dumping a private overlay.
+
+## Group and circle rows
+
+`same-group` and `named-circle` are direct dest-ACL rows. Hopcap is 1. An object names one set (`ObjectSetName`, its own `hamState`). A member has one `MeshMembership` in that set, with its own `hamState`. Both edges must be stated 1. One-sided membership is stored and is not a grant. Nested sets do not grant. `checkGroupSee` reads those edges. The owner still sees their object. A hop may factor a membership the graph already names. A hop, a hint, or a wrap never mints.
+
+A group presentation is allowed only when that check allows and the decoded payload is stated 1 with `now` in `[from, until)`. A live edge does not override a cancel or a closed window. A group object with no `PresentedGroup` fails closed. An ordinary see grant omits it and runs `checkSee`.
+
+A lower `hamState` does not hide a removal this replica has merged. Member `hamState` does not stand in for the object-set edge. `ownerOfSet` names the account that owns the set.
+
+Souls, under dest ACL, not grant souls and not Check objects:
+
+```
+s3rch/acl/<setOwner>/membership/<predicate>/<aclKey(setId)>/<accessor>
+s3rch/acl/<objectOwner>/object-set/edge/<aclKey(object)>
+```
+
+`GunFeedNode` and `GunUserNode` stay as they are.
 
 ## TypeScript consume contract
 

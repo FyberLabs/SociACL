@@ -158,11 +158,15 @@ struct MeshObject {
 /// Friend edges may be recorded and are never walked (hopcap 1).
 /// Mine overlay stays off this graph until an explicit share-into-mesh
 /// [`MeshSeeGraph::put_object`].
+///
+/// Group and circle rows live on this same graph. They do not fork
+/// items or users, and they are not see-grant souls.
 #[derive(Clone, Debug, Default)]
 pub struct MeshSeeGraph {
     objects: HashMap<String, MeshObject>,
     grants: HashMap<String, GunAclEdge>,
     friends: HashSet<(String, String)>,
+    pub(crate) groups: crate::group::GroupRows,
 }
 
 impl MeshSeeGraph {
@@ -294,6 +298,7 @@ impl MeshSeeGraph {
                 .entry(key.clone())
                 .or_insert_with(|| object.clone());
         }
+        self.groups.merge_from(&other.groups);
     }
 
     /// `CHECK(see, object, accessor)` at `now` on the locally merged
@@ -312,26 +317,10 @@ impl MeshSeeGraph {
         let hint = hint.cloned();
         let hop = hop.cloned();
 
-        if is_url_leaf(object) {
+        if let Some(reason) = closed_reason(object) {
             return MeshCheckResult {
                 allowed: false,
-                reason: MESH_REASON_URL_LEAF.into(),
-                hint,
-                hop,
-            };
-        }
-        if is_meta_object(object) {
-            return MeshCheckResult {
-                allowed: false,
-                reason: MESH_REASON_META.into(),
-                hint,
-                hop,
-            };
-        }
-        if is_acl_object(object) {
-            return MeshCheckResult {
-                allowed: false,
-                reason: MESH_REASON_ACL.into(),
+                reason: reason.into(),
                 hint,
                 hop,
             };
@@ -409,6 +398,11 @@ impl MeshSeeGraph {
         dest
     }
 
+    pub(crate) fn object_record(&self, object: &str) -> Option<(&str, &str)> {
+        self.lookup_object(object)
+            .map(|obj| (obj.id.as_str(), obj.owner.as_str()))
+    }
+
     fn lookup_object(&self, object: &str) -> Option<&MeshObject> {
         let object = object.trim();
         if let Some(found) = self.objects.get(&object_store_key(object)) {
@@ -452,6 +446,18 @@ fn item_soul_alias(a: &str, b: &str) -> bool {
     }
     GunSoul::s3rch_item(a).as_node_id().as_str() == b
         || GunSoul::s3rch_item(b).as_node_id().as_str() == a
+}
+
+pub(crate) fn closed_reason(object: &str) -> Option<&'static str> {
+    if is_url_leaf(object) {
+        Some(MESH_REASON_URL_LEAF)
+    } else if is_meta_object(object) {
+        Some(MESH_REASON_META)
+    } else if is_acl_object(object) {
+        Some(MESH_REASON_ACL)
+    } else {
+        None
+    }
 }
 
 fn is_url_leaf(object: &str) -> bool {

@@ -97,7 +97,7 @@ Reuse SociACL Social Light (`convention-badge` / `enrolled-station`, SLHP v1). D
 
 [encrypted-discovery.md](encrypted-discovery.md) is the spec. s3r.ch product draft: [FyberLabs/s3r.ch#108](https://github.com/FyberLabs/s3r.ch/pull/108) (`docs/encrypted-discovery.md` there). This repo does not edit s3r.ch.
 
-Copy the new names from [s3rch-check.d.ts](s3rch-check.d.ts) (`WrappedKey`, `BlindedGrantRow`, `MeshMembership`, `checkGroupSee`, `rotateOnRevoke`). The reference crate still evaluates plaintext `MeshSeeGrant` only. `GunFeedNode` and `GunUserNode` stay as they are. Do not `npm install sociacl`.
+Copy the new names from [s3rch-check.d.ts](s3rch-check.d.ts) (`WrappedKey`, `BlindedGrantRow`, `MeshMembership`, `checkGroupSee`, `rotateOnRevoke`). The reference crate evaluates plaintext `MeshSeeGrant` rows and direct `same-group` / `named-circle` edges (`checkGroupSee`). Wrapped keys stay spec. `GunFeedNode` and `GunUserNode` stay as they are. Do not `npm install sociacl`.
 
 A wrap of a DEK to a reader SEA `epub` is not a grant. SEA `priv` and `epriv` never go on Gun. Check must still pass. A hop, a hint, or a wrap never mints. SociACL decides who receives a wrap: only a principal the live grant or direct membership already names.
 

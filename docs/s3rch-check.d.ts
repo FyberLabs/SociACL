@@ -21,8 +21,9 @@
  *   same-group / named-circle = direct edges only; no transitive inheritance
  *
  * Wrapped keys, recipient-side discovery, rotation on revoke:
- * docs/encrypted-discovery.md. Spec only. The reference crate does
- * not evaluate these types yet. SEA priv and epriv never go on Gun.
+ * docs/encrypted-discovery.md. Those stay spec. The reference crate
+ * evaluates plaintext see grants and direct same-group / named-circle
+ * edges. SEA priv and epriv never go on Gun.
  */
 
 /** Fixed Gun root. */
@@ -389,10 +390,11 @@ export function acceptHop(hop: HopFactor): HopFactor;
 export function decodeHop(bytes: Uint8Array): HopFactor;
 
 /* -------------------------------------------------------------------------- */
-/* Wrapped keys, private rows, group predicates (spec)                        */
+/* Wrapped keys and private rows stay spec. Group edges are evaluated.       */
 /*                                                                            */
 /* docs/encrypted-discovery.md. Copy / re-type with the types above.          */
-/* The reference crate still evaluates plaintext MeshSeeGrant only.          */
+/* The reference crate evaluates plaintext MeshSeeGrant rows and direct      */
+/* same-group / named-circle edges. Wrapped keys stay spec.                  */
 /* A wrap is not a grant. SEA priv and epriv never go on Gun.                 */
 /* same-group and named-circle: hopcap 1, jointly stated, no inheritance.    */
 /* -------------------------------------------------------------------------- */
@@ -1768,6 +1770,8 @@ export type GroupSeeGraph = SeeGraph & {
 
 /**
  * CHECK(see) when the object names same-group or named-circle.
+ * The reference crate evaluates this on plaintext mesh rows.
+ * It does not read a wrapped key.
  * Hopcap 1. Direct jointly stated edge only.
  * No transitive inheritance.
  * Both the object-set edge and the membership edge must be stated 1.
