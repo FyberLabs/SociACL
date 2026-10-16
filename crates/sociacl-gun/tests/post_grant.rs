@@ -436,6 +436,70 @@ fn check_post_uses_the_current_owners_rows() {
     assert_eq!(got.reason, MESH_REASON_POST);
 }
 
+#[test]
+fn an_out_of_range_post_integer_does_not_restore_a_cancel() {
+    let mut graph = MeshSeeGraph::new();
+    graph.put_object("room:alpha", "0xalice");
+    graph
+        .state_see_grant("0xalice", MeshSeeGrant::live("room:alpha", "0xbob", 0, 80))
+        .unwrap();
+    graph
+        .state_post_grant("0xalice", MeshPostGrant::live("room:alpha", "0xbob", 0, 80))
+        .unwrap();
+    graph
+        .unstate_post_grant("0xalice", "0xbob", "room:alpha")
+        .unwrap();
+    graph.merge_post_edge(GunPostEdge::new(
+        "0xalice",
+        MeshPostGrant::live("room:alpha", "0xbob", 0, 80),
+        u64::MAX,
+    ));
+    let past_safe = (1_u64 << 53) - 1;
+    graph.merge_post_edge(GunPostEdge::new(
+        "0xalice",
+        MeshPostGrant {
+            object: "room:alpha".into(),
+            accessor: "0xbob".into(),
+            from: Timestamp(past_safe + 1),
+            until: Timestamp(past_safe + 2),
+            stated: 1,
+        },
+        9,
+    ));
+    let got = graph.check_post("room:alpha", "0xbob", Timestamp(10), None, None);
+    assert!(!got.allowed, "{}", got.reason);
+    assert_eq!(got.reason, MESH_REASON_CANCELLED);
+}
+
+#[test]
+fn a_raw_id_and_its_item_soul_share_one_post_row() {
+    let mut graph = MeshSeeGraph::new();
+    let raw = "room:alpha";
+    let soul = "s3rch/items/room:alpha";
+    graph.put_object(raw, "0xalice");
+    assert_eq!(graph.owner_of(soul), Some("0xalice"));
+    graph
+        .state_see_grant("0xalice", MeshSeeGrant::live(raw, "0xbob", 0, 80))
+        .unwrap();
+    graph
+        .state_post_grant("0xalice", MeshPostGrant::live(raw, "0xbob", 0, 80))
+        .unwrap();
+    graph
+        .state_post_grant(
+            "0xalice",
+            MeshPostGrant::live(soul, "s3rch/users/0xbob", 0, 80),
+        )
+        .unwrap();
+    graph.unstate_post_grant("0xalice", "0xbob", soul).unwrap();
+    for object in [raw, soul] {
+        let got = graph.check_post(object, "s3rch/users/0xbob", Timestamp(10), None, None);
+        assert!(!got.allowed, "{object} {}", got.reason);
+        assert_eq!(got.reason, MESH_REASON_CANCELLED, "{object}");
+    }
+    assert!(graph.post_edge(raw, "0xbob").unwrap().grant.stated != 1);
+    assert!(graph.post_edge(soul, "s3rch/users/0xbob").is_some());
+}
+
 fn hex(bytes: &[u8]) -> String {
     const HEX: &[u8; 16] = b"0123456789abcdef";
     let mut out = String::with_capacity(bytes.len() * 2);

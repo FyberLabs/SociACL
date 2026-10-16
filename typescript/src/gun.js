@@ -192,35 +192,39 @@ export class MemorySeeAcl {
   }
 
   stateSeeGrant(owner, grant) {
-    const key = `${owner}\0${grant.claimId ?? grant.object}\0${grant.accessor}`;
-    this.grants.set(key, { ...grant, stated: 1 });
+    const object = grant.claimId ?? grant.object;
+    const key = postGrantKey(owner, object, grant.accessor);
+    this.grants.set(key, { ...grant, stated: 1, owner });
   }
 
   unstateSeeGrant(owner, accessor, object) {
-    const key = `${owner}\0${object}\0${accessor}`;
+    const key = postGrantKey(owner, object, accessor);
     const prev = this.grants.get(key);
     if (prev) this.grants.set(key, { ...prev, stated: 0, hamState: (prev.hamState ?? 0) + 1 });
   }
 
   seeGrant(object, accessor) {
-    for (const grant of this.grants.values()) {
-      const id = grant.claimId ?? grant.object;
-      if (id !== object || grant.accessor !== accessor) continue;
-      const owner = this.ownerOf(object) ?? "";
-      return {
-        soul: grantSoul(owner, object, accessor),
-        owner,
-        hamState: grant.hamState ?? 1,
-        grant: {
-          object: id,
-          accessor: grant.accessor,
-          from: grant.from,
-          until: grant.until,
-          stated: grant.stated === 0 ? 0 : 1,
-        },
-      };
+    const ownerNow = this.ownerOf(object);
+    if (!ownerNow) return undefined;
+    const grant = this.grants.get(postGrantKey(ownerNow, object, accessor));
+    const grantOwner = grant?.owner ?? "";
+    if (!grant || !grantOwner) return undefined;
+    if (postGrantKey(grantOwner, object, grant.accessor) !== postGrantKey(ownerNow, object, accessor)) {
+      return undefined;
     }
-    return undefined;
+    const id = grant.claimId ?? grant.object;
+    return {
+      soul: grantSoul(grantOwner, id, grant.accessor),
+      owner: grantOwner,
+      hamState: grant.hamState ?? 1,
+      grant: {
+        object: id,
+        accessor: grant.accessor,
+        from: grant.from,
+        until: grant.until,
+        stated: grant.stated === 0 ? 0 : 1,
+      },
+    };
   }
 
   postGrant(object, accessor) {

@@ -241,13 +241,26 @@ fn push_str(buf: &mut Vec<u8>, value: &str) {
     buf.extend_from_slice(&bytes[..usize::try_from(len).unwrap_or(bytes.len())]);
 }
 
+fn post_row_in_range(edge: &GunPostEdge) -> bool {
+    edge.grant.from.0 <= JS_SAFE_INTEGER_MAX
+        && edge.grant.until.0 <= JS_SAFE_INTEGER_MAX
+        && edge.ham_state <= JS_SAFE_INTEGER_MAX
+}
+
+fn same_post_row(edge: &GunPostEdge, object: &str, accessor: &str, owner: &str) -> bool {
+    edge.grant.names_object(object)
+        && edge.grant.names_accessor(accessor)
+        && acl_principal_key(&edge.owner) == acl_principal_key(owner)
+}
+
 impl MeshSeeGraph {
     pub fn post_grants(&self, object: &str) -> Vec<&MeshPostGrant> {
         let owner = self.owner_of(object).unwrap_or("");
         self.posts
             .values()
             .filter(|edge| {
-                edge.grant.names_object(object)
+                post_row_in_range(edge)
+                    && edge.grant.names_object(object)
                     && edge.grant.is_stated()
                     && acl_principal_key(&edge.owner) == acl_principal_key(owner)
             })
@@ -257,11 +270,25 @@ impl MeshSeeGraph {
 
     pub fn post_edge(&self, object: &str, accessor: &str) -> Option<&GunPostEdge> {
         let owner = self.owner_of(object).unwrap_or("");
-        self.posts.values().find(|edge| {
-            edge.grant.names_object(object)
-                && edge.grant.names_accessor(accessor)
-                && acl_principal_key(&edge.owner) == acl_principal_key(owner)
-        })
+        self.posts
+            .values()
+            .find(|edge| post_row_in_range(edge) && same_post_row(edge, object, accessor, owner))
+    }
+
+    fn canonical_post_object(&self, object: &str) -> String {
+        self.object_record(object)
+            .map(|(id, _)| id.to_string())
+            .unwrap_or_else(|| object.trim().to_string())
+    }
+
+    /// In-range rows that name this object, accessor, and owner, folded
+    /// with the post HAM rule. A raw id and its item soul count once.
+    fn folded_post(&self, object: &str, accessor: &str, owner: &str) -> Option<GunPostEdge> {
+        self.posts
+            .values()
+            .filter(|edge| post_row_in_range(edge) && same_post_row(edge, object, accessor, owner))
+            .cloned()
+            .reduce(|left, right| left.ham_merge(right))
     }
 
     /// Owner-only. Writes a live post grant. Does not write a see grant.
@@ -271,22 +298,26 @@ impl MeshSeeGraph {
         grant: MeshPostGrant,
     ) -> Result<(), GunError> {
         let owner = owner.as_ref().trim();
-        let object_owner = self
-            .owner_of(&grant.object)
+        let (stored_id, object_owner) = self
+            .object_record(&grant.object)
+            .map(|(id, object_owner)| (id.to_string(), object_owner.to_string()))
             .ok_or(GunError::ObjectNotInGraph)?;
-        if acl_principal_key(object_owner) != acl_principal_key(owner) {
+        if acl_principal_key(&object_owner) != acl_principal_key(owner) {
             return Err(GunError::AclOwnerOnly);
         }
         let mut grant = grant;
+        grant.object = stored_id;
         grant.stated = 1;
-        let key = post_soul(owner, &grant.object, &grant.accessor)
-            .as_str()
-            .to_string();
+        if grant.from.0 > JS_SAFE_INTEGER_MAX || grant.until.0 > JS_SAFE_INTEGER_MAX {
+            return Err(GunError::PostGrantField);
+        }
         let ham_state = self
-            .posts
-            .get(&key)
+            .folded_post(&grant.object, &grant.accessor, owner)
             .map(|edge| edge.ham_state.saturating_add(1))
             .unwrap_or(1);
+        if ham_state > JS_SAFE_INTEGER_MAX {
+            return Err(GunError::PostGrantField);
+        }
         self.merge_post_edge(GunPostEdge::new(owner, grant, ham_state));
         Ok(())
     }
@@ -301,39 +332,79 @@ impl MeshSeeGraph {
         let owner = owner.as_ref().trim();
         let object = object.as_ref().trim();
         let accessor = accessor.as_ref().trim();
-        let object_owner = self.owner_of(object).ok_or(GunError::ObjectNotInGraph)?;
-        if acl_principal_key(object_owner) != acl_principal_key(owner) {
+        let (stored_id, object_owner) = self
+            .object_record(object)
+            .map(|(id, object_owner)| (id.to_string(), object_owner.to_string()))
+            .ok_or(GunError::ObjectNotInGraph)?;
+        if acl_principal_key(&object_owner) != acl_principal_key(owner) {
             return Err(GunError::AclOwnerOnly);
         }
-        let existing = self.post_edge(object, accessor).cloned();
+        let existing = self.folded_post(&stored_id, accessor, owner);
         let mut grant = existing
             .as_ref()
             .map(|edge| edge.grant.clone())
             .unwrap_or_else(|| MeshPostGrant {
-                object: object.to_string(),
+                object: stored_id.clone(),
                 accessor: accessor.to_string(),
                 from: Timestamp(0),
                 until: Timestamp(0),
                 stated: 0,
             });
+        grant.object = stored_id;
         grant.stated = 0;
         let ham_state = existing
             .map(|edge| edge.ham_state.saturating_add(1))
             .unwrap_or(1);
+        if ham_state > JS_SAFE_INTEGER_MAX {
+            return Err(GunError::PostGrantField);
+        }
         self.merge_post_edge(GunPostEdge::new(owner, grant, ham_state));
         Ok(())
     }
 
     /// HAM-merge an incoming post node. The stored key is rebuilt
-    /// from owner, object, and accessor.
+    /// from owner, object, and accessor. A raw id and the item soul
+    /// `owner_of` already treats as that object land on one row.
+    /// An integer above the JavaScript safe range is dropped.
     pub fn merge_post_edge(&mut self, incoming: GunPostEdge) {
-        let incoming = incoming.canonical();
-        let key = incoming.soul.clone();
-        let merged = match self.posts.remove(&key) {
+        if !post_row_in_range(&incoming) {
+            return;
+        }
+        let mut incoming = incoming.canonical();
+        incoming.grant.object = self.canonical_post_object(&incoming.grant.object);
+        incoming = incoming.canonical();
+        let object = incoming.grant.object.clone();
+        let accessor = incoming.grant.accessor.clone();
+        let owner = incoming.owner.clone();
+        let keys: Vec<String> = self
+            .posts
+            .iter()
+            .filter(|(_, edge)| same_post_row(edge, &object, &accessor, &owner))
+            .map(|(key, _)| key.clone())
+            .collect();
+        let mut local: Option<GunPostEdge> = None;
+        for key in keys {
+            let Some(edge) = self.posts.remove(&key) else {
+                continue;
+            };
+            if !post_row_in_range(&edge) {
+                continue;
+            }
+            local = Some(match local {
+                Some(prev) => prev.ham_merge(edge),
+                None => edge,
+            });
+        }
+        let merged = match local {
             Some(local) => local.ham_merge(incoming),
             None => incoming,
         };
-        let merged = merged.canonical();
+        let mut merged = merged.canonical();
+        merged.grant.object = self.canonical_post_object(&merged.grant.object);
+        merged = merged.canonical();
+        if !post_row_in_range(&merged) {
+            return;
+        }
         let key = merged.soul.clone();
         self.posts.insert(key, merged);
     }

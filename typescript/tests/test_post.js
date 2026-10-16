@@ -243,6 +243,20 @@ test("light acl: post requires see, and cancel is the next check", () => {
   assert.equal(gunCheckPost(acl, object, "0xbob", 10).reason, "cancelled");
 });
 
+test("light acl see lookup keeps the writer and the canonical accessor", () => {
+  const acl = new MemorySeeAcl();
+  const object = "room:alpha";
+  acl.putObject(object, "0xalice");
+  applySeeGrant(acl, "0xalice", { object, accessor: "s3rch/users/0xbob", from: 0, until: 80 });
+  applyPostGrant(acl, "0xalice", { object, accessor: "s3rch/users/0xbob", from: 0, until: 80 });
+  assert.equal(gunCheckPost(acl, object, "0xbob", 10).reason, "post");
+  assert.equal(acl.seeGrant(object, "0xbob").owner, "0xalice");
+  acl.putObject(object, "0xcarol");
+  applyPostGrant(acl, "0xcarol", { object, accessor: "0xbob", from: 0, until: 80 });
+  assert.equal(gunCheckPost(acl, object, "0xbob", 10).reason, "missing");
+  assert.equal(acl.seeGrant(object, "s3rch/users/0xbob"), undefined);
+});
+
 test("light acl cancel finds the row when the accessor is a user soul", () => {
   const acl = new MemorySeeAcl();
   const object = "room:alpha";

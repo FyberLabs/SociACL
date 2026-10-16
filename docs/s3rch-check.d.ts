@@ -449,8 +449,9 @@ export type MeshPostGrant = {
  * (higher wins). At an equal hamState a cancellation wins, then
  * the narrower window, then the smaller postGrantSigningBytes.
  * Lookup uses the current object owner. A row whose stated, from,
- * until, or hamState is not a canonical non-negative integer is
- * dropped on merge.
+ * until, or hamState is not a canonical non-negative integer, or
+ * is above 9007199254740991, is dropped on merge. A raw id and its
+ * item soul share that one row when they already name one object.
  */
 export type GunPostEdge = {
   soul: string;
