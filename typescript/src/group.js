@@ -52,7 +52,7 @@
  *   soul: string,
  *   setOwner: string,
  * }} MembershipRecord
- * @typedef {{ name: ObjectSetName, soul: string, objectOwner: string }} ObjectSetRecord
+ * @typedef {{ name: ObjectSetName, soul: string, objectOwner: string, epoch: number }} ObjectSetRecord
  * @typedef {{ accessor: string, from: number, until: number, stated?: 0 | 1, object?: string, claimId?: string, hamState?: number, owner?: string }} SeeGrant
  */
 
@@ -458,6 +458,7 @@ export class MemoryGroupGraph {
   #writeObjectSet(objectId, objectOwner, predicate, setId, stated) {
     const key = aclKey(objectId);
     const prev = this.objectSets.get(key);
+    const epoch = stated === 0 ? (prev?.epoch ?? 0) + 1 : (prev?.epoch ?? 0);
     this.objectSets.set(key, {
       name: {
         object: objectId,
@@ -468,6 +469,7 @@ export class MemoryGroupGraph {
       },
       soul: objectSetSoul(objectOwner, objectId),
       objectOwner,
+      epoch,
     });
   }
 }
@@ -508,6 +510,10 @@ function mergeMembership(local, incoming) {
 
 /** @param {ObjectSetRecord} local @param {ObjectSetRecord} incoming */
 function mergeObjectSet(local, incoming) {
+  const incomingEpoch = incoming.epoch ?? 0;
+  const localEpoch = local.epoch ?? 0;
+  if (incomingEpoch > localEpoch) return structuredClone(incoming);
+  if (incomingEpoch < localEpoch) return structuredClone(local);
   if (incoming.name.hamState > local.name.hamState) return structuredClone(incoming);
   if (incoming.name.hamState < local.name.hamState) return structuredClone(local);
   const incomingDown = incoming.name.stated === 0;

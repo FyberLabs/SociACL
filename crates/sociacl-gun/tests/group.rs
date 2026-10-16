@@ -1520,3 +1520,66 @@ fn a_stated_zero_object_set_does_not_block_an_ordinary_see_grant() {
     assert!(ordinary.allowed);
     assert_eq!(ordinary.reason, MESH_REASON_DELEGATE);
 }
+
+#[test]
+fn unseen_object_set_clear_dominates_a_remote_edge_advanced_twice() {
+    let mut peer = group_graph();
+    peer.name_object_set("0xalice", "doc", GroupPredicate::SameGroup, "0xalice/labs")
+        .unwrap();
+    peer.name_object_set("0xalice", "doc", GroupPredicate::SameGroup, "0xalice/ops")
+        .unwrap();
+    let remote = peer.object_set("doc").unwrap();
+    assert_eq!(remote.stated, 1);
+    assert!(remote.ham_state >= 3);
+
+    let mut clearer = MeshSeeGraph::new();
+    clearer.put_object("doc", "0xalice");
+    clearer
+        .record_set_owner("0xalice", GroupPredicate::SameGroup, "0xalice/ops")
+        .unwrap();
+    state_both(
+        &mut clearer,
+        GroupPredicate::SameGroup,
+        "0xalice/ops",
+        "0xbob",
+    );
+    clearer.clear_object_set("0xalice", "doc").unwrap();
+    let tombstone = clearer.object_set("doc").unwrap();
+    assert_eq!(tombstone.stated, 0);
+    assert!(tombstone.ham_state < remote.ham_state);
+
+    let mut from_clear = clearer.clone();
+    from_clear.merge_from(&peer);
+    let mut from_peer = peer.clone();
+    from_peer.merge_from(&clearer);
+    for graph in [&from_clear, &from_peer] {
+        assert_eq!(graph.object_set("doc").unwrap().stated, 0);
+        let denied = graph.check_group_see(
+            GroupPredicate::SameGroup,
+            "doc",
+            "0xbob",
+            Timestamp(1),
+            None,
+            None,
+        );
+        assert!(!denied.allowed);
+        assert_eq!(denied.reason, MESH_REASON_CANCELLED);
+    }
+
+    from_clear
+        .name_object_set("0xalice", "doc", GroupPredicate::SameGroup, "0xalice/ops")
+        .unwrap();
+    assert_eq!(from_clear.object_set("doc").unwrap().stated, 1);
+    assert!(
+        from_clear
+            .check_group_see(
+                GroupPredicate::SameGroup,
+                "doc",
+                "0xbob",
+                Timestamp(1),
+                None,
+                None,
+            )
+            .allowed
+    );
+}

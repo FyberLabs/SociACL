@@ -218,10 +218,19 @@ pub(crate) struct ObjectSetRecord {
     /// Object owner encoded in `soul`. A merge drops the row when this
     /// does not match the owner this graph kept.
     object_owner: String,
+    /// A clear bumps this. It wins over a live edge that has not
+    /// observed the clear, whatever that edge's `ham_state` is.
+    epoch: u64,
 }
 
 impl ObjectSetRecord {
     fn merged(self, incoming: Self) -> Self {
+        if incoming.epoch > self.epoch {
+            return incoming;
+        }
+        if incoming.epoch < self.epoch {
+            return self;
+        }
         if incoming.name.ham_state > self.name.ham_state {
             return incoming;
         }
@@ -578,8 +587,9 @@ impl MeshSeeGraph {
         let existing = self.object_set_record(&object_id);
         let (predicate, set_id) = match existing {
             Some(record) => (record.name.predicate, record.name.set_id.clone()),
-            // The live edge has not arrived. A stated-0 tombstone keeps a
-            // later merge from installing that edge at the same state.
+            // The live edge has not arrived. The clear still bumps the
+            // cancel epoch, so a remote live revision that has not
+            // observed it does not win on ham alone.
             None => (GroupPredicate::SameGroup, String::new()),
         };
         self.write_object_set(&object_id, &object_owner, predicate, &set_id, 0);
@@ -829,12 +839,16 @@ impl MeshSeeGraph {
         stated: u8,
     ) {
         let key = object_set_key(object_id);
-        let ham_state = self
-            .groups
-            .object_sets
-            .get(&key)
+        let previous = self.groups.object_sets.get(&key);
+        let ham_state = previous
             .map(|r| r.name.ham_state.saturating_add(1))
             .unwrap_or(1);
+        let epoch = match previous {
+            Some(record) if stated == 0 => record.epoch.saturating_add(1),
+            Some(record) => record.epoch,
+            None if stated == 0 => 1,
+            None => 0,
+        };
         let record = ObjectSetRecord {
             name: ObjectSetName {
                 object: object_id.to_string(),
@@ -845,6 +859,7 @@ impl MeshSeeGraph {
             },
             soul: object_set_soul(object_owner, object_id),
             object_owner: object_owner.to_string(),
+            epoch,
         };
         self.groups.object_sets.insert(key, record);
     }

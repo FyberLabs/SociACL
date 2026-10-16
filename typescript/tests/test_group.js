@@ -498,3 +498,40 @@ test("a stated-0 object-set does not block an ordinary see grant", () => {
   assert.equal(ordinary.allowed, true);
   assert.equal(ordinary.reason, "delegate");
 });
+
+test("unseen object-set clear dominates a remote edge advanced twice", () => {
+  const peer = liveGraph();
+  peer.nameObjectSet("0xalice", "doc", "same-group", "0xalice/labs");
+  peer.nameObjectSet("0xalice", "doc", "same-group", "0xalice/ops");
+  assert.equal(peer.objectSet("doc")?.stated, 1);
+  assert.ok((peer.objectSet("doc")?.hamState ?? 0) >= 3);
+
+  const clearer = new MemoryGroupGraph();
+  clearer.putObject("doc", "0xalice");
+  clearer.recordSetOwner("0xalice", "same-group", "0xalice/ops");
+  stateBoth(clearer, "same-group", "0xalice/ops", "0xbob");
+  clearer.clearObjectSet("0xalice", "doc");
+  assert.equal(clearer.objectSet("doc")?.stated, 0);
+  assert.ok((clearer.objectSet("doc")?.hamState ?? 0) < (peer.objectSet("doc")?.hamState ?? 0));
+
+  const fromClear = new MemoryGroupGraph();
+  fromClear.putObject("doc", "0xalice");
+  fromClear.recordSetOwner("0xalice", "same-group", "0xalice/ops");
+  stateBoth(fromClear, "same-group", "0xalice/ops", "0xbob");
+  fromClear.clearObjectSet("0xalice", "doc");
+  fromClear.mergeFrom(peer);
+
+  const fromPeer = liveGraph();
+  fromPeer.nameObjectSet("0xalice", "doc", "same-group", "0xalice/labs");
+  fromPeer.nameObjectSet("0xalice", "doc", "same-group", "0xalice/ops");
+  fromPeer.mergeFrom(clearer);
+
+  for (const graph of [fromClear, fromPeer]) {
+    assert.equal(graph.objectSet("doc")?.stated, 0);
+    assert.equal(checkGroupSee(graph, "same-group", "doc", "0xbob", 1).reason, "cancelled");
+  }
+
+  fromClear.nameObjectSet("0xalice", "doc", "same-group", "0xalice/ops");
+  assert.equal(fromClear.objectSet("doc")?.stated, 1);
+  assert.equal(checkGroupSee(fromClear, "same-group", "doc", "0xbob", 1).allowed, true);
+});
