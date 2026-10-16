@@ -23,9 +23,11 @@ import {
   shardCloseWatermarkImplemented,
   shardScanUsesDeviceCursor,
 } from "../contract/inbox.ts";
+import { writerChannelSha256 } from "../contract/canonical.ts";
 import {
   AuthenticatedWriterChannel,
   writerChannelMatches,
+  writerNameForbidden,
 } from "../contract/writer.ts";
 import type { InboxEntryBody } from "../../docs/s3rch-check.js";
 
@@ -145,38 +147,74 @@ test("inbox vectors match the shared fixture", () => {
 });
 
 test("writer channel brand is unforgeable", () => {
-  const pub =
-    "YP7UuiVanTHJYet0xjVtaMBJuJI7Yfps5mliLmDyn7Y.eQP-EAi4vJmkGunpVii8ZPLxsgwtfp9Rd6PClNRGIpk";
-  const real = AuthenticatedWriterChannel.open("0xbob", pub);
+  const names = JSON.parse(
+    readFileSync(
+      new URL("../../vectors/encrypted-discovery/forbidden-names.json", import.meta.url),
+      "utf8",
+    ),
+  ) as {
+    exact: string[];
+    contains: string[];
+    possession: { writer: string; writerPub: string; signature: string; sha256: string };
+  };
+  const pub = names.possession.writerPub;
+  assert.equal(writerChannelSha256(names.possession.writer), names.possession.sha256);
+  const real = AuthenticatedWriterChannel.openWithPossession(
+    names.possession.writer,
+    pub,
+    names.possession.signature,
+  );
   assert.equal(real instanceof AuthenticatedWriterChannel, true);
   assert.equal(real.hasTransportBrand(), true);
   assert.equal(Object.isFrozen(real), true);
-  assert.equal(writerChannelMatches(real, "0xbob", pub), true);
+  assert.equal(writerChannelMatches(real, names.possession.writer, pub), true);
   assert.equal(writerChannelMatches(real, "0xcarol", pub), false);
-  assert.equal(writerChannelMatches(real, "0xbob", "other-pub"), false);
+  assert.equal(writerChannelMatches(real, names.possession.writer, "other-pub"), false);
   assert.throws(() => {
     (real as { writer: string }).writer = "0xcarol";
   });
 
   const literal = {
-    writer: "0xbob",
+    writer: names.possession.writer,
     writerPub: pub,
     hasTransportBrand() {
       return true;
     },
   };
   assert.equal(literal instanceof AuthenticatedWriterChannel, false);
-  assert.equal(writerChannelMatches(literal, "0xbob", pub), false);
+  assert.equal(writerChannelMatches(literal, names.possession.writer, pub), false);
 
   const copy = Object.assign(Object.create(AuthenticatedWriterChannel.prototype), {
-    writer: "0xbob",
+    writer: names.possession.writer,
     writerPub: pub,
   }) as AuthenticatedWriterChannel;
   assert.equal(copy instanceof AuthenticatedWriterChannel, true);
   assert.equal(copy.hasTransportBrand(), false);
-  assert.equal(writerChannelMatches(copy, "0xbob", pub), false);
-  assert.throws(() => AuthenticatedWriterChannel.open("", pub));
-  assert.throws(() => AuthenticatedWriterChannel.open("itar", pub));
-  assert.throws(() => AuthenticatedWriterChannel.open("lightiff", pub));
-  assert.throws(() => AuthenticatedWriterChannel.open("saas", pub));
+  assert.equal(writerChannelMatches(copy, names.possession.writer, pub), false);
+  assert.throws(() =>
+    AuthenticatedWriterChannel.openWithPossession("", pub, names.possession.signature),
+  );
+  assert.throws(() =>
+    AuthenticatedWriterChannel.openWithPossession(
+      names.possession.writer,
+      pub,
+      "11".repeat(64),
+    ),
+  );
+  assert.throws(() =>
+    AuthenticatedWriterChannel.openWithPossession("itar", pub, names.possession.signature),
+  );
+  for (const name of names.exact) {
+    assert.equal(writerNameForbidden(name), true, name);
+    assert.throws(() => AuthenticatedWriterChannel.openWithPossession(name, pub, "00"), name);
+  }
+  for (const needle of names.contains) {
+    const name = `zz${needle}zz`;
+    assert.equal(writerNameForbidden(name), true, name);
+  }
+  assert.equal(writerNameForbidden("diff"), false);
+  assert.equal(writerNameForbidden("field-iff-extra"), false);
+  assert.equal(writerNameForbidden("0xbob"), false);
+  assert.equal(writerNameForbidden(" Flash "), true);
+  assert.equal(writerNameForbidden("ITAR"), true);
 });

@@ -11,13 +11,13 @@ use sociacl_encdisc::{
     replicated_row_admitted, scan_daily_shard, seal_blinded_row, shard_close_watermark_implemented,
     shard_scan_uses_device_cursor, sign_sea, signature_covers_claimed_id,
     stored_row_reveals_writer, verify_inbox_envelope, wrap_item_dek_to_readers,
-    writer_append_bytes, writer_append_sha256, writer_from_stored_row, AccountSeaSecret,
-    AdmissionChallenge, AdmissionEvidence, AuthenticatedWriterChannel, BlindedGrantRow,
-    DailyShardScan, EncDiscError, EnrolledSeaPub, GrantCommitment, InboxAdmission,
-    InboxAppendResult, InboxEnvelope, InboxLane, InboxWriteFilter, InboxWriteHook,
-    InboxWritePolicy, ItemDek, NamedSet, ReaderInboxes, RecipientInbox, SenderQuota,
-    VerifierAdmissionState, WrappedKey, WriterAppendAuth, WriterAppendProof, DOMAIN_INBOX_POW,
-    DOMAIN_INBOX_STAMP, DOMAIN_WRITER_APPEND, INBOX_ENTRY_MAX_BYTES,
+    writer_append_bytes, writer_append_sha256, writer_channel_bytes, writer_channel_sha256,
+    writer_from_stored_row, AccountSeaSecret, AdmissionChallenge, AdmissionEvidence,
+    AuthenticatedWriterChannel, BlindedGrantRow, DailyShardScan, EncDiscError, EnrolledSeaPub,
+    GrantCommitment, InboxAdmission, InboxAppendResult, InboxEnvelope, InboxLane, InboxWriteFilter,
+    InboxWriteHook, InboxWritePolicy, ItemDek, NamedSet, ReaderInboxes, RecipientInbox,
+    SenderQuota, VerifierAdmissionState, WrappedKey, WriterAppendAuth, WriterAppendProof,
+    DOMAIN_INBOX_POW, DOMAIN_INBOX_STAMP, DOMAIN_WRITER_APPEND, INBOX_ENTRY_MAX_BYTES,
 };
 
 const FIXTURE: &str = include_str!("../../../vectors/encrypted-discovery/sea-fixture.json");
@@ -103,9 +103,7 @@ fn stamp(issuer: &str, signature: &str) -> InboxAdmission {
 }
 
 fn channel(secret: &AccountSeaSecret) -> WriterAppendAuth {
-    WriterAppendAuth::Channel(
-        AuthenticatedWriterChannel::open(secret.account(), secret.sea_pub()).unwrap(),
-    )
+    WriterAppendAuth::Channel(secret.writer_channel().unwrap())
 }
 
 fn signed(secret: &AccountSeaSecret, entry_id: &str) -> WriterAppendAuth {
@@ -200,6 +198,23 @@ fn one_lane_per_reader_and_not_per_device() {
         "s3rch/acl/0xalice/s3rch/items/post/0xbob"
     ));
     assert!(lane_id_is_opaque("0xalice", &phone.inbox().lane_id));
+    assert!(!lane_id_is_opaque("0xalice", "x"));
+    assert!(!lane_id_is_opaque("0xalice", &"ab".repeat(31)));
+    assert!(!lane_id_is_opaque("0xalice", &"AB".repeat(32)));
+    assert!(!lane_id_is_opaque(
+        "0xalice",
+        &format!("{}g", "ab".repeat(31))
+    ));
+    assert_eq!(
+        lanes
+            .admit(&RecipientInbox {
+                accessor: "0xcarol".to_string(),
+                lane_id: "x".to_string(),
+            })
+            .unwrap_err(),
+        EncDiscError::BadLane
+    );
+    assert_eq!(InboxLane::open("x").unwrap_err(), EncDiscError::BadLane);
     assert_eq!(
         lanes
             .admit(&RecipientInbox {
@@ -209,8 +224,68 @@ fn one_lane_per_reader_and_not_per_device() {
             .unwrap_err(),
         EncDiscError::InboxRejected
     );
-    assert!(AuthenticatedWriterChannel::open("saas", secret.sea_pub()).is_err());
-    assert!(AuthenticatedWriterChannel::open("lightiff", secret.sea_pub()).is_err());
+    assert!(AuthenticatedWriterChannel::open_with_possession(
+        "saas",
+        secret.sea_pub(),
+        &"11".repeat(64)
+    )
+    .is_err());
+    assert!(AuthenticatedWriterChannel::open_with_possession(
+        "lightiff",
+        secret.sea_pub(),
+        &"11".repeat(64)
+    )
+    .is_err());
+    assert!(AuthenticatedWriterChannel::open_with_possession(
+        secret.account(),
+        secret.sea_pub(),
+        &"11".repeat(64)
+    )
+    .is_err());
+    let names: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../vectors/encrypted-discovery/forbidden-names.json"
+    ))
+    .unwrap();
+    for name in names["exact"].as_array().unwrap() {
+        let name = name.as_str().unwrap();
+        assert!(
+            AuthenticatedWriterChannel::open_with_possession(name, secret.sea_pub(), "00").is_err(),
+            "{name}"
+        );
+    }
+    for needle in names["contains"].as_array().unwrap() {
+        let name = format!("zz{}zz", needle.as_str().unwrap());
+        assert!(
+            AuthenticatedWriterChannel::open_with_possession(&name, secret.sea_pub(), "00")
+                .is_err(),
+            "{name}"
+        );
+    }
+    let minted = secret.writer_channel().unwrap();
+    assert!(minted.has_transport_brand());
+    assert_eq!(minted.writer(), secret.account());
+    let possession = &names["possession"];
+    assert_eq!(
+        writer_channel_sha256(possession["writer"].as_str().unwrap()).unwrap(),
+        possession["sha256"].as_str().unwrap()
+    );
+    assert_eq!(
+        writer_channel_bytes(possession["writer"].as_str().unwrap())
+            .unwrap()
+            .len(),
+        possession["encodedLen"].as_u64().unwrap() as usize
+    );
+    assert_eq!(
+        secret.sign_writer_channel().unwrap(),
+        possession["signature"].as_str().unwrap()
+    );
+    let from_vector = AuthenticatedWriterChannel::open_with_possession(
+        possession["writer"].as_str().unwrap(),
+        possession["writerPub"].as_str().unwrap(),
+        possession["signature"].as_str().unwrap(),
+    )
+    .unwrap();
+    assert_eq!(from_vector.writer_pub(), secret.sea_pub());
 }
 
 #[test]
@@ -598,6 +673,18 @@ fn accepting_relay_learns_the_writer_and_a_replica_does_not() {
     .unwrap();
     assert_eq!(result.learned_writer(), Some("0xbob"));
     assert!(replicated_row_admitted(&desk.entry, &result.state));
+    let mut swapped_body = desk.entry.clone();
+    swapped_body.grant_ciphertext = "ct-other".to_string();
+    assert!(!replicated_row_admitted(&swapped_body, &result.state));
+    swapped_body = desk.entry.clone();
+    swapped_body.commitment.hash = HASH_B.to_string();
+    assert!(!replicated_row_admitted(&swapped_body, &result.state));
+    swapped_body = desk.entry.clone();
+    swapped_body.lane_id = "44".repeat(32);
+    assert!(!replicated_row_admitted(&swapped_body, &result.state));
+    swapped_body = desk.entry.clone();
+    swapped_body.entry_id = "cd".repeat(32);
+    assert!(!replicated_row_admitted(&swapped_body, &result.state));
     assert!(writer_from_stored_row(&desk.entry).is_none());
     assert!(!stored_row_reveals_writer(
         &desk.entry,
@@ -911,7 +998,8 @@ fn oversized_rows_are_a_local_spam_drop() {
         HASH_A,
         None,
     );
-    assert!(inbox_entry_bytes(&inbox_body_of(&huge)).unwrap().len() > INBOX_ENTRY_MAX_BYTES);
+    let mut unmatched = huge.clone();
+    unmatched.entry_id = "cd".repeat(32);
     let state = open_state(3, 3);
     let dropped = filter_inbox_append(
         &InboxWriteHook::default(),
@@ -925,6 +1013,18 @@ fn oversized_rows_are_a_local_spam_drop() {
     .unwrap();
     assert_eq!(dropped.decision.filter, InboxWriteFilter::Spam);
     assert_unchanged(&state, &dropped);
+    let swapped = filter_inbox_append(
+        &InboxWriteHook::default(),
+        &unmatched,
+        &state,
+        10,
+        &enroll(&desk),
+        Some(&channel(&desk.bob)),
+        Some(&pow("nonce-a", "0")),
+    )
+    .unwrap();
+    assert_eq!(swapped.decision.filter, InboxWriteFilter::Spam);
+    assert_unchanged(&state, &swapped);
 }
 
 #[test]
@@ -1164,8 +1264,20 @@ fn malformed_state_and_rows_fail_closed() {
         EncDiscError::RowRejected
     );
 
-    let wrong_pub =
-        AuthenticatedWriterChannel::open(desk.bob.account(), desk.reader.sea_pub()).unwrap();
+    let wrong_message = writer_channel_bytes(desk.bob.account()).unwrap();
+    let wrong_sig = sign_sea(desk.reader.local_priv(), &wrong_message).unwrap();
+    assert!(AuthenticatedWriterChannel::open_with_possession(
+        desk.bob.account(),
+        desk.bob.sea_pub(),
+        &wrong_sig,
+    )
+    .is_err());
+    let wrong_pub = AuthenticatedWriterChannel::open_with_possession(
+        desk.bob.account(),
+        desk.reader.sea_pub(),
+        &wrong_sig,
+    )
+    .unwrap();
     let state = VerifierAdmissionState {
         known_senders: vec![desk.bob.account().to_string()],
         lane_remaining: 2,

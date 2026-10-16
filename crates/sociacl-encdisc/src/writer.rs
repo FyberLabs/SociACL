@@ -2,17 +2,21 @@
 //!
 //! The writer id is an [`AuthenticatedWriterChannel`] or a signature
 //! over the length-prefixed fields `s3rch-writer-append-v1` and
-//! `entryId`. A bare accessor is not a writer. The brand matches the
-//! presenter channel: only [`AuthenticatedWriterChannel::open`]
-//! constructs the value. The TypeScript contract uses an ECMAScript
-//! private field and a module `WeakSet`.
+//! `entryId`. A bare accessor is not a writer. The channel constructor
+//! is private. [`AuthenticatedWriterChannel::open_with_possession`]
+//! mints one only after a signature over `s3rch-writer-channel-v1` and
+//! the writer id verifies under `writerPub`. Knowing the enrolled pub
+//! is not possession. The TypeScript contract uses an ECMAScript
+//! private field and a module `WeakSet`, and the same possession check.
 //!
-//! `InboxEnvelope.writerSignature` covers those same bytes. The relay
+//! `InboxEnvelope.writerSignature` covers the append bytes. The relay
 //! recomputes `entryId` and does not open the grant. A verified
 //! envelope is not a grant and is not an admitted append.
 
 use crate::account::AccountSeaSecret;
-use crate::canonical::{self, inbox_entry_id, writer_append_bytes, InboxEntryBody};
+use crate::canonical::{
+    self, inbox_entry_id, writer_append_bytes, writer_channel_bytes, InboxEntryBody,
+};
 use crate::error::EncDiscError;
 use crate::sea;
 
@@ -21,7 +25,10 @@ struct ChannelBrand {
     _private: (),
 }
 
-/// Transport-minted capability for an append. `open` is the only constructor.
+/// Transport-minted capability for an append.
+///
+/// The constructor is private. Callers mint with
+/// [`AuthenticatedWriterChannel::open_with_possession`].
 pub struct AuthenticatedWriterChannel {
     writer: String,
     writer_pub: String,
@@ -29,12 +36,22 @@ pub struct AuthenticatedWriterChannel {
 }
 
 impl AuthenticatedWriterChannel {
-    /// Mint a channel for one writer and that writer's SEA pub.
-    pub fn open(writer: &str, writer_pub: &str) -> Result<Self, EncDiscError> {
+    /// Mint after `signature` verifies under `writer_pub`.
+    ///
+    /// The signed bytes are the length-prefixed fields
+    /// `s3rch-writer-channel-v1` and `writer`. A signature under
+    /// another key, or over another writer id, does not mint.
+    pub fn open_with_possession(
+        writer: &str,
+        writer_pub: &str,
+        signature: &str,
+    ) -> Result<Self, EncDiscError> {
         if writer.is_empty() || crate::see::hop_forbidden(writer) {
             return Err(EncDiscError::ChannelRejected);
         }
         sea::parse_sea_point(writer_pub)?;
+        let message = writer_channel_bytes(writer)?;
+        sea::verify_sea(writer_pub, &message, signature)?;
         Ok(Self {
             writer: writer.to_string(),
             writer_pub: writer_pub.to_string(),
@@ -50,7 +67,7 @@ impl AuthenticatedWriterChannel {
         &self.writer_pub
     }
 
-    /// True only for a value `open` minted. The brand is not a public field.
+    /// True only for a value minted after a verified possession signature.
     pub fn has_transport_brand(&self) -> bool {
         let _ = &self.brand;
         true
@@ -92,6 +109,17 @@ pub struct InboxEnvelope {
 }
 
 impl AccountSeaSecret {
+    pub fn sign_writer_channel(&self) -> Result<String, EncDiscError> {
+        let message = writer_channel_bytes(self.account())?;
+        sea::sign_sea(self.local_priv(), &message)
+    }
+
+    /// Mint this account's channel. The signature is possession of `priv`.
+    pub fn writer_channel(&self) -> Result<AuthenticatedWriterChannel, EncDiscError> {
+        let signature = self.sign_writer_channel()?;
+        AuthenticatedWriterChannel::open_with_possession(self.account(), self.sea_pub(), &signature)
+    }
+
     pub fn sign_writer_append(&self, entry_id: &str) -> Result<String, EncDiscError> {
         let message = writer_append_bytes(entry_id)?;
         sea::sign_sea(self.local_priv(), &message)

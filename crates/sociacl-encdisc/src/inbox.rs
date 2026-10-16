@@ -1,8 +1,8 @@
 //! One private inbox lane per reader, and the write policy.
 //!
-//! Each account has one [`RecipientInbox`]. The lane id is an opaque
-//! soul. It is not the accessor id and not `grantSoul`. There is no
-//! second lane per device, sender, or epoch, and no shared bucket.
+//! Each account has one [`RecipientInbox`]. The lane id is 32 bytes of
+//! lowercase hex. It is not the accessor id and not `grantSoul`. There
+//! is no second lane per device, sender, or epoch, and no shared bucket.
 //!
 //! `entryId` is the hash of the whole canonical entry. A daily shard
 //! is a rescan of that same lane, then dedup by `entryId`. A per-device
@@ -13,8 +13,8 @@
 //! `public-filtered`. `named-writers` is the allowlist. The accepting
 //! relay learns the authenticated writer id for that `entryId`. The
 //! stored row has no writer pub. A peer that only replicates the row
-//! does not learn the writer, and that replica is not an admitted
-//! append until this verifier records the id.
+//! does not learn the writer. A replicated body is admitted only when
+//! this verifier recorded its id and the body still hashes to that id.
 //!
 //! An append is not a grant. An opened wrap is not a grant. Surviving
 //! rows still go through Check. This module does not set `allowed`.
@@ -22,8 +22,8 @@
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 
-use crate::account::{EnrolledSeaPub, RecipientInbox};
-use crate::canonical::{self, inbox_entry_bytes};
+use crate::account::{lane_id_well_formed, EnrolledSeaPub, RecipientInbox};
+use crate::canonical::{self, DOMAIN_INBOX};
 use crate::error::EncDiscError;
 use crate::grant::{row_entry_matches, BlindedGrantRow};
 use crate::see::hop_forbidden;
@@ -230,9 +230,10 @@ impl ReaderInboxes {
     }
 }
 
-/// True when `lane_id` is not the accessor and not a `grantSoul`.
+/// True when `lane_id` is 32 lowercase hex bytes, not the accessor,
+/// and not a `grantSoul`.
 pub fn lane_id_is_opaque(accessor: &str, lane_id: &str) -> bool {
-    if lane_id.is_empty() || lane_id == accessor || hop_forbidden(lane_id) {
+    if !lane_id_well_formed(lane_id) || lane_id == accessor || hop_forbidden(lane_id) {
         return false;
     }
     if lane_id == "s3rch/acl" || lane_id.starts_with("s3rch/acl/") {
@@ -250,7 +251,7 @@ pub struct InboxLane {
 
 impl InboxLane {
     pub fn open(lane_id: &str) -> Result<Self, EncDiscError> {
-        if lane_id.is_empty() || hop_forbidden(lane_id) {
+        if !lane_id_well_formed(lane_id) || hop_forbidden(lane_id) {
             return Err(EncDiscError::BadLane);
         }
         Ok(Self {
@@ -341,7 +342,7 @@ pub fn scan_daily_shard(
     rows: &[BlindedGrantRow],
 ) -> Result<ShardScan, EncDiscError> {
     require_utc_day(&scan.day)?;
-    if scan.lane_id.is_empty() || hop_forbidden(&scan.lane_id) {
+    if !lane_id_well_formed(&scan.lane_id) || hop_forbidden(&scan.lane_id) {
         return Err(EncDiscError::InboxRejected);
     }
     let mut seen = scan.seen.clone();
@@ -395,9 +396,20 @@ pub fn stored_row_reveals_writer(row: &BlindedGrantRow, writer: &str, writer_pub
         || (!writer_pub.is_empty() && blob.contains(writer_pub))
 }
 
-/// A replicated row is admitted only when this verifier recorded its id.
+/// A replicated row is admitted only when its body still hashes to
+/// `entryId` and this verifier recorded that id.
+///
+/// A substituted ciphertext, commitment, wrap, or lane is not admitted.
+/// A length past the spam ceiling, or a field that cannot be
+/// length-prefixed, is false and is not hashed.
 pub fn replicated_row_admitted(row: &BlindedGrantRow, state: &VerifierAdmissionState) -> bool {
-    state.admitted.iter().any(|id| id == &row.entry_id)
+    if !entry_within_limit(row) {
+        return false;
+    }
+    match row_entry_matches(row) {
+        Ok(true) => state.admitted.iter().any(|id| id == &row.entry_id),
+        _ => false,
+    }
 }
 
 enum SpendKey {
@@ -422,11 +434,18 @@ pub fn filter_inbox_append(
     admission: Option<&InboxAdmission>,
 ) -> Result<InboxAppendResult, EncDiscError> {
     validate_state(state)?;
-    require_row(row)?;
-    let encoded = inbox_entry_bytes(&crate::grant::inbox_body_of(row))?;
-    if encoded.len() > INBOX_ENTRY_MAX_BYTES {
-        return Ok(refuse(state, InboxWriteFilter::Spam));
+    if !lane_id_well_formed(&row.lane_id) || hop_forbidden(&row.lane_id) {
+        return Err(EncDiscError::InboxRejected);
     }
+    match entry_encoded_len(row) {
+        Ok(len) if len > INBOX_ENTRY_MAX_BYTES => {
+            return Ok(refuse(state, InboxWriteFilter::Spam));
+        }
+        Err(EncDiscError::FieldTooLong) => return Ok(refuse(state, InboxWriteFilter::Spam)),
+        Err(error) => return Err(error),
+        Ok(_) => {}
+    }
+    require_row(row)?;
 
     let writer = match authenticate(writer_auth, &row.entry_id, enrollment) {
         Ok(writer) => writer,
@@ -532,8 +551,53 @@ fn validate_state(state: &VerifierAdmissionState) -> Result<(), EncDiscError> {
     Ok(())
 }
 
+fn entry_within_limit(row: &BlindedGrantRow) -> bool {
+    match entry_encoded_len(row) {
+        Ok(len) => len <= INBOX_ENTRY_MAX_BYTES,
+        Err(_) => false,
+    }
+}
+
+/// Canonical length of `row` without copying the ciphertext or hashing.
+fn entry_encoded_len(row: &BlindedGrantRow) -> Result<usize, EncDiscError> {
+    let epoch_owned = match &row.wrap {
+        Some(wrap) => canonical::canonical_decimal(wrap.epoch)?,
+        None => String::new(),
+    };
+    let wrap = row.wrap.as_ref();
+    let flag = if wrap.is_some() { "1" } else { "0" };
+    let scope = wrap.map(|item| item.scope.as_str()).unwrap_or("");
+    let target = wrap.map(|item| item.target.as_str()).unwrap_or("");
+    let target_id = wrap.map(|item| item.target_id.as_str()).unwrap_or("");
+    let object = wrap
+        .and_then(|item| item.object.as_deref())
+        .filter(|text| !text.is_empty())
+        .unwrap_or("");
+    let group = wrap
+        .and_then(|item| item.group.as_deref())
+        .filter(|text| !text.is_empty())
+        .unwrap_or("");
+    let revision = wrap.map(|item| item.revision_id.as_str()).unwrap_or("");
+    let wrapped = wrap.map(|item| item.wrapped_key.as_str()).unwrap_or("");
+    canonical::prefixed_total(&[
+        DOMAIN_INBOX,
+        row.lane_id.as_str(),
+        row.grant_ciphertext.as_str(),
+        row.commitment.hash.as_str(),
+        flag,
+        scope,
+        epoch_owned.as_str(),
+        target,
+        target_id,
+        object,
+        group,
+        revision,
+        wrapped,
+    ])
+}
+
 fn require_row(row: &BlindedGrantRow) -> Result<(), EncDiscError> {
-    if row.lane_id.is_empty() || hop_forbidden(&row.lane_id) {
+    if !lane_id_well_formed(&row.lane_id) || hop_forbidden(&row.lane_id) {
         return Err(EncDiscError::InboxRejected);
     }
     if row.grant_ciphertext.is_empty() {
@@ -703,4 +767,58 @@ fn require_utc_day(day: &str) -> Result<(), EncDiscError> {
         return Err(EncDiscError::InboxRejected);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{entry_encoded_len, INBOX_ENTRY_MAX_BYTES};
+    use crate::canonical::{inbox_entry_bytes, inbox_entry_encoded_len, prefixed_total_lens};
+    use crate::error::EncDiscError;
+    use crate::grant::{inbox_body_of, BlindedGrantRow, GrantCommitment};
+    use crate::wrap::{WrapScope, WrapTarget, WrappedKey};
+
+    fn row(ciphertext: &str, wrap: Option<WrappedKey>) -> BlindedGrantRow {
+        BlindedGrantRow {
+            lane_id: "ab".repeat(32),
+            entry_id: "cd".repeat(32),
+            grant_ciphertext: ciphertext.to_string(),
+            commitment: GrantCommitment {
+                hash: "ef".repeat(32),
+            },
+            wrap,
+        }
+    }
+
+    #[test]
+    fn encoded_length_matches_the_canonical_bytes_without_hashing() {
+        let plain = row("ct-1", None);
+        let wrapped = row(
+            "ct-1",
+            Some(WrappedKey {
+                scope: WrapScope::ItemDek,
+                epoch: 7,
+                target: WrapTarget::ReaderEpub,
+                target_id: "0xbob".to_string(),
+                object: Some("s3rch/items/post".to_string()),
+                group: None,
+                revision_id: "11".repeat(32),
+                wrapped_key: "22".repeat(8),
+            }),
+        );
+        for sample in [plain, wrapped] {
+            let body = inbox_body_of(&sample);
+            let bytes = inbox_entry_bytes(&body).unwrap();
+            assert_eq!(inbox_entry_encoded_len(&body).unwrap(), bytes.len());
+            assert_eq!(entry_encoded_len(&sample).unwrap(), bytes.len());
+        }
+    }
+
+    #[test]
+    fn a_field_past_uint32_is_too_long_before_any_buffer() {
+        let too_big = prefixed_total_lens(&[u32::MAX as usize + 1]);
+        assert!(matches!(too_big, Err(EncDiscError::FieldTooLong)));
+        let huge = "a".repeat(INBOX_ENTRY_MAX_BYTES);
+        let over = entry_encoded_len(&row(&huge, None)).unwrap();
+        assert!(over > INBOX_ENTRY_MAX_BYTES);
+    }
 }

@@ -667,6 +667,7 @@ export type BlindedGrantRow = {
  * public lane stays content-addressed and does not carry
  * writerPub. A replicated public row is not admitted until
  * this verifier runs filterInboxAppend and records entryId.
+ * A body that no longer hashes to that entryId is not admitted.
  * Not a grant.
  */
 export type InboxEnvelope = {
@@ -681,8 +682,10 @@ export type InboxEnvelope = {
 /**
  * Exactly one private lane per reader account. Not a Check object.
  * Not a shared bucket. Not one lane per device, sender, or epoch.
- * laneId is not the plaintext accessor id. Scanning it is not Check
- * and does not mint.
+ * laneId is 32 bytes, lowercase hex, chosen when the account
+ * key is minted. It is not the plaintext accessor id. A shorter
+ * string, uppercase hex, or any other shape is rejected at
+ * registration. Scanning it is not Check and does not mint.
  */
 export type RecipientInbox = {
   accessor: AccessorId;
@@ -1607,9 +1610,22 @@ declare const writerChannelInstances: WeakSet<AuthenticatedWriterChannel>;
  * AuthenticatedPresenterChannel: ECMAScript #channelBrand,
  * module WeakSet, frozen writer and writerPub. Not a grant.
  * Not a writer pub on the stored row.
+ * The constructor is private. openWithPossession mints a value
+ * only after `signature` verifies under writerPub. Signed bytes,
+ * length-prefixed:
+ * 1. "s3rch-writer-channel-v1"
+ * 2. writer
+ * A caller who knows writerPub and not the private key cannot
+ * mint. A forbidden writer name is the same reserved list as
+ * hop_forbidden.
  */
 export class AuthenticatedWriterChannel {
   private constructor(writer: AccessorId, writerPub: string);
+  static openWithPossession(
+    writer: AccessorId,
+    writerPub: string,
+    signature: string,
+  ): AuthenticatedWriterChannel;
   readonly writer: AccessorId;
   readonly writerPub: string;
   readonly #channelBrand: typeof writerChannelBrand;

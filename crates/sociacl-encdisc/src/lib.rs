@@ -44,9 +44,11 @@
 //!   the canonical grant. The blinding is not on the visible row.
 //! * A presenter binding is a P-256 signature over the length-prefixed
 //!   domain, nonce, commitment hash, and verifier audience.
-//! * `AuthenticatedPresenterChannel` and `AuthenticatedWriterChannel`
-//!   are minted only by their `open` constructors. The private brand is
-//!   not a public field.
+//! * `AuthenticatedPresenterChannel` is minted only by its `open`
+//!   constructor. `AuthenticatedWriterChannel` is minted only by
+//!   `open_with_possession`, after a signature over
+//!   `s3rch-writer-channel-v1` and the writer id verifies. The private
+//!   brand is not a public field.
 //! * A writer append and an inbox stamp are P-256 signatures over the
 //!   length-prefixed domain and `entryId`. Proof-of-work is SHA-256 of
 //!   the length-prefixed domain, nonce, `entryId`, and solution.
@@ -77,16 +79,17 @@ pub use canonical::{
     account_binding_bytes, account_binding_sha256, canonical_decimal, decode_length_prefixed,
     epoch_finalization_bytes, epoch_finalization_id, epoch_revision_bytes, epoch_revision_id,
     epoch_status_bytes, epoch_status_sha256, grant_commitment_bytes, grant_commitment_hash,
-    grant_payload_bytes, grant_payload_digest, inbox_entry_bytes, inbox_entry_id, inbox_pow_bytes,
-    inbox_pow_digest, inbox_pow_sha256, inbox_stamp_bytes, inbox_stamp_sha256, item_auth_bytes,
-    item_auth_sha256, leading_zero_bits, length_prefixed, parse_canonical_decimal,
-    plaintext_digest, presenter_binding_bytes, presenter_binding_sha256, sha256, sha256_fields,
-    sha256_hex, writer_append_bytes, writer_append_sha256, EpochManifestBody, EpochStatusBody,
+    grant_payload_bytes, grant_payload_digest, inbox_entry_bytes, inbox_entry_encoded_len,
+    inbox_entry_id, inbox_pow_bytes, inbox_pow_digest, inbox_pow_sha256, inbox_stamp_bytes,
+    inbox_stamp_sha256, item_auth_bytes, item_auth_sha256, leading_zero_bits, length_prefixed,
+    parse_canonical_decimal, plaintext_digest, presenter_binding_bytes, presenter_binding_sha256,
+    sha256, sha256_fields, sha256_hex, writer_append_bytes, writer_append_sha256,
+    writer_channel_bytes, writer_channel_sha256, EpochManifestBody, EpochStatusBody,
     GrantPayloadBody, InboxEntryBody, InboxWrapFields, ItemAuthFields, DOMAIN_ACCOUNT_BINDING,
     DOMAIN_EPOCH, DOMAIN_EPOCH_FINALIZATION, DOMAIN_EPOCH_STATUS, DOMAIN_GRANT_COMMITMENT,
     DOMAIN_GRANT_PAYLOAD, DOMAIN_GROUP_WRAP, DOMAIN_INBOX, DOMAIN_INBOX_POW, DOMAIN_INBOX_STAMP,
     DOMAIN_ITEM_AUTH, DOMAIN_PRESENTER_BINDING, DOMAIN_SEA_SECRET, DOMAIN_WRAPPED_KEY,
-    DOMAIN_WRITER_APPEND, JS_SAFE_INTEGER_MAX,
+    DOMAIN_WRITER_APPEND, DOMAIN_WRITER_CHANNEL, JS_SAFE_INTEGER_MAX,
 };
 pub use epoch::{
     epoch_read_key, epoch_step_current, status_is_fresh, AclObjectSet, AclScope, AclSnapshotBody,

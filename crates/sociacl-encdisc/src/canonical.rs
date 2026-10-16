@@ -24,6 +24,7 @@ pub const DOMAIN_PRESENTER_BINDING: &str = "s3rch-presenter-binding-v1";
 pub const DOMAIN_EPOCH_STATUS: &str = "s3rch-epoch-status-v1";
 pub const DOMAIN_EPOCH_FINALIZATION: &str = "s3rch-epoch-finalization-v1";
 pub const DOMAIN_WRITER_APPEND: &str = "s3rch-writer-append-v1";
+pub const DOMAIN_WRITER_CHANNEL: &str = "s3rch-writer-channel-v1";
 pub const DOMAIN_INBOX_POW: &str = "s3rch-inbox-pow-v1";
 pub const DOMAIN_INBOX_STAMP: &str = "s3rch-inbox-stamp-v1";
 
@@ -97,6 +98,28 @@ pub fn length_prefixed(fields: &[&str]) -> Result<Vec<u8>, EncDiscError> {
     Ok(out)
 }
 
+/// Byte length of a length-prefixed encoding, without building it.
+///
+/// A field longer than `u32::MAX`, or a total that does not fit in
+/// `usize`, is [`EncDiscError::FieldTooLong`].
+pub fn prefixed_total(fields: &[&str]) -> Result<usize, EncDiscError> {
+    let lengths: Vec<usize> = fields.iter().map(|field| field.len()).collect();
+    prefixed_total_lens(&lengths)
+}
+
+pub(crate) fn prefixed_total_lens(lengths: &[usize]) -> Result<usize, EncDiscError> {
+    let mut total = 0usize;
+    for &len in lengths {
+        if len > u32::MAX as usize {
+            return Err(EncDiscError::FieldTooLong);
+        }
+        total = total
+            .checked_add(4 + len)
+            .ok_or(EncDiscError::FieldTooLong)?;
+    }
+    Ok(total)
+}
+
 pub fn sha256_fields(fields: &[&str]) -> Result<String, EncDiscError> {
     Ok(sha256_hex(&length_prefixed(fields)?))
 }
@@ -137,11 +160,7 @@ fn empty_as_blank(value: Option<&str>) -> &str {
     }
 }
 
-pub fn inbox_entry_bytes(body: &InboxEntryBody) -> Result<Vec<u8>, EncDiscError> {
-    let epoch = match &body.wrap {
-        Some(wrap) => canonical_decimal(wrap.epoch)?,
-        None => String::new(),
-    };
+fn inbox_entry_fields<'a>(body: &'a InboxEntryBody, epoch: &'a str) -> [&'a str; 13] {
     let (flag, scope, target, target_id, object, group, revision, wrapped) = match &body.wrap {
         Some(wrap) => (
             "1",
@@ -155,21 +174,38 @@ pub fn inbox_entry_bytes(body: &InboxEntryBody) -> Result<Vec<u8>, EncDiscError>
         ),
         None => ("0", "", "", "", "", "", "", ""),
     };
-    length_prefixed(&[
+    [
         DOMAIN_INBOX,
-        &body.lane_id,
-        &body.grant_ciphertext,
-        &body.commitment_hash,
+        body.lane_id.as_str(),
+        body.grant_ciphertext.as_str(),
+        body.commitment_hash.as_str(),
         flag,
         scope,
-        &epoch,
+        epoch,
         target,
         target_id,
         object,
         group,
         revision,
         wrapped,
-    ])
+    ]
+}
+
+pub fn inbox_entry_bytes(body: &InboxEntryBody) -> Result<Vec<u8>, EncDiscError> {
+    let epoch = match &body.wrap {
+        Some(wrap) => canonical_decimal(wrap.epoch)?,
+        None => String::new(),
+    };
+    length_prefixed(&inbox_entry_fields(body, &epoch))
+}
+
+/// Canonical entry length. Does not allocate the encoding or hash it.
+pub fn inbox_entry_encoded_len(body: &InboxEntryBody) -> Result<usize, EncDiscError> {
+    let epoch = match &body.wrap {
+        Some(wrap) => canonical_decimal(wrap.epoch)?,
+        None => String::new(),
+    };
+    prefixed_total(&inbox_entry_fields(body, &epoch))
 }
 
 pub fn inbox_entry_id(body: &InboxEntryBody) -> Result<String, EncDiscError> {
@@ -427,6 +463,14 @@ pub fn epoch_finalization_bytes(
     fields.extend(candidates.iter().cloned());
     let borrowed: Vec<&str> = fields.iter().map(String::as_str).collect();
     length_prefixed(&borrowed)
+}
+
+pub fn writer_channel_bytes(writer: &str) -> Result<Vec<u8>, EncDiscError> {
+    length_prefixed(&[DOMAIN_WRITER_CHANNEL, writer])
+}
+
+pub fn writer_channel_sha256(writer: &str) -> Result<String, EncDiscError> {
+    Ok(sha256_hex(&writer_channel_bytes(writer)?))
 }
 
 pub fn writer_append_bytes(entry_id: &str) -> Result<Vec<u8>, EncDiscError> {

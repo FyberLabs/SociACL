@@ -22,6 +22,7 @@ const DOMAIN_GRANT_PAYLOAD = "s3rch-grant-payload-v1";
 const DOMAIN_PRESENTER_BINDING = "s3rch-presenter-binding-v1";
 const DOMAIN_EPOCH_STATUS = "s3rch-epoch-status-v1";
 const DOMAIN_WRITER_APPEND = "s3rch-writer-append-v1";
+const DOMAIN_WRITER_CHANNEL = "s3rch-writer-channel-v1";
 const DOMAIN_INBOX_POW = "s3rch-inbox-pow-v1";
 const DOMAIN_INBOX_STAMP = "s3rch-inbox-stamp-v1";
 
@@ -225,6 +226,14 @@ export function epochStatusBytes(body: EpochStatusBody): Uint8Array {
 
 export function epochStatusSha256(body: EpochStatusBody): string {
   return sha256Hex(epochStatusBytes(body));
+}
+
+export function writerChannelBytes(writer: string): Uint8Array {
+  return lengthPrefixed([DOMAIN_WRITER_CHANNEL, writer]);
+}
+
+export function writerChannelSha256(writer: string): string {
+  return sha256Hex(writerChannelBytes(writer));
 }
 
 export function writerAppendBytes(entryId: string): Uint8Array {
