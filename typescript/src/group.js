@@ -4,7 +4,12 @@
  * and is not a grant. A hop, a hint, or a wrap never mints.
  * A lower hamState does not hide a removal.
  *
+ * Cancels are a grow-only set of collision-free ids. A live assent or
+ * edge lists every known cancel. Object-set rows are signed by the
+ * object owner. Membership assents are signed by that party.
+ *
  * @typedef {"same-group" | "named-circle"} GroupPredicate
+ * @typedef {import("node:crypto").KeyObject} KeyObject
  * @typedef {{ principal?: string, target?: string }} HandoffHint
  * @typedef {{ channel?: string }} HopFactor
  * @typedef {{ predicate: GroupPredicate, setId: string }} PresentedGroup
@@ -29,6 +34,7 @@
  *   setId: string,
  *   stated: 0 | 1,
  *   hamState: number,
+ *   objectOwner?: string,
  * }} ObjectSetName
  * @typedef {{
  *   accessor: string,
@@ -43,7 +49,19 @@
  *   stated: 0 | 1,
  *   hamState: number,
  * }} GroupSnapshotObjectSet
- * @typedef {{ stated: boolean, hamState: number, epoch: number }} PartyStatement
+ * @typedef {{
+ *   stated: boolean,
+ *   hamState: number,
+ *   observed: string[],
+ *   signature: Uint8Array | null,
+ *   spoken: boolean,
+ * }} PartyStatement
+ * @typedef {{
+ *   id: string,
+ *   prior: string[],
+ *   signer: string,
+ *   signature: Uint8Array,
+ * }} SignedCancel
  * @typedef {{
  *   membership: MeshMembership,
  *   member: PartyStatement,
@@ -51,30 +69,159 @@
  *   removed: boolean,
  *   soul: string,
  *   setOwner: string,
+ *   cancels: SignedCancel[],
  * }} MembershipRecord
- * @typedef {{ name: ObjectSetName, soul: string, objectOwner: string, epoch: number }} ObjectSetRecord
+ * @typedef {{
+ *   name: ObjectSetName,
+ *   signedStated: 0 | 1,
+ *   soul: string,
+ *   objectOwner: string,
+ *   observed: string[],
+ *   signature: Uint8Array,
+ *   cancels: SignedCancel[],
+ * }} ObjectSetRecord
  * @typedef {{ accessor: string, from: number, until: number, stated?: 0 | 1, object?: string, claimId?: string, hamState?: number, owner?: string }} SeeGrant
+ * @typedef {{ privateKey: KeyObject, publicKey: Uint8Array }} Issuer
  */
+
+import {
+  createHash,
+  createPrivateKey,
+  createPublicKey,
+  randomBytes,
+  sign,
+  verify,
+} from "node:crypto";
+
+const PKCS8_PREFIX = Uint8Array.from([
+  0x30, 0x2e, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x04, 0x22, 0x04, 0x20,
+]);
+const SPKI_PREFIX = Uint8Array.from([
+  0x30, 0x2a, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x03, 0x21, 0x00,
+]);
+
+/**
+ * Ed25519 signer from a 32-byte seed. The graph stores only the verify key.
+ * @param {Uint8Array} seed
+ * @returns {Issuer}
+ */
+export function issuerFromSeed(seed) {
+  const seedBytes = new Uint8Array(seed);
+  const pkcs8 = new Uint8Array(PKCS8_PREFIX.length + seedBytes.length);
+  pkcs8.set(PKCS8_PREFIX, 0);
+  pkcs8.set(seedBytes, PKCS8_PREFIX.length);
+  const privateKey = createPrivateKey({ key: pkcs8, format: "der", type: "pkcs8" });
+  const spki = new Uint8Array(createPublicKey(privateKey).export({ type: "spki", format: "der" }));
+  return { privateKey, publicKey: spki.slice(spki.length - 32) };
+}
+
+/** @param {Uint8Array} raw */
+function publicKeyFromRaw(raw) {
+  const bytes = new Uint8Array(raw);
+  const spki = new Uint8Array(SPKI_PREFIX.length + bytes.length);
+  spki.set(SPKI_PREFIX, 0);
+  spki.set(bytes, SPKI_PREFIX.length);
+  return createPublicKey({ key: spki, format: "der", type: "spki" });
+}
+
+/** @param {KeyObject} privateKey @param {Uint8Array} message */
+function signBytes(privateKey, message) {
+  return new Uint8Array(sign(null, message, privateKey));
+}
+
+/**
+ * @param {Uint8Array | undefined} publicKey
+ * @param {Uint8Array} message
+ * @param {Uint8Array | null | undefined} signature
+ */
+function verifyBytes(publicKey, message, signature) {
+  if (!publicKey || !signature || signature.length !== 64) return false;
+  try {
+    return verify(null, message, publicKeyFromRaw(publicKey), signature);
+  } catch {
+    return false;
+  }
+}
+
+/** @param {Uint8Array} bytes */
+function bytesToHex(bytes) {
+  let out = "";
+  for (const byte of bytes) out += byte.toString(16).padStart(2, "0");
+  return out;
+}
+
+/** @param {string} hex */
+function hexToBytes(hex) {
+  const out = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < out.length; i += 1) {
+    out[i] = Number.parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+  }
+  return out;
+}
+
+/** @param {Uint8Array[]} parts */
+function concatBytes(parts) {
+  const size = parts.reduce((sum, part) => sum + part.length, 0);
+  const out = new Uint8Array(size);
+  let offset = 0;
+  for (const part of parts) {
+    out.set(part, offset);
+    offset += part.length;
+  }
+  return out;
+}
+
+/** @param {Uint8Array[]} parts @param {string} value */
+function pushStr(parts, value) {
+  const bytes = new TextEncoder().encode(value);
+  const len = new Uint8Array(4);
+  new DataView(len.buffer).setUint32(0, bytes.length);
+  parts.push(len, bytes);
+}
+
+/** @param {Uint8Array[]} parts @param {readonly string[]} ids */
+function pushIds(parts, ids) {
+  const sorted = [...ids].sort();
+  const len = new Uint8Array(4);
+  new DataView(len.buffer).setUint32(0, sorted.length);
+  parts.push(len);
+  for (const id of sorted) parts.push(hexToBytes(id));
+}
+
+/** @param {string} domain */
+function domainBytes(domain) {
+  const text = new TextEncoder().encode(domain);
+  const out = new Uint8Array(text.length + 1);
+  out.set(text, 0);
+  return out;
+}
 
 /** @param {SeeGrant} grant */
 function grantObject(grant) {
   return String(grant.claimId ?? grant.object ?? "").trim();
 }
 
-/** @param {string} setId @param {string} owner */
-function setIdBindsOwner(setId, owner) {
-  const slash = setId.indexOf("/");
-  if (slash <= 0 || slash === setId.length - 1) return false;
-  const head = setId.slice(0, slash);
-  const ownerKey = aclPrincipalKey(owner);
-  return ownerKey.length > 0 && aclPrincipalKey(head) === ownerKey;
+/** @param {string} setId */
+export function canonicalSetId(setId) {
+  const id = String(setId ?? "").trim();
+  if (!id) return null;
+  const slash = id.indexOf("/");
+  if (slash <= 0 || slash !== id.lastIndexOf("/")) return null;
+  const head = id.slice(0, slash);
+  const name = id.slice(slash + 1);
+  if (!head || !name || name.includes("_")) return null;
+  if (/[.#$[\]/]/.test(head) || /[.#$[\]/]/.test(name)) return null;
+  if (aclPrincipalKey(head) !== head) return null;
+  return `${head}/${name}`;
 }
 
-/** @param {string} setId */
-function setIdHasBoundOwner(setId) {
-  const slash = setId.indexOf("/");
-  if (slash <= 0 || slash === setId.length - 1) return false;
-  return aclPrincipalKey(setId.slice(0, slash)).length > 0;
+/** @param {string} setId @param {string} owner */
+function setIdBindsOwner(setId, owner) {
+  const canonical = canonicalSetId(setId);
+  if (!canonical) return false;
+  const head = canonical.slice(0, canonical.indexOf("/"));
+  const ownerKey = aclPrincipalKey(owner);
+  return ownerKey.length > 0 && aclPrincipalKey(head) === ownerKey;
 }
 
 /** @param {string} id */
@@ -97,6 +244,11 @@ export function aclPrincipalKey(id) {
   return aclKey(text);
 }
 
+/** @param {string} setId */
+function setMapKey(setId) {
+  return aclKey(canonicalSetId(setId) ?? "");
+}
+
 /**
  * @param {string} setOwner
  * @param {GroupPredicate} predicate
@@ -104,7 +256,9 @@ export function aclPrincipalKey(id) {
  * @param {string} accessor
  */
 export function membershipSoul(setOwner, predicate, setId, accessor) {
-  return `s3rch/acl/${aclPrincipalKey(setOwner)}/membership/${predicate}/${aclKey(setId)}/${aclPrincipalKey(accessor)}`;
+  const canonical = canonicalSetId(setId);
+  const setKey = canonical ? aclKey(canonical) : aclKey(setId);
+  return `s3rch/acl/${aclPrincipalKey(setOwner)}/membership/${predicate}/${setKey}/${aclPrincipalKey(accessor)}`;
 }
 
 /**
@@ -127,6 +281,312 @@ function closedReason(object) {
 /** @param {DecodedGroupPayload} payload @param {number} now */
 function payloadLive(payload, now) {
   return payload.stated === 1 && now >= payload.from && now < payload.until;
+}
+
+/** @returns {PartyStatement} */
+function absentParty() {
+  return { stated: false, hamState: 0, observed: [], signature: null, spoken: false };
+}
+
+/** @param {readonly string[]} observed @param {readonly string[]} ids */
+function covers(observed, ids) {
+  const have = new Set(observed);
+  return ids.every((id) => have.has(id));
+}
+
+/** @param {readonly SignedCancel[]} cancels */
+function cancelIds(cancels) {
+  return cancels.map((cancel) => cancel.id).sort();
+}
+
+/**
+ * @param {Uint8Array} replicaId
+ * @param {readonly string[]} prior
+ */
+function newCancelId(replicaId, prior) {
+  const hash = createHash("sha256");
+  hash.update(domainBytes("sociacl-cancel-id-v1"));
+  hash.update(replicaId);
+  hash.update(randomBytes(16));
+  const sorted = [...prior].sort();
+  const len = new Uint8Array(8);
+  new DataView(len.buffer).setBigUint64(0, BigInt(sorted.length));
+  hash.update(len);
+  for (const id of sorted) hash.update(hexToBytes(id));
+  return bytesToHex(hash.digest());
+}
+
+/**
+ * @param {MembershipRecord} record
+ * @param {"member" | "set"} role
+ * @param {boolean} stated
+ * @param {number} hamState
+ * @param {readonly string[]} observed
+ */
+function partyMessage(record, role, stated, hamState, observed) {
+  /** @type {Uint8Array[]} */
+  const parts = [domainBytes("sociacl-membership-assent-v1")];
+  pushStr(parts, role);
+  pushStr(parts, record.membership.predicate);
+  pushStr(parts, record.membership.setId);
+  pushStr(parts, aclPrincipalKey(record.membership.accessor));
+  pushStr(parts, aclPrincipalKey(record.setOwner));
+  parts.push(Uint8Array.of(stated ? 1 : 0));
+  const ham = new Uint8Array(8);
+  new DataView(ham.buffer).setBigUint64(0, BigInt(hamState));
+  parts.push(ham);
+  pushIds(parts, observed);
+  return concatBytes(parts);
+}
+
+/** @param {ObjectSetRecord} record */
+function objectMessage(record) {
+  /** @type {Uint8Array[]} */
+  const parts = [domainBytes("sociacl-object-set-v1")];
+  pushStr(parts, aclKey(record.name.object));
+  pushStr(parts, aclPrincipalKey(record.objectOwner));
+  pushStr(parts, record.name.predicate);
+  pushStr(parts, record.name.setId);
+  parts.push(Uint8Array.of(record.signedStated));
+  const ham = new Uint8Array(8);
+  new DataView(ham.buffer).setBigUint64(0, BigInt(record.name.hamState));
+  parts.push(ham);
+  pushIds(parts, record.observed);
+  return concatBytes(parts);
+}
+
+/**
+ * @param {string} kind
+ * @param {string} rowKey
+ * @param {string} id
+ * @param {readonly string[]} prior
+ */
+function cancelMessage(kind, rowKey, id, prior) {
+  /** @type {Uint8Array[]} */
+  const parts = [domainBytes("sociacl-cancel-v1")];
+  pushStr(parts, kind);
+  pushStr(parts, rowKey);
+  parts.push(hexToBytes(id));
+  pushIds(parts, prior);
+  return concatBytes(parts);
+}
+
+/** @param {MembershipRecord} record */
+function membershipRowKey(record) {
+  return `${record.membership.predicate}\0${record.membership.setId}\0${aclPrincipalKey(record.membership.accessor)}`;
+}
+
+/**
+ * @param {Map<string, Uint8Array>} enrolled
+ * @param {SignedCancel} cancel
+ * @param {string} kind
+ * @param {string} rowKey
+ * @param {(signer: string) => boolean} allow
+ */
+function cancelVerifies(enrolled, cancel, kind, rowKey, allow) {
+  if (!allow(cancel.signer)) return false;
+  const key = enrolled.get(aclPrincipalKey(cancel.signer));
+  return verifyBytes(key, cancelMessage(kind, rowKey, cancel.id, cancel.prior), cancel.signature);
+}
+
+/**
+ * @param {Map<string, Uint8Array>} enrolled
+ * @param {readonly SignedCancel[]} cancels
+ * @param {string} kind
+ * @param {string} rowKey
+ * @param {(signer: string) => boolean} allow
+ */
+function verifiedIds(enrolled, cancels, kind, rowKey, allow) {
+  return cancels.filter((cancel) => cancelVerifies(enrolled, cancel, kind, rowKey, allow)).map((cancel) => cancel.id);
+}
+
+/** @param {MembershipRecord} record @param {string} signer */
+function membershipCancelSigner(record, signer) {
+  const key = aclPrincipalKey(signer);
+  return key === aclPrincipalKey(record.membership.accessor) || key === aclPrincipalKey(record.setOwner);
+}
+
+/**
+ * @param {Map<string, Uint8Array>} enrolled
+ * @param {PartyStatement} party
+ * @param {"member" | "set"} role
+ * @param {MembershipRecord} record
+ */
+function partySignatureOk(enrolled, party, role, record) {
+  if (!party.spoken) return true;
+  const principal = role === "member" ? record.membership.accessor : record.setOwner;
+  const key = enrolled.get(aclPrincipalKey(principal));
+  if (!party.signature) return false;
+  return verifyBytes(key, partyMessage(record, role, party.stated, party.hamState, party.observed), party.signature);
+}
+
+/**
+ * @param {Map<string, Uint8Array>} enrolled
+ * @param {MembershipRecord} record
+ */
+function membershipSignaturesOk(enrolled, record) {
+  const ids = verifiedIds(enrolled, record.cancels, "membership", membershipRowKey(record), (signer) =>
+    membershipCancelSigner(record, signer),
+  );
+  return (
+    ids.length === record.cancels.length &&
+    partySignatureOk(enrolled, record.member, "member", record) &&
+    partySignatureOk(enrolled, record.setParty, "set", record)
+  );
+}
+
+/**
+ * @param {Map<string, Uint8Array>} enrolled
+ * @param {MembershipRecord} record
+ */
+function publishMembership(enrolled, record) {
+  const ids = verifiedIds(enrolled, record.cancels, "membership", membershipRowKey(record), (signer) =>
+    membershipCancelSigner(record, signer),
+  );
+  const live = (/** @type {PartyStatement} */ party, /** @type {"member" | "set"} */ role) =>
+    party.spoken &&
+    party.stated &&
+    covers(party.observed, ids) &&
+    ids.length === record.cancels.length &&
+    partySignatureOk(enrolled, party, role, record);
+  if (live(record.member, "member") && live(record.setParty, "set")) {
+    record.membership.stated = 1;
+    record.removed = false;
+    return;
+  }
+  record.membership.stated = 0;
+  const retracted = (/** @type {PartyStatement} */ party) => party.spoken && !party.stated && party.hamState > 0;
+  record.removed = ids.length > 0 || retracted(record.member) || retracted(record.setParty);
+}
+
+/**
+ * @param {Map<string, Uint8Array>} enrolled
+ * @param {ObjectSetRecord} record
+ */
+function objectSignatureOk(enrolled, record) {
+  const key = enrolled.get(aclPrincipalKey(record.objectOwner));
+  return verifyBytes(key, objectMessage(record), record.signature);
+}
+
+/**
+ * @param {Map<string, Uint8Array>} enrolled
+ * @param {ObjectSetRecord} record
+ */
+function refreshObject(enrolled, record) {
+  const ids = verifiedIds(enrolled, record.cancels, "object-set", aclKey(record.name.object), (signer) => {
+    return aclPrincipalKey(signer) === aclPrincipalKey(record.objectOwner);
+  });
+  const live =
+    record.signedStated === 1 &&
+    ids.length === record.cancels.length &&
+    covers(record.observed, ids) &&
+    objectSignatureOk(enrolled, record);
+  record.name.stated = live ? 1 : 0;
+}
+
+/**
+ * @param {PartyStatement} local
+ * @param {PartyStatement} incoming
+ * @param {readonly string[]} ids
+ * @param {boolean} localOk
+ * @param {boolean} incomingOk
+ */
+function pickParty(local, incoming, ids, localOk, incomingOk) {
+  if (localOk && !incomingOk) return structuredClone(local);
+  if (incomingOk && !localOk) return structuredClone(incoming);
+  if (!localOk && !incomingOk) return absentParty();
+  const localCovers = covers(local.observed, ids);
+  const incomingCovers = covers(incoming.observed, ids);
+  if (localCovers !== incomingCovers) return structuredClone(incomingCovers ? incoming : local);
+  if (incoming.hamState > local.hamState) return structuredClone(incoming);
+  if (incoming.hamState < local.hamState) return structuredClone(local);
+  if (!incoming.stated && local.stated) return structuredClone(incoming);
+  return structuredClone(local);
+}
+
+/**
+ * @param {Map<string, Uint8Array>} enrolled
+ * @param {MembershipRecord} local
+ * @param {MembershipRecord} incoming
+ */
+function mergeMembership(enrolled, local, incoming) {
+  /** @type {SignedCancel[]} */
+  const cancels = structuredClone(local.cancels);
+  if (membershipSignaturesOk(enrolled, incoming)) {
+    for (const cancel of incoming.cancels) {
+      if (
+        cancelVerifies(enrolled, cancel, "membership", membershipRowKey(incoming), (signer) =>
+          membershipCancelSigner(incoming, signer),
+        ) &&
+        !cancels.some((row) => row.id === cancel.id)
+      ) {
+        cancels.push(structuredClone(cancel));
+      }
+    }
+  }
+  const ids = cancelIds(cancels);
+  const merged = structuredClone(local);
+  merged.member = pickParty(
+    local.member,
+    incoming.member,
+    ids,
+    partySignatureOk(enrolled, local.member, "member", local),
+    partySignatureOk(enrolled, incoming.member, "member", incoming),
+  );
+  merged.setParty = pickParty(
+    local.setParty,
+    incoming.setParty,
+    ids,
+    partySignatureOk(enrolled, local.setParty, "set", local),
+    partySignatureOk(enrolled, incoming.setParty, "set", incoming),
+  );
+  merged.cancels = cancels;
+  merged.membership.hamState = Math.max(local.membership.hamState, incoming.membership.hamState);
+  publishMembership(enrolled, merged);
+  return merged;
+}
+
+/**
+ * @param {ObjectSetRecord} local
+ * @param {ObjectSetRecord} incoming
+ * @param {readonly string[]} ids
+ */
+function pickObject(local, incoming, ids) {
+  const localCovers = covers(local.observed, ids);
+  const incomingCovers = covers(incoming.observed, ids);
+  if (localCovers !== incomingCovers) return structuredClone(incomingCovers ? incoming : local);
+  if (incoming.name.hamState > local.name.hamState) return structuredClone(incoming);
+  if (incoming.name.hamState < local.name.hamState) return structuredClone(local);
+  if (incoming.signedStated === 0 && local.signedStated === 1) return structuredClone(incoming);
+  if (local.signedStated === 0 && incoming.signedStated === 1) return structuredClone(local);
+  const incomingKey = `${incoming.name.predicate}\0${incoming.name.setId}`;
+  const localKey = `${local.name.predicate}\0${local.name.setId}`;
+  return structuredClone(incomingKey < localKey ? incoming : local);
+}
+
+/**
+ * @param {Map<string, Uint8Array>} enrolled
+ * @param {ObjectSetRecord} local
+ * @param {ObjectSetRecord} incoming
+ */
+function mergeObjectSet(enrolled, local, incoming) {
+  /** @type {SignedCancel[]} */
+  const cancels = structuredClone(local.cancels);
+  const rowKey = aclKey(incoming.name.object);
+  for (const cancel of incoming.cancels) {
+    if (
+      cancelVerifies(enrolled, cancel, "object-set", rowKey, (signer) => {
+        return aclPrincipalKey(signer) === aclPrincipalKey(incoming.objectOwner);
+      }) &&
+      !cancels.some((row) => row.id === cancel.id)
+    ) {
+      cancels.push(structuredClone(cancel));
+    }
+  }
+  const picked = pickObject(local, incoming, cancelIds(cancels));
+  picked.cancels = cancels;
+  refreshObject(enrolled, picked);
+  return picked;
 }
 
 /**
@@ -176,6 +636,9 @@ export class MemoryGroupGraph {
     this.memberships = new Map();
     /** @type {Map<string, ObjectSetRecord>} */
     this.objectSets = new Map();
+    /** @type {Map<string, Uint8Array>} */
+    this.enrolled = new Map();
+    this.replicaId = randomBytes(16);
   }
 
   /** @param {string} object */
@@ -193,7 +656,11 @@ export class MemoryGroupGraph {
    * @param {string} owner
    */
   putObject(object, owner) {
-    this.objects.set(aclKey(String(object).trim()), String(owner).trim());
+    const key = aclKey(String(object).trim());
+    const next = String(owner).trim();
+    const prev = this.objects.get(key);
+    if (prev && aclPrincipalKey(prev) !== aclPrincipalKey(next)) this.objectSets.delete(key);
+    this.objects.set(key, next);
   }
 
   /** @param {string} object */
@@ -223,6 +690,23 @@ export class MemoryGroupGraph {
   }
 
   /**
+   * @param {string} principal
+   * @param {Uint8Array} publicKey
+   */
+  enrollSigner(principal, publicKey) {
+    const id = aclPrincipalKey(principal);
+    if (!id || publicKey.length !== 32) throw new Error("signer is not enrolled");
+    const existing = this.enrolled.get(id);
+    if (existing && bytesToHex(existing) !== bytesToHex(publicKey)) throw new Error("signer is not enrolled");
+    this.enrolled.set(id, new Uint8Array(publicKey));
+  }
+
+  /** @param {string} principal */
+  enrolledKey(principal) {
+    return this.enrolled.get(aclPrincipalKey(principal));
+  }
+
+  /**
    * @param {string} owner
    * @param {GroupPredicate} predicate
    * @param {string} setId
@@ -231,12 +715,14 @@ export class MemoryGroupGraph {
     const name = String(owner).trim();
     const id = String(setId).trim();
     if (!name || !id) throw new Error("group name is empty");
-    const key = `${predicate}\0${id}`;
+    const canonical = canonicalSetId(id);
+    if (!canonical) throw new Error("set id is not bound to this owner");
+    const key = `${predicate}\0${aclKey(canonical)}`;
     const existing = this.setOwners.get(key);
     if (existing && aclPrincipalKey(existing) !== aclPrincipalKey(name)) {
       throw new Error("set already has an owner");
     }
-    if (!existing && !setIdBindsOwner(id, name)) throw new Error("set id is not bound to this owner");
+    if (!existing && !setIdBindsOwner(canonical, name)) throw new Error("set id is not bound to this owner");
     if (!existing) this.setOwners.set(key, name);
   }
 
@@ -245,7 +731,9 @@ export class MemoryGroupGraph {
    * @param {string} setId
    */
   ownerOfSet(predicate, setId) {
-    return this.setOwners.get(`${predicate}\0${String(setId).trim()}`);
+    const canonical = canonicalSetId(setId);
+    if (!canonical) return undefined;
+    return this.setOwners.get(`${predicate}\0${aclKey(canonical)}`);
   }
 
   /**
@@ -266,43 +754,71 @@ export class MemoryGroupGraph {
   }
 
   /**
+   * @param {string} principal
+   * @param {KeyObject} secret
+   */
+  #requireSecret(principal, secret) {
+    const key = this.enrolled.get(aclPrincipalKey(principal));
+    if (!key) throw new Error("signer is not enrolled");
+    const probe = signBytes(secret, domainBytes("sociacl-signer-probe-v1"));
+    if (!verifyBytes(key, domainBytes("sociacl-signer-probe-v1"), probe)) {
+      throw new Error("row signature is not valid");
+    }
+  }
+
+  /**
+   * @param {SignedCancel[]} cancels
+   * @param {string} kind
+   * @param {string} rowKey
+   * @param {string} signer
+   * @param {KeyObject} secret
+   */
+  #pushCancel(cancels, kind, rowKey, signer, secret) {
+    const prior = cancelIds(cancels);
+    const id = newCancelId(this.replicaId, prior);
+    cancels.push({
+      id,
+      prior,
+      signer: signer.trim(),
+      signature: signBytes(secret, cancelMessage(kind, rowKey, id, prior)),
+    });
+  }
+
+  /**
    * @param {string} speaker
    * @param {GroupPredicate} predicate
    * @param {string} setId
    * @param {string} accessor
+   * @param {KeyObject} secret
    */
-  stateMembership(speaker, predicate, setId, accessor) {
+  stateMembership(speaker, predicate, setId, accessor, secret) {
     const id = String(setId).trim();
     const who = String(accessor).trim();
     if (!id || !who) throw new Error("group name is empty");
     const [speaksMember, speaksSet] = this.#speaker(speaker, predicate, id, who);
-    const key = `${predicate}\0${id}\0${aclPrincipalKey(who)}`;
-    const owner = this.ownerOfSet(predicate, id);
+    const canonical = canonicalSetId(id);
+    if (!canonical) throw new Error("set id is not bound to this owner");
+    this.#requireSecret(speaker, secret);
+    const owner = this.ownerOfSet(predicate, canonical);
     if (!owner) throw new Error("set owner is unknown");
-    const current = this.memberships.get(key);
-    const record = current ?? {
-      membership: { predicate, setId: id, accessor: who, stated: 0, hamState: 0 },
-      member: { stated: false, hamState: 0, epoch: 0 },
-      setParty: { stated: false, hamState: 0, epoch: 0 },
+    const key = `${predicate}\0${aclKey(canonical)}\0${aclPrincipalKey(who)}`;
+    const record = this.memberships.get(key) ?? {
+      membership: { predicate, setId: canonical, accessor: who, stated: /** @type {0} */ (0), hamState: 0 },
+      member: absentParty(),
+      setParty: absentParty(),
       removed: false,
       soul: "",
       setOwner: owner,
+      cancels: [],
     };
-    record.soul = membershipSoul(owner, predicate, id, who);
+    record.soul = membershipSoul(owner, predicate, canonical, who);
     record.setOwner = owner;
+    record.membership.setId = canonical;
     record.membership.hamState += 1;
-    const epoch = Math.max(record.member.epoch, record.setParty.epoch);
-    if (speaksMember) {
-      record.member.stated = true;
-      record.member.hamState += 1;
-      record.member.epoch = epoch;
-    }
-    if (speaksSet) {
-      record.setParty.stated = true;
-      record.setParty.hamState += 1;
-      record.setParty.epoch = epoch;
-    }
-    syncMembership(record);
+    const observed = cancelIds(record.cancels);
+    if (speaksMember) this.#signParty(record, record.member, "member", true, observed, secret);
+    if (speaksSet) this.#signParty(record, record.setParty, "set", true, observed, secret);
+    publishMembership(this.enrolled, record);
     this.memberships.set(key, record);
   }
 
@@ -311,50 +827,77 @@ export class MemoryGroupGraph {
    * @param {GroupPredicate} predicate
    * @param {string} setId
    * @param {string} accessor
+   * @param {KeyObject} secret
    */
-  cancelMembership(speaker, predicate, setId, accessor) {
+  cancelMembership(speaker, predicate, setId, accessor, secret) {
     const id = String(setId).trim();
     const who = String(accessor).trim();
     if (!id || !who) throw new Error("group name is empty");
-    this.#speaker(speaker, predicate, id, who);
-    const key = `${predicate}\0${id}\0${aclPrincipalKey(who)}`;
-    const owner = this.ownerOfSet(predicate, id);
+    const [speaksMember, speaksSet] = this.#speaker(speaker, predicate, id, who);
+    const canonical = canonicalSetId(id);
+    if (!canonical) throw new Error("set id is not bound to this owner");
+    this.#requireSecret(speaker, secret);
+    const owner = this.ownerOfSet(predicate, canonical);
     if (!owner) throw new Error("set owner is unknown");
-    const current = this.memberships.get(key);
-    const record = current ?? {
-      membership: { predicate, setId: id, accessor: who, stated: 0, hamState: 0 },
-      member: { stated: false, hamState: 0, epoch: 0 },
-      setParty: { stated: false, hamState: 0, epoch: 0 },
+    const key = `${predicate}\0${aclKey(canonical)}\0${aclPrincipalKey(who)}`;
+    const record = this.memberships.get(key) ?? {
+      membership: { predicate, setId: canonical, accessor: who, stated: /** @type {0} */ (0), hamState: 0 },
+      member: absentParty(),
+      setParty: absentParty(),
       removed: false,
       soul: "",
       setOwner: owner,
+      cancels: [],
     };
-    record.soul = membershipSoul(owner, predicate, id, who);
+    record.soul = membershipSoul(owner, predicate, canonical, who);
     record.setOwner = owner;
-    const epoch = Math.max(record.member.epoch, record.setParty.epoch) + 1;
-    record.member.stated = false;
-    record.member.hamState += 1;
-    record.member.epoch = epoch;
-    record.setParty.stated = false;
-    record.setParty.hamState += 1;
-    record.setParty.epoch = epoch;
-    record.removed = true;
-    record.membership.stated = 0;
+    record.membership.setId = canonical;
+    this.#pushCancel(record.cancels, "membership", membershipRowKey(record), speaker, secret);
+    const observed = cancelIds(record.cancels);
+    if (speaksMember) this.#signParty(record, record.member, "member", false, observed, secret);
+    if (speaksSet) this.#signParty(record, record.setParty, "set", false, observed, secret);
     record.membership.hamState += 1;
+    publishMembership(this.enrolled, record);
     this.memberships.set(key, record);
+  }
+
+  /**
+   * @param {MembershipRecord} record
+   * @param {PartyStatement} party
+   * @param {"member" | "set"} role
+   * @param {boolean} stated
+   * @param {readonly string[]} observed
+   * @param {KeyObject} secret
+   */
+  #signParty(record, party, role, stated, observed, secret) {
+    const hamState = party.hamState + 1;
+    const message = partyMessage(record, role, stated, hamState, observed);
+    party.stated = stated;
+    party.hamState = hamState;
+    party.observed = [...observed];
+    party.spoken = true;
+    party.signature = signBytes(secret, message);
   }
 
   /**
    * @param {GroupPredicate} predicate
    * @param {string} setId
    * @param {string} accessor
-   * @returns {(MeshMembership & { removed?: boolean }) | undefined}
    */
   membership(predicate, setId, accessor) {
-    const key = `${predicate}\0${String(setId).trim()}\0${aclPrincipalKey(accessor)}`;
+    const canonical = canonicalSetId(setId);
+    if (!canonical) return undefined;
+    const key = `${predicate}\0${aclKey(canonical)}\0${aclPrincipalKey(accessor)}`;
     const record = this.memberships.get(key);
     if (!record) return undefined;
-    return { ...record.membership, removed: record.removed };
+    return {
+      ...record.membership,
+      removed: record.removed,
+      setOwner: record.setOwner,
+      member: record.member,
+      setParty: record.setParty,
+      cancels: record.cancels,
+    };
   }
 
   /**
@@ -362,43 +905,57 @@ export class MemoryGroupGraph {
    * @param {string} object
    * @param {GroupPredicate} predicate
    * @param {string} setId
+   * @param {KeyObject} secret
    */
-  nameObjectSet(owner, object, predicate, setId) {
+  nameObjectSet(owner, object, predicate, setId, secret) {
     const id = String(setId).trim();
     if (!id) throw new Error("group name is empty");
-    if (!setIdHasBoundOwner(id)) throw new Error("set id is not bound to this owner");
+    const canonical = canonicalSetId(id);
+    if (!canonical) throw new Error("set id is not bound to this owner");
     const objectId = String(object).trim();
     const objectOwner = this.ownerOf(objectId);
     if (!objectOwner) throw new Error("mesh object is not in-graph");
     if (aclPrincipalKey(objectOwner) !== aclPrincipalKey(owner)) throw new Error("dest ACL write is owner-only");
-    const setOwner = this.ownerOfSet(predicate, id);
-    if (setOwner && !setIdBindsOwner(id, setOwner)) throw new Error("set id is not bound to this owner");
-    this.#writeObjectSet(objectId, objectOwner, predicate, id, 1);
+    const setOwner = this.ownerOfSet(predicate, canonical);
+    if (setOwner && !setIdBindsOwner(canonical, setOwner)) throw new Error("set id is not bound to this owner");
+    this.#requireSecret(owner, secret);
+    this.#writeObjectSet(objectId, objectOwner, predicate, canonical, 1, secret);
   }
 
   /**
    * @param {string} owner
    * @param {string} object
+   * @param {KeyObject} secret
    */
-  clearObjectSet(owner, object) {
+  clearObjectSet(owner, object, secret) {
     const objectId = String(object).trim();
     const objectOwner = this.ownerOf(objectId);
     if (!objectOwner) throw new Error("mesh object is not in-graph");
     if (aclPrincipalKey(objectOwner) !== aclPrincipalKey(owner)) throw new Error("dest ACL write is owner-only");
+    this.#requireSecret(owner, secret);
     const existing = this.objectSets.get(aclKey(objectId));
     if (!existing) {
-      this.#writeObjectSet(objectId, objectOwner, "same-group", "", 0);
+      this.#writeObjectSet(objectId, objectOwner, "same-group", "", 0, secret);
       return;
     }
-    this.#writeObjectSet(objectId, objectOwner, existing.name.predicate, existing.name.setId, 0);
+    this.#writeObjectSet(objectId, objectOwner, existing.name.predicate, existing.name.setId, 0, secret);
   }
 
   /**
    * @param {string} object
-   * @returns {ObjectSetName | undefined}
+   * @returns {(ObjectSetName & { signedStated?: 0 | 1, observed?: string[], signature?: Uint8Array, cancels?: SignedCancel[] }) | undefined}
    */
   objectSet(object) {
-    return this.objectSets.get(aclKey(String(object).trim()))?.name;
+    const record = this.objectSets.get(aclKey(String(object).trim()));
+    if (!record) return undefined;
+    return {
+      ...record.name,
+      objectOwner: record.objectOwner,
+      signedStated: record.signedStated,
+      observed: record.observed,
+      signature: record.signature,
+      cancels: record.cancels,
+    };
   }
 
   /** @param {MemoryGroupGraph} other */
@@ -418,21 +975,32 @@ export class MemoryGroupGraph {
       if (!local || incomingHam > localHam) this.grants.set(key, structuredClone(incoming));
     }
     for (const [key, owner] of other.setOwners) {
-      const setId = key.split("\0")[1] ?? "";
-      if (!setIdBindsOwner(setId, owner)) continue;
+      const setKey = key.split("\0")[1] ?? "";
+      const slash = setKey.lastIndexOf("_");
+      const setId = slash > 0 ? `${setKey.slice(0, slash)}/${setKey.slice(slash + 1)}` : "";
+      if (!setId || !setIdBindsOwner(setId, owner)) continue;
       if (!this.setOwners.has(key)) this.setOwners.set(key, owner);
     }
     for (const [key, incoming] of other.memberships) {
       if (!setIdBindsOwner(incoming.membership.setId, incoming.setOwner)) continue;
       if (!this.#membershipOwnerMatches(incoming)) continue;
+      if (!this.memberships.has(key) && !membershipSignaturesOk(this.enrolled, incoming)) continue;
       const local = this.memberships.get(key);
-      this.memberships.set(key, local ? mergeMembership(local, incoming) : structuredClone(incoming));
+      this.memberships.set(
+        key,
+        local ? mergeMembership(this.enrolled, local, incoming) : structuredClone(incoming),
+      );
+      const stored = this.memberships.get(key);
+      if (stored && !local) publishMembership(this.enrolled, stored);
     }
     for (const [key, incoming] of other.objectSets) {
       if (!this.#objectOwnerMatches(incoming)) continue;
-      if (incoming.name.stated === 1 && !setIdHasBoundOwner(incoming.name.setId)) continue;
+      if (incoming.signedStated === 1 && !canonicalSetId(incoming.name.setId)) continue;
+      if (!objectSignatureOk(this.enrolled, incoming)) continue;
       const local = this.objectSets.get(key);
-      this.objectSets.set(key, local ? mergeObjectSet(local, incoming) : structuredClone(incoming));
+      this.objectSets.set(key, local ? mergeObjectSet(this.enrolled, local, incoming) : structuredClone(incoming));
+      const stored = this.objectSets.get(key);
+      if (stored && !local) refreshObject(this.enrolled, stored);
     }
   }
 
@@ -454,12 +1022,16 @@ export class MemoryGroupGraph {
    * @param {GroupPredicate} predicate
    * @param {string} setId
    * @param {0 | 1} stated
+   * @param {KeyObject} secret
    */
-  #writeObjectSet(objectId, objectOwner, predicate, setId, stated) {
+  #writeObjectSet(objectId, objectOwner, predicate, setId, stated, secret) {
     const key = aclKey(objectId);
     const prev = this.objectSets.get(key);
-    const epoch = stated === 0 ? (prev?.epoch ?? 0) + 1 : (prev?.epoch ?? 0);
-    this.objectSets.set(key, {
+    /** @type {SignedCancel[]} */
+    const cancels = prev ? structuredClone(prev.cancels) : [];
+    if (stated === 0) this.#pushCancel(cancels, "object-set", key, objectOwner, secret);
+    /** @type {ObjectSetRecord} */
+    const record = {
       name: {
         object: objectId,
         predicate,
@@ -467,62 +1039,71 @@ export class MemoryGroupGraph {
         stated,
         hamState: (prev?.name.hamState ?? 0) + 1,
       },
+      signedStated: stated,
       soul: objectSetSoul(objectOwner, objectId),
       objectOwner,
-      epoch,
-    });
+      observed: cancelIds(cancels),
+      signature: new Uint8Array(),
+      cancels,
+    };
+    record.signature = signBytes(secret, objectMessage(record));
+    refreshObject(this.enrolled, record);
+    this.objectSets.set(key, record);
   }
 }
 
-/** @param {PartyStatement} local @param {PartyStatement} incoming */
-function mergeParty(local, incoming) {
-  const epoch = incoming.epoch ?? 0;
-  const localEpoch = local.epoch ?? 0;
-  if (epoch > localEpoch) return { stated: incoming.stated, hamState: incoming.hamState, epoch };
-  if (epoch < localEpoch) return { stated: local.stated, hamState: local.hamState, epoch: localEpoch };
-  if (incoming.hamState > local.hamState) return { stated: incoming.stated, hamState: incoming.hamState, epoch };
-  if (incoming.hamState < local.hamState) return { stated: local.stated, hamState: local.hamState, epoch: localEpoch };
-  if (!incoming.stated && local.stated) return { stated: false, hamState: incoming.hamState, epoch };
-  return { stated: local.stated, hamState: local.hamState, epoch: localEpoch };
+/**
+ * @param {MemoryGroupGraph} graph
+ * @param {NonNullable<ReturnType<MemoryGroupGraph["objectSet"]>>} edge
+ * @param {string} owner
+ */
+function edgeAuthentic(graph, edge, owner) {
+  if (edge.stated !== 1 || !edge.objectOwner || !edge.signature || !edge.observed || !edge.cancels) return false;
+  if (aclPrincipalKey(edge.objectOwner) !== aclPrincipalKey(owner)) return false;
+  if (!graph.enrolledKey(edge.objectOwner)) return false;
+  /** @type {ObjectSetRecord} */
+  const record = {
+    name: { ...edge, stated: edge.signedStated === 0 ? 0 : 1 },
+    signedStated: edge.signedStated === 0 ? 0 : 1,
+    soul: "",
+    objectOwner: edge.objectOwner,
+    observed: edge.observed,
+    signature: edge.signature,
+    cancels: edge.cancels,
+  };
+  const ids = verifiedIds(graph.enrolled, record.cancels, "object-set", aclKey(record.name.object), (signer) => {
+    return aclPrincipalKey(signer) === aclPrincipalKey(record.objectOwner);
+  });
+  return (
+    record.signedStated === 1 &&
+    ids.length === record.cancels.length &&
+    covers(record.observed, ids) &&
+    objectSignatureOk(graph.enrolled, record)
+  );
 }
 
-/** @param {MembershipRecord} record */
-function syncMembership(record) {
-  if (record.member.stated && record.setParty.stated) {
-    record.membership.stated = 1;
-    record.removed = false;
-    return;
-  }
-  record.membership.stated = 0;
-  const retracted = (/** @type {PartyStatement} */ party) => !party.stated && party.hamState > 0;
-  if (retracted(record.member) || retracted(record.setParty)) record.removed = true;
-}
-
-/** @param {MembershipRecord} local @param {MembershipRecord} incoming */
-function mergeMembership(local, incoming) {
-  const merged = structuredClone(local);
-  merged.member = mergeParty(local.member, incoming.member);
-  merged.setParty = mergeParty(local.setParty, incoming.setParty);
-  merged.membership.hamState = Math.max(local.membership.hamState, incoming.membership.hamState);
-  syncMembership(merged);
-  return merged;
-}
-
-/** @param {ObjectSetRecord} local @param {ObjectSetRecord} incoming */
-function mergeObjectSet(local, incoming) {
-  const incomingEpoch = incoming.epoch ?? 0;
-  const localEpoch = local.epoch ?? 0;
-  if (incomingEpoch > localEpoch) return structuredClone(incoming);
-  if (incomingEpoch < localEpoch) return structuredClone(local);
-  if (incoming.name.hamState > local.name.hamState) return structuredClone(incoming);
-  if (incoming.name.hamState < local.name.hamState) return structuredClone(local);
-  const incomingDown = incoming.name.stated === 0;
-  const localDown = local.name.stated === 0;
-  if (incomingDown && !localDown) return structuredClone(incoming);
-  if (localDown && !incomingDown) return structuredClone(local);
-  const incomingKey = `${incoming.name.predicate}\0${incoming.name.setId}`;
-  const localKey = `${local.name.predicate}\0${local.name.setId}`;
-  return incomingKey < localKey ? structuredClone(incoming) : structuredClone(local);
+/**
+ * @param {MemoryGroupGraph} graph
+ * @param {NonNullable<ReturnType<MemoryGroupGraph["membership"]>>} row
+ */
+function membershipAuthentic(graph, row) {
+  if (row.stated !== 1 || !row.member || !row.setParty || !row.cancels || !row.setOwner) return false;
+  /** @type {MembershipRecord} */
+  const record = {
+    membership: row,
+    member: row.member,
+    setParty: row.setParty,
+    removed: Boolean(row.removed),
+    soul: "",
+    setOwner: row.setOwner,
+    cancels: row.cancels,
+  };
+  const ids = verifiedIds(graph.enrolled, record.cancels, "membership", membershipRowKey(record), (signer) =>
+    membershipCancelSigner(record, signer),
+  );
+  const live = (/** @type {PartyStatement} */ party, /** @type {"member" | "set"} */ role) =>
+    party.spoken && party.stated && covers(party.observed, ids) && partySignatureOk(graph.enrolled, party, role, record);
+  return ids.length === record.cancels.length && live(record.member, "member") && live(record.setParty, "set");
 }
 
 /**
@@ -548,6 +1129,7 @@ function checkSee(graph, object, accessor, now) {
  * CHECK(see) for same-group or named-circle.
  * Hop missing does not fail. Hop alone never allows.
  * `now` is the Check instant. Membership has no window here.
+ * A missing set owner fails closed.
  *
  * @param {MemoryGroupGraph} graph
  * @param {GroupPredicate} predicate
@@ -563,22 +1145,27 @@ export function checkGroupSee(graph, predicate, object, accessor, now, hint, hop
   const deny = (/** @type {string} */ reason) => ({ allowed: false, reason, ...echoed });
   const closed = closedReason(object);
   if (closed) return deny(closed);
-  const owner = graph.ownerOf(object);
+  const owner = graph.ownerOf(String(object));
   if (!owner) return deny("missing");
   if (aclPrincipalKey(owner) === aclPrincipalKey(accessor)) {
     return { allowed: true, reason: "owner", ...echoed };
   }
-  const edge = graph.objectSet(object);
+  const edge = graph.objectSet(String(object));
   if (!edge) return deny("missing");
-  if (edge.stated === 1 && !setIdHasBoundOwner(edge.setId)) return deny("missing");
-  const setOwner = graph.ownerOfSet(predicate, edge.setId);
-  if (edge.stated === 1 && setOwner && !setIdBindsOwner(edge.setId, setOwner)) return deny("missing");
-  if (edge.predicate !== predicate || edge.stated !== 1) {
-    return deny(edge.predicate === predicate && edge.stated !== 1 ? "cancelled" : "missing");
-  }
-  const membership = graph.membership(predicate, edge.setId, accessor);
+  if (!edge.objectOwner || aclPrincipalKey(edge.objectOwner) !== aclPrincipalKey(owner)) return deny("missing");
+  if (edge.predicate !== predicate) return deny("missing");
+  if (edge.stated !== 1) return deny("cancelled");
+  const canonical = canonicalSetId(edge.setId);
+  if (!canonical || edge.setId !== canonical) return deny("missing");
+  const setOwner = graph.ownerOfSet(predicate, canonical);
+  if (setOwner == null || !setIdBindsOwner(canonical, setOwner)) return deny("missing");
+  if (!edgeAuthentic(graph, edge, owner)) return deny("missing");
+  const membership = graph.membership(predicate, canonical, accessor);
   if (!membership) return deny("missing");
-  if (membership.stated === 1) return { allowed: true, reason: predicate, ...echoed };
+  if (membership.setId !== canonical) return deny("missing");
+  if (membership.stated === 1 && membershipAuthentic(graph, membership)) {
+    return { allowed: true, reason: predicate, ...echoed };
+  }
   return deny(membership.removed ? "cancelled" : "missing");
 }
 
@@ -600,10 +1187,9 @@ export function checkGroupSee(graph, predicate, object, accessor, now, hint, hop
 export function checkGroupPresentation(graph, group, object, accessor, payload, now, hint, hop) {
   const storeCancel = payload.stated === 0;
   const echoed = { hint: hint ?? null, hop: hop ?? null, storeCancel };
-  const namedEdge = graph.objectSet(object);
-  const named = namedEdge != null && namedEdge.stated === 1;
+  const edge = graph.objectSet(String(object));
   if (!group) {
-    if (named) return { allowed: false, reason: "missing", ...echoed };
+    if (edge && edge.stated === 1) return { allowed: false, reason: "missing", ...echoed };
     const dest = checkSee(graph, object, accessor, now);
     if (dest.allowed && payloadLive(payload, now)) {
       return { allowed: true, reason: dest.reason, ...echoed };
@@ -614,7 +1200,6 @@ export function checkGroupPresentation(graph, group, object, accessor, payload, 
       ...echoed,
     };
   }
-  const edge = graph.objectSet(object);
   if (!edge || edge.predicate !== group.predicate || edge.setId !== group.setId) {
     return { allowed: false, reason: "missing", ...echoed };
   }

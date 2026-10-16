@@ -35,6 +35,10 @@ pub enum GunError {
     UnboundSetOwner,
     #[error("membership speaker is not the member or the set owner")]
     MembershipSpeaker,
+    #[error("signer is not enrolled")]
+    SignerNotEnrolled,
+    #[error("row signature is not valid")]
+    RowSignature,
     #[error("check rejected: {0}")]
     Check(CheckError),
     #[error("{0}")]

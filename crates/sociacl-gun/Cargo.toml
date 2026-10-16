@@ -11,5 +11,7 @@ name = "gun"
 path = "../../examples/gun.rs"
 
 [dependencies]
+rand = "0.8"
+sha2 = "0.10"
 sociacl-core = { path = "../sociacl-core" }
 thiserror = "2"
