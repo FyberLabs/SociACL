@@ -128,12 +128,12 @@ export function checkSee(graph, object, accessor, now, hint, hop) {
     return deny("unknown");
   }
   if (!graph.hasObject(object)) return deny("unknown");
-  if (graph.ownerOf(object) === accessor) return allow("owner");
+  if (samePrincipal(graph.ownerOf(object), accessor)) return allow("owner");
   const grants = liveGrants(graph, object, now);
-  if (grants.some((g) => g.accessor === accessor && g.claimId === object || g.object === object || g.claimId == null)) {
+  if (grants.some((g) => samePrincipal(g.accessor, accessor) && g.claimId === object || g.object === object || g.claimId == null)) {
     return allow("delegate");
   }
-  if (grants.some((g) => g.accessor === accessor)) return allow("delegate");
+  if (grants.some((g) => samePrincipal(g.accessor, accessor))) return allow("delegate");
   return deny("delegate");
 }
 

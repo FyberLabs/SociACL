@@ -371,12 +371,24 @@ impl MeshSeeGraph {
     /// from owner, object, and accessor. A raw id and the item soul
     /// `owner_of` already treats as that object land on one row.
     /// An integer above the JavaScript safe range is dropped.
+    /// The object must already be in the graph, and `incoming.owner`
+    /// must be that object's current owner. A row that arrives earlier
+    /// is not retained.
     pub fn merge_post_edge(&mut self, incoming: GunPostEdge) {
         if !post_row_in_range(&incoming) {
             return;
         }
+        let Some((stored_id, object_owner)) = self
+            .object_record(&incoming.grant.object)
+            .map(|(id, owner)| (id.to_string(), owner.to_string()))
+        else {
+            return;
+        };
+        if acl_principal_key(&object_owner) != acl_principal_key(&incoming.owner) {
+            return;
+        }
         let mut incoming = incoming.canonical();
-        incoming.grant.object = self.canonical_post_object(&incoming.grant.object);
+        incoming.grant.object = stored_id;
         incoming = incoming.canonical();
         let object = incoming.grant.object.clone();
         let accessor = incoming.grant.accessor.clone();

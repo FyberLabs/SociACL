@@ -839,7 +839,7 @@ function membershipHidden(record, members) {
  */
 export class MemoryGroupGraph {
   constructor() {
-    /** @type {Map<string, string>} */
+    /** @type {Map<string, { id: string, owner: string }>} */
     this.objects = new Map();
     /** @type {Map<string, SeeGrant>} */
     this.grants = new Map();
@@ -858,17 +858,17 @@ export class MemoryGroupGraph {
 
   /**
    * In-graph id and owner. A direct aclKey hit wins. Otherwise a raw
-   * id and its item soul resolve to the stored object.
+   * id and its item soul resolve to the stored object. The stored id
+   * is the original spelling, so an item soul still matches its raw id.
    * @param {string} object
    * @returns {{ id: string, owner: string } | undefined}
    */
   objectRecord(object) {
     const text = String(object).trim();
-    const direct = aclKey(text);
-    const owner = this.objects.get(direct);
-    if (owner !== undefined) return { id: direct, owner };
-    for (const [key, stored] of this.objects) {
-      if (itemSoulAlias(key, text)) return { id: key, owner: stored };
+    const direct = this.objects.get(aclKey(text));
+    if (direct) return { id: direct.id, owner: direct.owner };
+    for (const stored of this.objects.values()) {
+      if (itemSoulAlias(stored.id, text)) return { id: stored.id, owner: stored.owner };
     }
     return undefined;
   }
@@ -888,11 +888,12 @@ export class MemoryGroupGraph {
    * @param {string} owner
    */
   putObject(object, owner) {
-    const key = aclKey(String(object).trim());
+    const id = String(object).trim();
+    const key = aclKey(id);
     const next = String(owner).trim();
     const prev = this.objects.get(key);
-    if (prev && aclPrincipalKey(prev) !== aclPrincipalKey(next)) this.objectSets.delete(key);
-    this.objects.set(key, next);
+    if (prev && aclPrincipalKey(prev.owner) !== aclPrincipalKey(next)) this.objectSets.delete(key);
+    this.objects.set(key, { id, owner: next });
   }
 
   /** @param {string} object */
@@ -1345,9 +1346,8 @@ export class MemoryGroupGraph {
 
   /** @param {MemoryGroupGraph} other */
   mergeFrom(other) {
-    for (const [key, owner] of other.objects) {
-      const canon = aclKey(key);
-      if (!this.objects.has(canon)) this.objects.set(canon, owner);
+    for (const [key, record] of other.objects) {
+      if (!this.objects.has(key)) this.objects.set(key, { id: record.id, owner: record.owner });
     }
     for (const incoming of other.grants.values()) {
       const object = grantObject(incoming);

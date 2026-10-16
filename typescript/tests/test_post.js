@@ -20,6 +20,7 @@ import {
   applySeeGrant,
   cancelPost,
   checkPost as gunCheckPost,
+  checkSee,
   factorGrants as gunFactorGrants,
   postGrantSigningBytes as gunSigningBytes,
   postSoul as gunPostSoul,
@@ -353,6 +354,31 @@ test("light acl post write is owner-only and drops a noncanonical window", () =>
   assert.equal(acl.postGrant(object, "0xcarol").hamState, max);
   assert.equal(acl.postGrant(object, "0xcarol").grant.stated, 0);
   assert.equal(gunCheckPost(acl, object, "0xcarol", 10).reason, "missing");
+});
+
+test("a stored item soul still resolves the raw id", () => {
+  const graph = new MemoryGroupGraph();
+  const raw = "room:alpha";
+  const soul = "s3rch/items/room:alpha";
+  graph.putObject(soul, "0xalice");
+  assert.equal(graph.ownerOf(raw), "0xalice");
+  graph.stateSeeGrant("0xalice", { object: raw, accessor: "0xbob", from: 0, until: 80 });
+  graph.statePostGrant("0xalice", { object: raw, accessor: "0xbob", from: 0, until: 80 });
+  assert.equal(graph.postGrant(raw, "0xbob").grant.object, soul);
+  assert.equal(checkPost(graph, raw, "0xbob", 10).reason, "post");
+  assert.equal(checkPost(graph, soul, "0xbob", 10).reason, "post");
+});
+
+test("light checkSee uses the same owner principal as checkPost", () => {
+  const acl = new MemorySeeAcl();
+  const object = "room:alpha";
+  acl.putObject(object, "s3rch/users/0xalice");
+  assert.equal(checkSee(acl, object, "0xalice", 10).reason, "owner");
+  assert.equal(gunCheckPost(acl, object, "0xalice", 10).reason, "owner");
+  applySeeGrant(acl, "s3rch/users/0xalice", { claimId: object, accessor: "s3rch/users/0xbob", from: 0, until: 80 });
+  applyPostGrant(acl, "s3rch/users/0xalice", { object, accessor: "s3rch/users/0xbob", from: 0, until: 80 });
+  assert.equal(checkSee(acl, object, "0xbob", 10).allowed, true);
+  assert.equal(gunCheckPost(acl, object, "0xbob", 10).reason, "post");
 });
 
 test("light acl cancel finds the row when the accessor is a user soul", () => {

@@ -545,6 +545,45 @@ fn a_cancel_at_the_ham_ceiling_stays_representable() {
     );
 }
 
+#[test]
+fn a_post_merge_waits_for_the_current_owner() {
+    let mut graph = MeshSeeGraph::new();
+    graph.merge_post_edge(GunPostEdge::new(
+        "0xalice",
+        MeshPostGrant::live("room:alpha", "0xbob", 0, 80),
+        4,
+    ));
+    graph.put_object("room:alpha", "0xalice");
+    graph
+        .state_see_grant("0xalice", MeshSeeGrant::live("room:alpha", "0xbob", 0, 80))
+        .unwrap();
+    let staged = graph.check_post("room:alpha", "0xbob", Timestamp(10), None, None);
+    assert!(!staged.allowed, "{}", staged.reason);
+    assert_eq!(staged.reason, MESH_REASON_MISSING);
+    graph.merge_post_edge(GunPostEdge::new(
+        "0xcarol",
+        MeshPostGrant::live("room:alpha", "0xbob", 0, 80),
+        9,
+    ));
+    assert_eq!(
+        graph
+            .check_post("room:alpha", "0xbob", Timestamp(10), None, None)
+            .reason,
+        MESH_REASON_MISSING
+    );
+    graph.merge_post_edge(GunPostEdge::new(
+        "0xalice",
+        MeshPostGrant::live("room:alpha", "0xbob", 0, 80),
+        2,
+    ));
+    assert_eq!(
+        graph
+            .check_post("room:alpha", "0xbob", Timestamp(10), None, None)
+            .reason,
+        MESH_REASON_POST
+    );
+}
+
 fn hex(bytes: &[u8]) -> String {
     const HEX: &[u8; 16] = b"0123456789abcdef";
     let mut out = String::with_capacity(bytes.len() * 2);
