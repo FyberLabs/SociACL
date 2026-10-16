@@ -14,7 +14,8 @@
     "keyCommitment in these vectors is an opaque string. This slice does not define that commitment.",
     "epoch-max-safe uses 9007199254740991, the largest integer Number.isSafeInteger accepts. 9007199254740992 is rejected and has no id.",
     "inbox-real-wrap hashes the wrappedKey blob in wrap.json. The short aa and ab wraps are id cases only.",
-    "acl-snapshot-utf8-order sorts accessors by UTF-8 bytes. U+E000 precedes U+10000."
+    "acl-snapshot-utf8-order sorts accessors by UTF-8 bytes. U+E000 precedes U+10000.",
+    "wrap-receipt is the length-prefixed reader receipt. It is not a signature."
   ],
   "cases": [
     {
@@ -420,6 +421,20 @@
       ],
       "encodedLen": 163,
       "sha256": "52e3fad7030a69857da2efa49ee5527705723f421c937e62b7929da97594838d"
+    },
+    {
+      "name": "wrap-receipt",
+      "kind": "fields",
+      "fields": [
+        "s3rch-wrap-receipt-v1",
+        "item-1",
+        "bob",
+        "2",
+        "abababababababababababababababababababababababababababababababab",
+        "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+      ],
+      "encodedLen": 183,
+      "sha256": "f8b378a2de6cad7000152fabc93b3846e887d99bee4d74201f94ebb52618a2af"
     }
   ]
 }

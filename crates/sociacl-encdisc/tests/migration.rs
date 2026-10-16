@@ -1,0 +1,618 @@
+use serde::Deserialize;
+use sociacl_encdisc::{
+    accept_migration, apply_protocol_migration, open_migrated_item, open_reader_wrap,
+    prepare_protocol_migration, sign_sea, sign_wrap_receipt, wrap_receipt_sha256, AccountSeaSecret,
+    EnrolledSeaPub, GrantStated, GrantStorage, MeshSeeGrant, MigrationAdmissionInput,
+    MigrationGrant, MigrationReader, PreparedMigration, ProtocolMigration, ReaderMigration,
+    ReaderVersion, SignedGrantPayload, WrapReceipt, WrapScope, WrapTarget, WrappedKey,
+};
+
+const MIGRATION: &str = include_str!("../../../vectors/encrypted-discovery/migration.json");
+const CANONICAL: &str = include_str!("../../../vectors/encrypted-discovery/canonical.json");
+const REV: &str = "1111111111111111111111111111111111111111111111111111111111111111";
+
+#[derive(Deserialize)]
+struct Document {
+    cases: Vec<Case>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Case {
+    name: String,
+    owner: String,
+    caller: String,
+    now: u64,
+    storage: String,
+    object: String,
+    from_version: u64,
+    to_version: u64,
+    version_gate: u64,
+    soul_ham_state: u64,
+    grants: Vec<GrantJson>,
+    payloads: Vec<PayloadJson>,
+    wraps: Vec<WrapJson>,
+    readers: Vec<ReaderJson>,
+    reader_versions: Vec<VersionJson>,
+    receipts: Vec<ReceiptJson>,
+    expect: ExpectJson,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GrantJson {
+    owner: String,
+    object: String,
+    accessor: String,
+    from: u64,
+    until: u64,
+    stated: u64,
+    ham_state: u64,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PayloadJson {
+    object: String,
+    accessor: String,
+    from: u64,
+    until: u64,
+    stated: u64,
+    epoch: u64,
+    owner: String,
+    grant_revision: u64,
+    item_ciphertext_digest: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WrapJson {
+    epoch: u64,
+    target_id: String,
+    object: String,
+    revision_id: String,
+    wrapped_key: String,
+}
+
+#[derive(Deserialize)]
+struct ReaderJson {
+    accessor: String,
+    acknowledged: bool,
+    #[serde(rename = "atGate")]
+    at_gate: bool,
+}
+
+#[derive(Deserialize)]
+struct VersionJson {
+    accessor: String,
+    version: u64,
+    epub: String,
+}
+
+#[derive(Deserialize)]
+struct ReceiptJson {
+    accessor: String,
+    signature: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ExpectJson {
+    ok: bool,
+    plaintext_retained: Option<Vec<String>>,
+    plaintext_dropped: Option<Vec<String>>,
+    soul_replaced: Option<bool>,
+    skipped_public: Option<bool>,
+    ciphertext_published: Option<bool>,
+    soul_ham_state: Option<u64>,
+    cancelled: Option<Vec<CancelJson>>,
+}
+
+#[derive(Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CancelJson {
+    accessor: String,
+    ham_state: u64,
+    stated: u64,
+    from: u64,
+    until: u64,
+}
+
+#[test]
+fn migration_vectors_match_the_shared_fixture() {
+    let document: Document = serde_json::from_str(MIGRATION).unwrap();
+    let names: Vec<&str> = document
+        .cases
+        .iter()
+        .map(|case| case.name.as_str())
+        .collect();
+    for required in [
+        "migration-wrap-receipt",
+        "migration-per-reader",
+        "migration-soul-replaces",
+        "migration-no-widen",
+        "migration-privilege-down",
+        "migration-public-skipped",
+        "migration-reader-cannot-issue",
+    ] {
+        assert!(names.contains(&required), "{required}");
+    }
+    for case in &document.cases {
+        let migration = ProtocolMigration {
+            object: case.object.clone(),
+            from_version: case.from_version,
+            to_version: case.to_version,
+            rewrapped: case
+                .wraps
+                .iter()
+                .map(|wrap| WrappedKey {
+                    scope: WrapScope::ItemDek,
+                    epoch: wrap.epoch,
+                    target: WrapTarget::ReaderEpub,
+                    target_id: wrap.target_id.clone(),
+                    object: Some(wrap.object.clone()),
+                    group: None,
+                    revision_id: wrap.revision_id.clone(),
+                    wrapped_key: wrap.wrapped_key.clone(),
+                })
+                .collect(),
+            readers: case
+                .readers
+                .iter()
+                .map(|reader| ReaderMigration {
+                    accessor: reader.accessor.clone(),
+                    acknowledged: reader.acknowledged,
+                    at_gate: reader.at_gate,
+                })
+                .collect(),
+            version_gate: case.version_gate,
+        };
+        let grants: Vec<MigrationGrant> = case
+            .grants
+            .iter()
+            .map(|grant| MigrationGrant {
+                soul: format!(
+                    "s3rch/acl/{}/{}/{}",
+                    grant.owner, grant.object, grant.accessor
+                ),
+                owner: grant.owner.clone(),
+                grant: MeshSeeGrant {
+                    object: grant.object.clone(),
+                    accessor: grant.accessor.clone(),
+                    from: grant.from,
+                    until: grant.until,
+                    stated: GrantStated::from_u64(grant.stated).unwrap(),
+                },
+                ham_state: grant.ham_state,
+            })
+            .collect();
+        let payloads: Vec<SignedGrantPayload> = case
+            .payloads
+            .iter()
+            .map(|payload| SignedGrantPayload {
+                object: payload.object.clone(),
+                accessor: payload.accessor.clone(),
+                from: payload.from,
+                until: payload.until,
+                stated: GrantStated::from_u64(payload.stated).unwrap(),
+                epoch: payload.epoch,
+                owner: payload.owner.clone(),
+                grant_revision: payload.grant_revision,
+                item_ciphertext_digest: payload.item_ciphertext_digest.clone(),
+            })
+            .collect();
+        let versions: Vec<ReaderVersion> = case
+            .reader_versions
+            .iter()
+            .map(|version| ReaderVersion {
+                accessor: version.accessor.clone(),
+                version: version.version,
+                epub: version.epub.clone(),
+            })
+            .collect();
+        let receipts: Vec<WrapReceipt> = case
+            .receipts
+            .iter()
+            .map(|receipt| WrapReceipt {
+                accessor: receipt.accessor.clone(),
+                signature: receipt.signature.clone(),
+            })
+            .collect();
+        let storage = match case.storage.as_str() {
+            "public-plain" => GrantStorage::PublicPlain,
+            "private-row" => GrantStorage::PrivateRow,
+            other => panic!("{other}"),
+        };
+        let result = apply_protocol_migration(&MigrationAdmissionInput {
+            migration: &migration,
+            owner: &case.owner,
+            caller: &case.caller,
+            now: case.now,
+            storage,
+            grants: &grants,
+            payloads: &payloads,
+            receipts: &receipts,
+            reader_versions: &versions,
+            soul_ham_state: case.soul_ham_state,
+        });
+        if !case.expect.ok {
+            assert!(result.is_err(), "{}", case.name);
+            continue;
+        }
+        let outcome = result.unwrap_or_else(|error| panic!("{}: {error}", case.name));
+        assert!(!outcome.grants_see(), "{}", case.name);
+        assert!(!outcome.delays_privilege_down(), "{}", case.name);
+        assert!(!outcome.version_gate_drops_plaintext(), "{}", case.name);
+        assert!(!outcome.widened(), "{}", case.name);
+        assert!(outcome.historical_replica_remains(), "{}", case.name);
+        assert!(!outcome.claws_back_historical_replica(), "{}", case.name);
+        assert_eq!(outcome.object, case.object, "{}", case.name);
+        assert_eq!(
+            outcome.plaintext_retained,
+            case.expect.plaintext_retained.clone().unwrap(),
+            "{}",
+            case.name
+        );
+        assert_eq!(
+            outcome.plaintext_dropped,
+            case.expect.plaintext_dropped.clone().unwrap(),
+            "{}",
+            case.name
+        );
+        assert_eq!(
+            outcome.soul_replaced,
+            case.expect.soul_replaced.unwrap(),
+            "{}",
+            case.name
+        );
+        assert_eq!(
+            outcome.skipped_public,
+            case.expect.skipped_public.unwrap(),
+            "{}",
+            case.name
+        );
+        assert_eq!(
+            outcome.ciphertext_published,
+            case.expect.ciphertext_published.unwrap(),
+            "{}",
+            case.name
+        );
+        assert_eq!(
+            outcome.soul_ham_state,
+            case.expect.soul_ham_state.unwrap(),
+            "{}",
+            case.name
+        );
+        let cancelled = case.expect.cancelled.clone().unwrap();
+        assert_eq!(outcome.cancelled.len(), cancelled.len(), "{}", case.name);
+        for (actual, expected) in outcome.cancelled.iter().zip(&cancelled) {
+            assert_eq!(actual.grant.accessor, expected.accessor, "{}", case.name);
+            assert_eq!(
+                actual.grant.stated.as_u64(),
+                expected.stated,
+                "{}",
+                case.name
+            );
+            assert_eq!(actual.ham_state, expected.ham_state, "{}", case.name);
+            assert_eq!(actual.grant.from, expected.from, "{}", case.name);
+            assert_eq!(actual.grant.until, expected.until, "{}", case.name);
+            assert_eq!(actual.grant.object, case.object, "{}", case.name);
+        }
+    }
+}
+
+#[test]
+fn wrap_receipt_bytes_match_the_canonical_vector() {
+    let document: serde_json::Value = serde_json::from_str(CANONICAL).unwrap();
+    let case = document["cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|case| case["name"] == "wrap-receipt")
+        .unwrap();
+    let fields = case["fields"].as_array().unwrap();
+    let hash = wrap_receipt_sha256(
+        fields[1].as_str().unwrap(),
+        fields[2].as_str().unwrap(),
+        fields[3].as_str().unwrap().parse().unwrap(),
+        fields[4].as_str().unwrap(),
+        fields[5].as_str().unwrap(),
+    )
+    .unwrap();
+    assert_eq!(hash, case["sha256"].as_str().unwrap());
+}
+
+#[test]
+fn owner_migration_drops_plaintext_per_reader_and_does_not_grant() {
+    let owner = AccountSeaSecret::generate("0xalice").unwrap();
+    let bob = AccountSeaSecret::generate("0xbob").unwrap();
+    let carol = AccountSeaSecret::generate("0xcarol").unwrap();
+    let dave = AccountSeaSecret::generate("0xdave").unwrap();
+    let plaintext = b"existing-body";
+    let grants = vec![
+        edge(&owner, bob.account(), GrantStated::Live, 2),
+        edge(&owner, carol.account(), GrantStated::Live, 3),
+    ];
+    let readers = vec![migration_reader(&bob, 2), migration_reader(&carol, 1)];
+    let prepared = match prepare_protocol_migration(
+        &owner,
+        "item-1",
+        plaintext,
+        1,
+        2,
+        2,
+        1,
+        REV,
+        1_000,
+        4,
+        GrantStorage::PrivateRow,
+        &grants,
+        &readers,
+        &[],
+    )
+    .unwrap()
+    {
+        PreparedMigration::Encrypted(prepared) => prepared,
+        PreparedMigration::SkippedPublic { .. } => panic!("private row was skipped"),
+    };
+    assert_eq!(prepared.migration.object, "item-1");
+    assert_eq!(prepared.migration.to_version, 2);
+    assert!(prepared
+        .migration
+        .readers
+        .iter()
+        .all(|reader| !reader.acknowledged));
+    assert!(prepared
+        .migration
+        .readers
+        .iter()
+        .any(|reader| reader.accessor == carol.account() && !reader.at_gate));
+    assert_eq!(prepared.rows.len(), 2);
+    assert!(prepared.rows.iter().all(|row| row.wrap.is_some()));
+    let dek = prepared.author.open("item-1", REV).unwrap();
+    assert!(prepared.author.open("item-1", &"22".repeat(32)).is_err());
+    let opened = open_migrated_item(
+        &prepared.item_blob,
+        &sociacl_encdisc::ItemDek::from_bytes(decode_key(&dek)),
+    )
+    .unwrap();
+    assert_eq!(opened, plaintext);
+    let bob_wrap = prepared
+        .migration
+        .rewrapped
+        .iter()
+        .find(|wrap| wrap.target_id == bob.epub())
+        .unwrap();
+    let opened_wrap = open_reader_wrap(bob_wrap, bob.local_epriv(), bob.epub()).unwrap();
+    assert!(!opened_wrap.grants_see());
+    assert_eq!(opened_wrap.key_bytes(), &decode_key(&dek));
+
+    let waiting =
+        accept_migration(&owner, &prepared, &prepared.migration, &[], &grants, 1_000).unwrap();
+    assert_eq!(waiting.plaintext_retained.len(), 2);
+    assert!(!waiting.soul_replaced);
+    assert!(waiting.ciphertext_published);
+    assert!(!waiting.grants_see());
+
+    let bob_row = prepared
+        .rows
+        .iter()
+        .find(|row| row.lane_id == bob.inbox().lane_id)
+        .unwrap();
+    let bob_receipt = WrapReceipt {
+        accessor: bob.account().to_string(),
+        signature: sign_wrap_receipt(&bob, "item-1", 2, REV, &bob_row.entry_id).unwrap(),
+    };
+    let mut one = prepared.migration.clone();
+    one.readers
+        .iter_mut()
+        .find(|reader| reader.accessor == bob.account())
+        .unwrap()
+        .acknowledged = true;
+    let partial = accept_migration(
+        &owner,
+        &prepared,
+        &one,
+        &[bob_receipt.clone()],
+        &grants,
+        1_000,
+    )
+    .unwrap();
+    assert_eq!(partial.plaintext_dropped, vec![bob.account().to_string()]);
+    assert_eq!(
+        partial.plaintext_retained,
+        vec![carol.account().to_string()]
+    );
+    assert!(!partial.soul_replaced);
+    assert!(partial.cancelled.is_empty());
+    assert!(partial.historical_replica_remains());
+
+    let concatenated = format!(
+        "s3rch-wrap-receipt-v1item-1{}2{REV}{}",
+        bob.account(),
+        bob_row.entry_id
+    );
+    let bad = WrapReceipt {
+        accessor: bob.account().to_string(),
+        signature: sign_sea(bob.local_priv(), concatenated.as_bytes()).unwrap(),
+    };
+    assert!(accept_migration(&owner, &prepared, &one, &[bad], &grants, 1_000).is_err());
+    let foreign = WrapReceipt {
+        accessor: bob.account().to_string(),
+        signature: sign_wrap_receipt(&carol, "item-1", 2, REV, &bob_row.entry_id).unwrap(),
+    };
+    assert!(accept_migration(&owner, &prepared, &one, &[foreign], &grants, 1_000).is_err());
+
+    let carol_row = prepared
+        .rows
+        .iter()
+        .find(|row| row.lane_id == carol.inbox().lane_id)
+        .unwrap();
+    let carol_receipt = WrapReceipt {
+        accessor: carol.account().to_string(),
+        signature: sign_wrap_receipt(&carol, "item-1", 2, REV, &carol_row.entry_id).unwrap(),
+    };
+    let mut both = one.clone();
+    both.readers
+        .iter_mut()
+        .find(|reader| reader.accessor == carol.account())
+        .unwrap()
+        .acknowledged = true;
+    let settled = accept_migration(
+        &owner,
+        &prepared,
+        &both,
+        &[bob_receipt, carol_receipt],
+        &grants,
+        1_000,
+    )
+    .unwrap();
+    assert!(settled.soul_replaced);
+    assert_eq!(settled.soul_ham_state, 5);
+    assert!(settled.plaintext_retained.is_empty());
+    assert_eq!(settled.cancelled.len(), 2);
+    assert!(settled.cancelled.iter().all(|grant| {
+        grant.grant.stated == GrantStated::Cancelled && grant.grant.object == "item-1"
+    }));
+    assert!(!settled.claws_back_historical_replica());
+    assert!(!settled.grants_see());
+
+    assert!(prepare_protocol_migration(
+        &bob,
+        "item-1",
+        plaintext,
+        1,
+        2,
+        2,
+        1,
+        REV,
+        1_000,
+        4,
+        GrantStorage::PrivateRow,
+        &grants,
+        &readers,
+        &[],
+    )
+    .is_err());
+    let mut extra = readers.clone();
+    extra.push(migration_reader(&dave, 2));
+    assert!(prepare_protocol_migration(
+        &owner,
+        "item-1",
+        plaintext,
+        1,
+        2,
+        2,
+        1,
+        REV,
+        1_000,
+        4,
+        GrantStorage::PrivateRow,
+        &grants,
+        &extra,
+        &[],
+    )
+    .is_err());
+
+    let skipped = prepare_protocol_migration(
+        &owner,
+        "item-1",
+        plaintext,
+        1,
+        2,
+        2,
+        1,
+        REV,
+        1_000,
+        4,
+        GrantStorage::PublicPlain,
+        &grants,
+        &[],
+        &[],
+    )
+    .unwrap();
+    assert!(matches!(skipped, PreparedMigration::SkippedPublic { .. }));
+
+    let cancelled = vec![
+        edge(&owner, bob.account(), GrantStated::Cancelled, 4),
+        edge(&owner, carol.account(), GrantStated::Live, 1),
+    ];
+    let only_carol = vec![migration_reader(&carol, 2)];
+    let revoked = match prepare_protocol_migration(
+        &owner,
+        "item-1",
+        plaintext,
+        1,
+        2,
+        2,
+        1,
+        REV,
+        1_000,
+        4,
+        GrantStorage::PrivateRow,
+        &cancelled,
+        &only_carol,
+        &[],
+    )
+    .unwrap()
+    {
+        PreparedMigration::Encrypted(prepared) => prepared,
+        PreparedMigration::SkippedPublic { .. } => panic!("cancel path skipped"),
+    };
+    assert!(revoked
+        .migration
+        .rewrapped
+        .iter()
+        .all(|wrap| wrap.target_id != bob.epub()));
+    let outcome =
+        accept_migration(&owner, &revoked, &revoked.migration, &[], &cancelled, 1_000).unwrap();
+    assert_eq!(
+        outcome.plaintext_retained,
+        vec![carol.account().to_string()]
+    );
+    assert!(!outcome.soul_replaced);
+    assert!(!outcome.delays_privilege_down());
+    assert_eq!(cancelled[0].grant.stated, GrantStated::Cancelled);
+}
+
+fn edge(
+    owner: &AccountSeaSecret,
+    accessor: &str,
+    stated: GrantStated,
+    ham_state: u64,
+) -> MigrationGrant {
+    MigrationGrant {
+        soul: format!("s3rch/acl/{}/item-1/{accessor}", owner.account()),
+        owner: owner.account().to_string(),
+        grant: MeshSeeGrant {
+            object: "item-1".to_string(),
+            accessor: accessor.to_string(),
+            from: 0,
+            until: 5_000,
+            stated,
+        },
+        ham_state,
+    }
+}
+
+fn migration_reader(secret: &AccountSeaSecret, version: u64) -> MigrationReader {
+    MigrationReader {
+        enrolled: EnrolledSeaPub::from_account(secret),
+        lane_id: secret.inbox().lane_id,
+        version,
+    }
+}
+
+fn decode_key(hex_key: &str) -> [u8; 32] {
+    let decoded = hex_key.as_bytes();
+    assert_eq!(decoded.len(), 64);
+    let mut out = [0u8; 32];
+    for index in 0..32 {
+        out[index] = u8::from_str_radix(
+            std::str::from_utf8(&decoded[index * 2..index * 2 + 2]).unwrap(),
+            16,
+        )
+        .unwrap();
+    }
+    out
+}

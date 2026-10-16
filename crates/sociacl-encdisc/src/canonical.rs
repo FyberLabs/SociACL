@@ -31,6 +31,7 @@ pub const DOMAIN_ACL_SNAPSHOT: &str = "s3rch-acl-snapshot-v1";
 pub const DOMAIN_EPOCH_MANIFEST_SIG: &str = "s3rch-epoch-manifest-sig-v1";
 pub const DOMAIN_EPOCH_FINALIZATION_SIG: &str = "s3rch-epoch-finalization-sig-v1";
 pub const DOMAIN_GROUP_EPOCH_CONFIG: &str = "s3rch-group-epoch-config-v1";
+pub const DOMAIN_WRAP_RECEIPT: &str = "s3rch-wrap-receipt-v1";
 
 /// Cleartext fields that `inboxEntryId` hashes. `wrap` is absent or present.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -267,6 +268,46 @@ pub fn account_binding_sha256(
     epub: &str,
 ) -> Result<String, EncDiscError> {
     Ok(sha256_hex(&account_binding_bytes(account, sea_pub, epub)?))
+}
+
+/// Reader receipt that the wrap for this entry arrived.
+///
+/// A concatenated string with no lengths is not this encoding.
+/// The signature is not a field. A caller boolean is not a receipt.
+pub fn wrap_receipt_bytes(
+    object: &str,
+    accessor: &str,
+    to_version: u64,
+    revision_id: &str,
+    entry_id: &str,
+) -> Result<Vec<u8>, EncDiscError> {
+    require_revision_id(revision_id)?;
+    require_digest_hex(entry_id)?;
+    let version = canonical_decimal(to_version)?;
+    length_prefixed(&[
+        DOMAIN_WRAP_RECEIPT,
+        object,
+        accessor,
+        &version,
+        revision_id,
+        entry_id,
+    ])
+}
+
+pub fn wrap_receipt_sha256(
+    object: &str,
+    accessor: &str,
+    to_version: u64,
+    revision_id: &str,
+    entry_id: &str,
+) -> Result<String, EncDiscError> {
+    Ok(sha256_hex(&wrap_receipt_bytes(
+        object,
+        accessor,
+        to_version,
+        revision_id,
+        entry_id,
+    )?))
 }
 
 /// SHA-256 of the raw plaintext, lowercase hex. Not a hex encoding of the text.

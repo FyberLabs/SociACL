@@ -1346,6 +1346,109 @@ fn every_candidate_resolves_and_a_child_names_the_parent_epoch() {
     assert!(!early.revision_on_chain(&skipped_manifest.revision_id, &snapshot, 3, None));
 }
 
+#[test]
+fn stale_acl_membership_and_object_set_do_not_settle() {
+    let revision = REV.to_string();
+    let view = EpochReplicaView {
+        object: "item-1".to_string(),
+        epoch: 2,
+        previous_finalization_id: String::new(),
+        seen: vec![EpochFinalization::seal(
+            "item-1",
+            1,
+            2,
+            &revision,
+            vec![revision.clone()],
+            "",
+            "sig",
+        )
+        .unwrap()],
+        winner_seen_at: 0,
+        settle_window_ms: SETTLE_WINDOW_DEFAULT_MS,
+        settled_revision_id: revision,
+        settled_epoch: 1,
+    };
+    let now = SETTLE_WINDOW_DEFAULT_MS;
+    let live = AclSnapshotBody {
+        object_set: None,
+        entries: vec![
+            direct_entry("0xada", 1, GrantStated::Live),
+            direct_entry("0xbob", 2, GrantStated::Cancelled),
+        ],
+    };
+    assert!(epoch_step_current(&view, &live, &live, now));
+
+    let mut lists_ada_live = live.clone();
+    lists_ada_live.entries[0].stated = GrantStated::Live;
+    lists_ada_live.entries[0].grant_revision = 1;
+    let mut current = live.clone();
+    current.entries[0].stated = GrantStated::Cancelled;
+    current.entries[0].grant_revision = 10;
+    current.entries[1].grant_revision = 2;
+    assert!(!epoch_step_current(&view, &lists_ada_live, &current, now));
+
+    let omits_bob = AclSnapshotBody {
+        object_set: None,
+        entries: vec![direct_entry("0xada", 10, GrantStated::Cancelled)],
+    };
+    assert!(!epoch_step_current(&view, &omits_bob, &current, now));
+
+    let mut cancels_bob_low = current.clone();
+    cancels_bob_low.entries[1].grant_revision = 2;
+    let mut snapshot_low = current.clone();
+    snapshot_low.entries[1].grant_revision = 1;
+    assert!(!epoch_step_current(
+        &view,
+        &snapshot_low,
+        &cancels_bob_low,
+        now
+    ));
+
+    let set_a = AclSnapshotBody {
+        object_set: Some(AclObjectSet {
+            predicate: GroupPredicate::SameGroup,
+            set_id: "crew-a".to_string(),
+            stated: GrantStated::Live,
+            ham_state: 2,
+        }),
+        entries: vec![AclSnapshotEntry {
+            accessor: "0xcarol".to_string(),
+            grant_revision: 1,
+            stated: GrantStated::Live,
+            from: 0,
+            until: FAR,
+            scope: AclScope::SameGroup,
+            set_id: "crew-a".to_string(),
+            ham_state: 2,
+        }],
+    };
+    let set_b = AclSnapshotBody {
+        object_set: Some(AclObjectSet {
+            predicate: GroupPredicate::SameGroup,
+            set_id: "crew-b".to_string(),
+            stated: GrantStated::Live,
+            ham_state: 4,
+        }),
+        entries: vec![AclSnapshotEntry {
+            accessor: "0xcarol".to_string(),
+            grant_revision: 1,
+            stated: GrantStated::Live,
+            from: 0,
+            until: FAR,
+            scope: AclScope::SameGroup,
+            set_id: "crew-b".to_string(),
+            ham_state: 2,
+        }],
+    };
+    assert!(!epoch_step_current(&view, &set_a, &set_b, now));
+
+    let mut removed = set_a.clone();
+    removed.entries[0].stated = GrantStated::Cancelled;
+    removed.entries[0].ham_state = 4;
+    assert!(!epoch_step_current(&view, &set_a, &removed, now));
+    assert!(!settled_key_open(&view, &set_a, &removed, now));
+}
+
 fn context<'a>(
     owner: &'a AccountSeaSecret,
     manifest: &'a EpochManifest,

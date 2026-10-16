@@ -30,8 +30,8 @@
  * grants and direct same-group / named-circle edges. It does not
  * evaluate a wrap. sociacl-encdisc implements the account key, the
  * wrap edge, the canonical ids, blinded rows, checkPresentedGrant,
- * inbox admission, epoch admission, and rotateOnRevoke. It does not
- * run migration or a shard-close watermark.
+ * inbox admission, epoch admission, rotateOnRevoke, and in-place
+ * migration. A shard-close watermark is not implemented.
  * SEA priv and epriv never go on Gun.
  */
 
@@ -406,7 +406,8 @@ export function decodeHop(bytes: Uint8Array): HopFactor;
 /* same-group / named-circle edges. It does not evaluate a wrap.             */
 /* sociacl-encdisc implements the account key, the wrap edge, the canonical   */
 /* ids, blinded rows, checkPresentedGrant, inbox admission, epoch admission,  */
-/* and rotateOnRevoke. It does not run migration or a shard-close watermark.  */
+/* rotateOnRevoke, and in-place migration. A shard-close watermark is not     */
+/* implemented.                                                               */
 /* A wrap is not a grant. An inbox append is not a grant.                     */
 /* SEA priv and epriv never go on Gun.                                        */
 /* same-group and named-circle: hopcap 1, jointly stated, no inheritance.    */
@@ -2050,6 +2051,83 @@ export type ProtocolMigration = {
 };
 
 /**
+ * Authenticated receipt that this reader has the wrap.
+ * signature is a SEA signature over the length-prefixed fields
+ * "s3rch-wrap-receipt-v1", object, accessor, decimal toVersion,
+ * revisionId, and entryId. A caller boolean is not this receipt.
+ * A concatenated string with no lengths does not verify.
+ * Not a grant.
+ */
+export type WrapReceipt = {
+  accessor: AccessorId;
+  signature: string;
+};
+
+/**
+ * Reader version the verifier holds. atGate on ReaderMigration
+ * must equal version >= versionGate. The writer does not set it.
+ */
+export type MigrationReaderVersion = {
+  accessor: AccessorId;
+  version: number;
+  /** Enrolled SEA epub. The wrap targetId must be this value. */
+  epub: string;
+};
+
+/**
+ * Structural admission input. crates/sociacl-encdisc verifies
+ * the receipt signature before it will set acknowledged.
+ * grants are the merged plaintext edges. The caller does not
+ * add an accessor here to widen the set.
+ */
+export type MigrationAdmissionInput = {
+  migration: ProtocolMigration;
+  owner: AccessorId;
+  caller: AccessorId;
+  now: number;
+  storage: GrantStorage;
+  grants: readonly GunAclEdge[];
+  payloads: readonly SignedGrantPayload[];
+  receipts: readonly WrapReceipt[];
+  readerVersions: readonly MigrationReaderVersion[];
+  soulHamState: number;
+};
+
+/**
+ * What admission decided. grantsSee stays false.
+ * historicalReplicaRemains stays true: replacement does not
+ * claw back a plaintext copy already stored elsewhere.
+ * The version gate does not drop plaintext.
+ */
+export type MigrationAdmission = {
+  object: CheckObjectId;
+  plaintextRetained: readonly AccessorId[];
+  plaintextDropped: readonly AccessorId[];
+  soulReplaced: boolean;
+  soulHamState: number;
+  cancelled: readonly GunAclEdge[];
+  skippedPublic: boolean;
+  ciphertextPublished: boolean;
+  grantsSee: false;
+  delaysPrivilegeDown: false;
+  widened: false;
+  historicalReplicaRemains: true;
+};
+
+/**
+ * Owner-only admission. The TypeScript contract checks structure.
+ * The Rust crate also verifies the wrap receipt.
+ * atGate does not drop plaintext. One reader's receipt does not
+ * clear another reader. The soul stays until every current reader
+ * has a receipt. A wrap named here is not a grant. A reader does
+ * not call this. Items kept on the public plaintext path are not
+ * rewritten. Whether that path stays is open.
+ */
+export function applyProtocolMigration(
+  input: MigrationAdmissionInput,
+): MigrationAdmission;
+
+/**
  * Not a Check object. SociACL runs no index and does not store this.
  * public: one index, public content only.
  * private-group: that group's own index.
@@ -2061,8 +2139,8 @@ export type ContentIndexTier = "public" | "private-group" | "local";
 /**
  * Conformance stub names. Descriptions are in
  * docs/encrypted-discovery.md. crates/sociacl-encdisc runs the
- * epoch, rotation, and freshness checks. It does not run migration
- * or a shard-close watermark. None of them mint a grant.
+ * epoch, rotation, freshness, and migration checks. It does not run
+ * a shard-close watermark. None of them mint a grant.
  */
 export type EncryptedDiscoveryVector =
   | "content-auth-accept"
@@ -2116,6 +2194,14 @@ export type EncryptedDiscoveryVector =
   | "presented-group-check"
   | "presented-group-cancel"
   | "migration-wrap-receipt"
+  | "migration-per-reader"
+  | "migration-soul-replaces"
+  | "migration-no-widen"
+  | "migration-privilege-down"
+  | "migration-public-skipped"
+  | "migration-reader-cannot-issue"
+  | "migration-receipt-canonical"
+  | "migration-historical-replica"
   | "epoch-late-manifest"
   | "epoch-arrival-order"
   | "epoch-settle-window"

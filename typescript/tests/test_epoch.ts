@@ -313,6 +313,62 @@ test("epoch step and settled key follow the merged acl", () => {
   assert.equal(epochStepCurrent(pending, live, cancelled, open), false);
   const expired = directSnapshot([{ ...directEntry("ada", 1), until: open }]);
   assert.equal(epochStepCurrent(pending, expired, expired, open), false);
+  const elapsed = view([fin], { winnerSeenAt: 0, settleWindowMs: SETTLE_WINDOW_DEFAULT_MS });
+  const settledNow = SETTLE_WINDOW_DEFAULT_MS;
+  const pair = directSnapshot([
+    directEntry("ada", 1, 1),
+    { ...directEntry("bob", 0, 2), stated: 0 },
+  ]);
+  assert.equal(epochStepCurrent(elapsed, pair, pair, settledNow), true);
+  const adaCancelled = directSnapshot([
+    directEntry("ada", 0, 10),
+    directEntry("bob", 0, 2),
+  ]);
+  assert.equal(epochStepCurrent(elapsed, pair, adaCancelled, settledNow), false);
+  const omitsBob = directSnapshot([directEntry("ada", 0, 10)]);
+  assert.equal(epochStepCurrent(elapsed, omitsBob, adaCancelled, settledNow), false);
+  const lowBob = directSnapshot([
+    directEntry("ada", 0, 10),
+    directEntry("bob", 0, 1),
+  ]);
+  assert.equal(epochStepCurrent(elapsed, lowBob, adaCancelled, settledNow), false);
+  const setA: AclSnapshotBody = {
+    objectSet: { predicate: "same-group", setId: "crew-a", stated: 1, hamState: 2 },
+    entries: [
+      {
+        accessor: "carol",
+        grantRevision: 1,
+        stated: 1,
+        from: 0,
+        until: FAR,
+        scope: "same-group",
+        setId: "crew-a",
+        hamState: 2,
+      },
+    ],
+  };
+  const setB: AclSnapshotBody = {
+    objectSet: { predicate: "same-group", setId: "crew-b", stated: 1, hamState: 4 },
+    entries: [
+      {
+        accessor: "carol",
+        grantRevision: 1,
+        stated: 1,
+        from: 0,
+        until: FAR,
+        scope: "same-group",
+        setId: "crew-b",
+        hamState: 2,
+      },
+    ],
+  };
+  assert.equal(epochStepCurrent(elapsed, setA, setB, settledNow), false);
+  const removed: AclSnapshotBody = {
+    ...setA,
+    entries: [{ ...setA.entries[0]!, stated: 0, hamState: 4 }],
+  };
+  assert.equal(epochStepCurrent(elapsed, setA, removed, settledNow), false);
+  assert.equal(settledKeyOpen(elapsed, setA, removed, settledNow), false);
   const short = view([fin], { settleWindowMs: 0 });
   assert.equal(epochStepCurrent(short, live, live, open), false);
 
