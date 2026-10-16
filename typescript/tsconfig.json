@@ -1,0 +1,14 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "noEmit": true,
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "checkJs": true,
+    "allowJs": true,
+    "skipLibCheck": false,
+    "types": []
+  },
+  "files": ["src/node-crypto.d.ts", "src/group.js", "../docs/s3rch-check.d.ts"]
+}

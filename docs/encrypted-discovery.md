@@ -1,6 +1,6 @@
 # Encrypted discovery (spec)
 
-Status: spec only. Nothing on this page changes Check, the Gun reference crate, or the plaintext dest-ACL path those already evaluate.
+Status: wrapped keys, private rows, and rotation stay spec. The reference crate evaluates plaintext dest-ACL grants and direct `same-group` / `named-circle` edges (`checkGroupSee`). It does not evaluate a wrap.
 
 s3r.ch product draft: [FyberLabs/s3r.ch#108](https://github.com/FyberLabs/s3r.ch/pull/108) (`docs/encrypted-discovery.md` on that branch). This repository does not edit s3r.ch. Where the two pages differ, this page is the SociACL contract and that pull request is the product draft. The hardening on this page answers the Codex review on that pull request. It adds no verb.
 
@@ -17,7 +17,7 @@ Light Check stays `CHECK(see, object, accessor)` at `now`.
 - `acceptHint`, `acceptHop`, and `decodeHop` do not verify and do not mint.
 - Privilege-down is immediate for a current verifier. Cancel is owner-only, sets `stated: 0`, and bumps `hamState`. The next Check after that verifier has merged the cancel denies. Do not cache an allow across that merge. A verifier that does not hold a fresh owner-signed epoch/status proof is bounded by that proof's max-age. See [Revocation freshness](#revocation-freshness).
 - `meta`, dest-ACL souls, and `UrlLeaf` fail closed.
-- This page adds no verb. `crates/sociacl-gun` still evaluates plaintext `MeshSeeGrant` rows only.
+- This page adds no verb. `crates/sociacl-gun` evaluates plaintext `MeshSeeGrant` rows and direct group and circle membership. A wrap is not an input to that check.
 
 Plaintext dest ACL today is a `MeshSeeGrant` on a `GunAclEdge` (`hamState`) at `grantSoul(owner, object, accessor)`, under `aclSoul(owner)`:
 
@@ -249,9 +249,9 @@ Check then evaluates only the named predicate. Both edges in a group or circle c
 | `same-group` | `ObjectSetName` names a group, stated 1. The accessor has a jointly stated direct `member-of` edge to that group (`MeshMembership`). |
 | `named-circle` | `ObjectSetName` names a circle, stated 1. The accessor has a jointly stated direct `in-circle` edge to that circle. |
 
-One-sided membership is stored and is not a grant. `stated: 0` plus a higher `hamState` wins the next merge. `checkGroupSee` is that Check. Hop may factor an already-named direct membership. Hop alone never allows. A wrap never mints a membership.
+One-sided membership is stored and is not a grant. Cancels are a grow-only set of ids. Each id is the hash of the replica, a fresh nonce, and the ids already on the row, so two replicas cancelling from the same prior row do not collide. A live assent or object-set edge lists every known cancel. A cancel it does not list dominates, including one this replica had not seen. Each membership assent is signed by that party. An object-set row is signed by the object owner's enrolled key, which Check reads with `GroupSeeGraph.enrolledKey`. A cancel whose own signature verifies is kept even when another signature on that row does not. Merge stores a row under the key recomputed from the signed fields, not under the peer's map key. The set id is `<principal>/<name>`, and the name contains neither `/` nor `_`, so `aclKey` is the same key in the soul and in memory. A predictable id, or two ids that would share that key, is rejected. Check denies a returned membership whose set id or accessor is not the requested one, and an object-set row whose object is not the requested one. It fails closed when `ownerOfSet` is absent. At an equal hamState, a direct see grant keeps the cancellation, then the narrower window, then the smaller canonical bytes. A membership row stays bound to the set owner in its soul. An object-set row stays bound to the object owner in its soul. Replacing the object owner drops that edge, and Check denies an edge whose recorded owner is not the current one. A later name or assent, after those cancels are merged, can state the row again. `checkGroupSee` is that Check. Hop may factor an already-named direct membership. Hop alone never allows. A wrap never mints a membership.
 
-The group epoch key opens group ciphertext. It does not replace the membership edge. Check reads the edge. The key opens bytes.
+The group epoch key opens group ciphertext. It does not replace the membership edge. Check reads the edge. The key opens bytes. The reference crate runs `checkGroupSee` on the plaintext edges. It does not read a wrapped key.
 
 A member of group A is not thereby a member of group B. A member's other grants are not inherited by the rest of the group. A circle does not contain another circle for Check.
 

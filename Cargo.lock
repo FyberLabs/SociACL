@@ -380,6 +380,8 @@ dependencies = [
 name = "sociacl-gun"
 version = "0.1.0"
 dependencies = [
+ "rand",
+ "sha2",
  "sociacl-core",
  "thiserror",
 ]

@@ -6,6 +6,7 @@
 //! visible as privilege-down on the next Check after merge. There is
 //! no cached allow.
 
+use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 
 use sociacl_core::{NodeId, Timestamp};
@@ -110,15 +111,75 @@ impl GunAclEdge {
         self.soul.as_node_id().as_str().to_string()
     }
 
-    /// Last-write-wins on HAM state. Cancel bumps state so
-    /// privilege-down wins the next merge.
+    /// Soul rebuilt from owner, object, and accessor. A peer map
+    /// key or a copied soul does not choose where the grant lands.
+    pub fn canonical(self) -> Self {
+        Self::new(self.owner, self.grant, self.ham_state)
+    }
+
+    /// Higher HAM state wins. At the same state a cancellation wins,
+    /// then the narrower window, then the smaller canonical bytes.
     pub fn ham_merge(self, incoming: Self) -> Self {
-        if incoming.ham_state > self.ham_state {
-            incoming
-        } else {
-            self
+        let local = self.canonical();
+        let incoming = incoming.canonical();
+        if incoming.ham_state > local.ham_state {
+            return incoming;
+        }
+        if incoming.ham_state < local.ham_state {
+            return local;
+        }
+        match equal_ham_grant_order(&local, &incoming) {
+            Ordering::Greater => incoming,
+            Ordering::Less | Ordering::Equal => local,
         }
     }
+}
+
+/// `Less` means `left` is the privilege-down row.
+fn equal_ham_grant_order(left: &GunAclEdge, right: &GunAclEdge) -> Ordering {
+    let left_down = left.grant.stated != 1;
+    let right_down = right.grant.stated != 1;
+    match (left_down, right_down) {
+        (true, false) => return Ordering::Less,
+        (false, true) => return Ordering::Greater,
+        _ => {}
+    }
+    if let Some(order) = narrower_window(&left.grant, &right.grant) {
+        return order;
+    }
+    canonical_grant_bytes(left).cmp(&canonical_grant_bytes(right))
+}
+
+fn narrower_window(left: &MeshSeeGrant, right: &MeshSeeGrant) -> Option<Ordering> {
+    let left_inside = left.from.0 >= right.from.0
+        && left.until.0 <= right.until.0
+        && (left.from.0 > right.from.0 || left.until.0 < right.until.0);
+    let right_inside = right.from.0 >= left.from.0
+        && right.until.0 <= left.until.0
+        && (right.from.0 > left.from.0 || right.until.0 < left.until.0);
+    match (left_inside, right_inside) {
+        (true, false) => Some(Ordering::Less),
+        (false, true) => Some(Ordering::Greater),
+        _ => None,
+    }
+}
+
+fn canonical_grant_bytes(edge: &GunAclEdge) -> Vec<u8> {
+    let mut buf = b"sociacl-see-grant-v1\0".to_vec();
+    push_grant_str(&mut buf, &acl_principal_key(&edge.owner));
+    push_grant_str(&mut buf, &acl_key(&edge.grant.object));
+    push_grant_str(&mut buf, &acl_principal_key(&edge.grant.accessor));
+    buf.extend_from_slice(&edge.grant.from.0.to_be_bytes());
+    buf.extend_from_slice(&edge.grant.until.0.to_be_bytes());
+    buf.push(edge.grant.stated);
+    buf
+}
+
+fn push_grant_str(buf: &mut Vec<u8>, value: &str) {
+    let bytes = value.as_bytes();
+    let len = u32::try_from(bytes.len()).unwrap_or(u32::MAX);
+    buf.extend_from_slice(&len.to_be_bytes());
+    buf.extend_from_slice(&bytes[..usize::try_from(len).unwrap_or(bytes.len())]);
 }
 
 /// TS `CheckResult` on the mesh graph. A present hint or hop never
@@ -158,11 +219,15 @@ struct MeshObject {
 /// Friend edges may be recorded and are never walked (hopcap 1).
 /// Mine overlay stays off this graph until an explicit share-into-mesh
 /// [`MeshSeeGraph::put_object`].
+///
+/// Group and circle rows live on this same graph. They do not fork
+/// items or users, and they are not see-grant souls.
 #[derive(Clone, Debug, Default)]
 pub struct MeshSeeGraph {
     objects: HashMap<String, MeshObject>,
     grants: HashMap<String, GunAclEdge>,
     friends: HashSet<(String, String)>,
+    pub(crate) groups: crate::group::GroupRows,
 }
 
 impl MeshSeeGraph {
@@ -172,13 +237,16 @@ impl MeshSeeGraph {
 
     pub fn put_object(&mut self, object: impl AsRef<str>, owner: impl AsRef<str>) {
         let id = object.as_ref().trim().to_string();
-        self.objects.insert(
-            object_store_key(&id),
-            MeshObject {
-                id,
-                owner: owner.as_ref().trim().to_string(),
-            },
-        );
+        let owner = owner.as_ref().trim().to_string();
+        let key = object_store_key(&id);
+        if self
+            .objects
+            .get(&key)
+            .is_some_and(|existing| acl_principal_key(&existing.owner) != acl_principal_key(&owner))
+        {
+            self.groups.drop_object_set(&id);
+        }
+        self.objects.insert(key, MeshObject { id, owner });
     }
 
     pub fn has_object(&self, object: &str) -> bool {
@@ -275,25 +343,48 @@ impl MeshSeeGraph {
     }
 
     /// HAM-merge an incoming dest-ACL node from another peer.
+    /// The stored key is rebuilt from the grant's owner, object,
+    /// and accessor.
     pub fn merge_edge(&mut self, incoming: GunAclEdge) {
+        let incoming = incoming.canonical();
         let key = incoming.soul_key();
         let merged = match self.grants.remove(&key) {
             Some(local) => local.ham_merge(incoming),
             None => incoming,
         };
+        let merged = merged.canonical();
+        let key = merged.soul_key();
         self.grants.insert(key, merged);
     }
 
     /// Merge every dest-ACL node from `other` into this peer.
+    /// Object rows are stored under the id on the row, not the
+    /// peer's map key.
     pub fn merge_from(&mut self, other: &Self) {
-        for edge in other.grants.values() {
-            self.merge_edge(edge.clone());
+        for object in other.objects.values() {
+            let key = object_store_key(&object.id);
+            self.objects.entry(key).or_insert_with(|| object.clone());
         }
-        for (key, object) in &other.objects {
-            self.objects
-                .entry(key.clone())
-                .or_insert_with(|| object.clone());
+        let grants: Vec<GunAclEdge> = other
+            .grants
+            .values()
+            .filter(|edge| {
+                self.lookup_object(&edge.grant.object)
+                    .is_some_and(|object| {
+                        acl_principal_key(&object.owner) == acl_principal_key(&edge.owner)
+                    })
+            })
+            .cloned()
+            .collect();
+        for edge in grants {
+            self.merge_edge(edge);
         }
+        let object_owners: HashMap<String, String> = self
+            .objects
+            .values()
+            .map(|object| (object.id.clone(), object.owner.clone()))
+            .collect();
+        self.groups.merge_from(&other.groups, &object_owners);
     }
 
     /// `CHECK(see, object, accessor)` at `now` on the locally merged
@@ -312,26 +403,10 @@ impl MeshSeeGraph {
         let hint = hint.cloned();
         let hop = hop.cloned();
 
-        if is_url_leaf(object) {
+        if let Some(reason) = closed_reason(object) {
             return MeshCheckResult {
                 allowed: false,
-                reason: MESH_REASON_URL_LEAF.into(),
-                hint,
-                hop,
-            };
-        }
-        if is_meta_object(object) {
-            return MeshCheckResult {
-                allowed: false,
-                reason: MESH_REASON_META.into(),
-                hint,
-                hop,
-            };
-        }
-        if is_acl_object(object) {
-            return MeshCheckResult {
-                allowed: false,
-                reason: MESH_REASON_ACL.into(),
+                reason: reason.into(),
                 hint,
                 hop,
             };
@@ -356,7 +431,10 @@ impl MeshSeeGraph {
         }
 
         if let Some(edge) = self.grant_edge(object, accessor) {
-            if edge.grant.live_at(now) {
+            let names = edge.grant.names_object(object)
+                && edge.grant.names_accessor(accessor)
+                && acl_principal_key(&edge.owner) == acl_principal_key(&obj.owner);
+            if names && edge.grant.live_at(now) {
                 return MeshCheckResult {
                     allowed: true,
                     reason: MESH_REASON_DELEGATE.into(),
@@ -364,7 +442,7 @@ impl MeshSeeGraph {
                     hop,
                 };
             }
-            if !edge.grant.is_stated() {
+            if names && !edge.grant.is_stated() {
                 return MeshCheckResult {
                     allowed: false,
                     reason: MESH_REASON_CANCELLED.into(),
@@ -407,6 +485,11 @@ impl MeshSeeGraph {
             };
         }
         dest
+    }
+
+    pub(crate) fn object_record(&self, object: &str) -> Option<(&str, &str)> {
+        self.lookup_object(object)
+            .map(|obj| (obj.id.as_str(), obj.owner.as_str()))
     }
 
     fn lookup_object(&self, object: &str) -> Option<&MeshObject> {
@@ -454,6 +537,18 @@ fn item_soul_alias(a: &str, b: &str) -> bool {
         || GunSoul::s3rch_item(b).as_node_id().as_str() == a
 }
 
+pub(crate) fn closed_reason(object: &str) -> Option<&'static str> {
+    if is_url_leaf(object) {
+        Some(MESH_REASON_URL_LEAF)
+    } else if is_meta_object(object) {
+        Some(MESH_REASON_META)
+    } else if is_acl_object(object) {
+        Some(MESH_REASON_ACL)
+    } else {
+        None
+    }
+}
+
 fn is_url_leaf(object: &str) -> bool {
     let s = object.trim();
     (s.starts_with("http://") || s.starts_with("https://")) && UrlLeaf::parse(s).is_ok()
@@ -489,4 +584,78 @@ pub fn grant_soul(
 /// Owner dest-ACL root. Not a Check object.
 pub fn acl_soul(owner: impl AsRef<str>) -> NodeId {
     GunSoul::s3rch_acl(owner).as_node_id()
+}
+
+#[cfg(test)]
+mod tests {
+    use sociacl_core::{IssuerSecret, Timestamp};
+
+    use super::*;
+    use crate::GroupPredicate;
+
+    fn signer(name: &str) -> IssuerSecret {
+        let mut bytes = [0u8; 32];
+        for (i, b) in name.as_bytes().iter().enumerate() {
+            bytes[i % 32] ^= b.wrapping_add((i as u8).wrapping_mul(17));
+        }
+        bytes[0] ^= name.len() as u8;
+        bytes[31] |= 1;
+        IssuerSecret::from_bytes(bytes)
+    }
+
+    #[test]
+    fn check_rejects_an_edge_whose_owner_is_not_the_current_owner() {
+        let mut graph = MeshSeeGraph::new();
+        let alice = signer("0xalice");
+        let bob = signer("0xbob");
+        graph.enroll_signer("0xalice", alice.verify_key()).unwrap();
+        graph.enroll_signer("0xbob", bob.verify_key()).unwrap();
+        graph.put_object("doc", "0xalice");
+        graph
+            .record_set_owner("0xalice", GroupPredicate::SameGroup, "0xalice/ops")
+            .unwrap();
+        graph
+            .name_object_set(
+                "0xalice",
+                "doc",
+                GroupPredicate::SameGroup,
+                "0xalice/ops",
+                &alice,
+            )
+            .unwrap();
+        graph
+            .state_membership(
+                "0xbob",
+                GroupPredicate::SameGroup,
+                "0xalice/ops",
+                "0xbob",
+                &bob,
+            )
+            .unwrap();
+        graph
+            .state_membership(
+                "0xalice",
+                GroupPredicate::SameGroup,
+                "0xalice/ops",
+                "0xbob",
+                &alice,
+            )
+            .unwrap();
+        graph
+            .objects
+            .get_mut(&object_store_key("doc"))
+            .unwrap()
+            .owner = "0xcarol".into();
+        assert!(graph.object_set("doc").is_some());
+        let denied = graph.check_group_see(
+            GroupPredicate::SameGroup,
+            "doc",
+            "0xbob",
+            Timestamp(1),
+            None,
+            None,
+        );
+        assert!(!denied.allowed);
+        assert_eq!(denied.reason, MESH_REASON_MISSING);
+    }
 }

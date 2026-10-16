@@ -25,6 +25,20 @@ pub enum GunError {
     AclOwnerOnly,
     #[error("mesh object is not in-graph")]
     ObjectNotInGraph,
+    #[error("group name is empty")]
+    EmptyGroupName,
+    #[error("set owner is unknown")]
+    SetUnknown,
+    #[error("set already has an owner")]
+    SetOwnerConflict,
+    #[error("set id is not bound to this owner")]
+    UnboundSetOwner,
+    #[error("membership speaker is not the member or the set owner")]
+    MembershipSpeaker,
+    #[error("signer is not enrolled")]
+    SignerNotEnrolled,
+    #[error("row signature is not valid")]
+    RowSignature,
     #[error("check rejected: {0}")]
     Check(CheckError),
     #[error("{0}")]

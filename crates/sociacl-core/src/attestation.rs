@@ -69,6 +69,18 @@ impl VerifyKey {
         self.0 != [0u8; 32] && VerifyingKey::from_bytes(&self.0).is_ok()
     }
 
+    /// Ed25519 verify of an [`AttestationSig`] over `message`.
+    /// A bad key or a bad signature is false.
+    pub fn verify(self, message: &[u8], signature: &AttestationSig) -> bool {
+        let Ok(vk) = self.dalek() else {
+            return false;
+        };
+        let Ok(sig) = Signature::from_slice(&signature.0) else {
+            return false;
+        };
+        vk.verify_strict(message, &sig).is_ok()
+    }
+
     fn dalek(self) -> Result<VerifyingKey, AttestationError> {
         VerifyingKey::from_bytes(&self.0).map_err(|_| AttestationError::InvalidVerifyKey)
     }
