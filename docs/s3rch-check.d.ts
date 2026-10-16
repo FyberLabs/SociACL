@@ -2076,7 +2076,7 @@ export type MigrationReaderVersion = {
 
 /**
  * Structural admission input. crates/sociacl-encdisc verifies
- * the receipt signature before it will set acknowledged.
+ * the receipt signature before acknowledged is set.
  * grants are the merged plaintext edges. The caller does not
  * add an accessor here to widen the set.
  */
