@@ -607,7 +607,8 @@ export type InboxEntryBody = {
 /**
  * SHA-256 of the canonical bytes below, as lowercase hex
  * (64 chars). Not a hex encoding of the raw body. Does not mint.
- * crates/sociacl-encdisc runs this hash. It does not admit the row.
+ * crates/sociacl-encdisc runs this hash. The hash does not admit
+ * the row. Admission is filterInboxAppend.
  *
  * Canonical bytes are the concatenation, for each field in
  * order, of a uint32 little-endian length and then the UTF-8
