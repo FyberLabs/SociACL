@@ -990,7 +990,9 @@ export type PresentedGroup = {
  * payload outside that window denies. A live membership
  * edge does not override either deny. The revision record
  * may still store the cancel. When group is omitted,
- * it runs checkSee / checkSeeGrant. A group object with
+ * it runs checkSee / checkSeeGrant. A group object is an
+ * authenticated, currently grantable object-set edge. A
+ * stated bit alone does not name it. A group object with
  * no group argument fails closed.
  * The age bound is the smaller of status.maxAgeMs and
  * policyMaxAgeMs. policyMaxAgeMs is the verifier's cap.
@@ -1823,8 +1825,9 @@ export type MembershipAssent = {
  * signature verifies even when another signature on the row does not.
  */
 export type SignedCancel = {
-  /** Lowercase hex SHA-256. */
+  /** Exactly 64 lowercase hex characters. SHA-256 of the replica, a nonce, and the prior ids. */
   id: string;
+  /** Prior cancel ids, each exactly 64 lowercase hex characters. */
   prior: readonly string[];
   signer: AccessorId;
   signature: Uint8Array;

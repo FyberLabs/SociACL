@@ -9,9 +9,11 @@
 //! Member `hamState` does not stand in for the object-to-set edge.
 //! Each party's assent is signed by that party. An object-set row is
 //! signed by the object owner's enrolled key. Cancels are a grow-only
-//! set of collision-free ids. A live assent or edge must list every
-//! known cancel in its observed set. A set id is `<principal>/<name>`
-//! with a name that does not collide under `acl_key`.
+//! set of collision-free ids. Each id is exactly 64 lowercase hex
+//! characters. Prior ids are canonicalized before the signature is
+//! checked. A live assent or edge must list every known cancel in its
+//! observed set. A set id is `<principal>/<name>` with a name that
+//! does not collide under `acl_key`.
 //! Wrapped keys are not read here.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -950,7 +952,7 @@ impl GroupRows {
         signer: &str,
         secret: &IssuerSecret,
     ) {
-        let prior = cancel_ids(cancels);
+        let prior = canonical_prior(&cancel_ids(cancels));
         let id = new_cancel_id(&self.replica_id, &prior);
         let signature = secret.sign(&cancel_message(kind, row_key, &id, &prior));
         cancels.insert(
@@ -1327,10 +1329,60 @@ fn cancel_verifies(
     let Some(key) = enrolled.get(&acl_principal_key(&cancel.signer)) else {
         return false;
     };
+    let Some(id) = canonical_cancel_id(&cancel_id_hex(&cancel.id)) else {
+        return false;
+    };
+    let prior = canonical_prior(&cancel.prior);
+    if prior.len() != cancel.prior.len() {
+        return false;
+    }
     key.verify(
-        &cancel_message(kind, row_key, &cancel.id, &cancel.prior),
+        &cancel_message(kind, row_key, &id, &prior),
         &cancel.signature,
     )
+}
+
+fn hex_nibble(byte: u8) -> Option<u8> {
+    match byte {
+        b'0'..=b'9' => Some(byte - b'0'),
+        b'a'..=b'f' => Some(byte - b'a' + 10),
+        _ => None,
+    }
+}
+
+/// Exactly 64 lowercase hex characters. Uppercase and a trailing
+/// nibble are not a second spelling of the same id.
+fn canonical_cancel_id(text: &str) -> Option<CancelId> {
+    if text.len() != 64 {
+        return None;
+    }
+    let bytes = text.as_bytes();
+    let mut out = [0u8; 32];
+    for index in 0..32 {
+        let hi = hex_nibble(bytes[index * 2])?;
+        let lo = hex_nibble(bytes[index * 2 + 1])?;
+        out[index] = (hi << 4) | lo;
+    }
+    Some(CancelId(out))
+}
+
+fn cancel_id_hex(id: &CancelId) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut out = String::with_capacity(64);
+    for byte in id.0 {
+        out.push(HEX[(byte >> 4) as usize] as char);
+        out.push(HEX[(byte & 0x0f) as usize] as char);
+    }
+    out
+}
+
+/// Prior ids are a set of canonical cancel ids. The signature is
+/// checked against that set, not against a respelling.
+fn canonical_prior(prior: &BTreeSet<CancelId>) -> BTreeSet<CancelId> {
+    prior
+        .iter()
+        .filter_map(|id| canonical_cancel_id(&cancel_id_hex(id)))
+        .collect()
 }
 
 fn new_cancel_id(replica_id: &[u8; 16], prior: &BTreeSet<CancelId>) -> CancelId {
@@ -1502,6 +1554,8 @@ fn retained_object_owner<'a>(owners: &'a HashMap<String, String>, object: &str) 
 
 #[cfg(test)]
 mod tests {
+    use std::collections::{BTreeMap, BTreeSet};
+
     use super::*;
     use crate::mesh::MeshSeeGraph;
     use sociacl_core::{AttestationSig, IssuerSecret, Timestamp};
@@ -1639,6 +1693,191 @@ mod tests {
             assert!(!result.allowed);
             assert_eq!(result.reason, crate::MESH_REASON_CANCELLED);
         }
+    }
+
+    #[test]
+    fn cancel_ids_require_64_lowercase_hex_and_prior_is_canonical() {
+        assert!(canonical_cancel_id(&"ab".repeat(32)).is_some());
+        assert!(canonical_cancel_id(&"AB".repeat(32)).is_none());
+        assert!(canonical_cancel_id(&format!("{}a", "cd".repeat(32))).is_none());
+        assert!(canonical_cancel_id(&"ab".repeat(31)).is_none());
+        assert!(canonical_cancel_id(&"zz".repeat(32)).is_none());
+
+        let (alice, bob) = pair();
+        let live_row = live(&alice, &bob);
+        let mut cancelled = live_row.clone();
+        cancelled
+            .cancel_membership(
+                "0xalice",
+                GroupPredicate::SameGroup,
+                "0xalice/ops",
+                "0xbob",
+                &alice,
+            )
+            .unwrap();
+        let key = membership_key_parts(GroupPredicate::SameGroup, "0xalice/ops", "0xbob");
+        let real = cancelled
+            .groups
+            .memberships
+            .get(&key)
+            .unwrap()
+            .cancels
+            .values()
+            .next()
+            .unwrap()
+            .clone();
+        let hex = cancel_id_hex(&real.id);
+        assert_eq!(hex.len(), 64);
+        assert_eq!(canonical_cancel_id(&hex), Some(real.id));
+        assert!(canonical_cancel_id(&hex.to_uppercase()).is_none());
+        let mut prior = BTreeSet::new();
+        prior.insert(real.id);
+        assert_eq!(
+            cancel_message("membership", "row", &real.id, &prior),
+            cancel_message(
+                "membership",
+                "row",
+                &canonical_cancel_id(&hex).unwrap(),
+                &canonical_prior(&prior),
+            )
+        );
+
+        let mut alias = real.clone();
+        alias.id.0[0] ^= 0xff;
+        let mut attacked = live_row.clone();
+        attacked
+            .groups
+            .memberships
+            .get_mut(&key)
+            .unwrap()
+            .cancels
+            .insert(alias.id, alias);
+        let mut dest = enrolled(&alice, &bob);
+        dest.merge_from(&attacked);
+        assert!(see(&dest, "doc", "0xbob").allowed);
+        assert!(dest
+            .groups
+            .memberships
+            .get(&key)
+            .unwrap()
+            .cancels
+            .is_empty());
+
+        let mut sunk = enrolled(&alice, &bob);
+        sunk.merge_from(&cancelled);
+        let denied = see(&sunk, "doc", "0xbob");
+        assert!(!denied.allowed);
+        assert_eq!(denied.reason, crate::MESH_REASON_CANCELLED);
+
+        let mut orphan = live_row.clone();
+        orphan.groups.set_owners.clear();
+        let missing = see(&orphan, "doc", "0xbob");
+        assert!(!missing.allowed);
+        assert_eq!(missing.reason, crate::MESH_REASON_MISSING);
+    }
+
+    #[test]
+    fn an_unauthenticated_object_set_does_not_force_the_group_path() {
+        let (alice, bob) = pair();
+        let mut graph = enrolled(&alice, &bob);
+        graph
+            .state_see_grant(
+                "0xalice",
+                crate::mesh::MeshSeeGrant::live("doc", "0xbob", 0, 80),
+            )
+            .unwrap();
+        graph.groups.object_sets.insert(
+            object_set_key("doc"),
+            ObjectSetRecord {
+                name: ObjectSetName {
+                    object: "doc".into(),
+                    predicate: GroupPredicate::SameGroup,
+                    set_id: "0xalice/ops".into(),
+                    stated: 1,
+                    ham_state: 1,
+                },
+                signed_stated: 1,
+                soul: String::new(),
+                object_owner: "0xalice".into(),
+                observed: BTreeSet::new(),
+                signature: AttestationSig::empty(),
+                cancels: BTreeMap::new(),
+            },
+        );
+        let payload = DecodedGroupPayload {
+            stated: 1,
+            from: 0,
+            until: 80,
+        };
+        let hop = HopFactor::Structured {
+            channel: sociacl_core::AttestationChannel::ConventionBadge,
+            attestation_bytes: None,
+            share_token: None,
+        };
+        let owner = graph.check_group_presentation(
+            None,
+            "doc",
+            "0xalice",
+            &payload,
+            Timestamp(1),
+            None,
+            Some(&hop),
+        );
+        assert!(owner.allowed);
+        assert_eq!(owner.reason, crate::MESH_REASON_OWNER);
+        assert_eq!(owner.hop, Some(hop.clone()));
+        let delegate = graph.check_group_presentation(
+            None,
+            "doc",
+            "0xbob",
+            &payload,
+            Timestamp(1),
+            None,
+            None,
+        );
+        assert!(delegate.allowed);
+        assert_eq!(delegate.reason, crate::MESH_REASON_DELEGATE);
+        let stranger = graph.check_group_presentation(
+            None,
+            "doc",
+            "0xcarol",
+            &payload,
+            Timestamp(1),
+            None,
+            Some(&hop),
+        );
+        assert!(!stranger.allowed);
+        assert_eq!(stranger.hop, Some(hop));
+
+        let mut named = live(&alice, &bob);
+        named
+            .state_see_grant(
+                "0xalice",
+                crate::mesh::MeshSeeGrant::live("doc", "0xbob", 0, 80),
+            )
+            .unwrap();
+        let blocked = named.check_group_presentation(
+            None,
+            "doc",
+            "0xbob",
+            &payload,
+            Timestamp(1),
+            None,
+            None,
+        );
+        assert!(!blocked.allowed);
+        assert_eq!(blocked.reason, crate::MESH_REASON_MISSING);
+        let blocked_owner = named.check_group_presentation(
+            None,
+            "doc",
+            "0xalice",
+            &payload,
+            Timestamp(1),
+            None,
+            None,
+        );
+        assert!(!blocked_owner.allowed);
+        assert_eq!(blocked_owner.reason, crate::MESH_REASON_MISSING);
     }
 }
 
