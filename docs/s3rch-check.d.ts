@@ -6,7 +6,10 @@
  * Do not add this file as an npm package. This is a contract, not
  * a dependency.
  *
- * Reference implementation (Rust, this repo): crates/sociacl-gun.
+ * Reference implementation (Rust, this repo):
+ *   crates/sociacl-gun — plaintext MeshSeeGrant Check
+ *   crates/sociacl-encdisc — first encrypted-discovery slice
+ *     (account SEA key, enrollment, wrapped-key edge, canonical ids)
  *
  * CHECK(see, object, accessor) at now.
  *   object   = GunFeedNode | held claim id | later opaque post/room
@@ -21,9 +24,12 @@
  *   same-group / named-circle = direct edges only; no transitive inheritance
  *
  * Wrapped keys, recipient-side discovery, rotation on revoke:
- * docs/encrypted-discovery.md. Those stay spec. The reference crate
- * evaluates plaintext see grants and direct same-group / named-circle
- * edges. SEA priv and epriv never go on Gun.
+ * docs/encrypted-discovery.md. sociacl-gun evaluates plaintext see
+ * grants and direct same-group / named-circle edges. It does not
+ * evaluate a wrap. sociacl-encdisc implements the account key, the
+ * wrap edge, and the canonical ids named below. It does not run Check,
+ * inbox admission, epoch settlement, rotation, or migration.
+ * SEA priv and epriv never go on Gun.
  */
 
 /** Fixed Gun root. */
@@ -393,9 +399,11 @@ export function decodeHop(bytes: Uint8Array): HopFactor;
 /* Wrapped keys and private rows stay spec. Group edges are evaluated.       */
 /*                                                                            */
 /* docs/encrypted-discovery.md. Copy / re-type with the types above.          */
-/* The reference crate evaluates plaintext MeshSeeGrant rows and direct      */
-/* same-group / named-circle edges. Wrapped keys stay spec.                  */
-/* A wrap is not a grant. SEA priv and epriv never go on Gun.                 */
+/* sociacl-gun evaluates plaintext MeshSeeGrant rows and direct              */
+/* same-group / named-circle edges. It does not evaluate a wrap.             */
+/* sociacl-encdisc implements the account key, the wrap edge, and the         */
+/* canonical ids. It does not run Check, admission, settlement, rotation,     */
+/* or migration. A wrap is not a grant. SEA priv and epriv never go on Gun.   */
 /* same-group and named-circle: hopcap 1, jointly stated, no inheritance.    */
 /* -------------------------------------------------------------------------- */
 
@@ -421,6 +429,26 @@ export type LightPredicate =
  * A cleartext label a peer can swap is not this field.
  * Readers reject a wrap whose revisionId is not the winning
  * EpochManifest revision. Not a grant.
+ * crates/sociacl-encdisc seals this payload. sociacl-gun does
+ * not read wrap bytes.
+ * Where the SEA byte layout is not locked, the wire fails closed:
+ * reader wrap is ECDH P-256. The shared secret is the 32-byte x
+ * coordinate. The AES-256-GCM key is SHA-256 of the length-prefixed
+ * fields "s3rch-sea-secret-v1" and the lowercase hex of that
+ * coordinate. SEA.encrypt's password-salt envelope is not this wrap.
+ * Group-epoch wrap has no reader epub. Its AES key is SHA-256 of
+ * "s3rch-group-epoch-wrap-v1" and the lowercase hex of the 32-byte
+ * group key.
+ * AES-GCM plaintext, length-prefixed, domain "s3rch-wrapped-key-v1":
+ * scope, decimal epoch, target, targetId, object or empty, group
+ * or empty, revisionId, lowercase hex of the 32-byte key. The
+ * cleartext label must match or the open fails as one error.
+ * wrappedKey is lowercase hex. Version 0x01 is a reader wrap:
+ * 65-byte uncompressed ephemeral point, 12-byte nonce, ciphertext
+ * and 16-byte tag. Version 0x02 is a group-epoch wrap: nonce,
+ * ciphertext, and tag. The DEK and the group key are 32 bytes.
+ * A target outside the already-named set is not wrapped. This
+ * slice does not read the graph and does not mint membership.
  */
 export type WrappedKey = {
   scope: "item-dek" | "group-key";
@@ -504,6 +532,11 @@ export type GrantCommitment = {
  * signature, and cannot relabel revisionId under it.
  * The verifying pub is the enrolled pub of graph.ownerOf(object).
  * A signature under a reader's own key does not pass.
+ * The signature string is lowercase hex of low-s IEEE P1363 r||s
+ * (128 hex chars) from one P-256 ECDSA-SHA256 over those bytes.
+ * A SEA {m,s} envelope, a DER encoding, or a high-s encoding does
+ * not verify. crates/sociacl-encdisc verifies this signature. It
+ * does not build the item ciphertext.
  */
 export type ItemContentAuth = {
   object: CheckObjectId;
@@ -568,9 +601,9 @@ export type InboxEntryBody = {
 };
 
 /**
- * Spec signature. The reference crate does not run this.
  * SHA-256 of the canonical bytes below, as lowercase hex
  * (64 chars). Not a hex encoding of the raw body. Does not mint.
+ * crates/sociacl-encdisc runs this hash. It does not admit the row.
  *
  * Canonical bytes are the concatenation, for each field in
  * order, of a uint32 little-endian length and then the UTF-8
@@ -1030,6 +1063,11 @@ export type AuthorFastUnwrap = {
  * A signature that omits account, or concatenates pub and
  * epub with no lengths, does not verify. A missing epub
  * or a swapped epub fails closed.
+ * The signature string is lowercase hex of low-s IEEE P1363
+ * r||s from one P-256 ECDSA-SHA256 over those bytes. A SEA
+ * {m,s} envelope, DER, or high-s does not verify.
+ * crates/sociacl-encdisc checks this binding. It does not
+ * write the Gun user node.
  * Not a grant.
  */
 export type AccountKeyBinding =
@@ -1210,9 +1248,10 @@ export type AclSnapshotBody = {
 export function aclSnapshotId(body: AclSnapshotBody): string;
 
 /**
- * Spec signature. The reference crate does not run this.
  * SHA-256, lowercase hex, of the same length-prefixed UTF-8
  * encoding as inboxEntryId. Does not mint.
+ * crates/sociacl-encdisc runs this hash. It does not settle
+ * the epoch, and it does not enforce the settle-window bounds.
  *
  * Fields:
  * 1. "s3rch-epoch-revision-v1"

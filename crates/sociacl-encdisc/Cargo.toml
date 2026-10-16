@@ -1,0 +1,21 @@
+[package]
+name = "sociacl-encdisc"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Encrypted-discovery reference slice: account SEA key, wrapped DEK, canonical ids"
+
+[dependencies]
+# Pinned for Rust 1.83. Newer aead and p256 releases set edition 2024.
+aes-gcm = { version = "=0.10.3", default-features = false, features = ["alloc", "aes", "std"] }
+base64ct = "=1.6.0"
+p256 = { version = "=0.13.2", default-features = false, features = ["arithmetic", "ecdh", "ecdsa", "std"] }
+rand = "0.8"
+sha2 = "0.10"
+thiserror = "2"
+zeroize = { version = "=1.8.1", features = ["alloc"] }
+
+[dev-dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

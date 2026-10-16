@@ -1,0 +1,20 @@
+{
+  "label": "Public test keys for the encrypted-discovery vectors. Not a live account.",
+  "laneId": "05e57cbbd329896b1f6a2b13ce15cda256ed2fc854b3fb2edadd08933448e385",
+  "signing": {
+    "note": "RFC 6979 appendix A.2.5 P-256 SHA-256 key.",
+    "scalarHex": "C9AFA9D845BA75166B5C215767B1D6934E50C3DB36E89B127B8A622B120F6721",
+    "priv": "ya-p2EW6dRZrXCFXZ7HWk05Qw9s26JsSe4piKxIPZyE",
+    "pub": "YP7UuiVanTHJYet0xjVtaMBJuJI7Yfps5mliLmDyn7Y.eQP-EAi4vJmkGunpVii8ZPLxsgwtfp9Rd6PClNRGIpk",
+    "sampleMessage": "sample",
+    "sampleSignatureHighS": "efd48b2aacb6a8fd1140dd9cd45e81d69d2c877b56aaf991c34d0ea84eaf3716f7cb1c942d657c41d436c7a1b6e29f65f3e900dbb9aff4064dc4ab2f843acda8",
+    "sampleSignatureLowS": "efd48b2aacb6a8fd1140dd9cd45e81d69d2c877b56aaf991c34d0ea84eaf37160834e36ad29a83bf2bc9385e491d6099c8fdf9d1ed67aa7ea5f51f93782857a9"
+  },
+  "encryption": {
+    "note": "Scalar is SHA-256 of the UTF-8 string sociacl-encdisc-epub-fixture-v1.",
+    "epriv": "6EXhKuFCyTddo7uvYddNjXON5iKEMV7v8bCol7XOHt8",
+    "epub": "EMvdmXTv89JPyMx5n3blU3L_D70U-6JoVaVzTvSzgYg.B_b0CP3o9X3I7tWrxA_F1VhXpjeMuIJCtQWnOh7LN5c"
+  },
+  "revisionId": "7959127078e9212a046160203b536df084c7884f9f1c18f439fda77f28450008",
+  "plaintextHello": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+}
