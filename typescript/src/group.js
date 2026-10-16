@@ -43,15 +43,17 @@
  *   stated: 0 | 1,
  *   hamState: number,
  * }} GroupSnapshotObjectSet
+ * @typedef {{ stated: boolean, hamState: number }} PartyStatement
  * @typedef {{
  *   membership: MeshMembership,
- *   memberStated: boolean,
- *   setStated: boolean,
+ *   member: PartyStatement,
+ *   setParty: PartyStatement,
  *   removed: boolean,
  *   soul: string,
+ *   setOwner: string,
  * }} MembershipRecord
- * @typedef {{ name: ObjectSetName, soul: string }} ObjectSetRecord
- * @typedef {{ accessor: string, from: number, until: number, stated?: 0 | 1, object?: string }} SeeGrant
+ * @typedef {{ name: ObjectSetName, soul: string, objectOwner: string }} ObjectSetRecord
+ * @typedef {{ accessor: string, from: number, until: number, stated?: 0 | 1, object?: string, hamState?: number }} SeeGrant
  */
 
 /** @param {string} id */
@@ -186,7 +188,8 @@ export class MemoryGroupGraph {
   stateSeeGrant(owner, grant) {
     if (aclPrincipalKey(this.ownerOf(grant.object ?? "") ?? "") !== aclPrincipalKey(owner)) return;
     const key = `${aclPrincipalKey(owner)}\0${grant.object ?? ""}\0${aclPrincipalKey(grant.accessor)}`;
-    this.grants.set(key, { ...grant, stated: 1 });
+    const prev = this.grants.get(key);
+    this.grants.set(key, { ...grant, stated: 1, hamState: (prev?.hamState ?? 0) + 1 });
   }
 
   /**
@@ -248,21 +251,24 @@ export class MemoryGroupGraph {
     const current = this.memberships.get(key);
     const record = current ?? {
       membership: { predicate, setId: id, accessor: who, stated: 0, hamState: 0 },
-      memberStated: false,
-      setStated: false,
+      member: { stated: false, hamState: 0 },
+      setParty: { stated: false, hamState: 0 },
       removed: false,
       soul: "",
+      setOwner: owner,
     };
     record.soul = membershipSoul(owner, predicate, id, who);
+    record.setOwner = owner;
     record.membership.hamState += 1;
-    if (speaksMember) record.memberStated = true;
-    if (speaksSet) record.setStated = true;
-    if (record.memberStated && record.setStated) {
-      record.membership.stated = 1;
-      record.removed = false;
-    } else {
-      record.membership.stated = 0;
+    if (speaksMember) {
+      record.member.stated = true;
+      record.member.hamState += 1;
     }
+    if (speaksSet) {
+      record.setParty.stated = true;
+      record.setParty.hamState += 1;
+    }
+    syncMembership(record);
     this.memberships.set(key, record);
   }
 
@@ -283,14 +289,18 @@ export class MemoryGroupGraph {
     const current = this.memberships.get(key);
     const record = current ?? {
       membership: { predicate, setId: id, accessor: who, stated: 0, hamState: 0 },
-      memberStated: false,
-      setStated: false,
+      member: { stated: false, hamState: 0 },
+      setParty: { stated: false, hamState: 0 },
       removed: false,
       soul: "",
+      setOwner: owner,
     };
     record.soul = membershipSoul(owner, predicate, id, who);
-    record.memberStated = false;
-    record.setStated = false;
+    record.setOwner = owner;
+    record.member.stated = false;
+    record.member.hamState += 1;
+    record.setParty.stated = false;
+    record.setParty.hamState += 1;
     record.removed = true;
     record.membership.stated = 0;
     record.membership.hamState += 1;
@@ -334,7 +344,10 @@ export class MemoryGroupGraph {
     if (!objectOwner) throw new Error("mesh object is not in-graph");
     if (aclPrincipalKey(objectOwner) !== aclPrincipalKey(owner)) throw new Error("dest ACL write is owner-only");
     const existing = this.objectSets.get(aclKey(objectId));
-    if (!existing) return;
+    if (!existing) {
+      this.#writeObjectSet(objectId, objectOwner, "same-group", "", 0);
+      return;
+    }
     this.#writeObjectSet(objectId, objectOwner, existing.name.predicate, existing.name.setId, 0);
   }
 
@@ -348,21 +361,40 @@ export class MemoryGroupGraph {
 
   /** @param {MemoryGroupGraph} other */
   mergeFrom(other) {
-    for (const [key, incoming] of other.memberships) {
-      const local = this.memberships.get(key);
-      if (!local || incoming.membership.hamState > local.membership.hamState) {
-        this.memberships.set(key, structuredClone(incoming));
-      }
+    for (const [key, owner] of other.objects) {
+      if (!this.objects.has(key)) this.objects.set(key, owner);
     }
-    for (const [key, incoming] of other.objectSets) {
-      const local = this.objectSets.get(key);
-      if (!local || incoming.name.hamState > local.name.hamState) {
-        this.objectSets.set(key, structuredClone(incoming));
-      }
+    for (const [key, incoming] of other.grants) {
+      const local = this.grants.get(key);
+      const incomingHam = incoming.hamState ?? 0;
+      const localHam = local?.hamState ?? 0;
+      if (!local || incomingHam > localHam) this.grants.set(key, structuredClone(incoming));
     }
     for (const [key, owner] of other.setOwners) {
       if (!this.setOwners.has(key)) this.setOwners.set(key, owner);
     }
+    for (const [key, incoming] of other.memberships) {
+      if (!this.#membershipOwnerMatches(incoming)) continue;
+      const local = this.memberships.get(key);
+      this.memberships.set(key, local ? mergeMembership(local, incoming) : structuredClone(incoming));
+    }
+    for (const [key, incoming] of other.objectSets) {
+      if (!this.#objectOwnerMatches(incoming)) continue;
+      const local = this.objectSets.get(key);
+      this.objectSets.set(key, local ? mergeObjectSet(local, incoming) : structuredClone(incoming));
+    }
+  }
+
+  /** @param {MembershipRecord} record */
+  #membershipOwnerMatches(record) {
+    const owner = this.ownerOfSet(record.membership.predicate, record.membership.setId);
+    return owner != null && aclPrincipalKey(owner) === aclPrincipalKey(record.setOwner);
+  }
+
+  /** @param {ObjectSetRecord} record */
+  #objectOwnerMatches(record) {
+    const owner = this.ownerOf(record.name.object);
+    return owner != null && aclPrincipalKey(owner) === aclPrincipalKey(record.objectOwner);
   }
 
   /**
@@ -384,8 +416,52 @@ export class MemoryGroupGraph {
         hamState: (prev?.name.hamState ?? 0) + 1,
       },
       soul: objectSetSoul(objectOwner, objectId),
+      objectOwner,
     });
   }
+}
+
+/** @param {PartyStatement} local @param {PartyStatement} incoming */
+function mergeParty(local, incoming) {
+  if (incoming.hamState > local.hamState) return { stated: incoming.stated, hamState: incoming.hamState };
+  if (incoming.hamState < local.hamState) return { stated: local.stated, hamState: local.hamState };
+  if (!incoming.stated && local.stated) return { stated: false, hamState: incoming.hamState };
+  return { stated: local.stated, hamState: local.hamState };
+}
+
+/** @param {MembershipRecord} record */
+function syncMembership(record) {
+  if (record.member.stated && record.setParty.stated) {
+    record.membership.stated = 1;
+    record.removed = false;
+    return;
+  }
+  record.membership.stated = 0;
+  const retracted = (/** @type {PartyStatement} */ party) => !party.stated && party.hamState > 0;
+  if (retracted(record.member) || retracted(record.setParty)) record.removed = true;
+}
+
+/** @param {MembershipRecord} local @param {MembershipRecord} incoming */
+function mergeMembership(local, incoming) {
+  const merged = structuredClone(local);
+  merged.member = mergeParty(local.member, incoming.member);
+  merged.setParty = mergeParty(local.setParty, incoming.setParty);
+  merged.membership.hamState = Math.max(local.membership.hamState, incoming.membership.hamState);
+  syncMembership(merged);
+  return merged;
+}
+
+/** @param {ObjectSetRecord} local @param {ObjectSetRecord} incoming */
+function mergeObjectSet(local, incoming) {
+  if (incoming.name.hamState > local.name.hamState) return structuredClone(incoming);
+  if (incoming.name.hamState < local.name.hamState) return structuredClone(local);
+  const incomingDown = incoming.name.stated === 0;
+  const localDown = local.name.stated === 0;
+  if (incomingDown && !localDown) return structuredClone(incoming);
+  if (localDown && !incomingDown) return structuredClone(local);
+  const incomingKey = `${incoming.name.predicate}\0${incoming.name.setId}`;
+  const localKey = `${local.name.predicate}\0${local.name.setId}`;
+  return incomingKey < localKey ? structuredClone(incoming) : structuredClone(local);
 }
 
 /**

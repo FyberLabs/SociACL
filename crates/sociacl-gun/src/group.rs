@@ -7,7 +7,12 @@
 //!
 //! A lower `hamState` does not replace a removal this peer has merged.
 //! Member `hamState` does not stand in for the object-to-set edge.
-//! Wrapped keys are not read here.
+//! Each party's assent has its own state. A higher state wins, and at
+//! the same state a retraction wins. A membership row stays bound to
+//! the set owner in its soul. An object-set row stays bound to the
+//! object owner in its soul. At the same object-set state, stated 0 wins.
+//! Clearing an object-set edge this replica has not seen writes a
+//! stated-0 tombstone. Wrapped keys are not read here.
 
 use std::collections::HashMap;
 
@@ -135,31 +140,64 @@ impl GroupPresentation {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct MembershipRecord {
-    pub membership: MeshMembership,
-    member_stated: bool,
-    set_stated: bool,
-    /// True after a removal. A one-sided first statement stays false.
-    removed: bool,
-    soul: String,
+/// One party's assent. Higher `ham_state` wins. At the same state,
+/// a retraction (`stated` false) wins over an assent.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct PartyStatement {
+    stated: bool,
+    ham_state: u64,
 }
 
-impl MembershipRecord {
-    pub(crate) fn merged(self, incoming: Self) -> Self {
-        if incoming.membership.ham_state > self.membership.ham_state {
+impl PartyStatement {
+    fn merged(self, incoming: Self) -> Self {
+        if incoming.ham_state > self.ham_state {
+            incoming
+        } else if incoming.ham_state < self.ham_state {
+            self
+        } else if !incoming.stated && self.stated {
             incoming
         } else {
             self
         }
     }
 
+    fn retracted(self) -> bool {
+        !self.stated && self.ham_state > 0
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct MembershipRecord {
+    pub membership: MeshMembership,
+    member: PartyStatement,
+    set_party: PartyStatement,
+    /// True after a removal. A one-sided first statement stays false.
+    removed: bool,
+    soul: String,
+    /// Set owner encoded in `soul`. A merge drops the row when this
+    /// does not match the owner this graph kept.
+    set_owner: String,
+}
+
+impl MembershipRecord {
+    pub(crate) fn merged(self, incoming: Self) -> Self {
+        let mut out = self;
+        out.member = out.member.merged(incoming.member);
+        out.set_party = out.set_party.merged(incoming.set_party);
+        out.membership.ham_state = out.membership.ham_state.max(incoming.membership.ham_state);
+        out.sync_stated();
+        out
+    }
+
     fn sync_stated(&mut self) {
-        if self.member_stated && self.set_stated {
+        if self.member.stated && self.set_party.stated {
             self.membership.stated = 1;
             self.removed = false;
         } else {
             self.membership.stated = 0;
+            if self.member.retracted() || self.set_party.retracted() {
+                self.removed = true;
+            }
         }
     }
 }
@@ -168,11 +206,33 @@ impl MembershipRecord {
 pub(crate) struct ObjectSetRecord {
     name: ObjectSetName,
     soul: String,
+    /// Object owner encoded in `soul`. A merge drops the row when this
+    /// does not match the owner this graph kept.
+    object_owner: String,
 }
 
 impl ObjectSetRecord {
     fn merged(self, incoming: Self) -> Self {
         if incoming.name.ham_state > self.name.ham_state {
+            return incoming;
+        }
+        if incoming.name.ham_state < self.name.ham_state {
+            return self;
+        }
+        let incoming_down = incoming.name.stated == 0;
+        let local_down = self.name.stated == 0;
+        if incoming_down && !local_down {
+            return incoming;
+        }
+        if local_down && !incoming_down {
+            return self;
+        }
+        let incoming_key = (
+            incoming.name.predicate.as_str(),
+            incoming.name.set_id.as_str(),
+        );
+        let local_key = (self.name.predicate.as_str(), self.name.set_id.as_str());
+        if incoming_key < local_key {
             incoming
         } else {
             self
@@ -191,21 +251,30 @@ pub(crate) struct GroupRows {
 }
 
 impl GroupRows {
-    pub(crate) fn merge_from(&mut self, other: &Self) {
-        for record in other.memberships.values() {
-            self.merge_membership(record.clone());
-        }
-        for record in other.object_sets.values() {
-            self.merge_object_set(record.clone());
-        }
+    pub(crate) fn merge_from(&mut self, other: &Self, object_owners: &HashMap<String, String>) {
         for (key, owner) in &other.set_owners {
             self.set_owners
                 .entry(key.clone())
                 .or_insert_with(|| owner.clone());
         }
+        for record in other.memberships.values() {
+            self.merge_membership(record.clone());
+        }
+        for record in other.object_sets.values() {
+            self.merge_object_set(record.clone(), object_owners);
+        }
     }
 
     fn merge_membership(&mut self, incoming: MembershipRecord) {
+        let Some(owner) = self.set_owners.get(&(
+            incoming.membership.predicate,
+            incoming.membership.set_id.clone(),
+        )) else {
+            return;
+        };
+        if acl_principal_key(owner) != acl_principal_key(&incoming.set_owner) {
+            return;
+        }
         let key = membership_key(&incoming.membership);
         let merged = match self.memberships.remove(&key) {
             Some(local) => local.merged(incoming),
@@ -214,7 +283,17 @@ impl GroupRows {
         self.memberships.insert(key, merged);
     }
 
-    fn merge_object_set(&mut self, incoming: ObjectSetRecord) {
+    fn merge_object_set(
+        &mut self,
+        incoming: ObjectSetRecord,
+        object_owners: &HashMap<String, String>,
+    ) {
+        let Some(owner) = retained_object_owner(object_owners, &incoming.name.object) else {
+            return;
+        };
+        if acl_principal_key(owner) != acl_principal_key(&incoming.object_owner) {
+            return;
+        }
         let key = object_set_key(&incoming.name.object);
         let merged = match self.object_sets.remove(&key) {
             Some(local) => local.merged(incoming),
@@ -318,18 +397,28 @@ impl MeshSeeGraph {
                     stated: 0,
                     ham_state: 0,
                 },
-                member_stated: false,
-                set_stated: false,
+                member: PartyStatement {
+                    stated: false,
+                    ham_state: 0,
+                },
+                set_party: PartyStatement {
+                    stated: false,
+                    ham_state: 0,
+                },
                 removed: false,
                 soul: soul.clone(),
+                set_owner: owner.clone(),
             });
         record.soul = soul;
+        record.set_owner = owner;
         record.membership.ham_state = record.membership.ham_state.saturating_add(1);
         if speaks_member {
-            record.member_stated = true;
+            record.member.stated = true;
+            record.member.ham_state = record.member.ham_state.saturating_add(1);
         }
         if speaks_set {
-            record.set_stated = true;
+            record.set_party.stated = true;
+            record.set_party.ham_state = record.set_party.ham_state.saturating_add(1);
         }
         record.sync_stated();
         self.groups.memberships.insert(key, record);
@@ -369,14 +458,24 @@ impl MeshSeeGraph {
                     stated: 0,
                     ham_state: 0,
                 },
-                member_stated: false,
-                set_stated: false,
+                member: PartyStatement {
+                    stated: false,
+                    ham_state: 0,
+                },
+                set_party: PartyStatement {
+                    stated: false,
+                    ham_state: 0,
+                },
                 removed: false,
                 soul: soul.clone(),
+                set_owner: owner.clone(),
             });
         record.soul = soul;
-        record.member_stated = false;
-        record.set_stated = false;
+        record.set_owner = owner;
+        record.member.stated = false;
+        record.member.ham_state = record.member.ham_state.saturating_add(1);
+        record.set_party.stated = false;
+        record.set_party.ham_state = record.set_party.ham_state.saturating_add(1);
         record.removed = true;
         record.membership.stated = 0;
         record.membership.ham_state = record.membership.ham_state.saturating_add(1);
@@ -433,7 +532,9 @@ impl MeshSeeGraph {
         let existing = self.object_set_record(&object_id);
         let (predicate, set_id) = match existing {
             Some(record) => (record.name.predicate, record.name.set_id.clone()),
-            None => return Ok(()),
+            // The live edge has not arrived. A stated-0 tombstone keeps a
+            // later merge from installing that edge at the same state.
+            None => (GroupPredicate::SameGroup, String::new()),
         };
         self.write_object_set(&object_id, &object_owner, predicate, &set_id, 0);
         Ok(())
@@ -687,6 +788,7 @@ impl MeshSeeGraph {
                 ham_state,
             },
             soul: object_set_soul(object_owner, object_id),
+            object_owner: object_owner.to_string(),
         };
         self.groups.object_sets.insert(key, record);
     }
@@ -726,6 +828,17 @@ fn membership_key(membership: &MeshMembership) -> MembershipKey {
 
 fn object_set_key(object: &str) -> String {
     acl_key(object.trim())
+}
+
+fn retained_object_owner<'a>(owners: &'a HashMap<String, String>, object: &str) -> Option<&'a str> {
+    if let Some(owner) = owners.get(object) {
+        return Some(owner.as_str());
+    }
+    let want = object_set_key(object);
+    owners
+        .iter()
+        .find(|(id, _)| object_set_key(id) == want)
+        .map(|(_, owner)| owner.as_str())
 }
 
 fn membership_hidden(record: &MembershipRecord, members: &[GroupSnapshotMember]) -> bool {

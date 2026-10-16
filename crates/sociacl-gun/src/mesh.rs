@@ -298,7 +298,12 @@ impl MeshSeeGraph {
                 .entry(key.clone())
                 .or_insert_with(|| object.clone());
         }
-        self.groups.merge_from(&other.groups);
+        let object_owners: HashMap<String, String> = self
+            .objects
+            .values()
+            .map(|object| (object.id.clone(), object.owner.clone()))
+            .collect();
+        self.groups.merge_from(&other.groups, &object_owners);
     }
 
     /// `CHECK(see, object, accessor)` at `now` on the locally merged

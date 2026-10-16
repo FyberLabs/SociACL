@@ -76,7 +76,7 @@ Graphs: public cache vs personal overlay vs later explicit share-into-mesh. Obse
 
 A group presentation is allowed only when that check allows and the decoded payload is stated 1 with `now` in `[from, until)`. A live edge does not override a cancel or a closed window. A group object with no `PresentedGroup` fails closed. An ordinary see grant omits it and runs `checkSee`.
 
-A lower `hamState` does not hide a removal this replica has merged. Member `hamState` does not stand in for the object-set edge. `ownerOfSet` names the account that owns the set.
+A lower `hamState` does not hide a removal this replica has merged. Member `hamState` does not stand in for the object-set edge. `ownerOfSet` names the account that owns the set. A merge keeps that owner and drops a membership row whose soul names a different one. Each party's assent has its own state: the higher state wins, and at the same state a retraction wins, so one party cannot carry the other's stale assent past a cancel. An object-set row stays bound to the object owner in its soul. At the same object-set state, stated 0 wins. Clearing an edge this replica has not seen writes a stated-0 tombstone, so a live edge at that same state does not become a grant on merge.
 
 Souls, under dest ACL, not grant souls and not Check objects:
 

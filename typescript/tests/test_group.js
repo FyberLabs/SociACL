@@ -207,3 +207,159 @@ test("closed objects and a cleared edge fail closed", () => {
   graph.clearObjectSet("0xalice", "doc");
   assert.equal(checkGroupSee(graph, "same-group", "doc", "0xbob", 1).reason, "cancelled");
 });
+
+function stateBoth(graph, predicate, setId, accessor) {
+  graph.stateMembership(accessor, predicate, setId, accessor);
+  graph.stateMembership("0xalice", predicate, setId, accessor);
+}
+
+test("merge drops a membership from a conflicting set owner", () => {
+  const alice = new MemoryGroupGraph();
+  alice.putObject("doc", "0xalice");
+  alice.recordSetOwner("0xalice", "same-group", "ops");
+  alice.nameObjectSet("0xalice", "doc", "same-group", "ops");
+
+  const mallory = new MemoryGroupGraph();
+  mallory.recordSetOwner("0xmallory", "same-group", "ops");
+  mallory.stateMembership("0xbob", "same-group", "ops", "0xbob");
+  mallory.stateMembership("0xmallory", "same-group", "ops", "0xbob");
+  assert.equal(mallory.membership("same-group", "ops", "0xbob")?.stated, 1);
+
+  alice.mergeFrom(mallory);
+  assert.equal(alice.ownerOfSet("same-group", "ops"), "0xalice");
+  assert.equal(alice.membership("same-group", "ops", "0xbob"), undefined);
+  assert.equal(checkGroupSee(alice, "same-group", "doc", "0xbob", 1).allowed, false);
+
+  const sameOwner = new MemoryGroupGraph();
+  sameOwner.recordSetOwner("s3rch/users/0xalice", "same-group", "ops");
+  stateBoth(sameOwner, "same-group", "ops", "0xbob");
+  alice.mergeFrom(sameOwner);
+  assert.equal(alice.membership("same-group", "ops", "0xbob")?.stated, 1);
+});
+
+test("equal ham membership merge keeps the cancel", () => {
+  const cancelled = liveGraph();
+  cancelled.cancelMembership("0xalice", "same-group", "ops", "0xbob");
+  const restated = liveGraph();
+  restated.stateMembership("0xbob", "same-group", "ops", "0xbob");
+  assert.equal(
+    cancelled.membership("same-group", "ops", "0xbob")?.hamState,
+    restated.membership("same-group", "ops", "0xbob")?.hamState,
+  );
+  const fromCancel = liveGraph();
+  fromCancel.cancelMembership("0xalice", "same-group", "ops", "0xbob");
+  fromCancel.mergeFrom(restated);
+  const fromRestate = liveGraph();
+  fromRestate.stateMembership("0xbob", "same-group", "ops", "0xbob");
+  fromRestate.mergeFrom(cancelled);
+  for (const graph of [fromCancel, fromRestate]) {
+    assert.equal(graph.membership("same-group", "ops", "0xbob")?.stated, 0);
+    assert.equal(checkGroupSee(graph, "same-group", "doc", "0xbob", 1).allowed, false);
+  }
+});
+
+test("equal ham object-set merge keeps privilege-down", () => {
+  const cleared = liveGraph();
+  cleared.clearObjectSet("0xalice", "doc");
+  const renamed = liveGraph();
+  renamed.nameObjectSet("0xalice", "doc", "same-group", "labs");
+  assert.equal(cleared.objectSet("doc")?.hamState, renamed.objectSet("doc")?.hamState);
+  const fromClear = liveGraph();
+  fromClear.clearObjectSet("0xalice", "doc");
+  fromClear.mergeFrom(renamed);
+  const fromRename = liveGraph();
+  fromRename.nameObjectSet("0xalice", "doc", "same-group", "labs");
+  fromRename.mergeFrom(cleared);
+  for (const graph of [fromClear, fromRename]) {
+    assert.equal(graph.objectSet("doc")?.stated, 0);
+    assert.equal(checkGroupSee(graph, "same-group", "doc", "0xbob", 1).allowed, false);
+  }
+});
+
+test("merge drops an object-set row from a conflicting object owner", () => {
+  const alice = new MemoryGroupGraph();
+  alice.putObject("doc", "0xalice");
+  alice.recordSetOwner("0xalice", "same-group", "ops");
+  stateBoth(alice, "same-group", "ops", "0xbob");
+
+  const mallory = new MemoryGroupGraph();
+  mallory.putObject("doc", "0xmallory");
+  mallory.recordSetOwner("0xalice", "same-group", "ops");
+  mallory.nameObjectSet("0xmallory", "doc", "same-group", "ops");
+
+  alice.mergeFrom(mallory);
+  assert.equal(alice.ownerOf("doc"), "0xalice");
+  assert.equal(alice.objectSet("doc"), undefined);
+  assert.equal(checkGroupSee(alice, "same-group", "doc", "0xbob", 1).allowed, false);
+});
+
+test("clear of an unseen object-set writes a tombstone", () => {
+  const clearer = new MemoryGroupGraph();
+  clearer.putObject("doc", "0xalice");
+  clearer.recordSetOwner("0xalice", "same-group", "ops");
+  stateBoth(clearer, "same-group", "ops", "0xbob");
+  clearer.clearObjectSet("0xalice", "doc");
+  assert.equal(clearer.objectSet("doc")?.stated, 0);
+  assert.equal(clearer.objectSet("doc")?.hamState, 1);
+
+  const peer = new MemoryGroupGraph();
+  peer.putObject("doc", "0xalice");
+  peer.recordSetOwner("0xalice", "same-group", "ops");
+  peer.nameObjectSet("0xalice", "doc", "same-group", "ops");
+  stateBoth(peer, "same-group", "ops", "0xbob");
+  clearer.mergeFrom(peer);
+  assert.equal(clearer.objectSet("doc")?.stated, 0);
+  assert.equal(checkGroupSee(clearer, "same-group", "doc", "0xbob", 1).reason, "cancelled");
+  peer.mergeFrom(clearer);
+  assert.equal(peer.objectSet("doc")?.stated, 0);
+  assert.equal(checkGroupSee(peer, "same-group", "doc", "0xbob", 1).allowed, false);
+});
+
+test("one party cannot advance a stale live membership past a cancel", () => {
+  const ownerPeer = liveGraph();
+  ownerPeer.cancelMembership("0xalice", "same-group", "ops", "0xbob");
+  const memberPeer = liveGraph();
+  memberPeer.stateMembership("0xbob", "same-group", "ops", "0xbob");
+  memberPeer.stateMembership("0xbob", "same-group", "ops", "0xbob");
+  assert.equal(memberPeer.membership("same-group", "ops", "0xbob")?.stated, 1);
+  assert.ok(
+    (memberPeer.membership("same-group", "ops", "0xbob")?.hamState ?? 0) >
+      (ownerPeer.membership("same-group", "ops", "0xbob")?.hamState ?? 0),
+  );
+  const fromOwner = liveGraph();
+  fromOwner.cancelMembership("0xalice", "same-group", "ops", "0xbob");
+  fromOwner.mergeFrom(memberPeer);
+  const fromMember = liveGraph();
+  fromMember.stateMembership("0xbob", "same-group", "ops", "0xbob");
+  fromMember.stateMembership("0xbob", "same-group", "ops", "0xbob");
+  fromMember.mergeFrom(ownerPeer);
+  for (const graph of [fromOwner, fromMember]) {
+    assert.equal(graph.membership("same-group", "ops", "0xbob")?.stated, 0);
+    assert.equal(checkGroupSee(graph, "same-group", "doc", "0xbob", 1).reason, "cancelled");
+  }
+});
+
+test("mergeFrom copies objects and ordinary see grants", () => {
+  const source = new MemoryGroupGraph();
+  source.putObject("doc", "0xalice");
+  source.putObject("claim-1", "0xalice");
+  source.recordSetOwner("0xalice", "same-group", "ops");
+  source.nameObjectSet("0xalice", "doc", "same-group", "ops");
+  stateBoth(source, "same-group", "ops", "0xbob");
+  source.stateSeeGrant("0xalice", { object: "claim-1", accessor: "0xbob", from: 0, until: 80 });
+
+  const fresh = new MemoryGroupGraph();
+  fresh.mergeFrom(source);
+  assert.equal(fresh.ownerOf("doc"), "0xalice");
+  assert.equal(checkGroupSee(fresh, "same-group", "doc", "0xbob", 1).allowed, true);
+  const ordinary = checkGroupPresentation(fresh, null, "claim-1", "0xbob", { stated: 1, from: 0, until: 80 }, 10);
+  assert.equal(ordinary.allowed, true);
+  assert.equal(ordinary.reason, "delegate");
+
+  const local = new MemoryGroupGraph();
+  local.putObject("doc", "0xalice");
+  const other = new MemoryGroupGraph();
+  other.putObject("doc", "0xmallory");
+  local.mergeFrom(other);
+  assert.equal(local.ownerOf("doc"), "0xalice");
+});

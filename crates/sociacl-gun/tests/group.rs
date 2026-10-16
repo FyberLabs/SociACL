@@ -494,7 +494,9 @@ fn writers_are_the_object_owner_and_the_set_parties() {
         Err(GunError::EmptyGroupName)
     );
     graph.clear_object_set("0xalice", "doc").unwrap();
-    assert!(graph.object_set("doc").is_none());
+    let tombstone = graph.object_set("doc").unwrap();
+    assert_eq!(tombstone.stated, 0);
+    assert_eq!(tombstone.ham_state, 1);
 }
 
 #[test]
@@ -913,4 +915,299 @@ fn a_cancel_in_another_set_does_not_stale_this_object() {
         ham_state: 2,
     };
     assert!(!graph.snapshot_understates_group("doc", &[bob], Some(&edge)));
+}
+
+fn state_both(graph: &mut MeshSeeGraph, predicate: GroupPredicate, set_id: &str, accessor: &str) {
+    graph
+        .state_membership(accessor, predicate, set_id, accessor)
+        .unwrap();
+    graph
+        .state_membership("0xalice", predicate, set_id, accessor)
+        .unwrap();
+}
+
+#[test]
+fn merge_drops_membership_from_a_conflicting_set_owner() {
+    let mut alice = MeshSeeGraph::new();
+    alice.put_object("doc", "0xalice");
+    alice
+        .record_set_owner("0xalice", GroupPredicate::SameGroup, "ops")
+        .unwrap();
+    alice
+        .name_object_set("0xalice", "doc", GroupPredicate::SameGroup, "ops")
+        .unwrap();
+
+    let mut mallory = MeshSeeGraph::new();
+    mallory
+        .record_set_owner("0xmallory", GroupPredicate::SameGroup, "ops")
+        .unwrap();
+    mallory
+        .state_membership("0xbob", GroupPredicate::SameGroup, "ops", "0xbob")
+        .unwrap();
+    mallory
+        .state_membership("0xmallory", GroupPredicate::SameGroup, "ops", "0xbob")
+        .unwrap();
+    assert_eq!(
+        mallory
+            .membership(GroupPredicate::SameGroup, "ops", "0xbob")
+            .unwrap()
+            .stated,
+        1
+    );
+
+    alice.merge_from(&mallory);
+    assert_eq!(
+        alice.owner_of_set(GroupPredicate::SameGroup, "ops"),
+        Some("0xalice")
+    );
+    assert!(alice
+        .membership(GroupPredicate::SameGroup, "ops", "0xbob")
+        .is_none());
+    assert!(
+        !alice
+            .check_group_see(
+                GroupPredicate::SameGroup,
+                "doc",
+                "0xbob",
+                Timestamp(1),
+                None,
+                None,
+            )
+            .allowed
+    );
+
+    let mut same_owner = MeshSeeGraph::new();
+    same_owner
+        .record_set_owner("s3rch/users/0xalice", GroupPredicate::SameGroup, "ops")
+        .unwrap();
+    state_both(&mut same_owner, GroupPredicate::SameGroup, "ops", "0xbob");
+    alice.merge_from(&same_owner);
+    assert_eq!(
+        alice
+            .membership(GroupPredicate::SameGroup, "ops", "0xbob")
+            .unwrap()
+            .stated,
+        1
+    );
+}
+
+#[test]
+fn equal_ham_membership_merge_keeps_the_cancel() {
+    let mut cancelled = group_graph();
+    cancelled
+        .cancel_membership("0xalice", GroupPredicate::SameGroup, "ops", "0xbob")
+        .unwrap();
+    let mut restated = group_graph();
+    restated
+        .state_membership("0xbob", GroupPredicate::SameGroup, "ops", "0xbob")
+        .unwrap();
+    assert_eq!(
+        cancelled
+            .membership(GroupPredicate::SameGroup, "ops", "0xbob")
+            .unwrap()
+            .ham_state,
+        restated
+            .membership(GroupPredicate::SameGroup, "ops", "0xbob")
+            .unwrap()
+            .ham_state
+    );
+
+    let mut from_cancel = cancelled.clone();
+    from_cancel.merge_from(&restated);
+    let mut from_restate = restated.clone();
+    from_restate.merge_from(&cancelled);
+    for graph in [&from_cancel, &from_restate] {
+        let row = graph
+            .membership(GroupPredicate::SameGroup, "ops", "0xbob")
+            .unwrap();
+        assert_eq!(row.stated, 0);
+        assert!(
+            !graph
+                .check_group_see(
+                    GroupPredicate::SameGroup,
+                    "doc",
+                    "0xbob",
+                    Timestamp(1),
+                    None,
+                    None,
+                )
+                .allowed
+        );
+    }
+}
+
+#[test]
+fn equal_ham_object_set_merge_keeps_privilege_down() {
+    let mut cleared = group_graph();
+    cleared.clear_object_set("0xalice", "doc").unwrap();
+    let mut renamed = group_graph();
+    renamed
+        .name_object_set("0xalice", "doc", GroupPredicate::SameGroup, "labs")
+        .unwrap();
+    assert_eq!(
+        cleared.object_set("doc").unwrap().ham_state,
+        renamed.object_set("doc").unwrap().ham_state
+    );
+    assert_eq!(cleared.object_set("doc").unwrap().stated, 0);
+    assert_eq!(renamed.object_set("doc").unwrap().stated, 1);
+
+    let mut from_clear = cleared.clone();
+    from_clear.merge_from(&renamed);
+    let mut from_rename = renamed.clone();
+    from_rename.merge_from(&cleared);
+    for graph in [&from_clear, &from_rename] {
+        assert_eq!(graph.object_set("doc").unwrap().stated, 0);
+        assert!(
+            !graph
+                .check_group_see(
+                    GroupPredicate::SameGroup,
+                    "doc",
+                    "0xbob",
+                    Timestamp(1),
+                    None,
+                    None,
+                )
+                .allowed
+        );
+    }
+}
+
+#[test]
+fn merge_drops_an_object_set_from_a_conflicting_object_owner() {
+    let mut alice = MeshSeeGraph::new();
+    alice.put_object("doc", "0xalice");
+    alice
+        .record_set_owner("0xalice", GroupPredicate::SameGroup, "ops")
+        .unwrap();
+    state_both(&mut alice, GroupPredicate::SameGroup, "ops", "0xbob");
+
+    let mut mallory = MeshSeeGraph::new();
+    mallory.put_object("doc", "0xmallory");
+    mallory
+        .record_set_owner("0xalice", GroupPredicate::SameGroup, "ops")
+        .unwrap();
+    mallory
+        .name_object_set("0xmallory", "doc", GroupPredicate::SameGroup, "ops")
+        .unwrap();
+
+    alice.merge_from(&mallory);
+    assert_eq!(alice.owner_of("doc"), Some("0xalice"));
+    assert!(alice.object_set("doc").is_none());
+    assert!(
+        !alice
+            .check_group_see(
+                GroupPredicate::SameGroup,
+                "doc",
+                "0xbob",
+                Timestamp(1),
+                None,
+                None,
+            )
+            .allowed
+    );
+}
+
+#[test]
+fn clear_of_an_unseen_object_set_tombstones_the_edge() {
+    let mut clearer = MeshSeeGraph::new();
+    clearer.put_object("doc", "0xalice");
+    clearer
+        .record_set_owner("0xalice", GroupPredicate::SameGroup, "ops")
+        .unwrap();
+    state_both(&mut clearer, GroupPredicate::SameGroup, "ops", "0xbob");
+    clearer.clear_object_set("0xalice", "doc").unwrap();
+    let tombstone = clearer.object_set("doc").unwrap();
+    assert_eq!(tombstone.stated, 0);
+    assert_eq!(tombstone.ham_state, 1);
+
+    let mut peer = MeshSeeGraph::new();
+    peer.put_object("doc", "0xalice");
+    peer.record_set_owner("0xalice", GroupPredicate::SameGroup, "ops")
+        .unwrap();
+    peer.name_object_set("0xalice", "doc", GroupPredicate::SameGroup, "ops")
+        .unwrap();
+    state_both(&mut peer, GroupPredicate::SameGroup, "ops", "0xbob");
+    assert_eq!(peer.object_set("doc").unwrap().stated, 1);
+    assert_eq!(peer.object_set("doc").unwrap().ham_state, 1);
+
+    clearer.merge_from(&peer);
+    assert_eq!(clearer.object_set("doc").unwrap().stated, 0);
+    let denied = clearer.check_group_see(
+        GroupPredicate::SameGroup,
+        "doc",
+        "0xbob",
+        Timestamp(1),
+        None,
+        None,
+    );
+    assert!(!denied.allowed);
+    assert_eq!(denied.reason, MESH_REASON_CANCELLED);
+
+    peer.merge_from(&clearer);
+    assert_eq!(peer.object_set("doc").unwrap().stated, 0);
+    assert!(
+        !peer
+            .check_group_see(
+                GroupPredicate::SameGroup,
+                "doc",
+                "0xbob",
+                Timestamp(1),
+                None,
+                None,
+            )
+            .allowed
+    );
+}
+
+#[test]
+fn one_party_cannot_advance_a_stale_live_membership_past_a_cancel() {
+    let mut owner_peer = group_graph();
+    owner_peer
+        .cancel_membership("0xalice", GroupPredicate::SameGroup, "ops", "0xbob")
+        .unwrap();
+    let mut member_peer = group_graph();
+    member_peer
+        .state_membership("0xbob", GroupPredicate::SameGroup, "ops", "0xbob")
+        .unwrap();
+    member_peer
+        .state_membership("0xbob", GroupPredicate::SameGroup, "ops", "0xbob")
+        .unwrap();
+    assert_eq!(
+        member_peer
+            .membership(GroupPredicate::SameGroup, "ops", "0xbob")
+            .unwrap()
+            .stated,
+        1
+    );
+    assert!(
+        member_peer
+            .membership(GroupPredicate::SameGroup, "ops", "0xbob")
+            .unwrap()
+            .ham_state
+            > owner_peer
+                .membership(GroupPredicate::SameGroup, "ops", "0xbob")
+                .unwrap()
+                .ham_state
+    );
+
+    let mut from_owner = owner_peer.clone();
+    from_owner.merge_from(&member_peer);
+    let mut from_member = member_peer.clone();
+    from_member.merge_from(&owner_peer);
+    for graph in [&from_owner, &from_member] {
+        let row = graph
+            .membership(GroupPredicate::SameGroup, "ops", "0xbob")
+            .unwrap();
+        assert_eq!(row.stated, 0);
+        let denied = graph.check_group_see(
+            GroupPredicate::SameGroup,
+            "doc",
+            "0xbob",
+            Timestamp(1),
+            None,
+            None,
+        );
+        assert!(!denied.allowed);
+        assert_eq!(denied.reason, MESH_REASON_CANCELLED);
+    }
 }
