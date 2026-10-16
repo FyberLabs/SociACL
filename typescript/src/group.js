@@ -43,7 +43,7 @@
  *   stated: 0 | 1,
  *   hamState: number,
  * }} GroupSnapshotObjectSet
- * @typedef {{ stated: boolean, hamState: number }} PartyStatement
+ * @typedef {{ stated: boolean, hamState: number, epoch: number }} PartyStatement
  * @typedef {{
  *   membership: MeshMembership,
  *   member: PartyStatement,
@@ -53,8 +53,29 @@
  *   setOwner: string,
  * }} MembershipRecord
  * @typedef {{ name: ObjectSetName, soul: string, objectOwner: string }} ObjectSetRecord
- * @typedef {{ accessor: string, from: number, until: number, stated?: 0 | 1, object?: string, hamState?: number }} SeeGrant
+ * @typedef {{ accessor: string, from: number, until: number, stated?: 0 | 1, object?: string, claimId?: string, hamState?: number, owner?: string }} SeeGrant
  */
+
+/** @param {SeeGrant} grant */
+function grantObject(grant) {
+  return String(grant.claimId ?? grant.object ?? "").trim();
+}
+
+/** @param {string} setId @param {string} owner */
+function setIdBindsOwner(setId, owner) {
+  const slash = setId.indexOf("/");
+  if (slash <= 0 || slash === setId.length - 1) return false;
+  const head = setId.slice(0, slash);
+  const ownerKey = aclPrincipalKey(owner);
+  return ownerKey.length > 0 && aclPrincipalKey(head) === ownerKey;
+}
+
+/** @param {string} setId */
+function setIdHasBoundOwner(setId) {
+  const slash = setId.indexOf("/");
+  if (slash <= 0 || slash === setId.length - 1) return false;
+  return aclPrincipalKey(setId.slice(0, slash)).length > 0;
+}
 
 /** @param {string} id */
 export function encodeKey(id) {
@@ -159,12 +180,12 @@ export class MemoryGroupGraph {
 
   /** @param {string} object */
   hasObject(object) {
-    return this.objects.has(String(object).trim());
+    return this.objects.has(aclKey(String(object).trim()));
   }
 
   /** @param {string} object */
   ownerOf(object) {
-    return this.objects.get(String(object).trim());
+    return this.objects.get(aclKey(String(object).trim()));
   }
 
   /**
@@ -172,13 +193,13 @@ export class MemoryGroupGraph {
    * @param {string} owner
    */
   putObject(object, owner) {
-    this.objects.set(String(object).trim(), String(owner).trim());
+    this.objects.set(aclKey(String(object).trim()), String(owner).trim());
   }
 
   /** @param {string} object */
   seeGrants(object) {
-    const id = String(object).trim();
-    return [...this.grants.values()].filter((grant) => (grant.object ?? id) === id && grant.stated !== 0);
+    const key = aclKey(String(object).trim());
+    return [...this.grants.values()].filter((grant) => aclKey(grantObject(grant)) === key && grant.stated !== 0);
   }
 
   /**
@@ -186,10 +207,19 @@ export class MemoryGroupGraph {
    * @param {SeeGrant} grant
    */
   stateSeeGrant(owner, grant) {
-    if (aclPrincipalKey(this.ownerOf(grant.object ?? "") ?? "") !== aclPrincipalKey(owner)) return;
-    const key = `${aclPrincipalKey(owner)}\0${grant.object ?? ""}\0${aclPrincipalKey(grant.accessor)}`;
+    const object = grantObject(grant);
+    if (!object) return;
+    const objectOwner = this.ownerOf(object);
+    if (!objectOwner || aclPrincipalKey(objectOwner) !== aclPrincipalKey(owner)) return;
+    const key = `${aclPrincipalKey(owner)}\0${aclKey(object)}\0${aclPrincipalKey(grant.accessor)}`;
     const prev = this.grants.get(key);
-    this.grants.set(key, { ...grant, stated: 1, hamState: (prev?.hamState ?? 0) + 1 });
+    this.grants.set(key, {
+      ...grant,
+      object,
+      stated: 1,
+      hamState: (prev?.hamState ?? 0) + 1,
+      owner: String(owner).trim(),
+    });
   }
 
   /**
@@ -206,6 +236,7 @@ export class MemoryGroupGraph {
     if (existing && aclPrincipalKey(existing) !== aclPrincipalKey(name)) {
       throw new Error("set already has an owner");
     }
+    if (!existing && !setIdBindsOwner(id, name)) throw new Error("set id is not bound to this owner");
     if (!existing) this.setOwners.set(key, name);
   }
 
@@ -251,8 +282,8 @@ export class MemoryGroupGraph {
     const current = this.memberships.get(key);
     const record = current ?? {
       membership: { predicate, setId: id, accessor: who, stated: 0, hamState: 0 },
-      member: { stated: false, hamState: 0 },
-      setParty: { stated: false, hamState: 0 },
+      member: { stated: false, hamState: 0, epoch: 0 },
+      setParty: { stated: false, hamState: 0, epoch: 0 },
       removed: false,
       soul: "",
       setOwner: owner,
@@ -260,13 +291,16 @@ export class MemoryGroupGraph {
     record.soul = membershipSoul(owner, predicate, id, who);
     record.setOwner = owner;
     record.membership.hamState += 1;
+    const epoch = Math.max(record.member.epoch, record.setParty.epoch);
     if (speaksMember) {
       record.member.stated = true;
       record.member.hamState += 1;
+      record.member.epoch = epoch;
     }
     if (speaksSet) {
       record.setParty.stated = true;
       record.setParty.hamState += 1;
+      record.setParty.epoch = epoch;
     }
     syncMembership(record);
     this.memberships.set(key, record);
@@ -289,18 +323,21 @@ export class MemoryGroupGraph {
     const current = this.memberships.get(key);
     const record = current ?? {
       membership: { predicate, setId: id, accessor: who, stated: 0, hamState: 0 },
-      member: { stated: false, hamState: 0 },
-      setParty: { stated: false, hamState: 0 },
+      member: { stated: false, hamState: 0, epoch: 0 },
+      setParty: { stated: false, hamState: 0, epoch: 0 },
       removed: false,
       soul: "",
       setOwner: owner,
     };
     record.soul = membershipSoul(owner, predicate, id, who);
     record.setOwner = owner;
+    const epoch = Math.max(record.member.epoch, record.setParty.epoch) + 1;
     record.member.stated = false;
     record.member.hamState += 1;
+    record.member.epoch = epoch;
     record.setParty.stated = false;
     record.setParty.hamState += 1;
+    record.setParty.epoch = epoch;
     record.removed = true;
     record.membership.stated = 0;
     record.membership.hamState += 1;
@@ -311,11 +348,13 @@ export class MemoryGroupGraph {
    * @param {GroupPredicate} predicate
    * @param {string} setId
    * @param {string} accessor
-   * @returns {MeshMembership | undefined}
+   * @returns {(MeshMembership & { removed?: boolean }) | undefined}
    */
   membership(predicate, setId, accessor) {
     const key = `${predicate}\0${String(setId).trim()}\0${aclPrincipalKey(accessor)}`;
-    return this.memberships.get(key)?.membership;
+    const record = this.memberships.get(key);
+    if (!record) return undefined;
+    return { ...record.membership, removed: record.removed };
   }
 
   /**
@@ -327,10 +366,13 @@ export class MemoryGroupGraph {
   nameObjectSet(owner, object, predicate, setId) {
     const id = String(setId).trim();
     if (!id) throw new Error("group name is empty");
+    if (!setIdHasBoundOwner(id)) throw new Error("set id is not bound to this owner");
     const objectId = String(object).trim();
     const objectOwner = this.ownerOf(objectId);
     if (!objectOwner) throw new Error("mesh object is not in-graph");
     if (aclPrincipalKey(objectOwner) !== aclPrincipalKey(owner)) throw new Error("dest ACL write is owner-only");
+    const setOwner = this.ownerOfSet(predicate, id);
+    if (setOwner && !setIdBindsOwner(id, setOwner)) throw new Error("set id is not bound to this owner");
     this.#writeObjectSet(objectId, objectOwner, predicate, id, 1);
   }
 
@@ -362,24 +404,33 @@ export class MemoryGroupGraph {
   /** @param {MemoryGroupGraph} other */
   mergeFrom(other) {
     for (const [key, owner] of other.objects) {
-      if (!this.objects.has(key)) this.objects.set(key, owner);
+      const canon = aclKey(key);
+      if (!this.objects.has(canon)) this.objects.set(canon, owner);
     }
     for (const [key, incoming] of other.grants) {
+      const object = grantObject(incoming);
+      const retained = this.ownerOf(object);
+      const grantOwner = incoming.owner ?? "";
+      if (!retained || !grantOwner || aclPrincipalKey(retained) !== aclPrincipalKey(grantOwner)) continue;
       const local = this.grants.get(key);
       const incomingHam = incoming.hamState ?? 0;
       const localHam = local?.hamState ?? 0;
       if (!local || incomingHam > localHam) this.grants.set(key, structuredClone(incoming));
     }
     for (const [key, owner] of other.setOwners) {
+      const setId = key.split("\0")[1] ?? "";
+      if (!setIdBindsOwner(setId, owner)) continue;
       if (!this.setOwners.has(key)) this.setOwners.set(key, owner);
     }
     for (const [key, incoming] of other.memberships) {
+      if (!setIdBindsOwner(incoming.membership.setId, incoming.setOwner)) continue;
       if (!this.#membershipOwnerMatches(incoming)) continue;
       const local = this.memberships.get(key);
       this.memberships.set(key, local ? mergeMembership(local, incoming) : structuredClone(incoming));
     }
     for (const [key, incoming] of other.objectSets) {
       if (!this.#objectOwnerMatches(incoming)) continue;
+      if (incoming.name.stated === 1 && !setIdHasBoundOwner(incoming.name.setId)) continue;
       const local = this.objectSets.get(key);
       this.objectSets.set(key, local ? mergeObjectSet(local, incoming) : structuredClone(incoming));
     }
@@ -423,10 +474,14 @@ export class MemoryGroupGraph {
 
 /** @param {PartyStatement} local @param {PartyStatement} incoming */
 function mergeParty(local, incoming) {
-  if (incoming.hamState > local.hamState) return { stated: incoming.stated, hamState: incoming.hamState };
-  if (incoming.hamState < local.hamState) return { stated: local.stated, hamState: local.hamState };
-  if (!incoming.stated && local.stated) return { stated: false, hamState: incoming.hamState };
-  return { stated: local.stated, hamState: local.hamState };
+  const epoch = incoming.epoch ?? 0;
+  const localEpoch = local.epoch ?? 0;
+  if (epoch > localEpoch) return { stated: incoming.stated, hamState: incoming.hamState, epoch };
+  if (epoch < localEpoch) return { stated: local.stated, hamState: local.hamState, epoch: localEpoch };
+  if (incoming.hamState > local.hamState) return { stated: incoming.stated, hamState: incoming.hamState, epoch };
+  if (incoming.hamState < local.hamState) return { stated: local.stated, hamState: local.hamState, epoch: localEpoch };
+  if (!incoming.stated && local.stated) return { stated: false, hamState: incoming.hamState, epoch };
+  return { stated: local.stated, hamState: local.hamState, epoch: localEpoch };
 }
 
 /** @param {MembershipRecord} record */
@@ -509,13 +564,16 @@ export function checkGroupSee(graph, predicate, object, accessor, now, hint, hop
   }
   const edge = graph.objectSet(object);
   if (!edge) return deny("missing");
+  if (edge.stated === 1 && !setIdHasBoundOwner(edge.setId)) return deny("missing");
+  const setOwner = graph.ownerOfSet(predicate, edge.setId);
+  if (edge.stated === 1 && setOwner && !setIdBindsOwner(edge.setId, setOwner)) return deny("missing");
   if (edge.predicate !== predicate || edge.stated !== 1) {
     return deny(edge.predicate === predicate && edge.stated !== 1 ? "cancelled" : "missing");
   }
-  const row = graph.memberships.get(`${predicate}\0${edge.setId}\0${aclPrincipalKey(accessor)}`);
-  if (!row) return deny("missing");
-  if (row.membership.stated === 1) return { allowed: true, reason: predicate, ...echoed };
-  return deny(row.removed ? "cancelled" : "missing");
+  const membership = graph.membership(predicate, edge.setId, accessor);
+  if (!membership) return deny("missing");
+  if (membership.stated === 1) return { allowed: true, reason: predicate, ...echoed };
+  return deny(membership.removed ? "cancelled" : "missing");
 }
 
 /**
@@ -536,7 +594,8 @@ export function checkGroupSee(graph, predicate, object, accessor, now, hint, hop
 export function checkGroupPresentation(graph, group, object, accessor, payload, now, hint, hop) {
   const storeCancel = payload.stated === 0;
   const echoed = { hint: hint ?? null, hop: hop ?? null, storeCancel };
-  const named = graph.objectSet(object) != null;
+  const namedEdge = graph.objectSet(object);
+  const named = namedEdge != null && namedEdge.stated === 1;
   if (!group) {
     if (named) return { allowed: false, reason: "missing", ...echoed };
     const dest = checkSee(graph, object, accessor, now);

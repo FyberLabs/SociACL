@@ -12,7 +12,9 @@
 //! the set owner in its soul. An object-set row stays bound to the
 //! object owner in its soul. At the same object-set state, stated 0 wins.
 //! Clearing an object-set edge this replica has not seen writes a
-//! stated-0 tombstone. Wrapped keys are not read here.
+//! stated-0 tombstone. A set id is `<principal>/<name>`. A cancel
+//! epoch wins over party states that have not observed it.
+//! Wrapped keys are not read here.
 
 use std::collections::HashMap;
 
@@ -140,17 +142,24 @@ impl GroupPresentation {
     }
 }
 
-/// One party's assent. Higher `ham_state` wins. At the same state,
-/// a retraction (`stated` false) wins over an assent.
+/// One party's assent. A higher cancel epoch wins, including a
+/// cancel written before this replica had seen the row. Inside one
+/// epoch, higher `ham_state` wins. At the same state, a retraction
+/// (`stated` false) wins over an assent.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct PartyStatement {
     stated: bool,
     ham_state: u64,
+    epoch: u64,
 }
 
 impl PartyStatement {
     fn merged(self, incoming: Self) -> Self {
-        if incoming.ham_state > self.ham_state {
+        if incoming.epoch > self.epoch {
+            incoming
+        } else if incoming.epoch < self.epoch {
+            self
+        } else if incoming.ham_state > self.ham_state {
             incoming
         } else if incoming.ham_state < self.ham_state {
             self
@@ -253,6 +262,9 @@ pub(crate) struct GroupRows {
 impl GroupRows {
     pub(crate) fn merge_from(&mut self, other: &Self, object_owners: &HashMap<String, String>) {
         for (key, owner) in &other.set_owners {
+            if !set_id_binds_owner(&key.1, owner) {
+                continue;
+            }
             self.set_owners
                 .entry(key.clone())
                 .or_insert_with(|| owner.clone());
@@ -266,6 +278,9 @@ impl GroupRows {
     }
 
     fn merge_membership(&mut self, incoming: MembershipRecord) {
+        if !set_id_binds_owner(&incoming.membership.set_id, &incoming.set_owner) {
+            return;
+        }
         let Some(owner) = self.set_owners.get(&(
             incoming.membership.predicate,
             incoming.membership.set_id.clone(),
@@ -292,6 +307,9 @@ impl GroupRows {
             return;
         };
         if acl_principal_key(owner) != acl_principal_key(&incoming.object_owner) {
+            return;
+        }
+        if incoming.name.stated == 1 && !set_id_has_bound_owner(&incoming.name.set_id) {
             return;
         }
         let key = object_set_key(&incoming.name.object);
@@ -351,6 +369,9 @@ impl MeshSeeGraph {
             }
             return Ok(());
         }
+        if !set_id_binds_owner(set_id, owner) {
+            return Err(GunError::UnboundSetOwner);
+        }
         self.groups.set_owners.insert(key, owner.to_string());
         Ok(())
     }
@@ -400,10 +421,12 @@ impl MeshSeeGraph {
                 member: PartyStatement {
                     stated: false,
                     ham_state: 0,
+                    epoch: 0,
                 },
                 set_party: PartyStatement {
                     stated: false,
                     ham_state: 0,
+                    epoch: 0,
                 },
                 removed: false,
                 soul: soul.clone(),
@@ -412,13 +435,16 @@ impl MeshSeeGraph {
         record.soul = soul;
         record.set_owner = owner;
         record.membership.ham_state = record.membership.ham_state.saturating_add(1);
+        let epoch = record.member.epoch.max(record.set_party.epoch);
         if speaks_member {
             record.member.stated = true;
             record.member.ham_state = record.member.ham_state.saturating_add(1);
+            record.member.epoch = epoch;
         }
         if speaks_set {
             record.set_party.stated = true;
             record.set_party.ham_state = record.set_party.ham_state.saturating_add(1);
+            record.set_party.epoch = epoch;
         }
         record.sync_stated();
         self.groups.memberships.insert(key, record);
@@ -461,10 +487,12 @@ impl MeshSeeGraph {
                 member: PartyStatement {
                     stated: false,
                     ham_state: 0,
+                    epoch: 0,
                 },
                 set_party: PartyStatement {
                     stated: false,
                     ham_state: 0,
+                    epoch: 0,
                 },
                 removed: false,
                 soul: soul.clone(),
@@ -472,10 +500,19 @@ impl MeshSeeGraph {
             });
         record.soul = soul;
         record.set_owner = owner;
+        // A cancel epoch wins over party states that have not observed
+        // it, including a row this replica had not seen yet.
+        let epoch = record
+            .member
+            .epoch
+            .max(record.set_party.epoch)
+            .saturating_add(1);
         record.member.stated = false;
         record.member.ham_state = record.member.ham_state.saturating_add(1);
+        record.member.epoch = epoch;
         record.set_party.stated = false;
         record.set_party.ham_state = record.set_party.ham_state.saturating_add(1);
+        record.set_party.epoch = epoch;
         record.removed = true;
         record.membership.stated = 0;
         record.membership.ham_state = record.membership.ham_state.saturating_add(1);
@@ -515,8 +552,17 @@ impl MeshSeeGraph {
         if set_id.is_empty() {
             return Err(GunError::EmptyGroupName);
         }
+        if !set_id_has_bound_owner(set_id) {
+            return Err(GunError::UnboundSetOwner);
+        }
         let (object_id, object_owner) =
             self.write_object_set_auth(owner.as_ref(), object.as_ref())?;
+        if self
+            .owner_of_set(predicate, set_id)
+            .is_some_and(|set_owner| !set_id_binds_owner(set_id, set_owner))
+        {
+            return Err(GunError::UnboundSetOwner);
+        }
         self.write_object_set(&object_id, &object_owner, predicate, set_id, 1);
         Ok(())
     }
@@ -600,6 +646,16 @@ impl MeshSeeGraph {
         let edge_predicate = edge.predicate;
         let edge_live = edge.is_live();
         let set_id = edge.set_id.clone();
+        if edge_live && !set_id_has_bound_owner(&set_id) {
+            return closed(crate::MESH_REASON_MISSING, hint, hop);
+        }
+        if edge_live
+            && self
+                .owner_of_set(predicate, &set_id)
+                .is_some_and(|owner| !set_id_binds_owner(&set_id, owner))
+        {
+            return closed(crate::MESH_REASON_MISSING, hint, hop);
+        }
         if edge_predicate != predicate || !edge_live {
             let reason = if edge_predicate == predicate && !edge_live {
                 crate::MESH_REASON_CANCELLED
@@ -657,7 +713,7 @@ impl MeshSeeGraph {
             store_cancel,
         };
 
-        let named = self.object_set(object).is_some();
+        let named = self.object_set(object).is_some_and(|edge| edge.is_live());
         let Some(group) = group else {
             if named {
                 return finish(false, crate::MESH_REASON_MISSING.into());
@@ -828,6 +884,24 @@ fn membership_key(membership: &MeshMembership) -> MembershipKey {
 
 fn object_set_key(object: &str) -> String {
     acl_key(object.trim())
+}
+
+/// `<principal>/<name>`. The principal is the only account that can own the set.
+fn set_id_binds_owner(set_id: &str, owner: &str) -> bool {
+    let Some((head, tail)) = set_id.split_once('/') else {
+        return false;
+    };
+    if head.is_empty() || tail.is_empty() {
+        return false;
+    }
+    let owner_key = acl_principal_key(owner);
+    !owner_key.is_empty() && acl_principal_key(head) == owner_key
+}
+
+fn set_id_has_bound_owner(set_id: &str) -> bool {
+    set_id.split_once('/').is_some_and(|(head, tail)| {
+        !head.is_empty() && !tail.is_empty() && !acl_principal_key(head).is_empty()
+    })
 }
 
 fn retained_object_owner<'a>(owners: &'a HashMap<String, String>, object: &str) -> Option<&'a str> {

@@ -290,13 +290,24 @@ impl MeshSeeGraph {
 
     /// Merge every dest-ACL node from `other` into this peer.
     pub fn merge_from(&mut self, other: &Self) {
-        for edge in other.grants.values() {
-            self.merge_edge(edge.clone());
-        }
         for (key, object) in &other.objects {
             self.objects
                 .entry(key.clone())
                 .or_insert_with(|| object.clone());
+        }
+        let grants: Vec<GunAclEdge> = other
+            .grants
+            .values()
+            .filter(|edge| {
+                self.lookup_object(&edge.grant.object)
+                    .is_some_and(|object| {
+                        acl_principal_key(&object.owner) == acl_principal_key(&edge.owner)
+                    })
+            })
+            .cloned()
+            .collect();
+        for edge in grants {
+            self.merge_edge(edge);
         }
         let object_owners: HashMap<String, String> = self
             .objects

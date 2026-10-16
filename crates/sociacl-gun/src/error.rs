@@ -31,6 +31,8 @@ pub enum GunError {
     SetUnknown,
     #[error("set already has an owner")]
     SetOwnerConflict,
+    #[error("set id is not bound to this owner")]
+    UnboundSetOwner,
     #[error("membership speaker is not the member or the set owner")]
     MembershipSpeaker,
     #[error("check rejected: {0}")]
