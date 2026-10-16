@@ -257,6 +257,19 @@ test("light acl see lookup keeps the writer and the canonical accessor", () => {
   assert.equal(acl.seeGrant(object, "s3rch/users/0xbob"), undefined);
 });
 
+test("applyPostGrant accepts the wallet when ownerOf stores the user soul", () => {
+  const acl = new MemorySeeAcl();
+  const object = "room:alpha";
+  acl.putObject(object, "s3rch/users/0xalice");
+  acl.stateSeeGrant("0xalice", { object, accessor: "0xbob", from: 0, until: 80 });
+  applyPostGrant(acl, "0xalice", { object, accessor: "0xbob", from: 0, until: 80 });
+  assert.equal(gunCheckPost(acl, object, "0xbob", 10).reason, "post");
+  cancelPost(acl, "s3rch/users/0xalice", "0xbob", object);
+  assert.equal(gunCheckPost(acl, object, "0xbob", 10).reason, "cancelled");
+  applyPostGrant(acl, "0xbob", { object, accessor: "0xbob", from: 0, until: 80 });
+  assert.equal(gunCheckPost(acl, object, "0xbob", 10).reason, "cancelled");
+});
+
 test("light acl cancel finds the row when the accessor is a user soul", () => {
   const acl = new MemorySeeAcl();
   const object = "room:alpha";

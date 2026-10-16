@@ -16,6 +16,12 @@ export {
 
 import { postGrantKey, postSoul } from "./post.js";
 
+/** @param {string | null | undefined} left @param {string | null | undefined} right */
+function samePrincipal(left, right) {
+  if (left == null || right == null) return false;
+  return postGrantKey(left, "owner", "owner") === postGrantKey(right, "owner", "owner");
+}
+
 export function encodeKey(id) {
   return String(id).replace(/[.#$[\]]/g, "_");
 }
@@ -158,12 +164,12 @@ export function cancelSee(acl, owner, accessor, object) {
 }
 
 export function applyPostGrant(acl, owner, grant) {
-  if (acl.ownerOf(grant.claimId ?? grant.object) !== owner) return;
+  if (!samePrincipal(acl.ownerOf(grant.claimId ?? grant.object), owner)) return;
   acl.statePostGrant(owner, grant);
 }
 
 export function cancelPost(acl, owner, accessor, object) {
-  if (acl.ownerOf(object) !== owner) return;
+  if (!samePrincipal(acl.ownerOf(object), owner)) return;
   acl.unstatePostGrant(owner, accessor, object);
 }
 
