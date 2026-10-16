@@ -18,6 +18,11 @@ pub const DOMAIN_ACCOUNT_BINDING: &str = "s3rch-account-binding-v1";
 pub const DOMAIN_SEA_SECRET: &str = "s3rch-sea-secret-v1";
 pub const DOMAIN_GROUP_WRAP: &str = "s3rch-group-epoch-wrap-v1";
 pub const DOMAIN_WRAPPED_KEY: &str = "s3rch-wrapped-key-v1";
+pub const DOMAIN_GRANT_COMMITMENT: &str = "s3rch-grant-commitment-v1";
+pub const DOMAIN_GRANT_PAYLOAD: &str = "s3rch-grant-payload-v1";
+pub const DOMAIN_PRESENTER_BINDING: &str = "s3rch-presenter-binding-v1";
+pub const DOMAIN_EPOCH_STATUS: &str = "s3rch-epoch-status-v1";
+pub const DOMAIN_EPOCH_FINALIZATION: &str = "s3rch-epoch-finalization-v1";
 
 /// Cleartext fields that `inboxEntryId` hashes. `wrap` is absent or present.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -241,4 +246,200 @@ pub fn require_digest_hex(digest: &str) -> Result<(), EncDiscError> {
         return Err(EncDiscError::BadRevision);
     }
     Ok(())
+}
+
+/// Split a length-prefixed encoding back into UTF-8 fields.
+pub fn decode_length_prefixed(bytes: &[u8]) -> Result<Vec<String>, EncDiscError> {
+    let mut out = Vec::new();
+    let mut offset = 0;
+    while offset < bytes.len() {
+        if bytes.len() - offset < 4 {
+            return Err(EncDiscError::BadEncoding);
+        }
+        let mut len_bytes = [0u8; 4];
+        len_bytes.copy_from_slice(&bytes[offset..offset + 4]);
+        let len = u32::from_le_bytes(len_bytes) as usize;
+        offset += 4;
+        if bytes.len() - offset < len {
+            return Err(EncDiscError::BadEncoding);
+        }
+        let field = std::str::from_utf8(&bytes[offset..offset + len])
+            .map_err(|_| EncDiscError::BadEncoding)?;
+        out.push(field.to_string());
+        offset += len;
+    }
+    Ok(out)
+}
+
+/// Canonical grant fields the commitment hashes, after the blinding.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GrantPayloadBody {
+    pub object: String,
+    pub accessor: String,
+    pub from: u64,
+    pub until: u64,
+    pub stated: u64,
+    pub epoch: u64,
+    pub owner: String,
+    pub grant_revision: u64,
+    pub item_ciphertext_digest: String,
+}
+
+pub fn grant_commitment_bytes(
+    blinding: &str,
+    payload: &GrantPayloadBody,
+) -> Result<Vec<u8>, EncDiscError> {
+    let from = canonical_decimal(payload.from)?;
+    let until = canonical_decimal(payload.until)?;
+    let stated = canonical_decimal(payload.stated)?;
+    let epoch = canonical_decimal(payload.epoch)?;
+    let revision = canonical_decimal(payload.grant_revision)?;
+    length_prefixed(&[
+        DOMAIN_GRANT_COMMITMENT,
+        blinding,
+        &payload.object,
+        &payload.accessor,
+        &from,
+        &until,
+        &stated,
+        &epoch,
+        &payload.owner,
+        &revision,
+        &payload.item_ciphertext_digest,
+    ])
+}
+
+pub fn grant_commitment_hash(
+    blinding: &str,
+    payload: &GrantPayloadBody,
+) -> Result<String, EncDiscError> {
+    Ok(sha256_hex(&grant_commitment_bytes(blinding, payload)?))
+}
+
+pub fn grant_payload_bytes(payload: &GrantPayloadBody) -> Result<Vec<u8>, EncDiscError> {
+    let from = canonical_decimal(payload.from)?;
+    let until = canonical_decimal(payload.until)?;
+    let stated = canonical_decimal(payload.stated)?;
+    let epoch = canonical_decimal(payload.epoch)?;
+    let revision = canonical_decimal(payload.grant_revision)?;
+    length_prefixed(&[
+        DOMAIN_GRANT_PAYLOAD,
+        &payload.object,
+        &payload.accessor,
+        &from,
+        &until,
+        &stated,
+        &epoch,
+        &payload.owner,
+        &revision,
+        &payload.item_ciphertext_digest,
+    ])
+}
+
+pub fn grant_payload_digest(payload: &GrantPayloadBody) -> Result<String, EncDiscError> {
+    Ok(sha256_hex(&grant_payload_bytes(payload)?))
+}
+
+pub fn presenter_binding_bytes(
+    nonce: &str,
+    commitment_hash: &str,
+    audience: &str,
+) -> Result<Vec<u8>, EncDiscError> {
+    length_prefixed(&[DOMAIN_PRESENTER_BINDING, nonce, commitment_hash, audience])
+}
+
+pub fn presenter_binding_sha256(
+    nonce: &str,
+    commitment_hash: &str,
+    audience: &str,
+) -> Result<String, EncDiscError> {
+    Ok(sha256_hex(&presenter_binding_bytes(
+        nonce,
+        commitment_hash,
+        audience,
+    )?))
+}
+
+/// Owner-signed epoch/status bytes. The signature is not a field.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EpochStatusBody {
+    pub object: String,
+    pub epoch: u64,
+    pub revision_id: String,
+    pub accessor: String,
+    pub grant_revision: u64,
+    pub stated: u64,
+    pub signed_at: u64,
+    pub max_age_ms: u64,
+    pub zookie_object: String,
+    pub zookie_version: u64,
+    pub zookie_snapshot: String,
+}
+
+pub fn epoch_status_bytes(body: &EpochStatusBody) -> Result<Vec<u8>, EncDiscError> {
+    let epoch = canonical_decimal(body.epoch)?;
+    let revision = canonical_decimal(body.grant_revision)?;
+    let stated = canonical_decimal(body.stated)?;
+    let signed_at = canonical_decimal(body.signed_at)?;
+    let max_age = canonical_decimal(body.max_age_ms)?;
+    let version = canonical_decimal(body.zookie_version)?;
+    length_prefixed(&[
+        DOMAIN_EPOCH_STATUS,
+        &body.object,
+        &epoch,
+        &body.revision_id,
+        &body.accessor,
+        &revision,
+        &stated,
+        &signed_at,
+        &max_age,
+        &body.zookie_object,
+        &version,
+        &body.zookie_snapshot,
+    ])
+}
+
+pub fn epoch_status_sha256(body: &EpochStatusBody) -> Result<String, EncDiscError> {
+    Ok(sha256_hex(&epoch_status_bytes(body)?))
+}
+
+pub fn epoch_finalization_bytes(
+    object: &str,
+    epoch: u64,
+    previous_epoch: u64,
+    revision_id: &str,
+    previous_finalization_id: &str,
+    candidates: &[String],
+) -> Result<Vec<u8>, EncDiscError> {
+    let epoch_text = canonical_decimal(epoch)?;
+    let previous = canonical_decimal(previous_epoch)?;
+    let mut fields = vec![
+        DOMAIN_EPOCH_FINALIZATION.to_string(),
+        object.to_string(),
+        epoch_text,
+        previous,
+        revision_id.to_string(),
+        previous_finalization_id.to_string(),
+    ];
+    fields.extend(candidates.iter().cloned());
+    let borrowed: Vec<&str> = fields.iter().map(String::as_str).collect();
+    length_prefixed(&borrowed)
+}
+
+pub fn epoch_finalization_id(
+    object: &str,
+    epoch: u64,
+    previous_epoch: u64,
+    revision_id: &str,
+    previous_finalization_id: &str,
+    candidates: &[String],
+) -> Result<String, EncDiscError> {
+    Ok(sha256_hex(&epoch_finalization_bytes(
+        object,
+        epoch,
+        previous_epoch,
+        revision_id,
+        previous_finalization_id,
+        candidates,
+    )?))
 }

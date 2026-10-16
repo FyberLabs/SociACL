@@ -43,4 +43,24 @@ pub enum EncDiscError {
     EmptyObject,
     #[error("group id is empty")]
     EmptyGroup,
+    #[error("length-prefixed encoding is not canonical")]
+    BadEncoding,
+    #[error("commitment rejected")]
+    CommitmentRejected,
+    #[error("grant payload rejected")]
+    PayloadRejected,
+    #[error("blinded row rejected")]
+    RowRejected,
+    #[error("author unwrap rejected")]
+    AuthorUnwrapRejected,
+    #[error("presenter binding rejected")]
+    PresenterRejected,
+    #[error("epoch status rejected")]
+    StatusRejected,
+    #[error("channel rejected")]
+    ChannelRejected,
+    #[error("digest rejected")]
+    DigestRejected,
+    #[error("forbidden hop")]
+    ForbiddenHop,
 }

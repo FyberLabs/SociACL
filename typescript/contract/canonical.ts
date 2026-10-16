@@ -4,6 +4,7 @@
  * s3r.ch copies that contract and reimplements it. It does not import
  * this file and it does not import the Rust crate. This module hashes
  * the canonical bytes. It does not wrap keys and it does not run Check.
+ * authorFastMatches only compares a revision id. It does not grant.
  */
 import { createHash } from "node:crypto";
 import type {
@@ -16,6 +17,10 @@ const DOMAIN_INBOX = "s3rch-inbox-entry-v1";
 const DOMAIN_EPOCH = "s3rch-epoch-revision-v1";
 const DOMAIN_ITEM_AUTH = "s3rch-item-auth-v1";
 const DOMAIN_ACCOUNT_BINDING = "s3rch-account-binding-v1";
+const DOMAIN_GRANT_COMMITMENT = "s3rch-grant-commitment-v1";
+const DOMAIN_GRANT_PAYLOAD = "s3rch-grant-payload-v1";
+const DOMAIN_PRESENTER_BINDING = "s3rch-presenter-binding-v1";
+const DOMAIN_EPOCH_STATUS = "s3rch-epoch-status-v1";
 
 export function sha256Hex(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");
@@ -123,4 +128,107 @@ export function accountBindingBytes(account: string, seaPub: string, epub: strin
 
 export function accountBindingSha256(account: string, seaPub: string, epub: string): string {
   return sha256Hex(accountBindingBytes(account, seaPub, epub));
+}
+
+/** Canonical grant fields covered by the commitment and the owner signature. */
+export type GrantPayloadBody = {
+  object: string;
+  accessor: string;
+  from: number;
+  until: number;
+  stated: number;
+  epoch: number;
+  owner: string;
+  grantRevision: number;
+  itemCiphertextDigest: string;
+};
+
+function grantFields(body: GrantPayloadBody): string[] {
+  return [
+    body.object,
+    body.accessor,
+    canonicalDecimal(body.from),
+    canonicalDecimal(body.until),
+    canonicalDecimal(body.stated),
+    canonicalDecimal(body.epoch),
+    body.owner,
+    canonicalDecimal(body.grantRevision),
+    body.itemCiphertextDigest,
+  ];
+}
+
+export function grantCommitmentBytes(blinding: string, body: GrantPayloadBody): Uint8Array {
+  return lengthPrefixed([DOMAIN_GRANT_COMMITMENT, blinding, ...grantFields(body)]);
+}
+
+export function grantCommitmentHash(blinding: string, body: GrantPayloadBody): string {
+  return sha256Hex(grantCommitmentBytes(blinding, body));
+}
+
+export function grantPayloadBytes(body: GrantPayloadBody): Uint8Array {
+  return lengthPrefixed([DOMAIN_GRANT_PAYLOAD, ...grantFields(body)]);
+}
+
+export function grantPayloadDigest(body: GrantPayloadBody): string {
+  return sha256Hex(grantPayloadBytes(body));
+}
+
+export function presenterBindingBytes(
+  nonce: string,
+  commitmentHash: string,
+  audience: string,
+): Uint8Array {
+  return lengthPrefixed([DOMAIN_PRESENTER_BINDING, nonce, commitmentHash, audience]);
+}
+
+export function presenterBindingSha256(
+  nonce: string,
+  commitmentHash: string,
+  audience: string,
+): string {
+  return sha256Hex(presenterBindingBytes(nonce, commitmentHash, audience));
+}
+
+export type EpochStatusBody = {
+  object: string;
+  epoch: number;
+  revisionId: string;
+  accessor: string;
+  grantRevision: number;
+  stated: number;
+  signedAt: number;
+  maxAgeMs: number;
+  zookieObject: string;
+  zookieVersion: number;
+  zookieSnapshot: string;
+};
+
+export function epochStatusBytes(body: EpochStatusBody): Uint8Array {
+  return lengthPrefixed([
+    DOMAIN_EPOCH_STATUS,
+    body.object,
+    canonicalDecimal(body.epoch),
+    body.revisionId,
+    body.accessor,
+    canonicalDecimal(body.grantRevision),
+    canonicalDecimal(body.stated),
+    canonicalDecimal(body.signedAt),
+    canonicalDecimal(body.maxAgeMs),
+    body.zookieObject,
+    canonicalDecimal(body.zookieVersion),
+    body.zookieSnapshot,
+  ]);
+}
+
+export function epochStatusSha256(body: EpochStatusBody): string {
+  return sha256Hex(epochStatusBytes(body));
+}
+
+/** True only when the object and the manifest revision both match. */
+export function authorFastMatches(
+  record: { object: string; revisionId: string },
+  object: string,
+  revisionId: string,
+): boolean {
+  return record.object === object && record.revisionId === revisionId;
 }
