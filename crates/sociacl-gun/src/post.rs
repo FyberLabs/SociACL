@@ -20,7 +20,7 @@ use std::cmp::Ordering;
 use sociacl_core::{NodeId, Timestamp};
 
 use crate::mesh::{accessor_names, object_names};
-use crate::soul::{acl_key, acl_principal_key, S3RCH_ACL, S3RCH_ROOT};
+use crate::soul::{acl_key, acl_principal_key, canonical_accessor_id, S3RCH_ACL, S3RCH_ROOT};
 use crate::{
     GunError, MeshCheckResult, MeshSeeGraph, MESH_REASON_CANCELLED, MESH_REASON_MISSING,
     MESH_REASON_OWNER,
@@ -250,7 +250,7 @@ fn post_row_in_range(edge: &GunPostEdge) -> bool {
 fn same_post_row(edge: &GunPostEdge, object: &str, accessor: &str, owner: &str) -> bool {
     edge.grant.names_object(object)
         && edge.grant.names_accessor(accessor)
-        && acl_principal_key(&edge.owner) == acl_principal_key(owner)
+        && canonical_accessor_id(&edge.owner) == canonical_accessor_id(owner)
 }
 
 impl MeshSeeGraph {
@@ -262,7 +262,7 @@ impl MeshSeeGraph {
                 post_row_in_range(edge)
                     && edge.grant.names_object(object)
                     && edge.grant.is_stated()
-                    && acl_principal_key(&edge.owner) == acl_principal_key(owner)
+                    && canonical_accessor_id(&edge.owner) == canonical_accessor_id(owner)
             })
             .map(|edge| &edge.grant)
             .collect()
@@ -276,9 +276,7 @@ impl MeshSeeGraph {
     }
 
     fn canonical_post_object(&self, object: &str) -> String {
-        self.object_record(object)
-            .map(|(id, _)| id.to_string())
-            .unwrap_or_else(|| object.trim().to_string())
+        self.canonical_object_id(object)
     }
 
     /// In-range rows that name this object, accessor, and owner, folded
@@ -302,7 +300,7 @@ impl MeshSeeGraph {
             .object_record(&grant.object)
             .map(|(id, object_owner)| (id.to_string(), object_owner.to_string()))
             .ok_or(GunError::ObjectNotInGraph)?;
-        if acl_principal_key(&object_owner) != acl_principal_key(owner) {
+        if canonical_accessor_id(&object_owner) != canonical_accessor_id(owner) {
             return Err(GunError::AclOwnerOnly);
         }
         let mut grant = grant;
@@ -336,7 +334,7 @@ impl MeshSeeGraph {
             .object_record(object)
             .map(|(id, object_owner)| (id.to_string(), object_owner.to_string()))
             .ok_or(GunError::ObjectNotInGraph)?;
-        if acl_principal_key(&object_owner) != acl_principal_key(owner) {
+        if canonical_accessor_id(&object_owner) != canonical_accessor_id(owner) {
             return Err(GunError::AclOwnerOnly);
         }
         let existing = self.folded_post(&stored_id, accessor, owner);
@@ -384,7 +382,7 @@ impl MeshSeeGraph {
         else {
             return;
         };
-        if acl_principal_key(&object_owner) != acl_principal_key(&incoming.owner) {
+        if canonical_accessor_id(&object_owner) != canonical_accessor_id(&incoming.owner) {
             return;
         }
         let mut incoming = incoming.canonical();
@@ -444,13 +442,13 @@ impl MeshSeeGraph {
         if see.reason == MESH_REASON_OWNER {
             return see;
         }
-        let object = object.as_ref().trim();
+        let object = self.canonical_object_id(object.as_ref());
         let accessor = accessor.as_ref().trim();
-        let owner = self.owner_of(object).unwrap_or("");
-        if let Some(edge) = self.post_edge(object, accessor) {
-            let names = edge.grant.names_object(object)
+        let owner = self.owner_of(&object).unwrap_or("");
+        if let Some(edge) = self.post_edge(&object, accessor) {
+            let names = edge.grant.names_object(&object)
                 && edge.grant.names_accessor(accessor)
-                && acl_principal_key(&edge.owner) == acl_principal_key(owner);
+                && canonical_accessor_id(&edge.owner) == canonical_accessor_id(owner);
             if names && edge.grant.live_at(now) {
                 return MeshCheckResult {
                     allowed: true,

@@ -21,6 +21,7 @@ import {
   cancelPost,
   checkPost as gunCheckPost,
   checkSee,
+  checkSeeGrant,
   factorGrants as gunFactorGrants,
   postGrantSigningBytes as gunSigningBytes,
   postSoul as gunPostSoul,
@@ -49,26 +50,26 @@ function edgeFor(row) {
   };
 }
 
-function applySee(graph, row) {
+function applySee(graph, row, object, accessor) {
   if (!row.see) return;
   graph.stateSeeGrant(row.owner, {
-    object: row.object,
-    accessor: row.accessor,
+    object,
+    accessor,
     from: row.see.from,
     until: row.see.until,
   });
-  if (row.see.stated === 0) graph.unstateSeeGrant(row.owner, row.accessor, row.object);
+  if (row.see.stated === 0) graph.unstateSeeGrant(row.owner, accessor, object);
 }
 
-function applyPost(graph, row) {
+function applyPost(graph, row, object, accessor) {
   if (!row.post) return;
   graph.statePostGrant(row.owner, {
-    object: row.object,
-    accessor: row.accessor,
+    object,
+    accessor,
     from: row.post.from,
     until: row.post.until,
   });
-  if (row.post.stated === 0) graph.unstatePostGrant(row.owner, row.accessor, row.object);
+  if (row.post.stated === 0) graph.unstatePostGrant(row.owner, accessor, object);
 }
 
 function applyMerge(graph, row, edges) {
@@ -90,15 +91,35 @@ function applyMerge(graph, row, edges) {
 
 function runCase(row, merge) {
   const graph = new MemoryGroupGraph();
+  const writeObject = row.writeObject || row.object;
+  const writeAccessor = row.writeAccessor || row.accessor;
+  const checkObject = row.checkObject || row.object;
+  const checkAccessor = row.checkAccessor || row.accessor;
   graph.putObject(row.object, row.owner);
-  applySee(graph, row);
-  applyPost(graph, row);
+  applySee(graph, row, writeObject, writeAccessor);
+  applyPost(graph, row, writeObject, writeAccessor);
+  if (row.cancelSeeObject) {
+    graph.unstateSeeGrant(row.owner, row.cancelSeeAccessor || writeAccessor, row.cancelSeeObject);
+  }
+  if (row.reassignObject) graph.putObject(row.reassignObject, row.reassignOwner);
   if (merge) applyMerge(graph, row, merge);
-  const hint = row.hint ? { principal: row.accessor, target: row.object } : undefined;
+  const hint = row.hint ? { principal: checkAccessor, target: checkObject } : undefined;
   const hop = row.hop ? { channel: "convention-badge" } : undefined;
-  const got = checkPost(graph, row.object, row.accessor, row.now, hint, hop);
+  const got = checkPost(graph, checkObject, checkAccessor, row.now, hint, hop);
   assert.equal(got.allowed, row.allowed, row.name);
   assert.equal(got.reason, row.reason, row.name);
+  const see = checkSee(graph, checkObject, checkAccessor, row.now, hint, hop);
+  if (got.allowed) assert.equal(see.allowed, true, row.name);
+  if (row.presentedAccessor) {
+    const presented = {
+      claimId: row.presentedObject || writeObject,
+      accessor: row.presentedAccessor,
+      from: row.see.from,
+      until: row.see.until,
+    };
+    const grantCheck = checkSeeGrant(graph, presented, checkObject, checkAccessor, row.now, hint, hop);
+    assert.equal(grantCheck.allowed, row.seeGrantAllowed, row.name);
+  }
   assert.equal(factorGrants("hop"), false);
   assert.equal(factorGrants("hint"), false);
   assert.equal(factorGrants("wrap"), false);

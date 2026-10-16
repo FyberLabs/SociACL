@@ -92,6 +92,27 @@ function objectNames(stored, query) {
 }
 
 /**
+ * One accessor id. `s3rch/users/<wallet>` and the wallet are this key.
+ * @param {string} id
+ */
+export function canonicalAccessorId(id) {
+  return aclPrincipalKey(id);
+}
+
+/**
+ * Two strings name one object when their acl keys match, or one is
+ * the item soul of the other. A held claim id without `/` does not.
+ * @param {string} left
+ * @param {string} right
+ */
+export function sameObjectId(left, right) {
+  const a = String(left ?? "").trim();
+  const b = String(right ?? "").trim();
+  if (!a || !b) return false;
+  return objectNames(a, b);
+}
+
+/**
  * @param {string} owner
  * @param {string} object
  * @param {string} accessor
@@ -288,16 +309,16 @@ function seeDecision(graph, object, accessor, now) {
   if (closed) return { allowed: false, reason: closed };
   const owner = graph.ownerOf(String(object).trim());
   if (!owner) return { allowed: false, reason: "missing" };
-  if (aclPrincipalKey(owner) === aclPrincipalKey(accessor)) {
+  if (canonicalAccessorId(owner) === canonicalAccessorId(accessor)) {
     return { allowed: true, reason: "owner" };
   }
   const edge = graph.seeGrant(object, accessor);
   if (!edge) return { allowed: false, reason: "missing" };
   const grant = edge.grant;
   const names =
-    objectNames(grant.object, object) &&
-    aclPrincipalKey(grant.accessor) === aclPrincipalKey(accessor) &&
-    aclPrincipalKey(edge.owner) === aclPrincipalKey(owner);
+    sameObjectId(grant.object, object) &&
+    canonicalAccessorId(grant.accessor) === canonicalAccessorId(accessor) &&
+    canonicalAccessorId(edge.owner) === canonicalAccessorId(owner);
   if (!names) return { allowed: false, reason: "missing" };
   if (grant.stated !== 1) return { allowed: false, reason: "cancelled" };
   if (now >= grant.from && now < grant.until) return { allowed: true, reason: "delegate" };
@@ -327,9 +348,9 @@ export function checkPost(graph, object, accessor, now, hint, hop) {
   if (!edge || !owner) return { allowed: false, reason: "missing", ...echoed };
   const grant = edge.grant;
   const names =
-    objectNames(grant.object, object) &&
-    aclPrincipalKey(grant.accessor) === aclPrincipalKey(accessor) &&
-    aclPrincipalKey(edge.owner) === aclPrincipalKey(owner);
+    sameObjectId(grant.object, object) &&
+    canonicalAccessorId(grant.accessor) === canonicalAccessorId(accessor) &&
+    canonicalAccessorId(edge.owner) === canonicalAccessorId(owner);
   if (!names) return { allowed: false, reason: "missing", ...echoed };
   if (grant.stated !== 1) return { allowed: false, reason: "cancelled", ...echoed };
   if (now >= grant.from && now < grant.until) {

@@ -112,7 +112,14 @@ import {
   sign,
   verify,
 } from "node:crypto";
-import { canonicalPostEdge, nextPostHam, postRowEncodable, preferPost } from "./post.js";
+import {
+  canonicalAccessorId,
+  canonicalPostEdge,
+  nextPostHam,
+  postRowEncodable,
+  preferPost,
+  sameObjectId,
+} from "./post.js";
 
 export {
   POST_GRANT_DOMAIN,
@@ -884,22 +891,67 @@ export class MemoryGroupGraph {
   }
 
   /**
+   * In-graph object id. See and post writes, cancels, and lookups use
+   * this spelling once the object is stored.
+   * @param {string} object
+   */
+  canonicalObjectId(object) {
+    const text = String(object ?? "").trim();
+    return this.objectRecord(text)?.id ?? text;
+  }
+
+  /**
    * @param {string} object
    * @param {string} owner
    */
   putObject(object, owner) {
     const id = String(object).trim();
-    const key = aclKey(id);
     const next = String(owner).trim();
-    const prev = this.objects.get(key);
-    if (prev && aclPrincipalKey(prev.owner) !== aclPrincipalKey(next)) this.objectSets.delete(key);
-    this.objects.set(key, { id, owner: next });
+    const directKey = aclKey(id);
+    if (this.objects.has(directKey)) {
+      const prev = this.objects.get(directKey);
+      if (prev && canonicalAccessorId(prev.owner) !== canonicalAccessorId(next)) this.objectSets.delete(directKey);
+      this.objects.set(directKey, { id, owner: next });
+      return;
+    }
+    const existing = this.objectRecord(id);
+    if (existing) {
+      const key = aclKey(existing.id);
+      if (canonicalAccessorId(existing.owner) !== canonicalAccessorId(next)) this.objectSets.delete(key);
+      this.objects.set(key, { id: existing.id, owner: next });
+      return;
+    }
+    this.objects.set(directKey, { id, owner: next });
   }
 
   /** @param {string} object */
   seeGrants(object) {
-    const key = aclKey(String(object).trim());
-    return [...this.grants.values()].filter((grant) => aclKey(grantObject(grant)) === key && grant.stated !== 0);
+    const requested = this.canonicalObjectId(object);
+    return [...this.grants.values()].filter(
+      (grant) => sameObjectId(grantObject(grant), requested) && grant.stated !== 0,
+    );
+  }
+
+  /**
+   * See rows that name this object, accessor, and owner.
+   * A raw id and its item soul count as one object.
+   * @param {string} owner
+   * @param {string} object
+   * @param {string} accessor
+   */
+  matchingSee(owner, object, accessor) {
+    const requested = this.canonicalObjectId(object);
+    const who = canonicalAccessorId(accessor);
+    const ownerKey = canonicalAccessorId(owner);
+    /** @type {{ key: string, grant: SeeGrant }[]} */
+    const rows = [];
+    for (const [key, grant] of this.grants) {
+      if (canonicalAccessorId(grant.accessor) !== who) continue;
+      if (grant.owner != null && canonicalAccessorId(grant.owner) !== ownerKey) continue;
+      if (!sameObjectId(grantObject(grant), requested)) continue;
+      rows.push({ key, grant });
+    }
+    return rows;
   }
 
   /**
@@ -907,19 +959,25 @@ export class MemoryGroupGraph {
    * @param {SeeGrant} grant
    */
   stateSeeGrant(owner, grant) {
-    const object = grantObject(grant);
-    if (!object) return;
-    const objectOwner = this.ownerOf(object);
-    if (!objectOwner || aclPrincipalKey(objectOwner) !== aclPrincipalKey(owner)) return;
-    const key = grantKey(owner, object, grant.accessor);
-    const prev = this.grants.get(key);
-    this.grants.set(key, {
+    const query = grantObject(grant);
+    const record = this.objectRecord(query);
+    if (!query || !record || canonicalAccessorId(record.owner) !== canonicalAccessorId(owner)) return;
+    const object = record.id;
+    const accessor = grant.accessor;
+    const rows = this.matchingSee(owner, object, accessor);
+    const hamState = rows.reduce((max, row) => Math.max(max, row.grant.hamState ?? 0), 0) + 1;
+    for (const row of rows) this.grants.delete(row.key);
+    /** @type {SeeGrant} */
+    const stored = {
       ...grant,
       object,
-      stated: 1,
-      hamState: (prev?.hamState ?? 0) + 1,
+      accessor,
+      stated: /** @type {1} */ (1),
+      hamState,
       owner: String(owner).trim(),
-    });
+    };
+    if (stored.claimId != null) stored.claimId = object;
+    this.grants.set(grantKey(owner, object, accessor), stored);
   }
 
   /**
@@ -928,15 +986,20 @@ export class MemoryGroupGraph {
    * @param {string} object
    */
   unstateSeeGrant(owner, accessor, object) {
-    const id = String(object).trim();
+    const query = String(object).trim();
     const who = String(accessor).trim();
-    const objectOwner = this.ownerOf(id);
-    if (!id || !who || !objectOwner || aclPrincipalKey(objectOwner) !== aclPrincipalKey(owner)) return;
-    const key = grantKey(owner, id, who);
-    const prev = this.grants.get(key);
-    this.grants.set(key, {
+    const record = this.objectRecord(query);
+    if (!query || !who || !record || canonicalAccessorId(record.owner) !== canonicalAccessorId(owner)) return;
+    const id = record.id;
+    const rows = this.matchingSee(owner, id, who);
+    const prev = rows.reduce((best, row) => {
+      if (!best || (row.grant.hamState ?? 0) >= (best.hamState ?? 0)) return row.grant;
+      return best;
+    }, /** @type {SeeGrant | undefined} */ (undefined));
+    for (const row of rows) this.grants.delete(row.key);
+    this.grants.set(grantKey(owner, id, who), {
       ...(prev ?? {}),
-      object: prev ? grantObject(prev) : id,
+      object: id,
       accessor: who,
       from: prev?.from ?? 0,
       until: prev?.until ?? 0,
@@ -957,7 +1020,7 @@ export class MemoryGroupGraph {
     const ownerNow = record?.owner;
     for (const grant of this.grants.values()) {
       const grantId = grantObject(grant);
-      if (aclKey(grantId) !== aclKey(requested) && !itemSoulAlias(grantId, requested)) continue;
+      if (!sameObjectId(grantId, requested)) continue;
       if (aclPrincipalKey(grant.accessor) !== who) continue;
       const owner = grant.owner ?? "";
       if (!ownerNow || aclPrincipalKey(owner) !== aclPrincipalKey(ownerNow)) continue;
@@ -987,7 +1050,7 @@ export class MemoryGroupGraph {
     const who = aclPrincipalKey(accessor);
     const ownerNow = record?.owner;
     for (const edge of this.posts.values()) {
-      if (aclKey(edge.grant.object) !== aclKey(requested) && !itemSoulAlias(edge.grant.object, requested)) continue;
+      if (!sameObjectId(edge.grant.object, requested)) continue;
       if (aclPrincipalKey(edge.grant.accessor) !== who) continue;
       if (!ownerNow || aclPrincipalKey(edge.owner) !== aclPrincipalKey(ownerNow)) continue;
       return edge;
@@ -1347,17 +1410,27 @@ export class MemoryGroupGraph {
   /** @param {MemoryGroupGraph} other */
   mergeFrom(other) {
     for (const [key, record] of other.objects) {
-      if (!this.objects.has(key)) this.objects.set(key, { id: record.id, owner: record.owner });
+      if (this.objects.has(key) || this.objectRecord(record.id)) continue;
+      this.objects.set(key, { id: record.id, owner: record.owner });
     }
     for (const incoming of other.grants.values()) {
-      const object = grantObject(incoming);
-      const retained = this.ownerOf(object);
+      const query = grantObject(incoming);
+      const record = this.objectRecord(query);
       const grantOwner = incoming.owner ?? "";
-      if (!object || !retained || !grantOwner || aclPrincipalKey(retained) !== aclPrincipalKey(grantOwner)) continue;
-      const key = grantKey(grantOwner, object, incoming.accessor);
-      const local = this.grants.get(key);
-      const chosen = local ? preferGrant(local, incoming) : incoming;
-      this.grants.set(key, structuredClone(chosen));
+      if (!query || !record || !grantOwner || canonicalAccessorId(record.owner) !== canonicalAccessorId(grantOwner)) {
+        continue;
+      }
+      const object = record.id;
+      const normalized = { ...structuredClone(incoming), object };
+      const rows = this.matchingSee(grantOwner, object, normalized.accessor);
+      let local = /** @type {SeeGrant | undefined} */ (undefined);
+      for (const row of rows) {
+        local = local ? preferGrant(local, row.grant) : row.grant;
+        this.grants.delete(row.key);
+      }
+      const chosen = local ? preferGrant(local, normalized) : normalized;
+      const stored = { ...chosen, object };
+      this.grants.set(grantKey(grantOwner, object, stored.accessor), stored);
     }
     for (const incoming of other.posts.values()) {
       this.mergePost(incoming);
@@ -1593,15 +1666,14 @@ function checkSee(graph, object, accessor, now) {
   if (closed) return { allowed: false, reason: closed };
   const owner = graph.ownerOf(object);
   if (!owner) return { allowed: false, reason: "missing" };
-  if (aclPrincipalKey(owner) === aclPrincipalKey(accessor)) return { allowed: true, reason: "owner" };
-  const requested = aclKey(String(object).trim());
+  if (canonicalAccessorId(owner) === canonicalAccessorId(accessor)) return { allowed: true, reason: "owner" };
   const live = graph.seeGrants(object).some((grant) => {
     const grantOwner = grant.owner;
-    const ownerOk = grantOwner == null || aclPrincipalKey(grantOwner) === aclPrincipalKey(owner);
+    const ownerOk = grantOwner == null || canonicalAccessorId(grantOwner) === canonicalAccessorId(owner);
     return (
       ownerOk &&
-      aclKey(grantObject(grant)) === requested &&
-      aclPrincipalKey(grant.accessor) === aclPrincipalKey(accessor) &&
+      sameObjectId(grantObject(grant), object) &&
+      canonicalAccessorId(grant.accessor) === canonicalAccessorId(accessor) &&
       grant.stated !== 0 &&
       now >= grant.from &&
       now < grant.until
