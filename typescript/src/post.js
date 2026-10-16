@@ -1,0 +1,247 @@
+/**
+ * Post grant row for s3r.ch Views read+post.
+ * Separate from the see grant. Same cancel rule: stated 0 and a
+ * hamState bump. At an equal hamState a cancellation wins, then the
+ * narrower window, then the smaller signing bytes.
+ * Check does not verify a signature. A hop, a hint, a wrap, or an
+ * inbox delivery never grants.
+ *
+ * @typedef {{
+ *   object: string,
+ *   accessor: string,
+ *   from: number,
+ *   until: number,
+ *   stated: number,
+ * }} PostGrantRow
+ * @typedef {{
+ *   soul: string,
+ *   owner: string,
+ *   hamState: number,
+ *   grant: PostGrantRow,
+ * }} PostEdge
+ * @typedef {{
+ *   ownerOf(object: string): string | undefined,
+ *   seeGrant(object: string, accessor: string): PostEdge | undefined,
+ *   postGrant(object: string, accessor: string): PostEdge | undefined,
+ * }} PostGraph
+ */
+
+export const POST_GRANT_DOMAIN = "s3rch-post-grant-v1";
+export const POST_GRANT_SCOPE = "post";
+
+const JS_SAFE_INTEGER_MAX = Number.MAX_SAFE_INTEGER;
+
+/** @param {string} id */
+function encodeKey(id) {
+  return String(id).replace(/[.#$[\]]/g, "_");
+}
+
+/** @param {string} id */
+function aclKey(id) {
+  return encodeKey(String(id).trim()).replace(/\//g, "_");
+}
+
+/** @param {string} id */
+function aclPrincipalKey(id) {
+  const text = String(id).trim();
+  const parts = text.split("/");
+  if (parts.length === 3 && parts[0] === "s3rch" && parts[1] === "users") {
+    return encodeKey(parts[2] ?? "");
+  }
+  return aclKey(text);
+}
+
+/**
+ * @param {string} owner
+ * @param {string} object
+ * @param {string} accessor
+ */
+export function postSoul(owner, object, accessor) {
+  return `s3rch/acl/${aclPrincipalKey(owner)}/${POST_GRANT_SCOPE}/${aclKey(object)}/${aclPrincipalKey(accessor)}`;
+}
+
+/** @param {number} value */
+function canonicalDecimal(value) {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0 || value > JS_SAFE_INTEGER_MAX) {
+    throw new Error("post grant field is not a canonical integer");
+  }
+  return String(value);
+}
+
+/** @param {readonly string[]} fields */
+function lengthPrefixed(fields) {
+  /** @type {Uint8Array[]} */
+  const parts = [];
+  const encoder = new TextEncoder();
+  for (const field of fields) {
+    const bytes = encoder.encode(field);
+    const len = new Uint8Array(4);
+    new DataView(len.buffer).setUint32(0, bytes.length, true);
+    parts.push(len, bytes);
+  }
+  const size = parts.reduce((sum, part) => sum + part.length, 0);
+  const out = new Uint8Array(size);
+  let offset = 0;
+  for (const part of parts) {
+    out.set(part, offset);
+    offset += part.length;
+  }
+  return out;
+}
+
+/**
+ * Length-prefixed row encoding. Check does not verify a signature.
+ * @param {{ grant: { object: string, accessor: string, stated: number, from: number, until: number }, hamState: number }} edge
+ */
+export function postGrantSigningBytes(edge) {
+  const grant = edge.grant;
+  return lengthPrefixed([
+    POST_GRANT_DOMAIN,
+    aclKey(grant.object),
+    aclPrincipalKey(grant.accessor),
+    canonicalDecimal(grant.stated),
+    canonicalDecimal(grant.from),
+    canonicalDecimal(grant.until),
+    POST_GRANT_SCOPE,
+    canonicalDecimal(edge.hamState),
+  ]);
+}
+
+/** A hop, a hint, a wrap, or an inbox delivery never grants. @param {string} _kind */
+export function factorGrants(_kind) {
+  return false;
+}
+
+/** @param {string} object */
+function closedReason(object) {
+  const text = String(object).trim();
+  if (text.includes("://")) return "url-leaf";
+  if (text === "s3rch/meta") return "meta";
+  if (text === "s3rch/acl" || text.startsWith("s3rch/acl/")) return "acl";
+  return null;
+}
+
+/**
+ * @param {{ from: number, until: number }} left
+ * @param {{ from: number, until: number }} right
+ */
+function windowInside(left, right) {
+  return (
+    left.from >= right.from &&
+    left.until <= right.until &&
+    (left.from > right.from || left.until < right.until)
+  );
+}
+
+/** @param {Uint8Array} left @param {Uint8Array} right */
+function bytesBefore(left, right) {
+  const n = Math.min(left.length, right.length);
+  for (let i = 0; i < n; i += 1) {
+    if (left[i] !== right[i]) return left[i] < right[i];
+  }
+  return left.length < right.length;
+}
+
+/**
+ * @param {PostEdge} edge
+ * @returns {PostEdge}
+ */
+export function canonicalPostEdge(edge) {
+  const grant = edge.grant;
+  return {
+    soul: postSoul(edge.owner, grant.object, grant.accessor),
+    owner: String(edge.owner).trim(),
+    hamState: edge.hamState,
+    grant: {
+      object: String(grant.object).trim(),
+      accessor: String(grant.accessor).trim(),
+      from: grant.from,
+      until: grant.until,
+      stated: grant.stated,
+    },
+  };
+}
+
+/**
+ * Higher hamState wins. At the same hamState a cancellation wins,
+ * then the narrower window, then the smaller signing bytes.
+ * @param {PostEdge} local
+ * @param {PostEdge} incoming
+ * @returns {PostEdge}
+ */
+export function preferPost(local, incoming) {
+  const kept = canonicalPostEdge(local);
+  const next = canonicalPostEdge(incoming);
+  if (next.hamState > kept.hamState) return next;
+  if (next.hamState < kept.hamState) return kept;
+  const nextDown = next.grant.stated !== 1;
+  const keptDown = kept.grant.stated !== 1;
+  if (nextDown && !keptDown) return next;
+  if (keptDown && !nextDown) return kept;
+  if (windowInside(kept.grant, next.grant) && !windowInside(next.grant, kept.grant)) return kept;
+  if (windowInside(next.grant, kept.grant) && !windowInside(kept.grant, next.grant)) return next;
+  const keptBytes = postGrantSigningBytes(kept);
+  const nextBytes = postGrantSigningBytes(next);
+  return bytesBefore(nextBytes, keptBytes) ? next : kept;
+}
+
+/**
+ * @param {PostGraph} graph
+ * @param {string} object
+ * @param {string} accessor
+ * @param {number} now
+ */
+function seeDecision(graph, object, accessor, now) {
+  const closed = closedReason(object);
+  if (closed) return { allowed: false, reason: closed };
+  const owner = graph.ownerOf(String(object).trim());
+  if (!owner) return { allowed: false, reason: "missing" };
+  if (aclPrincipalKey(owner) === aclPrincipalKey(accessor)) {
+    return { allowed: true, reason: "owner" };
+  }
+  const edge = graph.seeGrant(object, accessor);
+  if (!edge) return { allowed: false, reason: "missing" };
+  const grant = edge.grant;
+  const names =
+    aclKey(grant.object) === aclKey(object) &&
+    aclPrincipalKey(grant.accessor) === aclPrincipalKey(accessor) &&
+    aclPrincipalKey(edge.owner) === aclPrincipalKey(owner);
+  if (!names) return { allowed: false, reason: "missing" };
+  if (grant.stated !== 1) return { allowed: false, reason: "cancelled" };
+  if (now >= grant.from && now < grant.until) return { allowed: true, reason: "delegate" };
+  return { allowed: false, reason: "missing" };
+}
+
+/**
+ * Allow-post only when see also passes.
+ * The object owner may post. Any other accessor needs a live post row.
+ * Hint and hop are echoed and do not set allowed.
+ *
+ * @param {PostGraph} graph
+ * @param {string} object
+ * @param {string} accessor
+ * @param {number} now
+ * @param {object | null | undefined} hint
+ * @param {object | null | undefined} hop
+ */
+export function checkPost(graph, object, accessor, now, hint, hop) {
+  const echoed = { hint: hint ?? null, hop: hop ?? null };
+  const see = seeDecision(graph, object, accessor, now);
+  if (!see.allowed || see.reason === "owner") {
+    return { ...see, ...echoed };
+  }
+  const owner = graph.ownerOf(String(object).trim());
+  const edge = graph.postGrant(object, accessor);
+  if (!edge || !owner) return { allowed: false, reason: "missing", ...echoed };
+  const grant = edge.grant;
+  const names =
+    aclKey(grant.object) === aclKey(object) &&
+    aclPrincipalKey(grant.accessor) === aclPrincipalKey(accessor) &&
+    aclPrincipalKey(edge.owner) === aclPrincipalKey(owner);
+  if (!names) return { allowed: false, reason: "missing", ...echoed };
+  if (grant.stated !== 1) return { allowed: false, reason: "cancelled", ...echoed };
+  if (now >= grant.from && now < grant.until) {
+    return { allowed: true, reason: "post", ...echoed };
+  }
+  return { allowed: false, reason: "missing", ...echoed };
+}

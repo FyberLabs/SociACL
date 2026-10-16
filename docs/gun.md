@@ -28,9 +28,9 @@ Execute-without-read is the existing `delegate` primitive (action mask `execute`
 
 A Social Light hop can factor Check. It cannot mint. The consume contract names this `HopFactor` on `checkSee(..., hint?, hop?)`. Decode (`acceptHop` / `decodeHop`) does not verify and does not mint. See [social-light.md](social-light.md).
 
-Mesh see grants are Gun-native dest-ACL nodes under `s3rch/acl/<owner>/<object>/<accessor>`. They do not fork `items` or `users`. Each peer Checks its locally HAM-merged graph at now. Cancel is owner-only privilege-down and must be visible on the next Check after merge (no cached allow). Soul helpers: `aclKey`, `aclPrincipalKey`, `aclSoul`, `grantSoul` in [s3rch-check.d.ts](s3rch-check.d.ts).
+Mesh see grants are Gun-native dest-ACL nodes under `s3rch/acl/<owner>/<object>/<accessor>`. Post grants are a separate row under `s3rch/acl/<owner>/post/<object>/<accessor>` (`postSoul`). They do not fork `items` or `users`. Each peer Checks its locally HAM-merged graph at now. Cancel is owner-only privilege-down (`stated: 0` and a `hamState` bump) and must be visible on the next Check after merge (no cached allow). `checkPost` allows only when see also passes. A hop, a hint, a wrap, or an inbox delivery never grants. Soul helpers: `aclKey`, `aclPrincipalKey`, `aclSoul`, `grantSoul`, `postSoul` in [s3rch-check.d.ts](s3rch-check.d.ts).
 
-Wrapped-key grants, recipient-side discovery, and rotation on revoke are specified in [encrypted-discovery.md](encrypted-discovery.md). That part is spec only. This crate evaluates plaintext `MeshSeeGrant` rows and direct `same-group` / `named-circle` edges. A wrap is not a grant. A hop, a hint, or a wrap never mints. SEA `priv` and `epriv` never go on Gun. SociACL runs no index. s3r.ch product draft: [FyberLabs/s3r.ch#108](https://github.com/FyberLabs/s3r.ch/pull/108). This repo does not edit s3r.ch.
+Wrapped-key grants, recipient-side discovery, and rotation on revoke are specified in [encrypted-discovery.md](encrypted-discovery.md). That part is spec only. This crate evaluates plaintext `MeshSeeGrant` rows, plaintext `MeshPostGrant` rows (`checkPost`), and direct `same-group` / `named-circle` edges. A wrap is not a grant. A hop, a hint, a wrap, or an inbox delivery never mints. SEA `priv` and `epriv` never go on Gun. SociACL runs no index. s3r.ch product draft: [FyberLabs/s3r.ch#108](https://github.com/FyberLabs/s3r.ch/pull/108). This repo does not edit s3r.ch.
 
 Case C may Check a frozen bundle the way the rest of SociACL does. The client has no mint path for new Gun grants.
 
@@ -44,6 +44,8 @@ gun.get('s3rch').get('meta')                     → seed meta (not a Check obje
 gun.get('s3rch').get('users').get(wallet)        → GunUserNode
 gun.get('s3rch').get('acl').get(aclPrincipalKey(owner))
      .get(aclKey(object)).get(aclPrincipalKey(accessor))  → MeshSeeGrant
+gun.get('s3rch').get('acl').get(aclPrincipalKey(owner))
+     .get('post').get(aclKey(object)).get(aclPrincipalKey(accessor))  → MeshPostGrant
 ```
 
 `aclKey` is `encodeKey` then `/` → `_` so dest-ACL souls stay five segments. It is not a second `encodeKey` for items or users. `s3rch/acl` is dest ACL, not a Check object.

@@ -179,8 +179,9 @@ export type CheckResult = {
 };
 
 /**
- * Live graph the browser reads. Only in-graph objects and jointly
- * stated see grants. Do not walk friend edges (hopcap 1).
+ * Live graph the browser reads. Only in-graph objects, jointly
+ * stated see grants, and separate post grants. Do not walk friend
+ * edges (hopcap 1).
  *
  * Mesh: each peer evaluates against its locally HAM-merged Gun graph
  * at now. Do not cache an allow across a privilege-down merge.
@@ -189,6 +190,22 @@ export type SeeGraph = {
   hasObject(object: CheckObjectId): boolean;
   ownerOf(object: CheckObjectId): AccessorId | undefined;
   seeGrants(object: CheckObjectId): readonly IdentitySeeGrant[];
+  /**
+   * Merged see row for this pair, including stated 0.
+   * Absent when no row has been merged. seeGrants hides a cancel.
+   */
+  seeGrant(
+    object: CheckObjectId,
+    accessor: AccessorId,
+  ): GunAclEdge | undefined;
+  /**
+   * Merged post row for this pair, including stated 0.
+   * Absent when no row has been merged. A see row is not this row.
+   */
+  postGrant(
+    object: CheckObjectId,
+    accessor: AccessorId,
+  ): GunPostEdge | undefined;
   /**
    * Object version this verifier has merged. Absent when the
    * object is missing. Encrypted re-check compares a zookie to
@@ -209,6 +226,17 @@ export type SeeAcl = SeeGraph & {
   putObject(object: CheckObjectId, owner: AccessorId): void;
   stateSeeGrant(owner: AccessorId, grant: IdentitySeeGrant): void;
   unstateSeeGrant(
+    owner: AccessorId,
+    accessor: AccessorId,
+    object: CheckObjectId,
+  ): void;
+  /** Owner-only live post row. Does not write a see grant. */
+  statePostGrant(owner: AccessorId, grant: MeshPostGrant): void;
+  /**
+   * Owner-only privilege-down. Sets stated to 0 and bumps hamState.
+   * The next checkPost after that merge denies. Do not cache an allow.
+   */
+  unstatePostGrant(
     owner: AccessorId,
     accessor: AccessorId,
     object: CheckObjectId,
@@ -270,6 +298,35 @@ export function checkSeeGrant(
   hint?: HandoffHint,
   hop?: HopFactor,
 ): CheckResult;
+
+/**
+ * Allow-post for a s3r.ch View.
+ * Allowed only when checkSee would allow the same triple.
+ * The object owner passes see and may post. Any other accessor
+ * also needs a live MeshPostGrant with now in [from, until).
+ * A post row alone does not allow. A see row does not allow post.
+ * checkGroupSee is not this gate. Hopcap is 1.
+ * Hop missing does not fail. Hop alone never allows.
+ * A hop, a hint, a wrap, or an inbox delivery never grants.
+ * Do not cache an allow across a privilege-down merge.
+ * This check does not verify a signature.
+ */
+export function checkPost(
+  graph: SeeGraph,
+  object: CheckObjectId,
+  accessor: AccessorId,
+  now: number,
+  hint?: HandoffHint,
+  hop?: HopFactor,
+): CheckResult;
+
+/**
+ * A hop, a hint, a wrap, or an inbox delivery never grants.
+ * The result is false for every kind.
+ */
+export function factorGrants(
+  kind: "hop" | "hint" | "wrap" | "inbox",
+): false;
 
 /**
  * Destination re-authorizes, then may put a GunFeedNode into items.
@@ -370,6 +427,66 @@ export type GunAclEdge = {
   hamState: number;
 };
 
+/**
+ * In-graph post grant. Separate soul from MeshSeeGrant.
+ * Same fields and the same cancel rule.
+ * `stated` 1 = live, 0 = cancelled (privilege-down).
+ * `from` inclusive, `until` exclusive.
+ * Cancel is owner-only, sets stated to 0, and bumps hamState.
+ * Do not cache an allow after that merge.
+ */
+export type MeshPostGrant = {
+  object: CheckObjectId;
+  accessor: AccessorId;
+  from: number;
+  until: number;
+  stated: 0 | 1;
+};
+
+/**
+ * One post-grant node. Soul is postSoul(owner, object, accessor).
+ * Not a five-segment see-grant soul. Peers HAM-merge by hamState
+ * (higher wins). At an equal hamState a cancellation wins, then
+ * the narrower window, then the smaller postGrantSigningBytes.
+ */
+export type GunPostEdge = {
+  soul: string;
+  owner: AccessorId;
+  grant: MeshPostGrant;
+  hamState: number;
+};
+
+/** Length-prefixed domain for postGrantSigningBytes. */
+export const POST_GRANT_DOMAIN: "s3rch-post-grant-v1";
+
+/** Scope covered by postGrantSigningBytes. Not a see row. */
+export const POST_GRANT_SCOPE: "post";
+
+/**
+ * Post grant under the object owner's dest ACL.
+ * Does not fork items or users. Not a see-grant soul.
+ * gun.get('s3rch').get('acl')
+ *   .get(aclPrincipalKey(owner))
+ *   .get('post')
+ *   .get(aclKey(object))
+ *   .get(aclPrincipalKey(accessor))
+ */
+export function postSoul(
+  owner: AccessorId,
+  object: CheckObjectId,
+  accessor: AccessorId,
+): string;
+
+/**
+ * Length-prefixed row encoding a later owner signature can cover.
+ * Domain s3rch-post-grant-v1, then aclKey(object),
+ * aclPrincipalKey(accessor), decimal stated, decimal from,
+ * decimal until, scope post, and decimal hamState.
+ * Lengths are uint32 little-endian. Integers are ASCII decimal
+ * with no leading zeros. Check does not verify a signature.
+ */
+export function postGrantSigningBytes(edge: GunPostEdge): Uint8Array;
+
 /** Named Social Light channels. Same as sociacl-core. Hop is not a grant. */
 export type SocialLightChannel = "convention-badge" | "enrolled-station";
 
@@ -402,8 +519,9 @@ export function decodeHop(bytes: Uint8Array): HopFactor;
 /* Wrapped keys and private rows stay spec. Group edges are evaluated.       */
 /*                                                                            */
 /* docs/encrypted-discovery.md. Copy / re-type with the types above.          */
-/* sociacl-gun evaluates plaintext MeshSeeGrant rows and direct              */
-/* same-group / named-circle edges. It does not evaluate a wrap.             */
+/* sociacl-gun evaluates plaintext MeshSeeGrant and MeshPostGrant rows       */
+/* and direct same-group / named-circle edges. It does not evaluate a wrap.  */
+/* An inbox delivery is not a grant.                                          */
 /* sociacl-encdisc implements the account key, the wrap edge, the canonical   */
 /* ids, blinded rows, checkPresentedGrant, inbox admission, epoch admission,  */
 /* rotateOnRevoke, and in-place migration. A shard-close watermark is not     */

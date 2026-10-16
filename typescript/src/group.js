@@ -112,6 +112,16 @@ import {
   sign,
   verify,
 } from "node:crypto";
+import { canonicalPostEdge, preferPost } from "./post.js";
+
+export {
+  POST_GRANT_DOMAIN,
+  POST_GRANT_SCOPE,
+  checkPost,
+  factorGrants,
+  postGrantSigningBytes,
+  postSoul,
+} from "./post.js";
 
 const PKCS8_PREFIX = Uint8Array.from([
   0x30, 0x2e, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x04, 0x22, 0x04, 0x20,
@@ -798,6 +808,8 @@ export class MemoryGroupGraph {
     this.objects = new Map();
     /** @type {Map<string, SeeGrant>} */
     this.grants = new Map();
+    /** @type {Map<string, import("./post.js").PostEdge>} */
+    this.posts = new Map();
     /** @type {Map<string, string>} */
     this.setOwners = new Map();
     /** @type {Map<string, MembershipRecord>} */
@@ -855,6 +867,134 @@ export class MemoryGroupGraph {
       hamState: (prev?.hamState ?? 0) + 1,
       owner: String(owner).trim(),
     });
+  }
+
+  /**
+   * @param {string} owner
+   * @param {string} accessor
+   * @param {string} object
+   */
+  unstateSeeGrant(owner, accessor, object) {
+    const id = String(object).trim();
+    const who = String(accessor).trim();
+    const objectOwner = this.ownerOf(id);
+    if (!id || !who || !objectOwner || aclPrincipalKey(objectOwner) !== aclPrincipalKey(owner)) return;
+    const key = grantKey(owner, id, who);
+    const prev = this.grants.get(key);
+    this.grants.set(key, {
+      ...(prev ?? {}),
+      object: prev ? grantObject(prev) : id,
+      accessor: who,
+      from: prev?.from ?? 0,
+      until: prev?.until ?? 0,
+      stated: 0,
+      hamState: (prev?.hamState ?? 0) + 1,
+      owner: String(owner).trim(),
+    });
+  }
+
+  /**
+   * @param {string} object
+   * @param {string} accessor
+   */
+  seeGrant(object, accessor) {
+    const requested = aclKey(String(object).trim());
+    const who = aclPrincipalKey(accessor);
+    for (const grant of this.grants.values()) {
+      if (aclKey(grantObject(grant)) !== requested) continue;
+      if (aclPrincipalKey(grant.accessor) !== who) continue;
+      const owner = grant.owner ?? "";
+      return {
+        soul: `s3rch/acl/${aclPrincipalKey(owner)}/${requested}/${who}`,
+        owner,
+        hamState: grant.hamState ?? 0,
+        grant: {
+          object: grantObject(grant),
+          accessor: grant.accessor,
+          from: grant.from ?? 0,
+          until: grant.until ?? 0,
+          stated: grant.stated === 0 ? 0 : 1,
+        },
+      };
+    }
+    return undefined;
+  }
+
+  /**
+   * @param {string} object
+   * @param {string} accessor
+   */
+  postGrant(object, accessor) {
+    const requested = aclKey(String(object).trim());
+    const who = aclPrincipalKey(accessor);
+    for (const edge of this.posts.values()) {
+      if (aclKey(edge.grant.object) !== requested) continue;
+      if (aclPrincipalKey(edge.grant.accessor) !== who) continue;
+      return edge;
+    }
+    return undefined;
+  }
+
+  /**
+   * Owner-only live post row. Does not write a see grant.
+   * @param {string} owner
+   * @param {{ object?: string, claimId?: string, accessor: string, from: number, until: number }} grant
+   */
+  statePostGrant(owner, grant) {
+    const object = String(grant.object ?? grant.claimId ?? "").trim();
+    const who = String(grant.accessor ?? "").trim();
+    if (!object || !who) return;
+    const objectOwner = this.ownerOf(object);
+    if (!objectOwner || aclPrincipalKey(objectOwner) !== aclPrincipalKey(owner)) return;
+    const key = grantKey(owner, object, who);
+    const prev = this.posts.get(key);
+    const edge = canonicalPostEdge({
+      soul: "",
+      owner: String(owner).trim(),
+      hamState: (prev?.hamState ?? 0) + 1,
+      grant: { object, accessor: who, from: grant.from, until: grant.until, stated: 1 },
+    });
+    this.posts.set(key, edge);
+  }
+
+  /**
+   * Owner-only. stated 0 and a hamState bump.
+   * @param {string} owner
+   * @param {string} accessor
+   * @param {string} object
+   */
+  unstatePostGrant(owner, accessor, object) {
+    const id = String(object).trim();
+    const who = String(accessor).trim();
+    const objectOwner = this.ownerOf(id);
+    if (!id || !who || !objectOwner || aclPrincipalKey(objectOwner) !== aclPrincipalKey(owner)) return;
+    const key = grantKey(owner, id, who);
+    const prev = this.posts.get(key);
+    const edge = canonicalPostEdge({
+      soul: "",
+      owner: String(owner).trim(),
+      hamState: (prev?.hamState ?? 0) + 1,
+      grant: {
+        object: prev?.grant.object ?? id,
+        accessor: who,
+        from: prev?.grant.from ?? 0,
+        until: prev?.grant.until ?? 0,
+        stated: 0,
+      },
+    });
+    this.posts.set(key, edge);
+  }
+
+  /** @param {import("./post.js").PostEdge} incoming */
+  mergePost(incoming) {
+    const object = String(incoming.grant?.object ?? "").trim();
+    const retained = this.ownerOf(object);
+    const grantOwner = incoming.owner ?? "";
+    if (!object || !retained || !grantOwner || aclPrincipalKey(retained) !== aclPrincipalKey(grantOwner)) return;
+    const edge = canonicalPostEdge(incoming);
+    const key = grantKey(edge.owner, edge.grant.object, edge.grant.accessor);
+    const local = this.posts.get(key);
+    this.posts.set(key, local ? preferPost(local, edge) : edge);
   }
 
   /**
@@ -1148,6 +1288,9 @@ export class MemoryGroupGraph {
       const local = this.grants.get(key);
       const chosen = local ? preferGrant(local, incoming) : incoming;
       this.grants.set(key, structuredClone(chosen));
+    }
+    for (const incoming of other.posts.values()) {
+      this.mergePost(incoming);
     }
     for (const [key, owner] of other.setOwners) {
       const setKey = key.split("\0")[1] ?? "";

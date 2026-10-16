@@ -31,6 +31,12 @@ fn consume_contract_covers_light_check() {
         "s3rch/meta",
         "checkSee",
         "checkSeeGrant",
+        "checkPost",
+        "MeshPostGrant",
+        "postSoul",
+        "postGrantSigningBytes",
+        "s3rch-post-grant-v1",
+        "inbox delivery never grants",
         "acceptHint",
         "admitFeedNode",
         "cancelSee",
@@ -206,6 +212,14 @@ fn consume_doc_says_browser_not_a_package() {
     assert!(
         md.contains("encrypted-discovery.md"),
         "consume doc must point at the wrapped-key spec"
+    );
+    assert!(
+        md.contains("checkPost") && md.contains("vectors/mesh/post-grant.json"),
+        "consume doc must name the post grant and its vectors"
+    );
+    assert!(
+        lower.contains("inbox delivery never grants"),
+        "consume doc must say an inbox delivery never grants"
     );
     assert!(
         lower.contains("a wrap is not a grant") || lower.contains("wrap of a dek"),

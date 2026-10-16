@@ -1,0 +1,278 @@
+{
+  "domain": "s3rch-post-grant-v1",
+  "scope": "post",
+  "note": "Length-prefixed little-endian UTF-8. Check does not verify a signature. A hop, a hint, a wrap, or an inbox delivery never grants.",
+  "factors": ["hop", "hint", "wrap", "inbox"],
+  "signing": [
+    {
+      "name": "live-room",
+      "object": "room:alpha",
+      "accessor": "0xbob",
+      "stated": 1,
+      "from": 0,
+      "until": 80,
+      "hamState": 1,
+      "hex": "1300000073337263682d706f73742d6772616e742d76310a000000726f6f6d3a616c706861050000003078626f620100000031010000003002000000383004000000706f73740100000031"
+    },
+    {
+      "name": "cancel-room",
+      "object": "room:alpha",
+      "accessor": "0xbob",
+      "stated": 0,
+      "from": 0,
+      "until": 80,
+      "hamState": 2,
+      "hex": "1300000073337263682d706f73742d6772616e742d76310a000000726f6f6d3a616c706861050000003078626f620100000030010000003002000000383004000000706f73740100000032"
+    },
+    {
+      "name": "canonical-ids",
+      "object": "rss3:act/1#x",
+      "accessor": "s3rch/users/0xbob",
+      "stated": 1,
+      "from": 10,
+      "until": 20,
+      "hamState": 3,
+      "hex": "1300000073337263682d706f73742d6772616e742d76310c000000727373333a6163745f315f78050000003078626f62010000003102000000313002000000323004000000706f73740100000033"
+    },
+    {
+      "name": "ham-covered",
+      "object": "room:alpha",
+      "accessor": "0xbob",
+      "stated": 1,
+      "from": 0,
+      "until": 80,
+      "hamState": 2,
+      "hex": "1300000073337263682d706f73742d6772616e742d76310a000000726f6f6d3a616c706861050000003078626f620100000031010000003002000000383004000000706f73740100000032"
+    }
+  ],
+  "graphs": [
+    {
+      "name": "see-and-post-allows",
+      "object": "room:alpha",
+      "owner": "0xalice",
+      "accessor": "0xbob",
+      "now": 10,
+      "see": { "from": 0, "until": 80, "stated": 1 },
+      "post": { "from": 0, "until": 80, "stated": 1 },
+      "allowed": true,
+      "reason": "post"
+    },
+    {
+      "name": "post-without-see",
+      "object": "room:alpha",
+      "owner": "0xalice",
+      "accessor": "0xbob",
+      "now": 10,
+      "post": { "from": 0, "until": 80, "stated": 1 },
+      "allowed": false,
+      "reason": "missing"
+    },
+    {
+      "name": "see-without-post",
+      "object": "room:alpha",
+      "owner": "0xalice",
+      "accessor": "0xbob",
+      "now": 10,
+      "see": { "from": 0, "until": 80, "stated": 1 },
+      "allowed": false,
+      "reason": "missing"
+    },
+    {
+      "name": "cancelled-see-blocks-post",
+      "object": "room:alpha",
+      "owner": "0xalice",
+      "accessor": "0xbob",
+      "now": 10,
+      "see": { "from": 0, "until": 80, "stated": 0 },
+      "post": { "from": 0, "until": 80, "stated": 1 },
+      "allowed": false,
+      "reason": "cancelled"
+    },
+    {
+      "name": "cancelled-post-blocks",
+      "object": "room:alpha",
+      "owner": "0xalice",
+      "accessor": "0xbob",
+      "now": 10,
+      "see": { "from": 0, "until": 80, "stated": 1 },
+      "post": { "from": 0, "until": 80, "stated": 0 },
+      "allowed": false,
+      "reason": "cancelled"
+    },
+    {
+      "name": "owner-posts-without-a-post-row",
+      "object": "room:alpha",
+      "owner": "0xalice",
+      "accessor": "0xalice",
+      "now": 10,
+      "allowed": true,
+      "reason": "owner"
+    },
+    {
+      "name": "hint-and-hop-do-not-grant",
+      "object": "room:alpha",
+      "owner": "0xalice",
+      "accessor": "0xbob",
+      "now": 10,
+      "hint": true,
+      "hop": true,
+      "allowed": false,
+      "reason": "missing"
+    },
+    {
+      "name": "hint-and-hop-do-not-mint-on-a-live-row",
+      "object": "room:alpha",
+      "owner": "0xalice",
+      "accessor": "0xbob",
+      "now": 10,
+      "hint": true,
+      "hop": true,
+      "see": { "from": 0, "until": 80, "stated": 1 },
+      "post": { "from": 0, "until": 80, "stated": 1 },
+      "allowed": true,
+      "reason": "post"
+    },
+    {
+      "name": "from-inclusive",
+      "object": "room:alpha",
+      "owner": "0xalice",
+      "accessor": "0xbob",
+      "now": 0,
+      "see": { "from": 0, "until": 80, "stated": 1 },
+      "post": { "from": 0, "until": 80, "stated": 1 },
+      "allowed": true,
+      "reason": "post"
+    },
+    {
+      "name": "until-exclusive",
+      "object": "room:alpha",
+      "owner": "0xalice",
+      "accessor": "0xbob",
+      "now": 80,
+      "see": { "from": 0, "until": 80, "stated": 1 },
+      "post": { "from": 0, "until": 80, "stated": 1 },
+      "allowed": false,
+      "reason": "missing"
+    },
+    {
+      "name": "post-window-closed",
+      "object": "room:alpha",
+      "owner": "0xalice",
+      "accessor": "0xbob",
+      "now": 10,
+      "see": { "from": 0, "until": 80, "stated": 1 },
+      "post": { "from": 40, "until": 80, "stated": 1 },
+      "allowed": false,
+      "reason": "missing"
+    },
+    {
+      "name": "higher-ham-cancel-wins",
+      "object": "room:alpha",
+      "owner": "0xalice",
+      "accessor": "0xbob",
+      "now": 10,
+      "see": { "from": 0, "until": 80, "stated": 1 },
+      "merge": [
+        { "from": 0, "until": 80, "stated": 1, "hamState": 2 },
+        { "from": 0, "until": 80, "stated": 0, "hamState": 3 }
+      ],
+      "eitherOrder": true,
+      "allowed": false,
+      "reason": "cancelled"
+    },
+    {
+      "name": "lower-ham-cancel-does-not-win",
+      "object": "room:alpha",
+      "owner": "0xalice",
+      "accessor": "0xbob",
+      "now": 10,
+      "see": { "from": 0, "until": 80, "stated": 1 },
+      "merge": [
+        { "from": 0, "until": 80, "stated": 1, "hamState": 5 },
+        { "from": 0, "until": 80, "stated": 0, "hamState": 4 }
+      ],
+      "eitherOrder": true,
+      "allowed": true,
+      "reason": "post"
+    },
+    {
+      "name": "equal-ham-cancel-wins",
+      "object": "room:alpha",
+      "owner": "0xalice",
+      "accessor": "0xbob",
+      "now": 10,
+      "see": { "from": 0, "until": 80, "stated": 1 },
+      "merge": [
+        { "from": 0, "until": 80, "stated": 1, "hamState": 4 },
+        { "from": 0, "until": 80, "stated": 0, "hamState": 4 }
+      ],
+      "eitherOrder": true,
+      "allowed": false,
+      "reason": "cancelled"
+    },
+    {
+      "name": "narrower-window-outside",
+      "object": "room:alpha",
+      "owner": "0xalice",
+      "accessor": "0xbob",
+      "now": 10,
+      "see": { "from": 0, "until": 100, "stated": 1 },
+      "merge": [
+        { "from": 0, "until": 100, "stated": 1, "hamState": 3 },
+        { "from": 0, "until": 5, "stated": 1, "hamState": 3 }
+      ],
+      "eitherOrder": true,
+      "allowed": false,
+      "reason": "missing",
+      "winner": { "from": 0, "until": 5, "stated": 1 }
+    },
+    {
+      "name": "narrower-window-inside",
+      "object": "room:alpha",
+      "owner": "0xalice",
+      "accessor": "0xbob",
+      "now": 1,
+      "see": { "from": 0, "until": 100, "stated": 1 },
+      "merge": [
+        { "from": 0, "until": 100, "stated": 1, "hamState": 3 },
+        { "from": 0, "until": 5, "stated": 1, "hamState": 3 }
+      ],
+      "eitherOrder": true,
+      "allowed": true,
+      "reason": "post",
+      "winner": { "from": 0, "until": 5, "stated": 1 }
+    },
+    {
+      "name": "equal-ham-smaller-encoding-wins",
+      "object": "room:alpha",
+      "owner": "0xalice",
+      "accessor": "0xbob",
+      "now": 10,
+      "see": { "from": 0, "until": 100, "stated": 1 },
+      "merge": [
+        { "from": 0, "until": 50, "stated": 1, "hamState": 3 },
+        { "from": 40, "until": 90, "stated": 1, "hamState": 3 }
+      ],
+      "eitherOrder": true,
+      "allowed": true,
+      "reason": "post",
+      "winner": { "from": 0, "until": 50, "stated": 1 }
+    },
+    {
+      "name": "equal-ham-smaller-encoding-later-now",
+      "object": "room:alpha",
+      "owner": "0xalice",
+      "accessor": "0xbob",
+      "now": 80,
+      "see": { "from": 0, "until": 100, "stated": 1 },
+      "merge": [
+        { "from": 0, "until": 50, "stated": 1, "hamState": 3 },
+        { "from": 40, "until": 90, "stated": 1, "hamState": 3 }
+      ],
+      "eitherOrder": true,
+      "allowed": false,
+      "reason": "missing",
+      "winner": { "from": 0, "until": 50, "stated": 1 }
+    }
+  ]
+}
