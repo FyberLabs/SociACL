@@ -3,9 +3,10 @@
 //! This crate implements the account SEA key, device enrollment, the
 //! wrapped-key edge, blinded grant rows, commitment opening, author fast
 //! unwrap, [`check_presented_grant`], and inbox admission. Canonical ids
-//! are checked against `vectors/encrypted-discovery/`. The read-key half
-//! of [`epoch_step_current`] runs inside that check. Epoch publication,
-//! rotation, migration, and a shard-close watermark are not in this slice.
+//! are checked against `vectors/encrypted-discovery/`. Epoch admission,
+//! convergent finalization, [`epoch_step_current`], [`settled_key_open`],
+//! and [`rotate_on_revoke`] run here. Migration and a shard-close
+//! watermark are not in this slice.
 //!
 //! s3r.ch copies `docs/s3rch-check.d.ts` and reimplements that contract
 //! in TypeScript. It does not import this crate. `sociacl-gun` evaluates
@@ -66,6 +67,7 @@ mod hexutil;
 mod inbox;
 mod present;
 mod presenter;
+mod rotation;
 mod sea;
 mod see;
 mod wrap;
@@ -77,24 +79,30 @@ pub use account::{
 };
 pub use canonical::{
     account_binding_bytes, account_binding_sha256, canonical_decimal, decode_length_prefixed,
-    epoch_finalization_bytes, epoch_finalization_id, epoch_revision_bytes, epoch_revision_id,
-    epoch_status_bytes, epoch_status_sha256, grant_commitment_bytes, grant_commitment_hash,
-    grant_payload_bytes, grant_payload_digest, inbox_entry_bytes, inbox_entry_encoded_len,
-    inbox_entry_id, inbox_pow_bytes, inbox_pow_digest, inbox_pow_sha256, inbox_stamp_bytes,
-    inbox_stamp_sha256, item_auth_bytes, item_auth_sha256, leading_zero_bits, length_prefixed,
-    parse_canonical_decimal, plaintext_digest, presenter_binding_bytes, presenter_binding_sha256,
-    sha256, sha256_fields, sha256_hex, writer_append_bytes, writer_append_sha256,
-    writer_channel_bytes, writer_channel_sha256, EpochManifestBody, EpochStatusBody,
-    GrantPayloadBody, InboxEntryBody, InboxWrapFields, ItemAuthFields, DOMAIN_ACCOUNT_BINDING,
-    DOMAIN_EPOCH, DOMAIN_EPOCH_FINALIZATION, DOMAIN_EPOCH_STATUS, DOMAIN_GRANT_COMMITMENT,
-    DOMAIN_GRANT_PAYLOAD, DOMAIN_GROUP_WRAP, DOMAIN_INBOX, DOMAIN_INBOX_POW, DOMAIN_INBOX_STAMP,
-    DOMAIN_ITEM_AUTH, DOMAIN_PRESENTER_BINDING, DOMAIN_SEA_SECRET, DOMAIN_WRAPPED_KEY,
-    DOMAIN_WRITER_APPEND, DOMAIN_WRITER_CHANNEL, JS_SAFE_INTEGER_MAX,
+    epoch_finalization_bytes, epoch_finalization_id, epoch_finalization_sig_bytes,
+    epoch_manifest_sig_bytes, epoch_revision_bytes, epoch_revision_id, epoch_status_bytes,
+    epoch_status_sha256, grant_commitment_bytes, grant_commitment_hash, grant_payload_bytes,
+    grant_payload_digest, group_epoch_config_bytes, group_epoch_config_digest, inbox_entry_bytes,
+    inbox_entry_encoded_len, inbox_entry_id, inbox_pow_bytes, inbox_pow_digest, inbox_pow_sha256,
+    inbox_stamp_bytes, inbox_stamp_sha256, item_auth_bytes, item_auth_sha256, leading_zero_bits,
+    length_prefixed, parse_canonical_decimal, plaintext_digest, presenter_binding_bytes,
+    presenter_binding_sha256, sha256, sha256_fields, sha256_hex, writer_append_bytes,
+    writer_append_sha256, writer_channel_bytes, writer_channel_sha256, EpochManifestBody,
+    EpochStatusBody, GrantPayloadBody, InboxEntryBody, InboxWrapFields, ItemAuthFields,
+    DOMAIN_ACCOUNT_BINDING, DOMAIN_ACL_SNAPSHOT, DOMAIN_EPOCH, DOMAIN_EPOCH_FINALIZATION,
+    DOMAIN_EPOCH_FINALIZATION_SIG, DOMAIN_EPOCH_MANIFEST_SIG, DOMAIN_EPOCH_STATUS,
+    DOMAIN_GRANT_COMMITMENT, DOMAIN_GRANT_PAYLOAD, DOMAIN_GROUP_EPOCH_CONFIG, DOMAIN_GROUP_WRAP,
+    DOMAIN_INBOX, DOMAIN_INBOX_POW, DOMAIN_INBOX_STAMP, DOMAIN_ITEM_AUTH, DOMAIN_PRESENTER_BINDING,
+    DOMAIN_SEA_SECRET, DOMAIN_WRAPPED_KEY, DOMAIN_WRITER_APPEND, DOMAIN_WRITER_CHANNEL,
+    JS_SAFE_INTEGER_MAX,
 };
 pub use epoch::{
-    epoch_read_key, epoch_step_current, status_is_fresh, AclObjectSet, AclScope, AclSnapshotBody,
-    AclSnapshotEntry, EpochFinalization, EpochReadKey, EpochReplicaView, EpochStatusProof,
-    LightZookie, SETTLE_WINDOW_DEFAULT_MS, SETTLE_WINDOW_MAX_MS, SETTLE_WINDOW_MIN_MS,
+    acl_snapshot_bytes, acl_snapshot_id, epoch_read_key, epoch_step_current, epoch_winner,
+    rebuild_grant_revision, select_group_epoch_config, settle_window_in_range,
+    settle_window_or_default, settled_key_open, status_is_fresh, write_disposition, AclObjectSet,
+    AclScope, AclSnapshotBody, AclSnapshotEntry, EpochChain, EpochFinalization, EpochManifest,
+    EpochReadKey, EpochReplicaView, EpochStatusProof, GroupEpochConfig, LightZookie,
+    WriteDisposition, SETTLE_WINDOW_DEFAULT_MS, SETTLE_WINDOW_MAX_MS, SETTLE_WINDOW_MIN_MS,
 };
 pub use error::EncDiscError;
 pub use grant::{
@@ -118,6 +126,10 @@ pub use present::{
 pub use presenter::{
     binding_for, verify_presenter_binding, AuthenticatedPresenterChannel, PresenterBinding,
     PresenterChallenge, VerifierChallengeState,
+};
+pub use rotation::{
+    rotate_on_revoke, CancelledGrant, EpochRotation, GrantStorage, PlainGrant, PriorRevision,
+    RevokeCipherMode, RotationCancel, RotationContext, RotationOutcome,
 };
 pub use sea::{sign_sea, verify_sea};
 pub use see::{

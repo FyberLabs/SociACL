@@ -1259,6 +1259,97 @@ fn a_tampered_entry_id_fails_closed() {
 }
 
 #[test]
+fn zookie_is_compared_to_this_objects_version_and_snapshot() {
+    let mut world = world();
+    world.graph.objects.insert(
+        "item-2".to_string(),
+        Obj {
+            owner: world.alice.account().to_string(),
+            version: 9,
+            snapshot: OTHER_ITEM.to_string(),
+            grants: Vec::new(),
+            set: None,
+            members: Vec::new(),
+        },
+    );
+    let payload = grant_of(&world, GrantStated::Live, 1);
+    let now = 20;
+    let built = build(&world, &payload, false);
+    let binding = bound(&world, &built, now);
+    let mut older = status_for(&world, 1, GrantStated::Live, 2, &world.revision, now);
+    older.zookie.object_version = 6;
+    older.signature = world.alice.sign_epoch_status(&older.body()).unwrap();
+    let decision = check_presented_grant(
+        &world,
+        input(&world, built, now, Some(binding), None, Some(older)),
+    );
+    assert_eq!(decision.result.reason, "zookie");
+    assert!(decision.challenges.spent.is_empty());
+
+    let built = build(&world, &payload, false);
+    let binding = bound(&world, &built, now);
+    let mut ahead = status_for(&world, 1, GrantStated::Live, 2, &world.revision, now);
+    ahead.zookie.object_version = 8;
+    ahead.signature = world.alice.sign_epoch_status(&ahead.body()).unwrap();
+    let decision = check_presented_grant(
+        &world,
+        input(&world, built, now, Some(binding), None, Some(ahead)),
+    );
+    assert_eq!(decision.result.reason, "zookie");
+
+    let built = build(&world, &payload, false);
+    let binding = bound(&world, &built, now);
+    let mut other_object = status_for(&world, 1, GrantStated::Live, 2, &world.revision, now);
+    other_object.zookie.snapshot_hash = OTHER_ITEM.to_string();
+    other_object.signature = world.alice.sign_epoch_status(&other_object.body()).unwrap();
+    let decision = check_presented_grant(
+        &world,
+        input(&world, built, now, Some(binding), None, Some(other_object)),
+    );
+    assert_eq!(decision.result.reason, "zookie");
+    assert_eq!(world.snapshot_hash("item-2"), Some(OTHER_ITEM));
+    assert_ne!(world.snapshot_hash("item-1"), world.snapshot_hash("item-2"));
+    assert!(world.object_version("missing").is_none());
+}
+
+#[test]
+fn privilege_down_denies_during_an_open_settle_window() {
+    let world = world();
+    let now = 20;
+    let payload = grant_of(&world, GrantStated::Cancelled, 2);
+    let built = build(&world, &payload, true);
+    let opened = open_reader_wrap(
+        built.row.wrap.as_ref().unwrap(),
+        world.bob.local_epriv(),
+        world.bob.epub(),
+    )
+    .unwrap();
+    assert!(!opened.grants_see());
+    let binding = bound(&world, &built, now);
+    let win = "22".repeat(32);
+    let mut pending = view(&world);
+    pending.epoch = 3;
+    pending.seen =
+        vec![EpochFinalization::seal("item-1", 1, 3, &win, vec![win.clone()], "", "sig").unwrap()];
+    pending.winner_seen_at = now;
+    pending.settle_window_ms = SETTLE_WINDOW_DEFAULT_MS;
+    pending.settled_epoch = 2;
+    pending.settled_revision_id = world.revision.clone();
+    assert!(!epoch_step_current(
+        &pending,
+        &empty_acl(),
+        &empty_acl(),
+        now
+    ));
+    let status = status_for(&world, 2, GrantStated::Cancelled, 2, &world.revision, now);
+    let mut check = input(&world, built, now, Some(binding), None, Some(status));
+    check.epoch_view = pending;
+    let decision = check_presented_grant(&world, check);
+    assert!(!decision.result.allowed);
+    assert_eq!(decision.result.reason, "cancelled");
+}
+
+#[test]
 fn owner_path_uses_owner_when_the_accessor_is_the_owner() {
     let world = world();
     let mut payload = grant_of(&world, GrantStated::Live, 1);

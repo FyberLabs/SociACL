@@ -27,6 +27,10 @@ pub const DOMAIN_WRITER_APPEND: &str = "s3rch-writer-append-v1";
 pub const DOMAIN_WRITER_CHANNEL: &str = "s3rch-writer-channel-v1";
 pub const DOMAIN_INBOX_POW: &str = "s3rch-inbox-pow-v1";
 pub const DOMAIN_INBOX_STAMP: &str = "s3rch-inbox-stamp-v1";
+pub const DOMAIN_ACL_SNAPSHOT: &str = "s3rch-acl-snapshot-v1";
+pub const DOMAIN_EPOCH_MANIFEST_SIG: &str = "s3rch-epoch-manifest-sig-v1";
+pub const DOMAIN_EPOCH_FINALIZATION_SIG: &str = "s3rch-epoch-finalization-sig-v1";
+pub const DOMAIN_GROUP_EPOCH_CONFIG: &str = "s3rch-group-epoch-config-v1";
 
 /// Cleartext fields that `inboxEntryId` hashes. `wrap` is absent or present.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -525,6 +529,50 @@ pub fn leading_zero_bits(digest: &[u8]) -> u32 {
         }
     }
     count
+}
+
+pub fn epoch_manifest_sig_bytes(revision_id: &str) -> Result<Vec<u8>, EncDiscError> {
+    length_prefixed(&[DOMAIN_EPOCH_MANIFEST_SIG, revision_id])
+}
+
+pub fn epoch_finalization_sig_bytes(finalization_id: &str) -> Result<Vec<u8>, EncDiscError> {
+    length_prefixed(&[DOMAIN_EPOCH_FINALIZATION_SIG, finalization_id])
+}
+
+/// Signed group-epoch config bytes. The signature is not a field.
+pub fn group_epoch_config_bytes(
+    owner: &str,
+    set_id: &str,
+    predicate: &str,
+    settle_window_ms: u64,
+    config_revision: u64,
+) -> Result<Vec<u8>, EncDiscError> {
+    let window = canonical_decimal(settle_window_ms)?;
+    let revision = canonical_decimal(config_revision)?;
+    length_prefixed(&[
+        DOMAIN_GROUP_EPOCH_CONFIG,
+        owner,
+        set_id,
+        predicate,
+        &window,
+        &revision,
+    ])
+}
+
+pub fn group_epoch_config_digest(
+    owner: &str,
+    set_id: &str,
+    predicate: &str,
+    settle_window_ms: u64,
+    config_revision: u64,
+) -> Result<String, EncDiscError> {
+    Ok(sha256_hex(&group_epoch_config_bytes(
+        owner,
+        set_id,
+        predicate,
+        settle_window_ms,
+        config_revision,
+    )?))
 }
 
 pub fn epoch_finalization_id(

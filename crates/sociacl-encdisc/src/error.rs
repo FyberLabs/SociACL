@@ -57,6 +57,10 @@ pub enum EncDiscError {
     PresenterRejected,
     #[error("epoch status rejected")]
     StatusRejected,
+    #[error("epoch rejected")]
+    EpochRejected,
+    #[error("rotation rejected")]
+    RotationRejected,
     #[error("channel rejected")]
     ChannelRejected,
     #[error("digest rejected")]
