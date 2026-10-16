@@ -1041,7 +1041,7 @@ fn verified_membership_cancels(
                 membership_cancel_signer(record, signer)
             })
         })
-        .map(|(id, cancel)| (*id, cancel.clone()))
+        .map(|(id, cancel)| (*id, stored_cancel(cancel)))
         .collect()
 }
 
@@ -1071,9 +1071,13 @@ fn retain_verified_object_cancels(
     let row_key = object_set_key(&record.name.object);
     let owner = acl_principal_key(&record.object_owner);
     record.cancels.retain(|_, cancel| {
-        cancel_verifies(cancel, enrolled, "object-set", &row_key, |signer| {
+        let ok = cancel_verifies(cancel, enrolled, "object-set", &row_key, |signer| {
             acl_principal_key(signer) == owner
-        })
+        });
+        if ok {
+            *cancel = stored_cancel(cancel);
+        }
+        ok
     });
 }
 
@@ -1166,7 +1170,7 @@ fn merge_object_records(
         if cancel_verifies(cancel, enrolled, "object-set", &row_key, |signer| {
             acl_principal_key(signer) == acl_principal_key(&incoming.object_owner)
         }) {
-            cancels.entry(*id).or_insert_with(|| cancel.clone());
+            cancels.entry(*id).or_insert_with(|| stored_cancel(cancel));
         }
     }
     let ids = cancel_ids(&cancels);
@@ -1385,14 +1389,24 @@ fn canonical_prior(prior: &BTreeSet<CancelId>) -> BTreeSet<CancelId> {
         .collect()
 }
 
+fn stored_cancel(cancel: &SignedCancel) -> SignedCancel {
+    let mut stored = cancel.clone();
+    if let Some(id) = canonical_cancel_id(&cancel_id_hex(&cancel.id)) {
+        stored.id = id;
+    }
+    stored.prior = canonical_prior(&cancel.prior);
+    stored
+}
+
 fn new_cancel_id(replica_id: &[u8; 16], prior: &BTreeSet<CancelId>) -> CancelId {
+    let prior = canonical_prior(prior);
     let mut nonce = [0u8; 16];
     rand::rngs::OsRng.fill_bytes(&mut nonce);
     let mut hasher = Sha256::new();
     hasher.update(b"sociacl-cancel-id-v1");
     hasher.update(replica_id);
     hasher.update(nonce);
-    push_ids_hash(&mut hasher, prior);
+    push_ids_hash(&mut hasher, &prior);
     CancelId(hasher.finalize().into())
 }
 
@@ -1878,6 +1892,181 @@ mod tests {
         );
         assert!(!blocked_owner.allowed);
         assert_eq!(blocked_owner.reason, crate::MESH_REASON_MISSING);
+    }
+
+    #[test]
+    fn a_duplicate_cancel_does_not_drop_the_next_cancel() {
+        let (alice, bob) = pair();
+        let mut base = live(&alice, &bob);
+        base.cancel_membership(
+            "0xalice",
+            GroupPredicate::SameGroup,
+            "0xalice/ops",
+            "0xbob",
+            &alice,
+        )
+        .unwrap();
+        let key = membership_key_parts(GroupPredicate::SameGroup, "0xalice/ops", "0xbob");
+        let first = *base
+            .groups
+            .memberships
+            .get(&key)
+            .unwrap()
+            .cancels
+            .keys()
+            .next()
+            .unwrap();
+
+        let mut restated = live(&alice, &bob);
+        restated.merge_from(&base);
+        restated
+            .state_membership(
+                "0xbob",
+                GroupPredicate::SameGroup,
+                "0xalice/ops",
+                "0xbob",
+                &bob,
+            )
+            .unwrap();
+        restated
+            .state_membership(
+                "0xalice",
+                GroupPredicate::SameGroup,
+                "0xalice/ops",
+                "0xbob",
+                &alice,
+            )
+            .unwrap();
+        assert_eq!(
+            restated
+                .membership(GroupPredicate::SameGroup, "0xalice/ops", "0xbob")
+                .unwrap()
+                .stated,
+            1
+        );
+
+        let mut newer = live(&alice, &bob);
+        newer.merge_from(&base);
+        {
+            let row = newer.groups.memberships.get_mut(&key).unwrap();
+            let again = row.cancels.get(&first).unwrap().clone();
+            row.cancels.insert(first, again);
+            assert_eq!(row.cancels.len(), 1);
+        }
+        newer
+            .cancel_membership(
+                "0xalice",
+                GroupPredicate::SameGroup,
+                "0xalice/ops",
+                "0xbob",
+                &alice,
+            )
+            .unwrap();
+        let issued = newer.groups.memberships.get(&key).unwrap();
+        assert_eq!(issued.cancels.len(), 2);
+        let next = issued
+            .cancels
+            .values()
+            .find(|cancel| cancel.prior.contains(&first))
+            .unwrap();
+        assert_eq!(next.prior, canonical_prior(&BTreeSet::from([first])));
+        assert!(cancel_verifies(
+            next,
+            &newer.groups.enrolled,
+            "membership",
+            &membership_row_key(issued),
+            |signer| membership_cancel_signer(issued, signer),
+        ));
+
+        let mut from_newer = newer.clone();
+        from_newer.merge_from(&restated);
+        let mut from_restated = restated.clone();
+        from_restated.merge_from(&newer);
+        for graph in [&from_newer, &from_restated] {
+            let denied = see(graph, "doc", "0xbob");
+            assert!(!denied.allowed);
+            assert_eq!(denied.reason, crate::MESH_REASON_CANCELLED);
+            let kept = graph.groups.memberships.get(&key).unwrap();
+            assert_eq!(kept.cancels.len(), 2);
+            assert!(kept.cancels.contains_key(&first));
+            assert_eq!(
+                kept.cancels
+                    .values()
+                    .find(|cancel| cancel.id != first)
+                    .unwrap()
+                    .prior,
+                BTreeSet::from([first])
+            );
+        }
+
+        let mut cleared = live(&alice, &bob);
+        cleared.clear_object_set("0xalice", "doc", &alice).unwrap();
+        let edge_key = object_set_key("doc");
+        let edge_id = *cleared
+            .groups
+            .object_sets
+            .get(&edge_key)
+            .unwrap()
+            .cancels
+            .keys()
+            .next()
+            .unwrap();
+        let mut renamed = live(&alice, &bob);
+        renamed.merge_from(&cleared);
+        renamed
+            .name_object_set(
+                "0xalice",
+                "doc",
+                GroupPredicate::SameGroup,
+                "0xalice/ops",
+                &alice,
+            )
+            .unwrap();
+        assert_eq!(renamed.object_set("doc").unwrap().stated, 1);
+
+        let mut cleared_again = live(&alice, &bob);
+        cleared_again.merge_from(&cleared);
+        {
+            let edge = cleared_again.groups.object_sets.get_mut(&edge_key).unwrap();
+            let again = edge.cancels.get(&edge_id).unwrap().clone();
+            edge.cancels.insert(edge_id, again);
+            assert_eq!(edge.cancels.len(), 1);
+        }
+        cleared_again
+            .clear_object_set("0xalice", "doc", &alice)
+            .unwrap();
+        let issued_edge = cleared_again.groups.object_sets.get(&edge_key).unwrap();
+        assert_eq!(issued_edge.cancels.len(), 2);
+        assert_eq!(
+            issued_edge
+                .cancels
+                .values()
+                .find(|cancel| cancel.prior.contains(&edge_id))
+                .unwrap()
+                .prior,
+            BTreeSet::from([edge_id])
+        );
+
+        let mut from_clear = cleared_again.clone();
+        from_clear.merge_from(&renamed);
+        let mut from_rename = renamed.clone();
+        from_rename.merge_from(&cleared_again);
+        for graph in [&from_clear, &from_rename] {
+            assert_eq!(graph.object_set("doc").unwrap().stated, 0);
+            let denied = see(graph, "doc", "0xbob");
+            assert!(!denied.allowed);
+            assert_eq!(denied.reason, crate::MESH_REASON_CANCELLED);
+            let kept = graph.groups.object_sets.get(&edge_key).unwrap();
+            assert_eq!(kept.cancels.len(), 2);
+            assert_eq!(
+                kept.cancels
+                    .values()
+                    .find(|cancel| cancel.id != edge_id)
+                    .unwrap()
+                    .prior,
+                BTreeSet::from([edge_id])
+            );
+        }
     }
 }
 

@@ -360,9 +360,38 @@ function covers(observed, ids) {
   return ids.every((id) => have.has(id));
 }
 
-/** @param {readonly SignedCancel[]} cancels */
+/**
+ * One canonical id per cancel. Duplicates are the same id, not a second prior.
+ * @param {readonly SignedCancel[]} cancels
+ */
 function cancelIds(cancels) {
-  return cancels.map((cancel) => cancel.id).sort();
+  /** @type {string[]} */
+  const ids = [];
+  const seen = new Set();
+  for (const cancel of cancels) {
+    const id = canonicalCancelId(cancel?.id);
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    ids.push(id);
+  }
+  ids.sort();
+  return ids;
+}
+
+/**
+ * @param {readonly SignedCancel[]} cancels
+ * @returns {SignedCancel[]}
+ */
+function uniqueCancels(cancels) {
+  /** @type {SignedCancel[]} */
+  const out = [];
+  const seen = new Set();
+  for (const cancel of cancels) {
+    if (!cancel || seen.has(cancel.id)) continue;
+    seen.add(cancel.id);
+    out.push(cancel);
+  }
+  return out;
 }
 
 /**
@@ -607,10 +636,12 @@ function pickParty(local, incoming, ids, localOk, incomingOk) {
 function retainAuthenticMembership(lookup, record) {
   const rowKey = membershipRowKey(record);
   const allow = (/** @type {string} */ signer) => membershipCancelSigner(record, signer);
-  record.cancels = record.cancels.flatMap((cancel) => {
-    const accepted = acceptedCancel(lookup, cancel, "membership", rowKey, allow);
-    return accepted ? [accepted] : [];
-  });
+  record.cancels = uniqueCancels(
+    record.cancels.flatMap((cancel) => {
+      const accepted = acceptedCancel(lookup, cancel, "membership", rowKey, allow);
+      return accepted ? [accepted] : [];
+    }),
+  );
   if (record.member.spoken && !partySignatureOk(lookup, record.member, "member", record)) {
     record.member = absentParty();
   }
@@ -629,7 +660,7 @@ function retainAuthenticMembership(lookup, record) {
  */
 function mergeMembership(lookup, local, incoming) {
   /** @type {SignedCancel[]} */
-  const cancels = structuredClone(local.cancels);
+  const cancels = uniqueCancels(structuredClone(local.cancels));
   const rowKey = membershipRowKey(incoming);
   const allow = (/** @type {string} */ signer) => membershipCancelSigner(incoming, signer);
   for (const cancel of incoming.cancels) {
@@ -689,10 +720,12 @@ function pickObject(lookup, local, incoming, ids) {
 function retainAuthenticObject(lookup, record) {
   const rowKey = aclKey(record.name.object);
   const allow = (/** @type {string} */ signer) => aclPrincipalKey(signer) === aclPrincipalKey(record.objectOwner);
-  record.cancels = record.cancels.flatMap((cancel) => {
-    const accepted = acceptedCancel(lookup, cancel, "object-set", rowKey, allow);
-    return accepted ? [accepted] : [];
-  });
+  record.cancels = uniqueCancels(
+    record.cancels.flatMap((cancel) => {
+      const accepted = acceptedCancel(lookup, cancel, "object-set", rowKey, allow);
+      return accepted ? [accepted] : [];
+    }),
+  );
   if (!objectSignatureOk(lookup, record)) {
     if (record.cancels.length === 0) return null;
     record.signedStated = 0;
@@ -710,7 +743,7 @@ function retainAuthenticObject(lookup, record) {
  */
 function mergeObjectSet(lookup, local, incoming) {
   /** @type {SignedCancel[]} */
-  const cancels = structuredClone(local.cancels);
+  const cancels = uniqueCancels(structuredClone(local.cancels));
   const rowKey = aclKey(incoming.name.object);
   const allow = (/** @type {string} */ signer) =>
     aclPrincipalKey(signer) === aclPrincipalKey(incoming.objectOwner);
@@ -909,7 +942,11 @@ export class MemoryGroupGraph {
    * @param {KeyObject} secret
    */
   #pushCancel(cancels, kind, rowKey, signer, secret) {
-    const prior = cancelIds(cancels);
+    const kept = uniqueCancels(cancels);
+    cancels.length = 0;
+    cancels.push(...kept);
+    const prior = canonicalPriorIds(cancelIds(cancels));
+    if (!prior) throw new Error("cancel id is not 64 lowercase hex");
     const id = newCancelId(this.replicaId, prior);
     const message = cancelMessage(kind, rowKey, id, prior);
     if (!message) throw new Error("cancel id is not 64 lowercase hex");
