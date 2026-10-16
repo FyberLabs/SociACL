@@ -12,5 +12,5 @@
     "noUncheckedIndexedAccess": true,
     "skipLibCheck": true
   },
-  "files": ["canonical.ts", "presenter.ts", "writer.ts", "inbox.ts", "epoch.ts", "../tests/test_encdisc_vectors.ts", "../tests/test_presentation.ts", "../tests/test_inbox.ts", "../tests/test_epoch.ts"]
+  "files": ["canonical.ts", "presenter.ts", "writer.ts", "inbox.ts", "epoch.ts", "migration.ts", "../tests/test_encdisc_vectors.ts", "../tests/test_presentation.ts", "../tests/test_inbox.ts", "../tests/test_epoch.ts", "../tests/test_migration.ts"]
 }

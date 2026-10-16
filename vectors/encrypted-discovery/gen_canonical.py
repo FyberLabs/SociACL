@@ -364,6 +364,17 @@ def main() -> None:
                 "0",
             ],
         ),
+        case_fields(
+            "wrap-receipt",
+            [
+                "s3rch-wrap-receipt-v1",
+                "item-1",
+                "bob",
+                "2",
+                rev,
+                "cd" * 32,
+            ],
+        ),
     ]
 
     # Absent group and empty group are one encoding.
@@ -399,6 +410,7 @@ def main() -> None:
             "epoch-max-safe uses 9007199254740991, the largest integer Number.isSafeInteger accepts. 9007199254740992 is rejected and has no id.",
             "inbox-real-wrap hashes the wrappedKey blob in wrap.json. The short aa and ab wraps are id cases only.",
             "acl-snapshot-utf8-order sorts accessors by UTF-8 bytes. U+E000 precedes U+10000.",
+            "wrap-receipt is the length-prefixed reader receipt. It is not a signature.",
         ],
         "cases": cases,
     }

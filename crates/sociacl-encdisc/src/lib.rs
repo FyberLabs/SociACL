@@ -5,8 +5,8 @@
 //! unwrap, [`check_presented_grant`], and inbox admission. Canonical ids
 //! are checked against `vectors/encrypted-discovery/`. Epoch admission,
 //! convergent finalization, [`epoch_step_current`], [`settled_key_open`],
-//! and [`rotate_on_revoke`] run here. Migration and a shard-close
-//! watermark are not in this slice.
+//! [`rotate_on_revoke`], and in-place migration run here. A shard-close
+//! watermark is not in this slice.
 //!
 //! s3r.ch copies `docs/s3rch-check.d.ts` and reimplements that contract
 //! in TypeScript. It does not import this crate. `sociacl-gun` evaluates
@@ -53,8 +53,22 @@
 //! * A writer append and an inbox stamp are P-256 signatures over the
 //!   length-prefixed domain and `entryId`. Proof-of-work is SHA-256 of
 //!   the length-prefixed domain, nonce, `entryId`, and solution.
+//! * A wrap receipt is a P-256 signature over the length-prefixed fields
+//!   `s3rch-wrap-receipt-v1`, object, accessor, decimal `toVersion`,
+//!   `revisionId`, and `entryId`. A caller boolean is not that receipt.
+//! * A migrated item is format byte `0x01`, big-endian `toVersion`,
+//!   big-endian epoch, a 12-byte random nonce, and AES-256-GCM under the
+//!   raw 32-byte item DEK. The AES plaintext is the length-prefixed fields
+//!   `s3rch-migrated-item-v1`, decimal version, decimal epoch,
+//!   `revisionId`, the item-auth signature, and the lowercase hex of the
+//!   raw plaintext. The header version and epoch must match the inner
+//!   fields. The grant ciphertext under that DEK is `0x01`, a different
+//!   nonce, and AES-256-GCM of `s3rch-grant-ciphertext-v1`, the blinding,
+//!   the owner signature, and the hex of the grant payload. There is no
+//!   public deterministic nonce helper.
 //! * The relay that accepts an append learns the writer id. The stored
-//!   row does not carry it. An append and an opened wrap never grant.
+//!   row does not carry it. An append, an opened wrap, and an opened
+//!   migrated item never grant.
 
 #![forbid(unsafe_code)]
 
@@ -65,6 +79,7 @@ mod error;
 mod grant;
 mod hexutil;
 mod inbox;
+mod migration;
 mod present;
 mod presenter;
 mod rotation;
@@ -86,15 +101,15 @@ pub use canonical::{
     inbox_entry_encoded_len, inbox_entry_id, inbox_pow_bytes, inbox_pow_digest, inbox_pow_sha256,
     inbox_stamp_bytes, inbox_stamp_sha256, item_auth_bytes, item_auth_sha256, leading_zero_bits,
     length_prefixed, parse_canonical_decimal, plaintext_digest, presenter_binding_bytes,
-    presenter_binding_sha256, sha256, sha256_fields, sha256_hex, writer_append_bytes,
-    writer_append_sha256, writer_channel_bytes, writer_channel_sha256, EpochManifestBody,
-    EpochStatusBody, GrantPayloadBody, InboxEntryBody, InboxWrapFields, ItemAuthFields,
-    DOMAIN_ACCOUNT_BINDING, DOMAIN_ACL_SNAPSHOT, DOMAIN_EPOCH, DOMAIN_EPOCH_FINALIZATION,
-    DOMAIN_EPOCH_FINALIZATION_SIG, DOMAIN_EPOCH_MANIFEST_SIG, DOMAIN_EPOCH_STATUS,
-    DOMAIN_GRANT_COMMITMENT, DOMAIN_GRANT_PAYLOAD, DOMAIN_GROUP_EPOCH_CONFIG, DOMAIN_GROUP_WRAP,
-    DOMAIN_INBOX, DOMAIN_INBOX_POW, DOMAIN_INBOX_STAMP, DOMAIN_ITEM_AUTH, DOMAIN_PRESENTER_BINDING,
-    DOMAIN_SEA_SECRET, DOMAIN_WRAPPED_KEY, DOMAIN_WRITER_APPEND, DOMAIN_WRITER_CHANNEL,
-    JS_SAFE_INTEGER_MAX,
+    presenter_binding_sha256, sha256, sha256_fields, sha256_hex, wrap_receipt_bytes,
+    wrap_receipt_sha256, writer_append_bytes, writer_append_sha256, writer_channel_bytes,
+    writer_channel_sha256, EpochManifestBody, EpochStatusBody, GrantPayloadBody, InboxEntryBody,
+    InboxWrapFields, ItemAuthFields, DOMAIN_ACCOUNT_BINDING, DOMAIN_ACL_SNAPSHOT, DOMAIN_EPOCH,
+    DOMAIN_EPOCH_FINALIZATION, DOMAIN_EPOCH_FINALIZATION_SIG, DOMAIN_EPOCH_MANIFEST_SIG,
+    DOMAIN_EPOCH_STATUS, DOMAIN_GRANT_COMMITMENT, DOMAIN_GRANT_PAYLOAD, DOMAIN_GROUP_EPOCH_CONFIG,
+    DOMAIN_GROUP_WRAP, DOMAIN_INBOX, DOMAIN_INBOX_POW, DOMAIN_INBOX_STAMP, DOMAIN_ITEM_AUTH,
+    DOMAIN_PRESENTER_BINDING, DOMAIN_SEA_SECRET, DOMAIN_WRAPPED_KEY, DOMAIN_WRAP_RECEIPT,
+    DOMAIN_WRITER_APPEND, DOMAIN_WRITER_CHANNEL, JS_SAFE_INTEGER_MAX,
 };
 pub use epoch::{
     acl_snapshot_bytes, acl_snapshot_id, epoch_read_key, epoch_step_current, epoch_winner,
@@ -118,6 +133,12 @@ pub use inbox::{
     DailyShardScan, InboxAdmission, InboxAppendResult, InboxLane, InboxWriteDecision,
     InboxWriteFilter, InboxWriteHook, InboxWritePolicy, ReaderInboxes, SenderQuota, ShardScan,
     VerifierAdmissionState, INBOX_ENTRY_MAX_BYTES,
+};
+pub use migration::{
+    accept_migration, apply_protocol_migration, open_migrated_item, prepare_protocol_migration,
+    sign_wrap_receipt, EncryptedMigration, MigrationAdmissionInput, MigrationEpoch, MigrationGrant,
+    MigrationOutcome, MigrationReader, PreparedMigration, ProtocolMigration, ReaderMigration,
+    ReaderVersion, WrapReceipt,
 };
 pub use present::{
     check_presented_grant, PresentedGrantDecision, PresentedGrantInput, VerifierGrantRevision,

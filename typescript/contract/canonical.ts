@@ -25,6 +25,7 @@ const DOMAIN_WRITER_APPEND = "s3rch-writer-append-v1";
 const DOMAIN_WRITER_CHANNEL = "s3rch-writer-channel-v1";
 const DOMAIN_INBOX_POW = "s3rch-inbox-pow-v1";
 const DOMAIN_INBOX_STAMP = "s3rch-inbox-stamp-v1";
+const DOMAIN_WRAP_RECEIPT = "s3rch-wrap-receipt-v1";
 
 export function sha256Hex(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");
@@ -258,6 +259,34 @@ export function inboxStampBytes(entryId: string): Uint8Array {
 
 export function inboxStampSha256(entryId: string): string {
   return sha256Hex(inboxStampBytes(entryId));
+}
+
+/** Length-prefixed wrap receipt. A concatenated string is not this encoding. */
+export function wrapReceiptBytes(
+  object: string,
+  accessor: string,
+  toVersion: number,
+  revisionId: string,
+  entryId: string,
+): Uint8Array {
+  return lengthPrefixed([
+    DOMAIN_WRAP_RECEIPT,
+    object,
+    accessor,
+    canonicalDecimal(toVersion),
+    revisionId,
+    entryId,
+  ]);
+}
+
+export function wrapReceiptSha256(
+  object: string,
+  accessor: string,
+  toVersion: number,
+  revisionId: string,
+  entryId: string,
+): string {
+  return sha256Hex(wrapReceiptBytes(object, accessor, toVersion, revisionId, entryId));
 }
 
 /** Leading zero bits of a lowercase hex SHA-256 digest. */

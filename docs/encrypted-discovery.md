@@ -1,6 +1,6 @@
 # Encrypted discovery (spec)
 
-Status: spec. `crates/sociacl-encdisc` implements the account SEA key, device enrollment, the wrapped-key edge, the length-prefixed SHA-256 ids, blinded grant rows, commitment opening, author fast unwrap, `checkPresentedGrant` (verifier nonce, audience, and the branded presenter channel), and inbox admission (one `RecipientInbox` per reader, `filterInboxAppend`, and the daily-shard rescan). `epochStepCurrent`, `settledKeyOpen`, epoch admission, and `rotateOnRevoke` run in that crate. The crate does not run migration or a shard-close watermark. `crates/sociacl-gun` evaluates plaintext `MeshSeeGrant` rows and direct `same-group` / `named-circle` edges (`checkGroupSee`). It does not evaluate a wrap. Nothing on this page changes that Check or the plaintext dest-ACL path. This page adds no verb.
+Status: spec. `crates/sociacl-encdisc` implements the account SEA key, device enrollment, the wrapped-key edge, the length-prefixed SHA-256 ids, blinded grant rows, commitment opening, author fast unwrap, `checkPresentedGrant` (verifier nonce, audience, and the branded presenter channel), and inbox admission (one `RecipientInbox` per reader, `filterInboxAppend`, and the daily-shard rescan). `epochStepCurrent`, `settledKeyOpen`, epoch admission, `rotateOnRevoke`, and in-place migration run in that crate. A shard-close watermark is not implemented. `crates/sociacl-gun` evaluates plaintext `MeshSeeGrant` rows and direct `same-group` / `named-circle` edges (`checkGroupSee`). It does not evaluate a wrap. Nothing on this page changes that Check or the plaintext dest-ACL path. This page adds no verb.
 
 s3r.ch product draft: [FyberLabs/s3r.ch#108](https://github.com/FyberLabs/s3r.ch/pull/108) (`docs/encrypted-discovery.md` on that branch). This repository does not edit s3r.ch. Where the two pages differ, this page is the SociACL contract and that pull request is the product draft. The hardening on this page answers the Codex review on that pull request. It adds no verb.
 
@@ -308,23 +308,27 @@ Copy or re-type [s3rch-check.d.ts](s3rch-check.d.ts). Do not `npm install sociac
 | `EpochStatusProof` | Owner-signed epoch/status beside the zookie. Names the accessor and that accessor's `grantRevision`. Length-prefixed signature. Age bound plus the verifier's skew allowance |
 | `ProtocolMigration` / `ReaderMigration` | Owner-only. Plaintext drops per reader after that reader's authenticated wrap receipt. The version gate alone does not drop it |
 | `ContentIndexTier` | `public`, `private-group`, or `local`. SociACL does not store it |
-| `EncryptedDiscoveryVector` | Conformance names below. `sociacl-encdisc` runs the canonical ids, the reader-wrap vector, blinded rows, commitment opening, author fast unwrap, presenter binding through `checkPresentedGrant`, inbox admission, epoch admission, and `rotateOnRevoke`. It does not run migration or a shard-close watermark |
+| `EncryptedDiscoveryVector` | Conformance names below. `sociacl-encdisc` runs the canonical ids, the reader-wrap vector, blinded rows, commitment opening, author fast unwrap, presenter binding through `checkPresentedGrant`, inbox admission, epoch admission, `rotateOnRevoke`, and in-place migration. A shard-close watermark is not implemented |
 
 `GunFeedNode` and `GunUserNode` are unchanged. Predicate and membership are ACL rows, not feed fields. The user node may carry the account SEA `pub` and `epub`. It does not carry `priv`, `epriv`, or a copy of a grant row's owner field.
 
 ## Migration
 
-Applying a new protocol version encrypts existing shared items in place. It does not leave those items on the plaintext path and encrypt only later writes. Only the owner re-encrypts a shared item and issues the new wraps. A reader does not choose a replacement DEK, does not re-encrypt the shared soul, and does not issue wraps for other readers. The reference crate does not run the migration.
+Applying a new protocol version encrypts existing shared items in place. It does not leave those items on the plaintext path and encrypt only later writes. Only the owner re-encrypts a shared item and issues the new wraps. A reader does not choose a replacement DEK, does not re-encrypt the shared soul, and does not issue wraps for other readers. The reference crate runs this migration. Opening a wrap or the migrated item is not a grant.
 
 For each existing item that moves onto the version:
 
 1. The object id and item soul stay. The owner generates a DEK and the ciphertext for the existing body. `version` on that ciphertext is `toVersion`. The plaintext body stays in place through this step.
 2. The owner keeps that DEK for [author fast unwrap](#author-fast-unwrap).
 3. The owner writes each current reader a `WrappedKey` and a `BlindedGrantRow` in that reader's one lane. The commitment hides the owner and covers the item ciphertext digest, as in [Hidden authorship](#hidden-authorship) and [Item content authenticity](#item-content-authenticity).
-4. Each reader keeps the plaintext copy, and may keep reading it, until that reader has sent an authenticated receipt for their wrap. A reader version at or above `versionGate` does not by itself remove that copy. One reader's ack does not remove plaintext for anyone else.
+4. Each reader keeps the plaintext copy, and may keep reading it, until that reader has sent an authenticated receipt for their wrap. The receipt is a SEA signature over the length-prefixed fields `s3rch-wrap-receipt-v1`, object, accessor, decimal `toVersion`, `revisionId`, and `entryId`. A caller boolean is not that receipt. A concatenated string with no lengths does not verify. A reader version at or above `versionGate` does not by itself remove that copy. One reader's ack does not remove plaintext for anyone else.
 5. The owner removes plaintext for a reader only after that reader's wrap receipt. While any current reader has not acknowledged, the plaintext soul stays. Readers who have already acknowledged read the published ciphertext with their wrap. The soul is not replaced out from under a reader who is still waiting.
 6. When every current reader has acknowledged the wrap, the ciphertext replaces the body, merge state bumps so the ciphertext wins, and the old plaintext `MeshSeeGrant` is cancelled (`stated: 0` and a `hamState` bump). Check after that merge denies the clear row for a current verifier. The private row is the live grant for readers who can open it.
 7. `ProtocolMigration` records `fromVersion`, `toVersion`, the object, the wraps the owner issued, `readers`, and `versionGate`. There is no single flag. Readers do not issue wraps and do not clear another reader's row.
+
+A current reader is a live grant whose window has not ended. That includes a grant whose `from` is still ahead of `now`. An expired grant is not current. Each merged edge's soul is `grantSoul(owner, object, accessor)`. A different soul is rejected, and the cancellation is written back to that same soul.
+
+The ciphertext's epoch and `revisionId` are the replica's current read key, and that key is open for a new write. A displaced revision, or a successor that can still replace the key, is rejected. Before receipts are applied, the owner compares the soul's current `hamState` and body to the prepared snapshot. A mismatch aborts. The owner prepares again from the current item. The row's wrap is the recorded `WrappedKey`, including the authenticated blob. Opening the item verifies the owner signature over the item-auth tuple. Holding the DEK does not make a different body authentic.
 
 Items the owner keeps on the public plaintext path are not rewritten. Whether that path stays is open. See [Open choices](#open-choices).
 
@@ -332,7 +336,7 @@ Items the owner keeps on the public plaintext path are not rewritten. Whether th
 
 ## Conformance vectors
 
-The names are `EncryptedDiscoveryVector` in [s3rch-check.d.ts](s3rch-check.d.ts). `crates/sociacl-encdisc` and the TypeScript contract both load `vectors/encrypted-discovery/canonical.json` for `inboxEntryId`, `epochRevisionId`, the item-auth bytes, and the account-binding bytes. They both load `vectors/encrypted-discovery/presentation.json` for the grant commitment, the grant payload digest, the presenter-binding bytes, the epoch-status bytes, and author fast unwrap. They both load `vectors/encrypted-discovery/inbox.json` for the whole-entry id, the writer-append bytes, the proof-of-work bytes, the stamp bytes, and the daily-shard dedup. The reader wrap in `vectors/encrypted-discovery/wrap.json` is checked by the Rust crate. The TypeScript contract also checks the presenter-channel brand and the writer-channel brand. The Rust crate runs `filterInboxAppend`, epoch admission, and `rotateOnRevoke`. It does not run migration or a shard-close watermark. In every vector, a wrap, a hop, a hint, an introduction, a binding, an append, or a stamp never mints.
+The names are `EncryptedDiscoveryVector` in [s3rch-check.d.ts](s3rch-check.d.ts). `crates/sociacl-encdisc` and the TypeScript contract both load `vectors/encrypted-discovery/canonical.json` for `inboxEntryId`, `epochRevisionId`, the item-auth bytes, and the account-binding bytes. They both load `vectors/encrypted-discovery/presentation.json` for the grant commitment, the grant payload digest, the presenter-binding bytes, the epoch-status bytes, and author fast unwrap. They both load `vectors/encrypted-discovery/inbox.json` for the whole-entry id, the writer-append bytes, the proof-of-work bytes, the stamp bytes, and the daily-shard dedup. They both load `vectors/encrypted-discovery/forbidden-names.json` for the closed name list. The reader wrap in `vectors/encrypted-discovery/wrap.json` is checked by the Rust crate. The TypeScript contract also checks the presenter-channel brand and the writer-channel brand. The Rust crate runs `filterInboxAppend`, epoch admission, `rotateOnRevoke`, and in-place migration. Both load `vectors/encrypted-discovery/migration.json` for the structural migration cases. A shard-close watermark is not in this slice. In every vector, a wrap, a hop, a hint, an introduction, a binding, an append, or a stamp never mints.
 
 ### Content authenticity
 
@@ -441,6 +445,22 @@ The names are `EncryptedDiscoveryVector` in [s3rch-check.d.ts](s3rch-check.d.ts)
 `presented-group-cancel`. The opened payload has `stated: 0`, or `now` is outside `[from, until)`. `PresentedGroup` is set and `checkGroupSee` would allow because the membership edge is still stated 1. `checkPresentedGrant` returns `allowed: false`. The revision record may store that cancel. A live membership edge does not override the payload.
 
 `migration-wrap-receipt`. A reader's version is at `versionGate` and that reader has not acknowledged the wrap. Plaintext for that reader stays.
+
+`migration-per-reader`. One reader has a verified wrap receipt. Plaintext for that reader drops. Another current reader has no receipt. Their plaintext stays. The shared soul stays plaintext. The object id stays.
+
+`migration-soul-replaces`. Every current reader has a verified receipt. The ciphertext replaces the body, the soul's merge state bumps, and each plaintext MeshSeeGrant is cancelled (stated 0 and a hamState bump). A reader below versionGate who has acknowledged is included. The gate is not the condition. The private row is the live grant. An opened wrap still does not grant.
+
+`migration-no-widen`. A wrap, a reader, or a payload names an accessor the live plaintext grant does not name, or the payload window starts earlier or ends later than that grant. The migration is rejected. A cancelled grant is not revived.
+
+`migration-privilege-down`. A reader already has stated 0 and a bumped hamState. That reader is not wrapped and does not have to acknowledge before other readers migrate. The cancel is not held for a receipt.
+
+`migration-public-skipped`. The owner keeps the item on the public plaintext path. No ciphertext replaces the body and no wrap is issued. Whether that path stays is open.
+
+`migration-reader-cannot-issue`. The caller is not the owner. The call is rejected. A reader does not re-encrypt the shared soul and does not issue wraps.
+
+`migration-receipt-canonical`. The receipt is a signature over the length-prefixed fields s3rch-wrap-receipt-v1, object, accessor, decimal toVersion, revisionId, and entryId. A different framing of the same values does not verify.
+
+`migration-historical-replica`. After the soul is replaced, a peer that already stored the plaintext body still has that copy. The replacement does not claw it back.
 
 `epoch-late-manifest`. A replica's winner is one finalization. A later finalization with a smaller `finalizationId` arrives. The replica adopts it and keeps the last settled key. The step switches only after the new winner's signed `settleWindowMs` has passed.
 

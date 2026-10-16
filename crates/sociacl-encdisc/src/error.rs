@@ -61,6 +61,8 @@ pub enum EncDiscError {
     EpochRejected,
     #[error("rotation rejected")]
     RotationRejected,
+    #[error("migration rejected")]
+    MigrationRejected,
     #[error("channel rejected")]
     ChannelRejected,
     #[error("digest rejected")]
