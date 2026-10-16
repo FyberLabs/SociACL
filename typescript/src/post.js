@@ -51,6 +51,46 @@ function aclPrincipalKey(id) {
   return aclKey(text);
 }
 
+const HELD_CLAIM_PREFIXES = ["ens:", "unstoppable:", "fc:", "lens:", "rss3:"];
+
+/** @param {string} id */
+function isItemShaped(id) {
+  const parts = String(id).trim().split("/");
+  return parts.length === 3 && parts[0] === "s3rch" && parts[1] === "items" && parts[2] !== "";
+}
+
+/** @param {string} id */
+function mayAliasToItemSoul(id) {
+  const text = String(id).trim();
+  if (isItemShaped(text)) return true;
+  if (!text.includes("/") && HELD_CLAIM_PREFIXES.some((prefix) => text.startsWith(prefix))) return false;
+  return true;
+}
+
+/** @param {string} id */
+function itemSoulOf(id) {
+  return `s3rch/items/${encodeKey(String(id).trim())}`;
+}
+
+/**
+ * A raw id and `s3rch/items/<encodeKey(id)>` name one object when
+ * one side is an item soul. A held claim id without `/` does not.
+ * @param {string} left
+ * @param {string} right
+ */
+function itemSoulAlias(left, right) {
+  const a = String(left).trim();
+  const b = String(right).trim();
+  if (!isItemShaped(a) && !isItemShaped(b)) return false;
+  if (!mayAliasToItemSoul(a) || !mayAliasToItemSoul(b)) return false;
+  return itemSoulOf(a) === b || itemSoulOf(b) === a;
+}
+
+/** @param {string} stored @param {string} query */
+function objectNames(stored, query) {
+  return aclKey(stored) === aclKey(query) || itemSoulAlias(stored, query);
+}
+
 /**
  * @param {string} owner
  * @param {string} object
@@ -89,6 +129,21 @@ export function postRowEncodable(edge) {
     canonicalInteger(grant.from) &&
     canonicalInteger(grant.until)
   );
+}
+
+/**
+ * Next hamState that still fits in a canonical integer.
+ * A cancellation at the maximum keeps that value so stated 0 wins.
+ * @param {number | undefined} prev
+ * @param {boolean} forCancel
+ * @returns {number | undefined}
+ */
+export function nextPostHam(prev, forCancel) {
+  const base = canonicalInteger(prev) ? prev : 0;
+  const bumped = base + 1;
+  if (canonicalInteger(bumped)) return bumped;
+  if (forCancel && base > 0) return base;
+  return undefined;
 }
 
 /**
@@ -240,7 +295,7 @@ function seeDecision(graph, object, accessor, now) {
   if (!edge) return { allowed: false, reason: "missing" };
   const grant = edge.grant;
   const names =
-    aclKey(grant.object) === aclKey(object) &&
+    objectNames(grant.object, object) &&
     aclPrincipalKey(grant.accessor) === aclPrincipalKey(accessor) &&
     aclPrincipalKey(edge.owner) === aclPrincipalKey(owner);
   if (!names) return { allowed: false, reason: "missing" };
@@ -272,7 +327,7 @@ export function checkPost(graph, object, accessor, now, hint, hop) {
   if (!edge || !owner) return { allowed: false, reason: "missing", ...echoed };
   const grant = edge.grant;
   const names =
-    aclKey(grant.object) === aclKey(object) &&
+    objectNames(grant.object, object) &&
     aclPrincipalKey(grant.accessor) === aclPrincipalKey(accessor) &&
     aclPrincipalKey(edge.owner) === aclPrincipalKey(owner);
   if (!names) return { allowed: false, reason: "missing", ...echoed };

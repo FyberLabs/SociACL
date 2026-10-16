@@ -500,6 +500,51 @@ fn a_raw_id_and_its_item_soul_share_one_post_row() {
     assert!(graph.post_edge(soul, "s3rch/users/0xbob").is_some());
 }
 
+#[test]
+fn a_cancel_at_the_ham_ceiling_stays_representable() {
+    let mut graph = MeshSeeGraph::new();
+    graph.put_object("room:alpha", "0xalice");
+    graph
+        .state_see_grant("0xalice", MeshSeeGrant::live("room:alpha", "0xbob", 0, 80))
+        .unwrap();
+    let max = (1_u64 << 53) - 1;
+    graph.merge_post_edge(GunPostEdge::new(
+        "0xalice",
+        MeshPostGrant::live("room:alpha", "0xbob", 0, 80),
+        max,
+    ));
+    graph
+        .unstate_post_grant("0xalice", "0xbob", "room:alpha")
+        .unwrap();
+    let edge = graph.post_edge("room:alpha", "0xbob").unwrap();
+    assert_eq!(edge.ham_state, max);
+    assert_ne!(edge.grant.stated, 1);
+    let got = graph.check_post("room:alpha", "0xbob", Timestamp(10), None, None);
+    assert!(!got.allowed, "{}", got.reason);
+    assert_eq!(got.reason, MESH_REASON_CANCELLED);
+    graph.merge_post_edge(GunPostEdge::new(
+        "0xalice",
+        MeshPostGrant::live("room:alpha", "0xbob", 0, 80),
+        max,
+    ));
+    let again = graph.check_post("room:alpha", "0xbob", Timestamp(10), None, None);
+    assert_eq!(again.reason, MESH_REASON_CANCELLED);
+    assert_eq!(
+        graph.post_edge("room:alpha", "0xbob").unwrap().ham_state,
+        max
+    );
+    let err = graph
+        .state_post_grant("0xalice", MeshPostGrant::live("room:alpha", "0xbob", 0, 80))
+        .unwrap_err();
+    assert!(matches!(err, GunError::PostGrantField));
+    assert_eq!(
+        graph
+            .check_post("room:alpha", "0xbob", Timestamp(10), None, None)
+            .reason,
+        MESH_REASON_CANCELLED
+    );
+}
+
 fn hex(bytes: &[u8]) -> String {
     const HEX: &[u8; 16] = b"0123456789abcdef";
     let mut out = String::with_capacity(bytes.len() * 2);

@@ -14,7 +14,7 @@ export {
   postSoul,
 } from "./post.js";
 
-import { postGrantKey, postSoul } from "./post.js";
+import { nextPostHam, postGrantKey, postRowEncodable, postSoul } from "./post.js";
 
 /** @param {string | null | undefined} left @param {string | null | undefined} right */
 function samePrincipal(left, right) {
@@ -240,12 +240,15 @@ export class MemorySeeAcl {
 
   statePostGrant(owner, grant) {
     const object = grant.claimId ?? grant.object;
+    if (!samePrincipal(this.ownerOf(object), owner)) return;
     const key = postGrantKey(owner, object, grant.accessor);
     const prev = this.posts.get(key);
-    this.posts.set(key, {
+    const hamState = nextPostHam(prev?.hamState, false);
+    if (hamState === undefined) return;
+    const edge = {
       soul: postSoul(owner, object, grant.accessor),
       owner,
-      hamState: (prev?.hamState ?? 0) + 1,
+      hamState,
       grant: {
         object,
         accessor: grant.accessor,
@@ -253,16 +256,21 @@ export class MemorySeeAcl {
         until: grant.until,
         stated: 1,
       },
-    });
+    };
+    if (!postRowEncodable(edge)) return;
+    this.posts.set(key, edge);
   }
 
   unstatePostGrant(owner, accessor, object) {
+    if (!samePrincipal(this.ownerOf(object), owner)) return;
     const key = postGrantKey(owner, object, accessor);
     const prev = this.posts.get(key);
-    this.posts.set(key, {
+    const hamState = nextPostHam(prev?.hamState, true);
+    if (hamState === undefined) return;
+    const edge = {
       soul: postSoul(owner, object, accessor),
       owner,
-      hamState: (prev?.hamState ?? 0) + 1,
+      hamState,
       grant: {
         object: prev?.grant.object ?? object,
         accessor: prev?.grant.accessor ?? accessor,
@@ -270,6 +278,8 @@ export class MemorySeeAcl {
         until: prev?.grant.until ?? 0,
         stated: 0,
       },
-    });
+    };
+    if (!postRowEncodable(edge)) return;
+    this.posts.set(key, edge);
   }
 }

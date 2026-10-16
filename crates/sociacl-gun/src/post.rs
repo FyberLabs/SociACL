@@ -352,12 +352,17 @@ impl MeshSeeGraph {
             });
         grant.object = stored_id;
         grant.stated = 0;
-        let ham_state = existing
-            .map(|edge| edge.ham_state.saturating_add(1))
-            .unwrap_or(1);
-        if ham_state > JS_SAFE_INTEGER_MAX {
-            return Err(GunError::PostGrantField);
-        }
+        let ham_state = match existing.as_ref().map(|edge| edge.ham_state) {
+            Some(ham) => {
+                let next = ham.saturating_add(1);
+                if next > JS_SAFE_INTEGER_MAX {
+                    ham
+                } else {
+                    next
+                }
+            }
+            None => 1,
+        };
         self.merge_post_edge(GunPostEdge::new(owner, grant, ham_state));
         Ok(())
     }

@@ -230,8 +230,11 @@ export type SeeAcl = SeeGraph & {
     accessor: AccessorId,
     object: CheckObjectId,
   ): void;
-  /** Owner-only live post row. Does not write a see grant. */
-  statePostGrant(owner: AccessorId, grant: MeshPostGrant): void;
+  /**
+   * Owner-only live post row. Does not write a see grant.
+   * `stated` is forced to 1. Omit it.
+   */
+  statePostGrant(owner: AccessorId, grant: PostGrantInput): void;
   /**
    * Owner-only privilege-down. Sets stated to 0 and bumps hamState.
    * The next checkPost after that merge denies. Do not cache an allow.
@@ -339,6 +342,21 @@ export function admitFeedNode(
   hint?: HandoffHint,
 ): { object: CheckObjectId } | { denied: true };
 
+/** Owner-only live post row. Does not write a see grant. */
+export function applyPostGrant(
+  acl: SeeAcl,
+  owner: AccessorId,
+  grant: PostGrantInput,
+): void;
+
+/** Owner-only privilege-down. The next checkPost denies. */
+export function cancelPost(
+  acl: SeeAcl,
+  owner: AccessorId,
+  accessor: AccessorId,
+  object: CheckObjectId,
+): void;
+
 /** Jointly stated. hopcap 1. */
 export function applySeeGrant(
   acl: SeeAcl,
@@ -441,6 +459,18 @@ export type MeshPostGrant = {
   from: number;
   until: number;
   stated: 0 | 1;
+};
+
+/**
+ * Live-row writer input. `stated` is optional because the writer
+ * forces 1. A stored MeshPostGrant still carries the bit.
+ */
+export type PostGrantInput = {
+  object: CheckObjectId;
+  accessor: AccessorId;
+  from: number;
+  until: number;
+  stated?: 0 | 1;
 };
 
 /**

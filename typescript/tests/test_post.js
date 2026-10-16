@@ -270,6 +270,91 @@ test("applyPostGrant accepts the wallet when ownerOf stores the user soul", () =
   assert.equal(gunCheckPost(acl, object, "0xbob", 10).reason, "cancelled");
 });
 
+test("group post write resolves the item soul onto the stored object", () => {
+  const graph = new MemoryGroupGraph();
+  const raw = "room:alpha";
+  const soul = "s3rch/items/room:alpha";
+  graph.putObject(raw, "0xalice");
+  graph.stateSeeGrant("0xalice", { object: raw, accessor: "0xbob", from: 0, until: 80 });
+  graph.statePostGrant("0xalice", { object: soul, accessor: "0xbob", from: 0, until: 80 });
+  assert.equal(graph.postGrant(raw, "0xbob").grant.object, raw);
+  assert.equal(graph.postGrant(raw, "0xbob").hamState, 1);
+  graph.statePostGrant("0xalice", { object: soul, accessor: "s3rch/users/0xbob", from: 0, until: 80 });
+  assert.equal(graph.postGrant(soul, "0xbob").hamState, 2);
+  assert.equal(graph.posts.size, 1);
+  graph.unstatePostGrant("0xalice", "0xbob", soul);
+  assert.equal(graph.postGrant(soul, "s3rch/users/0xbob").grant.stated, 0);
+  assert.equal(checkPost(graph, raw, "0xbob", 10).reason, "cancelled");
+  assert.equal(checkPost(graph, soul, "s3rch/users/0xbob", 10).reason, "cancelled");
+});
+
+test("a held claim id does not alias to an item soul", () => {
+  const graph = new MemoryGroupGraph();
+  graph.putObject("ens:alice.eth", "0xalice");
+  graph.statePostGrant("0xalice", {
+    object: "s3rch/items/ens:alice_eth",
+    accessor: "0xbob",
+    from: 0,
+    until: 80,
+  });
+  assert.equal(graph.ownerOf("s3rch/items/ens:alice_eth"), undefined);
+  assert.equal(graph.postGrant("ens:alice.eth", "0xbob"), undefined);
+  assert.equal(graph.posts.size, 0);
+});
+
+test("a local post row with a fractional window is not stored", () => {
+  const graph = new MemoryGroupGraph();
+  graph.putObject("room:alpha", "0xalice");
+  graph.stateSeeGrant("0xalice", { object: "room:alpha", accessor: "0xbob", from: 0, until: 80 });
+  graph.statePostGrant("0xalice", { object: "room:alpha", accessor: "0xbob", from: 1.5, until: 80 });
+  assert.equal(graph.postGrant("room:alpha", "0xbob"), undefined);
+  assert.equal(checkPost(graph, "room:alpha", "0xbob", 10).reason, "missing");
+});
+
+test("a cancel at the ham ceiling keeps that ham and stated 0", () => {
+  const graph = new MemoryGroupGraph();
+  const max = Number.MAX_SAFE_INTEGER;
+  graph.putObject("room:alpha", "0xalice");
+  graph.stateSeeGrant("0xalice", { object: "room:alpha", accessor: "0xbob", from: 0, until: 80 });
+  graph.statePostGrant("0xalice", { object: "room:alpha", accessor: "0xbob", from: 0, until: 80 });
+  const live = graph.postGrant("room:alpha", "0xbob");
+  live.hamState = max;
+  graph.unstatePostGrant("0xalice", "0xbob", "room:alpha");
+  const cancelled = graph.postGrant("room:alpha", "0xbob");
+  assert.equal(cancelled.hamState, max);
+  assert.equal(cancelled.grant.stated, 0);
+  assert.equal(checkPost(graph, "room:alpha", "0xbob", 10).reason, "cancelled");
+  graph.mergePost({
+    ...cancelled,
+    grant: { ...cancelled.grant, stated: 1 },
+  });
+  assert.equal(graph.postGrant("room:alpha", "0xbob").grant.stated, 0);
+  assert.equal(graph.postGrant("room:alpha", "0xbob").hamState, max);
+  graph.statePostGrant("0xalice", { object: "room:alpha", accessor: "0xbob", from: 0, until: 80 });
+  assert.equal(graph.postGrant("room:alpha", "0xbob").grant.stated, 0);
+});
+
+test("light acl post write is owner-only and drops a noncanonical window", () => {
+  const acl = new MemorySeeAcl();
+  const object = "room:alpha";
+  acl.statePostGrant("0xbob", { object, accessor: "0xbob", from: 0, until: 80 });
+  assert.equal(acl.posts.size, 0);
+  acl.putObject(object, "0xbob");
+  assert.equal(acl.postGrant(object, "0xbob"), undefined);
+  acl.statePostGrant("0xbob", { object, accessor: "0xcarol", from: 0, until: 80 });
+  assert.equal(acl.postGrant(object, "0xcarol").grant.stated, 1);
+  acl.statePostGrant("0xbob", { object, accessor: "0xcarol", from: 1.5, until: 80 });
+  assert.equal(acl.postGrant(object, "0xcarol").grant.from, 0);
+  acl.unstatePostGrant("0xalice", "0xcarol", object);
+  assert.equal(acl.postGrant(object, "0xcarol").grant.stated, 1);
+  const max = Number.MAX_SAFE_INTEGER;
+  acl.postGrant(object, "0xcarol").hamState = max;
+  acl.unstatePostGrant("0xbob", "0xcarol", object);
+  assert.equal(acl.postGrant(object, "0xcarol").hamState, max);
+  assert.equal(acl.postGrant(object, "0xcarol").grant.stated, 0);
+  assert.equal(gunCheckPost(acl, object, "0xcarol", 10).reason, "missing");
+});
+
 test("light acl cancel finds the row when the accessor is a user soul", () => {
   const acl = new MemorySeeAcl();
   const object = "room:alpha";
