@@ -4,10 +4,10 @@ Measured **2026-10-16** by `scripts/coverage.sh`.
 
 | Surface | Result | Line coverage | Tool |
 | --- | --- | ---: | --- |
-| Rust workspace | 254 tests + 6 examples | 86.24% | cargo-llvm-cov |
+| Rust workspace | 297 tests + 6 examples | 87.28% | cargo-llvm-cov |
 | C FFI | 12 unit + 6 examples | 84.56% (`sociacl-c`) | same llvm-cov |
 | Python | 28 tests | 86.6% | coverage.py or stdlib trace |
-| TypeScript | 22 tests | 87.3% | node --experimental-test-coverage |
+| TypeScript | 57 tests | 92.8% | node --experimental-test-coverage |
 
 C examples are smoke tests against `libsociacl`. Their line hits land in the Rust FFI crate.
 
@@ -16,7 +16,7 @@ C examples are smoke tests against `libsociacl`. Their line hits land in the Rus
 | File | Lines | Cover |
 | --- | ---: | ---: |
 | `sociacl-c/src/lib.rs` | 3090 | 84.56% |
-| `sociacl-core/src/attestation.rs` | 215 | 78.14% |
+| `sociacl-core/src/attestation.rs` | 222 | 79.28% |
 | `sociacl-core/src/bundle.rs` | 296 | 90.20% |
 | `sociacl-core/src/cache.rs` | 49 | 91.84% |
 | `sociacl-core/src/channel.rs` | 219 | 75.80% |
@@ -37,14 +37,15 @@ C examples are smoke tests against `libsociacl`. Their line hits land in the Rus
 | `sociacl-gun/src/adapter.rs` | 218 | 94.50% |
 | `sociacl-gun/src/error.rs` | 6 | 0.00% |
 | `sociacl-gun/src/feed.rs` | 179 | 67.04% |
+| `sociacl-gun/src/group.rs` | 1344 | 95.31% |
 | `sociacl-gun/src/hint.rs` | 157 | 86.62% |
 | `sociacl-gun/src/hop.rs` | 25 | 84.00% |
 | `sociacl-gun/src/leaf.rs` | 77 | 88.31% |
-| `sociacl-gun/src/mesh.rs` | 357 | 94.68% |
+| `sociacl-gun/src/mesh.rs` | 499 | 91.98% |
 | `sociacl-gun/src/soul.rs` | 147 | 95.92% |
 | `social-light/src/lib.rs` | 270 | 86.67% |
 | `social-light/src/localhost.rs` | 40 | 80.00% |
-| **TOTAL** | 10269 | **86.24%** |
+| **TOTAL** | 11762 | **87.28%** |
 
 ## How to refresh
 

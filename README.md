@@ -30,10 +30,10 @@ Measured **2026-10-16** by `scripts/coverage.sh`. CI publishes the same table on
 
 | Surface | Result | Line coverage |
 | --- | --- | ---: |
-| Rust workspace | 254 tests + 6 examples | 86.24% |
+| Rust workspace | 297 tests + 6 examples | 87.28% |
 | C FFI (`sociacl-c`) | 12 unit + 6 examples | 84.56% |
 | Python `python/sociacl` | 28 tests | 86.6% |
-| TypeScript `typescript/src` and `typescript/contract` | 22 tests | 87.3% |
+| TypeScript `typescript/src` and `typescript/contract` | 57 tests | 92.8% |
 
 C example hits land in `libsociacl`, not in the `.c` files. Full crate table: [docs/coverage.md](docs/coverage.md).
 <!-- coverage:end -->
