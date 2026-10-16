@@ -14,12 +14,29 @@ export {
   postSoul,
 } from "./post.js";
 
-import { nextPostHam, postGrantKey, postRowEncodable, postSoul } from "./post.js";
+import { canonicalAccessorId, nextPostHam, postGrantKey, postRowEncodable, postSoul, sameObjectId } from "./post.js";
 
 /** @param {string | null | undefined} left @param {string | null | undefined} right */
 function samePrincipal(left, right) {
   if (left == null || right == null) return false;
-  return postGrantKey(left, "owner", "owner") === postGrantKey(right, "owner", "owner");
+  return canonicalAccessorId(left) === canonicalAccessorId(right);
+}
+
+/** @param {Map<string, string>} objects @param {string} object */
+function canonicalStoredObject(objects, object) {
+  const text = String(object ?? "").trim();
+  if (objects.has(text)) return text;
+  for (const id of objects.keys()) {
+    if (sameObjectId(id, text)) return id;
+  }
+  return text;
+}
+
+/** @param {{ claimId?: string, object?: string }} grant @param {string} object */
+function grantNamesObject(grant, object) {
+  const id = String(grant.claimId ?? grant.object ?? "").trim();
+  if (!id) return false;
+  return sameObjectId(id, object);
 }
 
 export function encodeKey(id) {
@@ -130,10 +147,15 @@ export function checkSee(graph, object, accessor, now, hint, hop) {
   if (!graph.hasObject(object)) return deny("unknown");
   if (samePrincipal(graph.ownerOf(object), accessor)) return allow("owner");
   const grants = liveGrants(graph, object, now);
-  if (grants.some((g) => samePrincipal(g.accessor, accessor) && g.claimId === object || g.object === object || g.claimId == null)) {
+  const ownerNow = graph.ownerOf(object);
+  if (
+    grants.some((g) => {
+      const ownerOk = g.owner == null || samePrincipal(g.owner, ownerNow);
+      return ownerOk && samePrincipal(g.accessor, accessor) && grantNamesObject(g, object);
+    })
+  ) {
     return allow("delegate");
   }
-  if (grants.some((g) => samePrincipal(g.accessor, accessor))) return allow("delegate");
   return deny("delegate");
 }
 
@@ -141,8 +163,9 @@ export function checkSeeGrant(graph, grant, object, accessor, now, hint, hop) {
   if (now < grant.from || now >= grant.until) return deny("delegate");
   const dest = checkSee(graph, object, accessor, now, hint, hop);
   if (!dest.allowed) return dest;
-  if (grant.accessor !== accessor) return deny("delegate");
-  if (grant.claimId && grant.claimId !== object) return deny("delegate");
+  if (!samePrincipal(grant.accessor, accessor)) return deny("delegate");
+  const named = grant.claimId ?? grant.object;
+  if (named && !sameObjectId(named, object)) return deny("delegate");
   return dest;
 }
 
@@ -182,49 +205,97 @@ export class MemorySeeAcl {
   }
 
   hasObject(object) {
-    return this.objects.has(object);
+    const text = String(object ?? "").trim();
+    if (this.objects.has(text)) return true;
+    for (const id of this.objects.keys()) {
+      if (sameObjectId(id, text)) return true;
+    }
+    return false;
   }
 
   ownerOf(object) {
-    return this.objects.get(object);
+    return this.objects.get(canonicalStoredObject(this.objects, object));
   }
 
   seeGrants(object) {
-    return [...this.grants.values()].filter((g) => (g.claimId ?? g.object) === object && g.stated !== 0);
+    const text = String(object ?? "").trim();
+    return [...this.grants.values()].filter((g) => {
+      const id = String(g.claimId ?? g.object ?? "").trim();
+      return sameObjectId(id, text) && g.stated !== 0;
+    });
   }
 
   putObject(object, owner) {
-    this.objects.set(object, owner);
+    const id = String(object).trim();
+    const next = String(owner).trim();
+    if (this.objects.has(id)) {
+      this.objects.set(id, next);
+      return;
+    }
+    for (const stored of this.objects.keys()) {
+      if (sameObjectId(stored, id)) {
+        this.objects.set(stored, next);
+        return;
+      }
+    }
+    this.objects.set(id, next);
   }
 
   stateSeeGrant(owner, grant) {
-    const object = grant.claimId ?? grant.object;
+    const query = String(grant.claimId ?? grant.object ?? "").trim();
+    const object = canonicalStoredObject(this.objects, query);
     const key = postGrantKey(owner, object, grant.accessor);
-    this.grants.set(key, { ...grant, stated: 1, owner });
+    const stored = { ...grant, stated: 1, owner };
+    if (stored.claimId != null) stored.claimId = object;
+    if (stored.object != null || stored.claimId == null) stored.object = object;
+    this.grants.set(key, stored);
   }
 
   unstateSeeGrant(owner, accessor, object) {
-    const key = postGrantKey(owner, object, accessor);
-    const prev = this.grants.get(key);
-    if (prev) this.grants.set(key, { ...prev, stated: 0, hamState: (prev.hamState ?? 0) + 1 });
+    const id = canonicalStoredObject(this.objects, object);
+    const key = postGrantKey(owner, id, accessor);
+    let prevKey = this.grants.has(key) ? key : undefined;
+    if (!prevKey) {
+      for (const [rowKey, grant] of this.grants) {
+        const grantId = String(grant.claimId ?? grant.object ?? "");
+        if (sameObjectId(grantId, id) && samePrincipal(grant.accessor, accessor)) {
+          prevKey = rowKey;
+          break;
+        }
+      }
+    }
+    if (!prevKey) return;
+    const prev = this.grants.get(prevKey);
+    for (const [rowKey, grant] of [...this.grants]) {
+      const grantId = String(grant.claimId ?? grant.object ?? "");
+      if (sameObjectId(grantId, id) && samePrincipal(grant.accessor, accessor)) this.grants.delete(rowKey);
+    }
+    this.grants.set(key, {
+      ...prev,
+      object: id,
+      claimId: prev.claimId != null ? id : prev.claimId,
+      stated: 0,
+      hamState: (prev.hamState ?? 0) + 1,
+    });
   }
 
   seeGrant(object, accessor) {
-    const ownerNow = this.ownerOf(object);
+    const id = canonicalStoredObject(this.objects, object);
+    const ownerNow = this.ownerOf(id);
     if (!ownerNow) return undefined;
-    const grant = this.grants.get(postGrantKey(ownerNow, object, accessor));
+    const grant = this.grants.get(postGrantKey(ownerNow, id, accessor));
     const grantOwner = grant?.owner ?? "";
     if (!grant || !grantOwner) return undefined;
-    if (postGrantKey(grantOwner, object, grant.accessor) !== postGrantKey(ownerNow, object, accessor)) {
+    if (postGrantKey(grantOwner, id, grant.accessor) !== postGrantKey(ownerNow, id, accessor)) {
       return undefined;
     }
-    const id = grant.claimId ?? grant.object;
+    const grantId = grant.claimId ?? grant.object ?? id;
     return {
-      soul: grantSoul(grantOwner, id, grant.accessor),
+      soul: grantSoul(grantOwner, grantId, grant.accessor),
       owner: grantOwner,
       hamState: grant.hamState ?? 1,
       grant: {
-        object: id,
+        object: grantId,
         accessor: grant.accessor,
         from: grant.from,
         until: grant.until,
@@ -234,12 +305,14 @@ export class MemorySeeAcl {
   }
 
   postGrant(object, accessor) {
-    const owner = this.ownerOf(object) ?? "";
-    return this.posts.get(postGrantKey(owner, object, accessor));
+    const id = canonicalStoredObject(this.objects, object);
+    const owner = this.ownerOf(id) ?? "";
+    return this.posts.get(postGrantKey(owner, id, accessor));
   }
 
   statePostGrant(owner, grant) {
-    const object = grant.claimId ?? grant.object;
+    const query = String(grant.claimId ?? grant.object ?? "").trim();
+    const object = canonicalStoredObject(this.objects, query);
     if (!samePrincipal(this.ownerOf(object), owner)) return;
     const key = postGrantKey(owner, object, grant.accessor);
     const prev = this.posts.get(key);
@@ -262,17 +335,18 @@ export class MemorySeeAcl {
   }
 
   unstatePostGrant(owner, accessor, object) {
-    if (!samePrincipal(this.ownerOf(object), owner)) return;
-    const key = postGrantKey(owner, object, accessor);
+    const id = canonicalStoredObject(this.objects, object);
+    if (!samePrincipal(this.ownerOf(id), owner)) return;
+    const key = postGrantKey(owner, id, accessor);
     const prev = this.posts.get(key);
     const hamState = nextPostHam(prev?.hamState, true);
     if (hamState === undefined) return;
     const edge = {
-      soul: postSoul(owner, object, accessor),
+      soul: postSoul(owner, id, accessor),
       owner,
       hamState,
       grant: {
-        object: prev?.grant.object ?? object,
+        object: prev?.grant.object ?? id,
         accessor: prev?.grant.accessor ?? accessor,
         from: prev?.grant.from ?? 0,
         until: prev?.grant.until ?? 0,

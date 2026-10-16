@@ -50,6 +50,28 @@ struct GraphCase {
     merge: Option<Vec<MergeEdge>>,
     #[serde(default)]
     either_order: bool,
+    #[serde(default)]
+    write_object: Option<String>,
+    #[serde(default)]
+    write_accessor: Option<String>,
+    #[serde(default)]
+    check_object: Option<String>,
+    #[serde(default)]
+    check_accessor: Option<String>,
+    #[serde(default)]
+    cancel_see_object: Option<String>,
+    #[serde(default)]
+    cancel_see_accessor: Option<String>,
+    #[serde(default)]
+    reassign_object: Option<String>,
+    #[serde(default)]
+    reassign_owner: Option<String>,
+    #[serde(default)]
+    presented_object: Option<String>,
+    #[serde(default)]
+    presented_accessor: Option<String>,
+    #[serde(default)]
+    see_grant_allowed: Option<bool>,
     allowed: bool,
     reason: String,
     winner: Option<Window>,
@@ -82,30 +104,42 @@ fn signer(name: &str) -> IssuerSecret {
     IssuerSecret::from_bytes(bytes)
 }
 
-fn apply_window_see(graph: &mut MeshSeeGraph, case: &GraphCase, window: &Window) {
+fn apply_window_see(
+    graph: &mut MeshSeeGraph,
+    case: &GraphCase,
+    window: &Window,
+    object: &str,
+    accessor: &str,
+) {
     graph
         .state_see_grant(
             &case.owner,
-            MeshSeeGrant::live(&case.object, &case.accessor, window.from, window.until),
+            MeshSeeGrant::live(object, accessor, window.from, window.until),
         )
         .unwrap();
     if window.stated == 0 {
         graph
-            .unstate_see_grant(&case.owner, &case.accessor, &case.object)
+            .unstate_see_grant(&case.owner, accessor, object)
             .unwrap();
     }
 }
 
-fn apply_window_post(graph: &mut MeshSeeGraph, case: &GraphCase, window: &Window) {
+fn apply_window_post(
+    graph: &mut MeshSeeGraph,
+    case: &GraphCase,
+    window: &Window,
+    object: &str,
+    accessor: &str,
+) {
     graph
         .state_post_grant(
             &case.owner,
-            MeshPostGrant::live(&case.object, &case.accessor, window.from, window.until),
+            MeshPostGrant::live(object, accessor, window.from, window.until),
         )
         .unwrap();
     if window.stated == 0 {
         graph
-            .unstate_post_grant(&case.owner, &case.accessor, &case.object)
+            .unstate_post_grant(&case.owner, accessor, object)
             .unwrap();
     }
 }
@@ -128,33 +162,86 @@ fn apply_merge(graph: &mut MeshSeeGraph, case: &GraphCase, edges: &[MergeEdge]) 
 
 fn check_case(case: &GraphCase, merge: Option<&[MergeEdge]>) {
     let mut graph = MeshSeeGraph::new();
+    let write_object = case.write_object.as_deref().unwrap_or(&case.object);
+    let write_accessor = case.write_accessor.as_deref().unwrap_or(&case.accessor);
+    let check_object = case.check_object.as_deref().unwrap_or(&case.object);
+    let check_accessor = case.check_accessor.as_deref().unwrap_or(&case.accessor);
     graph.put_object(&case.object, &case.owner);
     if let Some(see) = &case.see {
-        apply_window_see(&mut graph, case, see);
+        apply_window_see(&mut graph, case, see, write_object, write_accessor);
     }
     if let Some(post) = &case.post {
-        apply_window_post(&mut graph, case, post);
+        apply_window_post(&mut graph, case, post, write_object, write_accessor);
+    }
+    if let Some(cancel_object) = &case.cancel_see_object {
+        let cancel_accessor = case
+            .cancel_see_accessor
+            .as_deref()
+            .unwrap_or(write_accessor);
+        graph
+            .unstate_see_grant(&case.owner, cancel_accessor, cancel_object)
+            .unwrap();
+    }
+    if let Some(reassign_object) = &case.reassign_object {
+        graph.put_object(
+            reassign_object,
+            case.reassign_owner.as_deref().unwrap_or(&case.owner),
+        );
     }
     if let Some(edges) = merge {
         apply_merge(&mut graph, case, edges);
     }
     let hint = case
         .hint
-        .then(|| HandoffHint::parse(&case.accessor, &case.object, Some("see"), None).unwrap());
+        .then(|| HandoffHint::parse(check_accessor, check_object, Some("see"), None).unwrap());
     let hop = case.hop.then(|| HopFactor::Structured {
         channel: AttestationChannel::ConventionBadge,
         attestation_bytes: None,
         share_token: None,
     });
     let got = graph.check_post(
-        &case.object,
-        &case.accessor,
+        check_object,
+        check_accessor,
         Timestamp(case.now),
         hint.as_ref(),
         hop.as_ref(),
     );
     assert_eq!(got.allowed, case.allowed, "{}", case.name);
     assert_eq!(got.reason, case.reason, "{}", case.name);
+    let see = graph.check_see(
+        check_object,
+        check_accessor,
+        Timestamp(case.now),
+        hint.as_ref(),
+        hop.as_ref(),
+    );
+    if got.allowed {
+        assert!(see.allowed, "{} check_see", case.name);
+    }
+    if let Some(presented_accessor) = &case.presented_accessor {
+        let presented_object = case.presented_object.as_deref().unwrap_or(write_object);
+        let window = case.see.as_ref().expect("presented grant needs see");
+        let grant = MeshSeeGrant::live(
+            presented_object,
+            presented_accessor,
+            window.from,
+            window.until,
+        );
+        let grant_check = graph.check_see_grant(
+            &grant,
+            check_object,
+            check_accessor,
+            Timestamp(case.now),
+            hint.as_ref(),
+            hop.as_ref(),
+        );
+        assert_eq!(
+            grant_check.allowed,
+            case.see_grant_allowed.unwrap_or(false),
+            "{} check_see_grant",
+            case.name
+        );
+    }
     assert!(!got.hint_is_grant(), "{}", case.name);
     assert!(!got.hop_is_grant(), "{}", case.name);
     assert!(!got.wrap_is_grant(), "{}", case.name);

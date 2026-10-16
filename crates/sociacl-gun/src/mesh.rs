@@ -11,7 +11,9 @@ use std::collections::{HashMap, HashSet};
 
 use sociacl_core::{NodeId, Timestamp};
 
-use crate::soul::{acl_key, acl_principal_key, GunSoul, S3RCH_ACL, S3RCH_META, S3RCH_ROOT};
+use crate::soul::{
+    acl_key, acl_principal_key, canonical_accessor_id, GunSoul, S3RCH_ACL, S3RCH_META, S3RCH_ROOT,
+};
 use crate::{GunError, HandoffHint, HopFactor, IdentitySeeGrant, UrlLeaf};
 
 /// Predicate / deny reasons on the mesh consume surface.
@@ -76,7 +78,7 @@ pub(crate) fn object_names(stored: &str, query: &str) -> bool {
 }
 
 pub(crate) fn accessor_names(stored: &str, query: &str) -> bool {
-    acl_principal_key(stored) == acl_principal_key(query)
+    canonical_accessor_id(stored) == canonical_accessor_id(query)
 }
 
 impl From<&IdentitySeeGrant> for MeshSeeGrant {
@@ -261,15 +263,33 @@ impl MeshSeeGraph {
     pub fn put_object(&mut self, object: impl AsRef<str>, owner: impl AsRef<str>) {
         let id = object.as_ref().trim().to_string();
         let owner = owner.as_ref().trim().to_string();
-        let key = object_store_key(&id);
-        if self
-            .objects
-            .get(&key)
-            .is_some_and(|existing| acl_principal_key(&existing.owner) != acl_principal_key(&owner))
-        {
-            self.groups.drop_object_set(&id);
+        let direct_key = object_store_key(&id);
+        if self.objects.contains_key(&direct_key) {
+            if self.objects.get(&direct_key).is_some_and(|existing| {
+                canonical_accessor_id(&existing.owner) != canonical_accessor_id(&owner)
+            }) {
+                self.groups.drop_object_set(&id);
+            }
+            self.objects.insert(direct_key, MeshObject { id, owner });
+            return;
         }
-        self.objects.insert(key, MeshObject { id, owner });
+        if let Some(existing_id) = self.lookup_object(&id).map(|existing| existing.id.clone()) {
+            let key = object_store_key(&existing_id);
+            if self.objects.get(&key).is_some_and(|existing| {
+                canonical_accessor_id(&existing.owner) != canonical_accessor_id(&owner)
+            }) {
+                self.groups.drop_object_set(&existing_id);
+            }
+            self.objects.insert(
+                key,
+                MeshObject {
+                    id: existing_id,
+                    owner,
+                },
+            );
+            return;
+        }
+        self.objects.insert(direct_key, MeshObject { id, owner });
     }
 
     pub fn has_object(&self, object: &str) -> bool {
@@ -281,19 +301,21 @@ impl MeshSeeGraph {
     }
 
     pub fn see_grants(&self, object: &str) -> Vec<&MeshSeeGrant> {
+        let canonical = self.canonical_object_id(object);
         self.grants
             .values()
-            .filter(|e| e.grant.names_object(object) && e.grant.is_stated())
+            .filter(|e| e.grant.names_object(&canonical) && e.grant.is_stated())
             .map(|e| &e.grant)
             .collect()
     }
 
     pub fn grant_edge(&self, object: &str, accessor: &str) -> Option<&GunAclEdge> {
-        let owner = self.owner_of(object).unwrap_or("");
+        let canonical = self.canonical_object_id(object);
+        let owner = self.owner_of(&canonical).unwrap_or("");
         self.grants.values().find(|edge| {
-            edge.grant.names_object(object)
+            edge.grant.names_object(&canonical)
                 && edge.grant.names_accessor(accessor)
-                && acl_principal_key(&edge.owner) == acl_principal_key(owner)
+                && canonical_accessor_id(&edge.owner) == canonical_accessor_id(owner)
         })
     }
 
@@ -309,26 +331,26 @@ impl MeshSeeGraph {
     }
 
     /// Owner-only. Writes a live grant at the dest-ACL soul.
+    /// The stored object id is the in-graph id, so a raw id and its
+    /// item soul share one row.
     pub fn state_see_grant(
         &mut self,
         owner: impl AsRef<str>,
         grant: MeshSeeGrant,
     ) -> Result<(), GunError> {
         let owner = owner.as_ref().trim();
-        let object = self
-            .lookup_object(&grant.object)
+        let (stored_id, object_owner) = self
+            .object_record(&grant.object)
+            .map(|(id, object_owner)| (id.to_string(), object_owner.to_string()))
             .ok_or(GunError::ObjectNotInGraph)?;
-        if acl_principal_key(&object.owner) != acl_principal_key(owner) {
+        if canonical_accessor_id(&object_owner) != canonical_accessor_id(owner) {
             return Err(GunError::AclOwnerOnly);
         }
-        let key = GunSoul::s3rch_acl_grant(owner, &grant.object, &grant.accessor)
-            .as_node_id()
-            .as_str()
-            .to_string();
+        let mut grant = grant;
+        grant.object = stored_id;
         let ham_state = self
-            .grants
-            .get(&key)
-            .map(|e| e.ham_state.saturating_add(1))
+            .folded_see(&grant.object, &grant.accessor, owner)
+            .map(|edge| edge.ham_state.saturating_add(1))
             .unwrap_or(1);
         self.merge_edge(GunAclEdge::new(owner, grant, ham_state));
         Ok(())
@@ -345,34 +367,88 @@ impl MeshSeeGraph {
         let owner = owner.as_ref().trim();
         let object = object.as_ref().trim();
         let accessor = accessor.as_ref().trim();
-        let obj = self
-            .lookup_object(object)
+        let (stored_id, object_owner) = self
+            .object_record(object)
+            .map(|(id, object_owner)| (id.to_string(), object_owner.to_string()))
             .ok_or(GunError::ObjectNotInGraph)?;
-        if acl_principal_key(&obj.owner) != acl_principal_key(owner) {
+        if canonical_accessor_id(&object_owner) != canonical_accessor_id(owner) {
             return Err(GunError::AclOwnerOnly);
         }
-        let existing = self.grant_edge(object, accessor).cloned();
+        let existing = self.folded_see(&stored_id, accessor, owner);
         let mut grant = existing
             .as_ref()
             .map(|e| e.grant.clone())
             .unwrap_or_else(|| MeshSeeGrant {
-                object: object.to_string(),
+                object: stored_id.clone(),
                 accessor: accessor.to_string(),
                 from: Timestamp(0),
                 until: Timestamp(0),
                 stated: 0,
             });
+        grant.object = stored_id;
         grant.stated = 0;
-        let ham_state = existing.map(|e| e.ham_state.saturating_add(1)).unwrap_or(1);
+        let ham_state = existing
+            .map(|edge| edge.ham_state.saturating_add(1))
+            .unwrap_or(1);
         self.merge_edge(GunAclEdge::new(owner, grant, ham_state));
         Ok(())
     }
 
     /// HAM-merge an incoming dest-ACL node from another peer.
     /// The stored key is rebuilt from the grant's owner, object,
-    /// and accessor.
+    /// and accessor. When the object is already in the graph, a raw
+    /// id and its item soul land on that in-graph id.
     pub fn merge_edge(&mut self, incoming: GunAclEdge) {
-        let incoming = incoming.canonical();
+        let mut incoming = incoming.canonical();
+        if let Some(stored_id) = self
+            .object_record(&incoming.grant.object)
+            .map(|(id, _)| id.to_string())
+        {
+            if incoming.grant.object != stored_id {
+                incoming.grant.object = stored_id;
+                incoming = incoming.canonical();
+            }
+            let object = incoming.grant.object.clone();
+            let accessor = incoming.grant.accessor.clone();
+            let owner = incoming.owner.clone();
+            let keys: Vec<String> = self
+                .grants
+                .iter()
+                .filter(|(_, edge)| {
+                    edge.grant.names_object(&object)
+                        && edge.grant.names_accessor(&accessor)
+                        && canonical_accessor_id(&edge.owner) == canonical_accessor_id(&owner)
+                })
+                .map(|(key, _)| key.clone())
+                .collect();
+            let mut local: Option<GunAclEdge> = None;
+            for key in keys {
+                let Some(edge) = self.grants.remove(&key) else {
+                    continue;
+                };
+                local = Some(match local {
+                    Some(prev) => prev.ham_merge(edge),
+                    None => edge,
+                });
+            }
+            let merged = match local {
+                Some(local) => local.ham_merge(incoming),
+                None => incoming,
+            };
+            let mut merged = merged.canonical();
+            if let Some(id) = self
+                .object_record(&merged.grant.object)
+                .map(|(id, _)| id.to_string())
+            {
+                if merged.grant.object != id {
+                    merged.grant.object = id;
+                    merged = merged.canonical();
+                }
+            }
+            let key = merged.soul_key();
+            self.grants.insert(key, merged);
+            return;
+        }
         let key = incoming.soul_key();
         let merged = match self.grants.remove(&key) {
             Some(local) => local.ham_merge(incoming),
@@ -389,7 +465,10 @@ impl MeshSeeGraph {
     pub fn merge_from(&mut self, other: &Self) {
         for object in other.objects.values() {
             let key = object_store_key(&object.id);
-            self.objects.entry(key).or_insert_with(|| object.clone());
+            if self.objects.contains_key(&key) || self.lookup_object(&object.id).is_some() {
+                continue;
+            }
+            self.objects.insert(key, object.clone());
         }
         let grants: Vec<GunAclEdge> = other
             .grants
@@ -397,7 +476,7 @@ impl MeshSeeGraph {
             .filter(|edge| {
                 self.lookup_object(&edge.grant.object)
                     .is_some_and(|object| {
-                        acl_principal_key(&object.owner) == acl_principal_key(&edge.owner)
+                        canonical_accessor_id(&object.owner) == canonical_accessor_id(&edge.owner)
                     })
             })
             .cloned()
@@ -411,7 +490,7 @@ impl MeshSeeGraph {
             .filter(|edge| {
                 self.lookup_object(&edge.grant.object)
                     .is_some_and(|object| {
-                        acl_principal_key(&object.owner) == acl_principal_key(&edge.owner)
+                        canonical_accessor_id(&object.owner) == canonical_accessor_id(&edge.owner)
                     })
             })
             .cloned()
@@ -461,7 +540,7 @@ impl MeshSeeGraph {
             };
         };
 
-        if acl_principal_key(&obj.owner) == acl_principal_key(accessor) {
+        if canonical_accessor_id(&obj.owner) == canonical_accessor_id(accessor) {
             return MeshCheckResult {
                 allowed: true,
                 reason: MESH_REASON_OWNER.into(),
@@ -473,7 +552,7 @@ impl MeshSeeGraph {
         if let Some(edge) = self.grant_edge(object, accessor) {
             let names = edge.grant.names_object(object)
                 && edge.grant.names_accessor(accessor)
-                && acl_principal_key(&edge.owner) == acl_principal_key(&obj.owner);
+                && canonical_accessor_id(&edge.owner) == canonical_accessor_id(&obj.owner);
             if names && edge.grant.live_at(now) {
                 return MeshCheckResult {
                     allowed: true,
@@ -530,6 +609,29 @@ impl MeshSeeGraph {
     pub(crate) fn object_record(&self, object: &str) -> Option<(&str, &str)> {
         self.lookup_object(object)
             .map(|obj| (obj.id.as_str(), obj.owner.as_str()))
+    }
+
+    /// In-graph object id. See and post writes, cancels, and lookups
+    /// use this spelling once the object is stored.
+    pub(crate) fn canonical_object_id(&self, object: &str) -> String {
+        self.object_record(object)
+            .map(|(id, _)| id.to_string())
+            .unwrap_or_else(|| object.trim().to_string())
+    }
+
+    /// In-range see rows that name this object, accessor, and owner.
+    /// A raw id and its item soul count once.
+    fn folded_see(&self, object: &str, accessor: &str, owner: &str) -> Option<GunAclEdge> {
+        let canonical = self.canonical_object_id(object);
+        self.grants
+            .values()
+            .filter(|edge| {
+                edge.grant.names_object(&canonical)
+                    && edge.grant.names_accessor(accessor)
+                    && canonical_accessor_id(&edge.owner) == canonical_accessor_id(owner)
+            })
+            .cloned()
+            .reduce(|left, right| left.ham_merge(right))
     }
 
     fn lookup_object(&self, object: &str) -> Option<&MeshObject> {

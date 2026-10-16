@@ -190,6 +190,12 @@ pub fn acl_principal_key(id: &str) -> String {
     acl_key(id)
 }
 
+/// One accessor id. A user soul `s3rch/users/<wallet>` and the wallet
+/// are this key. See and post writes, cancels, and lookups use it.
+pub fn canonical_accessor_id(id: &str) -> String {
+    acl_principal_key(id)
+}
+
 /// What a soul names on the locked graph. A user is a wallet.
 /// A feed item or a held claim is the Check object. Not a second
 /// identity node.
