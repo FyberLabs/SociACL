@@ -243,17 +243,25 @@ fn push_str(buf: &mut Vec<u8>, value: &str) {
 
 impl MeshSeeGraph {
     pub fn post_grants(&self, object: &str) -> Vec<&MeshPostGrant> {
+        let owner = self.owner_of(object).unwrap_or("");
         self.posts
             .values()
-            .filter(|edge| edge.grant.names_object(object) && edge.grant.is_stated())
+            .filter(|edge| {
+                edge.grant.names_object(object)
+                    && edge.grant.is_stated()
+                    && acl_principal_key(&edge.owner) == acl_principal_key(owner)
+            })
             .map(|edge| &edge.grant)
             .collect()
     }
 
     pub fn post_edge(&self, object: &str, accessor: &str) -> Option<&GunPostEdge> {
-        self.posts
-            .values()
-            .find(|edge| edge.grant.names_object(object) && edge.grant.names_accessor(accessor))
+        let owner = self.owner_of(object).unwrap_or("");
+        self.posts.values().find(|edge| {
+            edge.grant.names_object(object)
+                && edge.grant.names_accessor(accessor)
+                && acl_principal_key(&edge.owner) == acl_principal_key(owner)
+        })
     }
 
     /// Owner-only. Writes a live post grant. Does not write a see grant.

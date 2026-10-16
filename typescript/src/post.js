@@ -60,12 +60,45 @@ export function postSoul(owner, object, accessor) {
   return `s3rch/acl/${aclPrincipalKey(owner)}/${POST_GRANT_SCOPE}/${aclKey(object)}/${aclPrincipalKey(accessor)}`;
 }
 
+/**
+ * @param {unknown} value
+ * @returns {value is number}
+ */
+function canonicalInteger(value) {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 && value <= JS_SAFE_INTEGER_MAX;
+}
+
 /** @param {number} value */
 function canonicalDecimal(value) {
-  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0 || value > JS_SAFE_INTEGER_MAX) {
+  if (!canonicalInteger(value)) {
     throw new Error("post grant field is not a canonical integer");
   }
   return String(value);
+}
+
+/**
+ * Peer merge drops a row that cannot be encoded. It does not throw.
+ * @param {PostEdge | null | undefined} edge
+ */
+export function postRowEncodable(edge) {
+  if (!edge?.grant) return false;
+  const grant = edge.grant;
+  return (
+    canonicalInteger(edge.hamState) &&
+    canonicalInteger(grant.stated) &&
+    canonicalInteger(grant.from) &&
+    canonicalInteger(grant.until)
+  );
+}
+
+/**
+ * Storage and lookup key. Same canonical ids as postSoul.
+ * @param {string} owner
+ * @param {string} object
+ * @param {string} accessor
+ */
+export function postGrantKey(owner, object, accessor) {
+  return `${aclPrincipalKey(owner)}\0${aclKey(object)}\0${aclPrincipalKey(accessor)}`;
 }
 
 /** @param {readonly string[]} fields */
@@ -170,6 +203,10 @@ export function canonicalPostEdge(edge) {
  * @returns {PostEdge}
  */
 export function preferPost(local, incoming) {
+  const nextOk = postRowEncodable(incoming);
+  const keptOk = postRowEncodable(local);
+  if (!nextOk) return keptOk ? canonicalPostEdge(local) : local;
+  if (!keptOk) return canonicalPostEdge(incoming);
   const kept = canonicalPostEdge(local);
   const next = canonicalPostEdge(incoming);
   if (next.hamState > kept.hamState) return next;

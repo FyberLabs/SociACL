@@ -448,6 +448,9 @@ export type MeshPostGrant = {
  * Not a five-segment see-grant soul. Peers HAM-merge by hamState
  * (higher wins). At an equal hamState a cancellation wins, then
  * the narrower window, then the smaller postGrantSigningBytes.
+ * Lookup uses the current object owner. A row whose stated, from,
+ * until, or hamState is not a canonical non-negative integer is
+ * dropped on merge.
  */
 export type GunPostEdge = {
   soul: string;

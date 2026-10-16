@@ -112,7 +112,7 @@ import {
   sign,
   verify,
 } from "node:crypto";
-import { canonicalPostEdge, preferPost } from "./post.js";
+import { canonicalPostEdge, postRowEncodable, preferPost } from "./post.js";
 
 export {
   POST_GRANT_DOMAIN,
@@ -900,10 +900,12 @@ export class MemoryGroupGraph {
   seeGrant(object, accessor) {
     const requested = aclKey(String(object).trim());
     const who = aclPrincipalKey(accessor);
+    const ownerNow = this.ownerOf(String(object).trim());
     for (const grant of this.grants.values()) {
       if (aclKey(grantObject(grant)) !== requested) continue;
       if (aclPrincipalKey(grant.accessor) !== who) continue;
       const owner = grant.owner ?? "";
+      if (!ownerNow || aclPrincipalKey(owner) !== aclPrincipalKey(ownerNow)) continue;
       return {
         soul: `s3rch/acl/${aclPrincipalKey(owner)}/${requested}/${who}`,
         owner,
@@ -927,9 +929,11 @@ export class MemoryGroupGraph {
   postGrant(object, accessor) {
     const requested = aclKey(String(object).trim());
     const who = aclPrincipalKey(accessor);
+    const ownerNow = this.ownerOf(String(object).trim());
     for (const edge of this.posts.values()) {
       if (aclKey(edge.grant.object) !== requested) continue;
       if (aclPrincipalKey(edge.grant.accessor) !== who) continue;
+      if (!ownerNow || aclPrincipalKey(edge.owner) !== aclPrincipalKey(ownerNow)) continue;
       return edge;
     }
     return undefined;
@@ -987,6 +991,7 @@ export class MemoryGroupGraph {
 
   /** @param {import("./post.js").PostEdge} incoming */
   mergePost(incoming) {
+    if (!postRowEncodable(incoming)) return;
     const object = String(incoming.grant?.object ?? "").trim();
     const retained = this.ownerOf(object);
     const grantOwner = incoming.owner ?? "";

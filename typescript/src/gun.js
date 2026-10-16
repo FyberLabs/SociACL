@@ -14,7 +14,7 @@ export {
   postSoul,
 } from "./post.js";
 
-import { postSoul } from "./post.js";
+import { postGrantKey, postSoul } from "./post.js";
 
 export function encodeKey(id) {
   return String(id).replace(/[.#$[\]]/g, "_");
@@ -224,16 +224,13 @@ export class MemorySeeAcl {
   }
 
   postGrant(object, accessor) {
-    for (const edge of this.posts.values()) {
-      if (edge.grant.object !== object || edge.grant.accessor !== accessor) continue;
-      return edge;
-    }
-    return undefined;
+    const owner = this.ownerOf(object) ?? "";
+    return this.posts.get(postGrantKey(owner, object, accessor));
   }
 
   statePostGrant(owner, grant) {
     const object = grant.claimId ?? grant.object;
-    const key = `${owner}\0${object}\0${grant.accessor}`;
+    const key = postGrantKey(owner, object, grant.accessor);
     const prev = this.posts.get(key);
     this.posts.set(key, {
       soul: postSoul(owner, object, grant.accessor),
@@ -250,7 +247,7 @@ export class MemorySeeAcl {
   }
 
   unstatePostGrant(owner, accessor, object) {
-    const key = `${owner}\0${object}\0${accessor}`;
+    const key = postGrantKey(owner, object, accessor);
     const prev = this.posts.get(key);
     this.posts.set(key, {
       soul: postSoul(owner, object, accessor),
@@ -258,7 +255,7 @@ export class MemorySeeAcl {
       hamState: (prev?.hamState ?? 0) + 1,
       grant: {
         object: prev?.grant.object ?? object,
-        accessor,
+        accessor: prev?.grant.accessor ?? accessor,
         from: prev?.grant.from ?? 0,
         until: prev?.grant.until ?? 0,
         stated: 0,

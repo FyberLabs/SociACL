@@ -13,6 +13,7 @@ import {
   POST_GRANT_DOMAIN,
   POST_GRANT_SCOPE,
 } from "../src/group.js";
+import { postRowEncodable, preferPost } from "../src/post.js";
 import {
   MemorySeeAcl,
   applyPostGrant,
@@ -178,6 +179,54 @@ test("group see does not satisfy checkPost", () => {
   assert.equal(checkPost(graph, "doc", "0xalice", 1).reason, "owner");
 });
 
+test("post lookup follows the current object owner", () => {
+  const graph = new MemoryGroupGraph();
+  graph.putObject("room:alpha", "0xalice");
+  graph.stateSeeGrant("0xalice", { object: "room:alpha", accessor: "0xbob", from: 0, until: 80 });
+  graph.statePostGrant("0xalice", { object: "room:alpha", accessor: "0xbob", from: 0, until: 80 });
+  graph.putObject("room:alpha", "0xcarol");
+  graph.stateSeeGrant("0xcarol", { object: "room:alpha", accessor: "0xbob", from: 0, until: 80 });
+  graph.statePostGrant("0xcarol", { object: "room:alpha", accessor: "0xbob", from: 0, until: 80 });
+  assert.equal(graph.postGrant("room:alpha", "0xbob").owner, "0xcarol");
+  assert.equal(checkPost(graph, "room:alpha", "0xbob", 10).reason, "post");
+});
+
+test("a noncanonical post row is dropped and does not abort merge", () => {
+  const graph = new MemoryGroupGraph();
+  graph.putObject("room:alpha", "0xalice");
+  graph.stateSeeGrant("0xalice", { object: "room:alpha", accessor: "0xbob", from: 0, until: 80 });
+  graph.statePostGrant("0xalice", { object: "room:alpha", accessor: "0xbob", from: 0, until: 80 });
+  const local = graph.postGrant("room:alpha", "0xbob");
+  const peer = new MemoryGroupGraph();
+  peer.putObject("room:alpha", "0xalice");
+  peer.posts.set("bad-equal", {
+    soul: "s3rch/acl/forged",
+    owner: "0xalice",
+    hamState: local.hamState,
+    grant: { object: "room:alpha", accessor: "0xbob", from: 1.5, until: 90, stated: 1 },
+  });
+  peer.posts.set("bad-higher", {
+    soul: "s3rch/acl/forged",
+    owner: "0xalice",
+    hamState: local.hamState + 8,
+    grant: { object: "room:alpha", accessor: "0xbob", from: 0.5, until: 80, stated: 1 },
+  });
+  peer.stateSeeGrant("0xalice", { object: "room:alpha", accessor: "0xcarol", from: 0, until: 80 });
+  assert.equal(postRowEncodable(peer.posts.get("bad-equal")), false);
+  assert.doesNotThrow(() => preferPost(local, peer.posts.get("bad-equal")));
+  assert.doesNotThrow(() => graph.mergeFrom(peer));
+  const kept = graph.postGrant("room:alpha", "0xbob");
+  assert.equal(kept.grant.from, 0);
+  assert.equal(kept.grant.until, 80);
+  assert.equal(kept.grant.stated, 1);
+  assert.equal(checkPost(graph, "room:alpha", "0xbob", 10).reason, "post");
+  assert.equal(graph.seeGrants("room:alpha").some((grant) => grant.accessor === "0xcarol"), true);
+  const empty = new MemoryGroupGraph();
+  empty.putObject("room:alpha", "0xalice");
+  assert.doesNotThrow(() => empty.mergeFrom(peer));
+  assert.equal(empty.postGrant("room:alpha", "0xbob"), undefined);
+});
+
 test("light acl: post requires see, and cancel is the next check", () => {
   const acl = new MemorySeeAcl();
   const object = "room:alpha";
@@ -192,4 +241,16 @@ test("light acl: post requires see, and cancel is the next check", () => {
   assert.equal(gunFactorGrants("inbox"), false);
   applyPostGrant(acl, "0xbob", { object, accessor: "0xbob", from: 0, until: 80 });
   assert.equal(gunCheckPost(acl, object, "0xbob", 10).reason, "cancelled");
+});
+
+test("light acl cancel finds the row when the accessor is a user soul", () => {
+  const acl = new MemorySeeAcl();
+  const object = "room:alpha";
+  acl.putObject(object, "0xalice");
+  applySeeGrant(acl, "0xalice", { claimId: object, accessor: "s3rch/users/0xbob", from: 0, until: 80 });
+  applyPostGrant(acl, "0xalice", { object, accessor: "s3rch/users/0xbob", from: 0, until: 80 });
+  assert.equal(gunCheckPost(acl, object, "s3rch/users/0xbob", 10).reason, "post");
+  cancelPost(acl, "0xalice", "0xbob", object);
+  assert.equal(acl.posts.size, 1);
+  assert.equal(gunCheckPost(acl, object, "s3rch/users/0xbob", 10).reason, "cancelled");
 });

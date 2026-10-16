@@ -73,7 +73,7 @@ Each field HAM-merges. `MeshSeeGrant.stated` is `1` (live) or `0` (cancelled). C
 
 ### Post grant
 
-A post grant is a second dest-ACL row, not a field on the see grant. Same shape: `object`, `accessor`, `from` (inclusive), `until` (exclusive), `stated` (`1` live, `0` cancelled). Cancel is owner-only: set `stated` to `0` and bump `hamState`. Higher `hamState` wins. At the same `hamState` a cancellation wins, then the narrower window, then the smaller `postGrantSigningBytes`. The next `checkPost` after that merge denies. Do not cache an allow.
+A post grant is a second dest-ACL row, not a field on the see grant. Same shape: `object`, `accessor`, `from` (inclusive), `until` (exclusive), `stated` (`1` live, `0` cancelled). Cancel is owner-only: set `stated` to `0` and bump `hamState`. Storage and lookup use `aclPrincipalKey` and `aclKey`, the same ids as `postSoul`, so `s3rch/users/<wallet>` and the wallet name the same row. `checkPost` reads the see row and the post row that name the current object owner. Higher `hamState` wins. At the same `hamState` a cancellation wins, then the narrower window, then the smaller `postGrantSigningBytes`. A peer row whose `stated`, `from`, `until`, or `hamState` is not a canonical non-negative integer is dropped on merge and does not abort the rest of that merge. The next `checkPost` after a cancel merges in denies. Do not cache an allow.
 
 ```
 s3rch/acl/<aclPrincipalKey(owner)>/post/<aclKey(object)>/<aclPrincipalKey(accessor)>

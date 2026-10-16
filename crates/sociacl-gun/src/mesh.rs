@@ -289,9 +289,12 @@ impl MeshSeeGraph {
     }
 
     pub fn grant_edge(&self, object: &str, accessor: &str) -> Option<&GunAclEdge> {
-        self.grants
-            .values()
-            .find(|e| e.grant.names_object(object) && e.grant.names_accessor(accessor))
+        let owner = self.owner_of(object).unwrap_or("");
+        self.grants.values().find(|edge| {
+            edge.grant.names_object(object)
+                && edge.grant.names_accessor(accessor)
+                && acl_principal_key(&edge.owner) == acl_principal_key(owner)
+        })
     }
 
     /// Record a person-to-person edge. Check never walks it.

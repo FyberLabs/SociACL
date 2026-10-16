@@ -409,6 +409,33 @@ fn post_grant_on_a_feed_id_matches_the_item_soul() {
     assert_eq!(got.reason, MESH_REASON_POST);
 }
 
+#[test]
+fn check_post_uses_the_current_owners_rows() {
+    let mut graph = MeshSeeGraph::new();
+    graph.put_object("room:alpha", "0xalice");
+    graph
+        .state_see_grant("0xalice", MeshSeeGrant::live("room:alpha", "0xbob", 0, 80))
+        .unwrap();
+    graph
+        .state_post_grant(
+            "0xalice",
+            MeshPostGrant::live("room:alpha", "s3rch/users/0xbob", 0, 80),
+        )
+        .unwrap();
+    graph.put_object("room:alpha", "0xcarol");
+    graph
+        .state_see_grant("0xcarol", MeshSeeGrant::live("room:alpha", "0xbob", 0, 80))
+        .unwrap();
+    graph
+        .state_post_grant("0xcarol", MeshPostGrant::live("room:alpha", "0xbob", 0, 80))
+        .unwrap();
+    let edge = graph.post_edge("room:alpha", "s3rch/users/0xbob").unwrap();
+    assert_eq!(edge.owner, "0xcarol");
+    let got = graph.check_post("room:alpha", "s3rch/users/0xbob", Timestamp(10), None, None);
+    assert!(got.allowed, "{}", got.reason);
+    assert_eq!(got.reason, MESH_REASON_POST);
+}
+
 fn hex(bytes: &[u8]) -> String {
     const HEX: &[u8; 16] = b"0123456789abcdef";
     let mut out = String::with_capacity(bytes.len() * 2);
