@@ -201,6 +201,38 @@ impl AccountSeaSecret {
         sea::sign_sea(&self.sea_priv, &message)
     }
 
+    /// Owner signature over `revisionId`. A signature over `keyCommitment` is not this.
+    pub fn sign_epoch_manifest(&self, revision_id: &str) -> Result<String, EncDiscError> {
+        canonical::require_revision_id(revision_id)?;
+        let message = canonical::epoch_manifest_sig_bytes(revision_id)?;
+        sea::sign_sea(&self.sea_priv, &message)
+    }
+
+    /// Owner signature over `finalizationId`. A signature over `revisionId` is not this.
+    pub fn sign_epoch_finalization(&self, finalization_id: &str) -> Result<String, EncDiscError> {
+        canonical::require_revision_id(finalization_id)?;
+        let message = canonical::epoch_finalization_sig_bytes(finalization_id)?;
+        sea::sign_sea(&self.sea_priv, &message)
+    }
+
+    /// Owner signature over the group-epoch config bytes. `owner` is this account.
+    pub fn sign_group_epoch_config(
+        &self,
+        set_id: &str,
+        predicate: &str,
+        settle_window_ms: u64,
+        config_revision: u64,
+    ) -> Result<String, EncDiscError> {
+        let message = canonical::group_epoch_config_bytes(
+            &self.account,
+            set_id,
+            predicate,
+            settle_window_ms,
+            config_revision,
+        )?;
+        sea::sign_sea(&self.sea_priv, &message)
+    }
+
     pub fn sign_item_auth(&self, fields: &ItemAuthFields) -> Result<String, EncDiscError> {
         canonical::require_digest_hex(&fields.plaintext_digest)?;
         canonical::require_revision_id(&fields.revision_id)?;

@@ -1,0 +1,387 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { test } from "node:test";
+import type {
+  AclSnapshotBody,
+  AclSnapshotEntry,
+  EpochFinalization,
+  EpochReplicaView,
+  EpochRotation,
+  EpochStatusProof,
+} from "../../docs/s3rch-check.js";
+import { sha256Hex } from "../contract/canonical.ts";
+import {
+  aclSnapshotBytes,
+  aclSnapshotId,
+  epochFinalizationId,
+  epochFinalizationSigBytes,
+  epochManifestSigBytes,
+  groupEpochConfigBytes,
+  epochStepCurrent,
+  epochWinner,
+  groupEpochConfigDigest,
+  rotateOnRevoke,
+  settledKeyOpen,
+  SETTLE_WINDOW_DEFAULT_MS,
+  SETTLE_WINDOW_MAX_MS,
+  SETTLE_WINDOW_MIN_MS,
+  settleWindowInRange,
+  settleWindowOrDefault,
+  statusIsFresh,
+} from "../contract/epoch.ts";
+
+const REV = "ab".repeat(32);
+const OTHER = "cd".repeat(32);
+const FAR = 4_000_000_000_000;
+
+type VectorCase = {
+  name: string;
+  kind: string;
+  sha256: string;
+  encodedLen: number;
+  fields?: string[];
+};
+
+const document = JSON.parse(
+  readFileSync(new URL("../../vectors/encrypted-discovery/canonical.json", import.meta.url), "utf8"),
+) as { cases: VectorCase[] };
+
+function vector(name: string): VectorCase {
+  const row = document.cases.find((item) => item.name === name);
+  assert.ok(row, name);
+  return row;
+}
+
+function assertHash(name: string, bytes: Uint8Array): void {
+  const row = vector(name);
+  assert.equal(sha256Hex(bytes), row.sha256, name);
+  assert.equal(bytes.length, row.encodedLen, name);
+}
+
+function directEntry(
+  accessor: string,
+  stated: 0 | 1,
+  grantRevision = 1,
+): AclSnapshotEntry {
+  return {
+    accessor,
+    grantRevision,
+    stated,
+    from: 0,
+    until: FAR,
+    scope: "direct",
+    setId: "",
+    hamState: 0,
+  };
+}
+
+function directSnapshot(entries: readonly AclSnapshotEntry[]): AclSnapshotBody {
+  return { entries };
+}
+
+function finalization(
+  revisionId: string,
+  candidates: readonly string[] = [revisionId],
+): EpochFinalization {
+  const previousFinalizationId = "";
+  return {
+    object: "item-1",
+    previousEpoch: 1,
+    epoch: 2,
+    revisionId,
+    candidateRevisionIds: candidates,
+    previousFinalizationId,
+    finalizationId: epochFinalizationId(
+      "item-1",
+      2,
+      1,
+      revisionId,
+      previousFinalizationId,
+      candidates,
+    ),
+    signature: "ab".repeat(64),
+  };
+}
+
+function view(seen: readonly EpochFinalization[], extras: Partial<EpochReplicaView> = {}): EpochReplicaView {
+  return {
+    object: "item-1",
+    epoch: 2,
+    previousFinalizationId: "",
+    seen,
+    winnerSeenAt: 5_000,
+    settleWindowMs: SETTLE_WINDOW_MIN_MS,
+    settledRevisionId: OTHER,
+    settledEpoch: 1,
+    ...extras,
+  };
+}
+
+function proof(signedAt: number): EpochStatusProof {
+  return {
+    object: "item-1",
+    epoch: 1,
+    revisionId: REV,
+    accessor: "bob",
+    grantRevision: 4,
+    stated: 0,
+    signedAt,
+    maxAgeMs: 60_000,
+    signature: "ab".repeat(64),
+    zookie: { object: "item-1", objectVersion: 3, snapshotHash: OTHER },
+  };
+}
+
+function rotation(cipher: EpochRotation["cipher"], targetId = "carol"): EpochRotation {
+  return {
+    object: "item-1",
+    revokedEpoch: 1,
+    nextEpoch: 2,
+    revisionId: REV,
+    cancelled: [
+      {
+        kind: "plain",
+        grant: {
+          grant: { object: "item-1", accessor: "bob", from: 0, until: FAR, stated: 0 },
+          hamState: 2,
+        },
+      },
+    ],
+    rewrapped: [
+      {
+        scope: "item-dek",
+        epoch: 2,
+        target: "reader-epub",
+        targetId,
+        object: "item-1",
+        revisionId: REV,
+        wrappedKey: "aa",
+      },
+    ],
+    cipher,
+  };
+}
+
+test("epoch canonical bodies match the shared fixture", () => {
+  assertHash(
+    "acl-snapshot-direct",
+    aclSnapshotBytes({
+      entries: [
+        {
+          accessor: "bob",
+          grantRevision: 4,
+          stated: 0,
+          from: 10,
+          until: 20,
+          scope: "direct",
+          setId: "",
+          hamState: 0,
+        },
+      ],
+    }),
+  );
+  assert.equal(
+    aclSnapshotId({
+      entries: [
+        {
+          accessor: "bob",
+          grantRevision: 4,
+          stated: 0,
+          from: 10,
+          until: 20,
+          scope: "direct",
+          setId: "",
+          hamState: 0,
+        },
+      ],
+    }),
+    vector("acl-snapshot-direct").sha256,
+  );
+  assertHash(
+    "acl-snapshot-group",
+    aclSnapshotBytes({
+      objectSet: { predicate: "same-group", setId: "crew", stated: 1, hamState: 3 },
+      entries: [
+        {
+          accessor: "ada",
+          grantRevision: 2,
+          stated: 1,
+          from: 0,
+          until: 99,
+          scope: "same-group",
+          setId: "crew",
+          hamState: 5,
+        },
+      ],
+    }),
+  );
+  assert.equal(
+    epochFinalizationId("item-1", 3, 2, REV, "", [REV]),
+    vector("epoch-finalization-body").sha256,
+  );
+  assertHash("epoch-manifest-sig", epochManifestSigBytes(REV));
+  assertHash("epoch-finalization-sig", epochFinalizationSigBytes(REV));
+  assertHash(
+    "group-epoch-config",
+    groupEpochConfigBytes("alice", "crew", "named-circle", 7_200_000, 2),
+  );
+  const tie = groupEpochConfigDigest("alice", "crew", "named-circle", SETTLE_WINDOW_DEFAULT_MS, 2);
+  assert.equal(tie, vector("group-epoch-config-tie").sha256);
+  assert.ok(vector("group-epoch-config").sha256 < tie);
+  assert.throws(() =>
+    aclSnapshotId({
+      entries: [directEntry("bob", 1, 1), directEntry("amy", 1, 1)],
+    }),
+  );
+});
+
+test("settle window stays inside the signed bounds", () => {
+  assert.equal(SETTLE_WINDOW_MIN_MS, 3_600_000);
+  assert.equal(SETTLE_WINDOW_MAX_MS, 259_200_000);
+  assert.equal(SETTLE_WINDOW_DEFAULT_MS, 86_400_000);
+  assert.equal(settleWindowOrDefault(undefined), SETTLE_WINDOW_DEFAULT_MS);
+  assert.equal(settleWindowOrDefault(SETTLE_WINDOW_MIN_MS), SETTLE_WINDOW_MIN_MS);
+  assert.equal(settleWindowOrDefault(SETTLE_WINDOW_MAX_MS + 1), SETTLE_WINDOW_MAX_MS + 1);
+  assert.equal(settleWindowInRange(SETTLE_WINDOW_MIN_MS), true);
+  assert.equal(settleWindowInRange(SETTLE_WINDOW_DEFAULT_MS), true);
+  assert.equal(settleWindowInRange(SETTLE_WINDOW_MAX_MS), true);
+  assert.equal(settleWindowInRange(SETTLE_WINDOW_MIN_MS - 1), false);
+  assert.equal(settleWindowInRange(SETTLE_WINDOW_MAX_MS + 1), false);
+  assert.equal(settleWindowInRange(0), false);
+  assert.throws(() => settleWindowOrDefault(1.5));
+});
+
+test("the smaller finalization id wins independent of seen order", () => {
+  const left = finalization("11".repeat(32));
+  const right = finalization("22".repeat(32));
+  const smaller = left.finalizationId < right.finalizationId ? left : right;
+  assert.equal(epochWinner(view([left, right]))?.finalizationId, smaller.finalizationId);
+  assert.equal(epochWinner(view([right, left]))?.finalizationId, smaller.finalizationId);
+  const unsorted = finalization("11".repeat(32), ["11".repeat(32), "00".repeat(32)]);
+  assert.equal(epochWinner(view([unsorted, right]))?.finalizationId, right.finalizationId);
+  const foreign = { ...left, object: "item-2" };
+  assert.equal(epochWinner(view([foreign]))?.finalizationId, undefined);
+  const forged = { ...smaller, finalizationId: "00".repeat(32) };
+  assert.equal(epochWinner(view([forged, right]))?.revisionId, right.revisionId);
+});
+
+test("epoch step and settled key follow the merged acl", () => {
+  const live = directSnapshot([directEntry("ada", 1)]);
+  const fin = finalization(REV);
+  const pending = view([fin]);
+  const open = pending.winnerSeenAt + SETTLE_WINDOW_MIN_MS;
+  assert.equal(epochStepCurrent(pending, live, live, open - 1), false);
+  assert.equal(epochStepCurrent(pending, live, live, open), true);
+  const cancelled = directSnapshot([directEntry("ada", 0)]);
+  assert.equal(epochStepCurrent(pending, live, cancelled, open), false);
+  const expired = directSnapshot([{ ...directEntry("ada", 1), until: open }]);
+  assert.equal(epochStepCurrent(pending, expired, expired, open), false);
+  const short = view([fin], { settleWindowMs: 0 });
+  assert.equal(epochStepCurrent(short, live, live, open), false);
+
+  const settled = view([], { settledRevisionId: REV });
+  assert.equal(settledKeyOpen(settled, live, live, open), true);
+  assert.equal(settledKeyOpen(pending, live, live, open), false);
+  const same = view([finalization(REV)], { settledRevisionId: REV });
+  assert.equal(settledKeyOpen(same, live, live, open - 1), false);
+  assert.equal(settledKeyOpen(same, live, live, open), true);
+  assert.equal(settledKeyOpen(settled, expired, expired, open), false);
+  assert.equal(settledKeyOpen(view([], { settledRevisionId: "" }), live, live, open), false);
+  assert.equal(settledKeyOpen(view([], { settledRevisionId: "zz" }), live, live, open), false);
+});
+
+test("status freshness uses the tighter max age and the skew allowance", () => {
+  const signedAt = 1_000_000;
+  const row = proof(signedAt);
+  assert.equal(statusIsFresh(row, signedAt + 30_000, 5_000, 120_000), true);
+  assert.equal(statusIsFresh(row, signedAt + 60_000, 5_000, 120_000), true);
+  assert.equal(statusIsFresh(row, signedAt + 60_001, 5_000, 120_000), false);
+  assert.equal(statusIsFresh(row, signedAt + 30_000, 5_000, 10_000), false);
+  assert.equal(statusIsFresh(row, signedAt - 4_000, 5_000, 120_000), true);
+  assert.equal(statusIsFresh(row, signedAt - 6_000, 5_000, 120_000), false);
+  assert.equal(statusIsFresh(row, 1.5, 0, 0), false);
+  assert.equal(row.signature.length, 128);
+});
+
+test("rotateOnRevoke accepts both cipher modes and fails closed", () => {
+  assert.equal(rotateOnRevoke.length, 1);
+  assert.equal(rotateOnRevoke(rotation("forward-only")), undefined);
+  assert.equal(rotateOnRevoke(rotation("re-encrypt")), undefined);
+  const skipped = rotation("forward-only");
+  skipped.nextEpoch = 3;
+  assert.throws(() => rotateOnRevoke(skipped), /rotation rejected/);
+  const live = rotation("re-encrypt");
+  const cancel = live.cancelled[0];
+  assert.ok(cancel && cancel.kind === "plain");
+  if (cancel.kind === "plain" && "object" in cancel.grant.grant) {
+    cancel.grant.grant.stated = 1;
+  }
+  assert.throws(() => rotateOnRevoke(live), /rotation rejected/);
+  const quiet = rotation("forward-only");
+  const quietCancel = quiet.cancelled[0];
+  assert.ok(quietCancel && quietCancel.kind === "plain");
+  quietCancel.grant.hamState = 0;
+  assert.throws(() => rotateOnRevoke(quiet), /rotation rejected/);
+  assert.throws(() => rotateOnRevoke(rotation("forward-only", "bob")), /rotation rejected/);
+  assert.throws(() => rotateOnRevoke(rotation("re-encrypt", "bob")), /rotation rejected/);
+  const blank = rotation("forward-only");
+  const wrap = blank.rewrapped[0];
+  assert.ok(wrap);
+  wrap.wrappedKey = "";
+  assert.throws(() => rotateOnRevoke(blank), /rotation rejected/);
+  const doubled = rotation("forward-only");
+  doubled.cancelled = [...doubled.cancelled, ...doubled.cancelled];
+  assert.throws(() => rotateOnRevoke(doubled), /rotation rejected/);
+  const group = rotation("re-encrypt");
+  const groupWrap = {
+    scope: "item-dek" as const,
+    epoch: 2,
+    target: "group-epoch" as const,
+    targetId: "crew",
+    object: "item-1",
+    revisionId: REV,
+    wrappedKey: "bb",
+  };
+  group.rewrapped = [...group.rewrapped, groupWrap];
+  assert.equal(rotateOnRevoke(group), undefined);
+  group.rewrapped = [...group.rewrapped, { ...groupWrap }];
+  assert.throws(() => rotateOnRevoke(group), /rotation rejected/);
+
+  const privateRow: EpochRotation = {
+    object: "item-1",
+    revokedEpoch: 1,
+    nextEpoch: 2,
+    revisionId: REV,
+    cancelled: [
+      {
+        kind: "private-row",
+        payload: {
+          object: "item-1",
+          accessor: "bob",
+          from: 0,
+          until: FAR,
+          stated: 0,
+          epoch: 1,
+          owner: "alice",
+          grantRevision: 5,
+          itemCiphertextDigest: "",
+        },
+        signature: "cd".repeat(64),
+        status: { ...proof(1_000), grantRevision: 5 },
+      },
+    ],
+    rewrapped: [],
+    cipher: "forward-only",
+  };
+  assert.equal(rotateOnRevoke(privateRow), undefined);
+  const stale = structuredClone(privateRow);
+  const staleCancel = stale.cancelled[0];
+  assert.ok(staleCancel && staleCancel.kind === "private-row");
+  staleCancel.status.epoch = 9;
+  assert.throws(() => rotateOnRevoke(stale), /rotation rejected/);
+  const badSig = structuredClone(privateRow);
+  const badCancel = badSig.cancelled[0];
+  assert.ok(badCancel && badCancel.kind === "private-row");
+  badCancel.signature = "abcd";
+  assert.throws(() => rotateOnRevoke(badSig), /rotation rejected/);
+});

@@ -10,7 +10,8 @@
  *   crates/sociacl-gun — plaintext MeshSeeGrant Check
  *   crates/sociacl-encdisc — encrypted-discovery slice
  *     (account SEA key, enrollment, wrap edge, canonical ids,
- *      blinded rows, presenter binding, inbox admission)
+ *      blinded rows, presenter binding, inbox admission,
+ *      epoch admission, rotateOnRevoke)
  *
  * CHECK(see, object, accessor) at now.
  *   object   = GunFeedNode | held claim id | later opaque post/room
@@ -29,8 +30,8 @@
  * grants and direct same-group / named-circle edges. It does not
  * evaluate a wrap. sociacl-encdisc implements the account key, the
  * wrap edge, the canonical ids, blinded rows, checkPresentedGrant,
- * and inbox admission. It does not run epoch publication, rotation,
- * migration, or a shard-close watermark.
+ * inbox admission, epoch admission, and rotateOnRevoke. It does not
+ * run migration or a shard-close watermark.
  * SEA priv and epriv never go on Gun.
  */
 
@@ -404,8 +405,8 @@ export function decodeHop(bytes: Uint8Array): HopFactor;
 /* sociacl-gun evaluates plaintext MeshSeeGrant rows and direct              */
 /* same-group / named-circle edges. It does not evaluate a wrap.             */
 /* sociacl-encdisc implements the account key, the wrap edge, the canonical   */
-/* ids, blinded rows, checkPresentedGrant, and inbox admission. It does not   */
-/* run epoch publication, rotation, migration, or a shard-close watermark.    */
+/* ids, blinded rows, checkPresentedGrant, inbox admission, epoch admission,  */
+/* and rotateOnRevoke. It does not run migration or a shard-close watermark.  */
 /* A wrap is not a grant. An inbox append is not a grant.                     */
 /* SEA priv and epriv never go on Gun.                                        */
 /* same-group and named-circle: hopcap 1, jointly stated, no inheritance.    */
@@ -1242,7 +1243,7 @@ export type AclSnapshotBody = {
 };
 
 /**
- * Spec signature. The reference crate does not run this.
+ * crates/sociacl-encdisc runs this hash. It does not mint.
  * SHA-256, lowercase hex, of the length-prefixed UTF-8
  * encoding. Fields:
  * 1. "s3rch-acl-snapshot-v1"
@@ -1260,8 +1261,9 @@ export function aclSnapshotId(body: AclSnapshotBody): string;
 /**
  * SHA-256, lowercase hex, of the same length-prefixed UTF-8
  * encoding as inboxEntryId. Does not mint.
- * crates/sociacl-encdisc runs this hash. It does not settle
- * the epoch, and it does not enforce the settle-window bounds.
+ * crates/sociacl-encdisc runs this hash. Admission enforces
+ * the settle-window bounds. The hash alone does not settle
+ * the epoch.
  *
  * Fields:
  * 1. "s3rch-epoch-revision-v1"
@@ -1484,7 +1486,8 @@ export function epochStepCurrent(
  * Ciphertext already written under the settled key stays.
  * Readers keep bytes they already unwrapped.
  * This check runs after settlement, not only when a candidate
- * is about to settle. Does not mint.
+ * is about to settle. crates/sociacl-encdisc runs this check.
+ * Does not mint.
  */
 export function settledKeyOpen(
   view: EpochReplicaView,
@@ -1982,9 +1985,10 @@ export type EpochRotation = {
 };
 
 /**
- * Spec signature. The reference crate does not run this.
- * Privilege-down first (stated 0, hamState bump), then wraps of
- * the winning next-epoch revision. A wrap written here is not a grant.
+ * crates/sociacl-encdisc runs this check. Privilege-down first
+ * (stated 0, hamState bump), then wraps of the winning next-epoch
+ * revision. The settle window does not delay that. A wrap written
+ * here is not a grant.
  */
 export function rotateOnRevoke(rotation: EpochRotation): void;
 
@@ -2033,8 +2037,9 @@ export type ContentIndexTier = "public" | "private-group" | "local";
 
 /**
  * Conformance stub names. Descriptions are in
- * docs/encrypted-discovery.md. The reference crate does not
- * run these. None of them mint a grant.
+ * docs/encrypted-discovery.md. crates/sociacl-encdisc runs the
+ * epoch, rotation, and freshness checks. It does not run migration
+ * or a shard-close watermark. None of them mint a grant.
  */
 export type EncryptedDiscoveryVector =
   | "content-auth-accept"
