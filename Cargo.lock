@@ -620,6 +620,8 @@ name = "sociacl-gun"
 version = "0.1.0"
 dependencies = [
  "rand",
+ "serde",
+ "serde_json",
  "sha2",
  "sociacl-core",
  "thiserror",

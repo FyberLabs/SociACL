@@ -3,7 +3,10 @@ import { test } from "node:test";
 import {
   MemorySeeAcl,
   applySeeGrant,
+  applyPostGrant,
+  cancelPost,
   cancelSee,
+  checkPost,
   checkSee,
   checkSeeGrant,
   encodeKey,
@@ -47,4 +50,17 @@ test("checkSeeGrant ANDs the window; cancel is immediate", () => {
   assert.equal(checkSeeGrant(acl, grant, object, "0xbob", 10).allowed, true);
   cancelSee(acl, "0xalice", "0xbob", object);
   assert.equal(checkSee(acl, object, "0xbob", 10).allowed, false);
+});
+
+test("checkPost requires see and does not keep a cancelled allow", () => {
+  const acl = new MemorySeeAcl();
+  const object = itemSoul("room:alpha");
+  acl.putObject(object, "0xalice");
+  applyPostGrant(acl, "0xalice", { object, accessor: "0xbob", from: 0, until: 80 });
+  assert.equal(checkPost(acl, object, "0xbob", 10, { principal: "0xbob", target: object }).allowed, false);
+  applySeeGrant(acl, "0xalice", { claimId: object, accessor: "0xbob", from: 0, until: 80 });
+  assert.equal(checkPost(acl, object, "0xbob", 10).allowed, true);
+  cancelPost(acl, "0xalice", "0xbob", object);
+  assert.equal(checkPost(acl, object, "0xbob", 10).allowed, false);
+  assert.equal(checkSee(acl, object, "0xbob", 10).allowed, true);
 });

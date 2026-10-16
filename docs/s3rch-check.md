@@ -36,6 +36,8 @@ gun.get('s3rch').get('meta')                     → seed meta (not a Check obje
 gun.get('s3rch').get('users').get(wallet)        → GunUserNode
 gun.get('s3rch').get('acl').get(aclPrincipalKey(owner))
      .get(aclKey(object)).get(aclPrincipalKey(accessor))  → MeshSeeGrant
+gun.get('s3rch').get('acl').get(aclPrincipalKey(owner))
+     .get('post').get(aclKey(object)).get(aclPrincipalKey(accessor))  → MeshPostGrant
 ```
 
 `encodeKey`: `id.replace(/[.#$\[\]]/g, '_')`.
@@ -69,6 +71,22 @@ s3rch/acl/0xalice/ens:alice_eth/0xbob         // held claim ens:alice.eth
 
 Each field HAM-merges. `MeshSeeGrant.stated` is `1` (live) or `0` (cancelled). Cancel is owner-only and **must bump Gun HAM state** so privilege-down wins the next merge. Each peer runs `checkSee` on its locally HAM-merged graph at `now`. Do not cache an allow across a privilege-down merge.
 
+### Post grant
+
+A post grant is a second dest-ACL row, not a field on the see grant. Same shape: `object`, `accessor`, `from` (inclusive), `until` (exclusive), `stated` (`1` live, `0` cancelled). Cancel is owner-only: set `stated` to `0` and bump `hamState`. Storage and lookup use `aclPrincipalKey` and `aclKey`, the same ids as `postSoul`, so `s3rch/users/<wallet>` and the wallet name the same row. `checkPost` reads the see row and the post row that name the current object owner. Higher `hamState` wins. At the same `hamState` a cancellation wins, then the narrower window, then the smaller `postGrantSigningBytes`. A peer row whose `stated`, `from`, `until`, or `hamState` is not a canonical non-negative integer is dropped on merge and does not abort the rest of that merge. That includes an integer above 9007199254740991. Rust and TypeScript both drop it. A raw id and the item soul that already name one in-graph object share one post row and one `hamState`. The group graph keeps the original object id and resolves that alias before the post write and the post read, including when the stored row is the item soul and the query is the raw id. A peer post row is stored only when that object is already in the graph and the row owner is the current object owner. The light `checkSee` compares the owner with `aclPrincipalKey`, the same owner rule as `checkPost`. At `hamState` 9007199254740991 a cancellation keeps that value and `stated` 0 wins. A local `from` or `until` that is not a canonical integer is not stored. The light see lookup keeps the owner stored on the grant and compares `aclPrincipalKey`. The next `checkPost` after a cancel merges in denies. Do not cache an allow.
+
+```
+s3rch/acl/<aclPrincipalKey(owner)>/post/<aclKey(object)>/<aclPrincipalKey(accessor)>
+```
+
+`postSoul(owner, object, accessor)`. Six segments, so it is not a see-grant soul and not a Check object.
+
+`checkPost(graph, object, accessor, now, hint?, hop?)` returns allow-post only when `checkSee` would allow that same triple. The object owner passes see and may post. Any other accessor also needs a live post row with `now` in `[from, until)`. A post row alone does not allow. A see row does not allow post. `checkGroupSee` is not this gate. Hopcap is **1**. Hop missing does not fail. Hop alone never allows. A hop, a hint, a wrap, or an inbox delivery never grants.
+
+`postGrantSigningBytes` is the length-prefixed encoding a later owner signature can cover: domain `s3rch-post-grant-v1`, `aclKey(object)`, `aclPrincipalKey(accessor)`, decimal `stated`, decimal `from`, decimal `until`, scope `post`, and decimal `hamState`. Lengths are uint32 little-endian. Integers have no leading zeros. This check does not verify a signature.
+
+Rust `sociacl-gun` and `typescript/src/post.js` both load `vectors/mesh/post-grant.json`.
+
 `s3rch/acl` itself is not a Check object (same as `meta`).
 
 ### Objects in scope
@@ -97,7 +115,7 @@ Reuse SociACL Social Light (`convention-badge` / `enrolled-station`, SLHP v1). D
 
 [encrypted-discovery.md](encrypted-discovery.md) is the spec. s3r.ch product draft: [FyberLabs/s3r.ch#108](https://github.com/FyberLabs/s3r.ch/pull/108) (`docs/encrypted-discovery.md` there). This repo does not edit s3r.ch.
 
-Copy the new names from [s3rch-check.d.ts](s3rch-check.d.ts) (`WrappedKey`, `BlindedGrantRow`, `MeshMembership`, `checkGroupSee`, `rotateOnRevoke`). `crates/sociacl-gun` evaluates plaintext `MeshSeeGrant` rows and direct `same-group` / `named-circle` edges (`checkGroupSee`). `crates/sociacl-encdisc` implements the account key, the wrap edge, the canonical ids, blinded rows, `checkPresentedGrant`, inbox admission (`filterInboxAppend`, one lane per reader, daily-shard rescan), epoch admission (`epochRevisionId`, convergent `EpochFinalization`, `epochStepCurrent`, `settledKeyOpen`), `rotateOnRevoke`, and in-place migration (`applyProtocolMigration`). Wrapped keys are not an input to that check. A shard-close watermark is not implemented. `GunFeedNode` and `GunUserNode` stay as they are. Do not `npm install sociacl`.
+Copy the new names from [s3rch-check.d.ts](s3rch-check.d.ts) (`WrappedKey`, `BlindedGrantRow`, `MeshMembership`, `checkGroupSee`, `rotateOnRevoke`, `MeshPostGrant`, `checkPost`). `crates/sociacl-gun` evaluates plaintext `MeshSeeGrant` rows, plaintext `MeshPostGrant` rows (`checkPost`), and direct `same-group` / `named-circle` edges (`checkGroupSee`). `crates/sociacl-encdisc` implements the account key, the wrap edge, the canonical ids, blinded rows, `checkPresentedGrant`, inbox admission (`filterInboxAppend`, one lane per reader, daily-shard rescan), epoch admission (`epochRevisionId`, convergent `EpochFinalization`, `epochStepCurrent`, `settledKeyOpen`), `rotateOnRevoke`, and in-place migration (`applyProtocolMigration`). Wrapped keys are not an input to that check. A shard-close watermark is not implemented. `GunFeedNode` and `GunUserNode` stay as they are. Do not `npm install sociacl`.
 
 A wrap of a DEK to a reader SEA `epub` is not a grant. SEA `priv` and `epriv` never go on Gun. Check must still pass. A hop, a hint, or a wrap never mints. SociACL decides who receives a wrap: only a principal the live grant or direct membership already names.
 

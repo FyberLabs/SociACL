@@ -1,6 +1,6 @@
 # Encrypted discovery (spec)
 
-Status: spec. `crates/sociacl-encdisc` implements the account SEA key, device enrollment, the wrapped-key edge, the length-prefixed SHA-256 ids, blinded grant rows, commitment opening, author fast unwrap, `checkPresentedGrant` (verifier nonce, audience, and the branded presenter channel), and inbox admission (one `RecipientInbox` per reader, `filterInboxAppend`, and the daily-shard rescan). `epochStepCurrent`, `settledKeyOpen`, epoch admission, `rotateOnRevoke`, and in-place migration run in that crate. A shard-close watermark is not implemented. `crates/sociacl-gun` evaluates plaintext `MeshSeeGrant` rows and direct `same-group` / `named-circle` edges (`checkGroupSee`). It does not evaluate a wrap. Nothing on this page changes that Check or the plaintext dest-ACL path. This page adds no verb.
+Status: spec. `crates/sociacl-encdisc` implements the account SEA key, device enrollment, the wrapped-key edge, the length-prefixed SHA-256 ids, blinded grant rows, commitment opening, author fast unwrap, `checkPresentedGrant` (verifier nonce, audience, and the branded presenter channel), and inbox admission (one `RecipientInbox` per reader, `filterInboxAppend`, and the daily-shard rescan). `epochStepCurrent`, `settledKeyOpen`, epoch admission, `rotateOnRevoke`, and in-place migration run in that crate. A shard-close watermark is not implemented. `crates/sociacl-gun` evaluates plaintext `MeshSeeGrant` rows, plaintext `MeshPostGrant` rows (`checkPost`), and direct `same-group` / `named-circle` edges (`checkGroupSee`). It does not evaluate a wrap. An inbox delivery is not a grant. Nothing on this page changes that Check or the plaintext dest-ACL path. This page adds no verb.
 
 s3r.ch product draft: [FyberLabs/s3r.ch#108](https://github.com/FyberLabs/s3r.ch/pull/108) (`docs/encrypted-discovery.md` on that branch). This repository does not edit s3r.ch. Where the two pages differ, this page is the SociACL contract and that pull request is the product draft. The hardening on this page answers the Codex review on that pull request. It adds no verb.
 
@@ -17,7 +17,7 @@ Light Check stays `CHECK(see, object, accessor)` at `now`.
 - `acceptHint`, `acceptHop`, and `decodeHop` do not verify and do not mint.
 - Privilege-down is immediate for a current verifier. Cancel is owner-only, sets `stated: 0`, and bumps `hamState`. The next Check after that verifier has merged the cancel denies. Do not cache an allow across that merge. A verifier that does not hold a fresh owner-signed epoch/status proof is bounded by that proof's max-age. See [Revocation freshness](#revocation-freshness).
 - `meta`, dest-ACL souls, and `UrlLeaf` fail closed.
-- This page adds no verb. `crates/sociacl-gun` evaluates plaintext `MeshSeeGrant` rows and direct group and circle membership. A wrap is not an input to that check.
+- This page adds no verb. `crates/sociacl-gun` evaluates plaintext `MeshSeeGrant` rows, plaintext `MeshPostGrant` rows (`checkPost`), and direct group and circle membership. A wrap is not an input to that check. An inbox delivery is not a grant.
 
 Plaintext dest ACL today is a `MeshSeeGrant` on a `GunAclEdge` (`hamState`) at `grantSoul(owner, object, accessor)`, under `aclSoul(owner)`:
 

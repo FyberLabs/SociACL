@@ -39,6 +39,8 @@ pub enum GunError {
     SignerNotEnrolled,
     #[error("row signature is not valid")]
     RowSignature,
+    #[error("post grant field is not a canonical integer")]
+    PostGrantField,
     #[error("check rejected: {0}")]
     Check(CheckError),
     #[error("{0}")]

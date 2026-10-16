@@ -112,6 +112,16 @@ import {
   sign,
   verify,
 } from "node:crypto";
+import { canonicalPostEdge, nextPostHam, postRowEncodable, preferPost } from "./post.js";
+
+export {
+  POST_GRANT_DOMAIN,
+  POST_GRANT_SCOPE,
+  checkPost,
+  factorGrants,
+  postGrantSigningBytes,
+  postSoul,
+} from "./post.js";
 
 const PKCS8_PREFIX = Uint8Array.from([
   0x30, 0x2e, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x04, 0x22, 0x04, 0x20,
@@ -308,6 +318,41 @@ export function aclPrincipalKey(id) {
     return encodeKey(parts[2] ?? "");
   }
   return aclKey(text);
+}
+
+const HELD_CLAIM_PREFIXES = ["ens:", "unstoppable:", "fc:", "lens:", "rss3:"];
+
+/** @param {string} id */
+function isItemShaped(id) {
+  const parts = String(id).trim().split("/");
+  return parts.length === 3 && parts[0] === "s3rch" && parts[1] === "items" && parts[2] !== "";
+}
+
+/** @param {string} id */
+function mayAliasToItemSoul(id) {
+  const text = String(id).trim();
+  if (isItemShaped(text)) return true;
+  if (!text.includes("/") && HELD_CLAIM_PREFIXES.some((prefix) => text.startsWith(prefix))) return false;
+  return true;
+}
+
+/** @param {string} id */
+function itemSoulOf(id) {
+  return `s3rch/items/${encodeKey(String(id).trim())}`;
+}
+
+/**
+ * A raw id and `s3rch/items/<encodeKey(id)>` name one object when
+ * one side is an item soul. A held claim id without `/` does not.
+ * @param {string} left
+ * @param {string} right
+ */
+function itemSoulAlias(left, right) {
+  const a = String(left).trim();
+  const b = String(right).trim();
+  if (!isItemShaped(a) && !isItemShaped(b)) return false;
+  if (!mayAliasToItemSoul(a) || !mayAliasToItemSoul(b)) return false;
+  return itemSoulOf(a) === b || itemSoulOf(b) === a;
 }
 
 /** @param {string} setId */
@@ -794,10 +839,12 @@ function membershipHidden(record, members) {
  */
 export class MemoryGroupGraph {
   constructor() {
-    /** @type {Map<string, string>} */
+    /** @type {Map<string, { id: string, owner: string }>} */
     this.objects = new Map();
     /** @type {Map<string, SeeGrant>} */
     this.grants = new Map();
+    /** @type {Map<string, import("./post.js").PostEdge>} */
+    this.posts = new Map();
     /** @type {Map<string, string>} */
     this.setOwners = new Map();
     /** @type {Map<string, MembershipRecord>} */
@@ -809,14 +856,31 @@ export class MemoryGroupGraph {
     this.replicaId = randomBytes(16);
   }
 
+  /**
+   * In-graph id and owner. A direct aclKey hit wins. Otherwise a raw
+   * id and its item soul resolve to the stored object. The stored id
+   * is the original spelling, so an item soul still matches its raw id.
+   * @param {string} object
+   * @returns {{ id: string, owner: string } | undefined}
+   */
+  objectRecord(object) {
+    const text = String(object).trim();
+    const direct = this.objects.get(aclKey(text));
+    if (direct) return { id: direct.id, owner: direct.owner };
+    for (const stored of this.objects.values()) {
+      if (itemSoulAlias(stored.id, text)) return { id: stored.id, owner: stored.owner };
+    }
+    return undefined;
+  }
+
   /** @param {string} object */
   hasObject(object) {
-    return this.objects.has(aclKey(String(object).trim()));
+    return this.objectRecord(object) !== undefined;
   }
 
   /** @param {string} object */
   ownerOf(object) {
-    return this.objects.get(aclKey(String(object).trim()));
+    return this.objectRecord(object)?.owner;
   }
 
   /**
@@ -824,11 +888,12 @@ export class MemoryGroupGraph {
    * @param {string} owner
    */
   putObject(object, owner) {
-    const key = aclKey(String(object).trim());
+    const id = String(object).trim();
+    const key = aclKey(id);
     const next = String(owner).trim();
     const prev = this.objects.get(key);
-    if (prev && aclPrincipalKey(prev) !== aclPrincipalKey(next)) this.objectSets.delete(key);
-    this.objects.set(key, next);
+    if (prev && aclPrincipalKey(prev.owner) !== aclPrincipalKey(next)) this.objectSets.delete(key);
+    this.objects.set(key, { id, owner: next });
   }
 
   /** @param {string} object */
@@ -855,6 +920,152 @@ export class MemoryGroupGraph {
       hamState: (prev?.hamState ?? 0) + 1,
       owner: String(owner).trim(),
     });
+  }
+
+  /**
+   * @param {string} owner
+   * @param {string} accessor
+   * @param {string} object
+   */
+  unstateSeeGrant(owner, accessor, object) {
+    const id = String(object).trim();
+    const who = String(accessor).trim();
+    const objectOwner = this.ownerOf(id);
+    if (!id || !who || !objectOwner || aclPrincipalKey(objectOwner) !== aclPrincipalKey(owner)) return;
+    const key = grantKey(owner, id, who);
+    const prev = this.grants.get(key);
+    this.grants.set(key, {
+      ...(prev ?? {}),
+      object: prev ? grantObject(prev) : id,
+      accessor: who,
+      from: prev?.from ?? 0,
+      until: prev?.until ?? 0,
+      stated: 0,
+      hamState: (prev?.hamState ?? 0) + 1,
+      owner: String(owner).trim(),
+    });
+  }
+
+  /**
+   * @param {string} object
+   * @param {string} accessor
+   */
+  seeGrant(object, accessor) {
+    const record = this.objectRecord(object);
+    const requested = record?.id ?? aclKey(String(object).trim());
+    const who = aclPrincipalKey(accessor);
+    const ownerNow = record?.owner;
+    for (const grant of this.grants.values()) {
+      const grantId = grantObject(grant);
+      if (aclKey(grantId) !== aclKey(requested) && !itemSoulAlias(grantId, requested)) continue;
+      if (aclPrincipalKey(grant.accessor) !== who) continue;
+      const owner = grant.owner ?? "";
+      if (!ownerNow || aclPrincipalKey(owner) !== aclPrincipalKey(ownerNow)) continue;
+      return {
+        soul: `s3rch/acl/${aclPrincipalKey(owner)}/${requested}/${who}`,
+        owner,
+        hamState: grant.hamState ?? 0,
+        grant: {
+          object: grantObject(grant),
+          accessor: grant.accessor,
+          from: grant.from ?? 0,
+          until: grant.until ?? 0,
+          stated: grant.stated === 0 ? 0 : 1,
+        },
+      };
+    }
+    return undefined;
+  }
+
+  /**
+   * @param {string} object
+   * @param {string} accessor
+   */
+  postGrant(object, accessor) {
+    const record = this.objectRecord(object);
+    const requested = record?.id ?? aclKey(String(object).trim());
+    const who = aclPrincipalKey(accessor);
+    const ownerNow = record?.owner;
+    for (const edge of this.posts.values()) {
+      if (aclKey(edge.grant.object) !== aclKey(requested) && !itemSoulAlias(edge.grant.object, requested)) continue;
+      if (aclPrincipalKey(edge.grant.accessor) !== who) continue;
+      if (!ownerNow || aclPrincipalKey(edge.owner) !== aclPrincipalKey(ownerNow)) continue;
+      return edge;
+    }
+    return undefined;
+  }
+
+  /**
+   * Owner-only live post row. Does not write a see grant.
+   * @param {string} owner
+   * @param {{ object?: string, claimId?: string, accessor: string, from: number, until: number }} grant
+   */
+  statePostGrant(owner, grant) {
+    const query = String(grant.object ?? grant.claimId ?? "").trim();
+    const who = String(grant.accessor ?? "").trim();
+    const record = this.objectRecord(query);
+    if (!query || !who || !record || aclPrincipalKey(record.owner) !== aclPrincipalKey(owner)) return;
+    const object = record.id;
+    const key = grantKey(owner, object, who);
+    const prev = this.posts.get(key);
+    const hamState = nextPostHam(prev?.hamState, false);
+    if (hamState === undefined) return;
+    const edge = canonicalPostEdge({
+      soul: "",
+      owner: String(owner).trim(),
+      hamState,
+      grant: { object, accessor: who, from: grant.from, until: grant.until, stated: 1 },
+    });
+    if (!postRowEncodable(edge)) return;
+    this.posts.set(key, edge);
+  }
+
+  /**
+   * Owner-only. stated 0 and a hamState bump.
+   * @param {string} owner
+   * @param {string} accessor
+   * @param {string} object
+   */
+  unstatePostGrant(owner, accessor, object) {
+    const query = String(object).trim();
+    const who = String(accessor).trim();
+    const record = this.objectRecord(query);
+    if (!query || !who || !record || aclPrincipalKey(record.owner) !== aclPrincipalKey(owner)) return;
+    const id = record.id;
+    const key = grantKey(owner, id, who);
+    const prev = this.posts.get(key);
+    const hamState = nextPostHam(prev?.hamState, true);
+    if (hamState === undefined) return;
+    const edge = canonicalPostEdge({
+      soul: "",
+      owner: String(owner).trim(),
+      hamState,
+      grant: {
+        object: prev?.grant.object ?? id,
+        accessor: who,
+        from: prev?.grant.from ?? 0,
+        until: prev?.grant.until ?? 0,
+        stated: 0,
+      },
+    });
+    if (!postRowEncodable(edge)) return;
+    this.posts.set(key, edge);
+  }
+
+  /** @param {import("./post.js").PostEdge} incoming */
+  mergePost(incoming) {
+    if (!postRowEncodable(incoming)) return;
+    const query = String(incoming.grant?.object ?? "").trim();
+    const record = this.objectRecord(query);
+    const grantOwner = incoming.owner ?? "";
+    if (!query || !record || !grantOwner || aclPrincipalKey(record.owner) !== aclPrincipalKey(grantOwner)) return;
+    const edge = canonicalPostEdge({
+      ...incoming,
+      grant: { ...incoming.grant, object: record.id },
+    });
+    const key = grantKey(edge.owner, edge.grant.object, edge.grant.accessor);
+    const local = this.posts.get(key);
+    this.posts.set(key, local ? preferPost(local, edge) : edge);
   }
 
   /**
@@ -1135,9 +1346,8 @@ export class MemoryGroupGraph {
 
   /** @param {MemoryGroupGraph} other */
   mergeFrom(other) {
-    for (const [key, owner] of other.objects) {
-      const canon = aclKey(key);
-      if (!this.objects.has(canon)) this.objects.set(canon, owner);
+    for (const [key, record] of other.objects) {
+      if (!this.objects.has(key)) this.objects.set(key, { id: record.id, owner: record.owner });
     }
     for (const incoming of other.grants.values()) {
       const object = grantObject(incoming);
@@ -1148,6 +1358,9 @@ export class MemoryGroupGraph {
       const local = this.grants.get(key);
       const chosen = local ? preferGrant(local, incoming) : incoming;
       this.grants.set(key, structuredClone(chosen));
+    }
+    for (const incoming of other.posts.values()) {
+      this.mergePost(incoming);
     }
     for (const [key, owner] of other.setOwners) {
       const setKey = key.split("\0")[1] ?? "";

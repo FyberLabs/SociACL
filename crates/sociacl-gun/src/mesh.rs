@@ -62,15 +62,21 @@ impl MeshSeeGrant {
     }
 
     pub fn names_object(&self, object: &str) -> bool {
-        let object = object.trim();
-        self.object == object
-            || acl_key(&self.object) == acl_key(object)
-            || item_soul_alias(&self.object, object)
+        object_names(&self.object, object)
     }
 
     pub fn names_accessor(&self, accessor: &str) -> bool {
-        acl_principal_key(&self.accessor) == acl_principal_key(accessor)
+        accessor_names(&self.accessor, accessor)
     }
+}
+
+pub(crate) fn object_names(stored: &str, query: &str) -> bool {
+    let query = query.trim();
+    stored == query || acl_key(stored) == acl_key(query) || item_soul_alias(stored, query)
+}
+
+pub(crate) fn accessor_names(stored: &str, query: &str) -> bool {
+    acl_principal_key(stored) == acl_principal_key(query)
 }
 
 impl From<&IdentitySeeGrant> for MeshSeeGrant {
@@ -206,6 +212,22 @@ impl MeshCheckResult {
     pub fn hop_factored(&self) -> bool {
         self.allowed && self.hop.is_some()
     }
+
+    /// A wrap is never an input that sets `allowed`.
+    pub fn wrap_is_grant(&self) -> bool {
+        false
+    }
+
+    /// An inbox delivery is never an input that sets `allowed`.
+    pub fn inbox_is_grant(&self) -> bool {
+        false
+    }
+}
+
+/// A hop, a hint, a wrap, or an inbox delivery never grants.
+/// Any other label is also not a grant.
+pub fn factor_grants(_kind: &str) -> bool {
+    false
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -226,6 +248,7 @@ struct MeshObject {
 pub struct MeshSeeGraph {
     objects: HashMap<String, MeshObject>,
     grants: HashMap<String, GunAclEdge>,
+    pub(crate) posts: HashMap<String, crate::post::GunPostEdge>,
     friends: HashSet<(String, String)>,
     pub(crate) groups: crate::group::GroupRows,
 }
@@ -266,9 +289,12 @@ impl MeshSeeGraph {
     }
 
     pub fn grant_edge(&self, object: &str, accessor: &str) -> Option<&GunAclEdge> {
-        self.grants
-            .values()
-            .find(|e| e.grant.names_object(object) && e.grant.names_accessor(accessor))
+        let owner = self.owner_of(object).unwrap_or("");
+        self.grants.values().find(|edge| {
+            edge.grant.names_object(object)
+                && edge.grant.names_accessor(accessor)
+                && acl_principal_key(&edge.owner) == acl_principal_key(owner)
+        })
     }
 
     /// Record a person-to-person edge. Check never walks it.
@@ -378,6 +404,20 @@ impl MeshSeeGraph {
             .collect();
         for edge in grants {
             self.merge_edge(edge);
+        }
+        let posts: Vec<crate::post::GunPostEdge> = other
+            .posts
+            .values()
+            .filter(|edge| {
+                self.lookup_object(&edge.grant.object)
+                    .is_some_and(|object| {
+                        acl_principal_key(&object.owner) == acl_principal_key(&edge.owner)
+                    })
+            })
+            .cloned()
+            .collect();
+        for edge in posts {
+            self.merge_post_edge(edge);
         }
         let object_owners: HashMap<String, String> = self
             .objects
