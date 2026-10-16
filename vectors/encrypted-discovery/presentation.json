@@ -1,0 +1,95 @@
+{
+  "encoding": "uint32-le-length-prefixed-utf8",
+  "hash": "sha256-lowercase-hex",
+  "notes": [
+    "Grant commitment hashes a fresh blinding plus the canonical grant.",
+    "The unsalted payload hash is not a commitment.",
+    "Presenter binding hashes the length-prefixed domain, nonce, commitment, and audience.",
+    "A concatenation of those strings with no lengths is not the binding hash.",
+    "Author fast unwrap opens only the revision stored with the DEK."
+  ],
+  "grant": {
+    "object": "item-1",
+    "accessor": "0xbob",
+    "from": 10,
+    "until": 40,
+    "stated": 1,
+    "epoch": 2,
+    "owner": "0xalice",
+    "grantRevision": 4
+  },
+  "unsaltedPayloadSha256": "a9986d879c1980ea8a038b8efbc2545400d745deac9749df1b72114f0df7f39f",
+  "cases": [
+    {
+      "name": "commitment-blind-a",
+      "kind": "grantCommitment",
+      "blinding": "1111111111111111111111111111111111111111111111111111111111111111",
+      "itemCiphertextDigest": "",
+      "encodedLen": 158,
+      "sha256": "05ab02df7d5b5dfcc35f6e135eb448c52d566c45b7f4479cda99ba72d975e8ed"
+    },
+    {
+      "name": "commitment-blind-b",
+      "kind": "grantCommitment",
+      "blinding": "2222222222222222222222222222222222222222222222222222222222222222",
+      "itemCiphertextDigest": "",
+      "encodedLen": 158,
+      "sha256": "08fdbfd742b78f31a8485773773658f8a188d7d3340422af341a611e5a179c7f"
+    },
+    {
+      "name": "commitment-item",
+      "kind": "grantCommitment",
+      "blinding": "1111111111111111111111111111111111111111111111111111111111111111",
+      "itemCiphertextDigest": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824",
+      "encodedLen": 222,
+      "sha256": "3a4fc9ca45ef3923069fac5776a235438592f924c768c7160cfe02d9dc5a6553"
+    },
+    {
+      "name": "payload-live",
+      "kind": "grantPayload",
+      "itemCiphertextDigest": "",
+      "encodedLen": 87,
+      "sha256": "a9986d879c1980ea8a038b8efbc2545400d745deac9749df1b72114f0df7f39f"
+    },
+    {
+      "name": "presenter-binding",
+      "kind": "presenterBinding",
+      "nonce": "nonce-1",
+      "commitment": "05ab02df7d5b5dfcc35f6e135eb448c52d566c45b7f4479cda99ba72d975e8ed",
+      "audience": "dest-a",
+      "concatenatedSha256": "1c923c3ac79ee8c021437517e02ae9aadee3affb28ee5c215c8a3de7e5e0dc6b",
+      "encodedLen": 119,
+      "sha256": "c0ea794f16accfaf047d42b68c14a632859a577d56227aa4588706b945873164"
+    },
+    {
+      "name": "epoch-status",
+      "kind": "epochStatus",
+      "body": {
+        "object": "item-1",
+        "epoch": 2,
+        "revisionId": "7959127078e9212a046160203b536df084c7884f9f1c18f439fda77f28450008",
+        "accessor": "0xbob",
+        "grantRevision": 4,
+        "stated": 1,
+        "signedAt": 20,
+        "maxAgeMs": 60000,
+        "zookie": {
+          "object": "item-1",
+          "objectVersion": 7,
+          "snapshotHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "encodedLen": 225,
+      "sha256": "ecfcdb5e0f2849ae6049dd557e611628814af740aecf83e02384bd4d5db5643b"
+    },
+    {
+      "name": "author-fast-revision",
+      "kind": "authorFast",
+      "object": "item-1",
+      "epoch": 2,
+      "revisionId": "7959127078e9212a046160203b536df084c7884f9f1c18f439fda77f28450008",
+      "displacedRevisionId": "2222222222222222222222222222222222222222222222222222222222222222",
+      "dek": "abababababababababababababababababababababababababababababababab"
+    }
+  ]
+}

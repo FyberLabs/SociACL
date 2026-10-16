@@ -8,8 +8,9 @@
  *
  * Reference implementation (Rust, this repo):
  *   crates/sociacl-gun — plaintext MeshSeeGrant Check
- *   crates/sociacl-encdisc — first encrypted-discovery slice
- *     (account SEA key, enrollment, wrapped-key edge, canonical ids)
+ *   crates/sociacl-encdisc — encrypted-discovery slice
+ *     (account SEA key, enrollment, wrap edge, canonical ids,
+ *      blinded rows, presenter binding)
  *
  * CHECK(see, object, accessor) at now.
  *   object   = GunFeedNode | held claim id | later opaque post/room
@@ -27,8 +28,9 @@
  * docs/encrypted-discovery.md. sociacl-gun evaluates plaintext see
  * grants and direct same-group / named-circle edges. It does not
  * evaluate a wrap. sociacl-encdisc implements the account key, the
- * wrap edge, and the canonical ids named below. It does not run Check,
- * inbox admission, epoch settlement, rotation, or migration.
+ * wrap edge, the canonical ids, blinded rows, and checkPresentedGrant.
+ * It does not run inbox admission, epoch publication, rotation, or
+ * migration.
  * SEA priv and epriv never go on Gun.
  */
 
@@ -401,9 +403,10 @@ export function decodeHop(bytes: Uint8Array): HopFactor;
 /* docs/encrypted-discovery.md. Copy / re-type with the types above.          */
 /* sociacl-gun evaluates plaintext MeshSeeGrant rows and direct              */
 /* same-group / named-circle edges. It does not evaluate a wrap.             */
-/* sociacl-encdisc implements the account key, the wrap edge, and the         */
-/* canonical ids. It does not run Check, admission, settlement, rotation,     */
-/* or migration. A wrap is not a grant. SEA priv and epriv never go on Gun.   */
+/* sociacl-encdisc implements the account key, the wrap edge, the canonical   */
+/* ids, blinded rows, and checkPresentedGrant. It does not run admission,     */
+/* epoch publication, rotation, or migration. A wrap is not a grant.          */
+/* SEA priv and epriv never go on Gun.                                        */
 /* same-group and named-circle: hopcap 1, jointly stated, no inheritance.    */
 /* -------------------------------------------------------------------------- */
 
@@ -906,7 +909,7 @@ export type PresentedGroup = {
 };
 
 /**
- * Spec signature. The reference crate does not run this.
+ * The reference crate runs this check.
  * Commitment mismatch or a bad owner signature fails closed.
  * challenges is the verifier's outstanding nonce set.
  * A binding nonce must match one outstanding challenge,
@@ -1411,7 +1414,7 @@ export type EpochReplicaView = {
 };
 
 /**
- * Spec signature. The reference crate does not run this.
+ * The reference crate runs this for the read key inside checkPresentedGrant.
  * snapshot is the ACL body of the winning manifest. Its
  * aclSnapshotId must be that manifest's aclSnapshot.
  * current is the ACL this replica has already merged.

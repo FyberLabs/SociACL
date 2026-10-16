@@ -12,5 +12,5 @@
     "noUncheckedIndexedAccess": true,
     "skipLibCheck": true
   },
-  "files": ["canonical.ts", "../tests/test_encdisc_vectors.ts"]
+  "files": ["canonical.ts", "presenter.ts", "../tests/test_encdisc_vectors.ts", "../tests/test_presentation.ts"]
 }

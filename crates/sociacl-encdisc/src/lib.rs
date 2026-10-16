@@ -1,17 +1,18 @@
 //! Encrypted-discovery reference slice.
 //!
-//! This crate implements the first slice of
-//! [docs/encrypted-discovery.md](../../docs/encrypted-discovery.md):
-//! one SEA keypair per account, device enrollment, and the wrapped-key
-//! edge. Canonical ids for an inbox entry, an epoch revision, and the
-//! item-auth tuple are checked against
-//! `vectors/encrypted-discovery/canonical.json`.
+//! This crate implements the account SEA key, device enrollment, the
+//! wrapped-key edge, blinded grant rows, commitment opening, author fast
+//! unwrap, and [`check_presented_grant`]. Canonical ids are checked
+//! against `vectors/encrypted-discovery/`. The read-key half of
+//! [`epoch_step_current`] runs inside that check. Inbox admission, epoch
+//! publication, rotation, and migration are not in this slice.
 //!
 //! s3r.ch copies `docs/s3rch-check.d.ts` and reimplements that contract
-//! in TypeScript. It does not import this crate. `sociacl-gun` still
-//! evaluates plaintext `MeshSeeGrant` rows only. This crate does not
-//! change Check. A hop, a hint, or a wrap never mints. SEA `priv` and
-//! `epriv` are not on the Gun public view.
+//! in TypeScript. It does not import this crate. `sociacl-gun` evaluates
+//! plaintext `MeshSeeGrant` rows and direct `same-group` / `named-circle`
+//! edges. It does not evaluate a wrap. This crate does not change that
+//! Check. A hop, a hint, or a wrap never mints. SEA `priv` and `epriv`
+//! are not on the Gun public view.
 //!
 //! # Wire choices
 //!
@@ -39,17 +40,25 @@
 //! * `keyCommitment` stays an opaque string. This slice does not define it.
 //! * `laneId` is 32 random bytes chosen when the account key is minted.
 //!   Enrollment copies it. It is not derived from the account id.
-//!
-//! Epoch settlement, inbox admission, presenter binding, rotation, and
-//! migration are not in this slice.
+//! * A grant commitment is SHA-256 of the length-prefixed blinding and
+//!   the canonical grant. The blinding is not on the visible row.
+//! * A presenter binding is a P-256 signature over the length-prefixed
+//!   domain, nonce, commitment hash, and verifier audience.
+//! * `AuthenticatedPresenterChannel` is minted only by its `open`
+//!   constructor. The private brand is not a public field.
 
 #![forbid(unsafe_code)]
 
 mod account;
 mod canonical;
+mod epoch;
 mod error;
+mod grant;
 mod hexutil;
+mod present;
+mod presenter;
 mod sea;
+mod see;
 mod wrap;
 
 pub use account::{
@@ -57,15 +66,43 @@ pub use account::{
     AccountSeaSecret, DeviceEnrollment, EnrolledSeaPub, FirstContactIntro, RecipientInbox,
 };
 pub use canonical::{
-    account_binding_bytes, account_binding_sha256, canonical_decimal, epoch_revision_bytes,
-    epoch_revision_id, inbox_entry_bytes, inbox_entry_id, item_auth_bytes, item_auth_sha256,
-    length_prefixed, parse_canonical_decimal, plaintext_digest, sha256, sha256_fields, sha256_hex,
-    EpochManifestBody, InboxEntryBody, InboxWrapFields, ItemAuthFields, DOMAIN_ACCOUNT_BINDING,
-    DOMAIN_EPOCH, DOMAIN_GROUP_WRAP, DOMAIN_INBOX, DOMAIN_ITEM_AUTH, DOMAIN_SEA_SECRET,
+    account_binding_bytes, account_binding_sha256, canonical_decimal, decode_length_prefixed,
+    epoch_finalization_bytes, epoch_finalization_id, epoch_revision_bytes, epoch_revision_id,
+    epoch_status_bytes, epoch_status_sha256, grant_commitment_bytes, grant_commitment_hash,
+    grant_payload_bytes, grant_payload_digest, inbox_entry_bytes, inbox_entry_id, item_auth_bytes,
+    item_auth_sha256, length_prefixed, parse_canonical_decimal, plaintext_digest,
+    presenter_binding_bytes, presenter_binding_sha256, sha256, sha256_fields, sha256_hex,
+    EpochManifestBody, EpochStatusBody, GrantPayloadBody, InboxEntryBody, InboxWrapFields,
+    ItemAuthFields, DOMAIN_ACCOUNT_BINDING, DOMAIN_EPOCH, DOMAIN_EPOCH_FINALIZATION,
+    DOMAIN_EPOCH_STATUS, DOMAIN_GRANT_COMMITMENT, DOMAIN_GRANT_PAYLOAD, DOMAIN_GROUP_WRAP,
+    DOMAIN_INBOX, DOMAIN_ITEM_AUTH, DOMAIN_PRESENTER_BINDING, DOMAIN_SEA_SECRET,
     DOMAIN_WRAPPED_KEY, JS_SAFE_INTEGER_MAX,
 };
+pub use epoch::{
+    epoch_read_key, epoch_step_current, status_is_fresh, AclObjectSet, AclScope, AclSnapshotBody,
+    AclSnapshotEntry, EpochFinalization, EpochReadKey, EpochReplicaView, EpochStatusProof,
+    LightZookie, SETTLE_WINDOW_DEFAULT_MS, SETTLE_WINDOW_MAX_MS, SETTLE_WINDOW_MIN_MS,
+};
 pub use error::EncDiscError;
+pub use grant::{
+    commit_grant, decode_grant_bytes, encode_grant_bytes, fresh_blinding, grant_digest,
+    open_commitment, row_entry_matches, row_exposes_opening, seal_blinded_row, AuthorFastUnwrap,
+    BlindedGrantRow, GrantCommitment, GrantPresentation, GrantStated, MeshSeeGrant,
+    SignedGrantPayload,
+};
+pub use present::{
+    check_presented_grant, PresentedGrantDecision, PresentedGrantInput, VerifierGrantRevision,
+    VerifierGrantRevisionState,
+};
+pub use presenter::{
+    binding_for, verify_presenter_binding, AuthenticatedPresenterChannel, PresenterBinding,
+    PresenterChallenge, VerifierChallengeState,
+};
 pub use sea::{sign_sea, verify_sea};
+pub use see::{
+    check_group_see, check_opened_grant, hop_forbidden, CheckResult, GroupPredicate, HandoffHint,
+    HopFactor, IdentitySeeGrant, MeshMembership, ObjectSetName, PresentedGroup, SeeGraph,
+};
 pub use wrap::{
     open_group_epoch_wrap, open_reader_wrap, wrap_group_key_to_members,
     wrap_item_dek_to_group_epoch, wrap_item_dek_to_readers, GroupEpochKey, ItemDek, NamedSet,
