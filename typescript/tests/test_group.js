@@ -4,6 +4,7 @@ import {
   MemoryGroupGraph,
   checkGroupPresentation,
   checkGroupSee,
+  aclKey,
   membershipSoul,
   objectSetSoul,
   snapshotUnderstatesGroup,
@@ -487,7 +488,6 @@ test("checkGroupSee reads membership through the graph interface", () => {
     objectSet: (object) => real.objectSet(object),
     seeGrants: (object) => real.seeGrants(object),
     enrolledKey: (principal) => real.enrolledKey(principal),
-    enrolled: real.enrolled,
     membership(predicate, setId, accessor) {
       assert.equal(predicate, "same-group");
       assert.equal(setId, "0xalice/ops");
@@ -505,6 +505,7 @@ test("checkGroupSee reads membership through the graph interface", () => {
     stated: 0,
     hamState: 3,
     removed: true,
+    setOwner: "0xalice",
   });
   assert.equal(checkGroupSee(graph, "same-group", "doc", "0xbob", 1).reason, "cancelled");
 });
@@ -674,6 +675,116 @@ test("merge rejects a row signed for a different enrolled key", () => {
   receiver.recordSetOwner("0xalice", "same-group", "0xalice/ops");
   receiver.mergeFrom(sender);
   assert.equal(receiver.objectSet("doc"), undefined);
-  assert.equal(receiver.membership("same-group", "0xalice/ops", "0xbob"), undefined);
+  assert.equal(receiver.membership("same-group", "0xalice/ops", "0xbob")?.stated, 0);
   assert.equal(checkGroupSee(receiver, "same-group", "doc", "0xbob", 1).allowed, false);
+
+  const unsigned = new MemoryGroupGraph();
+  unsigned.putObject("doc", "0xalice");
+  unsigned.recordSetOwner("0xalice", "same-group", "0xalice/ops");
+  unsigned.mergeFrom(sender);
+  assert.equal(unsigned.objectSet("doc"), undefined);
+  assert.equal(unsigned.membership("same-group", "0xalice/ops", "0xbob"), undefined);
+});
+
+test("mergeFrom stores rows under the signed identity", () => {
+  const source = liveGraph();
+  source.putObject("other", "0xalice");
+  const nul = "\u0000";
+  const memberKey = `same-group${nul}${aclKey("0xalice/ops")}${nul}0xbob`;
+  const carolKey = `same-group${nul}${aclKey("0xalice/ops")}${nul}0xcarol`;
+  const membership = source.memberships.get(memberKey);
+  source.memberships.set(carolKey, membership);
+  const edge = source.objectSets.get(aclKey("doc"));
+  source.objectSets.set(aclKey("other"), edge);
+  const grantKey = `0xalice${nul}doc${nul}0xbob`;
+  source.stateSeeGrant("0xalice", { object: "doc", accessor: "0xbob", from: 0, until: 80 });
+  const grant = source.grants.get(grantKey);
+  source.grants.delete(grantKey);
+  source.grants.set(`0xalice${nul}doc${nul}0xcarol`, grant);
+
+  assert.equal(checkGroupSee(source, "same-group", "other", "0xbob", 1).allowed, false);
+  assert.equal(checkGroupSee(source, "same-group", "doc", "0xcarol", 1).allowed, false);
+  assert.equal(checkGroupSee(source, "same-group", "doc", "0xbob", 1).allowed, true);
+
+  const dest = openGraph();
+  dest.putObject("doc", "0xalice");
+  dest.putObject("other", "0xalice");
+  dest.recordSetOwner("0xalice", "same-group", "0xalice/ops");
+  dest.mergeFrom(source);
+  assert.equal(dest.membership("same-group", "0xalice/ops", "0xcarol"), undefined);
+  assert.equal(dest.membership("same-group", "0xalice/ops", "0xbob")?.accessor, "0xbob");
+  assert.equal(dest.objectSet("other"), undefined);
+  assert.equal(dest.objectSet("doc")?.object, "doc");
+  assert.equal(dest.seeGrants("doc").some((row) => row.accessor === "0xcarol"), false);
+  assert.equal(checkGroupSee(dest, "same-group", "doc", "0xbob", 1).allowed, true);
+  assert.equal(checkGroupSee(dest, "same-group", "other", "0xbob", 1).allowed, false);
+});
+
+test("check compares the returned accessor and object to the request", () => {
+  const real = liveGraph();
+  const graph = {
+    ownerOf: (object) => (object === "other" ? "0xalice" : real.ownerOf(object)),
+    ownerOfSet: (predicate, setId) => real.ownerOfSet(predicate, setId),
+    objectSet: () => real.objectSet("doc"),
+    seeGrants: () => [],
+    enrolledKey: (principal) => real.enrolledKey(principal),
+    membership: () => real.membership("same-group", "0xalice/ops", "0xbob"),
+  };
+  assert.equal(checkGroupSee(graph, "same-group", "other", "0xbob", 1).allowed, false);
+  assert.equal(checkGroupSee(graph, "same-group", "doc", "0xcarol", 1).allowed, false);
+  assert.equal(checkGroupSee(graph, "same-group", "doc", "0xbob", 1).reason, "same-group");
+});
+
+test("equal ham see grants keep the narrower window", () => {
+  const wide = openGraph();
+  wide.putObject("doc", "0xalice");
+  wide.stateSeeGrant("0xalice", { object: "doc", accessor: "0xbob", from: 0, until: 100 });
+  const narrow = openGraph();
+  narrow.putObject("doc", "0xalice");
+  narrow.stateSeeGrant("0xalice", { object: "doc", accessor: "0xbob", from: 0, until: 5 });
+  const fromWide = openGraph();
+  fromWide.putObject("doc", "0xalice");
+  fromWide.stateSeeGrant("0xalice", { object: "doc", accessor: "0xbob", from: 0, until: 100 });
+  fromWide.mergeFrom(narrow);
+  const fromNarrow = openGraph();
+  fromNarrow.putObject("doc", "0xalice");
+  fromNarrow.stateSeeGrant("0xalice", { object: "doc", accessor: "0xbob", from: 0, until: 5 });
+  fromNarrow.mergeFrom(wide);
+  for (const graph of [fromWide, fromNarrow]) {
+    assert.equal(
+      checkGroupPresentation(graph, null, "doc", "0xbob", { stated: 1, from: 0, until: 100 }, 10).allowed,
+      false,
+    );
+    const early = checkGroupPresentation(graph, null, "doc", "0xbob", { stated: 1, from: 0, until: 100 }, 1);
+    assert.equal(early.allowed, true);
+    assert.equal(early.reason, "delegate");
+    assert.equal(graph.seeGrants("doc")[0]?.until, 5);
+  }
+});
+
+test("a corrupt party signature does not drop a valid cancel", () => {
+  const live = liveGraph();
+  const cancelled = liveGraph();
+  cancelled.cancelMembership("0xalice", "same-group", "0xalice/ops", "0xbob", secret("0xalice").privateKey);
+  const key = `same-group${"\u0000"}${aclKey("0xalice/ops")}${"\u0000"}0xbob`;
+  const row = cancelled.memberships.get(key);
+  row.member.signature = new Uint8Array(64);
+
+  const fromCancel = openGraph();
+  fromCancel.putObject("doc", "0xalice");
+  fromCancel.recordSetOwner("0xalice", "same-group", "0xalice/ops");
+  fromCancel.mergeFrom(cancelled);
+  fromCancel.mergeFrom(live);
+
+  const fromLive = openGraph();
+  fromLive.putObject("doc", "0xalice");
+  fromLive.recordSetOwner("0xalice", "same-group", "0xalice/ops");
+  fromLive.mergeFrom(live);
+  fromLive.mergeFrom(cancelled);
+
+  for (const graph of [fromCancel, fromLive]) {
+    const result = checkGroupSee(graph, "same-group", "doc", "0xbob", 1);
+    assert.equal(result.allowed, false);
+    assert.equal(result.reason, "cancelled");
+  }
 });

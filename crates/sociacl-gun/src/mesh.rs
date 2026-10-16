@@ -6,6 +6,7 @@
 //! visible as privilege-down on the next Check after merge. There is
 //! no cached allow.
 
+use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 
 use sociacl_core::{NodeId, Timestamp};
@@ -110,15 +111,75 @@ impl GunAclEdge {
         self.soul.as_node_id().as_str().to_string()
     }
 
-    /// Last-write-wins on HAM state. Cancel bumps state so
-    /// privilege-down wins the next merge.
+    /// Soul rebuilt from owner, object, and accessor. A peer map
+    /// key or a copied soul does not choose where the grant lands.
+    pub fn canonical(self) -> Self {
+        Self::new(self.owner, self.grant, self.ham_state)
+    }
+
+    /// Higher HAM state wins. At the same state a cancellation wins,
+    /// then the narrower window, then the smaller canonical bytes.
     pub fn ham_merge(self, incoming: Self) -> Self {
-        if incoming.ham_state > self.ham_state {
-            incoming
-        } else {
-            self
+        let local = self.canonical();
+        let incoming = incoming.canonical();
+        if incoming.ham_state > local.ham_state {
+            return incoming;
+        }
+        if incoming.ham_state < local.ham_state {
+            return local;
+        }
+        match equal_ham_grant_order(&local, &incoming) {
+            Ordering::Greater => incoming,
+            Ordering::Less | Ordering::Equal => local,
         }
     }
+}
+
+/// `Less` means `left` is the privilege-down row.
+fn equal_ham_grant_order(left: &GunAclEdge, right: &GunAclEdge) -> Ordering {
+    let left_down = left.grant.stated != 1;
+    let right_down = right.grant.stated != 1;
+    match (left_down, right_down) {
+        (true, false) => return Ordering::Less,
+        (false, true) => return Ordering::Greater,
+        _ => {}
+    }
+    if let Some(order) = narrower_window(&left.grant, &right.grant) {
+        return order;
+    }
+    canonical_grant_bytes(left).cmp(&canonical_grant_bytes(right))
+}
+
+fn narrower_window(left: &MeshSeeGrant, right: &MeshSeeGrant) -> Option<Ordering> {
+    let left_inside = left.from.0 >= right.from.0
+        && left.until.0 <= right.until.0
+        && (left.from.0 > right.from.0 || left.until.0 < right.until.0);
+    let right_inside = right.from.0 >= left.from.0
+        && right.until.0 <= left.until.0
+        && (right.from.0 > left.from.0 || right.until.0 < left.until.0);
+    match (left_inside, right_inside) {
+        (true, false) => Some(Ordering::Less),
+        (false, true) => Some(Ordering::Greater),
+        _ => None,
+    }
+}
+
+fn canonical_grant_bytes(edge: &GunAclEdge) -> Vec<u8> {
+    let mut buf = b"sociacl-see-grant-v1\0".to_vec();
+    push_grant_str(&mut buf, &acl_principal_key(&edge.owner));
+    push_grant_str(&mut buf, &acl_key(&edge.grant.object));
+    push_grant_str(&mut buf, &acl_principal_key(&edge.grant.accessor));
+    buf.extend_from_slice(&edge.grant.from.0.to_be_bytes());
+    buf.extend_from_slice(&edge.grant.until.0.to_be_bytes());
+    buf.push(edge.grant.stated);
+    buf
+}
+
+fn push_grant_str(buf: &mut Vec<u8>, value: &str) {
+    let bytes = value.as_bytes();
+    let len = u32::try_from(bytes.len()).unwrap_or(u32::MAX);
+    buf.extend_from_slice(&len.to_be_bytes());
+    buf.extend_from_slice(&bytes[..usize::try_from(len).unwrap_or(bytes.len())]);
 }
 
 /// TS `CheckResult` on the mesh graph. A present hint or hop never
@@ -282,21 +343,27 @@ impl MeshSeeGraph {
     }
 
     /// HAM-merge an incoming dest-ACL node from another peer.
+    /// The stored key is rebuilt from the grant's owner, object,
+    /// and accessor.
     pub fn merge_edge(&mut self, incoming: GunAclEdge) {
+        let incoming = incoming.canonical();
         let key = incoming.soul_key();
         let merged = match self.grants.remove(&key) {
             Some(local) => local.ham_merge(incoming),
             None => incoming,
         };
+        let merged = merged.canonical();
+        let key = merged.soul_key();
         self.grants.insert(key, merged);
     }
 
     /// Merge every dest-ACL node from `other` into this peer.
+    /// Object rows are stored under the id on the row, not the
+    /// peer's map key.
     pub fn merge_from(&mut self, other: &Self) {
-        for (key, object) in &other.objects {
-            self.objects
-                .entry(key.clone())
-                .or_insert_with(|| object.clone());
+        for object in other.objects.values() {
+            let key = object_store_key(&object.id);
+            self.objects.entry(key).or_insert_with(|| object.clone());
         }
         let grants: Vec<GunAclEdge> = other
             .grants
@@ -364,7 +431,10 @@ impl MeshSeeGraph {
         }
 
         if let Some(edge) = self.grant_edge(object, accessor) {
-            if edge.grant.live_at(now) {
+            let names = edge.grant.names_object(object)
+                && edge.grant.names_accessor(accessor)
+                && acl_principal_key(&edge.owner) == acl_principal_key(&obj.owner);
+            if names && edge.grant.live_at(now) {
                 return MeshCheckResult {
                     allowed: true,
                     reason: MESH_REASON_DELEGATE.into(),
@@ -372,7 +442,7 @@ impl MeshSeeGraph {
                     hop,
                 };
             }
-            if !edge.grant.is_stated() {
+            if names && !edge.grant.is_stated() {
                 return MeshCheckResult {
                     allowed: false,
                     reason: MESH_REASON_CANCELLED.into(),

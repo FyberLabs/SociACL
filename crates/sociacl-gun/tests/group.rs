@@ -2162,7 +2162,7 @@ fn colliding_set_ids_are_rejected_and_check_uses_the_canonical_id() {
 
 #[test]
 fn merge_rejects_rows_that_do_not_verify_under_the_enrolled_key() {
-    let mut sender = group_graph();
+    let sender = group_graph();
     let mut receiver = MeshSeeGraph::new();
     receiver.put_object("doc", "0xalice");
     receiver
@@ -2176,9 +2176,10 @@ fn merge_rejects_rows_that_do_not_verify_under_the_enrolled_key() {
         .unwrap();
     receiver.merge_from(&sender);
     assert!(receiver.object_set("doc").is_none());
-    assert!(receiver
+    let kept = receiver
         .membership(GroupPredicate::SameGroup, "0xalice/ops", "0xbob")
-        .is_none());
+        .unwrap();
+    assert_eq!(kept.stated, 0);
     assert!(
         !receiver
             .check_group_see(
@@ -2199,6 +2200,9 @@ fn merge_rejects_rows_that_do_not_verify_under_the_enrolled_key() {
         .unwrap();
     unsigned.merge_from(&sender);
     assert!(unsigned.object_set("doc").is_none());
+    assert!(unsigned
+        .membership(GroupPredicate::SameGroup, "0xalice/ops", "0xbob")
+        .is_none());
 }
 
 #[test]

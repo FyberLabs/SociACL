@@ -1721,10 +1721,40 @@ export function filterInboxAppend(
 ): InboxAppendResult;
 
 /**
+ * One party's assent. The signature covers the predicate, set id,
+ * accessor, set owner, stated bit, hamState, and observed cancel ids.
+ * spoken is false when that party has not signed.
+ */
+export type MembershipAssent = {
+  stated: boolean;
+  hamState: number;
+  /** Cancel ids this assent lists. A live assent lists every known cancel. */
+  observed: readonly string[];
+  /** Ed25519 signature. Absent when spoken is false. */
+  signature?: Uint8Array;
+  spoken: boolean;
+};
+
+/**
+ * One cancel id, signed on its own. The signature covers the id,
+ * the row it names, and the prior ids. Check keeps an id whose
+ * signature verifies even when another signature on the row does not.
+ */
+export type SignedCancel = {
+  /** Lowercase hex SHA-256. */
+  id: string;
+  prior: readonly string[];
+  signer: AccessorId;
+  signature: Uint8Array;
+};
+
+/**
  * Direct membership. Hopcap 1. Jointly stated.
  * stated 1 = live, 0 = cancelled. Cancel bumps hamState.
  * One-sided membership is not a grant. Not a walk.
  * Nested groups and nested circles do not grant.
+ * Check compares accessor, setId, and predicate to the request.
+ * It does not trust the lookup key that returned the row.
  */
 export type MeshMembership = {
   predicate: "same-group" | "named-circle";
@@ -1732,11 +1762,23 @@ export type MeshMembership = {
   accessor: AccessorId;
   stated: 0 | 1;
   hamState: number;
+  /** Set owner named by the assents. Must match ownerOfSet. */
+  setOwner: AccessorId;
+  /** True when a verified cancel or a spoken retraction removed the row. */
+  removed: boolean;
+  /** Member assent, signed by the accessor. */
+  member: MembershipAssent;
+  /** Set-owner assent, signed by setOwner. */
+  setParty: MembershipAssent;
+  /** Grow-only cancel ids for this membership. */
+  cancels: readonly SignedCancel[];
 };
 
 /**
  * Group or circle the object names. One predicate.
  * Does not change GunFeedNode or GunUserNode.
+ * Check compares object to the requested object.
+ * It does not trust the lookup key that returned the row.
  */
 export type ObjectSetName = {
   object: CheckObjectId;
@@ -1744,11 +1786,22 @@ export type ObjectSetName = {
   setId: string;
   stated: 0 | 1;
   hamState: number;
+  /** Object owner who signed the edge. Must match ownerOf. */
+  objectOwner: AccessorId;
+  /** Stated bit covered by the signature. */
+  signedStated: 0 | 1;
+  /** Cancel ids this edge lists. */
+  observed: readonly string[];
+  /** Ed25519 signature by the enrolled object owner. */
+  signature: Uint8Array;
+  /** Grow-only cancel ids for this edge. */
+  cancels: readonly SignedCancel[];
 };
 
 /**
  * See graph plus direct group and circle edges.
  * Check does not walk from one set into another.
+ * enrolledKey is the verifier's map. A key on the row is not it.
  */
 export type GroupSeeGraph = SeeGraph & {
   objectSet(object: CheckObjectId): ObjectSetName | undefined;
@@ -1760,12 +1813,18 @@ export type GroupSeeGraph = SeeGraph & {
   /**
    * Account that owns this set. Absent when the set is unknown.
    * GroupEpochConfig.owner must equal this. The config does
-   * not choose it.
+   * not choose it. Absent fails closed.
    */
   ownerOfSet(
     predicate: "same-group" | "named-circle",
     setId: string,
   ): AccessorId | undefined;
+  /**
+   * Enrolled Ed25519 verify key for this principal. 32 bytes.
+   * Absent when the account is not enrolled. Check uses this
+   * key for object-set rows, membership assents, and cancels.
+   */
+  enrolledKey(principal: AccessorId): Uint8Array | undefined;
 };
 
 /**
@@ -1775,6 +1834,8 @@ export type GroupSeeGraph = SeeGraph & {
  * Hopcap 1. Direct jointly stated edge only.
  * No transitive inheritance.
  * Both the object-set edge and the membership edge must be stated 1.
+ * Check compares the row's object, set id, and accessor to the
+ * request, and verifies signatures with enrolledKey.
  * Hop missing does not fail. Hop alone never allows.
  * A hop, a hint, or a wrap never mints.
  * stated 0 denies. now is the Check instant; membership has no

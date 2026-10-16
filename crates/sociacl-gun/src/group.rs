@@ -274,10 +274,11 @@ impl GroupRows {
         let merged = match self.memberships.remove(&key) {
             Some(local) => merge_membership_records(local, incoming, &enrolled),
             None => {
-                if !membership_signatures_ok(&incoming, &enrolled) {
+                let mut incoming = incoming;
+                retain_verified_membership(&mut incoming, &enrolled);
+                if !membership_has_authentic_part(&incoming) {
                     return;
                 }
-                let mut incoming = incoming;
                 incoming.publish(&enrolled);
                 incoming
             }
@@ -300,14 +301,20 @@ impl GroupRows {
             return;
         }
         let enrolled = self.enrolled.clone();
-        if !object_signature_ok(&incoming, &enrolled) {
-            return;
-        }
         let key = object_set_key(&incoming.name.object);
         let merged = match self.object_sets.remove(&key) {
             Some(local) => merge_object_records(local, incoming, &enrolled),
             None => {
                 let mut incoming = incoming;
+                retain_verified_object_cancels(&mut incoming, &enrolled);
+                if !object_signature_ok(&incoming, &enrolled) {
+                    if incoming.cancels.is_empty() {
+                        return;
+                    }
+                    incoming.signed_stated = 0;
+                    incoming.signature = AttestationSig::empty();
+                    incoming.observed.clear();
+                }
                 refresh_object(&mut incoming, &enrolled);
                 incoming
             }
@@ -657,6 +664,9 @@ impl MeshSeeGraph {
         if acl_principal_key(&edge.object_owner) != acl_principal_key(&object_owner) {
             return closed(crate::MESH_REASON_MISSING, hint, hop);
         }
+        if acl_key(&edge.name.object) != acl_key(&object_id) {
+            return closed(crate::MESH_REASON_MISSING, hint, hop);
+        }
         let edge_predicate = edge.name.predicate;
         if edge_predicate != predicate {
             return closed(crate::MESH_REASON_MISSING, hint, hop);
@@ -691,7 +701,11 @@ impl MeshSeeGraph {
         let Some(record) = self.membership_record(predicate, &set_id, accessor) else {
             return closed(crate::MESH_REASON_MISSING, hint, hop);
         };
-        if record.membership.set_id != set_id {
+        if record.membership.predicate != predicate
+            || record.membership.set_id != set_id
+            || acl_principal_key(&record.membership.accessor) != acl_principal_key(accessor)
+            || acl_principal_key(&record.set_owner) != acl_principal_key(set_owner)
+        {
             return closed(crate::MESH_REASON_MISSING, hint, hop);
         }
         if self.membership_grantable(record) {
@@ -1012,24 +1026,63 @@ fn sign_party(
     party.signature = secret.sign(message);
 }
 
+fn verified_membership_cancels(
+    record: &MembershipRecord,
+    enrolled: &HashMap<String, VerifyKey>,
+) -> Vec<(CancelId, SignedCancel)> {
+    let row_key = membership_row_key(record);
+    record
+        .cancels
+        .iter()
+        .filter(|(_, cancel)| {
+            cancel_verifies(cancel, enrolled, "membership", &row_key, |signer| {
+                membership_cancel_signer(record, signer)
+            })
+        })
+        .map(|(id, cancel)| (*id, cancel.clone()))
+        .collect()
+}
+
+fn retain_verified_membership(
+    record: &mut MembershipRecord,
+    enrolled: &HashMap<String, VerifyKey>,
+) {
+    record.cancels = verified_membership_cancels(record, enrolled)
+        .into_iter()
+        .collect();
+    if record.member.spoken && !party_signature_ok(&record.member, "member", record, enrolled) {
+        record.member = PartyStatement::absent();
+    }
+    if record.set_party.spoken && !party_signature_ok(&record.set_party, "set", record, enrolled) {
+        record.set_party = PartyStatement::absent();
+    }
+}
+
+fn membership_has_authentic_part(record: &MembershipRecord) -> bool {
+    !record.cancels.is_empty() || record.member.spoken || record.set_party.spoken
+}
+
+fn retain_verified_object_cancels(
+    record: &mut ObjectSetRecord,
+    enrolled: &HashMap<String, VerifyKey>,
+) {
+    let row_key = object_set_key(&record.name.object);
+    let owner = acl_principal_key(&record.object_owner);
+    record.cancels.retain(|_, cancel| {
+        cancel_verifies(cancel, enrolled, "object-set", &row_key, |signer| {
+            acl_principal_key(signer) == owner
+        })
+    });
+}
+
 fn merge_membership_records(
     local: MembershipRecord,
     incoming: MembershipRecord,
     enrolled: &HashMap<String, VerifyKey>,
 ) -> MembershipRecord {
     let mut cancels = local.cancels.clone();
-    if membership_signatures_ok(&incoming, enrolled) {
-        for (id, cancel) in &incoming.cancels {
-            if cancel_verifies(
-                cancel,
-                enrolled,
-                "membership",
-                &membership_row_key(&incoming),
-                |signer| membership_cancel_signer(&incoming, signer),
-            ) {
-                cancels.entry(*id).or_insert_with(|| cancel.clone());
-            }
-        }
+    for (id, cancel) in verified_membership_cancels(&incoming, enrolled) {
+        cancels.entry(id).or_insert(cancel);
     }
     let ids = cancel_ids(&cancels);
     let member = pick_party(
@@ -1115,7 +1168,7 @@ fn merge_object_records(
         }
     }
     let ids = cancel_ids(&cancels);
-    let mut picked = pick_object(local, incoming, &ids);
+    let mut picked = pick_object(local, incoming, &ids, enrolled);
     picked.cancels = cancels;
     refresh_object(&mut picked, enrolled);
     picked
@@ -1125,7 +1178,19 @@ fn pick_object(
     local: ObjectSetRecord,
     incoming: ObjectSetRecord,
     ids: &BTreeSet<CancelId>,
+    enrolled: &HashMap<String, VerifyKey>,
 ) -> ObjectSetRecord {
+    let local_ok = object_signature_ok(&local, enrolled);
+    let incoming_ok = object_signature_ok(&incoming, enrolled);
+    if local_ok && !incoming_ok {
+        return local;
+    }
+    if incoming_ok && !local_ok {
+        return incoming;
+    }
+    if !local_ok && !incoming_ok {
+        return local;
+    }
     let local_cov = local.observed.is_superset(ids);
     let incoming_cov = incoming.observed.is_superset(ids);
     if local_cov != incoming_cov {
@@ -1178,15 +1243,6 @@ fn object_signature_ok(record: &ObjectSetRecord, enrolled: &HashMap<String, Veri
         return false;
     };
     key.verify(&object_message(record), &record.signature)
-}
-
-fn membership_signatures_ok(
-    record: &MembershipRecord,
-    enrolled: &HashMap<String, VerifyKey>,
-) -> bool {
-    party_signature_ok(&record.member, "member", record, enrolled)
-        && party_signature_ok(&record.set_party, "set", record, enrolled)
-        && verified_membership_ids(record, enrolled).len() == record.cancels.len()
 }
 
 fn party_live(
@@ -1442,6 +1498,148 @@ fn retained_object_owner<'a>(owners: &'a HashMap<String, String>, object: &str) 
         .iter()
         .find(|(id, _)| object_set_key(id) == want)
         .map(|(_, owner)| owner.as_str())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::mesh::MeshSeeGraph;
+    use sociacl_core::{AttestationSig, IssuerSecret, Timestamp};
+
+    fn pair() -> (IssuerSecret, IssuerSecret) {
+        (IssuerSecret::generate(), IssuerSecret::generate())
+    }
+
+    fn enrolled(alice: &IssuerSecret, bob: &IssuerSecret) -> MeshSeeGraph {
+        let mut graph = MeshSeeGraph::new();
+        graph.enroll_signer("0xalice", alice.verify_key()).unwrap();
+        graph.enroll_signer("0xbob", bob.verify_key()).unwrap();
+        graph.put_object("doc", "0xalice");
+        graph.put_object("other", "0xalice");
+        graph
+            .record_set_owner("0xalice", GroupPredicate::SameGroup, "0xalice/ops")
+            .unwrap();
+        graph
+    }
+
+    fn live(alice: &IssuerSecret, bob: &IssuerSecret) -> MeshSeeGraph {
+        let mut graph = enrolled(alice, bob);
+        graph
+            .name_object_set(
+                "0xalice",
+                "doc",
+                GroupPredicate::SameGroup,
+                "0xalice/ops",
+                alice,
+            )
+            .unwrap();
+        graph
+            .state_membership(
+                "0xbob",
+                GroupPredicate::SameGroup,
+                "0xalice/ops",
+                "0xbob",
+                bob,
+            )
+            .unwrap();
+        graph
+            .state_membership(
+                "0xalice",
+                GroupPredicate::SameGroup,
+                "0xalice/ops",
+                "0xbob",
+                alice,
+            )
+            .unwrap();
+        graph
+    }
+
+    fn see(graph: &MeshSeeGraph, object: &str, accessor: &str) -> crate::MeshCheckResult {
+        graph.check_group_see(
+            GroupPredicate::SameGroup,
+            object,
+            accessor,
+            Timestamp(1),
+            None,
+            None,
+        )
+    }
+
+    #[test]
+    fn merge_rekeys_rows_from_the_signed_fields() {
+        let (alice, bob) = pair();
+        let mut source = live(&alice, &bob);
+        let bob_key = membership_key_parts(GroupPredicate::SameGroup, "0xalice/ops", "0xbob");
+        let carol_key = membership_key_parts(GroupPredicate::SameGroup, "0xalice/ops", "0xcarol");
+        let membership = source.groups.memberships.get(&bob_key).unwrap().clone();
+        source.groups.memberships.insert(carol_key, membership);
+        let edge = source
+            .groups
+            .object_sets
+            .get(&object_set_key("doc"))
+            .unwrap()
+            .clone();
+        source
+            .groups
+            .object_sets
+            .insert(object_set_key("other"), edge);
+
+        assert!(!see(&source, "other", "0xbob").allowed);
+        assert!(!see(&source, "doc", "0xcarol").allowed);
+        assert!(see(&source, "doc", "0xbob").allowed);
+
+        let mut dest = enrolled(&alice, &bob);
+        dest.merge_from(&source);
+        assert!(dest
+            .membership(GroupPredicate::SameGroup, "0xalice/ops", "0xcarol")
+            .is_none());
+        assert_eq!(
+            dest.membership(GroupPredicate::SameGroup, "0xalice/ops", "0xbob")
+                .unwrap()
+                .accessor,
+            "0xbob"
+        );
+        assert!(dest.object_set("other").is_none());
+        assert_eq!(dest.object_set("doc").unwrap().object, "doc");
+        assert!(!see(&dest, "other", "0xbob").allowed);
+        assert!(see(&dest, "doc", "0xbob").allowed);
+    }
+
+    #[test]
+    fn a_corrupt_party_signature_does_not_drop_a_valid_cancel() {
+        let (alice, bob) = pair();
+        let live_row = live(&alice, &bob);
+        let mut cancelled = live_row.clone();
+        cancelled
+            .cancel_membership(
+                "0xalice",
+                GroupPredicate::SameGroup,
+                "0xalice/ops",
+                "0xbob",
+                &alice,
+            )
+            .unwrap();
+        let key = membership_key_parts(GroupPredicate::SameGroup, "0xalice/ops", "0xbob");
+        cancelled
+            .groups
+            .memberships
+            .get_mut(&key)
+            .unwrap()
+            .member
+            .signature = AttestationSig::empty();
+
+        let mut from_cancel = enrolled(&alice, &bob);
+        from_cancel.merge_from(&cancelled);
+        from_cancel.merge_from(&live_row);
+        let mut from_live = enrolled(&alice, &bob);
+        from_live.merge_from(&live_row);
+        from_live.merge_from(&cancelled);
+        for graph in [&from_cancel, &from_live] {
+            let result = see(graph, "doc", "0xbob");
+            assert!(!result.allowed);
+            assert_eq!(result.reason, crate::MESH_REASON_CANCELLED);
+        }
+    }
 }
 
 fn membership_hidden(record: &MembershipRecord, members: &[GroupSnapshotMember]) -> bool {

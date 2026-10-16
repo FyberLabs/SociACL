@@ -501,6 +501,55 @@ fn ham_merge_higher_state_wins() {
 }
 
 #[test]
+fn equal_ham_see_grants_keep_the_narrower_window() {
+    let mut wide = MeshSeeGraph::new();
+    wide.put_object("doc", "0xalice");
+    wide.state_see_grant("0xalice", MeshSeeGrant::live("doc", "0xbob", 0, 100))
+        .unwrap();
+    let mut narrow = MeshSeeGraph::new();
+    narrow.put_object("doc", "0xalice");
+    narrow
+        .state_see_grant("0xalice", MeshSeeGrant::live("doc", "0xbob", 0, 5))
+        .unwrap();
+
+    let mut from_wide = wide.clone();
+    from_wide.merge_from(&narrow);
+    let mut from_narrow = narrow.clone();
+    from_narrow.merge_from(&wide);
+    for graph in [&from_wide, &from_narrow] {
+        assert!(
+            !graph
+                .check_see("doc", "0xbob", Timestamp(10), None, None)
+                .allowed
+        );
+        assert!(
+            graph
+                .check_see("doc", "0xbob", Timestamp(1), None, None)
+                .allowed
+        );
+        assert_eq!(
+            graph.grant_edge("doc", "0xbob").unwrap().grant.until,
+            Timestamp(5)
+        );
+    }
+}
+
+#[test]
+fn merge_edge_uses_the_grant_identity_not_the_soul() {
+    let mut edge = GunAclEdge::new("0xalice", MeshSeeGrant::live("doc", "0xbob", 0, 80), 1);
+    edge.soul = GunSoul::s3rch_acl_grant("0xalice", "doc", "0xcarol");
+    let mut graph = MeshSeeGraph::new();
+    graph.put_object("doc", "0xalice");
+    graph.merge_edge(edge);
+    assert!(graph.grant_edge("doc", "0xcarol").is_none());
+    assert!(
+        graph
+            .check_see("doc", "0xbob", Timestamp(1), None, None)
+            .allowed
+    );
+}
+
+#[test]
 fn plane_hop_factors_named_grant_and_still_cannot_mint() {
     let mut plane = sociacl_core::Plane::new();
     let alice = add_wallet(&mut plane, "0xalice");

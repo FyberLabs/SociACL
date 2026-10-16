@@ -27,6 +27,11 @@
  *   accessor: string,
  *   stated: 0 | 1,
  *   hamState: number,
+ *   removed?: boolean,
+ *   setOwner?: string,
+ *   member?: PartyStatement,
+ *   setParty?: PartyStatement,
+ *   cancels?: SignedCancel[],
  * }} MeshMembership
  * @typedef {{
  *   object: string,
@@ -35,7 +40,20 @@
  *   stated: 0 | 1,
  *   hamState: number,
  *   objectOwner?: string,
+ *   signedStated?: 0 | 1,
+ *   observed?: string[],
+ *   signature?: Uint8Array,
+ *   cancels?: SignedCancel[],
  * }} ObjectSetName
+ * @typedef {(principal: string) => Uint8Array | undefined} KeyLookup
+ * @typedef {{
+ *   ownerOf(object: string): string | undefined,
+ *   seeGrants(object: string): readonly SeeGrant[],
+ *   objectSet(object: string): ObjectSetName | undefined,
+ *   membership(predicate: GroupPredicate, setId: string, accessor: string): MeshMembership | undefined,
+ *   ownerOfSet(predicate: GroupPredicate, setId: string): string | undefined,
+ *   enrolledKey(principal: string): Uint8Array | undefined,
+ * }} GroupSeeGraph
  * @typedef {{
  *   accessor: string,
  *   predicate: GroupPredicate,
@@ -376,28 +394,41 @@ function membershipRowKey(record) {
   return `${record.membership.predicate}\0${record.membership.setId}\0${aclPrincipalKey(record.membership.accessor)}`;
 }
 
+/** @param {Map<string, Uint8Array>} enrolled @returns {KeyLookup} */
+function mapLookup(enrolled) {
+  return (principal) => enrolled.get(aclPrincipalKey(principal));
+}
+
+/** @param {GroupSeeGraph} graph @returns {KeyLookup} */
+function graphLookup(graph) {
+  return (principal) => {
+    if (typeof graph.enrolledKey !== "function") return undefined;
+    const key = graph.enrolledKey(principal);
+    return key instanceof Uint8Array && key.length === 32 ? key : undefined;
+  };
+}
+
 /**
- * @param {Map<string, Uint8Array>} enrolled
+ * @param {KeyLookup} lookup
  * @param {SignedCancel} cancel
  * @param {string} kind
  * @param {string} rowKey
  * @param {(signer: string) => boolean} allow
  */
-function cancelVerifies(enrolled, cancel, kind, rowKey, allow) {
+function cancelVerifies(lookup, cancel, kind, rowKey, allow) {
   if (!allow(cancel.signer)) return false;
-  const key = enrolled.get(aclPrincipalKey(cancel.signer));
-  return verifyBytes(key, cancelMessage(kind, rowKey, cancel.id, cancel.prior), cancel.signature);
+  return verifyBytes(lookup(cancel.signer), cancelMessage(kind, rowKey, cancel.id, cancel.prior), cancel.signature);
 }
 
 /**
- * @param {Map<string, Uint8Array>} enrolled
+ * @param {KeyLookup} lookup
  * @param {readonly SignedCancel[]} cancels
  * @param {string} kind
  * @param {string} rowKey
  * @param {(signer: string) => boolean} allow
  */
-function verifiedIds(enrolled, cancels, kind, rowKey, allow) {
-  return cancels.filter((cancel) => cancelVerifies(enrolled, cancel, kind, rowKey, allow)).map((cancel) => cancel.id);
+function verifiedIds(lookup, cancels, kind, rowKey, allow) {
+  return cancels.filter((cancel) => cancelVerifies(lookup, cancel, kind, rowKey, allow)).map((cancel) => cancel.id);
 }
 
 /** @param {MembershipRecord} record @param {string} signer */
@@ -407,40 +438,24 @@ function membershipCancelSigner(record, signer) {
 }
 
 /**
- * @param {Map<string, Uint8Array>} enrolled
+ * @param {KeyLookup} lookup
  * @param {PartyStatement} party
  * @param {"member" | "set"} role
  * @param {MembershipRecord} record
  */
-function partySignatureOk(enrolled, party, role, record) {
+function partySignatureOk(lookup, party, role, record) {
   if (!party.spoken) return true;
   const principal = role === "member" ? record.membership.accessor : record.setOwner;
-  const key = enrolled.get(aclPrincipalKey(principal));
   if (!party.signature) return false;
-  return verifyBytes(key, partyMessage(record, role, party.stated, party.hamState, party.observed), party.signature);
+  return verifyBytes(lookup(principal), partyMessage(record, role, party.stated, party.hamState, party.observed), party.signature);
 }
 
 /**
- * @param {Map<string, Uint8Array>} enrolled
+ * @param {KeyLookup} lookup
  * @param {MembershipRecord} record
  */
-function membershipSignaturesOk(enrolled, record) {
-  const ids = verifiedIds(enrolled, record.cancels, "membership", membershipRowKey(record), (signer) =>
-    membershipCancelSigner(record, signer),
-  );
-  return (
-    ids.length === record.cancels.length &&
-    partySignatureOk(enrolled, record.member, "member", record) &&
-    partySignatureOk(enrolled, record.setParty, "set", record)
-  );
-}
-
-/**
- * @param {Map<string, Uint8Array>} enrolled
- * @param {MembershipRecord} record
- */
-function publishMembership(enrolled, record) {
-  const ids = verifiedIds(enrolled, record.cancels, "membership", membershipRowKey(record), (signer) =>
+function publishMembership(lookup, record) {
+  const ids = verifiedIds(lookup, record.cancels, "membership", membershipRowKey(record), (signer) =>
     membershipCancelSigner(record, signer),
   );
   const live = (/** @type {PartyStatement} */ party, /** @type {"member" | "set"} */ role) =>
@@ -448,7 +463,7 @@ function publishMembership(enrolled, record) {
     party.stated &&
     covers(party.observed, ids) &&
     ids.length === record.cancels.length &&
-    partySignatureOk(enrolled, party, role, record);
+    partySignatureOk(lookup, party, role, record);
   if (live(record.member, "member") && live(record.setParty, "set")) {
     record.membership.stated = 1;
     record.removed = false;
@@ -460,27 +475,26 @@ function publishMembership(enrolled, record) {
 }
 
 /**
- * @param {Map<string, Uint8Array>} enrolled
+ * @param {KeyLookup} lookup
  * @param {ObjectSetRecord} record
  */
-function objectSignatureOk(enrolled, record) {
-  const key = enrolled.get(aclPrincipalKey(record.objectOwner));
-  return verifyBytes(key, objectMessage(record), record.signature);
+function objectSignatureOk(lookup, record) {
+  return verifyBytes(lookup(record.objectOwner), objectMessage(record), record.signature);
 }
 
 /**
- * @param {Map<string, Uint8Array>} enrolled
+ * @param {KeyLookup} lookup
  * @param {ObjectSetRecord} record
  */
-function refreshObject(enrolled, record) {
-  const ids = verifiedIds(enrolled, record.cancels, "object-set", aclKey(record.name.object), (signer) => {
+function refreshObject(lookup, record) {
+  const ids = verifiedIds(lookup, record.cancels, "object-set", aclKey(record.name.object), (signer) => {
     return aclPrincipalKey(signer) === aclPrincipalKey(record.objectOwner);
   });
   const live =
     record.signedStated === 1 &&
     ids.length === record.cancels.length &&
     covers(record.observed, ids) &&
-    objectSignatureOk(enrolled, record);
+    objectSignatureOk(lookup, record);
   record.name.stated = live ? 1 : 0;
 }
 
@@ -505,23 +519,44 @@ function pickParty(local, incoming, ids, localOk, incomingOk) {
 }
 
 /**
- * @param {Map<string, Uint8Array>} enrolled
+ * Keep each cancel whose own signature verifies. A bad assent on
+ * the other party does not drop those ids.
+ * @param {KeyLookup} lookup
+ * @param {MembershipRecord} record
+ */
+function retainAuthenticMembership(lookup, record) {
+  record.cancels = record.cancels.filter((cancel) =>
+    cancelVerifies(lookup, cancel, "membership", membershipRowKey(record), (signer) =>
+      membershipCancelSigner(record, signer),
+    ),
+  );
+  if (record.member.spoken && !partySignatureOk(lookup, record.member, "member", record)) {
+    record.member = absentParty();
+  }
+  if (record.setParty.spoken && !partySignatureOk(lookup, record.setParty, "set", record)) {
+    record.setParty = absentParty();
+  }
+  if (record.cancels.length === 0 && !record.member.spoken && !record.setParty.spoken) return null;
+  publishMembership(lookup, record);
+  return record;
+}
+
+/**
+ * @param {KeyLookup} lookup
  * @param {MembershipRecord} local
  * @param {MembershipRecord} incoming
  */
-function mergeMembership(enrolled, local, incoming) {
+function mergeMembership(lookup, local, incoming) {
   /** @type {SignedCancel[]} */
   const cancels = structuredClone(local.cancels);
-  if (membershipSignaturesOk(enrolled, incoming)) {
-    for (const cancel of incoming.cancels) {
-      if (
-        cancelVerifies(enrolled, cancel, "membership", membershipRowKey(incoming), (signer) =>
-          membershipCancelSigner(incoming, signer),
-        ) &&
-        !cancels.some((row) => row.id === cancel.id)
-      ) {
-        cancels.push(structuredClone(cancel));
-      }
+  for (const cancel of incoming.cancels) {
+    if (
+      cancelVerifies(lookup, cancel, "membership", membershipRowKey(incoming), (signer) =>
+        membershipCancelSigner(incoming, signer),
+      ) &&
+      !cancels.some((row) => row.id === cancel.id)
+    ) {
+      cancels.push(structuredClone(cancel));
     }
   }
   const ids = cancelIds(cancels);
@@ -530,28 +565,34 @@ function mergeMembership(enrolled, local, incoming) {
     local.member,
     incoming.member,
     ids,
-    partySignatureOk(enrolled, local.member, "member", local),
-    partySignatureOk(enrolled, incoming.member, "member", incoming),
+    partySignatureOk(lookup, local.member, "member", local),
+    partySignatureOk(lookup, incoming.member, "member", incoming),
   );
   merged.setParty = pickParty(
     local.setParty,
     incoming.setParty,
     ids,
-    partySignatureOk(enrolled, local.setParty, "set", local),
-    partySignatureOk(enrolled, incoming.setParty, "set", incoming),
+    partySignatureOk(lookup, local.setParty, "set", local),
+    partySignatureOk(lookup, incoming.setParty, "set", incoming),
   );
   merged.cancels = cancels;
   merged.membership.hamState = Math.max(local.membership.hamState, incoming.membership.hamState);
-  publishMembership(enrolled, merged);
+  publishMembership(lookup, merged);
   return merged;
 }
 
 /**
+ * @param {KeyLookup} lookup
  * @param {ObjectSetRecord} local
  * @param {ObjectSetRecord} incoming
  * @param {readonly string[]} ids
  */
-function pickObject(local, incoming, ids) {
+function pickObject(lookup, local, incoming, ids) {
+  const localOk = objectSignatureOk(lookup, local);
+  const incomingOk = objectSignatureOk(lookup, incoming);
+  if (localOk && !incomingOk) return structuredClone(local);
+  if (incomingOk && !localOk) return structuredClone(incoming);
+  if (!localOk && !incomingOk) return structuredClone(local);
   const localCovers = covers(local.observed, ids);
   const incomingCovers = covers(incoming.observed, ids);
   if (localCovers !== incomingCovers) return structuredClone(incomingCovers ? incoming : local);
@@ -565,17 +606,37 @@ function pickObject(local, incoming, ids) {
 }
 
 /**
- * @param {Map<string, Uint8Array>} enrolled
+ * @param {KeyLookup} lookup
+ * @param {ObjectSetRecord} record
+ */
+function retainAuthenticObject(lookup, record) {
+  record.cancels = record.cancels.filter((cancel) =>
+    cancelVerifies(lookup, cancel, "object-set", aclKey(record.name.object), (signer) => {
+      return aclPrincipalKey(signer) === aclPrincipalKey(record.objectOwner);
+    }),
+  );
+  if (!objectSignatureOk(lookup, record)) {
+    if (record.cancels.length === 0) return null;
+    record.signedStated = 0;
+    record.signature = new Uint8Array();
+    record.observed = [];
+  }
+  refreshObject(lookup, record);
+  return record;
+}
+
+/**
+ * @param {KeyLookup} lookup
  * @param {ObjectSetRecord} local
  * @param {ObjectSetRecord} incoming
  */
-function mergeObjectSet(enrolled, local, incoming) {
+function mergeObjectSet(lookup, local, incoming) {
   /** @type {SignedCancel[]} */
   const cancels = structuredClone(local.cancels);
   const rowKey = aclKey(incoming.name.object);
   for (const cancel of incoming.cancels) {
     if (
-      cancelVerifies(enrolled, cancel, "object-set", rowKey, (signer) => {
+      cancelVerifies(lookup, cancel, "object-set", rowKey, (signer) => {
         return aclPrincipalKey(signer) === aclPrincipalKey(incoming.objectOwner);
       }) &&
       !cancels.some((row) => row.id === cancel.id)
@@ -583,9 +644,9 @@ function mergeObjectSet(enrolled, local, incoming) {
       cancels.push(structuredClone(cancel));
     }
   }
-  const picked = pickObject(local, incoming, cancelIds(cancels));
+  const picked = pickObject(lookup, local, incoming, cancelIds(cancels));
   picked.cancels = cancels;
-  refreshObject(enrolled, picked);
+  refreshObject(lookup, picked);
   return picked;
 }
 
@@ -678,7 +739,7 @@ export class MemoryGroupGraph {
     if (!object) return;
     const objectOwner = this.ownerOf(object);
     if (!objectOwner || aclPrincipalKey(objectOwner) !== aclPrincipalKey(owner)) return;
-    const key = `${aclPrincipalKey(owner)}\0${aclKey(object)}\0${aclPrincipalKey(grant.accessor)}`;
+    const key = grantKey(owner, object, grant.accessor);
     const prev = this.grants.get(key);
     this.grants.set(key, {
       ...grant,
@@ -818,7 +879,7 @@ export class MemoryGroupGraph {
     const observed = cancelIds(record.cancels);
     if (speaksMember) this.#signParty(record, record.member, "member", true, observed, secret);
     if (speaksSet) this.#signParty(record, record.setParty, "set", true, observed, secret);
-    publishMembership(this.enrolled, record);
+    publishMembership(mapLookup(this.enrolled), record);
     this.memberships.set(key, record);
   }
 
@@ -857,7 +918,7 @@ export class MemoryGroupGraph {
     if (speaksMember) this.#signParty(record, record.member, "member", false, observed, secret);
     if (speaksSet) this.#signParty(record, record.setParty, "set", false, observed, secret);
     record.membership.hamState += 1;
-    publishMembership(this.enrolled, record);
+    publishMembership(mapLookup(this.enrolled), record);
     this.memberships.set(key, record);
   }
 
@@ -964,43 +1025,55 @@ export class MemoryGroupGraph {
       const canon = aclKey(key);
       if (!this.objects.has(canon)) this.objects.set(canon, owner);
     }
-    for (const [key, incoming] of other.grants) {
+    for (const incoming of other.grants.values()) {
       const object = grantObject(incoming);
       const retained = this.ownerOf(object);
       const grantOwner = incoming.owner ?? "";
-      if (!retained || !grantOwner || aclPrincipalKey(retained) !== aclPrincipalKey(grantOwner)) continue;
+      if (!object || !retained || !grantOwner || aclPrincipalKey(retained) !== aclPrincipalKey(grantOwner)) continue;
+      const key = grantKey(grantOwner, object, incoming.accessor);
       const local = this.grants.get(key);
-      const incomingHam = incoming.hamState ?? 0;
-      const localHam = local?.hamState ?? 0;
-      if (!local || incomingHam > localHam) this.grants.set(key, structuredClone(incoming));
+      const chosen = local ? preferGrant(local, incoming) : incoming;
+      this.grants.set(key, structuredClone(chosen));
     }
     for (const [key, owner] of other.setOwners) {
       const setKey = key.split("\0")[1] ?? "";
       const slash = setKey.lastIndexOf("_");
       const setId = slash > 0 ? `${setKey.slice(0, slash)}/${setKey.slice(slash + 1)}` : "";
       if (!setId || !setIdBindsOwner(setId, owner)) continue;
-      if (!this.setOwners.has(key)) this.setOwners.set(key, owner);
+      const canonical = canonicalSetId(setId);
+      if (!canonical) continue;
+      const predicate = /** @type {GroupPredicate} */ (key.split("\0")[0]);
+      const storedKey = `${predicate}\0${aclKey(canonical)}`;
+      if (!this.setOwners.has(storedKey)) this.setOwners.set(storedKey, owner);
     }
-    for (const [key, incoming] of other.memberships) {
-      if (!setIdBindsOwner(incoming.membership.setId, incoming.setOwner)) continue;
+    const lookup = mapLookup(this.enrolled);
+    for (const incoming of other.memberships.values()) {
+      const canonical = canonicalSetId(incoming.membership.setId);
+      if (!canonical || incoming.membership.setId !== canonical) continue;
+      if (!setIdBindsOwner(canonical, incoming.setOwner)) continue;
       if (!this.#membershipOwnerMatches(incoming)) continue;
-      if (!this.memberships.has(key) && !membershipSignaturesOk(this.enrolled, incoming)) continue;
+      const key = `${incoming.membership.predicate}\0${aclKey(canonical)}\0${aclPrincipalKey(incoming.membership.accessor)}`;
       const local = this.memberships.get(key);
-      this.memberships.set(
-        key,
-        local ? mergeMembership(this.enrolled, local, incoming) : structuredClone(incoming),
-      );
-      const stored = this.memberships.get(key);
-      if (stored && !local) publishMembership(this.enrolled, stored);
+      if (!local) {
+        const kept = retainAuthenticMembership(lookup, structuredClone(incoming));
+        if (!kept) continue;
+        this.memberships.set(key, kept);
+        continue;
+      }
+      this.memberships.set(key, mergeMembership(lookup, local, incoming));
     }
-    for (const [key, incoming] of other.objectSets) {
+    for (const incoming of other.objectSets.values()) {
       if (!this.#objectOwnerMatches(incoming)) continue;
       if (incoming.signedStated === 1 && !canonicalSetId(incoming.name.setId)) continue;
-      if (!objectSignatureOk(this.enrolled, incoming)) continue;
+      const key = aclKey(incoming.name.object);
       const local = this.objectSets.get(key);
-      this.objectSets.set(key, local ? mergeObjectSet(this.enrolled, local, incoming) : structuredClone(incoming));
-      const stored = this.objectSets.get(key);
-      if (stored && !local) refreshObject(this.enrolled, stored);
+      if (!local) {
+        const kept = retainAuthenticObject(lookup, structuredClone(incoming));
+        if (!kept) continue;
+        this.objectSets.set(key, kept);
+        continue;
+      }
+      this.objectSets.set(key, mergeObjectSet(lookup, local, incoming));
     }
   }
 
@@ -1047,20 +1120,78 @@ export class MemoryGroupGraph {
       cancels,
     };
     record.signature = signBytes(secret, objectMessage(record));
-    refreshObject(this.enrolled, record);
+    refreshObject(mapLookup(this.enrolled), record);
     this.objectSets.set(key, record);
   }
 }
 
+/** @param {string} owner @param {string} object @param {string} accessor */
+function grantKey(owner, object, accessor) {
+  return `${aclPrincipalKey(owner)}\0${aclKey(object)}\0${aclPrincipalKey(accessor)}`;
+}
+
+/** @param {SeeGrant} grant */
+function canonicalGrantBytes(grant) {
+  /** @type {Uint8Array[]} */
+  const parts = [domainBytes("sociacl-see-grant-v1")];
+  pushStr(parts, aclPrincipalKey(grant.owner ?? ""));
+  pushStr(parts, aclKey(grantObject(grant)));
+  pushStr(parts, aclPrincipalKey(grant.accessor));
+  const times = new Uint8Array(16);
+  const view = new DataView(times.buffer);
+  view.setBigUint64(0, BigInt(grant.from ?? 0));
+  view.setBigUint64(8, BigInt(grant.until ?? 0));
+  parts.push(times, Uint8Array.of(grant.stated === 0 ? 0 : 1));
+  return concatBytes(parts);
+}
+
+/** @param {Uint8Array} left @param {Uint8Array} right */
+function bytesBefore(left, right) {
+  const n = Math.min(left.length, right.length);
+  for (let i = 0; i < n; i += 1) {
+    if (left[i] !== right[i]) return left[i] < right[i];
+  }
+  return left.length < right.length;
+}
+
 /**
- * @param {MemoryGroupGraph} graph
- * @param {NonNullable<ReturnType<MemoryGroupGraph["objectSet"]>>} edge
+ * True when `left`'s window is a proper subset of `right`'s.
+ * @param {SeeGrant} left
+ * @param {SeeGrant} right
+ */
+function windowInside(left, right) {
+  return (
+    (left.from ?? 0) >= (right.from ?? 0) &&
+    (left.until ?? 0) <= (right.until ?? 0) &&
+    ((left.from ?? 0) > (right.from ?? 0) || (left.until ?? 0) < (right.until ?? 0))
+  );
+}
+
+/** @param {SeeGrant} local @param {SeeGrant} incoming */
+function preferGrant(local, incoming) {
+  const incomingHam = incoming.hamState ?? 0;
+  const localHam = local.hamState ?? 0;
+  if (incomingHam > localHam) return incoming;
+  if (incomingHam < localHam) return local;
+  if (incoming.stated === 0 && local.stated !== 0) return incoming;
+  if (local.stated === 0 && incoming.stated !== 0) return local;
+  const localNarrower = windowInside(local, incoming);
+  const incomingNarrower = windowInside(incoming, local);
+  if (localNarrower && !incomingNarrower) return local;
+  if (incomingNarrower && !localNarrower) return incoming;
+  return bytesBefore(canonicalGrantBytes(incoming), canonicalGrantBytes(local)) ? incoming : local;
+}
+
+/**
+ * @param {GroupSeeGraph} graph
+ * @param {ObjectSetName} edge
  * @param {string} owner
  */
 function edgeAuthentic(graph, edge, owner) {
   if (edge.stated !== 1 || !edge.objectOwner || !edge.signature || !edge.observed || !edge.cancels) return false;
   if (aclPrincipalKey(edge.objectOwner) !== aclPrincipalKey(owner)) return false;
-  if (!graph.enrolledKey(edge.objectOwner)) return false;
+  const lookup = graphLookup(graph);
+  if (!lookup(edge.objectOwner)) return false;
   /** @type {ObjectSetRecord} */
   const record = {
     name: { ...edge, stated: edge.signedStated === 0 ? 0 : 1 },
@@ -1071,23 +1202,24 @@ function edgeAuthentic(graph, edge, owner) {
     signature: edge.signature,
     cancels: edge.cancels,
   };
-  const ids = verifiedIds(graph.enrolled, record.cancels, "object-set", aclKey(record.name.object), (signer) => {
+  const ids = verifiedIds(lookup, record.cancels, "object-set", aclKey(record.name.object), (signer) => {
     return aclPrincipalKey(signer) === aclPrincipalKey(record.objectOwner);
   });
   return (
     record.signedStated === 1 &&
     ids.length === record.cancels.length &&
     covers(record.observed, ids) &&
-    objectSignatureOk(graph.enrolled, record)
+    objectSignatureOk(lookup, record)
   );
 }
 
 /**
- * @param {MemoryGroupGraph} graph
- * @param {NonNullable<ReturnType<MemoryGroupGraph["membership"]>>} row
+ * @param {GroupSeeGraph} graph
+ * @param {MeshMembership} row
  */
 function membershipAuthentic(graph, row) {
   if (row.stated !== 1 || !row.member || !row.setParty || !row.cancels || !row.setOwner) return false;
+  const lookup = graphLookup(graph);
   /** @type {MembershipRecord} */
   const record = {
     membership: row,
@@ -1098,16 +1230,16 @@ function membershipAuthentic(graph, row) {
     setOwner: row.setOwner,
     cancels: row.cancels,
   };
-  const ids = verifiedIds(graph.enrolled, record.cancels, "membership", membershipRowKey(record), (signer) =>
+  const ids = verifiedIds(lookup, record.cancels, "membership", membershipRowKey(record), (signer) =>
     membershipCancelSigner(record, signer),
   );
   const live = (/** @type {PartyStatement} */ party, /** @type {"member" | "set"} */ role) =>
-    party.spoken && party.stated && covers(party.observed, ids) && partySignatureOk(graph.enrolled, party, role, record);
+    party.spoken && party.stated && covers(party.observed, ids) && partySignatureOk(lookup, party, role, record);
   return ids.length === record.cancels.length && live(record.member, "member") && live(record.setParty, "set");
 }
 
 /**
- * @param {MemoryGroupGraph} graph
+ * @param {GroupSeeGraph} graph
  * @param {string} object
  * @param {string} accessor
  * @param {number} now
@@ -1118,8 +1250,18 @@ function checkSee(graph, object, accessor, now) {
   const owner = graph.ownerOf(object);
   if (!owner) return { allowed: false, reason: "missing" };
   if (aclPrincipalKey(owner) === aclPrincipalKey(accessor)) return { allowed: true, reason: "owner" };
+  const requested = aclKey(String(object).trim());
   const live = graph.seeGrants(object).some((grant) => {
-    return aclPrincipalKey(grant.accessor) === aclPrincipalKey(accessor) && now >= grant.from && now < grant.until;
+    const grantOwner = grant.owner;
+    const ownerOk = grantOwner == null || aclPrincipalKey(grantOwner) === aclPrincipalKey(owner);
+    return (
+      ownerOk &&
+      aclKey(grantObject(grant)) === requested &&
+      aclPrincipalKey(grant.accessor) === aclPrincipalKey(accessor) &&
+      grant.stated !== 0 &&
+      now >= grant.from &&
+      now < grant.until
+    );
   });
   if (live) return { allowed: true, reason: "delegate" };
   return { allowed: false, reason: "missing" };
@@ -1131,7 +1273,7 @@ function checkSee(graph, object, accessor, now) {
  * `now` is the Check instant. Membership has no window here.
  * A missing set owner fails closed.
  *
- * @param {MemoryGroupGraph} graph
+ * @param {GroupSeeGraph} graph
  * @param {GroupPredicate} predicate
  * @param {string} object
  * @param {string} accessor
@@ -1143,15 +1285,17 @@ export function checkGroupSee(graph, predicate, object, accessor, now, hint, hop
   void now;
   const echoed = { hint: hint ?? null, hop: hop ?? null };
   const deny = (/** @type {string} */ reason) => ({ allowed: false, reason, ...echoed });
-  const closed = closedReason(object);
+  const requestedObject = String(object).trim();
+  const closed = closedReason(requestedObject);
   if (closed) return deny(closed);
-  const owner = graph.ownerOf(String(object));
+  const owner = graph.ownerOf(requestedObject);
   if (!owner) return deny("missing");
   if (aclPrincipalKey(owner) === aclPrincipalKey(accessor)) {
     return { allowed: true, reason: "owner", ...echoed };
   }
-  const edge = graph.objectSet(String(object));
+  const edge = graph.objectSet(requestedObject);
   if (!edge) return deny("missing");
+  if (!edge.object || aclKey(edge.object) !== aclKey(requestedObject)) return deny("missing");
   if (!edge.objectOwner || aclPrincipalKey(edge.objectOwner) !== aclPrincipalKey(owner)) return deny("missing");
   if (edge.predicate !== predicate) return deny("missing");
   if (edge.stated !== 1) return deny("cancelled");
@@ -1162,7 +1306,11 @@ export function checkGroupSee(graph, predicate, object, accessor, now, hint, hop
   if (!edgeAuthentic(graph, edge, owner)) return deny("missing");
   const membership = graph.membership(predicate, canonical, accessor);
   if (!membership) return deny("missing");
-  if (membership.setId !== canonical) return deny("missing");
+  if (membership.predicate !== predicate || membership.setId !== canonical) return deny("missing");
+  if (aclPrincipalKey(membership.accessor) !== aclPrincipalKey(accessor)) return deny("missing");
+  if (membership.setOwner == null || aclPrincipalKey(membership.setOwner) !== aclPrincipalKey(setOwner)) {
+    return deny("missing");
+  }
   if (membership.stated === 1 && membershipAuthentic(graph, membership)) {
     return { allowed: true, reason: predicate, ...echoed };
   }
@@ -1174,7 +1322,7 @@ export function checkGroupSee(graph, predicate, object, accessor, now, hint, hop
  * Allowed only when checkGroupSee allows and the payload is stated 1
  * with now in [from, until). A live edge does not override a cancel.
  *
- * @param {MemoryGroupGraph} graph
+ * @param {GroupSeeGraph} graph
  * @param {PresentedGroup | null | undefined} group
  * @param {string} object
  * @param {string} accessor
