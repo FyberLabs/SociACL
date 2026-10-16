@@ -136,7 +136,7 @@ pub use inbox::{
 };
 pub use migration::{
     accept_migration, apply_protocol_migration, open_migrated_item, prepare_protocol_migration,
-    sign_wrap_receipt, EncryptedMigration, MigrationAdmissionInput, MigrationGrant,
+    sign_wrap_receipt, EncryptedMigration, MigrationAdmissionInput, MigrationEpoch, MigrationGrant,
     MigrationOutcome, MigrationReader, PreparedMigration, ProtocolMigration, ReaderMigration,
     ReaderVersion, WrapReceipt,
 };

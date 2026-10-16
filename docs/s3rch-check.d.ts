@@ -2116,12 +2116,15 @@ export type MigrationAdmission = {
 
 /**
  * Owner-only admission. The TypeScript contract checks structure.
- * The Rust crate also verifies the wrap receipt.
+ * The Rust crate also verifies the wrap receipt, the owner
+ * item-auth signature, and the current epoch revision.
  * atGate does not drop plaintext. One reader's receipt does not
  * clear another reader. The soul stays until every current reader
- * has a receipt. A wrap named here is not a grant. A reader does
- * not call this. Items kept on the public plaintext path are not
- * rewritten. Whether that path stays is open.
+ * has a receipt. A live grant whose window has not ended is current,
+ * including one whose from is still ahead of now. Each edge soul is
+ * grantSoul(owner, object, accessor). A wrap named here is not a
+ * grant. A reader does not call this. Items kept on the public
+ * plaintext path are not rewritten. Whether that path stays is open.
  */
 export function applyProtocolMigration(
   input: MigrationAdmissionInput,

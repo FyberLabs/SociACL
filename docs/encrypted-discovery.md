@@ -326,6 +326,10 @@ For each existing item that moves onto the version:
 6. When every current reader has acknowledged the wrap, the ciphertext replaces the body, merge state bumps so the ciphertext wins, and the old plaintext `MeshSeeGrant` is cancelled (`stated: 0` and a `hamState` bump). Check after that merge denies the clear row for a current verifier. The private row is the live grant for readers who can open it.
 7. `ProtocolMigration` records `fromVersion`, `toVersion`, the object, the wraps the owner issued, `readers`, and `versionGate`. There is no single flag. Readers do not issue wraps and do not clear another reader's row.
 
+A current reader is a live grant whose window has not ended. That includes a grant whose `from` is still ahead of `now`. An expired grant is not current. Each merged edge's soul is `grantSoul(owner, object, accessor)`. A different soul is rejected, and the cancellation is written back to that same soul.
+
+The ciphertext's epoch and `revisionId` are the replica's current read key, and that key is open for a new write. A displaced revision, or a successor that can still replace the key, is rejected. Before receipts are applied, the owner compares the soul's current `hamState` and body to the prepared snapshot. A mismatch aborts. The owner prepares again from the current item. The row's wrap is the recorded `WrappedKey`, including the authenticated blob. Opening the item verifies the owner signature over the item-auth tuple. Holding the DEK does not make a different body authentic.
+
 Items the owner keeps on the public plaintext path are not rewritten. Whether that path stays is open. See [Open choices](#open-choices).
 
 **Honest limit.** Peers that already replicated the plaintext body or the plaintext grant keep that copy. In-place replacement updates the soul for peers that merge the new record. It does not claw back an old replica. A reader who has not acknowledged the wrap keeps the old copy and does not invent a second ciphertext to fill the gap.

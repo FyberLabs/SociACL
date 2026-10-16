@@ -406,6 +406,112 @@
         "soulHamState": 5,
         "cancelled": []
       }
+    },
+    {
+      "name": "migration-future-dated",
+      "owner": "alice",
+      "caller": "alice",
+      "now": 1000,
+      "storage": "private-row",
+      "object": "item-1",
+      "fromVersion": 1,
+      "toVersion": 2,
+      "versionGate": 2,
+      "soulHamState": 4,
+      "grants": [
+        {"owner": "alice", "object": "item-1", "accessor": "bob", "from": 0, "until": 5000, "stated": 1, "hamState": 2},
+        {"owner": "alice", "object": "item-1", "accessor": "carol", "from": 2000, "until": 5000, "stated": 1, "hamState": 1}
+      ],
+      "payloads": [
+        {"object": "item-1", "accessor": "bob", "from": 0, "until": 5000, "stated": 1, "epoch": 1, "owner": "alice", "grantRevision": 1, "itemCiphertextDigest": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"},
+        {"object": "item-1", "accessor": "carol", "from": 2000, "until": 5000, "stated": 1, "epoch": 1, "owner": "alice", "grantRevision": 1, "itemCiphertextDigest": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"}
+      ],
+      "wraps": [
+        {"scope": "item-dek", "epoch": 1, "target": "reader-epub", "targetId": "epub-bob", "object": "item-1", "revisionId": "abababababababababababababababababababababababababababababababab", "wrappedKey": "aa"},
+        {"scope": "item-dek", "epoch": 1, "target": "reader-epub", "targetId": "epub-carol", "object": "item-1", "revisionId": "abababababababababababababababababababababababababababababababab", "wrappedKey": "bb"}
+      ],
+      "readers": [
+        {"accessor": "bob", "acknowledged": true, "atGate": true},
+        {"accessor": "carol", "acknowledged": false, "atGate": true}
+      ],
+      "readerVersions": [
+        {"accessor": "bob", "version": 2, "epub": "epub-bob"},
+        {"accessor": "carol", "version": 2, "epub": "epub-carol"}
+      ],
+      "receipts": [
+        {"accessor": "bob", "signature": "abababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababab"}
+      ],
+      "expect": {
+        "ok": true,
+        "plaintextRetained": ["carol"],
+        "plaintextDropped": ["bob"],
+        "soulReplaced": false,
+        "skippedPublic": false,
+        "ciphertextPublished": true,
+        "soulHamState": 4,
+        "cancelled": []
+      }
+    },
+    {
+      "name": "migration-future-omitted",
+      "owner": "alice",
+      "caller": "alice",
+      "now": 1000,
+      "storage": "private-row",
+      "object": "item-1",
+      "fromVersion": 1,
+      "toVersion": 2,
+      "versionGate": 2,
+      "soulHamState": 4,
+      "grants": [
+        {"owner": "alice", "object": "item-1", "accessor": "bob", "from": 0, "until": 5000, "stated": 1, "hamState": 2},
+        {"owner": "alice", "object": "item-1", "accessor": "carol", "from": 2000, "until": 5000, "stated": 1, "hamState": 1}
+      ],
+      "payloads": [
+        {"object": "item-1", "accessor": "bob", "from": 0, "until": 5000, "stated": 1, "epoch": 1, "owner": "alice", "grantRevision": 1, "itemCiphertextDigest": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"}
+      ],
+      "wraps": [
+        {"scope": "item-dek", "epoch": 1, "target": "reader-epub", "targetId": "epub-bob", "object": "item-1", "revisionId": "abababababababababababababababababababababababababababababababab", "wrappedKey": "aa"}
+      ],
+      "readers": [
+        {"accessor": "bob", "acknowledged": true, "atGate": true}
+      ],
+      "readerVersions": [
+        {"accessor": "bob", "version": 2, "epub": "epub-bob"}
+      ],
+      "receipts": [
+        {"accessor": "bob", "signature": "abababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababab"}
+      ],
+      "expect": {"ok": false}
+    },
+    {
+      "name": "migration-mismatched-soul",
+      "owner": "alice",
+      "caller": "alice",
+      "now": 1000,
+      "storage": "private-row",
+      "object": "item-1",
+      "fromVersion": 1,
+      "toVersion": 2,
+      "versionGate": 2,
+      "soulHamState": 4,
+      "grants": [
+        {"soul": "s3rch/acl/alice/elsewhere/bob", "owner": "alice", "object": "item-1", "accessor": "bob", "from": 0, "until": 5000, "stated": 1, "hamState": 2}
+      ],
+      "payloads": [
+        {"object": "item-1", "accessor": "bob", "from": 0, "until": 5000, "stated": 1, "epoch": 1, "owner": "alice", "grantRevision": 1, "itemCiphertextDigest": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"}
+      ],
+      "wraps": [
+        {"scope": "item-dek", "epoch": 1, "target": "reader-epub", "targetId": "epub-bob", "object": "item-1", "revisionId": "abababababababababababababababababababababababababababababababab", "wrappedKey": "aa"}
+      ],
+      "readers": [
+        {"accessor": "bob", "acknowledged": false, "atGate": true}
+      ],
+      "readerVersions": [
+        {"accessor": "bob", "version": 2, "epub": "epub-bob"}
+      ],
+      "receipts": [],
+      "expect": {"ok": false}
     }
   ]
 }

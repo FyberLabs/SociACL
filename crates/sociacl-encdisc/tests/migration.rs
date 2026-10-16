@@ -1,10 +1,11 @@
 use serde::Deserialize;
 use sociacl_encdisc::{
     accept_migration, apply_protocol_migration, open_migrated_item, open_reader_wrap,
-    prepare_protocol_migration, sign_sea, sign_wrap_receipt, wrap_receipt_sha256, AccountSeaSecret,
-    EnrolledSeaPub, GrantStated, GrantStorage, MeshSeeGrant, MigrationAdmissionInput,
-    MigrationGrant, MigrationReader, PreparedMigration, ProtocolMigration, ReaderMigration,
-    ReaderVersion, SignedGrantPayload, WrapReceipt, WrapScope, WrapTarget, WrappedKey,
+    prepare_protocol_migration, seal_blinded_row, sign_sea, sign_wrap_receipt, wrap_receipt_sha256,
+    AccountSeaSecret, AclSnapshotBody, EnrolledSeaPub, EpochReplicaView, GrantStated, GrantStorage,
+    MeshSeeGrant, MigrationAdmissionInput, MigrationEpoch, MigrationGrant, MigrationReader,
+    PreparedMigration, ProtocolMigration, ReaderMigration, ReaderVersion, SignedGrantPayload,
+    WrapReceipt, WrapScope, WrapTarget, WrappedKey, SETTLE_WINDOW_DEFAULT_MS,
 };
 
 const MIGRATION: &str = include_str!("../../../vectors/encrypted-discovery/migration.json");
@@ -41,6 +42,8 @@ struct Case {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct GrantJson {
+    #[serde(default)]
+    soul: Option<String>,
     owner: String,
     object: String,
     accessor: String,
@@ -171,10 +174,12 @@ fn migration_vectors_match_the_shared_fixture() {
             .grants
             .iter()
             .map(|grant| MigrationGrant {
-                soul: format!(
-                    "s3rch/acl/{}/{}/{}",
-                    grant.owner, grant.object, grant.accessor
-                ),
+                soul: grant.soul.clone().unwrap_or_else(|| {
+                    format!(
+                        "s3rch/acl/{}/{}/{}",
+                        grant.owner, grant.object, grant.accessor
+                    )
+                }),
                 owner: grant.owner.clone(),
                 grant: MeshSeeGrant {
                     object: grant.object.clone(),
@@ -329,6 +334,8 @@ fn owner_migration_drops_plaintext_per_reader_and_does_not_grant() {
     let carol = AccountSeaSecret::generate("0xcarol").unwrap();
     let dave = AccountSeaSecret::generate("0xdave").unwrap();
     let plaintext = b"existing-body";
+    let (view, snapshot) = settled_view("item-1", 1, REV);
+    let epoch_view = migration_epoch(&view, &snapshot);
     let grants = vec![
         edge(&owner, bob.account(), GrantStated::Live, 2),
         edge(&owner, carol.account(), GrantStated::Live, 3),
@@ -349,6 +356,7 @@ fn owner_migration_drops_plaintext_per_reader_and_does_not_grant() {
         &grants,
         &readers,
         &[],
+        &epoch_view,
     )
     .unwrap()
     {
@@ -374,6 +382,8 @@ fn owner_migration_drops_plaintext_per_reader_and_does_not_grant() {
     let opened = open_migrated_item(
         &prepared.item_blob,
         &sociacl_encdisc::ItemDek::from_bytes(decode_key(&dek)),
+        owner.sea_pub(),
+        "item-1",
     )
     .unwrap();
     assert_eq!(opened, plaintext);
@@ -387,8 +397,18 @@ fn owner_migration_drops_plaintext_per_reader_and_does_not_grant() {
     assert!(!opened_wrap.grants_see());
     assert_eq!(opened_wrap.key_bytes(), &decode_key(&dek));
 
-    let waiting =
-        accept_migration(&owner, &prepared, &prepared.migration, &[], &grants, 1_000).unwrap();
+    let waiting = accept_migration(
+        &owner,
+        &prepared,
+        &prepared.migration,
+        &[],
+        &grants,
+        1_000,
+        4,
+        plaintext,
+        &epoch_view,
+    )
+    .unwrap();
     assert_eq!(waiting.plaintext_retained.len(), 2);
     assert!(!waiting.soul_replaced);
     assert!(waiting.ciphertext_published);
@@ -416,6 +436,9 @@ fn owner_migration_drops_plaintext_per_reader_and_does_not_grant() {
         &[bob_receipt.clone()],
         &grants,
         1_000,
+        4,
+        plaintext,
+        &epoch_view,
     )
     .unwrap();
     assert_eq!(partial.plaintext_dropped, vec![bob.account().to_string()]);
@@ -436,12 +459,34 @@ fn owner_migration_drops_plaintext_per_reader_and_does_not_grant() {
         accessor: bob.account().to_string(),
         signature: sign_sea(bob.local_priv(), concatenated.as_bytes()).unwrap(),
     };
-    assert!(accept_migration(&owner, &prepared, &one, &[bad], &grants, 1_000).is_err());
+    assert!(accept_migration(
+        &owner,
+        &prepared,
+        &one,
+        &[bad],
+        &grants,
+        1_000,
+        4,
+        plaintext,
+        &epoch_view,
+    )
+    .is_err());
     let foreign = WrapReceipt {
         accessor: bob.account().to_string(),
         signature: sign_wrap_receipt(&carol, "item-1", 2, REV, &bob_row.entry_id).unwrap(),
     };
-    assert!(accept_migration(&owner, &prepared, &one, &[foreign], &grants, 1_000).is_err());
+    assert!(accept_migration(
+        &owner,
+        &prepared,
+        &one,
+        &[foreign],
+        &grants,
+        1_000,
+        4,
+        plaintext,
+        &epoch_view,
+    )
+    .is_err());
 
     let carol_row = prepared
         .rows
@@ -465,6 +510,9 @@ fn owner_migration_drops_plaintext_per_reader_and_does_not_grant() {
         &[bob_receipt, carol_receipt],
         &grants,
         1_000,
+        4,
+        plaintext,
+        &epoch_view,
     )
     .unwrap();
     assert!(settled.soul_replaced);
@@ -492,6 +540,7 @@ fn owner_migration_drops_plaintext_per_reader_and_does_not_grant() {
         &grants,
         &readers,
         &[],
+        &epoch_view,
     )
     .is_err());
     let mut extra = readers.clone();
@@ -511,6 +560,7 @@ fn owner_migration_drops_plaintext_per_reader_and_does_not_grant() {
         &grants,
         &extra,
         &[],
+        &epoch_view,
     )
     .is_err());
 
@@ -529,6 +579,7 @@ fn owner_migration_drops_plaintext_per_reader_and_does_not_grant() {
         &grants,
         &[],
         &[],
+        &epoch_view,
     )
     .unwrap();
     assert!(matches!(skipped, PreparedMigration::SkippedPublic { .. }));
@@ -553,6 +604,7 @@ fn owner_migration_drops_plaintext_per_reader_and_does_not_grant() {
         &cancelled,
         &only_carol,
         &[],
+        &epoch_view,
     )
     .unwrap()
     {
@@ -564,8 +616,18 @@ fn owner_migration_drops_plaintext_per_reader_and_does_not_grant() {
         .rewrapped
         .iter()
         .all(|wrap| wrap.target_id != bob.epub()));
-    let outcome =
-        accept_migration(&owner, &revoked, &revoked.migration, &[], &cancelled, 1_000).unwrap();
+    let outcome = accept_migration(
+        &owner,
+        &revoked,
+        &revoked.migration,
+        &[],
+        &cancelled,
+        1_000,
+        4,
+        plaintext,
+        &epoch_view,
+    )
+    .unwrap();
     assert_eq!(
         outcome.plaintext_retained,
         vec![carol.account().to_string()]
@@ -573,6 +635,283 @@ fn owner_migration_drops_plaintext_per_reader_and_does_not_grant() {
     assert!(!outcome.soul_replaced);
     assert!(!outcome.delays_privilege_down());
     assert_eq!(cancelled[0].grant.stated, GrantStated::Cancelled);
+}
+
+#[test]
+fn stale_soul_epoch_wrap_and_future_grant_fail_closed() {
+    let owner = AccountSeaSecret::generate("0xalice").unwrap();
+    let bob = AccountSeaSecret::generate("0xbob").unwrap();
+    let dave = AccountSeaSecret::generate("0xdave").unwrap();
+    let plaintext = b"existing-body";
+    let (view, snapshot) = settled_view("item-1", 1, REV);
+    let epoch_view = migration_epoch(&view, &snapshot);
+    let grants = vec![edge(&owner, bob.account(), GrantStated::Live, 2)];
+    let readers = vec![migration_reader(&bob, 2)];
+    let prepared = match prepare_protocol_migration(
+        &owner,
+        "item-1",
+        plaintext,
+        1,
+        2,
+        2,
+        1,
+        REV,
+        1_000,
+        4,
+        GrantStorage::PrivateRow,
+        &grants,
+        &readers,
+        &[],
+        &epoch_view,
+    )
+    .unwrap()
+    {
+        PreparedMigration::Encrypted(prepared) => prepared,
+        PreparedMigration::SkippedPublic { .. } => panic!("private row was skipped"),
+    };
+    let row = &prepared.rows[0];
+    let receipt = WrapReceipt {
+        accessor: bob.account().to_string(),
+        signature: sign_wrap_receipt(&bob, "item-1", 2, REV, &row.entry_id).unwrap(),
+    };
+    let mut acknowledged = prepared.migration.clone();
+    acknowledged.readers[0].acknowledged = true;
+
+    assert!(accept_migration(
+        &owner,
+        &prepared,
+        &acknowledged,
+        &[receipt.clone()],
+        &grants,
+        1_000,
+        10,
+        plaintext,
+        &epoch_view,
+    )
+    .is_err());
+    assert!(accept_migration(
+        &owner,
+        &prepared,
+        &acknowledged,
+        &[receipt.clone()],
+        &grants,
+        1_000,
+        4,
+        b"changed-body",
+        &epoch_view,
+    )
+    .is_err());
+    let mut moved = view.clone();
+    moved.settled_revision_id = "33".repeat(32);
+    let moved_epoch = migration_epoch(&moved, &snapshot);
+    assert!(accept_migration(
+        &owner,
+        &prepared,
+        &acknowledged,
+        &[receipt.clone()],
+        &grants,
+        1_000,
+        4,
+        plaintext,
+        &moved_epoch,
+    )
+    .is_err());
+    let replaced = accept_migration(
+        &owner,
+        &prepared,
+        &acknowledged,
+        &[receipt.clone()],
+        &grants,
+        1_000,
+        4,
+        plaintext,
+        &epoch_view,
+    )
+    .unwrap();
+    assert!(replaced.soul_replaced);
+    assert_eq!(replaced.soul_ham_state, 5);
+
+    assert!(prepare_protocol_migration(
+        &owner,
+        "item-1",
+        plaintext,
+        1,
+        2,
+        2,
+        1,
+        &"22".repeat(32),
+        1_000,
+        4,
+        GrantStorage::PrivateRow,
+        &grants,
+        &readers,
+        &[],
+        &epoch_view,
+    )
+    .is_err());
+    let other = "22".repeat(32);
+    let mut pending = view.clone();
+    pending.seen = vec![sociacl_encdisc::EpochFinalization::seal(
+        "item-1",
+        0,
+        1,
+        &other,
+        vec![other.clone()],
+        "",
+        "sig",
+    )
+    .unwrap()];
+    pending.winner_seen_at = 0;
+    let pending_epoch = migration_epoch(&pending, &snapshot);
+    assert!(prepare_protocol_migration(
+        &owner,
+        "item-1",
+        plaintext,
+        1,
+        2,
+        2,
+        1,
+        REV,
+        1_000,
+        4,
+        GrantStorage::PrivateRow,
+        &grants,
+        &readers,
+        &[],
+        &pending_epoch,
+    )
+    .is_err());
+
+    let mut mismatched = grants.clone();
+    mismatched[0].soul = "s3rch/acl/0xalice/elsewhere/0xbob".to_string();
+    assert!(prepare_protocol_migration(
+        &owner,
+        "item-1",
+        plaintext,
+        1,
+        2,
+        2,
+        1,
+        REV,
+        1_000,
+        4,
+        GrantStorage::PrivateRow,
+        &mismatched,
+        &readers,
+        &[],
+        &epoch_view,
+    )
+    .is_err());
+
+    let mut future = edge(&owner, dave.account(), GrantStated::Live, 1);
+    future.grant.from = 2_000;
+    let with_future = vec![grants[0].clone(), future];
+    assert!(prepare_protocol_migration(
+        &owner,
+        "item-1",
+        plaintext,
+        1,
+        2,
+        2,
+        1,
+        REV,
+        1_000,
+        4,
+        GrantStorage::PrivateRow,
+        &with_future,
+        &readers,
+        &[],
+        &epoch_view,
+    )
+    .is_err());
+    let including = vec![migration_reader(&bob, 2), migration_reader(&dave, 2)];
+    let future_prepared = match prepare_protocol_migration(
+        &owner,
+        "item-1",
+        plaintext,
+        1,
+        2,
+        2,
+        1,
+        REV,
+        1_000,
+        4,
+        GrantStorage::PrivateRow,
+        &with_future,
+        &including,
+        &[],
+        &epoch_view,
+    )
+    .unwrap()
+    {
+        PreparedMigration::Encrypted(prepared) => prepared,
+        PreparedMigration::SkippedPublic { .. } => panic!("future reader was skipped"),
+    };
+    assert!(future_prepared
+        .migration
+        .rewrapped
+        .iter()
+        .any(|wrap| wrap.target_id == dave.epub()));
+
+    let mut tampered = prepared.clone();
+    let mut wrap = tampered.rows[0].wrap.clone().unwrap();
+    let last = wrap.wrapped_key.pop().unwrap();
+    wrap.wrapped_key.push(if last == 'a' { 'b' } else { 'a' });
+    let row = &tampered.rows[0];
+    tampered.rows[0] = seal_blinded_row(
+        &row.lane_id,
+        &row.grant_ciphertext,
+        row.commitment.clone(),
+        Some(wrap),
+    )
+    .unwrap();
+    let swapped = WrapReceipt {
+        accessor: bob.account().to_string(),
+        signature: sign_wrap_receipt(&bob, "item-1", 2, REV, &tampered.rows[0].entry_id).unwrap(),
+    };
+    assert!(accept_migration(
+        &owner,
+        &tampered,
+        &acknowledged,
+        &[swapped],
+        &grants,
+        1_000,
+        4,
+        plaintext,
+        &epoch_view,
+    )
+    .is_err());
+}
+
+fn settled_view(object: &str, epoch: u64, revision: &str) -> (EpochReplicaView, AclSnapshotBody) {
+    (
+        EpochReplicaView {
+            object: object.to_string(),
+            epoch,
+            previous_finalization_id: String::new(),
+            seen: Vec::new(),
+            winner_seen_at: 0,
+            settle_window_ms: SETTLE_WINDOW_DEFAULT_MS,
+            settled_revision_id: revision.to_string(),
+            settled_epoch: epoch,
+        },
+        AclSnapshotBody {
+            object_set: None,
+            entries: Vec::new(),
+        },
+    )
+}
+
+fn migration_epoch<'a>(
+    view: &'a EpochReplicaView,
+    snapshot: &'a AclSnapshotBody,
+) -> MigrationEpoch<'a> {
+    MigrationEpoch {
+        view,
+        winning: snapshot,
+        settled: snapshot,
+        current: snapshot,
+    }
 }
 
 fn edge(

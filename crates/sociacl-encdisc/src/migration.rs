@@ -22,6 +22,9 @@ use rand::RngCore;
 
 use crate::account::{AccountSeaSecret, EnrolledSeaPub};
 use crate::canonical::{self, ItemAuthFields};
+use crate::epoch::{
+    epoch_read_key, write_disposition, AclSnapshotBody, EpochReplicaView, WriteDisposition,
+};
 use crate::error::EncDiscError;
 use crate::grant::{
     self, commit_grant, seal_blinded_row, AuthorFastUnwrap, BlindedGrantRow, GrantStated,
@@ -144,7 +147,21 @@ pub struct MigrationReader {
     pub version: u64,
 }
 
+/// Replica view the migration must name.
+///
+/// `epoch` and `revision_id` have to be this view's current read key,
+/// and that key has to be open for a new write. A pending successor
+/// or a displaced revision is rejected. The owner prepares again when
+/// the current key is open.
+pub struct MigrationEpoch<'a> {
+    pub view: &'a EpochReplicaView,
+    pub winning: &'a AclSnapshotBody,
+    pub settled: &'a AclSnapshotBody,
+    pub current: &'a AclSnapshotBody,
+}
+
 /// Owner-local result of encrypting in place. Not a Gun row.
+#[derive(Clone)]
 pub struct EncryptedMigration {
     pub migration: ProtocolMigration,
     pub readers: Vec<MigrationReader>,
@@ -225,6 +242,7 @@ pub fn prepare_protocol_migration(
     grants: &[MigrationGrant],
     readers: &[MigrationReader],
     prior_revision: &[(String, u64)],
+    epoch_view: &MigrationEpoch<'_>,
 ) -> Result<PreparedMigration, EncDiscError> {
     if object.is_empty() || owner_secret.account().is_empty() {
         return Err(EncDiscError::MigrationRejected);
@@ -257,6 +275,7 @@ pub fn prepare_protocol_migration(
     if storage != GrantStorage::PrivateRow {
         return Err(EncDiscError::MigrationRejected);
     }
+    require_open_revision(epoch_view, object, epoch, revision_id, now)?;
     let readers = align_enrolled(&current, readers)?;
     for (name, revision) in prior_revision {
         safe_int(*revision)?;
@@ -372,6 +391,10 @@ pub fn prepare_protocol_migration(
 ///
 /// `grants` is the verifier's merged plaintext ACL, not a list the
 /// presenter extends. The caller must be the owner who prepared it.
+/// `soul_ham_state` and `soul_body` are the soul as it stands now.
+/// Either one differing from the prepared snapshot aborts. The owner
+/// prepares again from the current item. Receipts are not applied to
+/// a stale soul.
 pub fn accept_migration(
     owner_secret: &AccountSeaSecret,
     prepared: &EncryptedMigration,
@@ -379,6 +402,9 @@ pub fn accept_migration(
     receipts: &[WrapReceipt],
     grants: &[MigrationGrant],
     now: u64,
+    soul_ham_state: u64,
+    soul_body: &[u8],
+    epoch_view: &MigrationEpoch<'_>,
 ) -> Result<MigrationOutcome, EncDiscError> {
     if owner_secret.account().is_empty() {
         return Err(EncDiscError::MigrationRejected);
@@ -405,6 +431,17 @@ pub fn accept_migration(
         }
     }
     verify_item(owner_secret, prepared)?;
+    safe_int(soul_ham_state)?;
+    if soul_ham_state != prepared.soul_ham_state || soul_body != prepared.plaintext.as_slice() {
+        return Err(EncDiscError::MigrationRejected);
+    }
+    require_open_revision(
+        epoch_view,
+        &prepared.migration.object,
+        prepared.epoch,
+        &prepared_revision(prepared)?,
+        now,
+    )?;
     let versions = reader_versions(&prepared.readers)?;
     let payloads = open_rows(owner_secret, prepared)?;
     verify_receipts(prepared, proposed, receipts)?;
@@ -418,7 +455,7 @@ pub fn accept_migration(
         payloads: &payloads,
         receipts,
         reader_versions: &versions,
-        soul_ham_state: prepared.soul_ham_state,
+        soul_ham_state,
     })
 }
 
@@ -437,9 +474,70 @@ pub fn sign_wrap_receipt(
 }
 
 /// Open a migrated item body. Holding the DEK does not grant.
-pub fn open_migrated_item(blob: &[u8], dek: &ItemDek) -> Result<Vec<u8>, EncDiscError> {
+///
+/// The owner signature over the item-auth tuple is checked before the
+/// body is returned. A reader who knows the DEK cannot substitute a
+/// body. `object` is the item this caller fetched.
+pub fn open_migrated_item(
+    blob: &[u8],
+    dek: &ItemDek,
+    owner_pub: &str,
+    object: &str,
+) -> Result<Vec<u8>, EncDiscError> {
+    if object.is_empty() || owner_pub.is_empty() || sea::parse_sea_point(owner_pub).is_err() {
+        return Err(EncDiscError::MigrationRejected);
+    }
     let opened = open_item_fields(blob, dek)?;
+    let digest = canonical::plaintext_digest(&opened.plaintext);
+    if digest != opened.plaintext_digest {
+        return Err(EncDiscError::MigrationRejected);
+    }
+    let fields = ItemAuthFields {
+        object: object.to_string(),
+        epoch: opened.epoch,
+        version: opened.version,
+        plaintext_digest: digest,
+        revision_id: opened.revision_id,
+    };
+    crate::account::verify_item_auth(owner_pub, &fields, &opened.item_auth)
+        .map_err(|_| EncDiscError::MigrationRejected)?;
     Ok(opened.plaintext)
+}
+
+fn require_open_revision(
+    epoch_view: &MigrationEpoch<'_>,
+    object: &str,
+    epoch: u64,
+    revision_id: &str,
+    now: u64,
+) -> Result<(), EncDiscError> {
+    if epoch_view.view.object != object {
+        return Err(EncDiscError::MigrationRejected);
+    }
+    let Some(read_key) =
+        epoch_read_key(epoch_view.view, epoch_view.winning, epoch_view.current, now)
+    else {
+        return Err(EncDiscError::MigrationRejected);
+    };
+    let open = match write_disposition(
+        epoch_view.view,
+        epoch_view.winning,
+        epoch_view.settled,
+        epoch_view.current,
+        now,
+    ) {
+        WriteDisposition::Settled { revision_id, epoch }
+        | WriteDisposition::Winner { revision_id, epoch } => (epoch, revision_id),
+        WriteDisposition::Buffer => return Err(EncDiscError::MigrationRejected),
+    };
+    if read_key.epoch != open.0
+        || read_key.revision_id != open.1
+        || read_key.epoch != epoch
+        || read_key.revision_id != revision_id
+    {
+        return Err(EncDiscError::MigrationRejected);
+    }
+    Ok(())
 }
 
 fn skip_public(
@@ -688,6 +786,37 @@ fn align_wraps(
     Ok(())
 }
 
+fn grant_soul(owner: &str, object: &str, accessor: &str) -> String {
+    format!(
+        "s3rch/acl/{}/{}/{}",
+        acl_principal_key(owner),
+        acl_key(object),
+        acl_principal_key(accessor)
+    )
+}
+
+fn encode_key(id: &str) -> String {
+    id.chars()
+        .map(|character| match character {
+            '.' | '#' | '$' | '[' | ']' => '_',
+            other => other,
+        })
+        .collect()
+}
+
+fn acl_key(id: &str) -> String {
+    encode_key(id.trim()).replace('/', "_")
+}
+
+fn acl_principal_key(id: &str) -> String {
+    let id = id.trim();
+    let parts: Vec<&str> = id.split('/').filter(|part| !part.is_empty()).collect();
+    if parts.len() == 3 && parts[0] == "s3rch" && parts[1] == "users" {
+        return encode_key(parts[2]);
+    }
+    acl_key(id)
+}
+
 fn current_grants(
     grants: &[MigrationGrant],
     object: &str,
@@ -697,10 +826,10 @@ fn current_grants(
     let mut current = Vec::new();
     let mut seen = Vec::new();
     for grant in grants {
-        if grant.soul.is_empty()
-            || grant.owner != owner
+        if grant.owner != owner
             || grant.grant.object != object
             || grant.grant.accessor.is_empty()
+            || grant.soul != grant_soul(owner, object, &grant.grant.accessor)
         {
             return Err(EncDiscError::MigrationRejected);
         }
@@ -721,7 +850,13 @@ fn current_grants(
                 }
             }
             GrantStated::Live => {
-                if grant.grant.from <= now && now < grant.grant.until {
+                if grant.grant.from >= grant.grant.until {
+                    return Err(EncDiscError::MigrationRejected);
+                }
+                // A window that has not ended is current, including one
+                // whose `from` is still ahead of `now`. Dropping that
+                // reader would leave a live plaintext grant and no wrap.
+                if now < grant.grant.until {
                     current.push(grant.clone());
                 }
             }
@@ -848,7 +983,14 @@ fn open_rows(
             return Err(EncDiscError::MigrationRejected);
         }
         let wrap = row.wrap.as_ref().ok_or(EncDiscError::MigrationRejected)?;
-        if wrap.target_id != reader.enrolled.epub
+        let recorded = prepared
+            .migration
+            .rewrapped
+            .iter()
+            .find(|item| item.target_id == reader.enrolled.epub)
+            .ok_or(EncDiscError::MigrationRejected)?;
+        if wrap != recorded
+            || wrap.target_id != reader.enrolled.epub
             || wrap.revision_id != prepared_revision(prepared)?
             || wrap.epoch != prepared.epoch
         {
@@ -1173,4 +1315,43 @@ fn is_lower_hex(value: &str) -> bool {
         && value
             .bytes()
             .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn grant_soul_matches_the_gun_contract() {
+        for (owner, object, accessor) in [
+            ("0xalice", "item-1", "0xbob"),
+            ("s3rch/users/0xalice", "item-1", "0xbob"),
+            ("0xalice", "rss3:act/1_x", "s3rch/users/0xbob"),
+            ("alice.name", "a.b", "carol"),
+        ] {
+            let expected = sociacl_gun::grant_soul(owner, object, accessor);
+            assert_eq!(grant_soul(owner, object, accessor), expected.as_str());
+        }
+    }
+
+    #[test]
+    fn a_reader_holding_the_dek_cannot_forge_the_body() {
+        let owner = AccountSeaSecret::generate("0xalice").unwrap();
+        let reader = AccountSeaSecret::generate("0xbob").unwrap();
+        let dek = ItemDek::generate();
+        let revision = "11".repeat(32);
+        let signature = sign_item(&owner, "item-1", 1, 2, b"body", &revision).unwrap();
+        let real = seal_item(&dek, 2, 1, &revision, &signature, b"body").unwrap();
+        assert_eq!(
+            open_migrated_item(&real, &dek, owner.sea_pub(), "item-1").unwrap(),
+            b"body"
+        );
+        let forged_sig = sign_item(&reader, "item-1", 1, 2, b"forged", &revision).unwrap();
+        let forged = seal_item(&dek, 2, 1, &revision, &forged_sig, b"forged").unwrap();
+        assert!(open_migrated_item(&forged, &dek, owner.sea_pub(), "item-1").is_err());
+        let relabeled = seal_item(&dek, 2, 1, &revision, &signature, b"forged").unwrap();
+        assert!(open_migrated_item(&relabeled, &dek, owner.sea_pub(), "item-1").is_err());
+        assert!(open_migrated_item(&real, &dek, owner.sea_pub(), "item-2").is_err());
+        assert!(open_migrated_item(&real, &dek, reader.sea_pub(), "item-1").is_err());
+    }
 }

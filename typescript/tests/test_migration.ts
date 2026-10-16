@@ -12,6 +12,7 @@ import { sha256Hex, wrapReceiptBytes, wrapReceiptSha256 } from "../contract/cano
 import { applyProtocolMigration } from "../contract/migration.ts";
 
 type GrantJson = {
+  soul?: string;
   owner: string;
   object: string;
   accessor: string;
@@ -60,7 +61,7 @@ const canonical = JSON.parse(
 
 function inputOf(row: Case): MigrationAdmissionInput {
   const grants: GunAclEdge[] = row.grants.map((grant) => ({
-    soul: `s3rch/acl/${grant.owner}/${grant.object}/${grant.accessor}`,
+    soul: grant.soul ?? `s3rch/acl/${grant.owner}/${grant.object}/${grant.accessor}`,
     owner: grant.owner,
     hamState: grant.hamState,
     grant: {

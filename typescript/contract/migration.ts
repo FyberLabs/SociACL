@@ -40,16 +40,37 @@ function stated(value: number): 0 | 1 {
 
 type CurrentGrant = GunAclEdge;
 
+function encodeKey(id: string): string {
+  return id.replace(/[.#$[\]]/g, "_");
+}
+
+function aclKey(id: string): string {
+  return encodeKey(id.trim()).replaceAll("/", "_");
+}
+
+function aclPrincipalKey(id: string): string {
+  const trimmed = id.trim();
+  const parts = trimmed.split("/").filter((part) => part.length > 0);
+  if (parts.length === 3 && parts[0] === "s3rch" && parts[1] === "users") {
+    return encodeKey(parts[2] ?? "");
+  }
+  return aclKey(trimmed);
+}
+
+function grantSoul(owner: string, object: string, accessor: string): string {
+  return `s3rch/acl/${aclPrincipalKey(owner)}/${aclKey(object)}/${aclPrincipalKey(accessor)}`;
+}
+
 function currentGrants(input: MigrationAdmissionInput): CurrentGrant[] {
   const seen: string[] = [];
   const current: CurrentGrant[] = [];
   for (const edge of input.grants) {
     const grant = edge.grant;
     if (
-      edge.soul.length === 0 ||
       edge.owner !== input.owner ||
       grant.object !== input.migration.object ||
       grant.accessor.length === 0 ||
+      edge.soul !== grantSoul(input.owner, input.migration.object, grant.accessor) ||
       !safe(edge.hamState) ||
       !safe(grant.from) ||
       !safe(grant.until) ||
@@ -65,7 +86,10 @@ function currentGrants(input: MigrationAdmissionInput): CurrentGrant[] {
       }
       continue;
     }
-    if (grant.from <= input.now && input.now < grant.until) {
+    if (grant.from >= grant.until) {
+      reject();
+    }
+    if (input.now < grant.until) {
       current.push(edge);
     }
   }
