@@ -1,6 +1,18 @@
 # Changelog
 
-## sociacl-ids 0.4.0 — unreleased
+## sociacl-ids 0.5.0 — unreleased
+
+- Add explicit present-time `verifyRevokeNow` / `resolveWalletLinkNow` APIs
+  (Rust snake_case equivalents). Revokes signed by the final authenticated
+  current key need no Panopticon witness for present eligibility.
+- Make revoke `attest` optional on the wire while requiring and validating it
+  in every historical/as-of and rotation check. Preserve signing bytes and IDs.
+- Unwitnessed revokes stop applying when their signer retires; no saved-state
+  persistence or timestamp inference across retirement is implemented.
+- Add shared present/history/retirement regressions and exercise the exported
+  APIs and optional field in the installed-tarball consumer.
+
+## sociacl-ids 0.4.0 — superseded before release
 
 - Freeze authenticated rotation/revocation contradictions with `rotation-conflict`,
   including a compromised witness backdating revokes signed by a retired key.

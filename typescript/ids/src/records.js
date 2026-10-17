@@ -51,8 +51,9 @@ function record(x, unsigned = false) {
     const id = text(r.linkId, 64); if (!id.ok) return id;
     if (!/^[0-9a-f]{64}$/.test(id.value)) return fail('bad-record');
     const sig = unsigned ? ok('') : text(r.keySig, 128); if (!sig.ok) return sig;
-    const attest=unsigned?ok(''):text(r.attest,16384); if (!attest.ok) return attest;
-    return ok(Object.freeze({ ...base, attest:attest.value, kind: 'revoke', linkId: id.value, keySig: sig.value }));
+    const attest = unsigned || !Object.hasOwn(r, 'attest') ? ok(undefined) : text(r.attest,16384);
+    if (!attest.ok) return attest;
+    return ok(Object.freeze({ ...base, ...(attest.value === undefined ? {} : {attest:attest.value}), kind: 'revoke', linkId: id.value, keySig: sig.value }));
   }
   if (!only(r, [...common, 'seq', 'prevKey', 'nextKey', 'nextSig', 'authorizer', 'attest', 'retainedLinks'])) return fail('bad-record');
   if (!integer(r.seq) || r.seq === 0) return fail('bad-sequence');
@@ -220,12 +221,22 @@ export function verifyOidcLink(x,jwks,pinnedIss,now,keyState,clockSkewSeconds=0)
   const k=linkKey(r,keyState); if (!k.ok) return k;
   const w=oidcWitness(r,jwks,pinnedIss,now,clockSkewSeconds); return w.ok ? ok(r) : w;
 }
-/** @param {unknown} x @param {PrincipalId} currentKey @param {Jwks} jwks @param {number} now @returns {Result<Revoke>} */
-export function verifyRevoke(x, currentKey, jwks, now) {
+/** Present-time authority only: currentKey must be the final authenticated current key.
+ * This does not certify an issuance time or produce historical revocation evidence.
+ * @param {unknown} x @param {PrincipalId} currentKey @param {number} now @returns {Result<Revoke>} */
+export function verifyRevokeNow(x, currentKey, now) {
   const p = record(x); if (!p.ok) return p; const r = p.value;
   if (r.kind !== 'revoke') return fail('bad-record');
   const t = time(r.issuedAt, now); if (!t.ok) return t;
   if (!keyVerify(currentKey,r.keySig,bytes(r))) return fail('bad-signature');
+  return ok(r);
+}
+/** Witness required, including when the signer is the current key.
+ * @param {unknown} x @param {PrincipalId} currentKey @param {Jwks} jwks @param {number} now @returns {Result<Revoke>} */
+export function verifyRevoke(x, currentKey, jwks, now) {
+  const p = verifyRevokeNow(x, currentKey, now); if (!p.ok) return p;
+  const r = p.value;
+  if (r.attest === undefined) return fail('bad-attestation');
   const a=attestVerify(r.attest,jwks,now); if (!a.ok) return a;
   const c=a.value;
   if (!only(c,['typ','principal','recordId','iat','exp']) || c.typ!=='sociacl-revoke-attest-v1' || c.principal!==r.principal || c.recordId!==hex(sha256(bytes(r))) || c.iat!==r.issuedAt) return fail('bad-attestation');
@@ -258,8 +269,8 @@ function report(ds,source,index,reason) {
   if (!ds.some(d=>d.source===source && d.index===index && d.reason===reason)) ds.push({source,index,reason});
 }
 /** Revokes never choose a key/history from attacker-controlled fields.
- * @param {WalletLink|OidcLink} link @param {readonly unknown[]} revocations @param {PrincipalId} currentKey @param {number} now @param {Jwks} jwks @param {Diagnostic[]} diagnostics */
-function revokedAt(link,revocations,currentKey,now,jwks,diagnostics) {
+ * @param {WalletLink|OidcLink} link @param {readonly unknown[]} revocations @param {PrincipalId} currentKey @param {number} now @param {Jwks} jwks @param {Diagnostic[]} diagnostics @param {boolean} [present] */
+function revokedAt(link,revocations,currentKey,now,jwks,diagnostics,present=false) {
   const id=hex(sha256(bytes(link))); let revoked=false;
   for (const [index,raw] of revocations.entries()) {
     const p=record(raw);
@@ -267,7 +278,7 @@ function revokedAt(link,revocations,currentKey,now,jwks,diagnostics) {
     const r=p.value,t=time(r.issuedAt,now);
     if (!t.ok) {report(diagnostics,'revoke',index,t.reason);continue;}
     if (r.principal !== link.principal || r.linkId !== id || r.issuedAt < link.issuedAt) continue;
-    const v=verifyRevoke(r,currentKey,jwks,r.issuedAt);
+    const v = present ? verifyRevokeNow(r,currentKey,now) : verifyRevoke(r,currentKey,jwks,r.issuedAt);
     if (!v.ok) report(diagnostics,'revoke',index,v.reason); else revoked=true;
   }
   return revoked;
@@ -375,6 +386,16 @@ export function resolveCurrentKey(genesis, rotations, ctx) {
 /** Equal-time distinct links are ambiguous even for the same principal. No resurrection after revocation.
  * @param {Eip55} address @param {readonly unknown[]} links @param {readonly unknown[]} revocations @param {ResolutionContext} ctx @returns {Resolution<WalletLink>} */
 export function resolveWalletLink(address, links, revocations, ctx) {
+  return resolveWallet(address, links, revocations, ctx, false);
+}
+/** Present lookup using the final authenticated current key; never use for as-of queries.
+ * @param {Eip55} address @param {readonly unknown[]} links @param {readonly unknown[]} revocations @param {ResolutionContext} ctx @returns {Resolution<WalletLink>} */
+export function resolveWalletLinkNow(address, links, revocations, ctx) {
+  return resolveWallet(address, links, revocations, ctx, true);
+}
+/** The public entry point fixes the revocation mode; history resolution always uses witnessed revokes.
+ * @param {Eip55} address @param {readonly unknown[]} links @param {readonly unknown[]} revocations @param {ResolutionContext} ctx @param {boolean} present @returns {Resolution<WalletLink>} */
+function resolveWallet(address, links, revocations, ctx, present) {
   /** @type {Diagnostic[]} */ const diagnostics = [];
   if (!integer(ctx.now) || typeof ctx.history !== 'function') return { ...fail('missing-history'), diagnostics };
   /** @type {Map<string,WalletLink>} */ const valid = new Map();
@@ -392,7 +413,7 @@ export function resolveWalletLink(address, links, revocations, ctx) {
   if (sorted.length > 1 && sorted[1][1].issuedAt === newest.issuedAt) return { ...fail('ambiguous-link'), diagnostics };
   const h=state(ctx.history,newest.principal,newest.issuedAt,ctx.now);
   if (!h.ok) return {...h,diagnostics};
-  const revoked=revokedAt(newest,revocations,h.value.currentKey,ctx.now,ctx.jwks,diagnostics);
+  const revoked=revokedAt(newest,revocations,h.value.currentKey,ctx.now,ctx.jwks,diagnostics,present);
   return { ...(revoked ? fail('revoked-link') : ok(newest)), diagnostics };
 }
 export const verifyWalletLinkAtKey = verifyWalletLink;

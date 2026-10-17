@@ -78,7 +78,8 @@ pub struct Revoke {
     #[serde(deserialize_with = "deserialize_integer")]
     pub issued_at: u64,
     pub key_sig: String,
-    pub attest: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attest: Option<String>,
 }
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
@@ -335,7 +336,11 @@ fn record(v: &Value, unsigned: bool) -> Result<IdentityRecord, Reason> {
                 issued_at,
                 link_id,
                 key_sig: sig("keySig")?,
-                attest: attest()?,
+                attest: if unsigned || v.get("attest").is_none() {
+                    None
+                } else {
+                    Some(attest()?)
+                },
             }))
         }
         "rotate" => {
@@ -930,12 +935,9 @@ pub fn verify_oidc_link_with_skew(
     oidc_witness(o, jwks, pinned_iss, now, clock_skew_seconds)?;
     Ok(o.clone())
 }
-pub fn verify_revoke(
-    v: &Value,
-    current_key: &PrincipalId,
-    jwks: &Jwks,
-    now: u64,
-) -> Result<Revoke, Reason> {
+/// Present-time authority only. The caller supplies the final authenticated current key.
+/// This never certifies an issuance time or produces historical revocation evidence.
+pub fn verify_revoke_now(v: &Value, current_key: &PrincipalId, now: u64) -> Result<Revoke, Reason> {
     let r = record(v, false)?;
     let IdentityRecord::Revoke(rev) = &r else {
         return Err(Reason::BadRecord);
@@ -944,16 +946,27 @@ pub fn verify_revoke(
     if !key_verify(current_key, &rev.key_sig, &bytes(&r)) {
         return Err(Reason::BadSignature);
     }
-    let c = attest_verify(&rev.attest, jwks, now, 0)?;
+    Ok(rev.clone())
+}
+/// Witness required, including when the signer is the current key.
+pub fn verify_revoke(
+    v: &Value,
+    current_key: &PrincipalId,
+    jwks: &Jwks,
+    now: u64,
+) -> Result<Revoke, Reason> {
+    let rev = verify_revoke_now(v, current_key, now)?;
+    let attestation = rev.attest.as_deref().ok_or(Reason::BadAttestation)?;
+    let c = attest_verify(attestation, jwks, now, 0)?;
     if !only(&c, &["typ", "principal", "recordId", "iat", "exp"])
         || c["typ"] != "sociacl-revoke-attest-v1"
         || c["principal"] != rev.principal.as_ref()
-        || c["recordId"] != hex(&Sha256::digest(bytes(&r)))
+        || c["recordId"] != hex(&Sha256::digest(bytes(&IdentityRecord::Revoke(rev.clone()))))
         || number(&c["iat"]).ok() != Some(rev.issued_at)
     {
         return Err(Reason::BadAttestation);
     }
-    Ok(rev.clone())
+    Ok(rev)
 }
 pub use verify_oidc_link as verify_oidc_link_at_key;
 
@@ -1004,6 +1017,11 @@ fn historical_link(
     retained_link(r, &h)?;
     Ok(r.clone())
 }
+#[derive(Clone, Copy)]
+enum RevocationMode {
+    Witnessed,
+    Present,
+}
 fn revoked_at(
     link: &IdentityRecord,
     revocations: &[Value],
@@ -1011,6 +1029,7 @@ fn revoked_at(
     now: u64,
     jwks: &Jwks,
     diagnostics: &mut Vec<Diagnostic>,
+    mode: RevocationMode,
 ) -> bool {
     let id = hex(&Sha256::digest(bytes(link)));
     let mut revoked = false;
@@ -1033,7 +1052,11 @@ fn revoked_at(
         if &r.principal != link.principal() || r.link_id != id || r.issued_at < link.issued_at() {
             continue;
         }
-        match verify_revoke(raw, current_key, jwks, r.issued_at) {
+        let verified = match mode {
+            RevocationMode::Witnessed => verify_revoke(raw, current_key, jwks, r.issued_at),
+            RevocationMode::Present => verify_revoke_now(raw, current_key, now),
+        };
+        match verified {
             Ok(_) => revoked = true,
             Err(e) => diagnostic(diagnostics, "revoke", index, e),
         }
@@ -1125,6 +1148,7 @@ fn check_rotate(
             rot.issued_at,
             ctx.jwks,
             diagnostics,
+            RevocationMode::Witnessed,
         ) {
             return Err(Reason::RotationConflict);
         }
@@ -1187,6 +1211,7 @@ fn check_rotate(
                 rot.issued_at,
                 ctx.jwks,
                 diagnostics,
+                RevocationMode::Witnessed,
             ) {
                 return Err(Reason::WalletRequired);
             }
@@ -1332,6 +1357,24 @@ pub fn resolve_wallet_link(
     revocations: &[Value],
     ctx: &ResolutionContext<'_>,
 ) -> Resolution<WalletLink> {
+    resolve_wallet(address, links, revocations, ctx, RevocationMode::Witnessed)
+}
+/// Present lookup using the final authenticated current key. Never use for as-of queries.
+pub fn resolve_wallet_link_now(
+    address: &Eip55,
+    links: &[Value],
+    revocations: &[Value],
+    ctx: &ResolutionContext<'_>,
+) -> Resolution<WalletLink> {
+    resolve_wallet(address, links, revocations, ctx, RevocationMode::Present)
+}
+fn resolve_wallet(
+    address: &Eip55,
+    links: &[Value],
+    revocations: &[Value],
+    ctx: &ResolutionContext<'_>,
+    mode: RevocationMode,
+) -> Resolution<WalletLink> {
     let mut diagnostics = Vec::new();
     let result = (|| {
         if ctx.now > MAX_SAFE {
@@ -1385,6 +1428,7 @@ pub fn resolve_wallet_link(
             ctx.now,
             ctx.jwks,
             &mut diagnostics,
+            mode,
         );
         if revoked {
             Err(Reason::RevokedLink)

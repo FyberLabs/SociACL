@@ -32,7 +32,7 @@ export type Rotate = Readonly<{ v: 1; kind: 'rotate'; principal: PrincipalId; se
   prevKey: PrincipalId; nextKey: PrincipalId; retainedLinks: readonly string[]; issuedAt: number; nextSig: string;
   authorizer: { kind: 'wallet'; link: string; siwe: Siwe } | { kind: 'oidc-fresh-login'; link: string }; attest: string }>;
 export type Revoke = Readonly<{ v: 1; kind: 'revoke'; principal: PrincipalId; linkId: string;
-  issuedAt: number; keySig: string; attest: string }>;
+  issuedAt: number; keySig: string; attest?: string }>;
 export type IdentityRecord = WalletLink | OidcLink | Rotate | Revoke;
 export type UnsignedRecord = Omit<WalletLink, 'keySig' | 'siwe' | 'attest'> | Omit<OidcLink, 'keySig' | 'attest'>
   | (Omit<Rotate, 'nextSig' | 'authorizer' | 'attest'> & {authorizer: {kind:'wallet'|'oidc-fresh-login';link:string}}) | Omit<Revoke, 'keySig' | 'attest'>;

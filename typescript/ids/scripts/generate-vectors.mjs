@@ -359,6 +359,46 @@ bad('foreign-rotation-conflict-propagates',[w,otherWallet],'rotation-conflict','
 const secondRotation=rotation('wallet',p3,3,2,p2,at+55);
 bad('second-rotation-conflict-does-not-return-previous-key',[rot,secondRotation],'rotation-conflict','resolve',{revocations:[rev2],diagnosticReasons:['future-record','rotation-conflict']});
 
+// Present-only revocation: final current-key authority is distinct from witnessed history.
+const offline = record => { const {attest,...rest}=record; return rest; };
+const offlineRev=offline(rev), offlineRev2=offline(rev2);
+accept('signing-bytes','offline-revoke-same-identity',offlineRev,hex(bytes(rev)),{linkId:val(ids.linkId(rev))});
+accept('records','offline-current-key-revoke',offlineRev,p,{operation:'revoke-now',jwks:{keys:[]}});
+accept('records','offline-current-key-oidc-revoke',offline(revokedOidc),p,{operation:'revoke-now'});
+bad('offline-revoke-is-not-historical-proof',offlineRev,'bad-attestation','revoke');
+bad('offline-revoke-blocks-present-wallet',[w],'revoked-link','wallet-resolve-now',{address:wallet,revocations:[offlineRev]});
+accept('records','offline-revoke-ignored-at-historical-horizon',[w],p,{operation:'wallet-resolve',address:wallet,revocations:[offlineRev],diagnosticReasons:['bad-attestation']});
+bad('offline-rotated-current-key-blocks-present-wallet',[w],'revoked-link','wallet-resolve-now',{address:wallet,histories:[[p,[rot]]],revocations:[offlineRev2]});
+bad('offline-current-revoke-after-resolving-rotation',[rot],'revoked-link','resolve-and-wallet-now',{address:wallet,revocations:[offlineRev2]});
+accept('records','offline-retired-revoke-cannot-rollback-rotation',[rot],p2,{operation:'resolve',revocations:[offlineRev],diagnosticReasons:['bad-attestation']});
+accept('records','offline-retired-revoke-cannot-rewrite-rotation-proof',rot,p,{operation:'rotate',revocations:[offlineRev]});
+accept('records','offline-retired-revoke-stops-at-retirement',[w],p,{operation:'wallet-resolve-now',address:wallet,histories:[[p,[rot]]],revocations:[offlineRev],diagnosticReasons:['bad-signature']});
+accept('records','offline-retired-backdated-revoke-cannot-remove-wallet',[rot],p,{operation:'resolve-and-wallet-now',address:wallet,revocations:[offline(backdatedRevoke)]});
+accept('records','offline-revoke-cannot-block-second-rotation',[rot,secondRotation],p3,{operation:'resolve',revocations:[offlineRev2],diagnosticReasons:['future-record','bad-attestation']});
+accept('records','offline-revoke-stops-after-second-rotation',[rot,secondRotation],p,{operation:'resolve-and-wallet-now',address:wallet,revocations:[offlineRev2]});
+bad('offline-revoke-does-not-erase-wallet-from-historical-oidc-recovery',[rotOidc],'rotation-conflict','resolve',{revocations:[offlineRev],diagnosticReasons:['bad-attestation','rotation-conflict']});
+accept('records','offline-oidc-revoke-cannot-rewrite-oidc-rotation',[rotOidc],p2,{operation:'resolve',...oidcOnly,revocations:[offline(revokedOidc)],diagnosticReasons:['bad-attestation']});
+bad('witness-conflict-still-freezes-present-lookup',[rot],'rotation-conflict','resolve-and-wallet-now',{address:wallet,revocations:[hostileBackdated]});
+bad('missing-rotation-evidence-still-blocks-present-lookup',[rot],'missing-history','resolve-and-wallet-now',{address:wallet,links:[]});
+bad('rotation-fork-still-blocks-present-lookup',[rot,fork],'rotation-fork','resolve-and-wallet-now',{address:wallet});
+bad('present-lookup-needs-history',[w],'missing-history','wallet-resolve-now',{address:wallet,missingHistory:true});
+for(const reason of ['missing-history','rotation-fork','rotation-conflict']) bad('present-relevant-history-'+reason,[w,otherWallet],reason,'wallet-resolve-now',{address:wallet,historyErrors:[[p2,reason]],diagnosticReasons:[reason]});
+for(const [name,record,diags] of [
+  ['foreign',{...offlineRev,principal:p7,keySig:zero},[]],
+  ['future',{...offlineRev,issuedAt:now+1},['future-record']],
+  ['forged',{...offlineRev,keySig:zero},['bad-signature']],
+  ['other-id',{...offlineRev,linkId:'00'.repeat(32),keySig:zero},[]],
+]) accept('records','present-skip-revoke-'+name,[w],p,{operation:'wallet-resolve-now',address:wallet,revocations:[record],diagnosticReasons:diags});
+bad('present-revoked-newest-wallet-never-resurrects-old',[w,otherWallet],'revoked-link','wallet-resolve-now',{address:wallet,revocations:[offline(otherRevoke)]});
+accept('records','present-revoke-before-link-does-not-remove-link',[w],p,{operation:'wallet-resolve-now',address:wallet,revocations:[offline(earlyRevoke)]});
+for(const [name,patch] of [['principal',{principal:p2}],['target',{linkId:'00'.repeat(32)}],['time',{issuedAt:at+21}]]) bad('offline-revoke-binds-'+name,{...offlineRev,...patch},'bad-signature','revoke-now');
+bad('offline-retired-key-is-not-current',offlineRev,'bad-signature','revoke-now',{currentKey:p2});
+bad('offline-future-revoke', {...offlineRev,issuedAt:now+1},'future-record','revoke-now');
+for(const [name,attest,reason] of [['null',null,'not-string'],['number',3,'not-string'],['empty','','empty']]) bad('offline-malformed-attest-'+name,{...offlineRev,attest},reason,'revoke-now');
+accept('records','present-revoke-does-not-certify-witness',{...rev,attest:'broken'},p,{operation:'revoke-now'});
+bad('historical-revoke-still-validates-witness',{...rev,attest:'broken'},'bad-attestation','revoke');
+bad('present-witnessed-revoke-blocks-wallet',[w],'revoked-link','wallet-resolve-now',{address:wallet,revocations:[rev]});
+
 const root = new URL('../../../vectors/ids/',import.meta.url); mkdirSync(root,{recursive:true});
 for(const [name,value] of families) writeFileSync(new URL(name+'.json',root),JSON.stringify(value,null,2).replace(/"issuedAt": 1700000000,/g, name==='edges'?'"issuedAt": 1700000000,':'"issuedAt": 1700000000.0,')+'\n');
 writeFileSync(new URL('test-keys.json',new URL('../test/',import.meta.url)),JSON.stringify({p,p2,p3,wallet,tenant,obj,network,source,secretScalars:[1,2,3,4,5]},null,2)+'\n');

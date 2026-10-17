@@ -46,6 +46,7 @@ object. Rust cannot represent an unpaired UTF-16 surrogate in `str`;
 | Creation | `mintObjectId`, `deriveClaimId`, `deriveExternalId` |
 | Signing | `signingBytes`, `linkId` |
 | Proofs | `verifyWalletLink`, `verifyOidcLink`, `verifyRotate`, `verifyRevoke` |
+| Present eligibility | `verifyRevokeNow`, `resolveWalletLinkNow` |
 | Histories | `resolveCurrentKey`, `resolveWalletLink`, `historyState` |
 
 Every parser/verifier returns `{ok:true,value}` or `{ok:false,reason}`. Scalar
@@ -99,8 +100,9 @@ and nonce must all match. A rotation always requires Panopticon attestation,
 including when a wallet authorizes it. This package performs no token fetching,
 login, storage, nonce consumption or enrollment.
 
-The 0.4 contract requires wallet and revoke timestamp attestations, rotation
-retention commitments, and an enrolled credential bound into the v2 rotation
+The 0.5 contract requires wallet timestamp attestations and witnessed revokes
+for history, and permits current-key offline revokes for present lookups. Rotation
+retention commitments and an enrolled credential are bound into the v2 rotation
 signature and attestation. OIDC recovery is limited to accounts with no active
 wallet. See the [normative amendment](../../docs/identity-review-amendment.md) for
 signing fields, exact claims, grammar, and migration requirements.
@@ -131,8 +133,32 @@ revoke that conflicts with the authenticated rotation freezes resolution with
 `rotation-conflict`; it never returns an earlier key. This also handles a witness
 colluding with a retired key to backdate a revoke. An unwitnessed revoke cannot
 affect history. The service assigns witness timestamps and computes retained
-sets from authenticated state. This contract requires Panopticon availability
-for revocation and rotation.
+sets from authenticated state. Issuing witnessed revokes and rotations requires
+Panopticon availability.
+
+`verifyRevokeNow(record, currentKey, now)` needs no witness or JWKS; it checks
+present authority under the final authenticated current key. `Revoke.attest` is
+optional: omit it for offline revokes. Explicit null, empty or non-string values
+are rejected. A supplied witness string is not certified by this present-only
+API. The signature still binds principal, target link ID and issuance time.
+Direct callers must match those fields to the credential being revoked.
+
+`resolveWalletLinkNow(address, links, revocations, context)` uses that rule for
+present wallet eligibility. A current-key offline revoke blocks the newest
+binding without resurrecting an older one. **When its signer retires, an
+unwitnessed revoke stops applying.** There is no authenticated saved-state
+persistence in this API. Remove the link from the retained set, or use a
+witnessed revoke consistent with the transition, to preserve removal across
+rotation. The same offline revoke is ignored by historical/as-of
+`resolveWalletLink`, `verifyRotate` and `resolveCurrentKey`; never use a `Now`
+API for a historical query or choose its current key from `issuedAt`.
+
+Use present eligibility before a new login/recovery authorization. For OIDC,
+check matching revokes with `verifyRevokeNow` using the authenticated current key.
+The historical rotation verifier does not perform this present authorization
+step. Cached JWKS and enrollment proofs still authenticate existing links;
+complete authenticated history and a trusted latest-state checkpoint remain
+necessary. The offline revoke itself requires no network request.
 
 `ResolutionContext` contains `{jwks, pinnedIss, links, revocations?, now, policy, history}`.
 `history(principal, issuedAt, until)` is required and returns `Result<KeyState>`
@@ -183,7 +209,8 @@ are reported and skipped. Link maps are examined in sorted key order in both
 languages. Diagnostics identify input positions; they are not authorization.
 
 Rust returns `Resolution<T> { result: Result<T, Reason>, diagnostics }`. Both
-languages expose `*_at_key` / `*AtKey` aliases for the explicit proof/history APIs.
+languages expose `*_at_key` / `*AtKey` aliases for the explicit proof/history APIs;
+these remain witness-only and do not alias the new present-time entry points.
 The context must include complete known link, revocation, and rotation history;
 a pure verifier cannot discover omitted records or establish global freshness.
 Never treat a partial offline snapshot as proof that an account has no rotations
@@ -223,19 +250,20 @@ fixture authoring tool, not part of CI: changing expectations requires review.
 
 `npm pack` builds declarations and ESM into the tarball. The consumer example at
 `examples/consumer` is copied to a fresh directory with an empty npm cache, installs that local tarball,
-compiles against its exported types and runs its parsers. The browser check
+compiles against its exported types, runs its parsers, and exercises the
+present/historical revocation boundary. The browser check
 bundles the runtime dependency graph and rejects Node imports. Node built-ins
 are used only in build/test tooling, outside the shipped runtime.
 
-After review and merge, tag `ids-v0.4.0`. The release job waits for the full test
+After review and merge, tag `ids-v0.5.0`. The release job waits for the full test
 job, requires a protected `master` and verifies the tag commit is its ancestor.
 A read-only job installs dependencies with scripts disabled, explicitly builds,
 and checks the tag against `package.json`. A separate write-token job only
 downloads the resulting artifact, checks its SHA-256, and attaches
-`sociacl-ids-0.4.0.tgz` and its SHA-256 file. Consumers then install:
+`sociacl-ids-0.5.0.tgz` and its SHA-256 file. Consumers then install:
 
 ```sh
-npm install https://github.com/FyberLabs/SociACL/releases/download/ids-v0.4.0/sociacl-ids-0.4.0.tgz
+npm install https://github.com/FyberLabs/SociACL/releases/download/ids-v0.5.0/sociacl-ids-0.5.0.tgz
 ```
 
 Commit the consumer lockfile with tarball integrity. This URL becomes usable

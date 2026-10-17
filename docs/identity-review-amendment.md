@@ -1,8 +1,8 @@
-# sociacl-ids 0.4 review amendment
+# sociacl-ids 0.5 review amendment
 
 This amendment and the updated record sections of the
-[package specification](sociacl-ids-package-spec.md) define the 0.4 contract.
-Versions 0.1, 0.2 and 0.3 were never released. The review changes require a minor
+[package specification](sociacl-ids-package-spec.md) define the 0.5 contract.
+Versions 0.1 through 0.4 were never released. The review changes require a minor
 version bump because they change signing bytes, record shapes and URL grammar.
 Wallet and revoke timestamp attestations, rotation retention commitments, and
 skipping invalid history with diagnostics were explicitly approved during review.
@@ -21,7 +21,8 @@ principal, issuance time and nonce. `iat` must equal `issuedAt`. Panopticon must
 assign that time after checking the wallet proof and authenticated account state;
 accepting arbitrary client timestamps would defeat this guarantee.
 
-Revoke records also require `attest`, with these exact claims:
+Revoke records permit an optional `attest` on the wire. Historical verification
+requires it, with these exact claims:
 
 ```json
 {"typ":"sociacl-revoke-attest-v1","principal":"<genesis>","recordId":"<64 lowercase hex>","iat":1700000020,"exp":1700000620}
@@ -34,9 +35,52 @@ link's ID), and `iat` must equal `issuedAt`. The signing bytes remain
 timestamp witness. Panopticon must assign the time and verify current-key
 authority. An unwitnessed backdated revoke cannot invalidate a past rotation.
 If a compromised witness signs contradictory history, resolution freezes as
-specified below; it must not restore the retired key. Revocation and rotation
-currently both require Panopticon availability. An unwitnessed revoke has no
-effect under this contract.
+specified below; it must not restore the retired key. Issuing a witnessed revoke
+or a rotation requires Panopticon availability. Present-time revocation has the
+separate contract below.
+
+## Present-time offline revocation
+
+`verifyRevokeNow(record, currentKey, now)` verifies the revoke's structure, time
+and signature under the **final authenticated current key**. It needs no JWKS or
+Panopticon request. `resolveWalletLinkNow(address, links, revocations, context)`
+uses that rule for present eligibility after authenticating the wallet link and
+resolving its account's current key. Rust exposes `verify_revoke_now` and
+`resolve_wallet_link_now` with the same behavior.
+
+| Check | Revoke authority | Timestamp witness |
+| --- | --- | --- |
+| Present lookup (`resolveWalletLinkNow`) or direct present proof (`verifyRevokeNow`) | Final authenticated current key | Optional |
+| Historical/as-of lookup (`resolveWalletLink`), `verifyRevoke`, `verifyRotate`, `resolveCurrentKey`, and their `*AtKey` aliases | Key current at the evaluation horizon | Required |
+
+Omit `attest` for an offline revoke; explicit null, empty and non-string values
+are malformed. Present verification does not certify an attached witness, even
+if a string is supplied. Historical verification validates it strictly. Signing
+bytes and record IDs are identical with or without a witness.
+
+An unwitnessed revoke affects only present state while its signing key remains
+current. **It stops applying when that key retires.** The package does not
+persist revocations across key retirement or infer their authenticity from a
+claimed `issuedAt`. A retired-key revoke cannot block a present lookup, freeze a
+rotation or rewrite history without the historical witness requirements. A
+current-key offline revoke also cannot establish pre-rotation eligibility or
+remove a wallet from historical OIDC recovery checks.
+
+Consumers must use the present API before authorizing a new login or recovery
+attempt. For an OIDC credential, use `verifyRevokeNow` with the resolved account
+key and match the verified revoke's principal, target link ID and issuance time
+to that credential. Rotation-history verification remains witness-only; it does
+not replace the present authorization check. To preserve removal across a
+rotation, omit the credential from the retained set or obtain a witnessed revoke
+consistent with the authenticated transition. Never treat a past success from
+`verifyRevokeNow` as proof of a historical timestamp.
+
+Offline lookup can use cached enrollment witnesses, pinned keys and complete
+authenticated account history. It still requires that trusted context and a
+latest-state checkpoint; an arbitrary stale snapshot cannot establish which key
+is current. Missing history, a fork, or a witnessed rotation conflict still fails
+closed. No new enrollment witness or network request is needed to verify the
+current-key revoke itself.
 
 ## Recovery records
 
@@ -65,9 +109,10 @@ attestations are rejected; consumers must pin package version and integrity.
 The verifier authenticates the authorizing credential and **every retained ID**
 against the pre-rotation state. Each must belong to the principal and remain
 retained through all previous rotations. It rejects any of these links revoked
-at or before the candidate's timestamp under the key current immediately before
-that rotation. A rotation therefore cannot revive a revoked link. A verified
-witnessed revoke conflicting with an authenticated rotation returns the fatal
+at or before the candidate's timestamp by a witnessed revoke under the key
+current immediately before that rotation. A rotation therefore cannot revive a
+historically revoked link. A verified witnessed revoke conflicting with an
+authenticated rotation returns the fatal
 `rotation-conflict` error, including same-second conflicts. This remains fatal
 when the witness colludes with a retired key and backdates the revoke: no
 current key or partial successful history is returned. The authorizer may be

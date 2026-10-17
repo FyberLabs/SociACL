@@ -30,14 +30,17 @@ function run(f, c) {
       case 'wallet-link': r=ids.verifyWalletLink(c.input,ctx.jwks,ctx.policy,ctx.now,keyState); break;
       case 'oidc-link': r=ids.verifyOidcLink(c.input,ctx.jwks,new Set(ctx.pinnedIss),ctx.now,keyState); break;
       case 'rotate': r=ids.verifyRotate(c.input,ctx.currentKey,rc); break;
+      case 'revoke-now': r=ids.verifyRevokeNow(c.input,ctx.currentKey,ctx.now); break;
       case 'revoke': r=ids.verifyRevoke(c.input,ctx.currentKey,ctx.jwks,ctx.now); break;
       case 'resolve': r=ids.resolveCurrentKey(ctx.genesis,c.input,rc); break;
+      case 'resolve-and-wallet-now':
       case 'resolve-and-wallet': {
         const account=ids.resolveCurrentKey(ctx.genesis,c.input,rc);
         if (!account.ok) {r=account;break;}
         const resolved={...rc,history:(p,at,until)=>p===ctx.genesis?{ok:true,value:ids.historyState(p,account.value.rotations,at,until)}:history(p,at,until)};
-        r=ids.resolveWalletLink(ctx.address,[...links.values()],ctx.revocations??[],resolved);break;
+        r=(c.operation==='resolve-and-wallet-now'?ids.resolveWalletLinkNow:ids.resolveWalletLink)(ctx.address,[...links.values()],ctx.revocations??[],resolved);break;
       }
+      case 'wallet-resolve-now': r=ids.resolveWalletLinkNow(ctx.address,c.input,ctx.revocations??[],rc); break;
       case 'wallet-resolve': r=ids.resolveWalletLink(ctx.address,c.input,ctx.revocations??[],rc); break;
       default: throw Error('unknown operation: '+c.operation);
     }

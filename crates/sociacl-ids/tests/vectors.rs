@@ -179,6 +179,7 @@ fn run(f: &Family, c: &Case, v: &Value) -> Result<Value, Reason> {
                 .principal
             }
             "rotate" => verify_rotate(v, &key, &rc)?.principal,
+            "revoke-now" => verify_revoke_now(v, &key, now)?.principal,
             "revoke" => verify_revoke(v, &key, &jwks, now)?.principal,
             "resolve" => {
                 resolution(
@@ -191,7 +192,7 @@ fn run(f: &Family, c: &Case, v: &Value) -> Result<Value, Reason> {
                 )?
                 .current_key
             }
-            "resolve-and-wallet" => {
+            operation @ ("resolve-and-wallet" | "resolve-and-wallet-now") => {
                 let genesis = parse_principal_id(ctx["genesis"].as_str().unwrap()).unwrap();
                 let account = resolve_current_key(&genesis, v.as_array().unwrap(), &rc).result?;
                 let resolved = |p: &PrincipalId, at, until| {
@@ -201,7 +202,12 @@ fn run(f: &Family, c: &Case, v: &Value) -> Result<Value, Reason> {
                         history(p, at, until)
                     }
                 };
-                resolve_wallet_link(
+                let resolve = if operation == "resolve-and-wallet-now" {
+                    resolve_wallet_link_now
+                } else {
+                    resolve_wallet_link
+                };
+                resolve(
                     &parse_eip55(ctx["address"].as_str().unwrap()).unwrap(),
                     &ls.values().cloned().collect::<Vec<_>>(),
                     revs,
@@ -213,9 +219,14 @@ fn run(f: &Family, c: &Case, v: &Value) -> Result<Value, Reason> {
                 .result?
                 .principal
             }
-            "wallet-resolve" => {
+            operation @ ("wallet-resolve" | "wallet-resolve-now") => {
+                let resolve = if operation == "wallet-resolve-now" {
+                    resolve_wallet_link_now
+                } else {
+                    resolve_wallet_link
+                };
                 resolution(
-                    resolve_wallet_link(
+                    resolve(
                         &parse_eip55(ctx["address"].as_str().unwrap()).unwrap(),
                         v.as_array().unwrap(),
                         revs,

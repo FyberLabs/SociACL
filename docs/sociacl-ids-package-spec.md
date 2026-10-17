@@ -1,6 +1,6 @@
 # Spec: `sociacl-ids`, the shared identity package (TypeScript + Rust)
 
-Status: initial design dated 2026-10-16, amended for sociacl-ids 0.4 during review of #57. Sections 4.4–4.6 below reflect the current record contract. The [normative review amendment](identity-review-amendment.md) supersedes the original grammar and history rules where stated; the [package README](../typescript/ids/README.md) documents the implemented API.
+Status: initial design dated 2026-10-16, amended for sociacl-ids 0.5 during review of #57. Sections 4.4–4.6 below reflect the current record contract. The [normative review amendment](identity-review-amendment.md) supersedes the original grammar and history rules where stated; the [package README](../typescript/ids/README.md) documents the implemented API.
 
 Repos referenced:
 - `FyberLabs/SociACL`: Rust workspace `crates/*`, JS package `typescript/` (ESM, JSDoc, `tsc --strict`), vectors in `vectors/`.
@@ -198,14 +198,16 @@ export type Rotate = { v: 1; kind: "rotate"; principal: PrincipalId; seq: number
             | { kind: "oidc-fresh-login"; link: string /* enrolled OIDC linkId */ };
   attest: string /* Panopticon JWS, required in both cases */ };
 export type Revoke = { v: 1; kind: "revoke"; principal: PrincipalId; linkId: string; issuedAt: number;
-  keySig: string; attest: string /* Panopticon timestamp JWS */ };
+  keySig: string; attest?: string /* required for history; optional for present current-key revokes */ };
 
 verifyWalletLink(r: unknown, jwks: Jwks, policy: SiwePolicy, now: number, keyState: KeyState): Result<WalletLink>
 verifyOidcLink(r: unknown, jwks: Jwks, pinnedIss: ReadonlySet<string>, now: number, keyState: KeyState, clockSkewSeconds?: number): Result<OidcLink>
 verifyRevoke(r: unknown, currentKey: PrincipalId, jwks: Jwks, now: number): Result<Revoke>
+verifyRevokeNow(r: unknown, currentKey: PrincipalId, now: number): Result<Revoke>
 verifyRotate(r: unknown, currentKey: PrincipalId, context: ResolutionContext): Result<Rotate>
 resolveCurrentKey(genesis: PrincipalId, rotations: readonly unknown[], context: ResolutionContext): Resolution<{currentKey: PrincipalId; rotations: readonly Rotate[]}>
 resolveWalletLink(address: Eip55, links: readonly unknown[], revocations: readonly unknown[], context: ResolutionContext): Resolution<WalletLink>
+resolveWalletLinkNow(address: Eip55, links: readonly unknown[], revocations: readonly unknown[], context: ResolutionContext): Resolution<WalletLink>
 ```
 
 `Resolution<T>` adds `{source,index,reason}` diagnostics to the success/failure
@@ -221,7 +223,10 @@ Rules:
 - Rotations use contiguous sequences starting at one, strictly increasing timestamps, matching previous keys and no signing-key reuse. Two distinct valid records at the same sequence freeze the account with `rotation-fork`. Malformed/forged candidates are skipped with diagnostics; exact duplicates are idempotent. Once the new-key signature and rotation attestation authenticate the references, a missing or unverifiable authorizer or retained link is fatal `missing-history`, not a reason to discard the rotation and return an older key.
 - The rotation's authorizer and every retained ID must be valid links of that principal in the pre-rotation state. Any revoke witnessed at or before the rotation and signed by its preceding current key conflicts with retaining or authorizing with that link. After the rotation signature and attestation verify, this is fatal `rotation-conflict`; no current key is returned. An omitted ID cannot be restored by a later rotation.
 - OIDC recovery requires a retained, unrevoked enrolled OIDC link, a pinned issuer and a rotation attestation bound to that link. Any active wallet of that principal blocks OIDC recovery, even if the candidate drops that wallet from `retainedLinks`. Direct verification returns `wallet-required`; resolution freezes with `rotation-conflict`. Conflicting wallet ownership likewise freezes an authenticated rotation instead of discarding it.
-- Revoke verification uses the key current at the evaluation horizon and a mandatory timestamp witness. The pre-rotation check enforces earlier revocations before retiring that key; an unwitnessed backdated revoke cannot affect history, and a witness that signs conflicting backdated revocations causes a freeze instead of rollback. Same-second revokes use the preceding key; the new key signs records strictly after the rotation timestamp.
+- Historical revoke verification uses the key current at the evaluation horizon and a mandatory timestamp witness. The pre-rotation check enforces earlier revocations before retiring that key; an unwitnessed backdated revoke cannot affect history, and a witness that signs conflicting backdated revocations causes a freeze instead of rollback. Same-second revokes use the preceding key; the new key signs records strictly after the rotation timestamp.
+- Present-only `verifyRevokeNow` and `resolveWalletLinkNow` accept a revoke signed by the final authenticated current key without a witness. Omit `attest` for offline revokes; explicit null/empty/non-string values are malformed. These APIs do not certify a supplied witness string. Match principal, target ID and time when using direct verification. Signing bytes and IDs are unchanged by witness presence.
+- An unwitnessed revoke stops applying when its signing key retires. No saved-state persistence across retirement is implemented. It never counts in historical/as-of queries, rotation checks or `*AtKey` aliases. Historical APIs cannot be switched into present mode by input/context fields. Before authorizing new login/recovery, consumers must check present revocation eligibility separately; historical rotation verification does not replace that check. Preserve removal across a rotation through the retained set or a witnessed revoke consistent with the transition.
+- Present lookup may use cached proofs/keys but still requires complete authenticated history and a trusted latest-state checkpoint. A record's claimed timestamp never selects the key for present revocation.
 - Wallet lookup filters the requested address and verifies time, SIWE and timestamp attestation before requesting history. Revokes are filtered by target/principal/time and cannot request unrelated history. Missing history or a fork is fatal only for relevant, independently witnessed links.
 - The newest valid wallet link wins. Distinct equal-time links are ambiguous, even for the same principal. Revoking the newest binding never revives an older binding.
 - Historical witnesses are checked at issuance; their later expiry does not invalidate history. Direct wallet/OIDC/rotation proof checks allow explicitly configured clock skew of 0–300 seconds; revokes and history admission apply no skew.
