@@ -160,7 +160,7 @@ Wallets and OIDC subjects are linked credentials (`WalletLink`, `OidcLink`) only
 
 The `rotations` passed to seal and to open, and the resolution context those calls use, must be the trusted latest-state checkpoint from sociacl-ids §4.6. Panopticon alone does not supply that checkpoint. Passing no rotations leaves the current key equal to genesis, so a genesis-signed wrap opens.
 
-**OPEN.** sociacl-ids Rotate v3 names the next encryption public key. `nextEpub` is in the signed rotation bytes and the Panopticon attestation, and `resolveCurrentKey` returns that witnessed `currentEpub`. How a recovered device obtains the current encryption key, the account keyring, the Argon2id passphrase recovery copy, and HKDF per-contact lanes remain [SociACL#64](https://github.com/FyberLabs/SociACL/issues/64). This page does not seal a keyring, derive a lane, or rotate `epub` at enrollment.
+**OPEN.** sociacl-ids Rotate v3 names the next encryption public key. `nextEpub` is in the signed rotation bytes and the Panopticon attestation, and `resolveCurrentKey` returns that witnessed `currentEpub`. A null `currentEpub` means the encryption public key is unknown: do not seal, and never fall back to Gun `user.epub`. How a recovered device obtains the current encryption key, the account keyring, the Argon2id passphrase recovery copy, and HKDF per-contact lanes remain [SociACL#64](https://github.com/FyberLabs/SociACL/issues/64). This page does not seal a keyring, derive a lane, or rotate `epub` at enrollment.
 
 ## Epoch manifest
 

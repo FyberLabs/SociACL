@@ -146,11 +146,31 @@ The v3 attestation uses typ `sociacl-rotate-attest-v3` and the v2 claims plus
 record, a v2 attestation on a v3 record, a missing `nextEpub` claim, a
 malformed point, or a signature over a different byte string does not verify.
 
-`resolveCurrentKey` / `resolve_current_key` returns `currentEpub`: the
-`nextEpub` of the latest rotation that verified under the witnessed rules
-already in this package, or null when no v3 rotation was accepted. A later v2
-rotation advances the signing key and does not clear that epub. `historyState`
-does not carry an epub.
+The version is inferred from whether `nextEpub` is present. Record `v` stays
+1. New rotations MUST be v3. From sociacl-ids 0.7, Panopticon attests only v3
+(`sociacl-rotate-attest-v3`). The library still verifies historical v2
+records. Panopticon never attests both versions for the same principal and
+sequence. Publishing both versions of one transition produces two signing-byte
+IDs at that sequence and freezes the account with `rotation-fork`. Clients
+must not publish a v2 retry of a v3 rotation.
+
+`resolveCurrentKey` / `resolve_current_key` returns `currentEpub` from the
+accepted chain. Each accepted rotation replaces it after the witnessed checks
+already in this package: a v3 rotation sets `currentEpub` to that record's
+`nextEpub`, and a v2 rotation sets `currentEpub` to null. Null means the
+encryption public key for the current signing key is unknown. Consumers must
+not seal, and they must never fall back to Gun's `user.epub` or any other
+unwitnessed point. With no accepted v3 rotation, including a v2-only history
+and an empty history, `currentEpub` stays null. The genesis encryption public
+key is not bound here; the part 2 keyring covers that case. `historyState`
+stays signing-key state and carries no epub.
+
+`nextEpub` must be a fresh point. It must not equal `nextKey`, the genesis
+signing key, any prior signing key, or any prior `nextEpub`. A later `nextKey`
+must not equal any prior `nextEpub`. Those collisions are `bad-sequence`, the
+same reason as signing-key reuse. Direct `verifyRotate` rejects `nextEpub`
+equal to `nextKey` or `prevKey`. During resolution the colliding candidate is
+skipped and the prior key and epub stay in place.
 
 The verifier authenticates the authorizing credential and **every retained ID**
 against the pre-rotation state. Each must belong to the principal and remain

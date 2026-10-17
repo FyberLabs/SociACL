@@ -94,6 +94,13 @@ function rotationCandidate(x) {
   const candidate=record({...d.value,authorizer:{...a.value,siwe:{message:'',signature:'0x'+'00'.repeat(65)}}});
   return candidate.ok ? candidate : parsed;
 }
+/** Presence of nextEpub is the v2/v3 discriminator on a parsed rotation.
+ * @param {{nextEpub?: PrincipalId}} r
+ * @returns {r is {nextEpub: PrincipalId}}
+ */
+function hasNextEpub(r) {
+  return Object.hasOwn(r, 'nextEpub');
+}
 /** @param {UnsignedRecord} r @returns {Result<Uint8Array>} */
 export function signingBytes(r) {
   const p = record(r, true); if (!p.ok) return p;
@@ -105,7 +112,7 @@ function bytes(r) {
   switch (r.kind) {
     case 'wallet': return lengthPrefixed(['sociacl-link-wallet-v1', r.principal, r.address, t, r.nonce]);
     case 'oidc': return lengthPrefixed(['sociacl-link-oidc-v1', r.principal, r.cred.iss, r.cred.tenant, r.cred.sub, t, r.nonce]);
-    case 'rotate': return lengthPrefixed([r.nextEpub ? 'sociacl-rotate-v3' : 'sociacl-rotate-v2', r.principal, String(r.seq), r.prevKey, r.nextKey, ...(r.nextEpub ? [r.nextEpub] : []), t, r.authorizer.kind, r.authorizer.link, String(r.retainedLinks.length), ...r.retainedLinks]);
+    case 'rotate': return lengthPrefixed([hasNextEpub(r) ? 'sociacl-rotate-v3' : 'sociacl-rotate-v2', r.principal, String(r.seq), r.prevKey, r.nextKey, ...(hasNextEpub(r) ? [r.nextEpub] : []), t, r.authorizer.kind, r.authorizer.link, String(r.retainedLinks.length), ...r.retainedLinks]);
     case 'revoke': return lengthPrefixed(['sociacl-revoke-v1', r.principal, r.linkId, t]);
   }
 }
@@ -309,12 +316,13 @@ function checkRotate(x,currentKey,ctx,diagnostics) {
   if (r.kind !== 'rotate') return fail('bad-record');
   const t=time(r.issuedAt,ctx.now,ctx.policy.clockSkewSeconds??0); if (!t.ok) return t;
   if (r.prevKey !== currentKey || r.nextKey === currentKey) return fail('bad-sequence');
+  if (hasNextEpub(r) && (r.nextEpub === r.nextKey || r.nextEpub === r.prevKey)) return fail('bad-sequence');
   if (!keyVerify(r.nextKey,r.nextSig,bytes(r))) return fail('bad-signature');
   const a=attestVerify(r.attest,ctx.jwks,ctx.now,ctx.policy.clockSkewSeconds??0); if (!a.ok) return a;
   const c=a.value;
   const attestKeys = ['typ','principal','nextKey','seq','iat','exp','auth','linkId','retainedLinks'];
-  if (r.nextEpub) attestKeys.push('nextEpub');
-  if (!only(c,attestKeys) || c.typ !== (r.nextEpub ? 'sociacl-rotate-attest-v3' : 'sociacl-rotate-attest-v2') || c.principal !== r.principal || c.nextKey !== r.nextKey || (r.nextEpub !== undefined && c.nextEpub !== r.nextEpub) || c.seq !== r.seq || c.iat !== r.issuedAt || c.auth !== r.authorizer.kind || c.linkId !== r.authorizer.link || JSON.stringify(c.retainedLinks) !== JSON.stringify(r.retainedLinks)) return fail('bad-attestation');
+  if (hasNextEpub(r)) attestKeys.push('nextEpub');
+  if (!only(c,attestKeys) || c.typ !== (hasNextEpub(r) ? 'sociacl-rotate-attest-v3' : 'sociacl-rotate-attest-v2') || c.principal !== r.principal || c.nextKey !== r.nextKey || (hasNextEpub(r) && c.nextEpub !== r.nextEpub) || c.seq !== r.seq || c.iat !== r.issuedAt || c.auth !== r.authorizer.kind || c.linkId !== r.authorizer.link || JSON.stringify(c.retainedLinks) !== JSON.stringify(r.retainedLinks)) return fail('bad-attestation');
   // Validate the authorizing credential and every retained ID against the pre-rotation state.
   /** @type {Map<string,WalletLink|OidcLink>} */ const checked=new Map();
   for (const id of new Set([r.authorizer.link,...r.retainedLinks])) {
@@ -351,6 +359,14 @@ function checkRotate(x,currentKey,ctx,diagnostics) {
   }
   return ok(r);
 }
+/** nextEpub is a fresh point, and a later signing key is not an earlier epub.
+ * @param {Rotate} raw @param {PrincipalId} genesis @param {readonly Rotate[]} history */
+function reusesEpub(raw, genesis, history) {
+  if (history.some(h => h.nextEpub === raw.nextKey)) return true;
+  if (!hasNextEpub(raw)) return false;
+  const epub = raw.nextEpub;
+  return epub === raw.nextKey || epub === genesis || history.some(h => h.nextKey === epub || h.prevKey === epub || h.nextEpub === epub);
+}
 /** Copies share signing-byte identity: any fully verified copy satisfies that rotation ID.
  * Unauthenticated junk is diagnostic; unresolved authenticated evidence fails closed.
  * @param {PrincipalId} genesis @param {readonly unknown[]} rotations @param {ResolutionContext} ctx @returns {Resolution<ResolvedAccount>} */
@@ -374,7 +390,7 @@ export function resolveCurrentKey(genesis, rotations, ctx) {
       /** @type {ResolutionContext} */ const candidate = { ...ctx, now:raw.issuedAt,
         history:(p,at,until) => p === genesis ? ok(historyState(genesis,history,at,until)) : state(ctx.history,p,at,until) };
       /** @type {Result<Rotate>} */ let result;
-      if (n !== seq || raw.issuedAt <= lastTime || raw.nextKey === genesis || history.some(r => r.nextKey === raw.nextKey)) result = fail('bad-sequence');
+      if (n !== seq || raw.issuedAt <= lastTime || raw.nextKey === genesis || history.some(r => r.nextKey === raw.nextKey) || reusesEpub(raw, genesis, history)) result = fail('bad-sequence');
       else {
         result = checkRotate(raw,current,candidate,diagnostics);
         // A witnessed OIDC rotation contradicted by an active wallet cannot be skipped.
@@ -401,7 +417,7 @@ export function resolveCurrentKey(genesis, rotations, ctx) {
     for (const [id,reason] of unresolved) if (!valid.has(id)) return {...fail(reason),diagnostics};
     if (valid.size > 1) return { ...fail('rotation-fork'), diagnostics };
     const next = [...valid.values()][0];
-    if (next) { current=next.nextKey; if (next.nextEpub) currentEpub=next.nextEpub; lastTime=next.issuedAt; history.push(next); seq++; }
+    if (next) { current=next.nextKey; currentEpub=hasNextEpub(next) ? next.nextEpub : null; lastTime=next.issuedAt; history.push(next); seq++; }
   }
   return { ...ok({currentKey:current,currentEpub,rotations:history}), diagnostics };
 }

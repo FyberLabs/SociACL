@@ -6,12 +6,21 @@
   with that SEA point immediately after `nextKey`, and its Panopticon
   attestation is `sociacl-rotate-attest-v3` with the same claim. v2 records,
   which omit `nextEpub`, keep their signing bytes and attestation.
-- `resolveCurrentKey` / `resolve_current_key` returns `currentEpub` from the
-  latest verified v3 rotation, or null when none has been accepted. The epub
-  is accepted only after the existing witnessed rotation checks.
+- `resolveCurrentKey` / `resolve_current_key` returns `currentEpub` from each
+  accepted rotation. A v3 rotation sets it to that `nextEpub`. A v2 rotation
+  sets it to null, including a v2 rotation that follows a v3. Null means the
+  encryption public key is unknown: do not seal, and never fall back to Gun's
+  `user.epub`. With no accepted v3 rotation, `currentEpub` stays null.
+- New rotations must be v3. From 0.7, Panopticon attests only v3 and never
+  attests both versions for the same principal and sequence. The library still
+  verifies historical v2. Publishing both versions of one transition freezes
+  the account with `rotation-fork`.
+- Reject a `nextEpub` that equals `nextKey`, genesis, any prior signing key,
+  or any prior epub, and reject a later `nextKey` that equals a prior epub,
+  with `bad-sequence`.
 - Add shared accept and reject vectors for a v3 rotation, a tampered
-  `nextEpub`, a missing attestation claim, a malformed point, and a signature
-  over the v2 byte string.
+  `nextEpub`, a missing attestation claim, a malformed point, a signature
+  over the v2 byte string, epub reuse, and a v2 rotation that clears the epub.
 
 ## sociacl-ids 0.6.0 — superseded before release
 

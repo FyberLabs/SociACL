@@ -1116,6 +1116,22 @@ fn rotation_candidate(v: &Value) -> Result<IdentityRecord, Reason> {
         serde_json::json!({"message":"", "signature":format!("0x{}", "00".repeat(65))});
     record(&candidate, false).or(parsed)
 }
+fn reuses_epub(raw: &Rotate, genesis: &PrincipalId, history: &[Rotate]) -> bool {
+    if history
+        .iter()
+        .any(|h| h.next_epub.as_ref() == Some(&raw.next_key))
+    {
+        return true;
+    }
+    let Some(epub) = &raw.next_epub else {
+        return false;
+    };
+    epub == &raw.next_key
+        || epub == genesis
+        || history.iter().any(|h| {
+            &h.next_key == epub || &h.prev_key == epub || h.next_epub.as_ref() == Some(epub)
+        })
+}
 fn check_rotate(
     v: &Value,
     current_key: &PrincipalId,
@@ -1128,6 +1144,13 @@ fn check_rotate(
     };
     proof_time(rot.issued_at, ctx.now, ctx.policy.clock_skew_seconds)?;
     if &rot.prev_key != current_key || &rot.next_key == current_key {
+        return Err(Reason::BadSequence);
+    }
+    if rot
+        .next_epub
+        .as_ref()
+        .is_some_and(|epub| epub == &rot.next_key || epub == &rot.prev_key)
+    {
         return Err(Reason::BadSequence);
     }
     if !key_verify(&rot.next_key, &rot.next_sig, &bytes(&r)) {
@@ -1328,6 +1351,7 @@ pub fn resolve_current_key(
                         || history.last().is_some_and(|r| raw.issued_at <= r.issued_at)
                         || &raw.next_key == genesis
                         || history.iter().any(|r| r.next_key == raw.next_key)
+                        || reuses_epub(&raw, genesis, &history)
                     {
                         return Err(Reason::BadSequence);
                     }
@@ -1401,9 +1425,7 @@ pub fn resolve_current_key(
             }
             if let Some(r) = valid.into_values().next() {
                 current = r.next_key.clone();
-                if r.next_epub.is_some() {
-                    current_epub = r.next_epub.clone();
-                }
+                current_epub = r.next_epub.clone();
                 history.push(r);
                 seq += 1;
             }

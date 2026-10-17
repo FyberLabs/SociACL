@@ -448,7 +448,7 @@ accept('records','rotate-v3-wallet',rot3,p,{operation:'rotate',nextEpub:epub});
 accept('records','rotate-v3-resolve',[rot3],p2,{operation:'resolve',currentEpub:epub});
 const rot3second = rotationV3('wallet',p3,3,2,p2,at+40,[wid],epub2);
 accept('records','rotate-v3-after-v2',[rot,rot3second],p3,{operation:'resolve',currentEpub:epub2});
-accept('records','v2-after-v3-keeps-epub',[rot3,rotation('wallet',p3,3,2,p2,at+40)],p3,{operation:'resolve',currentEpub:epub});
+accept('records','v2-after-v3-clears-epub',[rot3,rotation('wallet',p3,3,2,p2,at+40)],p3,{operation:'resolve'});
 bad('rotate-v3-next-epub-tampered',{...rot3,nextEpub:p3},'bad-signature','rotate');
 bad('rotate-v3-next-epub-missing',{...rot3,attest:jws({typ:'sociacl-rotate-attest-v3',principal:p,nextKey:p2,seq:1,iat:rot3.issuedAt,exp:rot3.issuedAt+600,auth:'wallet',linkId:wid,retainedLinks:rot3.retainedLinks})},'bad-attestation','rotate');
 bad('rotate-v3-next-epub-malformed',{...rot3,nextEpub:'A'.repeat(43)+'.'+'A'.repeat(43)},'not-on-curve','rotate');
@@ -457,6 +457,44 @@ bad('rotate-v3-signed-bytes-mismatch',{...rot3,nextSig:keySig(v2Unsigned,2)},'ba
 accept('records','rotate-v3-tampered-does-not-resolve',[{...rot3,nextEpub:p3}],p,{operation:'resolve',diagnosticReasons:['bad-signature']});
 bad('rotate-v3-revoked-recovery',[rot3],'rotation-conflict','resolve',{diagnosticReasons:['rotation-conflict'],revocations:[rev]});
 bad('rotate-v3-attest-epub-mismatch',{...rot3,attest:jws({typ:'sociacl-rotate-attest-v3',principal:p,nextKey:p2,nextEpub:epub2,seq:1,iat:rot3.issuedAt,exp:rot3.issuedAt+600,auth:'wallet',linkId:wid,retainedLinks:rot3.retainedLinks})},'bad-attestation','rotate');
+bad('rotate-v3-epub-equals-nextkey',rotationV3('wallet',p2,2,1,p,at+30,[wid],p2),'bad-sequence','rotate');
+bad('rotate-v3-epub-equals-prevkey',rotationV3('wallet',p2,2,1,p,at+30,[wid],p),'bad-sequence','rotate');
+accept('records','rotate-v3-epub-reuses-prior-epub',[rot3,rotationV3('wallet',p3,3,2,p2,at+40,[wid],epub)],p2,{operation:'resolve',currentEpub:epub,diagnosticReasons:['bad-sequence']});
+accept('records','rotate-v3-epub-reuses-earlier-signing-key',[rot3,rotationV3('wallet',p3,3,2,p2,at+40,[wid],epub2),rotationV3('wallet',principal(4),4,3,p3,at+50,[wid],p2)],p3,{operation:'resolve',currentEpub:epub2,diagnosticReasons:['bad-sequence']});
+accept('records','rotate-v3-nextkey-reuses-prior-epub',[rot3,rotationV3('wallet',epub,6,2,p2,at+40,[wid],epub2)],p2,{operation:'resolve',currentEpub:epub,diagnosticReasons:['bad-sequence']});
+
+// Round-1 review probes. Expectations that disagreed with the #64 lock are adjusted:
+// epub reuse is bad-sequence, and a v2 rotation after a v3 clears currentEpub.
+const v3claims = (r, over={}) => ({typ:'sociacl-rotate-attest-v3',principal:p,nextKey:r.nextKey,nextEpub:r.nextEpub,seq:r.seq,iat:r.issuedAt,exp:r.issuedAt+600,auth:r.authorizer.kind,linkId:r.authorizer.link,retainedLinks:r.retainedLinks,...over});
+const v2claims = (r, over={}) => ({typ:'sociacl-rotate-attest-v2',principal:p,nextKey:r.nextKey,seq:r.seq,iat:r.issuedAt,exp:r.issuedAt+600,auth:r.authorizer.kind,linkId:r.authorizer.link,retainedLinks:r.retainedLinks,...over});
+bad('probe-epub-equals-nextkey',rotationV3('wallet',p2,2,1,p,at+30,[wid],p2),'bad-sequence','rotate');
+bad('probe-epub-equals-genesis',rotationV3('wallet',p2,2,1,p,at+30,[wid],p),'bad-sequence','rotate');
+accept('records','probe-epub-reuse-across-rotations',[rot3,rotationV3('wallet',p3,3,2,p2,at+40,[wid],epub)],p2,{operation:'resolve',currentEpub:epub,diagnosticReasons:['bad-sequence']});
+accept('records','probe-epub-equals-prior-signing-key',[rot3,rotationV3('wallet',p3,3,2,p2,at+40,[wid],p2)],p2,{operation:'resolve',currentEpub:epub,diagnosticReasons:['bad-sequence']});
+bad('probe-v2-and-v3-copy-same-transition-fork',[rot,rot3],'rotation-fork','resolve');
+bad('probe-v3-record-v2-attest',{...rot3,attest:jws(v2claims(rot3))},'bad-attestation','rotate');
+bad('probe-v3-record-v2-attest-with-epub',{...rot3,attest:jws(v2claims(rot3,{nextEpub:epub}))},'bad-attestation','rotate');
+bad('probe-v2-record-v3-attest',{...rot,attest:jws(v3claims({...rot,nextEpub:epub}))},'bad-attestation','rotate');
+bad('probe-v2-record-v3-typ-no-epub',{...rot,attest:jws(v2claims(rot,{typ:'sociacl-rotate-attest-v3'}))},'bad-attestation','rotate');
+{ const {nextEpub:_x,...stripped}=rot3; bad('probe-strip-epub-keep-sig',stripped,'bad-signature','rotate');
+  const {nextSig:_s,attest:_a,authorizer:_au,...u}=stripped; const un={...u,authorizer:{kind:'wallet',link:wid}};
+  const resigned={...stripped,nextSig:keySig(un,2),authorizer:{...un.authorizer,siwe:siwe(un)}};
+  bad('probe-strip-epub-resigned-v3-attest',resigned,'bad-attestation','rotate');
+  accept('records','probe-strip-epub-resigned-v2-attest',{...resigned,attest:jws(v2claims(resigned))},p,{operation:'rotate'});
+  bad('probe-strip-epub-resigned-v2-attest-fork',[rot3,{...resigned,attest:jws(v2claims(resigned))}],'rotation-fork','resolve'); }
+bad('probe-epub-null',{...rot3,nextEpub:null},'not-string','rotate');
+bad('probe-epub-number',{...rot3,nextEpub:7},'not-string','rotate');
+bad('probe-epub-empty',{...rot3,nextEpub:''},'empty','rotate');
+{ const A='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'; const c=epub[42]; const nc=epub.slice(0,42)+A[A.indexOf(c)^1]+epub.slice(43);
+  bad('probe-epub-noncanonical',{...rot3,nextEpub:nc},'non-canonical','rotate'); }
+bad('probe-epub-hex-p-form',{...rot3,nextEpub:'p_'+'ab'.repeat(32)},'bad-length','rotate');
+const rot3Oidc = rotationV3('oidc-fresh-login');
+accept('records','probe-v3-oidc',rot3Oidc,p,{operation:'rotate',links:[[oid,oidc]],nextEpub:epub});
+bad('probe-v3-oidc-wallet-active',rot3Oidc,'wallet-required','rotate');
+accept('records','probe-v3-damaged-copy-plus-good',[{...rot3,authorizer:{kind:'wallet',link:wid}},rot3],p2,{operation:'resolve',currentEpub:epub});
+accept('records','probe-v3-then-v2-clears-epub',[rot3,rotation('wallet',p3,3,2,p2,at+40)],p3,{operation:'resolve'});
+accept('records','probe-v2-only-epub-null',[rot],p2,{operation:'resolve'});
+accept('records','probe-no-rotations-epub-null',[],p,{operation:'resolve'});
 
 const root = new URL('../../../vectors/ids/',import.meta.url); mkdirSync(root,{recursive:true});
 for(const [name,value] of families) writeFileSync(new URL(name+'.json',root),JSON.stringify(value,null,2).replace(/"issuedAt": 1700000000,/g, name==='edges'?'"issuedAt": 1700000000,':'"issuedAt": 1700000000.0,')+'\n');

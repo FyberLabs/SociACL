@@ -183,9 +183,17 @@ context failure.
 
 `resolveCurrentKey(genesis, rotations, context)` returns
 `{ok:true,value:{currentKey,currentEpub,rotations},diagnostics}` or
-`{ok:false,reason,diagnostics}`. `currentEpub` is the `nextEpub` of the latest
-verified Rotate v3 record, or `null` when the accepted history has none. A v2
-record omits `nextEpub` and does not change `currentEpub`. It sorts sequences, verifies each candidate,
+`{ok:false,reason,diagnostics}`. The rotation version is inferred from whether
+`nextEpub` is present; record `v` stays 1. Each accepted rotation replaces
+`currentEpub`: a v3 record sets it to that `nextEpub`, and a v2 record sets it
+to null. Null means the encryption public key is unknown. Do not seal, and
+never fall back to Gun's `user.epub`. With no accepted v3 rotation,
+`currentEpub` stays null. New rotations must be v3, and from 0.7 Panopticon
+attests only v3. The library still verifies historical v2. Panopticon never
+attests both versions for the same principal and sequence; publishing both
+freezes the account with `rotation-fork`. `nextEpub` must not equal `nextKey`,
+genesis, any prior signing key, or any prior epub, and a later `nextKey` must
+not equal any prior epub (`bad-sequence`). It sorts sequences, verifies each candidate,
 skips unauthenticated malformed/forged candidates, and reports `{source,index,reason}` diagnostics.
 Once a rotation's new-key signature and attestation authenticate its references,
 copies are compared by signing-bytes hash. Any fully verified copy satisfies
@@ -197,7 +205,7 @@ A valid different ID cannot substitute for it. A witnessed revocation or
 wallet-eligibility contradiction returns fatal `rotation-conflict`. Neither failure returns a current key or
 partial successful account state; callers must never fall back to genesis.
 Accepted transitions start at one, are contiguous, strictly increase in time,
-and never reuse an earlier signing key. Invalid/gapped candidates do not change
+and never reuse an earlier signing key or an earlier epub. Invalid/gapped candidates do not change
 the current key. Exact duplicate transitions are idempotent. Two distinct valid
 transitions at the same sequence freeze resolution with `rotation-fork`.
 
