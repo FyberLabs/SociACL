@@ -129,9 +129,9 @@ pub use grant::{
 };
 pub use identity::{
     account_grant_soul, account_id_from_label, current_signing_key, delivery_mints_grant,
-    open_account_backup, parse_wrap_object, seal_account_backup, seal_account_backup_with,
-    EncryptedAccountWrap, GenesisAccount, InheritedDevice, KeyWrapStore, LinkedCredential,
-    MemoryKeyWrapStore, TransportKey, WrapIndex,
+    open_account_backup, parse_wrap_object, seal_account_backup, EncryptedAccountWrap,
+    GenesisAccount, InheritedDevice, KeyWrapStore, LinkedCredential, MemoryKeyWrapStore,
+    TransportKey, WrapIndex,
 };
 pub use inbox::{
     filter_inbox_append, lane_id_is_opaque, lanes_per_device, replicated_row_admitted,

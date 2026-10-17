@@ -5,17 +5,18 @@ import {
   accountGrantSoul,
   accountIdFromLabel,
   contentWrapHex,
+  currentSigningKey,
   deliveryMintsGrant,
   enroll,
   gunDocument,
   importGenesis,
+  LinkedCredential,
   MemoryKeyWrapStore,
   openAccountBackup,
   parseWrapObject,
   principalKey,
   sameAccount,
   sealAccountBackup,
-  type LinkedCredential,
 } from "../contract/account-key.ts";
 import {
   historyState,
@@ -24,6 +25,7 @@ import {
   verifyOidcLink,
   verifyWalletLink,
   type PrincipalId,
+  type ResolutionContext,
 } from "../ids/src/index.js";
 
 const vector = JSON.parse(readFileSync(new URL("../../vectors/encrypted-discovery/account-key.json", import.meta.url), "utf8")) as {
@@ -41,10 +43,19 @@ const vector = JSON.parse(readFileSync(new URL("../../vectors/encrypted-discover
   deliveries: string[];
   backupWrap: {
     transportScalarHex: string;
+    transportPub: string;
     ephemeralScalarHex: string;
     nonceHex: string;
     wrapId: string;
     ciphertextHex: string;
+    signature: string;
+  };
+  substitution: {
+    signingPub: string;
+    signingPriv: string;
+    epub: string;
+    epriv: string;
+    laneId: string;
   };
   contentWrap: {
     dekHex: string;
@@ -73,6 +84,18 @@ const records = JSON.parse(readFileSync(new URL("../../vectors/ids/records.json"
 
 function account() {
   return importGenesis(vector.laneId, vector.signingPub, vector.signingPriv, vector.epub, vector.epriv);
+}
+
+function emptyContext(): ResolutionContext {
+  return {
+    jwks: { keys: [] },
+    links: new Map(),
+    revocations: [],
+    now: 1_700_000_060,
+    policy: { allowedDomains: [], allowedUris: [], allowedChainIds: [] },
+    pinnedIss: new Set(),
+    history: () => ({ ok: false, reason: "missing-history" }),
+  };
 }
 
 test("enrollment inherits one keypair and secrets stay off gun", () => {
@@ -122,8 +145,9 @@ test("labels are not accounts and credentials are not identities", () => {
   const verified = verifyWalletLink(wallet.input, records.context.jwks, records.context.policy, records.context.now, keyState);
   assert.equal(verified.ok, true);
   if (!verified.ok) return;
-  const linked: LinkedCredential = { kind: "wallet", principal: verified.value.principal, label: verified.value.address };
+  const linked = LinkedCredential.fromWallet(verified.value);
   assert.equal(sameAccount(linked, genesisId.value), true);
+  assert.throws(() => sameAccount({ kind: "wallet", principal: genesisId.value, label: verified.value.address } as LinkedCredential, genesisId.value));
   assert.equal(sameAccount(linked, genesis.principal), false);
   assert.notEqual(linked.principal, verified.value.address);
   assert.equal(accountIdFromLabel(verified.value.address).ok, false);
@@ -136,18 +160,14 @@ test("labels are not accounts and credentials are not identities", () => {
   );
   assert.equal(verifiedOidc.ok, true);
   if (!verifiedOidc.ok) return;
-  const oidcLink: LinkedCredential = {
-    kind: "oidc",
-    principal: verifiedOidc.value.principal,
-    label: verifiedOidc.value.cred.sub,
-  };
+  const oidcLink = LinkedCredential.fromOidc(verifiedOidc.value);
   assert.equal(sameAccount(oidcLink, genesisId.value), true);
   assert.notEqual(oidcLink.principal, verifiedOidc.value.cred.sub);
   assert.equal(accountIdFromLabel(verifiedOidc.value.cred.sub).ok, false);
   assert.equal(accountIdFromLabel(verifiedOidc.value.cred.iss).ok, false);
 });
 
-test("rotation uses the package current key and does not change epub", () => {
+test("rotation uses the package current key", () => {
   const genesis = account();
   const rotate = records.accept.find((row) => row.name === "wallet-rotate");
   assert.ok(rotate);
@@ -169,6 +189,12 @@ test("rotation uses the package current key and does not change epub", () => {
   if (!resolved.ok) return;
   const nextKey = rotate.input["nextKey"];
   assert.equal(typeof nextKey, "string");
+  assert.equal(currentSigningKey(genesisId.value, [rotate.input], {
+    ...records.context,
+    links,
+    history,
+    pinnedIss: new Set(records.context.pinnedIss),
+  } as ResolutionContext), nextKey);
   assert.equal(resolved.value.currentKey, nextKey);
   assert.notEqual(resolved.value.currentKey, records.context.genesis);
   assert.notEqual(resolved.value.currentKey, vector.wallet);
@@ -183,25 +209,29 @@ test("backup wrap is stored off gun and both devices open one epub wrap", () => 
   assert.equal(store.isAuthority, false);
   assert.equal(store.mintsGrant, false);
   const wrapId = parseWrapObject(vector.backupWrap.wrapId);
-  const wrap = sealAccountBackup(
+  const context = emptyContext();
+  const wrap = sealAccountBackup(genesis, vector.backupWrap.transportPub, wrapId, store, [], context);
+  const again = sealAccountBackup(
     genesis,
-    vector.backupWrap.transportScalarHex,
-    vector.backupWrap.ephemeralScalarHex,
-    vector.backupWrap.nonceHex,
-    wrapId,
-    store,
+    vector.backupWrap.transportPub,
+    parseWrapObject("wrap_ffeeddccbbaa99887766554433221100"),
+    new MemoryKeyWrapStore(),
+    [],
+    context,
   );
-  assert.equal(wrap.ciphertextHex, vector.backupWrap.ciphertextHex);
-  assert.equal(wrap.epub, genesis.epub);
+  assert.notEqual(wrap.ciphertextHex, again.ciphertextHex);
+  assert.equal(wrap.ciphertextHex.includes(vector.signingScalarHex.toLowerCase()), false);
   assert.equal(wrap.ciphertextHex.includes(genesis.priv), false);
   assert.equal(wrap.ciphertextHex.includes(genesis.epriv), false);
+  assert.throws(() => sealAccountBackup(genesis, genesis.epub, wrapId, new MemoryKeyWrapStore(), [], context));
+  assert.throws(() => sealAccountBackup(genesis, genesis.pub, wrapId, new MemoryKeyWrapStore(), [], context));
   const gun = gunDocument(genesis);
   assert.equal(gun.includes(wrap.ciphertextHex), false);
   assert.equal(gun.includes(genesis.priv), false);
   const stored = store.get(genesis.principal);
   assert.ok(stored);
   if (!stored) return;
-  const opened = openAccountBackup(vector.backupWrap.transportScalarHex, stored);
+  const opened = openAccountBackup(vector.backupWrap.transportScalarHex, stored, genesis.principal, [], context);
   assert.equal(opened.principal, genesis.principal);
   assert.equal(opened.priv, genesis.priv);
   assert.equal(opened.epriv, genesis.epriv);
@@ -232,10 +262,18 @@ test("backup wrap is stored off gun and both devices open one epub wrap", () => 
     vector.contentWrap.revisionId,
   ), wrapped);
   const object = parseWrapObject(vector.contentWrap.objectId);
-  const epubId = parsePrincipalId(genesis.epub);
-  assert.equal(epubId.ok, true);
-  if (!epubId.ok) return;
-  const soul = accountGrantSoul(genesis.principal, object, epubId.value);
+  const soul = accountGrantSoul(genesis.principal, object, genesis.principal);
+  assert.throws(() => contentWrapHex(genesis, vector.contentWrap.dekHex, vector.contentWrap.ephemeralScalarHex, vector.contentWrap.nonceHex, Number.NaN, vector.contentWrap.objectId, vector.contentWrap.revisionId));
+  assert.throws(() => contentWrapHex(genesis, vector.contentWrap.dekHex, vector.contentWrap.ephemeralScalarHex, vector.contentWrap.nonceHex, vector.contentWrap.epoch, "not-an-object", vector.contentWrap.revisionId));
+  const attacker = importGenesis(
+    vector.substitution.laneId,
+    vector.substitution.signingPub,
+    vector.substitution.signingPriv,
+    vector.substitution.epub,
+    vector.substitution.epriv,
+  );
+  const swapped = sealAccountBackup(attacker, vector.backupWrap.transportPub, parseWrapObject("wrap_00112233445566778899aabbccddee00"), new MemoryKeyWrapStore(), [], context);
+  assert.throws(() => openAccountBackup(vector.backupWrap.transportScalarHex, swapped, genesis.principal, [], context));
   assert.equal(soul.split("/").length, 5);
   assert.equal(soul.includes(principalKey(genesis)), true);
   assert.equal(soul.includes(genesis.principal), false);
