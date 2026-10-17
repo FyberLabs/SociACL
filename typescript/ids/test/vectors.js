@@ -12,6 +12,10 @@ const keys = { principal:ids.formatPrincipalKey, wallet:ids.formatWalletKey, oid
   object:ids.objectKey, network:ids.formatNetworkKey, 'source-key':ids.formatSourcePathKey };
 const names = [];
 function run(f, c) {
+  if (f.family === 'edges') {
+    const parsers={ 'principal-key':ids.parsePrincipalKey, 'path-key':ids.parsePathKey, json:ids.parseJsonInput, sec1:x=>ids.principalFromSec1(Uint8Array.from(Buffer.from(x,'hex'))) };
+    return parsers[c.operation](c.input);
+  }
   if (f.family === 'signing-bytes') {
     const b = ids.signingBytes(c.input);
     return b.ok ? {ok:true,value:hex(b.value)} : b;
@@ -19,16 +23,20 @@ function run(f, c) {
   if (f.family === 'records') {
     const ctx = {...f.context,...c}; let r;
     const links = new Map(ctx.links);
+    const history = ctx.missingHistory ? undefined : (p,at,until) => ctx.authenticatedAccounts.includes(p) ? {ok:true,value:ids.historyState(p,new Map(ctx.histories??[]).get(p)??[],at,until)} : {ok:false,reason:'missing-history'};
+    const rc={...ctx,links,history};
+    const keyState=ctx.directState??{key:ctx.currentKey,currentKey:ctx.currentKey,retainedLinks:null};
     switch(c.operation) {
-      case 'wallet-link': r=ids.verifyWalletLink(c.input,ctx.now,ctx.currentKey); break;
-      case 'oidc-link': r=ids.verifyOidcLink(c.input,ctx.jwks,new Set(ctx.pinnedIss),ctx.now,ctx.currentKey); break;
-      case 'rotate': r=ids.verifyRotate(c.input,ctx.currentKey,links,ctx.jwks,ctx.now); break;
+      case 'wallet-link': r=ids.verifyWalletLink(c.input,ctx.jwks,ctx.policy,ctx.now,keyState); break;
+      case 'oidc-link': r=ids.verifyOidcLink(c.input,ctx.jwks,new Set(ctx.pinnedIss),ctx.now,keyState); break;
+      case 'rotate': r=ids.verifyRotate(c.input,ctx.currentKey,rc); break;
       case 'revoke': r=ids.verifyRevoke(c.input,ctx.currentKey,ctx.now); break;
-      case 'resolve': r=ids.resolveCurrentKey(ctx.genesis,c.input,{jwks:ctx.jwks,links,revocations:ctx.revocations,now:ctx.now}); break;
-      case 'wallet-resolve': r=ids.resolveWalletLink(ctx.address,c.input,ctx.revocations??[],ctx.now); break;
+      case 'resolve': r=ids.resolveCurrentKey(ctx.genesis,c.input,rc); break;
+      case 'wallet-resolve': r=ids.resolveWalletLink(ctx.address,c.input,ctx.revocations??[],rc); break;
       default: throw Error('unknown operation: '+c.operation);
     }
-    return r.ok ? {ok:true,value:typeof r.value==='string'?r.value:r.value.principal} : r;
+    if(c.diagnosticReasons) assert.deepEqual(r.diagnostics.map(d=>d.reason),c.diagnosticReasons,c.name+' diagnostics');
+    return r.ok ? {ok:true,value:r.value.currentKey??r.value.principal} : {ok:false,reason:r.reason};
   }
   if(c.operation === 'claim') return ids.deriveClaimId(c.input);
   if(c.operation === 'external') return ids.deriveExternalId(c.input.source,c.input.providerItemId);
@@ -36,7 +44,7 @@ function run(f, c) {
   return (c.parser === 'wallet-input' ? ids.parseWalletInput : parsers[f.family])(c.input);
 }
 test('every shared vector and exact rejection reason', () => {
-  assert.equal(files.length,10);
+  assert.equal(files.length,11);
   for(const file of files) {
     const f = JSON.parse(readFileSync(new URL(file,root),'utf8'));
     assert.equal(f.v,1);

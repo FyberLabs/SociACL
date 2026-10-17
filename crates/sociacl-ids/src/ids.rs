@@ -1,8 +1,8 @@
+use crate::uri::{public_host, web_uri};
 use crate::*;
 use p256::elliptic_curve::sec1::ToEncodedPoint;
 use sha2::{Digest, Sha256};
 use sha3::Keccak256;
-use url::Url;
 
 id_type!(PrincipalId, parse_principal_id);
 id_type!(PrincipalKey, parse_principal_key);
@@ -257,45 +257,6 @@ pub fn parse_object_id(s: &str) -> Result<ObjectId, Reason> {
     parse_eip55(p[2])?;
     Ok(ObjectId(s.into()))
 }
-fn public_host(host: &str) -> bool {
-    if host.len() > 253 || !host.contains('.') {
-        return false;
-    }
-    let labels: Vec<_> = host.split('.').collect();
-    if !labels.iter().all(|l| {
-        !l.is_empty()
-            && l.len() <= 63
-            && l.as_bytes()[0].is_ascii_alphanumeric()
-            && l.as_bytes()[l.len() - 1].is_ascii_alphanumeric()
-            && l.bytes()
-                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'-')
-    }) {
-        return false;
-    }
-    if labels
-        .last()
-        .is_some_and(|s| s.bytes().all(|c| c.is_ascii_digit()))
-    {
-        return false;
-    }
-    if [
-        "localhost",
-        "local",
-        "internal",
-        "home.arpa",
-        "test",
-        "invalid",
-        "example",
-        "onion",
-        "alt",
-    ]
-    .iter()
-    .any(|s| host == *s || host.ends_with(&format!(".{s}")))
-    {
-        return false;
-    }
-    Url::parse(&format!("https://{host}/")).is_ok_and(|u| u.host_str() == Some(host))
-}
 pub fn parse_network_id(s: &str) -> Result<NetworkId, Reason> {
     text(s, 2048)?;
     if ["atproto", "farcaster", "nostr", "activitypub", "rss"].contains(&s) {
@@ -431,16 +392,8 @@ pub fn parse_source_key(s: &str) -> Result<SourceKey, Reason> {
             .parse::<u64>()
             .is_ok_and(|n| n > 0 && n.to_string() == *owner),
         "nostr" => is_hex(owner, 64),
-        "activitypub" => Url::parse(owner).is_ok_and(|u| {
-            u.scheme() == "https"
-                && u.as_str() == owner
-                && u.username().is_empty()
-                && u.password().is_none()
-                && u.fragment().is_none()
-        }),
-        "rss" => Url::parse(owner).is_ok_and(|u| {
-            ["http", "https"].contains(&u.scheme()) && u.origin().ascii_serialization() == *owner
-        }),
+        "activitypub" => web_uri(owner, false, true),
+        "rss" => web_uri(owner, true, false),
         _ => false,
     };
     if !valid {

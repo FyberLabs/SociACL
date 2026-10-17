@@ -36,15 +36,15 @@ const signMessage = message => {
 const siwe = (r, options = '') => signMessage(`s3r.ch wants you to sign in with your Ethereum account:\n${wallet}\n\nSociACL link: ${hex(sha256(bytes(r)))}\n\nURI: https://s3r.ch/identity/link\nVersion: 1\nChain ID: 1\nNonce: ${r.nonce ?? 'rotation1234'}\nIssued At: ${date(r.issuedAt)}${options}`);
 function walletLink(principal = p, issuedAt = at, n = 1) {
   const r = { v: 1, kind: 'wallet', principal, address: wallet, issuedAt, nonce: 'fixtureNonce123' };
-  return { ...r, keySig: keySig(r, n), siwe: siwe(r) };
+  return { ...r, keySig: keySig(r, n), siwe: siwe(r), attest:jws({typ:'sociacl-wallet-attest-v1',principal,linkId:val(ids.linkId(r)),iat:issuedAt,exp:issuedAt+600}) };
 }
 const w = walletLink(), wid = val(ids.linkId(w));
 const unsignedOidc = { v: 1, kind: 'oidc', principal: p, cred, issuedAt: at, nonce: 'fixtureNonce456' };
 const oc = { typ: 'sociacl-oidc-attest-v1', ...cred, principal: p, iat: at, exp: at + 600, nonce: unsignedOidc.nonce };
 const oidc = { ...unsignedOidc, keySig: keySig(unsignedOidc), attest: jws(oc) };
-const rotation = (kind = 'wallet', next = p2, n = 2, seq = 1, prev = p, issuedAt = at + 30) => {
-  const r = { v: 1, kind: 'rotate', principal: p, seq, prevKey: prev, nextKey: next, issuedAt };
-  return { ...r, nextSig: keySig(r, n), authorizer: kind === 'wallet' ? { kind, link: wid, siwe: siwe(r) } : { kind }, attest: jws({ typ: 'sociacl-rotate-attest-v1', principal: p, nextKey: next, seq, iat: issuedAt, exp: issuedAt + 600, auth: kind }) };
+const rotation = (kind = 'wallet', next = p2, n = 2, seq = 1, prev = p, issuedAt = at + 30, retainedLinks = [wid]) => {
+  const r = { v: 1, kind: 'rotate', principal: p, seq, prevKey: prev, nextKey: next, issuedAt, retainedLinks };
+  return { ...r, nextSig: keySig(r, n), authorizer: kind === 'wallet' ? { kind, link: wid, siwe: siwe(r) } : { kind }, attest: jws({ typ: 'sociacl-rotate-attest-v1', principal: p, nextKey: next, seq, iat: issuedAt, exp: issuedAt + 600, auth: kind, retainedLinks }) };
 };
 const rot = rotation(), rotOidc = rotation('oidc-fresh-login'), fork = rotation('oidc-fresh-login', p3, 3);
 const rev = { v: 1, kind: 'revoke', principal: p, linkId: wid, issuedAt: at + 20 }; rev.keySig = keySig(rev);
@@ -69,7 +69,8 @@ for (const [name, input, reason] of [
   ['gun-chain-space', "0xattacker.get ('s3rch')", 'gun-chain'],
   ['gun-chain-bracket', "0xattacker['get']('s3rch')", 'gun-chain'],
   ['gun-chain-double', 'attacker["get"]("s3rch")', 'gun-chain'],
-  ['gun-chain-escape', 'x\\u002eget(', 'gun-chain'],
+  ['gun-chain-literal-escape', 'x\\u002eget(', 'gun-chain'],
+  ['gun-chain-decoded-escape', 'x\u002eget(', 'gun-chain'],
   ['nul', 'a\u0000b', 'control-char'], ['c1', '\u0085x', 'control-char'],
   ['bom', '\ufeffx', 'invisible-char'], ['zero-width', 'x\u200b', 'invisible-char'],
   ['line-separator', '\u2028', 'invisible-char'], ['unpaired', '\ud800', 'unpaired-surrogate'],
@@ -121,7 +122,7 @@ reject('soul','extra-segment',ids.grantSoul(p,obj,p2)+'/x','bad-template');
 reject('soul','unknown-collection','s3rch/users/'+obj,'bad-template');
 const signing = [w,oidc,rot,rev];
 for (const r of signing) accept('signing-bytes',r.kind,r,hex(bytes(r)),{linkId:val(ids.linkId(r))});
-const context = { jwks, pinnedIss:[cred.iss], now, genesis:p, currentKey:p, links:[[wid,w]] };
+const context = { jwks, pinnedIss:[cred.iss], now, genesis:p, currentKey:p, links:[[wid,w]], policy:{allowedDomains:['s3r.ch'],allowedUris:['https://s3r.ch/identity/link'],allowedChainIds:['1']}, authenticatedAccounts:[p,p2,p3] };
 family('records').context = context;
 for (const [name, operation, input, extra] of [ ['wallet','wallet-link',w,{}],['oidc','oidc-link',oidc,{}],['wallet-rotate','rotate',rot,{}],['oidc-rotate','rotate',rotOidc,{}],['revoke','revoke',rev,{}], ['resolve','resolve',[rot],{}],['duplicate-rotation','resolve',[rot,rot],{}],['reordered-history','resolve',[rotation('oidc-fresh-login',p3,3,2,p2,at+40),rot],{}], ['wallet-lookup','wallet-resolve',[w],{address:wallet}],['newest-wallet-wins','wallet-resolve',[w,walletLink(p2,at+10,2)],{address:wallet}],['historical-revoke','revoke',rev2,{currentKey:p2}] ]) {
   const canonical = operation==='resolve' ? name==='reordered-history'?p3:p2 : name==='newest-wallet-wins'?p2:p;
@@ -133,11 +134,11 @@ const bad = (name,input,reason,operation='wallet-link',extra={})=>reject('record
 bad('link-object-principal',{...w,principal:{toString:p}},'not-string');
 bad('rotate-object-principal',{...rot,principal:{toString:p}},'not-string','rotate');
 bad('fork',[rot,fork],'rotation-fork','resolve');
-bad('revoked-recovery',[rot],'revoked-link','resolve',{revocations:[rev]});
+accept('records','revoked-recovery',[rot],p,{operation:'resolve',diagnosticReasons:['revoked-link'],...{revocations:[rev]}});
 bad('newest-wallet-revoked',[w],'revoked-link','wallet-resolve',{address:wallet,revocations:[rev]});
 bad('duplicate-wallet-tie',[w,walletLink(p2,at,2)],'ambiguous-link','wallet-resolve',{address:wallet});
 bad('wrong-current-key',rot,'bad-sequence','rotate',{currentKey:p3});
-bad('sequence-gap',[rotation('oidc-fresh-login',p2,2,2)],'bad-sequence','resolve');
+accept('records','sequence-gap',[rotation('oidc-fresh-login',p2,2,2)],p,{operation:'resolve',diagnosticReasons:['bad-sequence'],...{}});
 bad('future-link',{...w,issuedAt:now+1},'future-record');
 bad('unsafe-time',{...w,issuedAt:9007199254740992},'bad-record');
 bad('bad-key-sig',{...w,keySig:b64(new Uint8Array(64))},'bad-signature');
@@ -180,11 +181,11 @@ accept('records','oidc-after-rotation',historicProof,p,{operation:'oidc-link',cu
 const otherWallet=walletLink(p2,at+10,2);const otherId=val(ids.linkId(otherWallet));
 const otherRevoke={v:1,kind:'revoke',principal:p2,linkId:otherId,issuedAt:at+20};otherRevoke.keySig=keySig(otherRevoke,2);
 bad('no-resurrection-after-revoke',[w,otherWallet],'revoked-link','wallet-resolve',{address:wallet,revocations:[otherRevoke]});
-bad('new-wallet-owner-blocks-old-recovery',[rot],'ambiguous-link','resolve',{links:[[wid,w],[otherId,otherWallet]]});
+accept('records','new-wallet-owner-blocks-old-recovery',[rot],p,{operation:'resolve',diagnosticReasons:['ambiguous-link'],...{links:[[wid,w],[otherId,otherWallet]]}});
 const earlyRevoke={...rev,issuedAt:at-1};earlyRevoke.keySig=keySig(earlyRevoke);
 accept('records','revoke-before-link-does-not-remove-link',[rot],p2,{operation:'resolve',revocations:[earlyRevoke]});
 const sameSecond={...rev,issuedAt:rot.issuedAt};sameSecond.keySig=keySig(sameSecond);
-bad('same-second-revoke-precedes-rotation',[rot],'revoked-link','resolve',{revocations:[sameSecond]});
+accept('records','same-second-revoke-precedes-rotation',[rot],p,{operation:'resolve',diagnosticReasons:['revoked-link'],...{revocations:[sameSecond]}});
 const invalidLink={...w,keySig:b64(new Uint8Array(64))};
 bad('unverified-wallet-map',rot,'bad-signature','rotate',{links:[[wid,invalidLink]]});
 bad('wrong-link-map-key',rot,'unknown-link','rotate',{links:[['00'.repeat(32),w]]});
@@ -194,7 +195,77 @@ for (const [suffix,msg] of [ ['extra-lines',w.siwe.message+'\nunknown'],['duplic
 reject('source-key','source-leading-nbsp','sr1:rss/https%3A%2F%2Fs3r.ch/%C2%A0feed/feed','bad-alphabet');
 reject('source-key','source-trailing-em-space','sr1:rss/https%3A%2F%2Fs3r.ch/feed%E2%80%83/feed','bad-alphabet');
 reject('object','claim-leading-nbsp','\u00a0ens:alice.eth','bad-alphabet',{operation:'claim'});
+
+// Review regression corpus: expected outcomes are explicit, independent of either URL parser.
+const hosts = [['s3r.ch',true],['sub.s3r.ch',true],['xn--ab--.com',false],['xn--bcher-kva.de',false],['a.xn--ab--',false],['S3R.CH',false],['s3r.ch.',false],['127.0.0.1',false],['0x7f.0.0.1',false],['box.local',false],['-a.com',false],['a-.com',false],['a..com',false],['a'.repeat(63)+'.com',true],['a'.repeat(64)+'.com',false]];
+const paths = [['/u',true],['/',true],['/u#',false],['/u?#',false],['/u?q=x',false],['/^',false],['/%2F',true],['/%2f',false],['/%XX',false],['/../u',false],['/%2E/u',false],['/a/..',false],['/a:b@c',true],['/a%20b',true]];
+for (const [hi,[host,hgood]] of hosts.entries()) {
+  const n=`s3rch:https://${host}:443;key=${'12'.repeat(32)}`;
+  (hgood?accept:reject)('network',`url-host-${hi}`,n,hgood?n:'bad-host');
+  for (const [pi,[path,pgood]] of paths.entries()) {
+    const owner='https://'+host+path, source=`sr1:activitypub/${pct(owner)}/feed/feed`;
+    (hgood&&pgood?accept:reject)('source-key',`url-corpus-${hi}-${pi}`,source,hgood&&pgood?source:'bad-alphabet');
+  }
+}
+for (const [i,[path,good]] of paths.entries()) {
+  const uri='https://s3r.ch'+path;
+  const proof={...w,siwe:signMessage(w.siwe.message.replace('https://s3r.ch/identity/link',uri))};
+  (good?accept:reject)('records',`siwe-uri-corpus-${i}`,proof,good?p:'bad-signature',{operation:'wallet-link',policy:{...context.policy,allowedUris:[uri]}});
+  const resource={...w,siwe:siwe(w,'\nResources:\n- '+uri)};
+  (good?accept:reject)('records',`siwe-resource-corpus-${i}`,resource,good?p:'bad-signature',{operation:'wallet-link'});
+}
+for (const [name,policy] of [['domain',{...context.policy,allowedDomains:['evil.com']}],['uri',{...context.policy,allowedUris:['https://s3r.ch/other']}],['chain',{...context.policy,allowedChainIds:['137']}]] ) bad('wrong-siwe-'+name,w,'bad-signature','wallet-link',{policy});
+bad('missing-wallet-attest',{...w,attest:''},'empty');
+bad('wallet-attest-wrong-time',{...w,attest:jws({typ:'sociacl-wallet-attest-v1',principal:p,linkId:wid,iat:at+1,exp:at+601})},'bad-attestation');
+bad('wallet-attest-wrong-id',{...w,attest:jws({typ:'sociacl-wallet-attest-v1',principal:p,linkId:'00'.repeat(32),iat:at,exp:at+600})},'bad-attestation');
+bad('wallet-attest-too-long',{...w,attest:jws({typ:'sociacl-wallet-attest-v1',principal:p,linkId:wid,iat:at,exp:at+901})},'bad-attestation');
+bad('rotation-retained-tampered',{...rot,retainedLinks:[]},'bad-signature','rotate');
+const noRetain=rotation('oidc-fresh-login',p2,2,1,p,at+30,[]);
+bad('rotation-attest-retained-mismatch',{...noRetain,attest:rotOidc.attest},'bad-attestation','rotate');
+bad('duplicate-retained-ids',{...rot,retainedLinks:[wid,wid]},'bad-record','rotate');
+const forgedBackdated=walletLink(p,at+10,1), forgedId=val(ids.linkId(forgedBackdated));
+bad('retired-key-backdated-wallet',[forgedBackdated],'unknown-link','wallet-resolve',{address:wallet,histories:[[p,[rot]]],diagnosticReasons:['unretained-link']});
+accept('records','retained-link-survives-rotation',[w],p,{operation:'wallet-resolve',address:wallet,histories:[[p,[rot]]]});
+bad('dropped-link-after-recovery',[w],'unknown-link','wallet-resolve',{address:wallet,histories:[[p,[noRetain]]],diagnosticReasons:['unretained-link']});
+accept('records','retired-key-backdated-revoke',[w],p,{operation:'wallet-resolve',address:wallet,histories:[[p,[rot]]],revocations:[rev],diagnosticReasons:['bad-signature']});
+bad('active-key-revoke-after-rotation',[w],'revoked-link','wallet-resolve',{address:wallet,histories:[[p,[rot]]],revocations:[rev2]});
+accept('records','skip-malformed-forged-rotations',[null,{...rot,nextSig:b64(new Uint8Array(64))},rot],p2,{operation:'resolve',diagnosticReasons:['bad-record','bad-signature']});
+bad('forgery-does-not-hide-valid-fork',[{...rot,nextSig:b64(new Uint8Array(64))},rot,fork],'rotation-fork','resolve',{diagnosticReasons:['bad-signature']});
+accept('records','skip-invalid-wallet-and-revoke',[null,invalidLink,w],p,{operation:'wallet-resolve',address:wallet,revocations:[null,{...rev,keySig:b64(new Uint8Array(64))}],diagnosticReasons:['bad-record','bad-signature','bad-record','bad-signature']});
+const tieBase={v:1,kind:'wallet',principal:p,address:wallet,issuedAt:at,nonce:'otherNonce123'};
+const tie={...tieBase,keySig:keySig(tieBase),siwe:siwe(tieBase),attest:jws({typ:'sociacl-wallet-attest-v1',principal:p,linkId:val(ids.linkId(tieBase)),iat:at,exp:at+600})};
+for (const [i,ls] of [[w,tie],[tie,w]].entries()) bad('same-principal-tie-'+i,ls,'ambiguous-link','wallet-resolve',{address:wallet,revocations:[rev]});
+accept('records','duplicate-wallet-idempotent',[w,w],p,{operation:'wallet-resolve',address:wallet});
+bad('missing-history-context',[w],'missing-history','wallet-resolve',{address:wallet,missingHistory:true});
+bad('missing-rotate-history',rot,'missing-history','rotate',{missingHistory:true});
+const extBase={v:1,kind:'rotate',principal:p2,seq:1,prevKey:p2,nextKey:p3,issuedAt:at+5,retainedLinks:[]};
+const extRot={...extBase,nextSig:keySig(extBase,3),authorizer:{kind:'oidc-fresh-login'},attest:jws({typ:'sociacl-rotate-attest-v1',principal:p2,nextKey:p3,seq:1,iat:at+5,exp:at+605,auth:'oidc-fresh-login',retainedLinks:[]})};
+const extLink=walletLink(p2,at+10,3),extId=val(ids.linkId(extLink));
+accept('records','rotated-external-owner-blocks-recovery',[rot],p,{operation:'resolve',links:[[wid,w],[extId,extLink]],histories:[[p2,[extRot]]],diagnosticReasons:['ambiguous-link']});
+accept('records','invalid-map-entry-skipped',[rot],p2,{operation:'resolve',links:[[wid,w],['00'.repeat(32),null]],diagnosticReasons:['bad-record']});
+
+accept('records','clock-skew-expiry',w,p,{operation:'wallet-link',now:at+630,policy:{...context.policy,clockSkewSeconds:60}});
+accept('records','clock-skew-future',w,p,{operation:'wallet-link',now:at-30,policy:{...context.policy,clockSkewSeconds:60}});
+bad('clock-skew-bounded',w,'bad-record','wallet-link',{policy:{...context.policy,clockSkewSeconds:301}});
+bad('clock-skew-expiry-boundary',w,'expired','wallet-link',{now:at+660,policy:{...context.policy,clockSkewSeconds:60}});
+accept('edges','principal-key',ids.formatPrincipalKey(p),ids.formatPrincipalKey(p),{operation:'principal-key'});
+accept('edges','path-key',ids.formatWalletKey(wallet),ids.formatWalletKey(wallet),{operation:'path-key'});
+accept('edges','sec1-compressed',hex(p256.getPublicKey(secret(1),true)),p,{operation:'sec1'});
+accept('edges','sec1-uncompressed',hex(p256.getPublicKey(secret(1),false)),p,{operation:'sec1'});
+reject('edges','path-key-invalid','p_00','bad-alphabet',{operation:'path-key'});
+reject('edges','sec1-invalid','00','not-on-curve',{operation:'sec1'});
+accept('edges','json-record',JSON.stringify(w),w,{operation:'json'});
+reject('edges','json-duplicate-member','{"v":1,"v":2}','bad-record',{operation:'json'});
+reject('edges','json-escaped-duplicate','{"a":1,"\\u0061":2}','bad-record',{operation:'json'});
+reject('edges','json-overflow','1e999','bad-record',{operation:'json'});
+reject('edges','json-surrogate','"\\ud800"','unpaired-surrogate',{operation:'json'});
+accept('edges','json-depth-limit','['.repeat(16)+'0'+']'.repeat(16),JSON.parse('['.repeat(16)+'0'+']'.repeat(16)),{operation:'json'});
+reject('edges','json-too-deep','['.repeat(17)+'0'+']'.repeat(17),'bad-record',{operation:'json'});
+// Explicit caller context failures must not be mistaken for forged input.
+bad('unavailable-foreign-history',[otherWallet],'missing-history','wallet-resolve',{address:wallet,authenticatedAccounts:[p],diagnosticReasons:['missing-history']});
+bad('direct-wallet-unretained',w,'unretained-link','wallet-link',{directState:{key:p,currentKey:p2,retainedLinks:[]}});
+bad('direct-oidc-unretained',oidc,'unretained-link','oidc-link',{directState:{key:p,currentKey:p2,retainedLinks:[]}});
 const root = new URL('../../../vectors/ids/',import.meta.url); mkdirSync(root,{recursive:true});
-for(const [name,value] of families) writeFileSync(new URL(name+'.json',root),JSON.stringify(value,null,2).replace(/"issuedAt": 1700000000,/g, '"issuedAt": 1700000000.0,')+'\n');
+for(const [name,value] of families) writeFileSync(new URL(name+'.json',root),JSON.stringify(value,null,2).replace(/"issuedAt": 1700000000,/g, name==='edges'?'"issuedAt": 1700000000,':'"issuedAt": 1700000000.0,')+'\n');
 writeFileSync(new URL('test-keys.json',new URL('../test/',import.meta.url)),JSON.stringify({p,p2,p3,wallet,tenant,obj,network,source,secretScalars:[1,2,3,4,5]},null,2)+'\n');
 console.log(`Wrote ${families.size} vector families`);

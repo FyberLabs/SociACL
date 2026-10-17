@@ -40,13 +40,13 @@ object. Rust cannot represent an unpaired UTF-16 surrogate in `str`;
 
 | Surface | Exports |
 | --- | --- |
-| Edge parsers | `parsePrincipalId`, `parseEip55`, `parseWalletInput`, `parseTenantId`, `parseOidcCredential`, `parseObjectId`, `parseNetworkId`, `parseSourceKey`, `parseSoul` |
+| Edge parsers | `parsePrincipalId`, `parsePrincipalKey`, `parsePathKey`, `principalFromSec1`, `parseJsonInput`, `parseEip55`, `parseWalletInput`, `parseTenantId`, `parseOidcCredential`, `parseObjectId`, `parseNetworkId`, `parseSourceKey`, `parseSoul` |
 | Keys | `formatPrincipalKey`, `formatWalletKey`, `formatOidcKey`, `formatNetworkKey`, `formatSourcePathKey`, `objectKey` |
 | Souls | `objectSoul`, `userSoul`, `aclSoul`, `grantSoul`, `postSoul` |
 | Creation | `mintObjectId`, `deriveClaimId`, `deriveExternalId` |
 | Signing | `signingBytes`, `linkId` |
 | Proofs | `verifyWalletLink`, `verifyOidcLink`, `verifyRotate`, `verifyRevoke` |
-| Histories | `resolveCurrentKey`, `resolveWalletLink` |
+| Histories | `resolveCurrentKey`, `resolveWalletLink`, `historyState` |
 
 Every parser/verifier returns `{ok:true,value}` or `{ok:false,reason}`. Scalar
 parsers check the input type before examining it. Object parsers snapshot own
@@ -99,45 +99,76 @@ and nonce must all match. A rotation always requires Panopticon attestation,
 including when a wallet authorizes it. This package performs no token fetching,
 login, storage, nonce consumption or enrollment.
 
-`verifyWalletLink(record, now, currentKey?)` and
-`verifyOidcLink(record, jwks, pinnedIss, now, currentKey?)` default to the genesis
-key. For a link made after rotation, provide the authenticated key that was
-current at its issuance. A verifier cannot infer that history from the link.
-`verifyRevoke(record, currentKey, now)` similarly requires the historical key.
-Rust exposes the explicit variants as `*_at_key` functions.
+The 0.2 contract adds a mandatory wallet timestamp attestation and rotation
+retention commitments. See the [normative amendment](../../docs/identity-review-amendment.md)
+for signing fields, exact claims, grammar, and migration requirements.
 
-`resolveCurrentKey(genesis, rotations, {jwks, links, revocations, now})` verifies
-history chronologically, checks the stable principal and previous key, and
-requires contiguous sequence numbers starting at one. Each rotation timestamp
-must strictly increase. A rotation takes effect for records issued **after**
-its integer timestamp; same-second revocations are checked with the preceding
-key and prevent recovery. This removes ambiguous ordering inside one second.
-Out-of-order input is sorted, exact duplicate transitions are idempotent, and
-two different valid transitions at one sequence return `rotation-fork`.
+`verifyWalletLink(record, jwks, policy, now, keyState)` and
+`verifyOidcLink(record, jwks, pinnedIss, now, keyState, clockSkewSeconds?)`
+require authenticated `KeyState`. There is no genesis fallback. `keyState.key`
+is the signing key active before the record's timestamp; `currentKey` is the
+key at the evaluation horizon. `retainedLinks` is `null` when no rotation
+followed the record, otherwise the intersection of every later rotation's
+retained IDs. Both verifiers reject an unretained link. For a proven unrotated
+account, explicitly supply `{key: genesis, currentKey: genesis, retainedLinks: null}`.
+Never derive this state from a claimed key inside an incoming record.
 
-Historical proofs are checked at issuance; `now` prevents future history.
+`policy` requires exact `allowedDomains`, `allowedUris`, and `allowedChainIds`
+arrays. Optional `clockSkewSeconds` defaults to zero and is capped at 300 seconds.
+It applies to direct proof issuance/expiration checks; it never changes signing
+bytes, timestamp equality, or the exact horizon of history resolution. OIDC
+accepts the same optional tolerance as its last argument (Rust:
+`verify_oidc_link_with_skew`). Every attestation's lifetime is at most 900 seconds.
+
+`verifyRevoke(record, currentKey, now)` requires the key current at the evaluation
+horizon. A retired key cannot backdate a new revoke. Rotation retention
+commitments replace the authority of older revocations: dropping an ID removes
+it; retaining an ID explicitly carries it forward. The service issuing rotation
+attestations must compute this set from authenticated link/revocation state.
+
+`ResolutionContext` contains `{jwks, links, revocations?, now, policy, history}`.
+`history(principal, issuedAt, until)` is required and returns `Result<KeyState>`
+from a complete authenticated snapshot through `until`. `historyState` computes
+that state from previously verified rotations. It does **not** authenticate its
+arguments. `resolveCurrentKey` resolves its own account internally and calls
+`history` for other accounts, so a rotated conflicting account's link is checked
+with its actual historical key. Unknown context returns `missing-history`;
+a fork in the required context propagates `rotation-fork`. These are unavailable
+verification context, not forged records that can be ignored.
+
+`resolveCurrentKey(genesis, rotations, context)` returns
+`{ok:true,value:{currentKey,rotations},diagnostics}` or
+`{ok:false,reason,diagnostics}`. It sorts sequences, verifies each candidate,
+skips malformed/forged candidates, and reports `{source,index,reason}` diagnostics.
+Accepted transitions start at one, are contiguous, strictly increase in time,
+and never reuse an earlier signing key. Invalid/gapped candidates do not change
+the current key. Exact duplicate transitions are idempotent. Two distinct valid
+transitions at the same sequence freeze resolution with `rotation-fork`.
+
+Historical proofs are checked at issuance; `now` excludes future history.
 An expired enrollment attestation does not retroactively invalidate a completed
-rotation. Direct proof verification checks expiration against the supplied
-`now`. The history resolver re-verifies wallet links, checks their content hash
-against the map key, applies revocations, and refuses recovery through a wallet
-with a newer conflicting principal binding. `verifyRotate` alone is a proof
-check against the supplied active-link context; use the resolver when applying
-untrusted history.
+rotation. A rotation's new key signs records issued **after** its timestamp;
+a same-second revoke by the preceding key can block that rotation. Once the
+rotation is accepted, its retained set is authoritative at that horizon.
+`verifyRotate(record, currentKey, context)` checks the proof and referenced link;
+use `resolveCurrentKey` to apply untrusted history with revocation and conflicting
+wallet-owner checks.
 
-`resolveWalletLink` selects the latest verified wallet binding. Equal-time
-bindings to different principals return `ambiguous-link`. Revoking the newest
-link does not resurrect an earlier link. For histories spanning several
-accounts, supply a trusted `keyAt(principal, issuedAt)` callback (Rust:
-`resolve_wallet_link_at_key`). Obtain that callback from authenticated histories,
-never from a claimed signing key inside an incoming record. Feed complete known
-link/revocation history into resolution: a pure verifier cannot discover omitted
-records or prove that an offline snapshot is globally current.
+`resolveWalletLink(address, links, revocations, context)` returns a wallet link
+and diagnostics using the same result envelope. Distinct equal-time links are
+ambiguous even for the same principal. Identical record IDs are idempotent.
+Revoking the newest link never resurrects an older one. Invalid unrelated entries
+are reported and skipped. Link maps are examined in sorted key order in both
+languages. Diagnostics identify input positions; they are not authorization.
 
-`Reason` includes the grammar failures and the additional proof/history errors
-required by these APIs: `bad-record`, `bad-signature`, `bad-attestation`,
-`untrusted-issuer`, `expired`, `future-record`, `bad-sequence`, `rotation-fork`,
-`unknown-link`, `revoked-link`, `ambiguous-link`, `unsupported-wallet`, and
-`rng-failure`.
+Rust returns `Resolution<T> { result: Result<T, Reason>, diagnostics }`. Both
+languages expose `*_at_key` / `*AtKey` aliases for the explicit proof/history APIs.
+The context must include complete known link, revocation, and rotation history;
+a pure verifier cannot discover omitted records or establish global freshness.
+Never treat a partial offline snapshot as proof that an account has no rotations.
+
+`Reason` additionally includes `missing-history` and `unretained-link`, alongside
+proof, ordering, fork, revocation, ambiguity, unsupported-wallet and RNG errors.
 
 ## Validation and distribution
 
@@ -167,17 +198,20 @@ and one million CSPRNG mints each. Signing-byte and record vectors share fixed
 fixture authoring tool, not part of CI: changing expectations requires review.
 
 `npm pack` builds declarations and ESM into the tarball. The consumer example at
-`examples/consumer` is copied to a fresh directory, installs that local tarball,
+`examples/consumer` is copied to a fresh directory with an empty npm cache, installs that local tarball,
 compiles against its exported types and runs its parsers. The browser check
 bundles the runtime dependency graph and rejects Node imports. Node built-ins
 are used only in build/test tooling, outside the shipped runtime.
 
-After review and merge, tag `ids-v0.1.0`. The release job waits for the full test
-job, verifies the tag matches `package.json`, and attaches
-`sociacl-ids-0.1.0.tgz` and its SHA-256 file. Consumers then install:
+After review and merge, tag `ids-v0.2.0`. The release job waits for the full test
+job, requires a protected `master` and verifies the tag commit is its ancestor.
+A read-only job installs dependencies with scripts disabled, explicitly builds,
+and checks the tag against `package.json`. A separate write-token job only
+downloads the resulting artifact, checks its SHA-256, and attaches
+`sociacl-ids-0.2.0.tgz` and its SHA-256 file. Consumers then install:
 
 ```sh
-npm install https://github.com/FyberLabs/SociACL/releases/download/ids-v0.1.0/sociacl-ids-0.1.0.tgz
+npm install https://github.com/FyberLabs/SociACL/releases/download/ids-v0.2.0/sociacl-ids-0.2.0.tgz
 ```
 
 Commit the consumer lockfile with tarball integrity. This URL becomes usable

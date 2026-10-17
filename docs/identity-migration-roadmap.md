@@ -13,7 +13,8 @@ and s3r.ch [#125](https://github.com/FyberLabs/s3r.ch/pull/125) were open when t
 work began; their caller changes remain separate.
 
 Implementation PR: [SociACL #57](https://github.com/FyberLabs/SociACL/pull/57).
-Local full-suite and package checks passed; remote CI and code/security review are pending.
+Grok/Codex findings are addressed in the 0.2 amendment in this PR. Local validation
+is recorded in the PR; merge, release, and consumer migration remain pending.
 
 ## Delivery status
 
@@ -37,7 +38,8 @@ have been removed.
 ## Reviewable follow-up PRs
 
 1. **Publish the reviewed package.** Merge after Grok/Codex review and CI, then
-   publish `ids-v0.1.0` through the release workflow. Record the immutable asset
+   configure branch protection and required CI/review on `master`, then publish
+   `ids-v0.2.0` through the release workflow. Record the immutable asset
    URL and SHA-256. Consumer PRs must pin lockfile integrity; no unresolvable
    release URL or vendored replacement validator belongs in a merged consumer.
 2. **SociACL core boundaries.** Replace TS `gun`, `post`, `group`, `request` and
@@ -47,11 +49,13 @@ have been removed.
    cover Gun-chain spoofing, the fold triple, grant-soul collisions, cross-room
    suffix matches, and request snapshot mutation. Keep #56's immediate fixes
    while this broader migration is reviewed.
-3. **Panopticon proofs and key backups.** Implement tenant-scoped OIDC link
-   attestation and rotation attestation with the specified claim fields. Fresh
+3. **Panopticon proofs and key backups.** Implement wallet timestamp attestation, tenant-scoped OIDC link
+   attestation, and rotation attestation including the retained-link commitment. Fresh
    login/proof, issuer pinning, nonce replay prevention and authorization belong
    at these endpoints. Store wrapped key backups privately. A signed-in user or
    a client-supplied principal is not sufficient authority to relink an account.
+   Panopticon assigns the issuance timestamp and computes the retained set from
+   authenticated history; it must not attest an arbitrary client-supplied date/set.
    Review the independent upload-grant lookup by file name separately.
 4. **s3r.ch account identity.** Migrate `identity/mesh`, `idb`, `mesh-link`,
    `link`, and `wrap` together: first enrollment mints one genesis identity,
@@ -92,3 +96,22 @@ have been removed.
 References for protocol details: [EIP-4361](https://eips.ethereum.org/EIPS/eip-4361),
 [EIP-55](https://eips.ethereum.org/EIPS/eip-55),
 [OIDC Core subject identifiers](https://openid.net/specs/openid-connect-core-1_0.html#IDToken).
+
+## Review amendment and legacy audit
+
+The [0.2 normative amendment](identity-review-amendment.md) supersedes the original
+proof/URL contract where stated. Timestamp attestations, retained-link sets,
+mandatory historical context, diagnostics, exact SIWE policy and deterministic
+URL validation are implemented in #57; no production signer/consumer uses them yet.
+
+Source audit of s3r.ch `lib/rooms.ts` and `lib/chat.ts`: default entropy is eight
+lowercase hex digits and current second timestamps fit the legacy grammar.
+`encodeKeySafe` only removes `. # $ [ ]`; caller-provided entropy can still contain
+uppercase letters, slash, percent, Unicode or more than 64 characters. Supplied
+negative or 13-digit timestamps also fall outside the grammar. These historical
+values must not be silently repaired or widened into authorization identifiers.
+Before the consumer migration, inventory actual persisted IDs with
+`node typescript/ids/scripts/audit-legacy.mjs < exported-ids.jsonl` (one JSON string
+or object with an `id` per line). Preserve rejected records read-only and design
+an explicit mapping with ownership evidence. No persisted production graph was
+available for this source audit, so actual prevalence remains unmeasured.

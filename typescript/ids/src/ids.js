@@ -1,3 +1,4 @@
+import { publicHost, webUri } from './uri.js';
 import { p256 } from '@noble/curves/nist.js';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { keccak_256 } from '@noble/hashes/sha3.js';
@@ -66,13 +67,6 @@ export function parseObjectId(x) {
   const w = parseEip55(legacy[1] ?? legacy[2] ?? legacy[3]); if (!w.ok) return w;
   return ok(/** @type {ObjectId} */ (s));
 }
-/** @param {string} host */
-export function publicHost(host) {
-  if (host.length > 253 || !host.includes('.') || !host.split('.').every(l => /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(l))) return false;
-  if (/^\d+$/.test(host.split('.').at(-1) ?? '')) return false;
-  if (['localhost', 'local', 'internal', 'home.arpa', 'test', 'invalid', 'example', 'onion', 'alt'].some(s => host === s || host.endsWith('.' + s))) return false;
-  try { return new URL('https://' + host + '/').hostname === host; } catch { return false; }
-}
 /** @param {unknown} x @returns {Result<NetworkId>} */
 export function parseNetworkId(x) {
   const t = text(x, 2048); if (!t.ok) return t;
@@ -113,10 +107,8 @@ export function parseSourceKey(x) {
     if (n === 'atproto') valid = /^did:plc:[a-z2-7]{24}$/.test(owner) || (owner.startsWith('did:web:') && didWeb(owner));
     if (n === 'farcaster') valid = /^[1-9][0-9]{0,19}$/.test(owner) && BigInt(owner) <= (1n << 64n) - 1n;
     if (n === 'nostr') valid = /^[0-9a-f]{64}$/.test(owner);
-    try {
-      if (n === 'activitypub') { const u = new URL(owner); valid = u.protocol === 'https:' && u.href === owner && !u.username && !u.password && !u.hash; }
-      if (n === 'rss') { const u = new URL(owner); valid = ['https:', 'http:'].includes(u.protocol) && u.origin === owner; }
-    } catch { valid = false; }
+    if (n === 'activitypub') valid = webUri(owner, false, true);
+    if (n === 'rss') valid = webUri(owner, true, false);
     if (!valid) return fail('bad-alphabet');
   }
   return ok(/** @type {SourceKey} */ (t.value));
@@ -142,7 +134,10 @@ function soul(parts, count) {
   return /** @type {Soul} */ (s);
 }
 /** @param {Collection} c @param {ObjectId} o */
-export const objectSoul = (c, o) => soul(['s3rch', c, objectKey(o)], 3);
+export const objectSoul = (c, o) => {
+  if (!['items', 'rooms', 'users-legacy'].includes(c)) throw Error('invalid collection');
+  return soul(['s3rch', c, objectKey(o)], 3);
+};
 /** @param {PrincipalId} p @returns {Soul} */
 export const userSoul = p => soul(['~' + p], 1);
 /** @param {PrincipalId} p */
@@ -152,7 +147,7 @@ export const grantSoul = (owner, object, accessor) => soul(['s3rch', 'acl', form
 /** @param {PrincipalId} owner @param {ObjectId} object @param {PrincipalId} accessor */
 export const postSoul = (owner, object, accessor) => soul(['s3rch', 'acl', formatPrincipalKey(owner), 'post', objectKey(object), formatPrincipalKey(accessor)], 6);
 /** @param {unknown} x @returns {Result<PrincipalId>} */
-export function parsePrincipalKey(x) {
+function keyPrincipal(x) {
   const t = text(x, 160); if (!t.ok) return t;
   if (!/^p_[0-9a-f]{128}$/.test(t.value)) return fail('bad-alphabet');
   const bytes = unhex(t.value.slice(2));
@@ -170,10 +165,10 @@ export function parseSoul(x) {
     const o = parseObjectId(a[2]); return o.ok ? ok({ template: 'object', ids: [a[1], o.value] }) : o;
   }
   if (a[1] !== 'acl' || ![3, 5, 6].includes(a.length) || (a.length === 6 && a[3] !== 'post')) return fail('bad-template');
-  const p = parsePrincipalKey(a[2]); if (!p.ok) return p;
+  const p = keyPrincipal(a[2]); if (!p.ok) return p;
   if (a.length === 3) return ok({ template: 'acl', ids: [p.value] });
   const o = parseObjectId(a[a.length - 2]); if (!o.ok) return o;
-  const acc = parsePrincipalKey(a[a.length - 1]); if (!acc.ok) return acc;
+  const acc = keyPrincipal(a[a.length - 1]); if (!acc.ok) return acc;
   return ok({ template: a.length === 5 ? 'grant' : 'post', ids: [p.value, o.value, acc.value] });
 }
 /** @param {string} kind @param {(n: number) => Uint8Array} [rng] @returns {Result<MintedObjectId>} */
@@ -196,4 +191,21 @@ export function deriveClaimId(claimText) {
 export function deriveExternalId(source, providerItemId) {
   const t = text(providerItemId, 2048); if (!t.ok) return t;
   return ok(/** @type {ObjectId} */ (/** @type {unknown} */ (hashKey('ext_', 'sociacl-ext-v1', [source, t.value]))));
+}
+
+/** @param {unknown} x @returns {Result<PrincipalKey>} */
+export function parsePrincipalKey(x) {
+  const p = keyPrincipal(x); return p.ok ? ok(formatPrincipalKey(p.value)) : p;
+}
+/** @param {unknown} x @returns {Result<PathKey>} */
+export function parsePathKey(x) {
+  const t = text(x, 160); if (!t.ok) return t;
+  if (t.value.startsWith('p_')) { const p = parsePrincipalKey(x); return p.ok ? ok(/** @type {PathKey} */ (/** @type {unknown} */ (p.value))) : p; }
+  if (/^(?:w_[0-9a-f]{40}|[kns]_[0-9a-f]{64})$/.test(t.value)) return ok(/** @type {PathKey} */ (t.value));
+  const o = parseObjectId(x); return o.ok ? ok(objectKey(o.value)) : o;
+}
+/** @param {Uint8Array} bytes @returns {Result<PrincipalId>} */
+export function principalFromSec1(bytes) {
+  try { const raw = p256.Point.fromBytes(bytes).toBytes(false); return parsePrincipalId(b64(raw.slice(1,33)) + '.' + b64(raw.slice(33))); }
+  catch { return fail('not-on-curve'); }
 }

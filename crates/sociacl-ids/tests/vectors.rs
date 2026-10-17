@@ -43,24 +43,43 @@ fn context(f: &Family, c: &Case) -> Value {
     }
     ctx
 }
-fn links(ctx: &Value) -> BTreeMap<String, WalletLink> {
+fn links(ctx: &Value) -> BTreeMap<String, Value> {
     ctx["links"]
         .as_array()
         .unwrap()
         .iter()
-        .map(|pair| {
-            let v = &pair[1];
-            let link: WalletLink = serde_json::from_value({
-                let mut value = v.clone();
-                value.as_object_mut().unwrap().remove("kind");
-                value
-            })
-            .unwrap();
-            (pair[0].as_str().unwrap().to_owned(), link)
-        })
+        .map(|pair| (pair[0].as_str().unwrap().to_owned(), pair[1].clone()))
         .collect()
 }
+fn resolution<T>(r: Resolution<T>, c: &Case) -> Result<T, Reason> {
+    if let Some(reasons) = c.extra.get("diagnosticReasons") {
+        assert_eq!(
+            serde_json::to_value(r.diagnostics.iter().map(|d| d.reason).collect::<Vec<_>>())
+                .unwrap(),
+            *reasons,
+            "{} diagnostics",
+            c.name
+        );
+    }
+    r.result
+}
 fn run(f: &Family, c: &Case, v: &Value) -> Result<Value, Reason> {
+    if f.family == "edges" {
+        return match c.extra["operation"].as_str().unwrap() {
+            "json" => parse_json_input(string(v)?),
+            "principal-key" => Ok(parse_principal_key(string(v)?)?.to_string().into()),
+            "path-key" => Ok(parse_path_key(string(v)?)?.to_string().into()),
+            "sec1" => {
+                let s = string(v)?;
+                let bytes: Vec<u8> = (0..s.len())
+                    .step_by(2)
+                    .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
+                    .collect();
+                Ok(principal_from_sec1(&bytes)?.to_string().into())
+            }
+            _ => panic!("unknown edge operation"),
+        };
+    }
     if f.family == "records" {
         let ctx = context(f, c);
         let now = ctx["now"].as_u64().unwrap();
@@ -69,8 +88,68 @@ fn run(f: &Family, c: &Case, v: &Value) -> Result<Value, Reason> {
         let ls = links(&ctx);
         let empty = vec![];
         let revs = ctx["revocations"].as_array().unwrap_or(&empty);
+        let policy: SiwePolicy = serde_json::from_value(ctx["policy"].clone()).unwrap();
+        let history = |p: &PrincipalId, at, until| {
+            if !ctx["authenticatedAccounts"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|a| a.as_str() == Some(p.as_ref()))
+            {
+                return Err(Reason::MissingHistory);
+            }
+            let hs: Vec<Rotate> = ctx["histories"]
+                .as_array()
+                .and_then(|hs| hs.iter().find(|h| h[0] == p.as_ref()))
+                .map(|h| {
+                    h[1].as_array()
+                        .unwrap()
+                        .iter()
+                        .map(|r| {
+                            let IdentityRecord::Rotate(r) =
+                                serde_json::from_value(r.clone()).unwrap()
+                            else {
+                                panic!("history")
+                            };
+                            r
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            Ok(history_state(p, &hs, at, until))
+        };
+        // Rust's required reference cannot be omitted; represent that wire fixture before constructing context.
+        if ctx["missingHistory"] == true {
+            return Err(Reason::MissingHistory);
+        }
+        let rc = ResolutionContext {
+            jwks: &jwks,
+            links: &ls,
+            revocations: revs,
+            now,
+            policy: &policy,
+            history: &history,
+        };
+        let key_state = if ctx["directState"].is_object() {
+            KeyState {
+                key: parse_principal_id(ctx["directState"]["key"].as_str().unwrap()).unwrap(),
+                current_key: parse_principal_id(ctx["directState"]["currentKey"].as_str().unwrap())
+                    .unwrap(),
+                retained_links: Some(
+                    serde_json::from_value(ctx["directState"]["retainedLinks"].clone()).unwrap(),
+                ),
+            }
+        } else {
+            KeyState {
+                key: key.clone(),
+                current_key: key.clone(),
+                retained_links: None,
+            }
+        };
         let principal = match c.extra["operation"].as_str().unwrap() {
-            "wallet-link" => verify_wallet_link_at_key(v, now, Some(&key))?.principal,
+            "wallet-link" => {
+                verify_wallet_link_at_key(v, &jwks, &policy, now, &key_state)?.principal
+            }
             "oidc-link" => {
                 verify_oidc_link_at_key(
                     v,
@@ -82,28 +161,32 @@ fn run(f: &Family, c: &Case, v: &Value) -> Result<Value, Reason> {
                         .map(|s| s.as_str().unwrap().to_owned())
                         .collect::<BTreeSet<_>>(),
                     now,
-                    Some(&key),
+                    &key_state,
                 )?
                 .principal
             }
-            "rotate" => verify_rotate(v, &key, &ls, &jwks, now)?.principal,
+            "rotate" => verify_rotate(v, &key, &rc)?.principal,
             "revoke" => verify_revoke(v, &key, now)?.principal,
-            "resolve" => resolve_current_key(
-                &parse_principal_id(ctx["genesis"].as_str().unwrap()).unwrap(),
-                v.as_array().unwrap(),
-                &ResolutionContext {
-                    jwks: &jwks,
-                    links: &ls,
-                    revocations: revs,
-                    now,
-                },
-            )?,
+            "resolve" => {
+                resolution(
+                    resolve_current_key(
+                        &parse_principal_id(ctx["genesis"].as_str().unwrap()).unwrap(),
+                        v.as_array().unwrap(),
+                        &rc,
+                    ),
+                    c,
+                )?
+                .current_key
+            }
             "wallet-resolve" => {
-                resolve_wallet_link(
-                    &parse_eip55(ctx["address"].as_str().unwrap()).unwrap(),
-                    v.as_array().unwrap(),
-                    revs,
-                    now,
+                resolution(
+                    resolve_wallet_link(
+                        &parse_eip55(ctx["address"].as_str().unwrap()).unwrap(),
+                        v.as_array().unwrap(),
+                        revs,
+                        &rc,
+                    ),
+                    c,
                 )?
                 .principal
             }
@@ -184,7 +267,7 @@ fn every_shared_vector() {
         .filter(|p| p.extension().is_some_and(|s| s == "json"))
         .collect();
     paths.sort();
-    assert_eq!(paths.len(), 10);
+    assert_eq!(paths.len(), 11);
     let mut names = BTreeSet::new();
     for path in paths {
         let f: Family = serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap();

@@ -1,6 +1,7 @@
 //! Canonical identity boundaries. Stored input is never normalized or repaired.
 mod ids;
 mod records;
+mod uri;
 pub use ids::*;
 pub use records::*;
 
@@ -41,6 +42,8 @@ pub enum Reason {
     AmbiguousLink,
     UnsupportedWallet,
     RngFailure,
+    MissingHistory,
+    UnretainedLink,
 }
 impl fmt::Display for Reason {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

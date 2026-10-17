@@ -43,6 +43,81 @@
       "input": "sr1:rss/https%3A%2F%2Fs3r.ch/feed%2F%CE%B1%231/feed",
       "canonical": "sr1:rss/https%3A%2F%2Fs3r.ch/feed%2F%CE%B1%231/feed",
       "pathKey": "s_05140fb120745c22eaa159a961a8afcec816cf198bcc69168f4743ce9cc48906"
+    },
+    {
+      "name": "url-corpus-0-0",
+      "input": "sr1:activitypub/https%3A%2F%2Fs3r.ch%2Fu/feed/feed",
+      "canonical": "sr1:activitypub/https%3A%2F%2Fs3r.ch%2Fu/feed/feed"
+    },
+    {
+      "name": "url-corpus-0-1",
+      "input": "sr1:activitypub/https%3A%2F%2Fs3r.ch%2F/feed/feed",
+      "canonical": "sr1:activitypub/https%3A%2F%2Fs3r.ch%2F/feed/feed"
+    },
+    {
+      "name": "url-corpus-0-6",
+      "input": "sr1:activitypub/https%3A%2F%2Fs3r.ch%2F%252F/feed/feed",
+      "canonical": "sr1:activitypub/https%3A%2F%2Fs3r.ch%2F%252F/feed/feed"
+    },
+    {
+      "name": "url-corpus-0-12",
+      "input": "sr1:activitypub/https%3A%2F%2Fs3r.ch%2Fa%3Ab%40c/feed/feed",
+      "canonical": "sr1:activitypub/https%3A%2F%2Fs3r.ch%2Fa%3Ab%40c/feed/feed"
+    },
+    {
+      "name": "url-corpus-0-13",
+      "input": "sr1:activitypub/https%3A%2F%2Fs3r.ch%2Fa%2520b/feed/feed",
+      "canonical": "sr1:activitypub/https%3A%2F%2Fs3r.ch%2Fa%2520b/feed/feed"
+    },
+    {
+      "name": "url-corpus-1-0",
+      "input": "sr1:activitypub/https%3A%2F%2Fsub.s3r.ch%2Fu/feed/feed",
+      "canonical": "sr1:activitypub/https%3A%2F%2Fsub.s3r.ch%2Fu/feed/feed"
+    },
+    {
+      "name": "url-corpus-1-1",
+      "input": "sr1:activitypub/https%3A%2F%2Fsub.s3r.ch%2F/feed/feed",
+      "canonical": "sr1:activitypub/https%3A%2F%2Fsub.s3r.ch%2F/feed/feed"
+    },
+    {
+      "name": "url-corpus-1-6",
+      "input": "sr1:activitypub/https%3A%2F%2Fsub.s3r.ch%2F%252F/feed/feed",
+      "canonical": "sr1:activitypub/https%3A%2F%2Fsub.s3r.ch%2F%252F/feed/feed"
+    },
+    {
+      "name": "url-corpus-1-12",
+      "input": "sr1:activitypub/https%3A%2F%2Fsub.s3r.ch%2Fa%3Ab%40c/feed/feed",
+      "canonical": "sr1:activitypub/https%3A%2F%2Fsub.s3r.ch%2Fa%3Ab%40c/feed/feed"
+    },
+    {
+      "name": "url-corpus-1-13",
+      "input": "sr1:activitypub/https%3A%2F%2Fsub.s3r.ch%2Fa%2520b/feed/feed",
+      "canonical": "sr1:activitypub/https%3A%2F%2Fsub.s3r.ch%2Fa%2520b/feed/feed"
+    },
+    {
+      "name": "url-corpus-13-0",
+      "input": "sr1:activitypub/https%3A%2F%2Faaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.com%2Fu/feed/feed",
+      "canonical": "sr1:activitypub/https%3A%2F%2Faaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.com%2Fu/feed/feed"
+    },
+    {
+      "name": "url-corpus-13-1",
+      "input": "sr1:activitypub/https%3A%2F%2Faaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.com%2F/feed/feed",
+      "canonical": "sr1:activitypub/https%3A%2F%2Faaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.com%2F/feed/feed"
+    },
+    {
+      "name": "url-corpus-13-6",
+      "input": "sr1:activitypub/https%3A%2F%2Faaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.com%2F%252F/feed/feed",
+      "canonical": "sr1:activitypub/https%3A%2F%2Faaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.com%2F%252F/feed/feed"
+    },
+    {
+      "name": "url-corpus-13-12",
+      "input": "sr1:activitypub/https%3A%2F%2Faaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.com%2Fa%3Ab%40c/feed/feed",
+      "canonical": "sr1:activitypub/https%3A%2F%2Faaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.com%2Fa%3Ab%40c/feed/feed"
+    },
+    {
+      "name": "url-corpus-13-13",
+      "input": "sr1:activitypub/https%3A%2F%2Faaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.com%2Fa%2520b/feed/feed",
+      "canonical": "sr1:activitypub/https%3A%2F%2Faaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.com%2Fa%2520b/feed/feed"
     }
   ],
   "reject": [
@@ -106,6 +181,981 @@
     {
       "name": "source-trailing-em-space",
       "input": "sr1:rss/https%3A%2F%2Fs3r.ch/feed%E2%80%83/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-0-2",
+      "input": "sr1:activitypub/https%3A%2F%2Fs3r.ch%2Fu%23/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-0-3",
+      "input": "sr1:activitypub/https%3A%2F%2Fs3r.ch%2Fu%3F%23/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-0-4",
+      "input": "sr1:activitypub/https%3A%2F%2Fs3r.ch%2Fu%3Fq%3Dx/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-0-5",
+      "input": "sr1:activitypub/https%3A%2F%2Fs3r.ch%2F%5E/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-0-7",
+      "input": "sr1:activitypub/https%3A%2F%2Fs3r.ch%2F%252f/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-0-8",
+      "input": "sr1:activitypub/https%3A%2F%2Fs3r.ch%2F%25XX/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-0-9",
+      "input": "sr1:activitypub/https%3A%2F%2Fs3r.ch%2F..%2Fu/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-0-10",
+      "input": "sr1:activitypub/https%3A%2F%2Fs3r.ch%2F%252E%2Fu/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-0-11",
+      "input": "sr1:activitypub/https%3A%2F%2Fs3r.ch%2Fa%2F../feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-1-2",
+      "input": "sr1:activitypub/https%3A%2F%2Fsub.s3r.ch%2Fu%23/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-1-3",
+      "input": "sr1:activitypub/https%3A%2F%2Fsub.s3r.ch%2Fu%3F%23/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-1-4",
+      "input": "sr1:activitypub/https%3A%2F%2Fsub.s3r.ch%2Fu%3Fq%3Dx/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-1-5",
+      "input": "sr1:activitypub/https%3A%2F%2Fsub.s3r.ch%2F%5E/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-1-7",
+      "input": "sr1:activitypub/https%3A%2F%2Fsub.s3r.ch%2F%252f/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-1-8",
+      "input": "sr1:activitypub/https%3A%2F%2Fsub.s3r.ch%2F%25XX/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-1-9",
+      "input": "sr1:activitypub/https%3A%2F%2Fsub.s3r.ch%2F..%2Fu/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-1-10",
+      "input": "sr1:activitypub/https%3A%2F%2Fsub.s3r.ch%2F%252E%2Fu/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-1-11",
+      "input": "sr1:activitypub/https%3A%2F%2Fsub.s3r.ch%2Fa%2F../feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-2-0",
+      "input": "sr1:activitypub/https%3A%2F%2Fxn--ab--.com%2Fu/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-2-1",
+      "input": "sr1:activitypub/https%3A%2F%2Fxn--ab--.com%2F/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-2-2",
+      "input": "sr1:activitypub/https%3A%2F%2Fxn--ab--.com%2Fu%23/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-2-3",
+      "input": "sr1:activitypub/https%3A%2F%2Fxn--ab--.com%2Fu%3F%23/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-2-4",
+      "input": "sr1:activitypub/https%3A%2F%2Fxn--ab--.com%2Fu%3Fq%3Dx/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-2-5",
+      "input": "sr1:activitypub/https%3A%2F%2Fxn--ab--.com%2F%5E/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-2-6",
+      "input": "sr1:activitypub/https%3A%2F%2Fxn--ab--.com%2F%252F/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-2-7",
+      "input": "sr1:activitypub/https%3A%2F%2Fxn--ab--.com%2F%252f/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-2-8",
+      "input": "sr1:activitypub/https%3A%2F%2Fxn--ab--.com%2F%25XX/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-2-9",
+      "input": "sr1:activitypub/https%3A%2F%2Fxn--ab--.com%2F..%2Fu/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-2-10",
+      "input": "sr1:activitypub/https%3A%2F%2Fxn--ab--.com%2F%252E%2Fu/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-2-11",
+      "input": "sr1:activitypub/https%3A%2F%2Fxn--ab--.com%2Fa%2F../feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-2-12",
+      "input": "sr1:activitypub/https%3A%2F%2Fxn--ab--.com%2Fa%3Ab%40c/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-2-13",
+      "input": "sr1:activitypub/https%3A%2F%2Fxn--ab--.com%2Fa%2520b/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-3-0",
+      "input": "sr1:activitypub/https%3A%2F%2Fxn--bcher-kva.de%2Fu/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-3-1",
+      "input": "sr1:activitypub/https%3A%2F%2Fxn--bcher-kva.de%2F/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-3-2",
+      "input": "sr1:activitypub/https%3A%2F%2Fxn--bcher-kva.de%2Fu%23/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-3-3",
+      "input": "sr1:activitypub/https%3A%2F%2Fxn--bcher-kva.de%2Fu%3F%23/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-3-4",
+      "input": "sr1:activitypub/https%3A%2F%2Fxn--bcher-kva.de%2Fu%3Fq%3Dx/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-3-5",
+      "input": "sr1:activitypub/https%3A%2F%2Fxn--bcher-kva.de%2F%5E/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-3-6",
+      "input": "sr1:activitypub/https%3A%2F%2Fxn--bcher-kva.de%2F%252F/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-3-7",
+      "input": "sr1:activitypub/https%3A%2F%2Fxn--bcher-kva.de%2F%252f/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-3-8",
+      "input": "sr1:activitypub/https%3A%2F%2Fxn--bcher-kva.de%2F%25XX/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-3-9",
+      "input": "sr1:activitypub/https%3A%2F%2Fxn--bcher-kva.de%2F..%2Fu/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-3-10",
+      "input": "sr1:activitypub/https%3A%2F%2Fxn--bcher-kva.de%2F%252E%2Fu/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-3-11",
+      "input": "sr1:activitypub/https%3A%2F%2Fxn--bcher-kva.de%2Fa%2F../feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-3-12",
+      "input": "sr1:activitypub/https%3A%2F%2Fxn--bcher-kva.de%2Fa%3Ab%40c/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-3-13",
+      "input": "sr1:activitypub/https%3A%2F%2Fxn--bcher-kva.de%2Fa%2520b/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-4-0",
+      "input": "sr1:activitypub/https%3A%2F%2Fa.xn--ab--%2Fu/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-4-1",
+      "input": "sr1:activitypub/https%3A%2F%2Fa.xn--ab--%2F/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-4-2",
+      "input": "sr1:activitypub/https%3A%2F%2Fa.xn--ab--%2Fu%23/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-4-3",
+      "input": "sr1:activitypub/https%3A%2F%2Fa.xn--ab--%2Fu%3F%23/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-4-4",
+      "input": "sr1:activitypub/https%3A%2F%2Fa.xn--ab--%2Fu%3Fq%3Dx/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-4-5",
+      "input": "sr1:activitypub/https%3A%2F%2Fa.xn--ab--%2F%5E/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-4-6",
+      "input": "sr1:activitypub/https%3A%2F%2Fa.xn--ab--%2F%252F/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-4-7",
+      "input": "sr1:activitypub/https%3A%2F%2Fa.xn--ab--%2F%252f/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-4-8",
+      "input": "sr1:activitypub/https%3A%2F%2Fa.xn--ab--%2F%25XX/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-4-9",
+      "input": "sr1:activitypub/https%3A%2F%2Fa.xn--ab--%2F..%2Fu/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-4-10",
+      "input": "sr1:activitypub/https%3A%2F%2Fa.xn--ab--%2F%252E%2Fu/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-4-11",
+      "input": "sr1:activitypub/https%3A%2F%2Fa.xn--ab--%2Fa%2F../feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-4-12",
+      "input": "sr1:activitypub/https%3A%2F%2Fa.xn--ab--%2Fa%3Ab%40c/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-4-13",
+      "input": "sr1:activitypub/https%3A%2F%2Fa.xn--ab--%2Fa%2520b/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-5-0",
+      "input": "sr1:activitypub/https%3A%2F%2FS3R.CH%2Fu/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-5-1",
+      "input": "sr1:activitypub/https%3A%2F%2FS3R.CH%2F/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-5-2",
+      "input": "sr1:activitypub/https%3A%2F%2FS3R.CH%2Fu%23/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-5-3",
+      "input": "sr1:activitypub/https%3A%2F%2FS3R.CH%2Fu%3F%23/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-5-4",
+      "input": "sr1:activitypub/https%3A%2F%2FS3R.CH%2Fu%3Fq%3Dx/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-5-5",
+      "input": "sr1:activitypub/https%3A%2F%2FS3R.CH%2F%5E/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-5-6",
+      "input": "sr1:activitypub/https%3A%2F%2FS3R.CH%2F%252F/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-5-7",
+      "input": "sr1:activitypub/https%3A%2F%2FS3R.CH%2F%252f/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-5-8",
+      "input": "sr1:activitypub/https%3A%2F%2FS3R.CH%2F%25XX/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-5-9",
+      "input": "sr1:activitypub/https%3A%2F%2FS3R.CH%2F..%2Fu/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-5-10",
+      "input": "sr1:activitypub/https%3A%2F%2FS3R.CH%2F%252E%2Fu/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-5-11",
+      "input": "sr1:activitypub/https%3A%2F%2FS3R.CH%2Fa%2F../feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-5-12",
+      "input": "sr1:activitypub/https%3A%2F%2FS3R.CH%2Fa%3Ab%40c/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-5-13",
+      "input": "sr1:activitypub/https%3A%2F%2FS3R.CH%2Fa%2520b/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-6-0",
+      "input": "sr1:activitypub/https%3A%2F%2Fs3r.ch.%2Fu/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-6-1",
+      "input": "sr1:activitypub/https%3A%2F%2Fs3r.ch.%2F/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-6-2",
+      "input": "sr1:activitypub/https%3A%2F%2Fs3r.ch.%2Fu%23/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-6-3",
+      "input": "sr1:activitypub/https%3A%2F%2Fs3r.ch.%2Fu%3F%23/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-6-4",
+      "input": "sr1:activitypub/https%3A%2F%2Fs3r.ch.%2Fu%3Fq%3Dx/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-6-5",
+      "input": "sr1:activitypub/https%3A%2F%2Fs3r.ch.%2F%5E/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-6-6",
+      "input": "sr1:activitypub/https%3A%2F%2Fs3r.ch.%2F%252F/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-6-7",
+      "input": "sr1:activitypub/https%3A%2F%2Fs3r.ch.%2F%252f/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-6-8",
+      "input": "sr1:activitypub/https%3A%2F%2Fs3r.ch.%2F%25XX/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-6-9",
+      "input": "sr1:activitypub/https%3A%2F%2Fs3r.ch.%2F..%2Fu/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-6-10",
+      "input": "sr1:activitypub/https%3A%2F%2Fs3r.ch.%2F%252E%2Fu/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-6-11",
+      "input": "sr1:activitypub/https%3A%2F%2Fs3r.ch.%2Fa%2F../feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-6-12",
+      "input": "sr1:activitypub/https%3A%2F%2Fs3r.ch.%2Fa%3Ab%40c/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-6-13",
+      "input": "sr1:activitypub/https%3A%2F%2Fs3r.ch.%2Fa%2520b/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-7-0",
+      "input": "sr1:activitypub/https%3A%2F%2F127.0.0.1%2Fu/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-7-1",
+      "input": "sr1:activitypub/https%3A%2F%2F127.0.0.1%2F/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-7-2",
+      "input": "sr1:activitypub/https%3A%2F%2F127.0.0.1%2Fu%23/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-7-3",
+      "input": "sr1:activitypub/https%3A%2F%2F127.0.0.1%2Fu%3F%23/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-7-4",
+      "input": "sr1:activitypub/https%3A%2F%2F127.0.0.1%2Fu%3Fq%3Dx/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-7-5",
+      "input": "sr1:activitypub/https%3A%2F%2F127.0.0.1%2F%5E/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-7-6",
+      "input": "sr1:activitypub/https%3A%2F%2F127.0.0.1%2F%252F/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-7-7",
+      "input": "sr1:activitypub/https%3A%2F%2F127.0.0.1%2F%252f/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-7-8",
+      "input": "sr1:activitypub/https%3A%2F%2F127.0.0.1%2F%25XX/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-7-9",
+      "input": "sr1:activitypub/https%3A%2F%2F127.0.0.1%2F..%2Fu/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-7-10",
+      "input": "sr1:activitypub/https%3A%2F%2F127.0.0.1%2F%252E%2Fu/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-7-11",
+      "input": "sr1:activitypub/https%3A%2F%2F127.0.0.1%2Fa%2F../feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-7-12",
+      "input": "sr1:activitypub/https%3A%2F%2F127.0.0.1%2Fa%3Ab%40c/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-7-13",
+      "input": "sr1:activitypub/https%3A%2F%2F127.0.0.1%2Fa%2520b/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-8-0",
+      "input": "sr1:activitypub/https%3A%2F%2F0x7f.0.0.1%2Fu/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-8-1",
+      "input": "sr1:activitypub/https%3A%2F%2F0x7f.0.0.1%2F/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-8-2",
+      "input": "sr1:activitypub/https%3A%2F%2F0x7f.0.0.1%2Fu%23/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-8-3",
+      "input": "sr1:activitypub/https%3A%2F%2F0x7f.0.0.1%2Fu%3F%23/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-8-4",
+      "input": "sr1:activitypub/https%3A%2F%2F0x7f.0.0.1%2Fu%3Fq%3Dx/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-8-5",
+      "input": "sr1:activitypub/https%3A%2F%2F0x7f.0.0.1%2F%5E/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-8-6",
+      "input": "sr1:activitypub/https%3A%2F%2F0x7f.0.0.1%2F%252F/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-8-7",
+      "input": "sr1:activitypub/https%3A%2F%2F0x7f.0.0.1%2F%252f/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-8-8",
+      "input": "sr1:activitypub/https%3A%2F%2F0x7f.0.0.1%2F%25XX/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-8-9",
+      "input": "sr1:activitypub/https%3A%2F%2F0x7f.0.0.1%2F..%2Fu/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-8-10",
+      "input": "sr1:activitypub/https%3A%2F%2F0x7f.0.0.1%2F%252E%2Fu/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-8-11",
+      "input": "sr1:activitypub/https%3A%2F%2F0x7f.0.0.1%2Fa%2F../feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-8-12",
+      "input": "sr1:activitypub/https%3A%2F%2F0x7f.0.0.1%2Fa%3Ab%40c/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-8-13",
+      "input": "sr1:activitypub/https%3A%2F%2F0x7f.0.0.1%2Fa%2520b/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-9-0",
+      "input": "sr1:activitypub/https%3A%2F%2Fbox.local%2Fu/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-9-1",
+      "input": "sr1:activitypub/https%3A%2F%2Fbox.local%2F/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-9-2",
+      "input": "sr1:activitypub/https%3A%2F%2Fbox.local%2Fu%23/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-9-3",
+      "input": "sr1:activitypub/https%3A%2F%2Fbox.local%2Fu%3F%23/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-9-4",
+      "input": "sr1:activitypub/https%3A%2F%2Fbox.local%2Fu%3Fq%3Dx/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-9-5",
+      "input": "sr1:activitypub/https%3A%2F%2Fbox.local%2F%5E/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-9-6",
+      "input": "sr1:activitypub/https%3A%2F%2Fbox.local%2F%252F/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-9-7",
+      "input": "sr1:activitypub/https%3A%2F%2Fbox.local%2F%252f/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-9-8",
+      "input": "sr1:activitypub/https%3A%2F%2Fbox.local%2F%25XX/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-9-9",
+      "input": "sr1:activitypub/https%3A%2F%2Fbox.local%2F..%2Fu/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-9-10",
+      "input": "sr1:activitypub/https%3A%2F%2Fbox.local%2F%252E%2Fu/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-9-11",
+      "input": "sr1:activitypub/https%3A%2F%2Fbox.local%2Fa%2F../feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-9-12",
+      "input": "sr1:activitypub/https%3A%2F%2Fbox.local%2Fa%3Ab%40c/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-9-13",
+      "input": "sr1:activitypub/https%3A%2F%2Fbox.local%2Fa%2520b/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-10-0",
+      "input": "sr1:activitypub/https%3A%2F%2F-a.com%2Fu/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-10-1",
+      "input": "sr1:activitypub/https%3A%2F%2F-a.com%2F/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-10-2",
+      "input": "sr1:activitypub/https%3A%2F%2F-a.com%2Fu%23/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-10-3",
+      "input": "sr1:activitypub/https%3A%2F%2F-a.com%2Fu%3F%23/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-10-4",
+      "input": "sr1:activitypub/https%3A%2F%2F-a.com%2Fu%3Fq%3Dx/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-10-5",
+      "input": "sr1:activitypub/https%3A%2F%2F-a.com%2F%5E/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-10-6",
+      "input": "sr1:activitypub/https%3A%2F%2F-a.com%2F%252F/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-10-7",
+      "input": "sr1:activitypub/https%3A%2F%2F-a.com%2F%252f/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-10-8",
+      "input": "sr1:activitypub/https%3A%2F%2F-a.com%2F%25XX/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-10-9",
+      "input": "sr1:activitypub/https%3A%2F%2F-a.com%2F..%2Fu/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-10-10",
+      "input": "sr1:activitypub/https%3A%2F%2F-a.com%2F%252E%2Fu/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-10-11",
+      "input": "sr1:activitypub/https%3A%2F%2F-a.com%2Fa%2F../feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-10-12",
+      "input": "sr1:activitypub/https%3A%2F%2F-a.com%2Fa%3Ab%40c/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-10-13",
+      "input": "sr1:activitypub/https%3A%2F%2F-a.com%2Fa%2520b/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-11-0",
+      "input": "sr1:activitypub/https%3A%2F%2Fa-.com%2Fu/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-11-1",
+      "input": "sr1:activitypub/https%3A%2F%2Fa-.com%2F/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-11-2",
+      "input": "sr1:activitypub/https%3A%2F%2Fa-.com%2Fu%23/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-11-3",
+      "input": "sr1:activitypub/https%3A%2F%2Fa-.com%2Fu%3F%23/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-11-4",
+      "input": "sr1:activitypub/https%3A%2F%2Fa-.com%2Fu%3Fq%3Dx/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-11-5",
+      "input": "sr1:activitypub/https%3A%2F%2Fa-.com%2F%5E/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-11-6",
+      "input": "sr1:activitypub/https%3A%2F%2Fa-.com%2F%252F/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-11-7",
+      "input": "sr1:activitypub/https%3A%2F%2Fa-.com%2F%252f/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-11-8",
+      "input": "sr1:activitypub/https%3A%2F%2Fa-.com%2F%25XX/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-11-9",
+      "input": "sr1:activitypub/https%3A%2F%2Fa-.com%2F..%2Fu/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-11-10",
+      "input": "sr1:activitypub/https%3A%2F%2Fa-.com%2F%252E%2Fu/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-11-11",
+      "input": "sr1:activitypub/https%3A%2F%2Fa-.com%2Fa%2F../feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-11-12",
+      "input": "sr1:activitypub/https%3A%2F%2Fa-.com%2Fa%3Ab%40c/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-11-13",
+      "input": "sr1:activitypub/https%3A%2F%2Fa-.com%2Fa%2520b/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-12-0",
+      "input": "sr1:activitypub/https%3A%2F%2Fa..com%2Fu/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-12-1",
+      "input": "sr1:activitypub/https%3A%2F%2Fa..com%2F/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-12-2",
+      "input": "sr1:activitypub/https%3A%2F%2Fa..com%2Fu%23/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-12-3",
+      "input": "sr1:activitypub/https%3A%2F%2Fa..com%2Fu%3F%23/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-12-4",
+      "input": "sr1:activitypub/https%3A%2F%2Fa..com%2Fu%3Fq%3Dx/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-12-5",
+      "input": "sr1:activitypub/https%3A%2F%2Fa..com%2F%5E/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-12-6",
+      "input": "sr1:activitypub/https%3A%2F%2Fa..com%2F%252F/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-12-7",
+      "input": "sr1:activitypub/https%3A%2F%2Fa..com%2F%252f/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-12-8",
+      "input": "sr1:activitypub/https%3A%2F%2Fa..com%2F%25XX/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-12-9",
+      "input": "sr1:activitypub/https%3A%2F%2Fa..com%2F..%2Fu/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-12-10",
+      "input": "sr1:activitypub/https%3A%2F%2Fa..com%2F%252E%2Fu/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-12-11",
+      "input": "sr1:activitypub/https%3A%2F%2Fa..com%2Fa%2F../feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-12-12",
+      "input": "sr1:activitypub/https%3A%2F%2Fa..com%2Fa%3Ab%40c/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-12-13",
+      "input": "sr1:activitypub/https%3A%2F%2Fa..com%2Fa%2520b/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-13-2",
+      "input": "sr1:activitypub/https%3A%2F%2Faaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.com%2Fu%23/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-13-3",
+      "input": "sr1:activitypub/https%3A%2F%2Faaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.com%2Fu%3F%23/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-13-4",
+      "input": "sr1:activitypub/https%3A%2F%2Faaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.com%2Fu%3Fq%3Dx/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-13-5",
+      "input": "sr1:activitypub/https%3A%2F%2Faaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.com%2F%5E/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-13-7",
+      "input": "sr1:activitypub/https%3A%2F%2Faaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.com%2F%252f/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-13-8",
+      "input": "sr1:activitypub/https%3A%2F%2Faaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.com%2F%25XX/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-13-9",
+      "input": "sr1:activitypub/https%3A%2F%2Faaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.com%2F..%2Fu/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-13-10",
+      "input": "sr1:activitypub/https%3A%2F%2Faaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.com%2F%252E%2Fu/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-13-11",
+      "input": "sr1:activitypub/https%3A%2F%2Faaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.com%2Fa%2F../feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-14-0",
+      "input": "sr1:activitypub/https%3A%2F%2Faaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.com%2Fu/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-14-1",
+      "input": "sr1:activitypub/https%3A%2F%2Faaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.com%2F/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-14-2",
+      "input": "sr1:activitypub/https%3A%2F%2Faaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.com%2Fu%23/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-14-3",
+      "input": "sr1:activitypub/https%3A%2F%2Faaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.com%2Fu%3F%23/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-14-4",
+      "input": "sr1:activitypub/https%3A%2F%2Faaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.com%2Fu%3Fq%3Dx/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-14-5",
+      "input": "sr1:activitypub/https%3A%2F%2Faaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.com%2F%5E/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-14-6",
+      "input": "sr1:activitypub/https%3A%2F%2Faaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.com%2F%252F/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-14-7",
+      "input": "sr1:activitypub/https%3A%2F%2Faaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.com%2F%252f/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-14-8",
+      "input": "sr1:activitypub/https%3A%2F%2Faaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.com%2F%25XX/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-14-9",
+      "input": "sr1:activitypub/https%3A%2F%2Faaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.com%2F..%2Fu/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-14-10",
+      "input": "sr1:activitypub/https%3A%2F%2Faaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.com%2F%252E%2Fu/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-14-11",
+      "input": "sr1:activitypub/https%3A%2F%2Faaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.com%2Fa%2F../feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-14-12",
+      "input": "sr1:activitypub/https%3A%2F%2Faaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.com%2Fa%3Ab%40c/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "url-corpus-14-13",
+      "input": "sr1:activitypub/https%3A%2F%2Faaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.com%2Fa%2520b/feed/feed",
       "reason": "bad-alphabet"
     }
   ]

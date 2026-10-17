@@ -114,8 +114,13 @@
       "reason": "gun-chain"
     },
     {
-      "name": "gun-chain-escape",
+      "name": "gun-chain-literal-escape",
       "input": "x\\u002eget(",
+      "reason": "gun-chain"
+    },
+    {
+      "name": "gun-chain-decoded-escape",
+      "input": "x.get(",
       "reason": "gun-chain"
     },
     {

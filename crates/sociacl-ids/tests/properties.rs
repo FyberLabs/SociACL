@@ -75,7 +75,10 @@ proptest! {
         let s: String=chars.into_iter().collect();
         let _=parse_principal_id(&s);let _=parse_eip55(&s);let _=parse_wallet_input(&s);let _=parse_tenant_id(&s);let _=parse_object_id(&s);let _=parse_network_id(&s);let _=parse_source_key(&s);let _=parse_soul(&s);let _=parse_path_key(&s);
         for v in [serde_json::json!(s),serde_json::json!(number),serde_json::json!({"principal":s,"v":1,"kind":"wallet","issuedAt":number}),serde_json::json!({"iss":s,"tenant":s,"sub":s})] {
-            let _=parse_oidc_credential(&v);let _=verify_wallet_link(&v,1700000000);let _=verify_oidc_link(&v,&Jwks{keys:vec![]},&Default::default(),1700000000);
+            let _=parse_oidc_credential(&v);let p=parse_principal_id("axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU").unwrap();
+            let state=KeyState{key:p.clone(),current_key:p.clone(),retained_links:None};
+            let policy=SiwePolicy{allowed_domains:vec![],allowed_uris:vec![],allowed_chain_ids:vec![],clock_skew_seconds:0};
+            let _=verify_wallet_link(&v,&Jwks{keys:vec![]},&policy,1700000000,&state);let _=verify_oidc_link(&v,&Jwks{keys:vec![]},&Default::default(),1700000000,&state);
         }
     }
 }
