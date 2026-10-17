@@ -191,6 +191,9 @@ bad('wrong-link-map-key',rot,'unknown-link','rotate',{links:[['00'.repeat(32),w]
 bad('extra-record-field',{...w,unexpected:true},'bad-record');
 bad('fractional-issued-at',{...w,issuedAt:at+.5},'bad-record');
 for (const [suffix,msg] of [ ['extra-lines',w.siwe.message+'\nunknown'],['duplicate-expiry',siwe(w,`\nExpiration Time: ${date(at+600)}\nExpiration Time: ${date(at+700)}`).message],['invalid-percent-uri',w.siwe.message.replace('/identity/link','/%xx')]]) bad('siwe-'+suffix,{...w,siwe:signMessage(msg)},'bad-signature');
+reject('source-key','source-leading-nbsp','sr1:rss/https%3A%2F%2Fs3r.ch/%C2%A0feed/feed','bad-alphabet');
+reject('source-key','source-trailing-em-space','sr1:rss/https%3A%2F%2Fs3r.ch/feed%E2%80%83/feed','bad-alphabet');
+reject('object','claim-leading-nbsp','\u00a0ens:alice.eth','bad-alphabet',{operation:'claim'});
 const root = new URL('../../../vectors/ids/',import.meta.url); mkdirSync(root,{recursive:true});
 for(const [name,value] of families) writeFileSync(new URL(name+'.json',root),JSON.stringify(value,null,2).replace(/"issuedAt": 1700000000,/g, '"issuedAt": 1700000000.0,')+'\n');
 writeFileSync(new URL('test-keys.json',new URL('../test/',import.meta.url)),JSON.stringify({p,p2,p3,wallet,tenant,obj,network,source,secretScalars:[1,2,3,4,5]},null,2)+'\n');

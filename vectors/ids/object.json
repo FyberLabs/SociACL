@@ -289,6 +289,12 @@
       "name": "reserved-kind",
       "input": "claim_01010101010101010101010101010101",
       "reason": "reserved-kind"
+    },
+    {
+      "name": "claim-leading-nbsp",
+      "input": " ens:alice.eth",
+      "reason": "bad-alphabet",
+      "operation": "claim"
     }
   ]
 }

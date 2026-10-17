@@ -89,6 +89,17 @@ pub(crate) fn text(s: &str, max: usize) -> Result<&str, Reason> {
     if s.starts_with(' ') || s.ends_with(' ') {
         return Err(Reason::Whitespace);
     }
+    let unicode_space = |c: char| {
+        matches!(
+            c,
+            '\u{a0}' | '\u{1680}' | '\u{202f}' | '\u{205f}' | '\u{3000}'
+        ) || ('\u{2000}'..='\u{200a}').contains(&c)
+    };
+    if s.chars().next().is_some_and(unicode_space)
+        || s.chars().next_back().is_some_and(unicode_space)
+    {
+        return Err(Reason::BadAlphabet);
+    }
     Ok(s)
 }
 pub(crate) fn hex(b: &[u8]) -> String {

@@ -12,6 +12,9 @@ is additive to SociACL `master@7279ef6`. SociACL [#56](https://github.com/FyberL
 and s3r.ch [#125](https://github.com/FyberLabs/s3r.ch/pull/125) were open when this
 work began; their caller changes remain separate.
 
+Implementation PR: [SociACL #57](https://github.com/FyberLabs/SociACL/pull/57).
+Local full-suite and package checks passed; remote CI and code/security review are pending.
+
 ## Delivery status
 
 | Stage | Implementation | Review/merge/release | Acceptance evidence |

@@ -27,6 +27,7 @@ export function text(x, max) {
   if (/[\ufeff\u200b-\u200f\u2028\u2029\ufffd]/.test(x)) return fail('invisible-char');
   if (/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/.test(x)) return fail('unpaired-surrogate');
   if (x.startsWith(' ') || x.endsWith(' ')) return fail('whitespace');
+  if (/^[\u00a0\u1680\u2000-\u200a\u202f\u205f\u3000]|[\u00a0\u1680\u2000-\u200a\u202f\u205f\u3000]$/.test(x)) return fail('bad-alphabet');
   return ok(x);
 }
 /** Snapshot data properties once. No getters, coercion or prototype reads. Proxies fail closed. @param {unknown} x @returns {Result<Record<string, unknown>>} */
