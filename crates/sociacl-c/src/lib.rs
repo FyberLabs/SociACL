@@ -34,6 +34,25 @@ fn cstr<'a>(p: *const c_char) -> Option<&'a str> {
     unsafe { CStr::from_ptr(p) }.to_str().ok()
 }
 
+/// Copy `text` and a trailing NUL. Returns -1 when the buffer cannot
+/// hold both, and writes nothing in that case.
+fn write_exact(dst: *mut c_char, len: usize, text: &str) -> c_int {
+    if dst.is_null() || len == 0 {
+        return -1;
+    }
+    let Ok(c) = CString::new(text) else {
+        return -1;
+    };
+    let bytes = c.as_bytes_with_nul();
+    if bytes.len() > len {
+        return -1;
+    }
+    unsafe {
+        ptr::copy_nonoverlapping(bytes.as_ptr(), dst as *mut u8, bytes.len());
+    }
+    0
+}
+
 fn write_reason(dst: *mut c_char, len: usize, text: &str) {
     if dst.is_null() || len == 0 {
         return;
@@ -1886,8 +1905,7 @@ pub extern "C" fn sociacl_gun_item_soul(
         return -1;
     }
     let soul = GunSoul::s3rch_item(id).as_node_id();
-    write_reason(dst, dst_len, soul.as_str());
-    0
+    write_exact(dst, dst_len, soul.as_str())
 }
 
 #[no_mangle]
@@ -1902,8 +1920,7 @@ pub extern "C" fn sociacl_gun_encode_key(
     if dst.is_null() || dst_len == 0 {
         return -1;
     }
-    write_reason(dst, dst_len, &encode_key(id));
-    0
+    write_exact(dst, dst_len, &encode_key(id))
 }
 
 #[no_mangle]
@@ -2974,6 +2991,34 @@ mod tests {
             .to_string_lossy()
             .into_owned();
         assert_eq!(item_soul, "s3rch/items/rss3:act/1~2x");
+        let dotted = ".".repeat(128);
+        let mut small = [0i8; 256];
+        assert_eq!(
+            sociacl_gun_encode_key(c(&dotted).as_ptr(), small.as_mut_ptr(), small.len()),
+            -1
+        );
+        let mut exact = vec![0i8; 257];
+        assert_eq!(
+            sociacl_gun_encode_key(c(&dotted).as_ptr(), exact.as_mut_ptr(), exact.len()),
+            0
+        );
+        let encoded = unsafe { CStr::from_ptr(exact.as_ptr()) }
+            .to_string_lossy()
+            .into_owned();
+        assert_eq!(encoded, "~1".repeat(128));
+        assert_eq!(
+            sociacl_gun_item_soul(c(&dotted).as_ptr(), small.as_mut_ptr(), small.len()),
+            -1
+        );
+        let mut soul_buf = vec![0i8; 12 + 256 + 1];
+        assert_eq!(
+            sociacl_gun_item_soul(c(&dotted).as_ptr(), soul_buf.as_mut_ptr(), soul_buf.len()),
+            0
+        );
+        let expanded = unsafe { CStr::from_ptr(soul_buf.as_ptr()) }
+            .to_string_lossy()
+            .into_owned();
+        assert_eq!(expanded, format!("s3rch/items/{encoded}"));
         sociacl_plane_free(plane);
     }
 

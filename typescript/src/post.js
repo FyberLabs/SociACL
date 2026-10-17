@@ -252,17 +252,22 @@ function canonicalDecimal(value) {
 
 /**
  * Peer merge drops a row that cannot be encoded. It does not throw.
+ * A principal that does not parse has no soul, so that row is dropped
+ * before the signing-byte tie-break.
  * @param {PostEdge | null | undefined} edge
  */
 export function postRowEncodable(edge) {
   if (!edge?.grant) return false;
   const grant = edge.grant;
-  return (
-    canonicalInteger(edge.hamState) &&
-    canonicalInteger(grant.stated) &&
-    canonicalInteger(grant.from) &&
-    canonicalInteger(grant.until)
-  );
+  if (
+    !canonicalInteger(edge.hamState) ||
+    !canonicalInteger(grant.stated) ||
+    !canonicalInteger(grant.from) ||
+    !canonicalInteger(grant.until)
+  ) {
+    return false;
+  }
+  return postSoul(edge.owner, grant.object, grant.accessor) != null;
 }
 
 /**

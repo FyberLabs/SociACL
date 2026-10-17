@@ -74,7 +74,7 @@ impl MeshSeeGrant {
 }
 
 pub(crate) fn object_names(stored: &str, query: &str) -> bool {
-    let query = query.trim();
+    let query = ascii_trim(query);
     stored == query || acl_key(stored) == acl_key(query) || item_soul_alias(stored, query)
 }
 
@@ -648,7 +648,7 @@ impl MeshSeeGraph {
     pub(crate) fn canonical_object_id(&self, object: &str) -> String {
         self.object_record(object)
             .map(|(id, _)| id.to_string())
-            .unwrap_or_else(|| object.trim().to_string())
+            .unwrap_or_else(|| ascii_trim(object).to_string())
     }
 
     /// In-range see rows that name this object, accessor, and owner.
@@ -672,7 +672,7 @@ impl MeshSeeGraph {
     }
 
     fn lookup_object(&self, object: &str) -> Option<&MeshObject> {
-        let object = object.trim();
+        let object = ascii_trim(object);
         if let Some(found) = self.objects.get(&object_store_key(object)) {
             return Some(found);
         }

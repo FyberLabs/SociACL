@@ -27,7 +27,7 @@ function samePrincipal(left, right) {
 
 /** @param {Map<string, string>} objects @param {string} object */
 function canonicalStoredObject(objects, object) {
-  const text = String(object ?? "").trim();
+  const text = asciiTrim(String(object ?? ""));
   if (objects.has(text)) return text;
   for (const id of objects.keys()) {
     if (sameObjectId(id, text)) return id;
@@ -37,7 +37,7 @@ function canonicalStoredObject(objects, object) {
 
 /** @param {{ claimId?: string, object?: string }} grant @param {string} object */
 function grantNamesObject(grant, object) {
-  const id = String(grant.claimId ?? grant.object ?? "").trim();
+  const id = asciiTrim(String(grant.claimId ?? grant.object ?? ""));
   if (!id) return false;
   return sameObjectId(id, object);
 }
@@ -250,7 +250,7 @@ export class MemorySeeAcl {
   }
 
   hasObject(object) {
-    const text = String(object ?? "").trim();
+    const text = asciiTrim(String(object ?? ""));
     if (this.objects.has(text)) return true;
     for (const id of this.objects.keys()) {
       if (sameObjectId(id, text)) return true;
@@ -263,9 +263,9 @@ export class MemorySeeAcl {
   }
 
   seeGrants(object) {
-    const text = String(object ?? "").trim();
+    const text = asciiTrim(String(object ?? ""));
     return [...this.grants.values()].filter((g) => {
-      const id = String(g.claimId ?? g.object ?? "").trim();
+      const id = asciiTrim(String(g.claimId ?? g.object ?? ""));
       return sameObjectId(id, text) && g.stated !== 0;
     });
   }
@@ -287,7 +287,7 @@ export class MemorySeeAcl {
   }
 
   stateSeeGrant(owner, grant) {
-    const query = String(grant.claimId ?? grant.object ?? "").trim();
+    const query = asciiTrim(String(grant.claimId ?? grant.object ?? ""));
     const object = canonicalStoredObject(this.objects, query);
     const key = postGrantKey(owner, object, grant.accessor);
     const stored = { ...grant, stated: 1, owner };
@@ -356,7 +356,7 @@ export class MemorySeeAcl {
   }
 
   statePostGrant(owner, grant) {
-    const query = String(grant.claimId ?? grant.object ?? "").trim();
+    const query = asciiTrim(String(grant.claimId ?? grant.object ?? ""));
     const object = canonicalStoredObject(this.objects, query);
     if (!samePrincipal(this.ownerOf(object), owner)) return;
     const key = postGrantKey(owner, object, grant.accessor);

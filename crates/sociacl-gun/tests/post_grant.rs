@@ -697,6 +697,35 @@ fn a_post_merge_waits_for_the_current_owner() {
     );
 }
 
+#[test]
+fn a_rejected_accessor_does_not_replace_a_post_row() {
+    let mut graph = MeshSeeGraph::new();
+    graph.put_object("doc", "0xalice");
+    graph
+        .state_post_grant("0xalice", MeshPostGrant::live("doc", "0xbob", 0, 80))
+        .unwrap();
+    let local = graph.post_edge("doc", "0xbob").unwrap().clone();
+    let bad = GunPostEdge {
+        soul: String::new(),
+        owner: "0xalice".into(),
+        grant: MeshPostGrant {
+            object: "doc".into(),
+            accessor: "/".into(),
+            from: Timestamp(0),
+            until: Timestamp(80),
+            stated: 1,
+        },
+        ham_state: local.ham_state,
+    };
+    assert_eq!(local.clone().ham_merge(bad.clone()).grant.accessor, "0xbob");
+    graph.merge_post_edge(bad);
+    assert_eq!(
+        graph.post_edge("doc", "0xbob").unwrap().grant.accessor,
+        "0xbob"
+    );
+    assert!(graph.post_edge("doc", "/").is_none());
+}
+
 fn hex(bytes: &[u8]) -> String {
     const HEX: &[u8; 16] = b"0123456789abcdef";
     let mut out = String::with_capacity(bytes.len() * 2);

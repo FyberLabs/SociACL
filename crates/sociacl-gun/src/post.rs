@@ -120,7 +120,16 @@ impl GunPostEdge {
 
     /// Higher HAM state wins. At the same state a cancellation wins,
     /// then the narrower window, then the smaller signing bytes.
+    /// A row whose owner or accessor does not parse is dropped.
     pub fn ham_merge(self, incoming: Self) -> Self {
+        let incoming_ok = post_edge_parsable(&incoming);
+        let local_ok = post_edge_parsable(&self);
+        if !incoming_ok {
+            return self;
+        }
+        if !local_ok {
+            return incoming.canonical();
+        }
         let local = self.canonical();
         let incoming = incoming.canonical();
         if incoming.ham_state > local.ham_state {
@@ -252,6 +261,10 @@ fn push_str(buf: &mut Vec<u8>, value: &str) {
     let len = u32::try_from(bytes.len()).unwrap_or(u32::MAX);
     buf.extend_from_slice(&len.to_be_bytes());
     buf.extend_from_slice(&bytes[..usize::try_from(len).unwrap_or(bytes.len())]);
+}
+
+fn post_edge_parsable(edge: &GunPostEdge) -> bool {
+    post_soul(&edge.owner, &edge.grant.object, &edge.grant.accessor).is_some()
 }
 
 fn post_row_in_range(edge: &GunPostEdge) -> bool {
@@ -391,7 +404,7 @@ impl MeshSeeGraph {
     /// must be that object's current owner. A row that arrives earlier
     /// is not retained.
     pub fn merge_post_edge(&mut self, incoming: GunPostEdge) {
-        if !post_row_in_range(&incoming) {
+        if !post_row_in_range(&incoming) || !post_edge_parsable(&incoming) {
             return;
         }
         let Some((stored_id, object_owner)) = self

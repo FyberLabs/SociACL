@@ -560,7 +560,8 @@ int sociacl_gun_user_soul(
     size_t dst_len
 );
 
-/* Write s3rch/items/<encodeKey(id)>. Returns 0. */
+/* Write s3rch/items/<encodeKey(id)>. Returns 0, or -1 when dst cannot
+ * hold the expanded soul and a trailing NUL. */
 int sociacl_gun_item_soul(
     const char *id,
     char *dst,
@@ -568,7 +569,8 @@ int sociacl_gun_item_soul(
 );
 
 /* s3r.ch encodeKey: injective escape. ~ . # $ [ ] become ~0 ~1 ~2 ~3 ~4 ~5.
- * / is not escaped. This is not the older fold of those characters into _. */
+ * / is not escaped. This is not the older fold of those characters into _.
+ * Returns 0, or -1 when dst cannot hold the expanded key and a trailing NUL. */
 int sociacl_gun_encode_key(
     const char *id,
     char *dst,
