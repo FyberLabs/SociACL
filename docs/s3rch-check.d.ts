@@ -801,10 +801,12 @@ export type WrappedKey = {
 };
 
 /**
- * One SEA keypair for the account. Devices inherit this same
- * keypair through enrollment. They do not mint a second pair.
- * pub and epub may sit on the user node. priv and epriv never
- * go on Gun. Enrollment does not mint a grant.
+ * One SEA keypair for the account. The account id is the genesis
+ * SEA pub (sociacl-ids PrincipalId). Devices inherit this same
+ * keypair through enrollment. They do not mint a second pair or
+ * an identity. pub and epub may sit on the user node. priv and
+ * epriv never go on Gun. Enrollment does not mint a grant.
+ * Wallets and OIDC subjects are linked credentials, not this id.
  */
 export type AccountSeaKey = {
   account: AccessorId;

@@ -61,6 +61,10 @@ pub fn sea_pub_from_secret(secret: &SecretKey) -> Result<String, EncDiscError> {
     point_to_sea(&secret.public_key().to_encoded_point(false))
 }
 
+pub(crate) fn sea_pub_from_point(point: &PublicKey) -> Result<String, EncDiscError> {
+    point_to_sea(&point.to_encoded_point(false))
+}
+
 pub fn sea_priv_from_secret(secret: &SecretKey) -> Result<Zeroizing<String>, EncDiscError> {
     let mut raw = secret.to_bytes();
     let encoded = scalar_to_sea(raw.as_slice());
