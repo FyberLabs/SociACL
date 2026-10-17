@@ -1,8 +1,8 @@
-# sociacl-ids 0.3 review amendment
+# sociacl-ids 0.4 review amendment
 
 This amendment and the updated record sections of the
-[package specification](sociacl-ids-package-spec.md) define the 0.3 contract.
-Versions 0.1 and 0.2 were never released. The review changes require a minor
+[package specification](sociacl-ids-package-spec.md) define the 0.4 contract.
+Versions 0.1, 0.2 and 0.3 were never released. The review changes require a minor
 version bump because they change signing bytes, record shapes and URL grammar.
 Wallet and revoke timestamp attestations, rotation retention commitments, and
 skipping invalid history with diagnostics were explicitly approved during review.
@@ -32,8 +32,11 @@ link's ID), and `iat` must equal `issuedAt`. The signing bytes remain
 `LP("sociacl-revoke-v1") LP(principal) LP(linkId) LP(decimal(issuedAt))`.
 `verifyRevoke(record, currentKey, jwks, now)` checks the key signature and the
 timestamp witness. Panopticon must assign the time and verify current-key
-authority. This prevents a stolen retired key from backdating a revoke and
-invalidating an already accepted rotation when history is replayed.
+authority. An unwitnessed backdated revoke cannot invalidate a past rotation.
+If a compromised witness signs contradictory history, resolution freezes as
+specified below; it must not restore the retired key. Revocation and rotation
+currently both require Panopticon availability. An unwitnessed revoke has no
+effect under this contract.
 
 ## Recovery records
 
@@ -63,15 +66,21 @@ The verifier authenticates the authorizing credential and **every retained ID**
 against the pre-rotation state. Each must belong to the principal and remain
 retained through all previous rotations. It rejects any of these links revoked
 at or before the candidate's timestamp under the key current immediately before
-that rotation. A rotation therefore cannot revive a revoked link. The authorizer
-may be omitted from the new retained set, allowing it to authorize its own removal.
+that rotation. A rotation therefore cannot revive a revoked link. A verified
+witnessed revoke conflicting with an authenticated rotation returns the fatal
+`rotation-conflict` error, including same-second conflicts. This remains fatal
+when the witness colludes with a retired key and backdates the revoke: no
+current key or partial successful history is returned. The authorizer may be
+omitted from the new retained set, allowing it to authorize its own removal.
 
 OIDC recovery additionally requires an enrolled, retained, unrevoked OIDC link
 whose issuer belongs to `pinnedIss`. Its attestation must bind that link, and
 Panopticon must verify a fresh login to that exact issuer/tenant/subject. Any
-active wallet link for the principal blocks OIDC recovery with `wallet-required`,
-including a wallet the candidate attempts to drop. This restriction is checked
-against complete pre-rotation link and revocation history.
+active wallet link for the principal blocks OIDC recovery with `wallet-required`
+in direct proof verification, including a wallet the candidate attempts to drop.
+During history resolution, that contradiction with the witnessed rotation is
+fatal `rotation-conflict`. Conflicting wallet ownership also freezes resolution.
+These restrictions use complete pre-rotation link and revocation history.
 
 Every rotation at or after a link's issuance must retain its ID for it to remain
 usable. The history adapter returns the intersection of these commitments.
@@ -100,18 +109,26 @@ index records cannot force a lookup of unavailable or forked account history.
 Missing history for a relevant, independently witnessed link fails with
 `missing-history`; a verified fork in that required context propagates failure.
 
-Malformed records, bad signatures, invalid attestations, gapped sequences and
-unusable recovery candidates are skipped with source/index/reason diagnostics.
-They cannot advance the key or manufacture a fork. Distinct **valid** transitions
-at the same sequence freeze the account. Duplicate record IDs are idempotent.
+Malformed records, bad rotation signatures/attestations and gapped sequences
+are skipped with source/index/reason diagnostics. They cannot advance the key
+or manufacture a fork. After a rotation's new-key signature and Panopticon
+attestation authenticate its references, a missing or unverifiable authorizer or
+retained link is fatal `missing-history`. This includes tampered link signatures,
+SIWE proofs and attestations, and a missing valid wallet proof for the rotation
+itself. Referenced fork/conflict errors propagate. Discarding such a rotation
+would silently restore an older key. Unrelated invalid index entries remain
+skippable; they cannot trigger these failures without an authenticated reference.
+Distinct **valid** transitions at the same sequence freeze the account. Duplicate record IDs are idempotent.
 Distinct wallet links tied at the newest timestamp are ambiguous, including
 links to the same principal. A revoked newest binding does not revive an older
 binding. Direct proof verification is distinct from applying full history.
 
 The caller must supply complete authenticated snapshots, including links and
 revocations: a pure verifier cannot discover an omitted wallet or prove global
-freshness. Panopticon remains the trusted timestamp witness and OIDC login
-attestor; its index output alone is not account authority. Callers also enforce
+freshness. These checks also cannot detect an entirely omitted rotation or
+replace a trusted latest-state checkpoint. Consumers must not authenticate from
+an untrusted index's assertion that a history is complete. Panopticon remains
+the trusted timestamp witness and OIDC login attestor; its index output alone is not account authority. Callers also enforce
 input-size and work budgets before invoking these synchronous verifiers. The
 package does not silently truncate history, since doing so could omit a revoke
 or fork. Individual record fields and retained sets have explicit bounds.

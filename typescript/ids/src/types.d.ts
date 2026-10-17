@@ -18,7 +18,7 @@ export type Reason = 'not-string' | 'empty' | 'too-long' | 'control-char' | 'inv
   | 'bad-checksum' | 'not-on-curve' | 'reserved-kind' | 'unknown-network' | 'bad-host'
   | 'bad-port' | 'gun-chain' | 'bad-template' | 'bad-record' | 'bad-signature'
   | 'bad-attestation' | 'untrusted-issuer' | 'expired' | 'future-record' | 'bad-sequence'
-  | 'rotation-fork' | 'unknown-link' | 'revoked-link' | 'ambiguous-link' | 'unsupported-wallet'
+  | 'rotation-fork' | 'rotation-conflict' | 'unknown-link' | 'revoked-link' | 'ambiguous-link' | 'unsupported-wallet'
   | 'rng-failure' | 'missing-history' | 'unretained-link' | 'wallet-required';
 export type Result<T> = { ok: true; value: T } | { ok: false; reason: Reason };
 export type Collection = 'items' | 'rooms' | 'users-legacy';

@@ -13,7 +13,7 @@ SociACL [#56](https://github.com/FyberLabs/SociACL/pull/56) merged. The separate
 s3r.ch [#125](https://github.com/FyberLabs/s3r.ch/pull/125) was open when this work began.
 
 Implementation PR: [SociACL #57](https://github.com/FyberLabs/SociACL/pull/57).
-Grok/Codex findings are addressed in the 0.3 amendment in this PR. Local validation
+Grok/Codex findings are addressed in the 0.4 amendment in this PR. Local validation
 is recorded in the PR; merge, release, and consumer migration remain pending.
 
 ## Delivery status
@@ -21,7 +21,7 @@ is recorded in the PR; merge, release, and consumer migration remain pending.
 | Stage | Implementation | Review/merge/release | Acceptance evidence |
 | --- | --- | --- | --- |
 | Canonical ids and keys in TS/Rust | Implemented in this PR | Pending review | Shared grammar/path/soul vectors and generated tests |
-| Wallet/OIDC proofs, rotation and revocation | Implemented in this PR | Pending review | Fixed-key records; invalid-index DoS, revoked-link resurrection, OIDC recovery authority, timestamp replay and fork checks |
+| Wallet/OIDC proofs, rotation and revocation | Implemented in this PR | Pending review | Fixed-key records; invalid-index DoS, revoked-link resurrection, OIDC recovery authority, timestamp replay, witness equivocation, missing required evidence and fork checks |
 | Browser package and optional Zod entry point | Implemented in this PR | Pending review | Strict types, browser bundle, installed-tarball consumer |
 | Shared-vector accounting and release workflow | Implemented in this PR | Pending review; tag not published | CI compares both execution manifests to all vectors; release gated on full suite |
 | SociACL permission callers | Planned | Separate PR after package review | Branded core inputs; remove alias, fold and chain-accessor code |
@@ -39,7 +39,7 @@ have been removed.
 
 1. **Publish the reviewed package.** Merge after Grok/Codex review and CI, then
    configure branch protection and required CI/review on `master`, then publish
-   `ids-v0.3.0` through the release workflow. Record the immutable asset
+   `ids-v0.4.0` through the release workflow. Record the immutable asset
    URL and SHA-256. Consumer PRs must pin lockfile integrity; no unresolvable
    release URL or vendored replacement validator belongs in a merged consumer.
 2. **SociACL core boundaries.** Replace TS `gun`, `post`, `group`, `request` and
@@ -60,6 +60,10 @@ have been removed.
    OIDC recovery must prove fresh login to the enrolled issuer/tenant/subject
    and require no active wallet. Supply complete authenticated link, revocation
    and rotation snapshots to the package, with explicit request/work budgets.
+   Preserve trusted latest-state checkpoints: an index's assertion of completeness
+   is not sufficient, and a verifier cannot detect an entirely omitted rotation.
+   Propagate `missing-history`, `rotation-conflict` and `rotation-fork` to login
+   and recovery; none may fall back to genesis or a previous successful key.
    Review the independent upload-grant lookup by file name separately.
 4. **s3r.ch account identity.** Migrate `identity/mesh`, `idb`, `mesh-link`,
    `link`, and `wrap` together: first enrollment mints one genesis identity,
@@ -103,7 +107,7 @@ References for protocol details: [EIP-4361](https://eips.ethereum.org/EIPS/eip-4
 
 ## Review amendment and legacy audit
 
-The [0.3 normative amendment](identity-review-amendment.md) supersedes the original
+The [0.4 normative amendment](identity-review-amendment.md) supersedes the original
 proof/URL contract where stated. Wallet/revoke timestamp witnesses, v2 rotation
 credential binding, enforced pre-rotation revocations, OIDC-only recovery,
 mandatory historical context, diagnostics, exact SIWE policy and deterministic

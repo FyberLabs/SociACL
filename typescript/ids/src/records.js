@@ -272,6 +272,11 @@ function revokedAt(link,revocations,currentKey,now,jwks,diagnostics) {
   }
   return revoked;
 }
+/** An authenticated rotation cannot be discarded because its referenced evidence is unavailable.
+ * @param {import('./types.js').Reason} reason */
+function requiredHistoryFailure(reason) {
+  return reason === 'rotation-fork' || reason === 'rotation-conflict' ? reason : 'missing-history';
+}
 /** @param {unknown} x @param {PrincipalId} currentKey @param {ResolutionContext} ctx @returns {Result<Rotate>} */
 export function verifyRotate(x,currentKey,ctx) {return checkRotate(x,currentKey,ctx,[]);}
 /** @param {unknown} x @param {PrincipalId} currentKey @param {ResolutionContext} ctx @param {Diagnostic[]} diagnostics @returns {Result<Rotate>} */
@@ -288,20 +293,20 @@ function checkRotate(x,currentKey,ctx,diagnostics) {
   // Validate the authorizing credential and every retained ID against the pre-rotation state.
   /** @type {Map<string,WalletLink|OidcLink>} */ const checked=new Map();
   for (const id of new Set([r.authorizer.link,...r.retainedLinks])) {
-    if (!ctx.links.has(id)) return fail('unknown-link');
-    const raw=record(ctx.links.get(id)); if (!raw.ok) return raw;
+    if (!ctx.links.has(id)) return fail('missing-history');
+    const raw=record(ctx.links.get(id)); if (!raw.ok) return fail('missing-history');
     const l=raw.value;
-    if (!['wallet','oidc'].includes(l.kind) || l.principal !== r.principal || hex(sha256(bytes(l))) !== id) return fail('unknown-link');
-    const v=historicalLink(/** @type {WalletLink|OidcLink} */ (l),ctx,r.issuedAt); if (!v.ok) return v;
-    if (revokedAt(v.value,ctx.revocations??[],currentKey,r.issuedAt,ctx.jwks,diagnostics)) return fail('revoked-link');
+    if (!['wallet','oidc'].includes(l.kind) || l.principal !== r.principal || hex(sha256(bytes(l))) !== id) return fail('missing-history');
+    const v=historicalLink(/** @type {WalletLink|OidcLink} */ (l),ctx,r.issuedAt); if (!v.ok) return fail(requiredHistoryFailure(v.reason));
+    if (revokedAt(v.value,ctx.revocations??[],currentKey,r.issuedAt,ctx.jwks,diagnostics)) return fail('rotation-conflict');
     checked.set(id,v.value);
   }
   const authorizer=/** @type {WalletLink|OidcLink} */ (checked.get(r.authorizer.link));
   if (r.authorizer.kind === 'wallet') {
-    if (authorizer.kind !== 'wallet') return fail('unknown-link');
-    const s=siweVerify(r.authorizer.siwe,authorizer.address,bytes(r),r.issuedAt,ctx.now,ctx.policy); if (!s.ok) return s;
+    if (authorizer.kind !== 'wallet') return fail('missing-history');
+    const s=siweVerify(r.authorizer.siwe,authorizer.address,bytes(r),r.issuedAt,ctx.now,ctx.policy); if (!s.ok) return fail('missing-history');
   } else {
-    if (authorizer.kind !== 'oidc') return fail('unknown-link');
+    if (authorizer.kind !== 'oidc') return fail('missing-history');
     // OIDC recovery is restricted to accounts with no active wallet, including wallets the candidate drops.
     const entries=[...ctx.links].sort((a,b)=>a[0]<b[0]?-1:a[0]>b[0]?1:0);
     for (const [index,[id,raw]] of entries.entries()) {
@@ -313,7 +318,7 @@ function checkRotate(x,currentKey,ctx,diagnostics) {
       const v=historicalLink(l,ctx,r.issuedAt);
       if (!v.ok) {
         report(diagnostics,'link',index,v.reason);
-        if (v.reason==='missing-history'||v.reason==='rotation-fork') return v;
+        if (v.reason==='missing-history'||v.reason==='rotation-fork'||v.reason==='rotation-conflict') return v;
         continue;
       }
       if (!revokedAt(v.value,ctx.revocations??[],currentKey,r.issuedAt,ctx.jwks,diagnostics)) return fail('wallet-required');
@@ -321,7 +326,7 @@ function checkRotate(x,currentKey,ctx,diagnostics) {
   }
   return ok(r);
 }
-/** Invalid entries are diagnostic; only a valid fork prevents a resolved account.
+/** Unauthenticated junk is diagnostic; missing evidence and authenticated conflicts fail closed.
  * @param {PrincipalId} genesis @param {readonly unknown[]} rotations @param {ResolutionContext} ctx @returns {Resolution<ResolvedAccount>} */
 export function resolveCurrentKey(genesis, rotations, ctx) {
   /** @type {Diagnostic[]} */ const diagnostics = [];
@@ -345,19 +350,20 @@ export function resolveCurrentKey(genesis, rotations, ctx) {
       if (n !== seq || raw.issuedAt <= lastTime || raw.nextKey === genesis || history.some(r => r.nextKey === raw.nextKey)) result = fail('bad-sequence');
       else {
         result = checkRotate(raw,current,candidate,diagnostics);
+        // A witnessed OIDC rotation contradicted by an active wallet cannot be skipped.
+        if (!result.ok && result.reason === 'wallet-required') result = fail('rotation-conflict');
         if (result.ok && raw.authorizer.kind === 'wallet') {
           const own = record(ctx.links.get(raw.authorizer.link));
-          if (!own.ok) result = own;
-          else if (own.value.kind !== 'wallet') result = fail('bad-record');
+          if (!own.ok || own.value.kind !== 'wallet') result = fail('missing-history');
           else {
             const lookup = resolveWalletLink(own.value.address, [...ctx.links].sort((a,b) => a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0).map(e => e[1]), ctx.revocations ?? [], candidate);
             for (const d of lookup.diagnostics) report(diagnostics,d.source,d.index,d.reason);
-            if (!lookup.ok) result = lookup;
-            else if (hex(sha256(bytes(lookup.value))) !== raw.authorizer.link) result = fail('ambiguous-link');
+            if (!lookup.ok) result = fail(['missing-history','rotation-fork','rotation-conflict'].includes(lookup.reason) ? lookup.reason : 'rotation-conflict');
+            else if (hex(sha256(bytes(lookup.value))) !== raw.authorizer.link) result = fail('rotation-conflict');
           }
         }
       }
-      if (!result.ok) { diagnostics.push({source:'rotation',index,reason:result.reason}); if (result.reason === 'missing-history' || result.reason === 'rotation-fork') return { ...result, diagnostics }; continue; }
+      if (!result.ok) { diagnostics.push({source:'rotation',index,reason:result.reason}); if (result.reason === 'missing-history' || result.reason === 'rotation-fork' || result.reason === 'rotation-conflict') return { ...result, diagnostics }; continue; }
       valid.set(hex(sha256(bytes(result.value))),result.value);
     }
     if (valid.size > 1) return { ...fail('rotation-fork'), diagnostics };
@@ -377,7 +383,7 @@ export function resolveWalletLink(address, links, revocations, ctx) {
     if (!p.ok) {report(diagnostics,'link',index,p.reason);continue;}
     if (p.value.kind !== 'wallet' || p.value.address !== address) continue;
     const v=historicalLink(p.value,ctx,ctx.now);
-    if (!v.ok) {report(diagnostics,'link',index,v.reason);if (v.reason==='missing-history'||v.reason==='rotation-fork') return {...v,diagnostics};continue;}
+    if (!v.ok) {report(diagnostics,'link',index,v.reason);if (v.reason==='missing-history'||v.reason==='rotation-fork'||v.reason==='rotation-conflict') return {...v,diagnostics};continue;}
     valid.set(hex(sha256(bytes(v.value))),/** @type {WalletLink} */ (v.value));
   }
   const sorted=[...valid].sort((a,b) => b[1].issuedAt-a[1].issuedAt || (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));

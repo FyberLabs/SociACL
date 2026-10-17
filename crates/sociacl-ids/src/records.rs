@@ -1040,6 +1040,12 @@ fn revoked_at(
     }
     revoked
 }
+fn required_history_failure(reason: Reason) -> Reason {
+    match reason {
+        Reason::RotationFork | Reason::RotationConflict => reason,
+        _ => Reason::MissingHistory,
+    }
+}
 pub fn verify_rotate(
     v: &Value,
     current_key: &PrincipalId,
@@ -1103,14 +1109,15 @@ fn check_rotate(
         if checked.contains_key(id) {
             continue;
         }
-        let raw = record(ctx.links.get(id).ok_or(Reason::UnknownLink)?, false)?;
+        let raw = record(ctx.links.get(id).ok_or(Reason::MissingHistory)?, false)
+            .map_err(required_history_failure)?;
         if !matches!(raw, IdentityRecord::Wallet(_) | IdentityRecord::Oidc(_))
             || raw.principal() != &rot.principal
             || hex(&Sha256::digest(bytes(&raw))) != *id
         {
-            return Err(Reason::UnknownLink);
+            return Err(Reason::MissingHistory);
         }
-        let v = historical_link(&raw, ctx, rot.issued_at)?;
+        let v = historical_link(&raw, ctx, rot.issued_at).map_err(required_history_failure)?;
         if revoked_at(
             &v,
             ctx.revocations,
@@ -1119,14 +1126,14 @@ fn check_rotate(
             ctx.jwks,
             diagnostics,
         ) {
-            return Err(Reason::RevokedLink);
+            return Err(Reason::RotationConflict);
         }
         checked.insert(id.clone(), v);
     }
-    let authorizer = checked.get(link).ok_or(Reason::UnknownLink)?;
+    let authorizer = checked.get(link).ok_or(Reason::MissingHistory)?;
     if let Authorizer::Wallet { siwe, .. } = &rot.authorizer {
         let IdentityRecord::Wallet(w) = authorizer else {
-            return Err(Reason::UnknownLink);
+            return Err(Reason::MissingHistory);
         };
         siwe_verify(
             siwe,
@@ -1136,10 +1143,11 @@ fn check_rotate(
             ctx.now,
             ctx.policy,
             None,
-        )?;
+        )
+        .map_err(required_history_failure)?;
     } else {
         if !matches!(authorizer, IdentityRecord::Oidc(_)) {
-            return Err(Reason::UnknownLink);
+            return Err(Reason::MissingHistory);
         }
         for (index, (id, raw)) in ctx.links.iter().enumerate() {
             let parsed = match record(raw, false) {
@@ -1163,7 +1171,10 @@ fn check_rotate(
                 Ok(v) => v,
                 Err(e) => {
                     diagnostic(diagnostics, "link", index, e);
-                    if matches!(e, Reason::MissingHistory | Reason::RotationFork) {
+                    if matches!(
+                        e,
+                        Reason::MissingHistory | Reason::RotationFork | Reason::RotationConflict
+                    ) {
                         return Err(e);
                     }
                     continue;
@@ -1243,12 +1254,20 @@ pub fn resolve_current_key(
                         &current,
                         &candidate,
                         &mut diagnostics,
-                    )?;
+                    )
+                    .map_err(|e| {
+                        if e == Reason::WalletRequired {
+                            Reason::RotationConflict
+                        } else {
+                            e
+                        }
+                    })?;
                     if let Authorizer::Wallet { link, .. } = &raw.authorizer {
                         let IdentityRecord::Wallet(own) =
-                            record(ctx.links.get(link).ok_or(Reason::UnknownLink)?, false)?
+                            record(ctx.links.get(link).ok_or(Reason::MissingHistory)?, false)
+                                .map_err(required_history_failure)?
                         else {
-                            return Err(Reason::BadRecord);
+                            return Err(Reason::MissingHistory);
                         };
                         let lookup = resolve_wallet_link(
                             &own.address,
@@ -1259,9 +1278,14 @@ pub fn resolve_current_key(
                         for d in lookup.diagnostics {
                             diagnostic(&mut diagnostics, &d.source, d.index, d.reason);
                         }
-                        let w = lookup.result?;
+                        let w = lookup.result.map_err(|e| match e {
+                            Reason::MissingHistory
+                            | Reason::RotationFork
+                            | Reason::RotationConflict => e,
+                            _ => Reason::RotationConflict,
+                        })?;
                         if link_id(&IdentityRecord::Wallet(w))? != *link {
-                            return Err(Reason::AmbiguousLink);
+                            return Err(Reason::RotationConflict);
                         }
                     }
                     Ok(r)
@@ -1272,7 +1296,12 @@ pub fn resolve_current_key(
                     }
                     Err(e) => {
                         diagnostic(&mut diagnostics, "rotation", index, e);
-                        if matches!(e, Reason::MissingHistory | Reason::RotationFork) {
+                        if matches!(
+                            e,
+                            Reason::MissingHistory
+                                | Reason::RotationFork
+                                | Reason::RotationConflict
+                        ) {
                             return Err(e);
                         }
                     }
@@ -1330,7 +1359,10 @@ pub fn resolve_wallet_link(
                 Ok(_) => unreachable!("historical link preserves kind"),
                 Err(e) => {
                     diagnostic(&mut diagnostics, "link", index, e);
-                    if matches!(e, Reason::MissingHistory | Reason::RotationFork) {
+                    if matches!(
+                        e,
+                        Reason::MissingHistory | Reason::RotationFork | Reason::RotationConflict
+                    ) {
                         return Err(e);
                     }
                 }

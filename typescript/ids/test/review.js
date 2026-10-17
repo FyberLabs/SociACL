@@ -10,9 +10,9 @@ test('hostile link-map values and retained-link arrays never run getters',()=>{
   const hostile={get issuedAt(){reads++;throw Error('getter');},get principal(){reads++;throw Error('getter');}};
   for(const raw of [hostile,new Proxy({},{ownKeys(){throw Error('proxy');}})]) {
     const links=new Map([[rotation.authorizer.link,raw]]);
-    assert.deepEqual(ids.verifyRotate(rotation,ctx.currentKey,{...ctx,links}),{ok:false,reason:'bad-record'});
+    assert.deepEqual(ids.verifyRotate(rotation,ctx.currentKey,{...ctx,links}),{ok:false,reason:'missing-history'});
     const r=ids.resolveCurrentKey(ctx.genesis,[rotation],{...ctx,links});
-    assert.equal(r.ok,true);assert.equal(r.value.currentKey,ctx.genesis);assert.equal(r.diagnostics[0].reason,'bad-record');
+    assert.equal(r.ok,false);assert.equal(r.reason,'missing-history');assert.equal(r.diagnostics[0].reason,'missing-history');assert.equal('value' in r,false);
   }
   const retained=[];Object.defineProperty(retained,0,{get(){reads++;throw Error('getter');}});
   assert.deepEqual(ids.signingBytes({...rotation,retainedLinks:retained}),{ok:false,reason:'bad-record'});

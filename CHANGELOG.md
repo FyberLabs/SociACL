@@ -1,6 +1,18 @@
 # Changelog
 
-## sociacl-ids 0.3.0 — unreleased
+## sociacl-ids 0.4.0 — unreleased
+
+- Freeze authenticated rotation/revocation contradictions with `rotation-conflict`,
+  including a compromised witness backdating revokes signed by a retired key.
+- After authenticating a rotation signature and attestation, fail with
+  `missing-history` when authorizing or retained credential evidence is missing
+  or cannot verify. Never silently discard that rotation and return an older key.
+- Freeze witnessed wallet-ownership and OIDC-eligibility contradictions during
+  history resolution. Preserve diagnostics-only handling of unauthenticated junk.
+- Add shared rollback regressions and clarify complete-history, latest-state
+  checkpoint and Panopticon availability requirements.
+
+## sociacl-ids 0.3.0 — superseded before release
 
 - Authenticate relevant link witnesses before requesting history; reject or skip
   unrelated, future and forged index records without fetching their history.

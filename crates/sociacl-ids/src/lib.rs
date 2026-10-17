@@ -37,6 +37,7 @@ pub enum Reason {
     FutureRecord,
     BadSequence,
     RotationFork,
+    RotationConflict,
     UnknownLink,
     RevokedLink,
     AmbiguousLink,
