@@ -6,6 +6,19 @@
   "messageMax": 280,
   "note": "A request never grants. There is no hosted evaluator. Length-prefixed little-endian UTF-8. Check does not verify a signature. A hop, a hint, a wrap, a request, or an inbox delivery never grants.",
   "factors": ["hop", "hint", "wrap", "inbox", "request"],
+  "signatures": [
+    {
+      "name": "bob-read",
+      "seed": "1111111111111111111111111111111111111111111111111111111111111111",
+      "requester": "0xbob",
+      "source": "room:alpha",
+      "scope": "read",
+      "message": "please",
+      "status": "pending",
+      "publicKey": "d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c9778737",
+      "signature": "498eac6c2d7fe5b6a419bdc727e1ad553bcca5c9a903f65a1cb6fcacdd0cfbd0dad56bf19d8c1b59422cd8dd0c89d9291da0443ea40ed9453b60383e0533250c"
+    }
+  ],
   "ids": [
     {
       "name": "wallet-room",
@@ -543,6 +556,84 @@
       "now": 10,
       "expect": "see",
       "repeat": true
+    },
+    {
+      "name": "dot-object",
+      "mode": "owner",
+      "object": "room.alpha",
+      "owner": "0xalice",
+      "requester": "0xbob",
+      "source": "room.alpha",
+      "scope": "read",
+      "message": "",
+      "status": "pending",
+      "from": 0,
+      "until": 80,
+      "now": 10,
+      "expect": "see"
+    },
+    {
+      "name": "feed-object",
+      "mode": "owner",
+      "object": "rss3:act/1#x",
+      "owner": "0xalice",
+      "requester": "0xbob",
+      "source": "rss3:act/1#x",
+      "scope": "read",
+      "message": "join",
+      "status": "pending",
+      "from": 0,
+      "until": 80,
+      "now": 10,
+      "expect": "see"
+    },
+    {
+      "name": "unsigned",
+      "mode": "owner",
+      "object": "room:alpha",
+      "owner": "0xalice",
+      "requester": "0xbob",
+      "source": "room:alpha",
+      "scope": "read+post",
+      "message": "please",
+      "status": "pending",
+      "from": 0,
+      "until": 80,
+      "now": 10,
+      "expect": "signature",
+      "signature": "missing"
+    },
+    {
+      "name": "bad-signature",
+      "mode": "owner",
+      "object": "room:alpha",
+      "owner": "0xalice",
+      "requester": "0xbob",
+      "source": "room:alpha",
+      "scope": "read+post",
+      "message": "please",
+      "status": "pending",
+      "from": 0,
+      "until": 80,
+      "now": 10,
+      "expect": "signature",
+      "signature": "bad"
+    },
+    {
+      "name": "unenrolled",
+      "mode": "owner",
+      "object": "room:alpha",
+      "owner": "0xalice",
+      "requester": "0xbob",
+      "source": "room:alpha",
+      "scope": "read",
+      "message": "",
+      "status": "pending",
+      "from": 0,
+      "until": 80,
+      "now": 10,
+      "expect": "signature",
+      "signature": "unenrolled"
     }
   ]
 }

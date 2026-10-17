@@ -70,10 +70,10 @@ pub use post::{
 };
 pub use request::{
     accept_access_request, access_request_id, access_request_signing_bytes,
-    canonical_request_accessor, canonical_request_object, AccessRequest, AcceptedAccessRequest,
-    MembersAutoApprove, OwnerGrantRows, ACCESS_MESSAGE_MAX, ACCESS_REQUEST_DOMAIN,
-    ACCESS_REQUEST_ID_DOMAIN, ACCESS_SCOPE_READ, ACCESS_SCOPE_READ_POST, ACCESS_STATUS_PENDING,
-    ACCESS_STATUS_WITHDRAWN,
+    canonical_request_accessor, canonical_request_object, sign_access_request,
+    AcceptedAccessRequest, AccessRequest, MembersAutoApprove, OwnerGrantRows, ACCESS_MESSAGE_MAX,
+    ACCESS_REQUEST_DOMAIN, ACCESS_REQUEST_ID_DOMAIN, ACCESS_SCOPE_READ, ACCESS_SCOPE_READ_POST,
+    ACCESS_STATUS_PENDING, ACCESS_STATUS_WITHDRAWN,
 };
 pub use soul::{
     acl_key, acl_principal_key, encode_key, GunNode, GunNodeKind, GunSoul, S3RCH_ACL, S3RCH_ITEMS,

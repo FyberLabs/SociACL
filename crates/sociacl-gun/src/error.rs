@@ -43,6 +43,10 @@ pub enum GunError {
     PostGrantField,
     #[error("access request field is not canonical")]
     AccessRequestField,
+    #[error("access request signature is not valid")]
+    AccessRequestSignature,
+    #[error("see grant cannot advance")]
+    SeeGrantCeiling,
     #[error("a withdrawn request does not grant")]
     AccessRequestWithdrawn,
     #[error("members auto-approve did not allow")]

@@ -4,8 +4,10 @@
  * grantApprovedRequest runs on the owner's client. Members auto-approve
  * calls checkGroupSee on that client. There is no hosted evaluator.
  * Explicit deny and the policy queue are not this module.
- * Check does not verify a signature. A hop, a hint, a wrap, a request,
- * or an inbox delivery never grants. Hopcap stays 1.
+ * The requester signs the request. The owner's client verifies that
+ * signature against the enrolled key before any write. Grant rows
+ * stay unsigned. A hop, a hint, a wrap, a request, or an inbox
+ * delivery never grants. Hopcap stays 1.
  *
  * @typedef {{
  *   requester: string,
@@ -13,6 +15,7 @@
  *   scope: string,
  *   message: string,
  *   status: string,
+ *   signature?: Uint8Array,
  * }} AccessRequestInput
  * @typedef {{
  *   requester: string,
@@ -30,6 +33,7 @@
  *   statePostGrant(owner: string, grant: { object: string, accessor: string, from: number, until: number }): void,
  *   seeGrant(object: string, accessor: string): { soul?: string, owner?: string, hamState?: number, grant?: { object?: string, accessor?: string, from?: number, until?: number, stated?: number } } | undefined,
  *   postGrant(object: string, accessor: string): { soul?: string, owner?: string, hamState?: number, grant?: { object?: string, accessor?: string, from?: number, until?: number, stated?: number } } | undefined,
+ *   enrolledKey(principal: string): Uint8Array | undefined,
  *   checkGroupSee?: (predicate: string, object: string, accessor: string, now: number) => { allowed: boolean, reason: string },
  * }} RequestGraph
  * @typedef {{
@@ -41,12 +45,19 @@
  *   postSigningBytes: Uint8Array | null,
  * } | {
  *   granted: false,
- *   reason: "withdrawn" | "owner" | "missing" | "not-member",
+ *   reason: "withdrawn" | "owner" | "missing" | "not-member" | "signature",
  * }} AccessApproval
  */
 
-import { createHash } from "node:crypto";
-import { canonicalAccessorId, nextPostHam, postGrantSigningBytes } from "./post.js";
+import { createHash, createPrivateKey, createPublicKey, sign, verify } from "node:crypto";
+import { nextPostHam, postGrantSigningBytes } from "./post.js";
+
+const PKCS8_PREFIX = Uint8Array.from([
+  0x30, 0x2e, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x04, 0x22, 0x04, 0x20,
+]);
+const SPKI_PREFIX = Uint8Array.from([
+  0x30, 0x2a, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x03, 0x21, 0x00,
+]);
 
 export const ACCESS_REQUEST_DOMAIN = "s3rch-access-request-v1";
 export const ACCESS_REQUEST_ID_DOMAIN = "s3rch-request";
@@ -86,10 +97,26 @@ function mayAliasToItemSoul(id) {
 /** @param {string} id */
 function closedSource(id) {
   const text = String(id).trim();
-  if (text.includes("://")) return true;
+  if (isHttpUrlLeaf(text)) return true;
   if (text === "s3rch/meta") return true;
   if (text === "s3rch/acl" || text.startsWith("s3rch/acl/")) return true;
   return false;
+}
+
+/** Same HTTP(S) leaf predicate as the Rust encoder. `ipfs://` is not one. @param {string} id */
+function isHttpUrlLeaf(id) {
+  if (!id.startsWith("http://") && !id.startsWith("https://")) return false;
+  const hash = id.indexOf("#");
+  const body = hash === -1 ? id : id.slice(0, hash);
+  const mark = body.indexOf("://");
+  if (mark < 0) return false;
+  const scheme = body.slice(0, mark).toLowerCase();
+  if (scheme !== "http" && scheme !== "https") return false;
+  const rest = body.slice(mark + 3);
+  if (!rest) return false;
+  const slash = rest.indexOf("/");
+  const hostport = slash === -1 ? rest : rest.slice(0, slash);
+  return hostport.length > 0;
 }
 
 /**
@@ -97,7 +124,16 @@ function closedSource(id) {
  * @param {string} requester
  */
 export function canonicalRequestAccessor(requester) {
-  const id = canonicalAccessorId(requester);
+  const text = String(requester ?? "").trim();
+  if (!text) throw new Error(FIELD);
+  const parts = text
+    .split("/")
+    .map((part) => part.trim())
+    .filter((part) => part !== "");
+  const id =
+    parts.length === 3 && parts[0] === "s3rch" && parts[1] === "users"
+      ? encodeKey(parts[2] ?? "")
+      : encodeKey(text).replace(/\//g, "_");
   if (!id) throw new Error(FIELD);
   return id;
 }
@@ -191,8 +227,57 @@ function canonicalStatus(status) {
 /** @param {string} message */
 function canonicalMessage(message) {
   if (typeof message !== "string") throw new Error(FIELD);
+  for (let i = 0; i < message.length; i += 1) {
+    const unit = message.charCodeAt(i);
+    if (unit >= 0xd800 && unit <= 0xdfff) throw new Error(FIELD);
+  }
   if (Array.from(message).length > ACCESS_MESSAGE_MAX) throw new Error(FIELD);
   return message;
+}
+
+/** @param {Uint8Array} raw */
+function publicKeyFromRaw(raw) {
+  const bytes = new Uint8Array(raw);
+  const spki = new Uint8Array(SPKI_PREFIX.length + bytes.length);
+  spki.set(SPKI_PREFIX, 0);
+  spki.set(bytes, SPKI_PREFIX.length);
+  return createPublicKey({ key: spki, format: "der", type: "spki" });
+}
+
+/**
+ * Ed25519 signature over accessRequestSigningBytes. Does not grant.
+ * @param {import("node:crypto").KeyObject} privateKey
+ * @param {AccessRequestInput} request
+ */
+export function signAccessRequest(privateKey, request) {
+  return new Uint8Array(sign(null, accessRequestSigningBytes(request), privateKey));
+}
+
+/**
+ * @param {Uint8Array | undefined} publicKey
+ * @param {AccessRequestInput} request
+ */
+function requestSignatureOk(publicKey, request) {
+  const signature = request.signature;
+  if (!publicKey || publicKey.length !== 32 || !(signature instanceof Uint8Array) || signature.length !== 64) {
+    return false;
+  }
+  try {
+    return verify(null, accessRequestSigningBytes(request), publicKeyFromRaw(publicKey), signature);
+  } catch {
+    return false;
+  }
+}
+
+/** @param {Uint8Array} seed */
+export function requestIssuerFromSeed(seed) {
+  const seedBytes = new Uint8Array(seed);
+  const pkcs8 = new Uint8Array(PKCS8_PREFIX.length + seedBytes.length);
+  pkcs8.set(PKCS8_PREFIX, 0);
+  pkcs8.set(seedBytes, PKCS8_PREFIX.length);
+  const privateKey = createPrivateKey({ key: pkcs8, format: "der", type: "pkcs8" });
+  const spki = new Uint8Array(createPublicKey(privateKey).export({ type: "spki", format: "der" }));
+  return { privateKey, publicKey: spki.slice(spki.length - 32) };
 }
 
 /**
@@ -226,6 +311,15 @@ export function acceptAccessRequest(request) {
   return { requester, source, scope, message, status, id, signingBytes };
 }
 
+/** @param {{ hamState?: number } | undefined} edge */
+function seeCanAdvance(edge) {
+  if (!edge) return true;
+  const ham = edge.hamState ?? 0;
+  if (typeof ham !== "number" || !Number.isFinite(ham) || ham < 0) return false;
+  const next = ham + 1;
+  return next > ham && Number.isSafeInteger(next);
+}
+
 /**
  * @param {{ from: number, until: number }} window
  */
@@ -247,11 +341,13 @@ function canonicalWindow(window) {
  */
 export function grantApprovedRequest(graph, owner, request, window, members) {
   const accepted = acceptAccessRequest(request);
+  const key = typeof graph.enrolledKey === "function" ? graph.enrolledKey(accepted.requester) : undefined;
+  if (!requestSignatureOk(key, request)) return { granted: false, reason: "signature" };
   if (accepted.status !== ACCESS_STATUS_PENDING) return { granted: false, reason: "withdrawn" };
   if (!canonicalWindow(window)) throw new Error(FIELD);
   const record = typeof graph.objectRecord === "function" ? graph.objectRecord(request.source) : undefined;
   if (!record?.id || record.owner == null || record.owner === "") return { granted: false, reason: "missing" };
-  if (canonicalAccessorId(record.owner) !== canonicalAccessorId(owner)) {
+  if (canonicalRequestAccessor(record.owner) !== canonicalRequestAccessor(owner)) {
     return { granted: false, reason: "owner" };
   }
   if (members) {
@@ -262,6 +358,8 @@ export function grantApprovedRequest(graph, owner, request, window, members) {
     if (!see || see.allowed !== true) return { granted: false, reason: "not-member" };
   }
   const accessor = accepted.requester;
+  const prevSee = graph.seeGrant(record.id, accessor);
+  if (!seeCanAdvance(prevSee)) throw new Error("see grant cannot advance");
   if (accepted.scope === ACCESS_SCOPE_READ_POST) {
     const prev = graph.postGrant(record.id, accessor);
     if (nextPostHam(prev?.hamState, false) === undefined) {
@@ -274,6 +372,8 @@ export function grantApprovedRequest(graph, owner, request, window, members) {
     from: window.from,
     until: window.until,
   });
+  const seeNow = graph.seeGrant(record.id, accessor);
+  if (!seeNow?.grant || seeNow.grant.stated !== 1) throw new Error("see grant cannot advance");
   /** @type {NonNullable<ReturnType<RequestGraph["postGrant"]>> | null} */
   let postEdge = null;
   /** @type {Uint8Array | null} */
@@ -311,7 +411,7 @@ export function grantApprovedRequest(graph, owner, request, window, members) {
       },
     });
   }
-  const see = graph.seeGrant(record.id, accessor);
+  const see = seeNow;
   if (!see?.grant) return { granted: false, reason: "missing" };
   return {
     granted: true,

@@ -20,13 +20,15 @@
 //!
 //! Grant rows use the in-graph object id (`canonical_object_id`) and
 //! the canonical accessor id, the same ids see and post already write.
-//! This check does not verify a signature. The request bytes and the
-//! post row's `post_grant_signing_bytes` are what a later signature can
+//! The requester signs the request bytes. The owner's client verifies
+//! that signature against the requester's enrolled key before any
+//! write. Grant rows stay unsigned. The post row's
+//! `post_grant_signing_bytes` are what a later owner signature can
 //! cover. A hop, a hint, a wrap, a request, or an inbox delivery never
 //! grants. Hopcap stays 1.
 
 use sha2::{Digest, Sha256};
-use sociacl_core::Timestamp;
+use sociacl_core::{AttestationSig, IssuerSecret, Timestamp};
 
 use crate::mesh::{closed_reason, is_item_shaped, may_alias_to_item_soul};
 use crate::soul::{acl_key, canonical_accessor_id, encode_key, GunSoul};
@@ -67,6 +69,9 @@ pub struct AccessRequest {
     pub scope: String,
     pub message: String,
     pub status: String,
+    /// Ed25519 signature over [`access_request_signing_bytes`].
+    /// Empty is not a grant. Not an owner signature on a grant row.
+    pub signature: Vec<u8>,
 }
 
 /// Canonical request. `requester` is the accessor id. `source` is the
@@ -146,7 +151,7 @@ pub fn access_request_id(requester: &str, source: &str) -> Result<String, GunErr
     Ok(sha256_hex(&bytes))
 }
 
-/// Length-prefixed bytes a later signature can cover.
+/// Length-prefixed bytes the requester signs.
 ///
 /// Order: domain `s3rch-access-request-v1`, the request id, scope,
 /// message, status. Lengths are uint32 little-endian. This function
@@ -185,6 +190,16 @@ pub fn accept_access_request(request: &AccessRequest) -> Result<AcceptedAccessRe
     })
 }
 
+/// Ed25519 signature over [`access_request_signing_bytes`].
+/// The requester holds the secret. This does not grant.
+pub fn sign_access_request(
+    secret: &IssuerSecret,
+    request: &AccessRequest,
+) -> Result<Vec<u8>, GunError> {
+    let bytes = access_request_signing_bytes(request)?;
+    Ok(secret.sign(&bytes).0.to_vec())
+}
+
 impl MeshSeeGraph {
     /// Owner's client. Writes grant rows for an approved pending request.
     ///
@@ -193,7 +208,9 @@ impl MeshSeeGraph {
     /// already approved. A withdrawn request writes nothing. A caller who
     /// is not the object owner writes nothing. A request, hop, hint, wrap,
     /// or inbox delivery is not an approval. Rows use the stored object
-    /// id and the canonical accessor id. No signature is verified.
+    /// id and the canonical accessor id. The requester signature is
+    /// checked against the enrolled key before any write. Grant rows
+    /// stay unsigned.
     pub fn grant_approved_request(
         &mut self,
         owner: impl AsRef<str>,
@@ -203,6 +220,12 @@ impl MeshSeeGraph {
         members: Option<MembersAutoApprove>,
     ) -> Result<OwnerGrantRows, GunError> {
         let accepted = accept_access_request(request)?;
+        verify_request_signature(
+            self,
+            &accepted.requester,
+            &accepted.signing_bytes,
+            &request.signature,
+        )?;
         if accepted.status != ACCESS_STATUS_PENDING {
             return Err(GunError::AccessRequestWithdrawn);
         }
@@ -229,6 +252,11 @@ impl MeshSeeGraph {
             }
         }
         let accessor = accepted.requester.clone();
+        if let Some(edge) = self.grant_edge(&stored_id, &accessor) {
+            if edge.ham_state == u64::MAX {
+                return Err(GunError::SeeGrantCeiling);
+            }
+        }
         if accepted.scope == ACCESS_SCOPE_READ_POST {
             if let Some(edge) = self.post_edge(&stored_id, &accessor) {
                 if edge.ham_state.saturating_add(1) > JS_SAFE_INTEGER_MAX {
@@ -240,6 +268,13 @@ impl MeshSeeGraph {
             &object_owner,
             MeshSeeGrant::live(&stored_id, &accessor, from, until),
         )?;
+        let see_live = self
+            .grant_edge(&stored_id, &accessor)
+            .map(|edge| edge.grant.stated == 1)
+            .unwrap_or(false);
+        if !see_live {
+            return Err(GunError::SeeGrantCeiling);
+        }
         let post = if accepted.scope == ACCESS_SCOPE_READ_POST {
             self.state_post_grant(
                 &object_owner,
@@ -269,6 +304,24 @@ impl MeshSeeGraph {
             post_signing_bytes,
         })
     }
+}
+
+fn verify_request_signature(
+    graph: &MeshSeeGraph,
+    requester: &str,
+    bytes: &[u8],
+    signature: &[u8],
+) -> Result<(), GunError> {
+    let Some(key) = graph.enrolled_key(requester) else {
+        return Err(GunError::AccessRequestSignature);
+    };
+    let Ok(sig) = AttestationSig::from_slice(signature) else {
+        return Err(GunError::AccessRequestSignature);
+    };
+    if !key.verify(bytes, &sig) {
+        return Err(GunError::AccessRequestSignature);
+    }
+    Ok(())
 }
 
 fn canonical_scope(scope: &str) -> Result<String, GunError> {

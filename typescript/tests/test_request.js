@@ -17,9 +17,12 @@ import {
   canonicalRequestAccessor,
   checkPost,
   factorGrants,
+  aclKey,
   grantApprovedRequest,
   issuerFromSeed,
   postGrantSigningBytes,
+  requestIssuerFromSeed,
+  signAccessRequest,
 } from "../src/group.js";
 import { canonicalAccessorId } from "../src/post.js";
 import { checkSee } from "../src/gun.js";
@@ -89,16 +92,36 @@ function prepare(graph, row) {
   }
 }
 
+function attachSignature(graph, row, request) {
+  const mode = row.signature ?? "ok";
+  if (mode === "missing") return request;
+  const bob = signer("0xbob");
+  if (mode !== "unenrolled") graph.enrollSigner("0xbob", bob.publicKey);
+  let signature;
+  try {
+    signature = signAccessRequest(bob.privateKey, request);
+  } catch (err) {
+    if (err instanceof Error && err.message === "access request field is not canonical") return request;
+    throw err;
+  }
+  if (mode === "bad") signature[0] ^= 0xff;
+  return { ...request, signature };
+}
+
 function approve(graph, row) {
   const members =
     row.mode === "members"
       ? { predicate: row.queryPredicate ?? row.predicate, now: row.now }
       : undefined;
+  const request = attachSignature(graph, row, requestOf(row));
   try {
-    return grantApprovedRequest(graph, row.caller ?? row.owner, requestOf(row), { from: row.from, until: row.until }, members);
+    return grantApprovedRequest(graph, row.caller ?? row.owner, request, { from: row.from, until: row.until }, members);
   } catch (err) {
     if (err instanceof Error && err.message === "access request field is not canonical") {
       return { granted: false, reason: "field" };
+    }
+    if (err instanceof Error && err.message === "see grant cannot advance") {
+      return { granted: false, reason: "see" };
     }
     throw err;
   }
@@ -118,6 +141,10 @@ function assertGranted(graph, row, result, ham) {
   assert.equal(result.see.grant.stated, 1);
   assert.equal(result.see.hamState, ham);
   assert.equal(result.see.owner, row.owner);
+  assert.equal(
+    result.see.soul,
+    `s3rch/acl/${canonicalRequestAccessor(row.owner)}/${aclKey(row.object)}/${accessor}`,
+  );
   const see = seeResult(graph, row.source, row.requester, row.now);
   assert.equal(see.allowed, true, row.name);
   assert.equal(see.reason, "delegate");
@@ -176,6 +203,103 @@ test("rejected spellings do not encode", () => {
   for (const row of fixture.rejected) {
     assert.throws(() => accessRequestSigningBytes(requestOf(row)), /access request field is not canonical/, row.name);
     assert.throws(() => acceptAccessRequest(requestOf(row)), /access request field is not canonical/, row.name);
+  }
+});
+
+test("user soul segments and a non-http uri share one id", () => {
+  const bob = accessRequestId("bob", "room:alpha");
+  assert.equal(accessRequestId("s3rch/users/ bob ", "room:alpha"), bob);
+  assert.equal(accessRequestId("s3rch/users//bob", "room:alpha"), bob);
+  const ipfs = accessRequestId("0xbob", "ipfs://cid");
+  assert.equal(ipfs.length, 64);
+  assert.notEqual(ipfs, accessRequestId("0xbob", "room:alpha"));
+  assert.throws(
+    () => accessRequestId("0xbob", "https://gi.rss3.io/decentralized/0xalice"),
+    /access request field is not canonical/,
+  );
+});
+
+test("an unpaired surrogate is not a message", () => {
+  assert.throws(
+    () =>
+      accessRequestSigningBytes({
+        requester: "0xbob",
+        source: "room:alpha",
+        scope: "read",
+        message: "\ud800",
+        status: "pending",
+      }),
+    /access request field is not canonical/,
+  );
+});
+
+test("a cancelled see at the ham ceiling does not grow a post", () => {
+  const graph = new MemoryGroupGraph();
+  graph.putObject("room:alpha", "0xalice");
+  const bob = signer("0xbob");
+  graph.enrollSigner("0xbob", bob.publicKey);
+  graph.grants.set("0xalice\0room:alpha\0bob", {
+    object: "room:alpha",
+    accessor: "0xbob",
+    from: 0,
+    until: 80,
+    stated: 0,
+    hamState: Number.MAX_VALUE,
+    owner: "0xalice",
+  });
+  const request = {
+    requester: "0xbob",
+    source: "room:alpha",
+    scope: "read+post",
+    message: "",
+    status: "pending",
+    signature: signAccessRequest(bob.privateKey, {
+      requester: "0xbob",
+      source: "room:alpha",
+      scope: "read+post",
+      message: "",
+      status: "pending",
+    }),
+  };
+  assert.throws(
+    () => grantApprovedRequest(graph, "0xalice", request, { from: 0, until: 80 }),
+    /see grant cannot advance/,
+  );
+  assert.equal(graph.postGrant("room:alpha", "0xbob"), undefined);
+  assert.equal(graph.seeGrant("room:alpha", "0xbob").grant.stated, 0);
+});
+
+test("requester signature matches the enrolled key", () => {
+  for (const row of fixture.signatures) {
+    const seed = Uint8Array.from(row.seed.match(/../g).map((byte) => Number.parseInt(byte, 16)));
+    const issuer = requestIssuerFromSeed(seed);
+    assert.equal(hex(issuer.publicKey), row.publicKey, row.name);
+    const request = {
+      requester: row.requester,
+      source: row.source,
+      scope: row.scope,
+      message: row.message,
+      status: row.status,
+    };
+    const signature = signAccessRequest(issuer.privateKey, request);
+    assert.equal(hex(signature), row.signature, row.name);
+    const graph = new MemoryGroupGraph();
+    graph.putObject(row.source, "0xalice");
+    graph.enrollSigner(row.requester, issuer.publicKey);
+    const granted = grantApprovedRequest(graph, "0xalice", { ...request, signature }, { from: 0, until: 80 });
+    assert.equal(granted.granted, true, row.name);
+    const bad = new Uint8Array(signature);
+    bad[0] ^= 0xff;
+    const fresh = new MemoryGroupGraph();
+    fresh.putObject(row.source, "0xalice");
+    fresh.enrollSigner(row.requester, issuer.publicKey);
+    const denied = grantApprovedRequest(fresh, "0xalice", { ...request, signature: bad }, { from: 0, until: 80 });
+    assert.equal(denied.granted, false, row.name);
+    assert.equal(denied.reason, "signature");
+    const unsigned = grantApprovedRequest(fresh, "0xalice", request, { from: 0, until: 80 });
+    assert.equal(unsigned.reason, "signature");
+    assert.equal(fresh.seeGrant(row.source, row.requester), undefined);
+    assert.equal(fresh.postGrant(row.source, row.requester), undefined);
   }
 });
 

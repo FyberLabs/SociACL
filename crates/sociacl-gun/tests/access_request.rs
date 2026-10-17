@@ -4,10 +4,11 @@
 use sociacl_core::{AttestationChannel, IssuerSecret, Timestamp};
 use sociacl_gun::{
     accept_access_request, access_request_id, access_request_signing_bytes, factor_grants,
-    post_grant_signing_bytes, AccessRequest, GroupPredicate, GunError, HandoffHint, HopFactor,
-    MembersAutoApprove, MeshSeeGraph, OwnerGrantRows, ACCESS_MESSAGE_MAX, ACCESS_REQUEST_DOMAIN,
-    ACCESS_REQUEST_ID_DOMAIN, ACCESS_SCOPE_READ, ACCESS_SCOPE_READ_POST, ACCESS_STATUS_PENDING,
-    ACCESS_STATUS_WITHDRAWN, MESH_REASON_DELEGATE, MESH_REASON_MISSING, MESH_REASON_POST,
+    grant_soul, post_grant_signing_bytes, sign_access_request, AccessRequest, GroupPredicate,
+    GunAclEdge, GunError, HandoffHint, HopFactor, MembersAutoApprove, MeshSeeGrant, MeshSeeGraph,
+    OwnerGrantRows, ACCESS_MESSAGE_MAX, ACCESS_REQUEST_DOMAIN, ACCESS_REQUEST_ID_DOMAIN,
+    ACCESS_SCOPE_READ, ACCESS_SCOPE_READ_POST, ACCESS_STATUS_PENDING, ACCESS_STATUS_WITHDRAWN,
+    MESH_REASON_DELEGATE, MESH_REASON_MISSING, MESH_REASON_POST,
 };
 
 const VECTORS: &str = include_str!("../../../vectors/mesh/access-request.json");
@@ -21,10 +22,25 @@ struct Fixture {
     statuses: Vec<String>,
     message_max: usize,
     factors: Vec<String>,
+    signatures: Vec<SignatureCase>,
     ids: Vec<IdCase>,
     signing: Vec<SigningCase>,
     rejected: Vec<SigningCase>,
     approvals: Vec<ApprovalCase>,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SignatureCase {
+    name: String,
+    seed: String,
+    requester: String,
+    source: String,
+    scope: String,
+    message: String,
+    status: String,
+    public_key: String,
+    signature: String,
 }
 
 #[derive(serde::Deserialize)]
@@ -91,6 +107,8 @@ struct ApprovalCase {
     hint: bool,
     #[serde(default)]
     hop: bool,
+    #[serde(default)]
+    signature: Option<String>,
 }
 
 fn signer(name: &str) -> IssuerSecret {
@@ -127,6 +145,7 @@ fn request_of(
         scope: scope.to_string(),
         message: message.to_string(),
         status: status.to_string(),
+        signature: Vec::new(),
     }
 }
 
@@ -159,6 +178,8 @@ fn reason_of(err: GunError) -> String {
         GunError::AccessRequestNotMember => "not-member".to_string(),
         GunError::AclOwnerOnly => "owner".to_string(),
         GunError::ObjectNotInGraph => "missing".to_string(),
+        GunError::AccessRequestSignature => "signature".to_string(),
+        GunError::SeeGrantCeiling => "see".to_string(),
         other => panic!("unexpected access-request error: {other}"),
     }
 }
@@ -198,14 +219,35 @@ fn prepare(graph: &mut MeshSeeGraph, case: &ApprovalCase) {
     }
 }
 
+fn attach_signature(graph: &mut MeshSeeGraph, case: &ApprovalCase, request: &mut AccessRequest) {
+    let mode = case.signature.as_deref().unwrap_or("ok");
+    if mode == "missing" {
+        return;
+    }
+    let secret = signer("0xbob");
+    if mode != "unenrolled" {
+        graph
+            .enroll_signer("0xbob", secret.verify_key())
+            .expect("enroll requester");
+    }
+    let Ok(mut signature) = sign_access_request(&secret, request) else {
+        return;
+    };
+    if mode == "bad" {
+        signature[0] ^= 0xff;
+    }
+    request.signature = signature;
+}
+
 fn approve(graph: &mut MeshSeeGraph, case: &ApprovalCase) -> Result<OwnerGrantRows, String> {
-    let request = request_of(
+    let mut request = request_of(
         &case.requester,
         &case.source,
         &case.scope,
         &case.message,
         &case.status,
     );
+    attach_signature(graph, case, &mut request);
     let caller = case.caller.as_deref().unwrap_or(&case.owner);
     let members = if case.mode == "members" {
         let query = case
@@ -249,6 +291,10 @@ fn assert_granted(graph: &MeshSeeGraph, case: &ApprovalCase, rows: &OwnerGrantRo
     assert_eq!(rows.see.grant.stated, 1);
     assert_eq!(rows.see.ham_state, ham);
     assert_eq!(rows.see.owner, case.owner);
+    assert_eq!(
+        rows.see.soul.as_node_id().as_str(),
+        grant_soul(&case.owner, &case.object, &accessor).as_str()
+    );
     let see = graph.check_see(
         &case.source,
         &case.requester,
@@ -418,4 +464,112 @@ fn owner_client_writes_rows_and_a_request_does_not() {
             }
         }
     }
+}
+
+#[test]
+fn user_soul_segments_and_non_http_uris_share_one_id() {
+    let bob = access_request_id("bob", "room:alpha").unwrap();
+    assert_eq!(
+        access_request_id("s3rch/users/ bob ", "room:alpha").unwrap(),
+        bob
+    );
+    assert_eq!(
+        access_request_id("s3rch/users//bob", "room:alpha").unwrap(),
+        bob
+    );
+    let ipfs = access_request_id("0xbob", "ipfs://cid").unwrap();
+    assert_eq!(ipfs.len(), 64);
+    assert_ne!(ipfs, access_request_id("0xbob", "room:alpha").unwrap());
+    assert!(access_request_id("0xbob", "https://gi.rss3.io/decentralized/0xalice").is_err());
+}
+
+fn decode_hex(text: &str) -> Vec<u8> {
+    (0..text.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&text[i..i + 2], 16).unwrap())
+        .collect()
+}
+
+#[test]
+fn requester_signature_matches_the_enrolled_key() {
+    let fixture = fixture();
+    for case in &fixture.signatures {
+        let seed = decode_hex(&case.seed);
+        let secret = IssuerSecret::from_bytes(seed.as_slice().try_into().unwrap());
+        assert_eq!(
+            hex(&secret.verify_key().0),
+            case.public_key,
+            "{}",
+            case.name
+        );
+        let mut request = request_of(
+            &case.requester,
+            &case.source,
+            &case.scope,
+            &case.message,
+            &case.status,
+        );
+        let signed = sign_access_request(&secret, &request).unwrap();
+        assert_eq!(hex(&signed), case.signature, "{}", case.name);
+        request.signature = signed;
+        let mut graph = MeshSeeGraph::new();
+        graph.put_object(&case.source, "0xalice");
+        graph
+            .enroll_signer(&case.requester, secret.verify_key())
+            .unwrap();
+        let rows = graph
+            .grant_approved_request("0xalice", &request, 0, 80, None)
+            .unwrap();
+        assert_eq!(rows.see.grant.stated, 1);
+        request.signature[0] ^= 0xff;
+        assert!(graph
+            .grant_approved_request("0xalice", &request, 0, 80, None)
+            .is_err());
+        let mut unsigned = request_of(
+            &case.requester,
+            &case.source,
+            &case.scope,
+            &case.message,
+            &case.status,
+        );
+        unsigned.signature.clear();
+        let mut fresh = MeshSeeGraph::new();
+        fresh.put_object(&case.source, "0xalice");
+        fresh
+            .enroll_signer(&case.requester, secret.verify_key())
+            .unwrap();
+        assert!(fresh
+            .grant_approved_request("0xalice", &unsigned, 0, 80, None)
+            .is_err());
+        assert!(fresh.grant_edge(&case.source, &case.requester).is_none());
+    }
+}
+
+#[test]
+fn cancelled_see_at_ham_ceiling_does_not_grow_a_post() {
+    let mut graph = MeshSeeGraph::new();
+    graph.put_object("room:alpha", "0xalice");
+    let bob = signer("0xbob");
+    graph.enroll_signer("0xbob", bob.verify_key()).unwrap();
+    graph.merge_edge(GunAclEdge::new(
+        "0xalice",
+        MeshSeeGrant {
+            object: "room:alpha".into(),
+            accessor: "0xbob".into(),
+            from: Timestamp(0),
+            until: Timestamp(80),
+            stated: 0,
+        },
+        u64::MAX,
+    ));
+    let mut request = request_of("0xbob", "room:alpha", "read+post", "", "pending");
+    request.signature = sign_access_request(&bob, &request).unwrap();
+    let err = graph
+        .grant_approved_request("0xalice", &request, 0, 80, None)
+        .unwrap_err();
+    assert_eq!(reason_of(err), "see");
+    assert!(graph.post_edge("room:alpha", "0xbob").is_none());
+    let see = graph.grant_edge("room:alpha", "0xbob").unwrap();
+    assert_eq!(see.grant.stated, 0);
+    assert_eq!(see.ham_state, u64::MAX);
 }

@@ -144,6 +144,8 @@ export {
   canonicalRequestAccessor,
   canonicalRequestObject,
   grantApprovedRequest,
+  requestIssuerFromSeed,
+  signAccessRequest,
 } from "./request.js";
 
 const PKCS8_PREFIX = Uint8Array.from([
@@ -1054,7 +1056,7 @@ export class MemoryGroupGraph {
       const owner = grant.owner ?? "";
       if (!ownerNow || aclPrincipalKey(owner) !== aclPrincipalKey(ownerNow)) continue;
       return {
-        soul: `s3rch/acl/${aclPrincipalKey(owner)}/${requested}/${who}`,
+        soul: `s3rch/acl/${aclPrincipalKey(owner)}/${aclKey(requested)}/${who}`,
         owner,
         hamState: grant.hamState ?? 0,
         grant: {

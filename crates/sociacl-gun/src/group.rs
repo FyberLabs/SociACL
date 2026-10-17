@@ -415,6 +415,15 @@ impl MeshSeeGraph {
         Ok(())
     }
 
+    /// Verify key enrolled for this principal. Lookup uses the canonical
+    /// accessor id. A missing enrollment is not a key.
+    pub fn enrolled_key(&self, principal: &str) -> Option<VerifyKey> {
+        self.groups
+            .enrolled
+            .get(&acl_principal_key(principal))
+            .copied()
+    }
+
     /// One side of a direct membership. Live only when both the member
     /// and the set owner have stated it, and both assents have observed
     /// every cancel on the row.

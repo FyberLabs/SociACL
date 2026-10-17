@@ -535,6 +535,13 @@ export type AccessRequest = {
   scope: string;
   message: string;
   status: string;
+  /**
+   * Ed25519 signature over accessRequestSigningBytes.
+   * 64 bytes. The owner's client checks it against the
+   * requester's enrolled key. Absent is not a grant.
+   * This is not an owner signature on a grant row.
+   */
+  signature?: Uint8Array;
 };
 
 /** Canonical request. requester is the accessor id. source is the object key. id is 64 lowercase hex. */
@@ -576,7 +583,7 @@ export type AccessApproval =
   | ({ granted: true } & OwnerGrantRows)
   | {
       granted: false;
-      reason: "withdrawn" | "owner" | "missing" | "not-member";
+      reason: "withdrawn" | "owner" | "missing" | "not-member" | "signature";
     };
 
 /** Length-prefixed domain for accessRequestSigningBytes. */
@@ -641,19 +648,24 @@ export function acceptAccessRequest(request: AccessRequest): AcceptedAccessReque
 /**
  * Owner's client. Writes a see grant for an approved pending request,
  * and a post grant when the scope is read+post. Rows use the in-graph
- * object id and the canonical accessor id. members evaluates
- * checkGroupSee and writes only when that allows. A withdrawn request
- * writes nothing. A caller who is not the object owner writes nothing.
+ * object id and the canonical accessor id. Before any write, the
+ * requester signature over accessRequestSigningBytes must verify
+ * under the enrolled key for that requester. An unsigned or badly
+ * signed request writes nothing. members, when supplied, runs
+ * checkGroupSee and writes only when that allows. checkGroupSee is
+ * optional when members is omitted. A withdrawn request writes
+ * nothing. A caller who is not the object owner writes nothing.
  * A hop, a hint, a wrap, a request, or an inbox delivery is not an
  * approval. There is no hosted evaluator. Explicit deny and the policy
- * queue are not this function. No signature is verified.
+ * queue are not this function. Grant rows stay unsigned.
  */
 export function grantApprovedRequest(
   graph: SeeAcl & {
     objectRecord(
       object: CheckObjectId,
     ): { id: CheckObjectId; owner: AccessorId } | undefined;
-    checkGroupSee(
+    enrolledKey(principal: AccessorId): Uint8Array | undefined;
+    checkGroupSee?(
       predicate: "same-group" | "named-circle",
       object: CheckObjectId,
       accessor: AccessorId,
