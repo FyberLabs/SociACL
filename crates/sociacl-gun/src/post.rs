@@ -20,7 +20,9 @@ use std::cmp::Ordering;
 use sociacl_core::{NodeId, Timestamp};
 
 use crate::mesh::{accessor_names, object_names};
-use crate::soul::{acl_key, acl_principal_key, ascii_trim, S3RCH_ACL, S3RCH_ROOT};
+use crate::soul::{
+    acl_key, acl_principal_key, ascii_trim, object_id_rejected, S3RCH_ACL, S3RCH_ROOT,
+};
 use crate::{
     GunError, MeshCheckResult, MeshSeeGraph, MESH_REASON_CANCELLED, MESH_REASON_MISSING,
     MESH_REASON_OWNER,
@@ -214,7 +216,12 @@ fn equal_ham_post_order(left: &GunPostEdge, right: &GunPostEdge) -> Ordering {
     if let Some(order) = narrower_window(&left.grant, &right.grant) {
         return order;
     }
-    canonical_post_bytes(left).cmp(&canonical_post_bytes(right))
+    match (canonical_post_bytes(left), canonical_post_bytes(right)) {
+        (Some(left_bytes), Some(right_bytes)) => left_bytes.cmp(&right_bytes),
+        (Some(_), None) => Ordering::Less,
+        (None, Some(_)) => Ordering::Greater,
+        (None, None) => Ordering::Equal,
+    }
 }
 
 fn narrower_window(left: &MeshPostGrant, right: &MeshPostGrant) -> Option<Ordering> {
@@ -231,29 +238,24 @@ fn narrower_window(left: &MeshPostGrant, right: &MeshPostGrant) -> Option<Orderi
     }
 }
 
-fn canonical_post_bytes(edge: &GunPostEdge) -> Vec<u8> {
+fn canonical_post_bytes(edge: &GunPostEdge) -> Option<Vec<u8>> {
     post_grant_signing_bytes(&edge.grant, edge.ham_state)
-        .unwrap_or_else(|_| fallback_post_bytes(edge))
+        .ok()
+        .or_else(|| fallback_post_bytes(edge))
 }
 
-fn fallback_post_bytes(edge: &GunPostEdge) -> Vec<u8> {
+fn fallback_post_bytes(edge: &GunPostEdge) -> Option<Vec<u8>> {
+    let owner = acl_principal_key(&edge.owner)?;
+    let accessor = acl_principal_key(&edge.grant.accessor)?;
     let mut buf = b"sociacl-post-grant-fallback-v1\0".to_vec();
-    push_str(
-        &mut buf,
-        acl_principal_key(&edge.owner).as_deref().unwrap_or(""),
-    );
+    push_str(&mut buf, &owner);
     push_str(&mut buf, &acl_key(&edge.grant.object));
-    push_str(
-        &mut buf,
-        acl_principal_key(&edge.grant.accessor)
-            .as_deref()
-            .unwrap_or(""),
-    );
+    push_str(&mut buf, &accessor);
     buf.extend_from_slice(&edge.grant.from.0.to_be_bytes());
     buf.extend_from_slice(&edge.grant.until.0.to_be_bytes());
     buf.push(edge.grant.stated);
     buf.extend_from_slice(&edge.ham_state.to_be_bytes());
-    buf
+    Some(buf)
 }
 
 fn push_str(buf: &mut Vec<u8>, value: &str) {
@@ -359,7 +361,10 @@ impl MeshSeeGraph {
         object: impl AsRef<str>,
     ) -> Result<(), GunError> {
         let owner = ascii_trim(owner.as_ref());
-        let object = ascii_trim(object.as_ref());
+        let object = object.as_ref();
+        if object_id_rejected(object) {
+            return Err(GunError::ObjectNotInGraph);
+        }
         let accessor = ascii_trim(accessor.as_ref());
         let (stored_id, object_owner) = self
             .object_record(object)

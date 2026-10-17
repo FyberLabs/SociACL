@@ -15,7 +15,7 @@ export {
   postSoul,
 } from "./post.js";
 
-import { canonicalAccessorId, nextPostHam, postGrantKey, postRowEncodable, postSoul, sameObjectId } from "./post.js";
+import { canonicalAccessorId, nextPostHam, objectIdRejected, postGrantKey, postRowEncodable, postSoul, sameObjectId } from "./post.js";
 
 /** @param {string | null | undefined} left @param {string | null | undefined} right */
 function samePrincipal(left, right) {
@@ -27,7 +27,8 @@ function samePrincipal(left, right) {
 
 /** @param {Map<string, string>} objects @param {string} object */
 function canonicalStoredObject(objects, object) {
-  const text = asciiTrim(String(object ?? ""));
+  const text = String(object ?? "");
+  if (objectIdRejected(text)) return text;
   if (objects.has(text)) return text;
   for (const id of objects.keys()) {
     if (sameObjectId(id, text)) return id;
@@ -37,8 +38,8 @@ function canonicalStoredObject(objects, object) {
 
 /** @param {{ claimId?: string, object?: string }} grant @param {string} object */
 function grantNamesObject(grant, object) {
-  const id = asciiTrim(String(grant.claimId ?? grant.object ?? ""));
-  if (!id) return false;
+  const id = String(grant.claimId ?? grant.object ?? "");
+  if (objectIdRejected(id) || objectIdRejected(object)) return false;
   return sameObjectId(id, object);
 }
 
@@ -250,7 +251,8 @@ export class MemorySeeAcl {
   }
 
   hasObject(object) {
-    const text = asciiTrim(String(object ?? ""));
+    const text = String(object ?? "");
+    if (objectIdRejected(text)) return false;
     if (this.objects.has(text)) return true;
     for (const id of this.objects.keys()) {
       if (sameObjectId(id, text)) return true;
@@ -263,33 +265,34 @@ export class MemorySeeAcl {
   }
 
   seeGrants(object) {
-    const text = asciiTrim(String(object ?? ""));
+    const text = String(object ?? "");
+    if (objectIdRejected(text)) return [];
     return [...this.grants.values()].filter((g) => {
-      const id = asciiTrim(String(g.claimId ?? g.object ?? ""));
+      const id = String(g.claimId ?? g.object ?? "");
       return sameObjectId(id, text) && g.stated !== 0;
     });
   }
 
   putObject(object, owner) {
-    const id = asciiTrim(String(object));
+    const id = String(object);
+    if (objectIdRejected(id)) return;
     const next = asciiTrim(String(owner));
     if (this.objects.has(id)) {
       this.objects.set(id, next);
       return;
     }
     for (const stored of this.objects.keys()) {
-      if (sameObjectId(stored, id)) {
-        this.objects.set(stored, next);
-        return;
-      }
+      if (sameObjectId(stored, id)) return;
     }
     this.objects.set(id, next);
   }
 
   stateSeeGrant(owner, grant) {
-    const query = asciiTrim(String(grant.claimId ?? grant.object ?? ""));
+    const query = String(grant.claimId ?? grant.object ?? "");
+    if (objectIdRejected(query)) return;
     const object = canonicalStoredObject(this.objects, query);
     const key = postGrantKey(owner, object, grant.accessor);
+    if (key == null) return;
     const stored = { ...grant, stated: 1, owner };
     if (stored.claimId != null) stored.claimId = object;
     if (stored.object != null || stored.claimId == null) stored.object = object;
@@ -297,8 +300,10 @@ export class MemorySeeAcl {
   }
 
   unstateSeeGrant(owner, accessor, object) {
+    if (objectIdRejected(object)) return;
     const id = canonicalStoredObject(this.objects, object);
     const key = postGrantKey(owner, id, accessor);
+    if (key == null) return;
     let prevKey = this.grants.has(key) ? key : undefined;
     if (!prevKey) {
       for (const [rowKey, grant] of this.grants) {
@@ -325,15 +330,17 @@ export class MemorySeeAcl {
   }
 
   seeGrant(object, accessor) {
+    if (objectIdRejected(object)) return undefined;
     const id = canonicalStoredObject(this.objects, object);
     const ownerNow = this.ownerOf(id);
     if (!ownerNow) return undefined;
-    const grant = this.grants.get(postGrantKey(ownerNow, id, accessor));
+    const key = postGrantKey(ownerNow, id, accessor);
+    if (key == null) return undefined;
+    const grant = this.grants.get(key);
     const grantOwner = grant?.owner ?? "";
     if (!grant || !grantOwner) return undefined;
-    if (postGrantKey(grantOwner, id, grant.accessor) !== postGrantKey(ownerNow, id, accessor)) {
-      return undefined;
-    }
+    const storedKey = postGrantKey(grantOwner, id, grant.accessor);
+    if (storedKey == null || storedKey !== key) return undefined;
     const grantId = grant.claimId ?? grant.object ?? id;
     return {
       soul: grantSoul(grantOwner, grantId, grant.accessor),
@@ -350,16 +357,21 @@ export class MemorySeeAcl {
   }
 
   postGrant(object, accessor) {
+    if (objectIdRejected(object)) return undefined;
     const id = canonicalStoredObject(this.objects, object);
     const owner = this.ownerOf(id) ?? "";
-    return this.posts.get(postGrantKey(owner, id, accessor));
+    const key = postGrantKey(owner, id, accessor);
+    if (key == null) return undefined;
+    return this.posts.get(key);
   }
 
   statePostGrant(owner, grant) {
-    const query = asciiTrim(String(grant.claimId ?? grant.object ?? ""));
+    const query = String(grant.claimId ?? grant.object ?? "");
+    if (objectIdRejected(query)) return;
     const object = canonicalStoredObject(this.objects, query);
     if (!samePrincipal(this.ownerOf(object), owner)) return;
     const key = postGrantKey(owner, object, grant.accessor);
+    if (key == null) return;
     const prev = this.posts.get(key);
     const hamState = nextPostHam(prev?.hamState, false);
     if (hamState === undefined) return;
@@ -380,9 +392,11 @@ export class MemorySeeAcl {
   }
 
   unstatePostGrant(owner, accessor, object) {
+    if (objectIdRejected(object)) return;
     const id = canonicalStoredObject(this.objects, object);
     if (!samePrincipal(this.ownerOf(id), owner)) return;
     const key = postGrantKey(owner, id, accessor);
+    if (key == null) return;
     const prev = this.posts.get(key);
     const hamState = nextPostHam(prev?.hamState, true);
     if (hamState === undefined) return;

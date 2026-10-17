@@ -110,7 +110,7 @@ function aclKey(id) {
 
 /**
  * A bare principal, or null. `.` may occur inside an id. The whole id
- * cannot be `.` or `..`. `/ # $ [ ] ~`, an inner space, a control,
+ * cannot be `.`, `..`, or `...`. `/ # $ [ ] ~`, an inner space, a control,
  * Unicode whitespace, a format character, `.get(`, an unpaired
  * surrogate, and more than 256 scalar values are rejected.
  * Never returns "".
@@ -118,7 +118,7 @@ function aclKey(id) {
  * @returns {string | null}
  */
 function barePrincipal(id) {
-  if (!id || id === "." || id === ".." || id.includes(".get(") || id.includes(" ")) return null;
+  if (!id || id === "." || id === ".." || id === "..." || id.includes(".get(") || id.includes(" ")) return null;
   if (hasUnpairedSurrogate(id)) return null;
   if ([...id].length > 256) return null;
   if (/[/#$[\]~]/.test(id)) return null;
@@ -210,15 +210,48 @@ export function canonicalAccessorId(id) {
 }
 
 /**
+ * Leading or trailing whitespace, including U+0085, U+00A0, and U+FEFF.
+ * That id is not stored and does not alias to the trimmed spelling.
+ * @param {string | null | undefined} id
+ */
+export function objectIdRejected(id) {
+  const text = String(id ?? "");
+  if (!text || hasUnpairedSurrogate(text)) return true;
+  return edgeSpace(text, true) || edgeSpace(text, false);
+}
+
+/** @param {string} text @param {boolean} fromStart */
+function edgeSpace(text, fromStart) {
+  const index = fromStart ? 0 : lastScalarIndex(text);
+  const cp = text.codePointAt(index);
+  if (cp == null) return true;
+  if (cp === 0x09 || cp === 0x0a || cp === 0x0b || cp === 0x0c || cp === 0x0d || cp === 0x20 || cp === 0x85) {
+    return true;
+  }
+  return /\p{Z}|\p{Cf}/u.test(String.fromCodePoint(cp));
+}
+
+/** @param {string} text */
+function lastScalarIndex(text) {
+  const end = text.charCodeAt(text.length - 1);
+  if (end >= 0xdc00 && end <= 0xdfff && text.length > 1) {
+    const prev = text.charCodeAt(text.length - 2);
+    if (prev >= 0xd800 && prev <= 0xdbff) return text.length - 2;
+  }
+  return text.length - 1;
+}
+
+/**
  * Two strings name one object when their acl keys match, or one is
  * the item soul of the other. A held claim id without `/` does not.
+ * Surrounding whitespace does not name the trimmed id.
  * @param {string} left
  * @param {string} right
  */
 export function sameObjectId(left, right) {
-  const a = asciiTrim(String(left ?? ""));
-  const b = asciiTrim(String(right ?? ""));
-  if (!a || !b) return false;
+  const a = String(left ?? "");
+  const b = String(right ?? "");
+  if (objectIdRejected(a) || objectIdRejected(b)) return false;
   return objectNames(a, b);
 }
 
@@ -432,7 +465,7 @@ export function preferPost(local, incoming) {
 function seeDecision(graph, object, accessor, now) {
   const closed = closedReason(object);
   if (closed) return { allowed: false, reason: closed };
-  const owner = graph.ownerOf(String(object).trim());
+  const owner = graph.ownerOf(String(object));
   if (!owner) return { allowed: false, reason: "missing" };
   if (sameParsed(owner, accessor)) {
     return { allowed: true, reason: "owner" };
@@ -468,7 +501,7 @@ export function checkPost(graph, object, accessor, now, hint, hop) {
   if (!see.allowed || see.reason === "owner") {
     return { ...see, ...echoed };
   }
-  const owner = graph.ownerOf(String(object).trim());
+  const owner = graph.ownerOf(String(object));
   const edge = graph.postGrant(object, accessor);
   if (!edge || !owner) return { allowed: false, reason: "missing", ...echoed };
   const grant = edge.grant;

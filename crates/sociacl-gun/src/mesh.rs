@@ -12,8 +12,8 @@ use std::collections::{HashMap, HashSet};
 use sociacl_core::{NodeId, Timestamp};
 
 use crate::soul::{
-    acl_key, acl_principal_key, ascii_trim, canonical_accessor_id, GunSoul, S3RCH_ACL, S3RCH_META,
-    S3RCH_ROOT,
+    acl_key, acl_principal_key, ascii_trim, canonical_accessor_id, object_id_rejected, GunSoul,
+    S3RCH_ACL, S3RCH_META, S3RCH_ROOT,
 };
 use crate::{GunError, HandoffHint, HopFactor, IdentitySeeGrant, UrlLeaf};
 
@@ -74,7 +74,9 @@ impl MeshSeeGrant {
 }
 
 pub(crate) fn object_names(stored: &str, query: &str) -> bool {
-    let query = ascii_trim(query);
+    if object_id_rejected(stored) || object_id_rejected(query) {
+        return false;
+    }
     stored == query || acl_key(stored) == acl_key(query) || item_soul_alias(stored, query)
 }
 
@@ -141,7 +143,16 @@ impl GunAclEdge {
 
     /// Higher HAM state wins. At the same state a cancellation wins,
     /// then the narrower window, then the smaller canonical bytes.
+    /// A row whose owner or accessor does not parse is dropped.
     pub fn ham_merge(self, incoming: Self) -> Self {
+        let incoming_ok = grant_edge_parsable(&incoming);
+        let local_ok = grant_edge_parsable(&self);
+        if !incoming_ok {
+            return self;
+        }
+        if !local_ok {
+            return incoming.canonical();
+        }
         let local = self.canonical();
         let incoming = incoming.canonical();
         if incoming.ham_state > local.ham_state {
@@ -169,7 +180,16 @@ fn equal_ham_grant_order(left: &GunAclEdge, right: &GunAclEdge) -> Ordering {
     if let Some(order) = narrower_window(&left.grant, &right.grant) {
         return order;
     }
-    canonical_grant_bytes(left).cmp(&canonical_grant_bytes(right))
+    match (canonical_grant_bytes(left), canonical_grant_bytes(right)) {
+        (Some(left_bytes), Some(right_bytes)) => left_bytes.cmp(&right_bytes),
+        (Some(_), None) => Ordering::Less,
+        (None, Some(_)) => Ordering::Greater,
+        (None, None) => Ordering::Equal,
+    }
+}
+
+fn grant_edge_parsable(edge: &GunAclEdge) -> bool {
+    acl_principal_key(&edge.owner).is_some() && acl_principal_key(&edge.grant.accessor).is_some()
 }
 
 fn narrower_window(left: &MeshSeeGrant, right: &MeshSeeGrant) -> Option<Ordering> {
@@ -186,23 +206,17 @@ fn narrower_window(left: &MeshSeeGrant, right: &MeshSeeGrant) -> Option<Ordering
     }
 }
 
-fn canonical_grant_bytes(edge: &GunAclEdge) -> Vec<u8> {
+fn canonical_grant_bytes(edge: &GunAclEdge) -> Option<Vec<u8>> {
+    let owner = acl_principal_key(&edge.owner)?;
+    let accessor = acl_principal_key(&edge.grant.accessor)?;
     let mut buf = b"sociacl-see-grant-v1\0".to_vec();
-    push_grant_str(
-        &mut buf,
-        acl_principal_key(&edge.owner).as_deref().unwrap_or(""),
-    );
+    push_grant_str(&mut buf, &owner);
     push_grant_str(&mut buf, &acl_key(&edge.grant.object));
-    push_grant_str(
-        &mut buf,
-        acl_principal_key(&edge.grant.accessor)
-            .as_deref()
-            .unwrap_or(""),
-    );
+    push_grant_str(&mut buf, &accessor);
     buf.extend_from_slice(&edge.grant.from.0.to_be_bytes());
     buf.extend_from_slice(&edge.grant.until.0.to_be_bytes());
     buf.push(edge.grant.stated);
-    buf
+    Some(buf)
 }
 
 fn push_grant_str(buf: &mut Vec<u8>, value: &str) {
@@ -288,36 +302,24 @@ impl MeshSeeGraph {
     }
 
     pub fn put_object(&mut self, object: impl AsRef<str>, owner: impl AsRef<str>) {
-        let id = ascii_trim(object.as_ref()).to_string();
+        let raw = object.as_ref();
+        if object_id_rejected(raw) {
+            return;
+        }
+        let id = raw.to_string();
         let owner = ascii_trim(owner.as_ref()).to_string();
         let direct_key = object_store_key(&id);
-        if self.objects.contains_key(&direct_key) {
-            if self
-                .objects
-                .get(&direct_key)
-                .is_some_and(|existing| !principals_are(existing.owner.as_str(), owner.as_str()))
-            {
+        if let Some(existing) = self.objects.get(&direct_key) {
+            if existing.id != id {
+                return;
+            }
+            if !principals_are(existing.owner.as_str(), owner.as_str()) {
                 self.groups.drop_object_set(&id);
             }
             self.objects.insert(direct_key, MeshObject { id, owner });
             return;
         }
-        if let Some(existing_id) = self.lookup_object(&id).map(|existing| existing.id.clone()) {
-            let key = object_store_key(&existing_id);
-            if self
-                .objects
-                .get(&key)
-                .is_some_and(|existing| !principals_are(existing.owner.as_str(), owner.as_str()))
-            {
-                self.groups.drop_object_set(&existing_id);
-            }
-            self.objects.insert(
-                key,
-                MeshObject {
-                    id: existing_id,
-                    owner,
-                },
-            );
+        if self.lookup_object(&id).is_some() {
             return;
         }
         self.objects.insert(direct_key, MeshObject { id, owner });
@@ -401,7 +403,10 @@ impl MeshSeeGraph {
         object: impl AsRef<str>,
     ) -> Result<(), GunError> {
         let owner = ascii_trim(owner.as_ref());
-        let object = ascii_trim(object.as_ref());
+        let object = object.as_ref();
+        if object_id_rejected(object) {
+            return Err(GunError::ObjectNotInGraph);
+        }
         let accessor = ascii_trim(accessor.as_ref());
         let (stored_id, object_owner) = self
             .object_record(object)
@@ -549,8 +554,16 @@ impl MeshSeeGraph {
         hint: Option<&HandoffHint>,
         hop: Option<&HopFactor>,
     ) -> MeshCheckResult {
-        let object = ascii_trim(object.as_ref());
+        let object = object.as_ref();
         let accessor = ascii_trim(accessor.as_ref());
+        if object_id_rejected(object) {
+            return MeshCheckResult {
+                allowed: false,
+                reason: MESH_REASON_MISSING.into(),
+                hint: hint.cloned(),
+                hop: hop.cloned(),
+            };
+        }
         let hint = hint.cloned();
         let hop = hop.cloned();
 
@@ -648,7 +661,7 @@ impl MeshSeeGraph {
     pub(crate) fn canonical_object_id(&self, object: &str) -> String {
         self.object_record(object)
             .map(|(id, _)| id.to_string())
-            .unwrap_or_else(|| ascii_trim(object).to_string())
+            .unwrap_or_else(|| object.to_string())
     }
 
     /// In-range see rows that name this object, accessor, and owner.
@@ -672,7 +685,9 @@ impl MeshSeeGraph {
     }
 
     fn lookup_object(&self, object: &str) -> Option<&MeshObject> {
-        let object = ascii_trim(object);
+        if object_id_rejected(object) {
+            return None;
+        }
         if let Some(found) = self.objects.get(&object_store_key(object)) {
             return Some(found);
         }

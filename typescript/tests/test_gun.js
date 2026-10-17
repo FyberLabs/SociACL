@@ -124,7 +124,8 @@ test("a rejected principal is not a grant path", () => {
   assert.equal(canonicalAccessorId("0xvictim\uFEFF"), null);
   assert.equal(canonicalAccessorId("\u00850xvictim"), null);
   assert.equal(sameObjectId("\uFEFFroom", "room"), false);
-  assert.equal(sameObjectId(" room ", "room"), true);
+  assert.equal(sameObjectId(" room ", "room"), false);
+  assert.equal(canonicalAccessorId("..."), null);
   assert.equal(canonicalAccessorId("0x\ud800victim"), null);
   assert.equal(canonicalAccessorId("bob.name"), "bob.name");
   assert.equal(canonicalAccessorId("s3rch/users/0xbob"), "0xbob");
@@ -140,18 +141,3 @@ test("a rejected principal is not a grant path", () => {
   assert.equal(checkSee(acl, "owned", "\u00850xalice", 10).allowed, false);
 });
 
-test("an object id keeps a non-ASCII space on lookup", () => {
-  const acl = new MemorySeeAcl();
-  const object = "\u00A0doc";
-  acl.putObject(object, "0xalice");
-  assert.equal(acl.hasObject(object), true);
-  assert.equal(acl.ownerOf(object), "0xalice");
-  assert.equal(acl.hasObject("doc"), false);
-  assert.equal(acl.ownerOf("doc"), undefined);
-  applySeeGrant(acl, "0xalice", { claimId: object, accessor: "0xbob", from: 0, until: 80 });
-  assert.equal(checkSee(acl, object, "0xbob", 10).allowed, true);
-  assert.equal(checkSee(acl, "doc", "0xbob", 10).allowed, false);
-  acl.putObject(" spaced ", "0xcarol");
-  assert.equal(acl.hasObject("spaced"), true);
-  assert.equal(acl.ownerOf(" spaced "), "0xcarol");
-});

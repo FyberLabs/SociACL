@@ -473,12 +473,18 @@ impl MeshSeeGraph {
         let observed = cancel_ids(&record.cancels);
         if speaks_member {
             let ham = record.member.ham_state.saturating_add(1);
-            let message = party_message("member", &record, true, ham, &observed);
+            let Some(message) = party_message("member", &record, true, ham, &observed) else {
+                self.groups.memberships.insert(key, record);
+                return Err(GunError::EmptyPrincipal);
+            };
             sign_party(&mut record.member, true, observed.clone(), secret, &message);
         }
         if speaks_set {
             let ham = record.set_party.ham_state.saturating_add(1);
-            let message = party_message("set", &record, true, ham, &observed);
+            let Some(message) = party_message("set", &record, true, ham, &observed) else {
+                self.groups.memberships.insert(key, record);
+                return Err(GunError::EmptyPrincipal);
+            };
             sign_party(
                 &mut record.set_party,
                 true,
@@ -525,7 +531,10 @@ impl MeshSeeGraph {
             });
         record.soul = soul;
         record.set_owner = owner;
-        let row_key = membership_row_key(&record);
+        let Some(row_key) = membership_row_key(&record) else {
+            self.groups.memberships.insert(key, record);
+            return Err(GunError::EmptyPrincipal);
+        };
         self.groups.push_cancel(
             &mut record.cancels,
             "membership",
@@ -536,7 +545,10 @@ impl MeshSeeGraph {
         let observed = cancel_ids(&record.cancels);
         if speaks_member {
             let ham = record.member.ham_state.saturating_add(1);
-            let message = party_message("member", &record, false, ham, &observed);
+            let Some(message) = party_message("member", &record, false, ham, &observed) else {
+                self.groups.memberships.insert(key, record);
+                return Err(GunError::EmptyPrincipal);
+            };
             sign_party(
                 &mut record.member,
                 false,
@@ -547,7 +559,10 @@ impl MeshSeeGraph {
         }
         if speaks_set {
             let ham = record.set_party.ham_state.saturating_add(1);
-            let message = party_message("set", &record, false, ham, &observed);
+            let Some(message) = party_message("set", &record, false, ham, &observed) else {
+                self.groups.memberships.insert(key, record);
+                return Err(GunError::EmptyPrincipal);
+            };
             sign_party(
                 &mut record.set_party,
                 false,
@@ -932,7 +947,10 @@ impl MeshSeeGraph {
             signature: AttestationSig::empty(),
             cancels,
         };
-        record.signature = secret.sign(&object_message(&record));
+        let Some(message) = object_message(&record) else {
+            return;
+        };
+        record.signature = secret.sign(&message);
         let enrolled = self.groups.enrolled.clone();
         refresh_object(&mut record, &enrolled);
         self.groups.object_sets.insert(key, record);
@@ -1060,7 +1078,9 @@ fn verified_membership_cancels(
     record: &MembershipRecord,
     enrolled: &HashMap<String, VerifyKey>,
 ) -> Vec<(CancelId, SignedCancel)> {
-    let row_key = membership_row_key(record);
+    let Some(row_key) = membership_row_key(record) else {
+        return Vec::new();
+    };
     record
         .cancels
         .iter()
@@ -1279,7 +1299,10 @@ fn object_signature_ok(record: &ObjectSetRecord, enrolled: &HashMap<String, Veri
     let Some(key) = enrolled.get(&id) else {
         return false;
     };
-    key.verify(&object_message(record), &record.signature)
+    let Some(message) = object_message(record) else {
+        return false;
+    };
+    key.verify(&message, &record.signature)
 }
 
 fn party_live(
@@ -1315,21 +1338,25 @@ fn party_signature_ok(
     let Some(key) = enrolled.get(&principal) else {
         return false;
     };
-    key.verify(
-        &party_message(role, record, party.stated, party.ham_state, &party.observed),
-        &party.signature,
-    )
+    let Some(message) = party_message(role, record, party.stated, party.ham_state, &party.observed)
+    else {
+        return false;
+    };
+    key.verify(&message, &party.signature)
 }
 
 fn verified_membership_ids(
     record: &MembershipRecord,
     enrolled: &HashMap<String, VerifyKey>,
 ) -> BTreeSet<CancelId> {
+    let Some(row_key) = membership_row_key(record) else {
+        return BTreeSet::new();
+    };
     verified_cancel_ids(
         &record.cancels,
         enrolled,
         "membership",
-        &membership_row_key(record),
+        &row_key,
         |signer| membership_cancel_signer(record, signer),
     )
 }
@@ -1465,44 +1492,32 @@ fn party_message(
     stated: bool,
     ham_state: u64,
     observed: &BTreeSet<CancelId>,
-) -> Vec<u8> {
+) -> Option<Vec<u8>> {
+    let accessor = acl_principal_key(&record.membership.accessor)?;
+    let set_owner = acl_principal_key(&record.set_owner)?;
     let mut buf = b"sociacl-membership-assent-v1\0".to_vec();
     push_str(&mut buf, role);
     push_str(&mut buf, record.membership.predicate.as_str());
     push_str(&mut buf, &record.membership.set_id);
-    push_str(
-        &mut buf,
-        acl_principal_key(&record.membership.accessor)
-            .as_deref()
-            .unwrap_or(""),
-    );
-    push_str(
-        &mut buf,
-        acl_principal_key(&record.set_owner)
-            .as_deref()
-            .unwrap_or(""),
-    );
+    push_str(&mut buf, &accessor);
+    push_str(&mut buf, &set_owner);
     buf.push(u8::from(stated));
     buf.extend_from_slice(&ham_state.to_be_bytes());
     push_ids(&mut buf, observed);
-    buf
+    Some(buf)
 }
 
-fn object_message(record: &ObjectSetRecord) -> Vec<u8> {
+fn object_message(record: &ObjectSetRecord) -> Option<Vec<u8>> {
+    let owner = acl_principal_key(&record.object_owner)?;
     let mut buf = b"sociacl-object-set-v1\0".to_vec();
     push_str(&mut buf, &acl_key(&record.name.object));
-    push_str(
-        &mut buf,
-        acl_principal_key(&record.object_owner)
-            .as_deref()
-            .unwrap_or(""),
-    );
+    push_str(&mut buf, &owner);
     push_str(&mut buf, record.name.predicate.as_str());
     push_str(&mut buf, &record.name.set_id);
     buf.push(record.signed_stated);
     buf.extend_from_slice(&record.name.ham_state.to_be_bytes());
     push_ids(&mut buf, &record.observed);
-    buf
+    Some(buf)
 }
 
 fn cancel_message(kind: &str, row_key: &str, id: &CancelId, prior: &BTreeSet<CancelId>) -> Vec<u8> {
@@ -1529,14 +1544,14 @@ fn push_ids(buf: &mut Vec<u8>, ids: &BTreeSet<CancelId>) {
     }
 }
 
-fn membership_row_key(record: &MembershipRecord) -> String {
-    let accessor = acl_principal_key(&record.membership.accessor).unwrap_or_default();
-    format!(
+fn membership_row_key(record: &MembershipRecord) -> Option<String> {
+    let accessor = acl_principal_key(&record.membership.accessor)?;
+    Some(format!(
         "{}\0{}\0{}",
         record.membership.predicate.as_str(),
         record.membership.set_id,
         accessor
-    )
+    ))
 }
 
 fn membership_key(membership: &MeshMembership) -> Option<MembershipKey> {
@@ -2042,7 +2057,7 @@ mod tests {
             next,
             &newer.groups.enrolled,
             "membership",
-            &membership_row_key(issued),
+            &membership_row_key(issued).expect("membership accessor parses"),
             |signer| membership_cancel_signer(issued, signer),
         ));
 

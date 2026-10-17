@@ -116,6 +116,7 @@ import {
   canonicalAccessorId,
   canonicalPostEdge,
   nextPostHam,
+  objectIdRejected,
   postRowEncodable,
   preferPost,
   sameObjectId,
@@ -297,9 +298,16 @@ function domainBytes(domain) {
   return out;
 }
 
+/** @param {string | null | undefined} object */
+function plainObjectId(object) {
+  const text = String(object ?? "");
+  if (objectIdRejected(text)) return null;
+  return text;
+}
+
 /** @param {SeeGrant} grant */
 function grantObject(grant) {
-  return String(grant.claimId ?? grant.object ?? "").trim();
+  return plainObjectId(grant.claimId ?? grant.object ?? "") ?? "";
 }
 
 /** @param {string} setId */
@@ -984,7 +992,8 @@ export class MemoryGroupGraph {
    * @returns {{ id: string, owner: string } | undefined}
    */
   objectRecord(object) {
-    const text = String(object).trim();
+    const text = plainObjectId(object);
+    if (text == null) return undefined;
     const direct = this.objects.get(aclKey(text));
     if (direct) return { id: direct.id, owner: direct.owner };
     for (const stored of this.objects.values()) {
@@ -1009,7 +1018,8 @@ export class MemoryGroupGraph {
    * @param {string} object
    */
   canonicalObjectId(object) {
-    const text = String(object ?? "").trim();
+    const text = plainObjectId(object);
+    if (text == null) return String(object ?? "");
     return this.objectRecord(text)?.id ?? text;
   }
 
@@ -1031,22 +1041,18 @@ export class MemoryGroupGraph {
    * @param {string} owner
    */
   putObject(object, owner) {
-    const id = String(object).trim();
-    const next = String(owner).trim();
+    const id = plainObjectId(object);
+    if (id == null) return;
+    const next = asciiTrim(String(owner));
     const directKey = aclKey(id);
     if (this.objects.has(directKey)) {
       const prev = this.objects.get(directKey);
+      if (prev && prev.id !== id) return;
       if (prev && !samePrincipal(prev.owner, next)) this.objectSets.delete(directKey);
       this.objects.set(directKey, { id, owner: next });
       return;
     }
-    const existing = this.objectRecord(id);
-    if (existing) {
-      const key = aclKey(existing.id);
-      if (!samePrincipal(existing.owner, next)) this.objectSets.delete(key);
-      this.objects.set(key, { id: existing.id, owner: next });
-      return;
-    }
+    if (this.objectRecord(id)) return;
     this.objects.set(directKey, { id, owner: next });
   }
 
@@ -1103,7 +1109,7 @@ export class MemoryGroupGraph {
       accessor,
       stated: /** @type {1} */ (1),
       hamState,
-      owner: String(owner).trim(),
+      owner: asciiTrim(String(owner)),
     };
     if (stored.claimId != null) stored.claimId = object;
     const key = grantKey(owner, object, accessor);
@@ -1117,7 +1123,7 @@ export class MemoryGroupGraph {
    * @param {string} object
    */
   unstateSeeGrant(owner, accessor, object) {
-    const query = String(object).trim();
+    const query = plainObjectId(object) ?? "";
     const who = asciiTrim(String(accessor));
     const record = this.objectRecord(query);
     const ownerKey = canonicalAccessorId(owner);
@@ -1139,7 +1145,7 @@ export class MemoryGroupGraph {
       until: prev?.until ?? 0,
       stated: 0,
       hamState: (prev?.hamState ?? 0) + 1,
-      owner: String(owner).trim(),
+      owner: asciiTrim(String(owner)),
     });
   }
 
@@ -1149,7 +1155,7 @@ export class MemoryGroupGraph {
    */
   seeGrant(object, accessor) {
     const record = this.objectRecord(object);
-    const requested = record?.id ?? String(object).trim();
+    const requested = record?.id ?? plainObjectId(object) ?? "";
     const who = aclPrincipalKey(accessor);
     if (!who) return undefined;
     const ownerNow = record?.owner;
@@ -1186,7 +1192,7 @@ export class MemoryGroupGraph {
    */
   postGrant(object, accessor) {
     const record = this.objectRecord(object);
-    const requested = record?.id ?? String(object).trim();
+    const requested = record?.id ?? plainObjectId(object) ?? "";
     const who = aclPrincipalKey(accessor);
     if (!who) return undefined;
     const ownerNow = record?.owner;
@@ -1206,7 +1212,7 @@ export class MemoryGroupGraph {
    * @param {{ object?: string, claimId?: string, accessor: string, from: number, until: number }} grant
    */
   statePostGrant(owner, grant) {
-    const query = String(grant.object ?? grant.claimId ?? "").trim();
+    const query = plainObjectId(grant.object ?? grant.claimId ?? "") ?? "";
     const who = asciiTrim(String(grant.accessor ?? ""));
     const record = this.objectRecord(query);
     const ownerKey = aclPrincipalKey(owner);
@@ -1219,7 +1225,7 @@ export class MemoryGroupGraph {
     if (hamState === undefined) return;
     const edge = canonicalPostEdge({
       soul: "",
-      owner: String(owner).trim(),
+      owner: asciiTrim(String(owner)),
       hamState,
       grant: { object, accessor: who, from: grant.from, until: grant.until, stated: 1 },
     });
@@ -1234,7 +1240,7 @@ export class MemoryGroupGraph {
    * @param {string} object
    */
   unstatePostGrant(owner, accessor, object) {
-    const query = String(object).trim();
+    const query = plainObjectId(object) ?? "";
     const who = asciiTrim(String(accessor));
     const record = this.objectRecord(query);
     const ownerKey = aclPrincipalKey(owner);
@@ -1247,7 +1253,7 @@ export class MemoryGroupGraph {
     if (hamState === undefined) return;
     const edge = canonicalPostEdge({
       soul: "",
-      owner: String(owner).trim(),
+      owner: asciiTrim(String(owner)),
       hamState,
       grant: {
         object: prev?.grant.object ?? id,
@@ -1264,7 +1270,7 @@ export class MemoryGroupGraph {
   /** @param {import("./post.js").PostEdge} incoming */
   mergePost(incoming) {
     if (!postRowEncodable(incoming)) return;
-    const query = String(incoming.grant?.object ?? "").trim();
+    const query = plainObjectId(incoming.grant?.object ?? "") ?? "";
     const record = this.objectRecord(query);
     const grantOwner = incoming.owner ?? "";
     if (!query || !record || !grantOwner || !samePrincipal(record.owner, grantOwner)) return;
@@ -1520,7 +1526,8 @@ export class MemoryGroupGraph {
     if (!id) throw new Error("group name is empty");
     const canonical = canonicalSetId(id);
     if (!canonical) throw new Error("set id is not bound to this owner");
-    const objectId = String(object).trim();
+    const objectId = plainObjectId(object);
+    if (objectId == null) throw new Error("mesh object is not in-graph");
     const objectOwner = this.ownerOf(objectId);
     if (!objectOwner) throw new Error("mesh object is not in-graph");
     if (!samePrincipal(objectOwner, owner)) throw new Error("dest ACL write is owner-only");
@@ -1536,7 +1543,8 @@ export class MemoryGroupGraph {
    * @param {KeyObject} secret
    */
   clearObjectSet(owner, object, secret) {
-    const objectId = String(object).trim();
+    const objectId = plainObjectId(object);
+    if (objectId == null) throw new Error("mesh object is not in-graph");
     const objectOwner = this.ownerOf(objectId);
     if (!objectOwner) throw new Error("mesh object is not in-graph");
     if (!samePrincipal(objectOwner, owner)) throw new Error("dest ACL write is owner-only");
@@ -1554,7 +1562,9 @@ export class MemoryGroupGraph {
    * @returns {(ObjectSetName & { signedStated?: 0 | 1, observed?: string[], signature?: Uint8Array, cancels?: SignedCancel[] }) | undefined}
    */
   objectSet(object) {
-    const record = this.objectSets.get(aclKey(String(object).trim()));
+    const objectId = plainObjectId(object);
+    if (objectId == null) return undefined;
+    const record = this.objectSets.get(aclKey(objectId));
     if (!record) return undefined;
     return {
       ...record.name,
@@ -1788,7 +1798,8 @@ function edgeAuthentic(graph, edge, owner) {
  * @param {string} object
  */
 function objectSetGrantable(graph, object) {
-  const requested = String(object).trim();
+  const requested = plainObjectId(object);
+  if (requested == null) return false;
   const edge = graph.objectSet(requested);
   if (!edge || !edge.object || aclKey(edge.object) !== aclKey(requested)) return false;
   const owner = graph.ownerOf(requested);
@@ -1869,7 +1880,8 @@ export function checkGroupSee(graph, predicate, object, accessor, now, hint, hop
   void now;
   const echoed = { hint: hint ?? null, hop: hop ?? null };
   const deny = (/** @type {string} */ reason) => ({ allowed: false, reason, ...echoed });
-  const requestedObject = String(object).trim();
+  const requestedObject = plainObjectId(object);
+  if (requestedObject == null) return deny("missing");
   const closed = closedReason(requestedObject);
   if (closed) return deny(closed);
   const owner = graph.ownerOf(requestedObject);

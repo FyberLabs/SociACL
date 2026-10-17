@@ -701,29 +701,3 @@ fn execute_mask_stays_on_plane_not_mesh_see() {
         .unwrap();
     assert!(!check_see(&plane, &claim, &bob, None).unwrap().allowed);
 }
-
-#[test]
-fn a_non_ascii_space_stays_in_the_object_id() {
-    let mut graph = MeshSeeGraph::new();
-    let id = "\u{00A0}doc";
-    graph.put_object(id, "0xalice");
-    assert!(graph.has_object(id));
-    assert_eq!(graph.owner_of(id), Some("0xalice"));
-    assert!(!graph.has_object("doc"));
-    graph
-        .state_see_grant("0xalice", MeshSeeGrant::live(id, "0xbob", 0, 80))
-        .unwrap();
-    assert!(
-        graph
-            .check_see(id, "0xbob", Timestamp(10), None, None)
-            .allowed
-    );
-    assert!(
-        !graph
-            .check_see("doc", "0xbob", Timestamp(10), None, None)
-            .allowed
-    );
-    graph.put_object(" spaced ", "0xcarol");
-    assert!(graph.has_object("spaced"));
-    assert_eq!(graph.owner_of(" spaced "), Some("0xcarol"));
-}

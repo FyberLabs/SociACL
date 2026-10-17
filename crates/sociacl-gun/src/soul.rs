@@ -207,6 +207,21 @@ pub(crate) fn ascii_trim(text: &str) -> &str {
     text.trim_matches(|ch: char| matches!(ch, '\t' | '\n' | '\u{000B}' | '\u{000C}' | '\r' | ' '))
 }
 
+/// Leading or trailing whitespace, including U+0085, U+00A0, and
+/// U+FEFF. An object id with either is not stored and does not alias.
+pub(crate) fn object_id_rejected(id: &str) -> bool {
+    let mut chars = id.chars();
+    let Some(first) = chars.next() else {
+        return true;
+    };
+    let last = chars.next_back().unwrap_or(first);
+    edge_space(first) || edge_space(last)
+}
+
+fn edge_space(ch: char) -> bool {
+    ch.is_whitespace() || is_format_char(ch)
+}
+
 fn is_format_char(ch: char) -> bool {
     matches!(
         ch,
@@ -242,6 +257,7 @@ fn bare_principal(id: &str) -> Option<String> {
     if id.is_empty()
         || id == "."
         || id == ".."
+        || id == "..."
         || id.chars().count() > 256
         || id.contains(".get(")
         || id.contains(['/', '#', '$', '[', ']', '~', ' '])

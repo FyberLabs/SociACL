@@ -343,7 +343,7 @@
       "reason": "cancelled"
     },
     {
-      "name": "put-object-alias-replaces-the-owner",
+      "name": "put-object-alias-does-not-replace-the-owner",
       "object": "room:alpha",
       "owner": "0xalice",
       "accessor": "0xbob",
@@ -354,8 +354,8 @@
       "checkAccessor": "0xbob",
       "see": { "from": 0, "until": 80, "stated": 1 },
       "post": { "from": 0, "until": 80, "stated": 1 },
-      "allowed": false,
-      "reason": "missing"
+      "allowed": true,
+      "reason": "post"
     }
   ]
 }
