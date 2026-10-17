@@ -1,0 +1,11 @@
+import type { ZodType } from 'zod';
+import type * as T from './types.js';
+export const principalId: ZodType<T.PrincipalId>;
+export const eip55: ZodType<T.Eip55>;
+export const walletInput: ZodType<T.Eip55>;
+export const tenantId: ZodType<T.TenantId>;
+export const oidcCredential: ZodType<T.OidcCredential>;
+export const objectId: ZodType<T.ObjectId>;
+export const networkId: ZodType<T.NetworkId>;
+export const sourceKey: ZodType<T.SourceKey>;
+export const soul: ZodType<T.ParsedSoul>;

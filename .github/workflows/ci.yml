@@ -4,6 +4,7 @@ on:
   pull_request:
   push:
     branches: [master]
+    tags: ["ids-v*"]
   workflow_dispatch:
 
 permissions:
@@ -65,3 +66,33 @@ jobs:
             target/coverage/python.json
             target/coverage/typescript-report.txt
           if-no-files-found: warn
+
+  release-ids:
+    if: startsWith(github.ref, 'refs/tags/ids-v')
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - name: Pack identity package
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          npm ci --prefix typescript/ids
+          version="$(node -p "JSON.parse(require('fs').readFileSync('typescript/ids/package.json')).version")"
+          test "$RELEASE_TAG" = "ids-v$version"
+          npm pack ./typescript/ids --pack-destination "$RUNNER_TEMP"
+          cd "$RUNNER_TEMP"
+          sha256sum "sociacl-ids-$version.tgz" > "sociacl-ids-$version.tgz.sha256"
+      - name: Publish identity release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$RELEASE_TAG" --verify-tag --generate-notes \
+            "$RUNNER_TEMP"/sociacl-ids-*.tgz "$RUNNER_TEMP"/sociacl-ids-*.tgz.sha256

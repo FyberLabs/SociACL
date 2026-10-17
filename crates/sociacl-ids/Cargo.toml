@@ -1,0 +1,23 @@
+[package]
+name = "sociacl-ids"
+version = "0.1.0"
+rust-version = "1.83"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Canonical identities, path keys and credential proofs"
+
+[dependencies]
+p256 = { version = "=0.13.2", features = ["ecdsa", "arithmetic"] }
+k256 = { version = "=0.13.4", features = ["ecdsa"] }
+sha2 = "0.10"
+sha3 = "0.10"
+base64ct = { version = "=1.6.0", features = ["alloc"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["raw_value"] }
+regex = "1"
+getrandom = "0.2"
+url = "=2.4.1"
+
+[dev-dependencies]
+proptest = { version = "=1.6.0", default-features = false, features = ["std"] }

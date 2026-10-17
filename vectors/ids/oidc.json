@@ -1,0 +1,72 @@
+{
+  "v": 1,
+  "family": "oidc",
+  "accept": [
+    {
+      "name": "tenant-scoped",
+      "input": {
+        "iss": "https://id.fyberlabs.com/realms/test",
+        "tenant": "01234567-89ab-cdef-0123-456789abcdef",
+        "sub": "Case-Sensitive/Subject"
+      },
+      "canonical": {
+        "iss": "https://id.fyberlabs.com/realms/test",
+        "tenant": "01234567-89ab-cdef-0123-456789abcdef",
+        "sub": "Case-Sensitive/Subject"
+      },
+      "pathKey": "k_b3fd223fbcb5343d4347f6ecb77ece08394c0fd4fe769f2d734b5fc1d5c91b42"
+    },
+    {
+      "name": "other-tenant",
+      "input": {
+        "iss": "https://id.fyberlabs.com/realms/test",
+        "tenant": "11234567-89ab-cdef-0123-456789abcdef",
+        "sub": "Case-Sensitive/Subject"
+      },
+      "canonical": {
+        "iss": "https://id.fyberlabs.com/realms/test",
+        "tenant": "11234567-89ab-cdef-0123-456789abcdef",
+        "sub": "Case-Sensitive/Subject"
+      },
+      "pathKey": "k_c5c54a3858d4715eb8fa113d43f44aa6147c0d99f4514c8131ff699ab69c6dfb"
+    }
+  ],
+  "reject": [
+    {
+      "name": "missing-tenant",
+      "input": {
+        "iss": "https://id.fyberlabs.com/realms/test",
+        "sub": "Case-Sensitive/Subject"
+      },
+      "reason": "not-string"
+    },
+    {
+      "name": "subject-unicode",
+      "input": {
+        "iss": "https://id.fyberlabs.com/realms/test",
+        "tenant": "01234567-89ab-cdef-0123-456789abcdef",
+        "sub": "é"
+      },
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "issuer-http",
+      "input": {
+        "iss": "http://s3r.ch",
+        "tenant": "01234567-89ab-cdef-0123-456789abcdef",
+        "sub": "Case-Sensitive/Subject"
+      },
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "extra-field",
+      "input": {
+        "iss": "https://id.fyberlabs.com/realms/test",
+        "tenant": "01234567-89ab-cdef-0123-456789abcdef",
+        "sub": "Case-Sensitive/Subject",
+        "alias": "wrong"
+      },
+      "reason": "bad-record"
+    }
+  ]
+}

@@ -13,7 +13,8 @@ fi
 . "${root}/scripts/require-node.sh"
 
 cargo build --workspace --locked
-cargo test --workspace --locked
+mkdir -p target/ids
+IDS_VECTOR_REPORT="${root}/target/ids/rust-vectors.txt" cargo test --workspace --locked
 
 cargo run --locked -p sociacl-core --example check
 cargo run --locked -p sociacl-core --example wills
@@ -48,3 +49,11 @@ npx --prefix typescript tsc --strict --noEmit -p typescript/contract
 node --test typescript/tests/*.js
 node --experimental-strip-types --test typescript/tests/test_encdisc_vectors.ts typescript/tests/test_presentation.ts typescript/tests/test_inbox.ts typescript/tests/test_epoch.ts typescript/tests/test_migration.ts
 npm run --prefix typescript typecheck
+
+# Independent browser package: each language reports exactly which shared vectors ran.
+npm ci --prefix typescript/ids
+IDS_VECTOR_REPORT="${root}/target/ids/ts-vectors.txt" node --test typescript/ids/test/*.js
+npm run --prefix typescript/ids typecheck
+npm run --prefix typescript/ids browser
+npm run --prefix typescript/ids consumer
+node typescript/ids/scripts/compare-vectors.mjs target/ids/rust-vectors.txt target/ids/ts-vectors.txt

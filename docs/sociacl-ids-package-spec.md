@@ -1,0 +1,353 @@
+# Spec: `sociacl-ids`, the shared identity package (TypeScript + Rust)
+
+Status: locked design (decisions A–F, 2026-10-16). This is the full spec for one PR. It assumes no prior context.
+
+Repos referenced:
+- `FyberLabs/SociACL`: Rust workspace `crates/*`, JS package `typescript/` (ESM, JSDoc, `tsc --strict`), vectors in `vectors/`.
+- `FyberLabs/s3r.ch`: Next.js/TypeScript client using Gun, viem and TanStack Query.
+- `FyberLabs/panopticon`: Python services plus a Next.js `frontend/` (zod, openapi-typescript, TanStack Query).
+
+Line references are as of SociACL `main@7279ef6`, SociACL PR #56 head `d51e33f`, s3r.ch `feat/views-route@da3a396` and panopticon `main`.
+
+---
+
+## 1. Purpose and first principles
+
+Today SociACL and s3r.ch identify objects and accounts by *strings in several spellings*: a raw id or `s3rch/items/<id>`; a wallet, `s3rch/users/<wallet>` or a Gun `.get()` chain. The code then reconciles those spellings at every comparison. That design produced an access bypass (a Gun-chain accessor spoof, SociACL #54), lossy keys (`room.alpha`, `room_alpha` and `room/alpha` were all one key), and a grant-soul collision in PR #56. The fix is the shared package specified here.
+
+Rules. Each rule is normative.
+1. **One minter per id.** Every id type has exactly one place that creates it (table in §2). Nothing else creates or "repairs" ids.
+2. **Identity is never derived from display data.** Names, labels, titles, descriptions, handles, ENS names, email and wallet text are attributes or lookup keys. They never serve as a join key or as an identity.
+3. **Canonicalize once, at the edge.** Untrusted input becomes a branded id through one `parse*` function. After that the value is passed through as-is and is never re-parsed, re-escaped or "normalized" again.
+4. **The core accepts branded types only.** Permission code (`checkSee`, `checkPost`, grant writers and the like) takes branded ids, never `string`.
+5. **Fail closed.** Unknown, non-canonical or ambiguous input is rejected with a reason. There is no fallback spelling, no alias folding, no trimming or case-folding of stored data, and no "best effort" parse.
+6. **No escaping scheme.** Every path-key alphabet is safe in Gun paths by construction. Input outside the alphabet is rejected, not escaped.
+7. **Equality is `===`** on canonical strings in TypeScript, and `==` on newtypes in Rust. There is no `sameX()` helper.
+
+## 2. Locked decisions
+
+| Id | Canonical identity | Minted by | Notes |
+|---|---|---|---|
+| `PrincipalId` (account) | The **genesis** Gun SEA P-256 public key `pub`, exactly as SEA emits it | The account's first enrolled client, once | Never changes. The *current* signing key may rotate (§4.6). |
+| `Eip55` (wallet) | EIP-55 checksummed address | Wallet | A **linked credential** for login and recovery. Never a principal. |
+| OIDC credential | `(iss, tenant, sub)` | Panopticon Keycloak | A linked credential. A Panopticon attestation is required (§4.6). Linked per tenant. |
+| `TenantId` | Panopticon tenant UUID (lowercase, hyphenated) | Panopticon | Panopticon uses `uuid.UUID` (`core/auth-service/src/auth_service/enrollment.py:231`). |
+| `ObjectId` (native object) | Random 128-bit id fixed at creation | The creating client | Stored on the object. Gun souls are derived from it one way (§3.6). |
+| `LegacyObjectId` | Existing s3r.ch ids (`s3rch:room:<wallet>:<ts>:<hex>` and so on) | Already minted | Accepted read-only and never minted again. Opaque: the owner or ts is **never** read out of the id. |
+| `DerivedObjectId` | `sha256` of a canonical external id (held claim, external feed item) | Deterministic | Used for ids whose source alphabet isn't path-safe (`ens:alice.eth`, `rss3:act/1#x`). |
+| `NetworkId` | `s3rch:https://<host>:<port>;key=<64hex>` or one of `atproto`, `farcaster`, `nostr`, `activitypub`, `rss` | The deployment's permitted key / the protocol | Same grammar as s3r.ch `lib/views-source-ref.ts:94-116`. |
+| `SourceKey` | `formatCanonical(SourceRef)` from s3r.ch `lib/views-source-ref.ts:225-227` (`sr1:` + pct(network) `/` pct(owner) `/` pct(source) `/` kind) | Deterministic | For s3r.ch networks, `owner` becomes a `PrincipalId` (follow-up call site, Appendix B). |
+
+Why I chose this `ObjectId` format: `<kind>_<32 lowercase hex>` with 128 bits from a CSPRNG.
+- **Hex, not base32:** hex has exactly one encoding per value. Base32 needs a rule about unused trailing bits.
+- **Not UUIDv7 or ULID:** those leak creation time, and ordering comes from the object's `ts` field.
+- **128 bits:** collision chance is negligible, about 2^64 objects for a 50% birthday bound. Today's ids carry only 32 bits (`lib/rooms.ts:60-64`).
+- **Path-safe:** the alphabet `[a-z0-9_]` needs no escaping in Gun paths.
+- **Typed kind prefix:** helps debugging and branded sub-types. Code never derives authority from it.
+
+## 3. Grammar
+
+All rules match the **entire** string (anchored). All characters are ASCII unless stated. Input is first rejected if it is not a JS `string` (or Rust `&str`), contains a control character (`U+0000-U+001F`, `U+007F-U+009F`), contains `U+FEFF`, `U+200B-U+200F`, `U+2028`, `U+2029` or `U+FFFD`, or contains an unpaired surrogate. **Nothing is trimmed.** Leading or trailing whitespace is a reject.
+
+```abnf
+; 3.1 Principal
+b64u          = ALPHA / DIGIT / "-" / "_"
+b64u-last     = "A" / "E" / "I" / "M" / "Q" / "U" / "Y" / "c" / "g" / "k" / "o" / "s" / "w" / "0" / "4" / "8"
+                ; the 43rd char of 32 bytes: its 2 low bits must be 0 (canonical base64url, no padding)
+principal-id  = 42b64u b64u-last "." 42b64u b64u-last          ; exactly 87 chars
+principal-key = "p_" 128HEXL                                    ; x||y raw point bytes, lowercase hex, 130 chars
+
+; 3.2 Wallet
+eip55         = "0x" 40( DIGIT / %x41-46 / %x61-66 )           ; and the EIP-55 checksum must match exactly
+wallet-key    = "w_" 40HEXL                                     ; 42 chars
+
+; 3.3 Tenant / OIDC
+tenant-id     = 8HEXL "-" 4HEXL "-" 4HEXL "-" 4HEXL "-" 12HEXL  ; 36 chars; version bits not enforced
+oidc-iss      = "https://" 1*2040VCHAR-NO-WS                   ; exact byte match against a pinned issuer; no normalization
+oidc-sub      = 1*255( %x21-7E )                                ; OIDC Core §2: ≤255 ASCII, case-sensitive, opaque
+oidc-key      = "k_" 64HEXL                                     ; sha256(LP("sociacl-oidc-v1") LP(iss) LP(tenant) LP(sub))
+
+; 3.4 Objects
+kind          = %x61-7A 1*15( %x61-7A / DIGIT )                 ; 2..16 chars, NOT one of: "claim" "ext"
+object-id     = kind "_" 32HEXL                                 ; ≤ 49 chars
+derived-id    = ( "claim" / "ext" ) "_" 64HEXL
+                ; claim_ = sha256(LP("sociacl-claim-v1") LP(claimText)); claimText is the existing held-claim id, e.g. "ens:alice.eth"
+                ; ext_   = sha256(LP("sociacl-ext-v1") LP(sourceKey) LP(providerItemId))
+legacy-id     = "s3rch:" ( ( "room" / "chat" / "forum-msg" ) ":" eip55 ":" 1*12DIGIT ":" 1*64( %x61-7A / DIGIT )
+                         / ( "forum-group" / "bot" ) ":" eip55 ":" 1*64( %x61-7A / DIGIT )
+                         / "forum" ":" eip55 )
+any-object    = object-id / derived-id / legacy-id
+object-key    = any-object                                      ; already path-safe; the path key is the id itself
+
+; 3.5 Network / SourceKey
+network-id    = "atproto" / "farcaster" / "nostr" / "activitypub" / "rss"
+              / "s3rch:https://" public-hostname ":" port ";key=" 64HEXL   ; rules: s3r.ch views-source-ref.ts:69-116
+network-key   = "n_" 64HEXL                                     ; sha256(LP("sociacl-network-v1") LP(networkId))
+source-key    = "sr1:" ...                                      ; exactly s3r.ch parseCanonical(); ≤ 8192 chars
+source-key-pk = "s_" 64HEXL                                     ; sha256(LP("sociacl-source-v1") LP(sourceKey))
+
+HEXL          = DIGIT / %x61-66
+LP(x)         = u32-little-endian(byteLength(utf8(x))) || utf8(x)  ; same encoding as SociACL request.js:295 / request.rs:408
+```
+
+**3.6 Path keys and souls.** The path-key alphabet is `[A-Za-z0-9_:-]`. **Reserved characters are never allowed** in any path key: `/ . # $ [ ] ~ %`, whitespace, control characters and anything outside ASCII.
+- Every path key starts with a type tag (`p_`, `w_`, `k_`, `n_`, `s_`), or is an `any-object` whose kind is at least 2 characters or which starts with `s3rch:`. So keys of different types can never be equal.
+- Max path-key length: 160.
+
+Soul builders take branded values only, and always produce a fixed number of segments:
+```
+objectSoul(collection, o)   = "s3rch/" collection "/" objectKey(o)          ; collection ∈ {items, rooms, users-legacy}
+userSoul(p)                 = "~" p                                         ; Gun user space; link records live here
+aclSoul(owner)              = "s3rch/acl/" principalKey(owner)              ; 3 segments
+grantSoul(owner, o, acc)    = "s3rch/acl/" pk(owner) "/" objectKey(o) "/" pk(acc)              ; exactly 5 segments
+postSoul(owner, o, acc)     = "s3rch/acl/" pk(owner) "/post/" objectKey(o) "/" pk(acc)         ; exactly 6 segments
+```
+Debug builds must assert the segment count. **No function parses a soul back** into ids, except `parseSoul(text)`, which accepts exactly these templates and returns `{template, ids}`, or rejects.
+
+## 4. TypeScript API (`typescript/ids`, ESM, zero runtime dependencies besides `@noble/curves` and `@noble/hashes`)
+
+The package must run unchanged in browsers (s3r.ch client) and Node ≥ 24. **Do not use `node:crypto`.** Existing `typescript/src/request.js:52` uses it; this package must not.
+
+### 4.1 Types
+```ts
+declare const brand: unique symbol;
+export type Brand<T, B extends string> = T & { readonly [brand]: B };
+
+export type PrincipalId     = Brand<string, "PrincipalId">;
+export type PrincipalKey    = Brand<string, "PrincipalKey">;      // "p_..."
+export type Eip55           = Brand<string, "Eip55">;
+export type TenantId        = Brand<string, "TenantId">;
+export type OidcCredential  = { readonly iss: string; readonly tenant: TenantId; readonly sub: string };
+export type ObjectId        = Brand<string, "ObjectId">;          // object-id | derived-id | legacy-id
+export type MintedObjectId  = ObjectId & Brand<string, "Minted">;
+export type NetworkId       = Brand<string, "NetworkId">;
+export type SourceKey       = Brand<string, "SourceKey">;
+export type PathKey         = Brand<string, "PathKey">;
+export type Soul            = Brand<string, "Soul">;
+
+export type Reason =
+  | "not-string" | "empty" | "too-long" | "control-char" | "invisible-char" | "unpaired-surrogate"
+  | "whitespace" | "bad-alphabet" | "bad-length" | "non-canonical" | "bad-checksum" | "not-on-curve"
+  | "reserved-kind" | "unknown-network" | "bad-host" | "bad-port" | "gun-chain" | "bad-template";
+export type Result<T> = { ok: true; value: T } | { ok: false; reason: Reason };
+```
+
+### 4.2 Parsers
+Parsers never throw on any input, including non-strings and objects with `toString`/`valueOf`: they check `typeof x === "string"` first. They are pure.
+```ts
+parsePrincipalId(x: unknown): Result<PrincipalId>     // §3.1 regex + base64url decode + re-encode equality + p256 point validity
+parseEip55(x: unknown): Result<Eip55>                 // stored data: exact checksummed form only
+parseWalletInput(x: unknown): Result<Eip55>           // UI edge only: all-lower or all-upper hex accepted → EIP-55; mixed case must match checksum
+parseTenantId(x: unknown): Result<TenantId>           // lowercase only; uppercase = "non-canonical"
+parseOidcCredential(x: unknown): Result<OidcCredential>   // {iss, tenant, sub}; iss compared later against a pinned issuer, never normalized
+parseObjectId(x: unknown): Result<ObjectId>           // object-id | derived-id | legacy-id
+parseNetworkId(x: unknown): Result<NetworkId>
+parseSourceKey(x: unknown): Result<SourceKey>         // port of s3r.ch parseCanonical + validateSourceRef; s3rch owner must be a PrincipalId
+parseSoul(x: unknown): Result<{ template: "object"|"user"|"acl"|"grant"|"post"; ids: readonly string[] }>
+```
+Any string that contains `.get(`, `get(`, `['get']`, `["get"]`, or a backslash is rejected with reason `"gun-chain"` before any other parsing. A defensive tag only; the alphabets already exclude these.
+
+### 4.3 Format, path keys, mint
+```ts
+formatPrincipalKey(p: PrincipalId): PrincipalKey      // "p_" + hex(x||y)
+formatWalletKey(w: Eip55): PathKey                    // "w_" + lowercase hex
+formatOidcKey(c: OidcCredential): PathKey
+formatNetworkKey(n: NetworkId): PathKey
+formatSourcePathKey(s: SourceKey): PathKey
+objectKey(o: ObjectId): PathKey                       // identity
+objectSoul / userSoul / aclSoul / grantSoul / postSoul   // §3.6, branded args only, return Soul
+mintObjectId(kind: string, rng?: (n: number) => Uint8Array): Result<MintedObjectId>   // default rng = crypto.getRandomValues
+deriveClaimId(claimText: string): Result<ObjectId>    // claimText validated as non-empty, ≤2048, no controls
+deriveExternalId(source: SourceKey, providerItemId: string): Result<ObjectId>
+```
+Equality is `===` everywhere. Export no comparison helpers.
+
+### 4.4 Signing bytes
+All signatures cover `LP(domain) LP(field1) … LP(fieldN)` (§3).
+
+| Record | Domain | Fields, in order |
+|---|---|---|
+| Key → wallet link | `sociacl-link-wallet-v1` | principal, eip55, issuedAt (decimal seconds), nonce |
+| Key → OIDC link | `sociacl-link-oidc-v1` | principal, iss, tenant, sub, issuedAt, nonce |
+| Rotation | `sociacl-rotate-v1` | principal, seq (decimal), prevKey, nextKey, issuedAt |
+| Revocation | `sociacl-revoke-v1` | principal, linkId, issuedAt |
+
+`linkId` = lowercase hex sha256 of the record's signing bytes. Record identity never depends on signature bytes (ECDSA malleability).
+
+### 4.5 Signatures
+- **SEA key signatures:** ECDSA P-256 over SHA-256 of the signing bytes, a raw 64-byte `r||s`, base64url without padding. These can be produced from the SEA pair with WebCrypto, as s3r.ch `lib/views-backup.ts` already does for manifests. Verifiers accept high-S and low-S. The SEA `SEA{m,s}` envelope is **not** used.
+- **SIWE:** an EIP-4361 message whose `statement` is exactly `SociACL link: ` + hex(sha256(signing bytes)) and whose `address` is the `Eip55`. Signed with EIP-191 `personal_sign` (secp256k1, keccak256). Verification recovers the address and compares it with `===`. EIP-1271 smart-contract wallets: reject with `"unsupported-wallet"` (out of scope).
+- **Panopticon attestation:** compact JWS, `alg` = `ES256`, `kid` required. The verifier is handed a pinned JWKS. Claims are `{typ:"sociacl-oidc-attest-v1", iss, tenant, sub, principal, iat, exp, nonce}` for links, and `{typ:"sociacl-rotate-attest-v1", principal, nextKey, seq, iat, exp, auth:"wallet"|"oidc-fresh-login"}` for rotation.
+
+### 4.6 Records
+```ts
+export type WalletLink = { v: 1; kind: "wallet"; principal: PrincipalId; address: Eip55; issuedAt: number; nonce: string;
+  keySig: string /* SEA key over link-wallet bytes */; siwe: { message: string; signature: `0x${string}` } };
+export type OidcLink = { v: 1; kind: "oidc"; principal: PrincipalId; cred: OidcCredential; issuedAt: number; nonce: string;
+  keySig: string; attest: string /* Panopticon JWS */ };
+export type Rotate = { v: 1; kind: "rotate"; principal: PrincipalId; seq: number /* 1.. */; prevKey: PrincipalId; nextKey: PrincipalId;
+  issuedAt: number; nextSig: string /* new key */; authorizer: { kind: "wallet"; link: string /* linkId */; siwe: {message:string; signature:`0x${string}`} }
+              | { kind: "oidc-fresh-login" }; attest: string /* Panopticon JWS, required in both cases */ };
+export type Revoke = { v: 1; kind: "revoke"; principal: PrincipalId; linkId: string; issuedAt: number; keySig: string };
+
+verifyWalletLink(r: unknown, now: number): Result<WalletLink>
+verifyOidcLink(r: unknown, jwks: Jwks, pinnedIss: ReadonlySet<string>, now: number): Result<OidcLink>
+verifyRotate(r: unknown, currentKey: PrincipalId, links: ReadonlyMap<string, WalletLink>, jwks: Jwks, now: number): Result<Rotate>
+resolveCurrentKey(genesis: PrincipalId, rotations: readonly unknown[], ...ctx): Result<PrincipalId>
+  // Applies rotations in strictly increasing seq; each prevKey must equal the current key.
+  // Two valid records with the same seq → { ok:false, reason:"rotation-fork" } (fail closed, account frozen).
+```
+Rules:
+- A record's signatures are checked by the current key at the time of `issuedAt`.
+- Two links for one wallet pointing at different principals: the newest SIWE `issuedAt` wins, and a `Revoke` signed by the wallet's principal removes a link.
+- Link records are published under `userSoul(principal)` (Gun `~pub` space). Private keys, PRF wraps and SIWE session cookies are never published.
+- Wrapped key backups live in Panopticon storage. That is outside this package.
+
+### 4.7 zod
+Subpath export `sociacl-ids/zod`, with `zod` as a **peerDependency** so the core package doesn't depend on it. Each schema is `z.unknown().transform(parseX)`, surfacing the reason as a zod issue. There is exactly one validator per id; the zod schemas call the parsers.
+
+## 5. Rust API (`crates/sociacl-ids`, a workspace member)
+
+- Newtypes: `PrincipalId`, `PrincipalKey`, `Eip55`, `TenantId`, `OidcCredential`, `ObjectId`, `NetworkId`, `SourceKey`, `PathKey`, `Soul`. Each has `FromStr<Err = Reason>`, `Display`, `AsRef<str>`, `Eq`, `Hash` and `Ord`, and none has a public tuple field.
+- `TryFrom<&str>` is identical to `FromStr`. There is no `From<String>`.
+- Functions mirror §4.2–4.6 in snake_case and return `Result<T, Reason>`. `Reason` is an enum whose kebab-case names are identical to the TS strings.
+- **String semantics:** reject on the Unicode-scalar level the same way TS does. Do not use `str::trim` or `char::is_whitespace` anywhere, since Rust's notion of whitespace differs from JS `trim()` on `U+FEFF`.
+- Crates:
+  - `p256` (ecdsa, arithmetic): the workspace already pins `=0.13.2` in `crates/sociacl-encdisc/Cargo.toml:18`; reuse that pin.
+  - `sha2`: already in the workspace.
+  - `k256` (ecdsa, for secp256k1 recovery) and `sha3` (Keccak-256), for SIWE.
+  - A JWS/JWK verifier for ES256: use `p256` directly with a minimal compact-JWS parser.
+  - `serde` / `serde_json`: already present.
+  - `getrandom` for minting.
+  - Pick versions compatible with the existing lockfile and commit `Cargo.lock`. Don't use `--locked` drift.
+- Expose a C-ABI shim later via `sociacl-c` (non-goal here).
+
+## 6. Shared test vectors (`vectors/ids/*.json`)
+
+Format, one file per id family, loaded by **both** the TS and Rust test suites (and Python through `sociacl-c` later):
+```json
+{ "v": 1, "family": "principal",
+  "accept": [ { "name": "genesis-1", "input": "<87 chars>", "canonical": "<same>", "pathKey": "p_<128 hex>" } ],
+  "reject": [ { "name": "trailing-space", "input": "<87 chars> ", "reason": "whitespace" } ] }
+```
+`input` may be any JSON value, so non-string inputs are vectors too. Required families: `principal`, `wallet`, `tenant`, `oidc`, `object`, `network`, `source-key`, `soul`, `signing-bytes`, `records` (wallet link, OIDC link, rotate, fork, revoke, each with fixed test keys and the expected verify result).
+
+Required reject cases. Each must be present and rejected identically in both languages.
+- **Gun chains (#54 item 1):**
+  - `0xattacker.get('s3rch').get('users').get('0xvictim')`
+  - `gun.get('s3rch').get('users').get('0xbob')`
+  - `0xattacker.get ('s3rch')`
+  - `0xattacker['get']('s3rch')`
+  - `x\u002eget(`
+- **The fold triple:** `room.alpha`, `room/alpha` and `room_alpha` as `ObjectId`. All three are rejected with `bad-alphabet`. Only minted, derived or legacy ids are accepted.
+- **Grant-soul collision (#56):** `grantSoul` must make it impossible to build `("0xalice","doc","0xbob/x")` vs `("0xalice/doc","0xbob","x")`. All six components are invalid ids, so they're rejected at parse. Add an accept-side vector with two distinct valid triples whose souls differ and contain exactly 5 segments.
+- **Paths:** `../meta`, `s3rch/meta`, `s3rch/acl/x`, `s3rch/users/0x…` as `PrincipalId`. All rejected; there's no alias form.
+- **Escape remnants:** `room~1alpha`, `~0`, `%2F`, `a%2Eb`. All rejected.
+- **Controls and invisibles:**
+  - `a\u0000b`, `\u0085x`, `\uFEFFx`, `x\u200B`, `\u2028`, and an unpaired `\uD800`.
+  - A leading space, a trailing tab, and an NBSP `\u00A0` (bad-alphabet).
+- **Lookalikes:** fullwidth `．`, `∕` (U+2215), `／` (U+FF0F), Cyrillic `а` in a hex position, `０` (fullwidth zero) in a wallet.
+- **Case:**
+  - A wallet with a wrong mixed-case checksum. An all-lowercase wallet: rejected by `parseEip55`, accepted by `parseWalletInput`.
+  - An uppercase tenant UUID.
+  - An uppercase hex `ObjectId`.
+- **Principal:**
+  - 86 or 88 chars, a missing `.`, two dots, padding `=`, a non-canonical last char (e.g. ending `B`), a standard-base64 `+` or `/`.
+  - A valid-looking string that isn't a point on P-256.
+- **Stateful object:** `{ toString(){…} }` gives `not-string`.
+- **#54 items 2–4** are request-layer behaviours. Add record-level vectors so that a `Rotate`/`Link` whose `principal` is a non-string object is rejected, and so that a fork at the same `seq` gives `rotation-fork`.
+
+Property tests (fast-check in TS, proptest in Rust; at least 10k cases per property in CI):
+1. `parse(format(x)) == x` for every generated valid value of every family.
+2. `format` is injective: distinct canonical values give distinct canonical strings and distinct path keys, including across families (no `PathKey` collisions between `p_`, `w_`, `k_`, `n_`, `s_` and object keys).
+3. `parse(canonical) == canonical`: parsing a canonical string is the identity, i.e. idempotent.
+4. No path key or soul segment contains `/ . # $ [ ] ~ %`. Every soul has its template's exact segment count.
+5. Every `reject` vector is rejected in both languages with the same `reason`.
+6. `mintObjectId` output always parses, and 1e6 mints have no duplicates.
+7. TS and Rust produce byte-identical signing bytes and `linkId`s for every `signing-bytes` vector.
+
+## 7. Packaging, versioning, CI
+
+- **Location:** SociACL repo, at `typescript/ids/` (package name `sociacl-ids`, ESM, own `package.json`, `"private": false`) and `crates/sociacl-ids/` (workspace member). Vectors go in `vectors/ids/`.
+- **Distribution:** GitHub Release asset `sociacl-ids-<version>.tgz` produced by `npm pack`. s3r.ch and Panopticon depend on the tarball URL, which the lockfile pins with integrity. This needs no registry token, and avoids the GHCR/Packages auth failures we've hit. s3r.ch stops vendoring `docs/s3rch-check.d.ts` for ids (the current state is described in `typescript/package.json`: "s3r.ch still copies docs/s3rch-check.d.ts and does not import this package").
+- **Versioning:** independent tag track `ids-vMAJOR.MINOR.PATCH`, starting at `ids-v0.1.0`. Any change to an `accept` or `reject` vector, a grammar or a signing domain is a MAJOR change. While below 1.0, bump MINOR for it and record it in `CHANGELOG.md`.
+- **CI** (extend `scripts/test-all.sh` and `.github/workflows/ci.yml`; the CI's Node ≥ 24 check stays):
+  - `cargo test -p sociacl-ids --locked`, including proptests.
+  - `node --test typescript/ids/test/*.js`, including fast-check.
+  - `tsc --strict --noEmit` on `typescript/ids`.
+  - A browser-compat check: bundle with esbuild for `--platform=browser` and fail if `node:` imports appear.
+  - A vector check that fails if any `vectors/ids/*.json` case isn't loaded by both suites. Each suite emits the vector names it ran, and CI compares the two sets.
+  - Release job on tag: `npm pack`, attach the tgz to the release, and publish a sha256 of the tgz.
+
+## 8. Non-goals (this PR)
+
+- No changes to callers: SociACL `src/*.js`, the existing `crates/sociacl-gun`, s3r.ch and Panopticon stay as they are. Appendix B lists them for later PRs.
+- No alias folding, no `sameObjectId`/`sameAccessor`-style helpers, and no acceptance of `s3rch/users/<wallet>` or raw-vs-soul spellings.
+- No wallet-as-identity: `Eip55` never converts to `PrincipalId`.
+- No permission logic: no `checkSee`, grants, HAM or epochs.
+- No storage of records, no Gun I/O, no Panopticon endpoints. The package only defines the formats and verifies them.
+- No EIP-1271, no ENS resolution, no handle registry, no search indexing.
+- No migration of existing Gun data.
+
+## 9. Acceptance criteria
+
+- [ ] `typescript/ids` and `crates/sociacl-ids` implement §3–§5 and nothing more.
+- [ ] Every parser is total (never throws or panics) on arbitrary input. A fuzz test with 1e5 random strings or values is included in both languages.
+- [ ] The core API has no function that takes `string`/`&str` where a branded id is expected, except the `parse*` functions. A type test proves that `grantSoul("a","b","c")` fails to compile in TS.
+- [ ] Vectors in `vectors/ids/` cover every case in §6, and both suites load 100% of them (CI-enforced).
+- [ ] All 7 property tests pass in both languages.
+- [ ] TS and Rust produce identical signing bytes, `linkId`s, path keys and souls.
+- [ ] Verification works end to end with fixed test keys for a wallet link, an OIDC link (test JWKS), a rotate via wallet, a rotate via fresh OIDC login, a fork, and a revoke.
+- [ ] No `node:` imports in `typescript/ids` (browser bundle check).
+- [ ] The release job produces `sociacl-ids-0.1.0.tgz` on tag `ids-v0.1.0`. A sample consumer (an `examples/consumer` folder in the SociACL repo) installs it from the local tgz and runs the parsers.
+- [ ] The PR touches only `typescript/ids/**`, `crates/sociacl-ids/**`, `vectors/ids/**`, `Cargo.toml` (members), `Cargo.lock`, `scripts/test-all.sh`, `.github/workflows/ci.yml`, `CHANGELOG.md` and docs.
+
+---
+
+## Appendix A: why the old scheme failed (evidence)
+
+- SociACL `typescript/src/post.js:49-90` (main): an unanchored `.get(` chain parser turned `0xattacker.get('s3rch').get('users').get('0xvictim')` into `0xvictim`.
+- SociACL `typescript/src/gun.js:43-61` (main): `encodeKey` folded `. # $ [ ]` to `_`, and `aclKey` also folded `/` to `_`. Result: `room.alpha` = `room_alpha` = `room/alpha`.
+- SociACL PR #56 `d51e33f`: unescaped principals in `grantSoul` (`gun.js:96-100`, Rust `soul.rs:110-120`) made `("0xalice","doc","0xbob/x")` and `("0xalice/doc","0xbob","x")` the same soul.
+- s3r.ch `lib/identity/check.ts:478-492`: `grantNamesObject` matched `object.endsWith('/chat/'+id)`, so a grant could cross rooms.
+- At least 8 copies of key encoding across TS and Rust: `gun.js`, `post.js`, `group.js`, `request.js`, `contract/migration.ts`, `soul.rs`, `encdisc/migration.rs`, plus s3r.ch `lib/identity/check.ts:219-300`.
+
+## Appendix B: call sites to migrate later (not in this PR)
+
+**SociACL**, `main@7279ef6` unless marked #56 (`d51e33f`):
+- TS key encoding and accessors:
+  - `typescript/src/gun.js:20-61` (`samePrincipal`, `canonicalStoredObject`, `grantNamesObject`, `encodeKey`, `itemSoul`, `userSoul`, `aclKey`, `aclPrincipalKey`, `aclSoul`, `grantSoul`)
+  - `typescript/src/post.js:40-135` (`aclKey`, `aclPrincipalKey`, `itemSoulAlias`, `objectNames`, `canonicalAccessorId`). #56: `post.js:66-91, 142, 160-161, 216-217`.
+  - `typescript/src/group.js` (#56): `373-385` encode/acl/principal keys, `433-444` membership/object-set souls, `1605` `grantKey`, `1222` `enrolledKey`.
+  - `typescript/src/request.js` (#56): `182-258` canonical request accessor/object and `reducibleItemInner`, `295` `lengthPrefixed` (keep the encoding, move into ids), `459` enrolled-key lookup.
+  - `typescript/contract/migration.ts:45-77`.
+- Rust:
+  - `crates/sociacl-gun/src/soul.rs`: `16-60` (escape), `101-120` (soul builders), `183-202` (principal key).
+  - `crates/sociacl-gun/src/mesh.rs`: `614-626` (`object_record`, `canonical_object_id`), `731-742` (`grant_soul`, `acl_soul`).
+  - `crates/sociacl-gun/src/post.rs:137` (`post_soul`).
+  - `crates/sociacl-gun/src/group.rs`: `331` (membership soul), `398-425` (enroll and lookup), `1546` (set id from key).
+  - `crates/sociacl-gun/src/request.rs`: `115-140`, `380-417`.
+  - `crates/sociacl-gun/src/feed.rs:263-292`.
+  - `crates/sociacl-encdisc/src/migration.rs:795-830`.
+
+**s3r.ch** (`feat/views-route@da3a396`):
+- Identity: `lib/identity/check.ts:138-145` (string `CheckObjectId`/`AccessorId` types), `219-300` (encodeKey, itemSoul, roomSoul, userSoul, aclKey, aclPrincipalKey), `451-528` (`accessorAliases`, `sameAccessor`, `grantNamesObject`, `userObjectId`, `ownerOwnsObject`), `632-645` (lowercase dedupe).
+- Account keys:
+  - `lib/identity/mesh.ts:51-79`: a SEA pair is minted per device and keyed by wallet. One key per account needs SociACL #24.
+  - `lib/identity/idb.ts:20-22`: the "address is session subject" record.
+  - `lib/identity/mesh-link.ts:7-28`: the wallet-signed statement becomes a `WalletLink`.
+  - `lib/identity/link.ts:37-41, 51-56`: `IdentityPerson.owner` is the wallet, and the OIDC handle lacks tenant and issuer.
+  - `lib/identity/wrap.ts:51-66`: envelope `address` becomes the principal.
+- Objects: `lib/users.ts:2,309` (user soul `s3rch/users/<wallet>`), `lib/rooms.ts:60-64,143`, `lib/chat.ts:48-52,123`, `lib/forum.ts:488,652,1123` (mint sites move to `mintObjectId`).
+- Forum: `lib/forum.ts:368,408,648` (label used as identity), `590` (handle lookup not scoped by channel).
+- Views:
+  - `lib/views-source-ref.ts:146-153`: the s3r.ch owner must be a `PrincipalId`, not a wallet.
+  - `lib/views-picker.ts`: `73` (lowercase owner compare), `247` (label copied into the window), `284-286` (`labelFor` linear scan).
+  - `lib/views-access.ts:45` (`roomSoul(ref.source)`).
+  - `lib/views-backup.ts:104-109,216,253` (owner in AAD and manifest becomes the principal).
+  - `lib/views-store.ts` (keyed by wallet).
+  - `components/ViewRoute.tsx:34` (`selfNetwork: ""` placeholder).
+
+**Panopticon frontend** (`main`):
+- `frontend/src/lib/private-model-upload.ts:40`: upload grant chosen by `file.name`; use the file index or sha256.
+- The OIDC link attestation (§4.5) is a new Panopticon endpoint, in a separate PR.
