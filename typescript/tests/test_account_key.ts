@@ -467,16 +467,47 @@ test("a forged LinkedCredential is rejected", () => {
   reject(() => Reflect.construct(LinkedCredential, [Symbol("linked-credential-ctor"), "wallet", victim, "x"]));
   reject(() => sameAccount(Object.create(LinkedCredential.prototype), victim));
   reject(() => sameAccount(Object.setPrototypeOf({ principal: victim, kind: "wallet", label: "x" }, LinkedCredential.prototype), victim));
-  const previous = Object.getOwnPropertyDescriptor(LinkedCredential, Symbol.hasInstance);
-  Object.defineProperty(LinkedCredential, Symbol.hasInstance, { configurable: true, value: () => true });
-  try {
-    const plain = { principal: victim, kind: "wallet", label: "x" };
-    assert.equal(plain instanceof LinkedCredential, true);
-    reject(() => sameAccount(plain, victim));
-  } finally {
-    if (previous) Object.defineProperty(LinkedCredential, Symbol.hasInstance, previous);
-    else Reflect.deleteProperty(LinkedCredential, Symbol.hasInstance);
+  const plain = { principal: victim, kind: "wallet", label: "x" };
+  assert.throws(() => {
+    Object.defineProperty(LinkedCredential, Symbol.hasInstance, { configurable: true, value: () => true });
+  });
+  assert.equal(plain instanceof LinkedCredential, false);
+  reject(() => sameAccount(plain, victim));
+});
+
+test("LinkedCredential statics cannot be reassigned", () => {
+  const victim = account().principal;
+  const plain = { principal: victim, kind: "wallet" as const, label: "x" };
+  const blocked: Array<() => void> = [
+    () => {
+      (LinkedCredential as unknown as { isVerified: (value: unknown) => boolean }).isVerified = () => true;
+    },
+    () => {
+      (LinkedCredential as unknown as { fromWallet: () => unknown }).fromWallet = () => plain;
+    },
+    () => {
+      (LinkedCredential as unknown as { fromOidc: () => unknown }).fromOidc = () => plain;
+    },
+    () => {
+      (LinkedCredential as unknown as { prototype: object }).prototype = { principal: victim };
+    },
+    () => {
+      Object.defineProperty(LinkedCredential, "isVerified", { configurable: true, value: () => true });
+    },
+  ];
+  for (const assign of blocked) assert.throws(assign);
+  assert.equal(Object.isFrozen(LinkedCredential), true);
+  assert.equal(Object.isFrozen(LinkedCredential.prototype), true);
+  for (const name of ["isVerified", "fromWallet", "fromOidc", "prototype"] as const) {
+    const descriptor = Object.getOwnPropertyDescriptor(LinkedCredential, name);
+    assert.equal(descriptor?.writable ?? false, false);
+    assert.equal(descriptor?.configurable, false);
   }
+  assert.equal(LinkedCredential.isVerified(plain), false);
+  assert.throws(
+    () => sameAccount(plain, victim),
+    (error: unknown) => error instanceof Error && error.message === "unverified-credential",
+  );
 });
 
 test("a verified principal cannot be replaced", () => {

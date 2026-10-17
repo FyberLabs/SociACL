@@ -125,7 +125,8 @@ const ctorToken: unique symbol = Symbol("linked-credential-ctor");
 /**
  * A wallet or OIDC record that `verifyWalletLink` / `verifyOidcLink` accepted.
  * `sameAccount` checks the private `#brand`, not `instanceof`. The constructor
- * accepts only this module's token. `principal` is a private field.
+ * accepts only this module's token. `principal` is a private field. The
+ * instance, the prototype, and the constructor are frozen.
  */
 export class LinkedCredential {
   readonly kind: "wallet" | "oidc";
@@ -175,6 +176,7 @@ export class LinkedCredential {
 }
 
 Object.freeze(LinkedCredential.prototype);
+Object.freeze(LinkedCredential);
 
 export function importGenesis(
   laneId: string,
