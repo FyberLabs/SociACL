@@ -101,9 +101,15 @@ pub struct MemoryKeyWrapStore {
     by_principal: BTreeMap<String, EncryptedAccountWrap>,
 }
 
-/// A verified wallet or OIDC link. The principal is the only account id.
+/// A wallet or OIDC link that `verify_wallet_link` / `verify_oidc_link` accepted.
+/// Variants and fields are private. A forged record cannot build one.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum LinkedCredential {
+pub struct LinkedCredential {
+    kind: CredentialKind,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum CredentialKind {
     Wallet {
         principal: PrincipalId,
         address: String,
@@ -400,8 +406,10 @@ impl KeyWrapStore for MemoryKeyWrapStore {
 
 impl LinkedCredential {
     pub fn principal(&self) -> &PrincipalId {
-        match self {
-            Self::Wallet { principal, .. } | Self::Oidc { principal, .. } => principal,
+        match &self.kind {
+            CredentialKind::Wallet { principal, .. } | CredentialKind::Oidc { principal, .. } => {
+                principal
+            }
         }
     }
 
@@ -409,22 +417,42 @@ impl LinkedCredential {
         self.principal() == account
     }
 
-    /// `link` is a `verify_wallet_link` result. A bare principal is not a credential.
-    pub fn from_wallet(link: &sociacl_ids::WalletLink) -> Self {
-        Self::Wallet {
-            principal: link.principal.clone(),
-            address: link.address.to_string(),
-        }
+    /// Verify `raw` with `verify_wallet_link`. A bare principal is not a credential.
+    pub fn from_wallet(
+        raw: &serde_json::Value,
+        jwks: &sociacl_ids::Jwks,
+        policy: &sociacl_ids::SiwePolicy,
+        now: u64,
+        key_state: &sociacl_ids::KeyState,
+    ) -> Result<Self, EncDiscError> {
+        let link = sociacl_ids::verify_wallet_link(raw, jwks, policy, now, key_state)
+            .map_err(|_| EncDiscError::IdentityRejected("unverified-credential".into()))?;
+        Ok(Self {
+            kind: CredentialKind::Wallet {
+                principal: link.principal,
+                address: link.address.to_string(),
+            },
+        })
     }
 
-    /// `link` is a `verify_oidc_link` result. The subject is not an account.
-    pub fn from_oidc(link: &sociacl_ids::OidcLink) -> Self {
-        Self::Oidc {
-            principal: link.principal.clone(),
-            issuer: link.cred.issuer().to_string(),
-            tenant: link.cred.tenant().to_string(),
-            subject: link.cred.subject().to_string(),
-        }
+    /// Verify `raw` with `verify_oidc_link`. The subject is not an account.
+    pub fn from_oidc(
+        raw: &serde_json::Value,
+        jwks: &sociacl_ids::Jwks,
+        pinned: &std::collections::BTreeSet<String>,
+        now: u64,
+        key_state: &sociacl_ids::KeyState,
+    ) -> Result<Self, EncDiscError> {
+        let link = sociacl_ids::verify_oidc_link(raw, jwks, pinned, now, key_state)
+            .map_err(|_| EncDiscError::IdentityRejected("unverified-credential".into()))?;
+        Ok(Self {
+            kind: CredentialKind::Oidc {
+                principal: link.principal,
+                issuer: link.cred.issuer().to_string(),
+                tenant: link.cred.tenant().to_string(),
+                subject: link.cred.subject().to_string(),
+            },
+        })
     }
 }
 
@@ -475,6 +503,8 @@ pub fn current_signing_key(
 /// Panopticon stores the wrap. It is not a channel that delivers that public key.
 /// The signature is from the current signing key (`resolve_current_key`).
 /// This device can sign only while that key is the genesis key it holds.
+/// `rotations` and `context` must be the trusted latest-state checkpoint
+/// (sociacl-ids §4.6), not a set taken from Panopticon alone.
 pub fn seal_account_backup(
     account: &GenesisAccount,
     transport_pub: &str,
@@ -523,6 +553,8 @@ fn seal_account_backup_with(
 /// Open a wrap for `expected`. A store row that names some other account is rejected.
 ///
 /// The signature is checked against `resolve_current_key(expected)` before import.
+/// `rotations` and `context` must be the trusted latest-state checkpoint
+/// (sociacl-ids §4.6), not a set taken from Panopticon alone.
 pub fn open_account_backup(
     transport: &TransportKey,
     wrap: &EncryptedAccountWrap,
@@ -657,8 +689,7 @@ fn require_transport_pub(
     if transport_pub == account.sea_pub() || transport_pub == account.epub() {
         return Err(EncDiscError::IdentityRejected("transport".into()));
     }
-    sea::parse_sea_point(transport_pub)
-        .map_err(|_| EncDiscError::IdentityRejected("transport".into()))
+    sea::parse_sea_point(transport_pub).map_err(|_| EncDiscError::BadKey)
 }
 
 fn require_held_current_key(
@@ -916,21 +947,44 @@ mod tests {
             current_key: genesis.clone(),
             retained_links: None,
         };
+        let linked =
+            LinkedCredential::from_wallet(&wallet["input"], &jwks, &policy, now, &key_state)
+                .unwrap();
         let verified =
             verify_wallet_link(&wallet["input"], &jwks, &policy, now, &key_state).unwrap();
-        let linked = LinkedCredential::from_wallet(&verified);
         assert!(linked.same_account(&genesis));
         assert!(!linked.same_account(account.principal()));
         assert_ne!(linked.principal().as_ref(), verified.address.as_ref());
         assert!(account_id_from_label(verified.address.as_ref()).is_err());
+        let mut forged = wallet["input"].clone();
+        forged["keySig"] = Value::String("x".into());
+        assert_eq!(
+            LinkedCredential::from_wallet(&forged, &jwks, &policy, now, &key_state).unwrap_err(),
+            EncDiscError::IdentityRejected("unverified-credential".into())
+        );
+        let mut flipped = wallet["input"].clone();
+        let mut signature = flipped["keySig"].as_str().unwrap().to_string();
+        let replacement = if signature.starts_with('a') { 'b' } else { 'a' };
+        signature.replace_range(0..1, &replacement.to_string());
+        flipped["keySig"] = Value::String(signature);
+        assert_eq!(
+            LinkedCredential::from_wallet(&flipped, &jwks, &policy, now, &key_state).unwrap_err(),
+            EncDiscError::IdentityRejected("unverified-credential".into())
+        );
 
+        let oidc_link =
+            LinkedCredential::from_oidc(&oidc["input"], &jwks, &pinned, now, &key_state).unwrap();
         let verified_oidc =
             verify_oidc_link(&oidc["input"], &jwks, &pinned, now, &key_state).unwrap();
-        let oidc_link = LinkedCredential::from_oidc(&verified_oidc);
         assert!(oidc_link.same_account(&genesis));
         assert_ne!(oidc_link.principal().as_ref(), verified_oidc.cred.subject());
         assert!(account_id_from_label(verified_oidc.cred.subject()).is_err());
         assert!(account_id_from_label(verified_oidc.cred.issuer()).is_err());
+        let mut forged_oidc = oidc["input"].clone();
+        forged_oidc["keySig"] = Value::String("x".into());
+        assert!(
+            LinkedCredential::from_oidc(&forged_oidc, &jwks, &pinned, now, &key_state).is_err()
+        );
     }
 
     #[test]
@@ -1011,24 +1065,30 @@ mod tests {
         let enc_hex = crate::hexutil::encode_secret_hex(encryption.to_bytes().as_slice());
         assert!(!wrap.ciphertext_hex.contains(sign_hex.as_str()));
         assert!(!wrap.ciphertext_hex.contains(enc_hex.as_str()));
-        assert!(seal_account_backup(
-            &account,
-            account.epub(),
-            &wrap_id,
-            &[],
-            &context,
-            &mut MemoryKeyWrapStore::default(),
-        )
-        .is_err());
-        assert!(seal_account_backup(
-            &account,
-            account.sea_pub(),
-            &wrap_id,
-            &[],
-            &context,
-            &mut MemoryKeyWrapStore::default(),
-        )
-        .is_err());
+        assert_eq!(
+            seal_account_backup(
+                &account,
+                account.epub(),
+                &wrap_id,
+                &[],
+                &context,
+                &mut MemoryKeyWrapStore::default(),
+            )
+            .unwrap_err(),
+            EncDiscError::IdentityRejected("transport".into())
+        );
+        assert_eq!(
+            seal_account_backup(
+                &account,
+                account.sea_pub(),
+                &wrap_id,
+                &[],
+                &context,
+                &mut MemoryKeyWrapStore::default(),
+            )
+            .unwrap_err(),
+            EncDiscError::IdentityRejected("transport".into())
+        );
         let gun = account.gun_document();
         assert!(!gun.contains(&wrap.ciphertext_hex));
         assert!(!gun.contains(account.local_priv()));
@@ -1197,6 +1257,122 @@ mod tests {
             open_account_backup(&transport, &first, account.principal(), &[], &context).unwrap();
         assert_eq!(opened.principal(), account.principal());
         assert_eq!(opened.local_priv(), account.local_priv());
+    }
+
+    #[test]
+    fn off_curve_transport_pub_is_bad_key() {
+        let v = vector();
+        let account = fixture_account(&v);
+        let wrap_id = parse_wrap_object(v["backupWrap"]["wrapId"].as_str().unwrap()).unwrap();
+        let parts = empty_resolution();
+        let context = parts.context();
+        let err = seal_account_backup(
+            &account,
+            v["offCurveTransportPub"].as_str().unwrap(),
+            &wrap_id,
+            &[],
+            &context,
+            &mut MemoryKeyWrapStore::default(),
+        )
+        .unwrap_err();
+        assert_eq!(err, EncDiscError::BadKey);
+    }
+
+    #[test]
+    fn seal_refused_and_open_rejected_after_rotation() {
+        let v = vector();
+        let row = &v["afterRotation"];
+        let account = GenesisAccount::import(
+            row["laneId"].as_str().unwrap(),
+            row["signingPub"].as_str().unwrap(),
+            row["signingPriv"].as_str().unwrap(),
+            row["epub"].as_str().unwrap(),
+            row["epriv"].as_str().unwrap(),
+        )
+        .unwrap();
+        let records: Value = serde_json::from_str(RECORDS).unwrap();
+        assert_eq!(row["rotationName"].as_str().unwrap(), "wallet-rotate");
+        assert_eq!(
+            account.principal().as_ref(),
+            records["context"]["genesis"].as_str().unwrap()
+        );
+        let rotate = records["accept"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|item| item["name"] == "wallet-rotate")
+            .unwrap();
+        let (jwks, policy, pinned, now, genesis) = record_parts(&records);
+        assert_eq!(account.principal(), &genesis);
+        let links = links_of(&records["context"]);
+        let authenticated = records["context"]["authenticatedAccounts"].clone();
+        let history = |principal: &PrincipalId, at, until| {
+            if !authenticated
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|item| item.as_str() == Some(principal.as_ref()))
+            {
+                return Err(Reason::MissingHistory);
+            }
+            let empty: Vec<Rotate> = Vec::new();
+            Ok(history_state(principal, &empty, at, until))
+        };
+        let resolver: &HistoryResolver<'_> = &history;
+        let revocations = Vec::new();
+        let context = ResolutionContext {
+            jwks: &jwks,
+            links: &links,
+            revocations: &revocations,
+            now,
+            policy: &policy,
+            pinned_iss: &pinned,
+            history: resolver,
+        };
+        let transport =
+            TransportKey::from_scalar_hex(row["transportScalarHex"].as_str().unwrap()).unwrap();
+        assert_eq!(transport.sea_pub(), row["transportPub"].as_str().unwrap());
+        assert_ne!(transport.sea_pub(), account.sea_pub());
+        assert_ne!(transport.sea_pub(), account.epub());
+        let ephemeral = secret_from_hex(row["ephemeralScalarHex"].as_str().unwrap());
+        let nonce = nonce_from_hex(row["nonceHex"].as_str().unwrap());
+        let wrap_id = parse_wrap_object(row["wrapId"].as_str().unwrap()).unwrap();
+        let mut store = MemoryKeyWrapStore::default();
+        let wrap = seal_account_backup_with(
+            &account,
+            transport.sea_pub(),
+            &ephemeral,
+            &nonce,
+            &wrap_id,
+            &[],
+            &context,
+            &mut store,
+        )
+        .unwrap();
+        assert_eq!(wrap.ciphertext_hex, row["ciphertextHex"].as_str().unwrap());
+        assert_eq!(wrap.signature, row["signature"].as_str().unwrap());
+        let opened =
+            open_account_backup(&transport, &wrap, account.principal(), &[], &context).unwrap();
+        assert_eq!(opened.local_priv(), account.local_priv());
+        let rotations = [rotate["input"].clone()];
+        let mut refused = MemoryKeyWrapStore::default();
+        assert_eq!(
+            seal_account_backup(
+                &account,
+                transport.sea_pub(),
+                &wrap_id,
+                &rotations,
+                &context,
+                &mut refused,
+            )
+            .unwrap_err(),
+            EncDiscError::IdentityRejected("current-key".into())
+        );
+        assert_eq!(
+            open_account_backup(&transport, &wrap, account.principal(), &rotations, &context)
+                .unwrap_err(),
+            EncDiscError::SignatureRejected
+        );
     }
 
     #[test]

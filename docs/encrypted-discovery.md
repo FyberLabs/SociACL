@@ -156,7 +156,9 @@ Devices do not mint a second SEA keypair and do not mint an identity. A device i
 
 Wallets and OIDC subjects are linked credentials (`WalletLink`, `OidcLink`) only after `verifyWalletLink` / `verifyOidcLink`. They are not principals. The current signing key, when it differs from genesis, is whatever `resolveCurrentKey` returns under the package's witnessed rotation rules. This page does not define a second rotation scheme.
 
-**OPEN.** Whether a rotation mints a new `epub`, and how a recovered device obtains the current encryption key, is not decided here. See the review on [SociACL#63](https://github.com/FyberLabs/SociACL/pull/63) (issue [#24](https://github.com/FyberLabs/SociACL/issues/24)). Chris is deciding the recovery design. This spec does not add a Rotate version or an account keyring.
+The `rotations` passed to seal and to open, and the resolution context those calls use, must be the trusted latest-state checkpoint from sociacl-ids §4.6. Panopticon alone does not supply that checkpoint. Passing no rotations leaves the current key equal to genesis, so a genesis-signed wrap opens.
+
+**OPEN.** Whether a rotation mints a new `epub`, and how a recovered device obtains the current encryption key, is [SociACL#64](https://github.com/FyberLabs/SociACL/issues/64). That issue covers the Argon2id passphrase recovery copy and HKDF per-contact lanes. This spec does not implement either of them. It does not add a Rotate version or an account keyring.
 
 ## Epoch manifest
 

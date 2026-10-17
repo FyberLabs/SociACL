@@ -7,11 +7,12 @@
  * nonce are generated inside sealAccountBackup. That public key must arrive
  * out of band (a QR code, or a short-code comparison). Panopticon stores
  * the wrap and must not be the only channel for the transport public key.
+ *
+ * `rotations` and the resolution context passed to seal and open must be the
+ * trusted latest-state checkpoint from sociacl-ids §4.6. Panopticon alone
+ * does not supply that checkpoint.
  */
-import assert from "node:assert/strict";
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
-import { readFileSync } from "node:fs";
-import { test } from "node:test";
 import { p256 } from "@noble/curves/nist.js";
 import {
   formatPrincipalKey,
@@ -22,11 +23,14 @@ import {
   principalFromSec1,
   resolveCurrentKey,
   userSoul,
+  verifyOidcLink,
+  verifyWalletLink,
+  type Jwks,
+  type KeyState,
   type ObjectId,
-  type OidcLink,
   type PrincipalId,
   type ResolutionContext,
-  type WalletLink,
+  type SiwePolicy,
 } from "../ids/src/index.js";
 import { canonicalDecimal, lengthPrefixed } from "./canonical.ts";
 
@@ -102,7 +106,10 @@ export class MemoryKeyWrapStore implements KeyWrapStore {
 
 const linkedBrand = Symbol("verified-link");
 
-/** A wallet or OIDC record after verifyWalletLink / verifyOidcLink. Not an identity. */
+/**
+ * A wallet or OIDC record that `verifyWalletLink` / `verifyOidcLink` accepted.
+ * The constructor is private. A forged record is not a credential.
+ */
 export class LinkedCredential {
   readonly kind: "wallet" | "oidc";
   readonly principal: PrincipalId;
@@ -115,22 +122,22 @@ export class LinkedCredential {
     this.label = label;
   }
 
-  static fromWallet(link: WalletLink): LinkedCredential {
-    if (link.kind !== "wallet" || link.v !== 1 || link.keySig.length === 0 || link.attest.length === 0) {
-      throw new Error("unverified-credential");
-    }
-    const parsed = parsePrincipalId(link.principal);
-    if (!parsed.ok || parsed.value !== link.principal) throw new Error("unverified-credential");
-    return new LinkedCredential("wallet", parsed.value, link.address);
+  static fromWallet(raw: unknown, jwks: Jwks, policy: SiwePolicy, now: number, keyState: KeyState): LinkedCredential {
+    const verified = verifyWalletLink(raw, jwks, policy, now, keyState);
+    if (!verified.ok) throw new Error("unverified-credential");
+    return new LinkedCredential("wallet", verified.value.principal, verified.value.address);
   }
 
-  static fromOidc(link: OidcLink): LinkedCredential {
-    if (link.kind !== "oidc" || link.v !== 1 || link.keySig.length === 0 || link.attest.length === 0) {
-      throw new Error("unverified-credential");
-    }
-    const parsed = parsePrincipalId(link.principal);
-    if (!parsed.ok || parsed.value !== link.principal) throw new Error("unverified-credential");
-    return new LinkedCredential("oidc", parsed.value, link.cred.sub);
+  static fromOidc(
+    raw: unknown,
+    jwks: Jwks,
+    pinnedIss: ReadonlySet<string>,
+    now: number,
+    keyState: KeyState,
+  ): LinkedCredential {
+    const verified = verifyOidcLink(raw, jwks, pinnedIss, now, keyState);
+    if (!verified.ok) throw new Error("unverified-credential");
+    return new LinkedCredential("oidc", verified.value.principal, verified.value.cred.sub);
   }
 }
 
@@ -206,7 +213,10 @@ export function currentSigningKey(
   return resolved.value.currentKey;
 }
 
-/** Seal to `transportPub`. Randomness stays inside this function. */
+/**
+ * Seal to `transportPub`. Randomness stays inside this function.
+ * `rotations` and `context` are the trusted latest-state checkpoint (sociacl-ids §4.6).
+ */
 export function sealAccountBackup(
   account: GenesisAccount,
   transportPub: string,
@@ -218,6 +228,10 @@ export function sealAccountBackup(
   return sealAccountBackupWith(account, transportPub, randomScalar(), randomBytes(12), wrapId, rotations, context, store);
 }
 
+/**
+ * Open a wrap for `expected`.
+ * `rotations` and `context` are the trusted latest-state checkpoint (sociacl-ids §4.6).
+ */
 export function openAccountBackup(
   transportScalarHex: string,
   wrap: EncryptedAccountWrap,
@@ -225,6 +239,7 @@ export function openAccountBackup(
   rotations: readonly unknown[],
   context: ResolutionContext,
 ): GenesisAccount {
+  if (wrap.signature.length !== 128 || !/^[0-9a-f]{128}$/u.test(wrap.signature)) throw new Error("wrap-rejected");
   if (wrap.ciphertextHex.length > MAX_BACKUP_BYTES * 2) throw new Error("wrap-rejected");
   const transport = hexToBytes(transportScalarHex);
   if (transport.length !== 32) throw new Error("bad-key");
@@ -256,7 +271,19 @@ export function openAccountBackup(
   return account;
 }
 
+/** Wrap a DEK to the account `epub`. The ephemeral key and nonce are generated here. */
 export function contentWrapHex(
+  account: GenesisAccount,
+  dekHex: string,
+  epoch: number,
+  objectId: string,
+  revisionId: string,
+): string {
+  return contentWrapHexWith(account, dekHex, bytesToHex(randomScalar()), bytesToHex(randomBytes(12)), epoch, objectId, revisionId);
+}
+
+/** Deterministic content wrap. Not a production export. */
+function contentWrapHexWith(
   account: GenesisAccount,
   dekHex: string,
   ephemeralScalarHex: string,
@@ -294,7 +321,52 @@ export function contentWrapHex(
   return bytesToHex(blob);
 }
 
-/** Deterministic enrollment seal. Tests in this module only. Not a production export. */
+/**
+ * Deterministic helpers for `node --test`.
+ * Returns undefined unless `NODE_TEST_CONTEXT` is set. The helpers are not named exports.
+ */
+export function accountKeyTestApi():
+  | {
+      sealAccountBackupWith: (
+        account: GenesisAccount,
+        transportPub: string,
+        ephemeralScalarHex: string,
+        nonceHex: string,
+        wrapId: ObjectId,
+        rotations: readonly unknown[],
+        context: ResolutionContext,
+        store: KeyWrapStore,
+      ) => EncryptedAccountWrap;
+      contentWrapHexWith: (
+        account: GenesisAccount,
+        dekHex: string,
+        ephemeralScalarHex: string,
+        nonceHex: string,
+        epoch: number,
+        objectId: string,
+        revisionId: string,
+      ) => string;
+    }
+  | undefined {
+  if (process.env.NODE_TEST_CONTEXT === undefined) return undefined;
+  return {
+    sealAccountBackupWith(account, transportPub, ephemeralScalarHex, nonceHex, wrapId, rotations, context, store) {
+      return sealAccountBackupWith(
+        account,
+        transportPub,
+        hexToBytes(ephemeralScalarHex),
+        hexToBytes(nonceHex),
+        wrapId,
+        rotations,
+        context,
+        store,
+      );
+    },
+    contentWrapHexWith,
+  };
+}
+
+/** Deterministic enrollment seal. Not a production export. */
 function sealAccountBackupWith(
   account: GenesisAccount,
   transportPub: string,
@@ -308,8 +380,7 @@ function sealAccountBackupWith(
   if (ephemeral.length !== 32 || nonce.length !== 12) throw new Error("bad-key");
   const current = currentSigningKey(account.principal, rotations, context);
   if (current !== account.pub) throw new Error("current-key");
-  if (transportPub === account.pub || transportPub === account.epub) throw new Error("transport");
-  const peer = uncompressedFromSea(transportPub);
+  const peer = transportPeer(account, transportPub);
   const point = p256.getPublicKey(ephemeral, false);
   const ephemeralPub = seaPoint(ephemeral);
   const plain = lengthPrefixed([
@@ -337,6 +408,17 @@ function sealAccountBackupWith(
   const wrap: EncryptedAccountWrap = { principal: account.principal, wrapId, epub: account.epub, ciphertextHex, signature };
   store.put({ principal: wrap.principal, wrapId: wrap.wrapId, epub: wrap.epub }, wrap);
   return wrap;
+}
+
+function transportPeer(account: GenesisAccount, transportPub: string): Uint8Array {
+  if (transportPub === account.pub || transportPub === account.epub) throw new Error("transport");
+  try {
+    const peer = uncompressedFromSea(transportPub);
+    p256.Point.fromBytes(peer);
+    return peer;
+  } catch {
+    throw new Error("bad-key");
+  }
 }
 
 function randomScalar(): Uint8Array {
@@ -448,92 +530,4 @@ function bytesToHex(bytes: Uint8Array): string {
 
 function jsonString(value: string): string {
   return JSON.stringify(value);
-}
-
-if (process.env.NODE_TEST_CONTEXT !== undefined) {
-  const vector = JSON.parse(readFileSync(new URL("../../vectors/encrypted-discovery/account-key.json", import.meta.url), "utf8")) as {
-    signingPub: string;
-    signingPriv: string;
-    epub: string;
-    epriv: string;
-    laneId: string;
-    principal: string;
-    backupWrap: {
-      transportScalarHex: string;
-      transportPub: string;
-      ephemeralScalarHex: string;
-      nonceHex: string;
-      wrapId: string;
-      ciphertextHex: string;
-      signature: string;
-    };
-    substitution: {
-      signingPub: string;
-      signingPriv: string;
-      epub: string;
-      epriv: string;
-      laneId: string;
-      ephemeralScalarHex: string;
-      nonceHex: string;
-      wrapId: string;
-      ciphertextHex: string;
-      signature: string;
-    };
-  };
-  const context: ResolutionContext = {
-    jwks: { keys: [] },
-    links: new Map(),
-    revocations: [],
-    now: 1_700_000_060,
-    policy: { allowedDomains: [], allowedUris: [], allowedChainIds: [] },
-    pinnedIss: new Set(),
-    history: () => ({ ok: false, reason: "missing-history" }),
-  };
-
-  test("public transport key seal matches the shared vector", () => {
-    const account = importGenesis(vector.laneId, vector.signingPub, vector.signingPriv, vector.epub, vector.epriv);
-    const store = new MemoryKeyWrapStore();
-    const wrap = sealAccountBackupWith(
-      account,
-      vector.backupWrap.transportPub,
-      hexToBytes(vector.backupWrap.ephemeralScalarHex),
-      hexToBytes(vector.backupWrap.nonceHex),
-      parseWrapObject(vector.backupWrap.wrapId),
-      [],
-      context,
-      store,
-    );
-    assert.equal(wrap.ciphertextHex, vector.backupWrap.ciphertextHex);
-    assert.equal(wrap.signature, vector.backupWrap.signature);
-    const opened = openAccountBackup(vector.backupWrap.transportScalarHex, wrap, account.principal, [], context);
-    assert.equal(opened.principal, account.principal);
-    assert.equal(opened.priv, account.priv);
-  });
-
-  test("a wrap sealed to the victim transport pub by another account does not open", () => {
-    const victim = importGenesis(vector.laneId, vector.signingPub, vector.signingPriv, vector.epub, vector.epriv);
-    const attacker = importGenesis(
-      vector.substitution.laneId,
-      vector.substitution.signingPub,
-      vector.substitution.signingPriv,
-      vector.substitution.epub,
-      vector.substitution.epriv,
-    );
-    const store = new MemoryKeyWrapStore();
-    const wrap = sealAccountBackupWith(
-      attacker,
-      vector.backupWrap.transportPub,
-      hexToBytes(vector.substitution.ephemeralScalarHex),
-      hexToBytes(vector.substitution.nonceHex),
-      parseWrapObject(vector.substitution.wrapId),
-      [],
-      context,
-      store,
-    );
-    assert.equal(wrap.ciphertextHex, vector.substitution.ciphertextHex);
-    assert.equal(wrap.signature, vector.substitution.signature);
-    assert.throws(() => openAccountBackup(vector.backupWrap.transportScalarHex, wrap, victim.principal, [], context));
-    const relabeled: EncryptedAccountWrap = { ...wrap, principal: victim.principal, epub: victim.epub };
-    assert.throws(() => openAccountBackup(vector.backupWrap.transportScalarHex, relabeled, victim.principal, [], context));
-  });
 }
