@@ -23,15 +23,21 @@ function run(f, c) {
   if (f.family === 'records') {
     const ctx = {...f.context,...c}; let r;
     const links = new Map(ctx.links);
-    const history = ctx.missingHistory ? undefined : (p,at,until) => ctx.authenticatedAccounts.includes(p) ? {ok:true,value:ids.historyState(p,new Map(ctx.histories??[]).get(p)??[],at,until)} : {ok:false,reason:'missing-history'};
-    const rc={...ctx,links,history};
+    const history = ctx.missingHistory ? undefined : (p,at,until) => new Map(ctx.historyErrors??[]).has(p) ? {ok:false,reason:new Map(ctx.historyErrors).get(p)} : ctx.authenticatedAccounts.includes(p) ? {ok:true,value:ids.historyState(p,new Map(ctx.histories??[]).get(p)??[],at,until)} : {ok:false,reason:'missing-history'};
+    const rc={...ctx,links,history,pinnedIss:new Set(ctx.pinnedIss)};
     const keyState=ctx.directState??{key:ctx.currentKey,currentKey:ctx.currentKey,retainedLinks:null};
     switch(c.operation) {
       case 'wallet-link': r=ids.verifyWalletLink(c.input,ctx.jwks,ctx.policy,ctx.now,keyState); break;
       case 'oidc-link': r=ids.verifyOidcLink(c.input,ctx.jwks,new Set(ctx.pinnedIss),ctx.now,keyState); break;
       case 'rotate': r=ids.verifyRotate(c.input,ctx.currentKey,rc); break;
-      case 'revoke': r=ids.verifyRevoke(c.input,ctx.currentKey,ctx.now); break;
+      case 'revoke': r=ids.verifyRevoke(c.input,ctx.currentKey,ctx.jwks,ctx.now); break;
       case 'resolve': r=ids.resolveCurrentKey(ctx.genesis,c.input,rc); break;
+      case 'resolve-and-wallet': {
+        const account=ids.resolveCurrentKey(ctx.genesis,c.input,rc);
+        if (!account.ok) {r=account;break;}
+        const resolved={...rc,history:(p,at,until)=>p===ctx.genesis?{ok:true,value:ids.historyState(p,account.value.rotations,at,until)}:history(p,at,until)};
+        r=ids.resolveWalletLink(ctx.address,[...links.values()],ctx.revocations??[],resolved);break;
+      }
       case 'wallet-resolve': r=ids.resolveWalletLink(ctx.address,c.input,ctx.revocations??[],rc); break;
       default: throw Error('unknown operation: '+c.operation);
     }

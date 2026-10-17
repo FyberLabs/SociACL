@@ -51,7 +51,7 @@ pub enum Authorizer {
     #[serde(rename = "wallet")]
     Wallet { link: String, siwe: Siwe },
     #[serde(rename = "oidc-fresh-login")]
-    OidcFreshLogin,
+    OidcFreshLogin { link: String },
 }
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -78,6 +78,7 @@ pub struct Revoke {
     #[serde(deserialize_with = "deserialize_integer")]
     pub issued_at: u64,
     pub key_sig: String,
+    pub attest: String,
 }
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
@@ -129,6 +130,7 @@ pub struct ResolutionContext<'a> {
     pub revocations: &'a [Value],
     pub now: u64,
     pub policy: &'a SiwePolicy,
+    pub pinned_iss: &'a BTreeSet<String>,
     pub history: &'a HistoryResolver<'a>,
 }
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -164,11 +166,16 @@ pub struct ResolvedAccount {
     pub rotations: Vec<Rotate>,
 }
 fn diagnostic(ds: &mut Vec<Diagnostic>, source: &str, index: usize, reason: Reason) {
-    ds.push(Diagnostic {
-        source: source.into(),
-        index,
-        reason,
-    });
+    if !ds
+        .iter()
+        .any(|d| d.source == source && d.index == index && d.reason == reason)
+    {
+        ds.push(Diagnostic {
+            source: source.into(),
+            index,
+            reason,
+        });
+    }
 }
 
 fn field<'a>(v: &'a Value, key: &str, max: usize) -> Result<&'a str, Reason> {
@@ -306,7 +313,15 @@ fn record(v: &Value, unsigned: bool) -> Result<IdentityRecord, Reason> {
         "revoke" => {
             if !only(
                 v,
-                &["v", "kind", "principal", "issuedAt", "linkId", "keySig"],
+                &[
+                    "v",
+                    "kind",
+                    "principal",
+                    "issuedAt",
+                    "linkId",
+                    "keySig",
+                    "attest",
+                ],
             ) {
                 return Err(Reason::BadRecord);
             }
@@ -320,6 +335,7 @@ fn record(v: &Value, unsigned: bool) -> Result<IdentityRecord, Reason> {
                 issued_at,
                 link_id,
                 key_sig: sig("keySig")?,
+                attest: attest()?,
             }))
         }
         "rotate" => {
@@ -364,20 +380,29 @@ fn record(v: &Value, unsigned: bool) -> Result<IdentityRecord, Reason> {
             let next_sig = sig("nextSig")?;
             let att = attest()?;
             let a = &v["authorizer"];
-            let authorizer = if unsigned || (a["kind"] == "oidc-fresh-login" && only(a, &["kind"]))
+            if !(a["kind"] == "wallet" && only(a, &["kind", "link", "siwe"])
+                || a["kind"] == "oidc-fresh-login" && only(a, &["kind", "link"]))
             {
-                Authorizer::OidcFreshLogin
-            } else if a["kind"] == "wallet" && only(a, &["kind", "link", "siwe"]) {
-                let link = field(a, "link", 64)?.to_owned();
-                if !is_hex(&link, 64) {
-                    return Err(Reason::BadRecord);
-                }
+                return Err(Reason::BadRecord);
+            }
+            let link = field(a, "link", 64)?.to_owned();
+            if !is_hex(&link, 64) {
+                return Err(Reason::BadRecord);
+            }
+            let authorizer = if a["kind"] == "oidc-fresh-login" {
+                Authorizer::OidcFreshLogin { link }
+            } else {
                 Authorizer::Wallet {
                     link,
-                    siwe: siwe_data(&a["siwe"])?,
+                    siwe: if unsigned {
+                        Siwe {
+                            message: String::new(),
+                            signature: "0x".into(),
+                        }
+                    } else {
+                        siwe_data(&a["siwe"])?
+                    },
                 }
-            } else {
-                return Err(Reason::BadRecord);
             };
             Ok(IdentityRecord::Rotate(Rotate {
                 v: 1,
@@ -417,13 +442,19 @@ fn bytes(r: &IdentityRecord) -> Vec<u8> {
         IdentityRecord::Rotate(r) => {
             let seq = r.seq.to_string();
             let count = r.retained_links.len().to_string();
+            let (auth, link) = match &r.authorizer {
+                Authorizer::Wallet { link, .. } => ("wallet", link),
+                Authorizer::OidcFreshLogin { link } => ("oidc-fresh-login", link),
+            };
             let mut fields = vec![
-                "sociacl-rotate-v1",
+                "sociacl-rotate-v2",
                 r.principal.as_ref(),
                 &seq,
                 r.prev_key.as_ref(),
                 r.next_key.as_ref(),
                 &t,
+                auth,
+                link,
                 &count,
             ];
             fields.extend(r.retained_links.iter().map(String::as_str));
@@ -774,6 +805,69 @@ fn proof_time(issued: u64, now: u64, skew: u64) -> Result<(), Reason> {
     }
     Ok(())
 }
+fn wallet_witness(
+    w: &WalletLink,
+    jwks: &Jwks,
+    policy: &SiwePolicy,
+    now: u64,
+) -> Result<(), Reason> {
+    proof_time(w.issued_at, now, policy.clock_skew_seconds)?;
+    siwe_verify(
+        &w.siwe,
+        &w.address,
+        &bytes(&IdentityRecord::Wallet(w.clone())),
+        w.issued_at,
+        now,
+        policy,
+        Some(&w.nonce),
+    )?;
+    let c = attest_verify(&w.attest, jwks, now, policy.clock_skew_seconds)?;
+    if !only(&c, &["typ", "principal", "linkId", "iat", "exp"])
+        || c["typ"] != "sociacl-wallet-attest-v1"
+        || c["principal"] != w.principal.as_ref()
+        || c["linkId"] != link_id(&IdentityRecord::Wallet(w.clone()))?
+        || number(&c["iat"]).ok() != Some(w.issued_at)
+    {
+        return Err(Reason::BadAttestation);
+    }
+    Ok(())
+}
+fn oidc_witness(
+    o: &OidcLink,
+    jwks: &Jwks,
+    pinned_iss: &BTreeSet<String>,
+    now: u64,
+    clock_skew_seconds: u64,
+) -> Result<(), Reason> {
+    proof_time(o.issued_at, now, clock_skew_seconds)?;
+    if !pinned_iss.contains(o.cred.issuer()) {
+        return Err(Reason::UntrustedIssuer);
+    }
+    let c = attest_verify(&o.attest, jwks, now, clock_skew_seconds)?;
+    if !only(
+        &c,
+        &[
+            "typ",
+            "iss",
+            "tenant",
+            "sub",
+            "principal",
+            "iat",
+            "exp",
+            "nonce",
+        ],
+    ) || c["typ"] != "sociacl-oidc-attest-v1"
+        || c["iss"] != o.cred.issuer()
+        || c["tenant"] != o.cred.tenant().as_ref()
+        || c["sub"] != o.cred.subject()
+        || c["principal"] != o.principal.as_ref()
+        || number(&c["iat"]).ok() != Some(o.issued_at)
+        || c["nonce"] != o.nonce
+    {
+        return Err(Reason::BadAttestation);
+    }
+    Ok(())
+}
 fn retained_link(r: &IdentityRecord, state: &KeyState) -> Result<(), Reason> {
     if state
         .retained_links
@@ -800,24 +894,7 @@ pub fn verify_wallet_link(
         return Err(Reason::BadSignature);
     }
     retained_link(&r, key_state)?;
-    siwe_verify(
-        &w.siwe,
-        &w.address,
-        &bytes(&r),
-        w.issued_at,
-        now,
-        policy,
-        Some(&w.nonce),
-    )?;
-    let c = attest_verify(&w.attest, jwks, now, policy.clock_skew_seconds)?;
-    if !only(&c, &["typ", "principal", "linkId", "iat", "exp"])
-        || c["typ"] != "sociacl-wallet-attest-v1"
-        || c["principal"] != w.principal.as_ref()
-        || c["linkId"] != link_id(&r)?
-        || number(&c["iat"]).ok() != Some(w.issued_at)
-    {
-        return Err(Reason::BadAttestation);
-    }
+    wallet_witness(w, jwks, policy, now)?;
     Ok(w.clone())
 }
 pub use verify_wallet_link as verify_wallet_link_at_key;
@@ -850,32 +927,15 @@ pub fn verify_oidc_link_with_skew(
         return Err(Reason::BadSignature);
     }
     retained_link(&r, key_state)?;
-    let c = attest_verify(&o.attest, jwks, now, clock_skew_seconds)?;
-    if !only(
-        &c,
-        &[
-            "typ",
-            "iss",
-            "tenant",
-            "sub",
-            "principal",
-            "iat",
-            "exp",
-            "nonce",
-        ],
-    ) || c["typ"] != "sociacl-oidc-attest-v1"
-        || c["iss"] != o.cred.issuer()
-        || c["tenant"] != o.cred.tenant().as_ref()
-        || c["sub"] != o.cred.subject()
-        || c["principal"] != o.principal.as_ref()
-        || number(&c["iat"]).ok() != Some(o.issued_at)
-        || c["nonce"] != o.nonce
-    {
-        return Err(Reason::BadAttestation);
-    }
+    oidc_witness(o, jwks, pinned_iss, now, clock_skew_seconds)?;
     Ok(o.clone())
 }
-pub fn verify_revoke(v: &Value, current_key: &PrincipalId, now: u64) -> Result<Revoke, Reason> {
+pub fn verify_revoke(
+    v: &Value,
+    current_key: &PrincipalId,
+    jwks: &Jwks,
+    now: u64,
+) -> Result<Revoke, Reason> {
     let r = record(v, false)?;
     let IdentityRecord::Revoke(rev) = &r else {
         return Err(Reason::BadRecord);
@@ -883,6 +943,15 @@ pub fn verify_revoke(v: &Value, current_key: &PrincipalId, now: u64) -> Result<R
     time(rev.issued_at, now)?;
     if !key_verify(current_key, &rev.key_sig, &bytes(&r)) {
         return Err(Reason::BadSignature);
+    }
+    let c = attest_verify(&rev.attest, jwks, now, 0)?;
+    if !only(&c, &["typ", "principal", "recordId", "iat", "exp"])
+        || c["typ"] != "sociacl-revoke-attest-v1"
+        || c["principal"] != rev.principal.as_ref()
+        || c["recordId"] != hex(&Sha256::digest(bytes(&r)))
+        || number(&c["iat"]).ok() != Some(rev.issued_at)
+    {
+        return Err(Reason::BadAttestation);
     }
     Ok(rev.clone())
 }
@@ -912,25 +981,77 @@ pub fn history_state(genesis: &PrincipalId, history: &[Rotate], at: u64, until: 
     }
 }
 fn historical_link(
-    r: &WalletLink,
+    r: &IdentityRecord,
     ctx: &ResolutionContext<'_>,
     until: u64,
-) -> Result<WalletLink, Reason> {
-    time(r.issued_at, until)?;
-    let h = (ctx.history)(&r.principal, r.issued_at, until)?;
-    let v = IdentityRecord::Wallet(r.clone());
-    let w = verify_wallet_link(&v.value(), ctx.jwks, ctx.policy, r.issued_at, &h)?;
-    if h.retained_links
-        .is_some_and(|ids| !ids.contains(&link_id(&v).expect("validated record")))
-    {
-        return Err(Reason::UnretainedLink);
+) -> Result<IdentityRecord, Reason> {
+    time(r.issued_at(), until)?;
+    let sig = match r {
+        IdentityRecord::Wallet(w) => {
+            wallet_witness(w, ctx.jwks, ctx.policy, w.issued_at)?;
+            &w.key_sig
+        }
+        IdentityRecord::Oidc(o) => {
+            oidc_witness(o, ctx.jwks, ctx.pinned_iss, o.issued_at, 0)?;
+            &o.key_sig
+        }
+        _ => return Err(Reason::BadRecord),
+    };
+    let h = (ctx.history)(r.principal(), r.issued_at(), until)?;
+    if !key_verify(&h.key, sig, &bytes(r)) {
+        return Err(Reason::BadSignature);
     }
-    Ok(w)
+    retained_link(r, &h)?;
+    Ok(r.clone())
+}
+fn revoked_at(
+    link: &IdentityRecord,
+    revocations: &[Value],
+    current_key: &PrincipalId,
+    now: u64,
+    jwks: &Jwks,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> bool {
+    let id = hex(&Sha256::digest(bytes(link)));
+    let mut revoked = false;
+    for (index, raw) in revocations.iter().enumerate() {
+        let r = match record(raw, false) {
+            Ok(IdentityRecord::Revoke(r)) => r,
+            Ok(_) => {
+                diagnostic(diagnostics, "revoke", index, Reason::BadRecord);
+                continue;
+            }
+            Err(e) => {
+                diagnostic(diagnostics, "revoke", index, e);
+                continue;
+            }
+        };
+        if let Err(e) = time(r.issued_at, now) {
+            diagnostic(diagnostics, "revoke", index, e);
+            continue;
+        }
+        if &r.principal != link.principal() || r.link_id != id || r.issued_at < link.issued_at() {
+            continue;
+        }
+        match verify_revoke(raw, current_key, jwks, r.issued_at) {
+            Ok(_) => revoked = true,
+            Err(e) => diagnostic(diagnostics, "revoke", index, e),
+        }
+    }
+    revoked
 }
 pub fn verify_rotate(
     v: &Value,
     current_key: &PrincipalId,
     ctx: &ResolutionContext<'_>,
+) -> Result<Rotate, Reason> {
+    check_rotate(v, current_key, ctx, &mut Vec::new())
+}
+fn check_rotate(
+    v: &Value,
+    current_key: &PrincipalId,
+    ctx: &ResolutionContext<'_>,
+    diagnostics: &mut Vec<Diagnostic>,
 ) -> Result<Rotate, Reason> {
     let r = record(v, false)?;
     let IdentityRecord::Rotate(rot) = &r else {
@@ -949,9 +1070,9 @@ pub fn verify_rotate(
         ctx.now,
         ctx.policy.clock_skew_seconds,
     )?;
-    let auth = match rot.authorizer {
-        Authorizer::Wallet { .. } => "wallet",
-        Authorizer::OidcFreshLogin => "oidc-fresh-login",
+    let (auth, link) = match &rot.authorizer {
+        Authorizer::Wallet { link, .. } => ("wallet", link),
+        Authorizer::OidcFreshLogin { link } => ("oidc-fresh-login", link),
     };
     if !only(
         &c,
@@ -963,27 +1084,50 @@ pub fn verify_rotate(
             "iat",
             "exp",
             "auth",
+            "linkId",
             "retainedLinks",
         ],
-    ) || c["typ"] != "sociacl-rotate-attest-v1"
+    ) || c["typ"] != "sociacl-rotate-attest-v2"
         || c["principal"] != rot.principal.as_ref()
         || c["nextKey"] != rot.next_key.as_ref()
         || number(&c["seq"]).ok() != Some(rot.seq)
         || number(&c["iat"]).ok() != Some(rot.issued_at)
         || c["auth"] != auth
+        || c["linkId"] != *link
         || c["retainedLinks"] != serde_json::json!(rot.retained_links)
     {
         return Err(Reason::BadAttestation);
     }
-    if let Authorizer::Wallet { link, siwe } = &rot.authorizer {
-        let raw = record(ctx.links.get(link).ok_or(Reason::UnknownLink)?, false)?;
-        let IdentityRecord::Wallet(w) = raw else {
-            return Err(Reason::BadRecord);
-        };
-        let w = historical_link(&w, ctx, rot.issued_at)?;
-        if link_id(&IdentityRecord::Wallet(w.clone()))? != *link || w.principal != rot.principal {
+    let mut checked = BTreeMap::new();
+    for id in std::iter::once(link).chain(rot.retained_links.iter()) {
+        if checked.contains_key(id) {
+            continue;
+        }
+        let raw = record(ctx.links.get(id).ok_or(Reason::UnknownLink)?, false)?;
+        if !matches!(raw, IdentityRecord::Wallet(_) | IdentityRecord::Oidc(_))
+            || raw.principal() != &rot.principal
+            || hex(&Sha256::digest(bytes(&raw))) != *id
+        {
             return Err(Reason::UnknownLink);
         }
+        let v = historical_link(&raw, ctx, rot.issued_at)?;
+        if revoked_at(
+            &v,
+            ctx.revocations,
+            current_key,
+            rot.issued_at,
+            ctx.jwks,
+            diagnostics,
+        ) {
+            return Err(Reason::RevokedLink);
+        }
+        checked.insert(id.clone(), v);
+    }
+    let authorizer = checked.get(link).ok_or(Reason::UnknownLink)?;
+    if let Authorizer::Wallet { siwe, .. } = &rot.authorizer {
+        let IdentityRecord::Wallet(w) = authorizer else {
+            return Err(Reason::UnknownLink);
+        };
         siwe_verify(
             siwe,
             &w.address,
@@ -993,6 +1137,49 @@ pub fn verify_rotate(
             ctx.policy,
             None,
         )?;
+    } else {
+        if !matches!(authorizer, IdentityRecord::Oidc(_)) {
+            return Err(Reason::UnknownLink);
+        }
+        for (index, (id, raw)) in ctx.links.iter().enumerate() {
+            let parsed = match record(raw, false) {
+                Ok(v) => v,
+                Err(e) => {
+                    diagnostic(diagnostics, "link", index, e);
+                    continue;
+                }
+            };
+            let IdentityRecord::Wallet(w) = &parsed else {
+                continue;
+            };
+            if w.principal != rot.principal {
+                continue;
+            }
+            if hex(&Sha256::digest(bytes(&parsed))) != *id {
+                diagnostic(diagnostics, "link", index, Reason::UnknownLink);
+                continue;
+            }
+            let v = match historical_link(&parsed, ctx, rot.issued_at) {
+                Ok(v) => v,
+                Err(e) => {
+                    diagnostic(diagnostics, "link", index, e);
+                    if matches!(e, Reason::MissingHistory | Reason::RotationFork) {
+                        return Err(e);
+                    }
+                    continue;
+                }
+            };
+            if !revoked_at(
+                &v,
+                ctx.revocations,
+                current_key,
+                rot.issued_at,
+                ctx.jwks,
+                diagnostics,
+            ) {
+                return Err(Reason::WalletRequired);
+            }
+        }
     }
     Ok(rot.clone())
 }
@@ -1051,10 +1238,11 @@ pub fn resolve_current_key(
                     {
                         return Err(Reason::BadSequence);
                     }
-                    let r = verify_rotate(
+                    let r = check_rotate(
                         &IdentityRecord::Rotate(raw.clone()).value(),
                         &current,
                         &candidate,
+                        &mut diagnostics,
                     )?;
                     if let Authorizer::Wallet { link, .. } = &raw.authorizer {
                         let IdentityRecord::Wallet(own) =
@@ -1068,7 +1256,9 @@ pub fn resolve_current_key(
                             ctx.revocations,
                             &candidate,
                         );
-                        diagnostics.extend(lookup.diagnostics);
+                        for d in lookup.diagnostics {
+                            diagnostic(&mut diagnostics, &d.source, d.index, d.reason);
+                        }
                         let w = lookup.result?;
                         if link_id(&IdentityRecord::Wallet(w))? != *link {
                             return Err(Reason::AmbiguousLink);
@@ -1120,18 +1310,24 @@ pub fn resolve_wallet_link(
         }
         let mut valid = BTreeMap::new();
         for (index, raw) in links.iter().enumerate() {
-            let verified = (|| {
-                let IdentityRecord::Wallet(w) = record(raw, false)? else {
-                    return Err(Reason::BadRecord);
-                };
-                historical_link(&w, ctx, ctx.now)
-            })();
-            match verified {
-                Ok(w) => {
-                    if &w.address == address {
-                        valid.insert(link_id(&IdentityRecord::Wallet(w.clone()))?, w);
-                    }
+            let p = match record(raw, false) {
+                Ok(p) => p,
+                Err(e) => {
+                    diagnostic(&mut diagnostics, "link", index, e);
+                    continue;
                 }
+            };
+            let IdentityRecord::Wallet(w) = &p else {
+                continue;
+            };
+            if &w.address != address {
+                continue;
+            }
+            match historical_link(&p, ctx, ctx.now) {
+                Ok(IdentityRecord::Wallet(w)) => {
+                    valid.insert(link_id(&IdentityRecord::Wallet(w.clone()))?, w);
+                }
+                Ok(_) => unreachable!("historical link preserves kind"),
                 Err(e) => {
                     diagnostic(&mut diagnostics, "link", index, e);
                     if matches!(e, Reason::MissingHistory | Reason::RotationFork) {
@@ -1142,39 +1338,22 @@ pub fn resolve_wallet_link(
         }
         let mut sorted: Vec<_> = valid.into_iter().collect();
         sorted.sort_by(|a, b| b.1.issued_at.cmp(&a.1.issued_at).then(a.0.cmp(&b.0)));
-        let (id, newest) = sorted.first().ok_or(Reason::UnknownLink)?;
+        let (_, newest) = sorted.first().ok_or(Reason::UnknownLink)?;
         if sorted
             .get(1)
             .is_some_and(|(_, w)| w.issued_at == newest.issued_at)
         {
             return Err(Reason::AmbiguousLink);
         }
-        let mut revoked = false;
-        for (index, raw) in revocations.iter().enumerate() {
-            let verified = (|| {
-                let IdentityRecord::Revoke(r) = record(raw, false)? else {
-                    return Err(Reason::BadRecord);
-                };
-                let h = (ctx.history)(&r.principal, r.issued_at, ctx.now)?;
-                verify_revoke(raw, &h.current_key, ctx.now)
-            })();
-            match verified {
-                Ok(r) => {
-                    if r.principal == newest.principal
-                        && r.link_id == *id
-                        && r.issued_at >= newest.issued_at
-                    {
-                        revoked = true;
-                    }
-                }
-                Err(e) => {
-                    diagnostic(&mut diagnostics, "revoke", index, e);
-                    if matches!(e, Reason::MissingHistory | Reason::RotationFork) {
-                        return Err(e);
-                    }
-                }
-            }
-        }
+        let h = (ctx.history)(&newest.principal, newest.issued_at, ctx.now)?;
+        let revoked = revoked_at(
+            &IdentityRecord::Wallet(newest.clone()),
+            revocations,
+            &h.current_key,
+            ctx.now,
+            ctx.jwks,
+            &mut diagnostics,
+        );
         if revoked {
             Err(Reason::RevokedLink)
         } else {

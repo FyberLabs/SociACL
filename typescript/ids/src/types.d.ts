@@ -19,7 +19,7 @@ export type Reason = 'not-string' | 'empty' | 'too-long' | 'control-char' | 'inv
   | 'bad-port' | 'gun-chain' | 'bad-template' | 'bad-record' | 'bad-signature'
   | 'bad-attestation' | 'untrusted-issuer' | 'expired' | 'future-record' | 'bad-sequence'
   | 'rotation-fork' | 'unknown-link' | 'revoked-link' | 'ambiguous-link' | 'unsupported-wallet'
-  | 'rng-failure' | 'missing-history' | 'unretained-link';
+  | 'rng-failure' | 'missing-history' | 'unretained-link' | 'wallet-required';
 export type Result<T> = { ok: true; value: T } | { ok: false; reason: Reason };
 export type Collection = 'items' | 'rooms' | 'users-legacy';
 export type ParsedSoul = { template: 'object' | 'user' | 'acl' | 'grant' | 'post'; ids: readonly string[] };
@@ -30,12 +30,12 @@ export type OidcLink = Readonly<{ v: 1; kind: 'oidc'; principal: PrincipalId; cr
   issuedAt: number; nonce: string; keySig: string; attest: string }>;
 export type Rotate = Readonly<{ v: 1; kind: 'rotate'; principal: PrincipalId; seq: number;
   prevKey: PrincipalId; nextKey: PrincipalId; retainedLinks: readonly string[]; issuedAt: number; nextSig: string;
-  authorizer: { kind: 'wallet'; link: string; siwe: Siwe } | { kind: 'oidc-fresh-login' }; attest: string }>;
+  authorizer: { kind: 'wallet'; link: string; siwe: Siwe } | { kind: 'oidc-fresh-login'; link: string }; attest: string }>;
 export type Revoke = Readonly<{ v: 1; kind: 'revoke'; principal: PrincipalId; linkId: string;
-  issuedAt: number; keySig: string }>;
+  issuedAt: number; keySig: string; attest: string }>;
 export type IdentityRecord = WalletLink | OidcLink | Rotate | Revoke;
 export type UnsignedRecord = Omit<WalletLink, 'keySig' | 'siwe' | 'attest'> | Omit<OidcLink, 'keySig' | 'attest'>
-  | Omit<Rotate, 'nextSig' | 'authorizer' | 'attest'> | Omit<Revoke, 'keySig'>;
+  | (Omit<Rotate, 'nextSig' | 'authorizer' | 'attest'> & {authorizer: {kind:'wallet'|'oidc-fresh-login';link:string}}) | Omit<Revoke, 'keySig' | 'attest'>;
 export type Jwks = Readonly<{ keys: readonly Readonly<{ kty: 'EC'; crv: 'P-256'; kid: string;
   x: string; y: string; alg?: 'ES256'; use?: 'sig'; key_ops?: readonly string[] }>[] }>;
 export type SiwePolicy = Readonly<{ allowedDomains: readonly string[]; allowedUris: readonly string[]; allowedChainIds: readonly string[]; clockSkewSeconds?: number }>;
@@ -47,4 +47,4 @@ export type Diagnostic = Readonly<{ source: 'rotation' | 'link' | 'revoke'; inde
 export type Resolution<T> = Result<T> & { diagnostics: readonly Diagnostic[] };
 export type ResolvedAccount = Readonly<{ currentKey: PrincipalId; rotations: readonly Rotate[] }>;
 export type ResolutionContext = Readonly<{ jwks: Jwks; links: ReadonlyMap<string, unknown>;
-  revocations?: readonly unknown[]; now: number; policy: SiwePolicy; history: HistoryResolver }>;
+  revocations?: readonly unknown[]; now: number; policy: SiwePolicy; pinnedIss: ReadonlySet<string>; history: HistoryResolver }>;

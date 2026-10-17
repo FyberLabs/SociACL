@@ -6,14 +6,14 @@ and tenant-scoped OIDC credentials link to it. Object ids are fixed at creation;
 names and labels remain mutable attributes. Canonical ids enter through one
 parser and compare directly thereafter.
 
-Source: [supplied package specification](sociacl-ids-package-spec.md), design dated 2026-10-16. See the package
+Source: [package specification with review amendments](sociacl-ids-package-spec.md), design dated 2026-10-16. See the package
 [API and verification contract](../typescript/ids/README.md). The implementation
-is additive to SociACL `master@7279ef6`. SociACL [#56](https://github.com/FyberLabs/SociACL/pull/56)
-and s3r.ch [#125](https://github.com/FyberLabs/s3r.ch/pull/125) were open when this
-work began; their caller changes remain separate.
+is additive to SociACL `master@246e941`, rebased after
+SociACL [#56](https://github.com/FyberLabs/SociACL/pull/56) merged. The separate
+s3r.ch [#125](https://github.com/FyberLabs/s3r.ch/pull/125) was open when this work began.
 
 Implementation PR: [SociACL #57](https://github.com/FyberLabs/SociACL/pull/57).
-Grok/Codex findings are addressed in the 0.2 amendment in this PR. Local validation
+Grok/Codex findings are addressed in the 0.3 amendment in this PR. Local validation
 is recorded in the PR; merge, release, and consumer migration remain pending.
 
 ## Delivery status
@@ -21,7 +21,7 @@ is recorded in the PR; merge, release, and consumer migration remain pending.
 | Stage | Implementation | Review/merge/release | Acceptance evidence |
 | --- | --- | --- | --- |
 | Canonical ids and keys in TS/Rust | Implemented in this PR | Pending review | Shared grammar/path/soul vectors and generated tests |
-| Wallet/OIDC proofs, rotation and revocation | Implemented in this PR | Pending review | Fixed-key positive/negative records; fork, revoked-recovery and replay-binding checks |
+| Wallet/OIDC proofs, rotation and revocation | Implemented in this PR | Pending review | Fixed-key records; invalid-index DoS, revoked-link resurrection, OIDC recovery authority, timestamp replay and fork checks |
 | Browser package and optional Zod entry point | Implemented in this PR | Pending review | Strict types, browser bundle, installed-tarball consumer |
 | Shared-vector accounting and release workflow | Implemented in this PR | Pending review; tag not published | CI compares both execution manifests to all vectors; release gated on full suite |
 | SociACL permission callers | Planned | Separate PR after package review | Branded core inputs; remove alias, fold and chain-accessor code |
@@ -39,7 +39,7 @@ have been removed.
 
 1. **Publish the reviewed package.** Merge after Grok/Codex review and CI, then
    configure branch protection and required CI/review on `master`, then publish
-   `ids-v0.2.0` through the release workflow. Record the immutable asset
+   `ids-v0.3.0` through the release workflow. Record the immutable asset
    URL and SHA-256. Consumer PRs must pin lockfile integrity; no unresolvable
    release URL or vendored replacement validator belongs in a merged consumer.
 2. **SociACL core boundaries.** Replace TS `gun`, `post`, `group`, `request` and
@@ -49,13 +49,17 @@ have been removed.
    cover Gun-chain spoofing, the fold triple, grant-soul collisions, cross-room
    suffix matches, and request snapshot mutation. Keep #56's immediate fixes
    while this broader migration is reviewed.
-3. **Panopticon proofs and key backups.** Implement wallet timestamp attestation, tenant-scoped OIDC link
-   attestation, and rotation attestation including the retained-link commitment. Fresh
+3. **Panopticon proofs and key backups.** Implement wallet and revoke timestamp attestations, tenant-scoped OIDC link
+   attestation, and v2 rotation attestation binding the authorizing credential
+   and retained-link commitment. Fresh
    login/proof, issuer pinning, nonce replay prevention and authorization belong
    at these endpoints. Store wrapped key backups privately. A signed-in user or
    a client-supplied principal is not sufficient authority to relink an account.
    Panopticon assigns the issuance timestamp and computes the retained set from
    authenticated history; it must not attest an arbitrary client-supplied date/set.
+   OIDC recovery must prove fresh login to the enrolled issuer/tenant/subject
+   and require no active wallet. Supply complete authenticated link, revocation
+   and rotation snapshots to the package, with explicit request/work budgets.
    Review the independent upload-grant lookup by file name separately.
 4. **s3r.ch account identity.** Migrate `identity/mesh`, `idb`, `mesh-link`,
    `link`, and `wrap` together: first enrollment mints one genesis identity,
@@ -99,8 +103,9 @@ References for protocol details: [EIP-4361](https://eips.ethereum.org/EIPS/eip-4
 
 ## Review amendment and legacy audit
 
-The [0.2 normative amendment](identity-review-amendment.md) supersedes the original
-proof/URL contract where stated. Timestamp attestations, retained-link sets,
+The [0.3 normative amendment](identity-review-amendment.md) supersedes the original
+proof/URL contract where stated. Wallet/revoke timestamp witnesses, v2 rotation
+credential binding, enforced pre-rotation revocations, OIDC-only recovery,
 mandatory historical context, diagnostics, exact SIWE policy and deterministic
 URL validation are implemented in #57; no production signer/consumer uses them yet.
 

@@ -47,11 +47,12 @@ function record(x, unsigned = false) {
     return ok(Object.freeze({ ...base, kind: 'oidc', cred: cred.value, nonce: nonce.value, keySig: keySig.value, attest: attest.value }));
   }
   if (r.kind === 'revoke') {
-    if (!only(r, [...common, 'linkId', 'keySig'])) return fail('bad-record');
+    if (!only(r, [...common, 'linkId', 'keySig', 'attest'])) return fail('bad-record');
     const id = text(r.linkId, 64); if (!id.ok) return id;
     if (!/^[0-9a-f]{64}$/.test(id.value)) return fail('bad-record');
     const sig = unsigned ? ok('') : text(r.keySig, 128); if (!sig.ok) return sig;
-    return ok(Object.freeze({ ...base, kind: 'revoke', linkId: id.value, keySig: sig.value }));
+    const attest=unsigned?ok(''):text(r.attest,16384); if (!attest.ok) return attest;
+    return ok(Object.freeze({ ...base, attest:attest.value, kind: 'revoke', linkId: id.value, keySig: sig.value }));
   }
   if (!only(r, [...common, 'seq', 'prevKey', 'nextKey', 'nextSig', 'authorizer', 'attest', 'retainedLinks'])) return fail('bad-record');
   if (!integer(r.seq) || r.seq === 0) return fail('bad-sequence');
@@ -67,16 +68,17 @@ function record(x, unsigned = false) {
   const next = parsePrincipalId(r.nextKey); if (!next.ok) return next;
   const sig = unsigned ? ok('') : text(r.nextSig, 128); if (!sig.ok) return sig;
   const attest = unsigned ? ok('') : text(r.attest, 16384); if (!attest.ok) return attest;
-  const ad = unsigned ? data({ kind: 'oidc-fresh-login' }) : data(r.authorizer); if (!ad.ok) return ad;
+  const ad = data(r.authorizer); if (!ad.ok) return ad;
   const a = ad.value;
   /** @type {Rotate['authorizer']} */ let authorizer;
-  if (a.kind === 'oidc-fresh-login' && only(a, ['kind'])) authorizer = { kind: a.kind };
-  else if (a.kind === 'wallet' && only(a, ['kind', 'link', 'siwe'])) {
-    const link = text(a.link, 64); if (!link.ok) return link;
-    if (!/^[0-9a-f]{64}$/.test(link.value)) return fail('bad-record');
-    const siwe = siweData(a.siwe); if (!siwe.ok) return siwe;
-    authorizer = { kind: a.kind, link: link.value, siwe: siwe.value };
-  } else return fail('bad-record');
+  if (!['wallet','oidc-fresh-login'].includes(/** @type {string} */ (a.kind)) || !only(a, a.kind === 'wallet' ? ['kind','link','siwe'] : ['kind','link'])) return fail('bad-record');
+  const link = text(a.link,64); if (!link.ok) return link;
+  if (!/^[0-9a-f]{64}$/.test(link.value)) return fail('bad-record');
+  if (a.kind === 'oidc-fresh-login') authorizer = {kind:a.kind,link:link.value};
+  else {
+    const siwe = unsigned ? ok({message:'',signature:/** @type {`0x${string}`} */ ('0x')}) : siweData(a.siwe); if (!siwe.ok) return siwe;
+    authorizer = {kind:'wallet',link:link.value,siwe:siwe.value};
+  }
   return ok(Object.freeze({ ...base, retainedLinks: Object.freeze(retainedLinks), kind: 'rotate', seq: /** @type {number} */ (r.seq), prevKey: prev.value, nextKey: next.value, nextSig: sig.value, attest: attest.value, authorizer: Object.freeze(authorizer) }));
 }
 /** @param {UnsignedRecord} r @returns {Result<Uint8Array>} */
@@ -90,7 +92,7 @@ function bytes(r) {
   switch (r.kind) {
     case 'wallet': return lengthPrefixed(['sociacl-link-wallet-v1', r.principal, r.address, t, r.nonce]);
     case 'oidc': return lengthPrefixed(['sociacl-link-oidc-v1', r.principal, r.cred.iss, r.cred.tenant, r.cred.sub, t, r.nonce]);
-    case 'rotate': return lengthPrefixed(['sociacl-rotate-v1', r.principal, String(r.seq), r.prevKey, r.nextKey, t, String(r.retainedLinks.length), ...r.retainedLinks]);
+    case 'rotate': return lengthPrefixed(['sociacl-rotate-v2', r.principal, String(r.seq), r.prevKey, r.nextKey, t, r.authorizer.kind, r.authorizer.link, String(r.retainedLinks.length), ...r.retainedLinks]);
     case 'revoke': return lengthPrefixed(['sociacl-revoke-v1', r.principal, r.linkId, t]);
   }
 }
@@ -177,41 +179,57 @@ function attestVerify(jws, jwks, now, skew = 0) {
     return c;
   } catch { return fail('bad-attestation'); }
 }
-/** @param {unknown} x @param {Jwks} jwks @param {SiwePolicy} policy @param {number} now @param {KeyState} keyState @returns {Result<WalletLink>} */
-export function verifyWalletLink(x, jwks, policy, now, keyState) {
-  const p = record(x); if (!p.ok) return p; const r = p.value;
-  if (r.kind !== 'wallet') return fail('bad-record');
-  const t = time(r.issuedAt, now, policy?.clockSkewSeconds ?? 0); if (!t.ok) return t;
+/** @param {WalletLink|OidcLink} r @param {KeyState} keyState @returns {Result<true>} */
+function linkKey(r,keyState) {
   if (!keyState || !keyState.key || !keyState.currentKey || (keyState.retainedLinks !== null && !Array.isArray(keyState.retainedLinks))) return fail('missing-history');
-  const b = bytes(r);
-  if (!keyVerify(keyState.key, r.keySig, b)) return fail('bad-signature');
+  if (!keyVerify(keyState.key,r.keySig,bytes(r))) return fail('bad-signature');
   if (keyState.retainedLinks !== null && !keyState.retainedLinks.includes(hex(sha256(bytes(r))))) return fail('unretained-link');
-  const s = siweVerify(r.siwe, r.address, b, r.issuedAt, now, policy, r.nonce); if (!s.ok) return s;
-  const a = attestVerify(r.attest, jwks, now, policy.clockSkewSeconds ?? 0); if (!a.ok) return a;
-  const c = a.value;
-  if (!only(c, ['typ','principal','linkId','iat','exp']) || c.typ !== 'sociacl-wallet-attest-v1' || c.principal !== r.principal || c.linkId !== hex(sha256(b)) || c.iat !== r.issuedAt) return fail('bad-attestation');
-  return ok(r);
+  return ok(true);
+}
+/** Authenticate the independent witnesses before requesting untrusted-index principals' history.
+ * @param {WalletLink} r @param {Jwks} jwks @param {SiwePolicy} policy @param {number} now @returns {Result<true>} */
+function walletWitness(r,jwks,policy,now) {
+  const t=time(r.issuedAt,now,policy.clockSkewSeconds??0); if (!t.ok) return t;
+  const b=bytes(r), s=siweVerify(r.siwe,r.address,b,r.issuedAt,now,policy,r.nonce); if (!s.ok) return s;
+  const a=attestVerify(r.attest,jwks,now,policy.clockSkewSeconds??0); if (!a.ok) return a;
+  const c=a.value;
+  return !only(c,['typ','principal','linkId','iat','exp']) || c.typ !== 'sociacl-wallet-attest-v1' || c.principal !== r.principal || c.linkId !== hex(sha256(b)) || c.iat !== r.issuedAt ? fail('bad-attestation') : ok(true);
+}
+/** @param {OidcLink} r @param {Jwks} jwks @param {ReadonlySet<string>} pinnedIss @param {number} now @param {number} [skew] @returns {Result<true>} */
+function oidcWitness(r,jwks,pinnedIss,now,skew=0) {
+  const t=time(r.issuedAt,now,skew); if (!t.ok) return t;
+  if (!pinnedIss.has(r.cred.iss)) return fail('untrusted-issuer');
+  const a=attestVerify(r.attest,jwks,now,skew); if (!a.ok) return a;
+  const c=a.value;
+  return !only(c,['typ','iss','tenant','sub','principal','iat','exp','nonce']) || c.typ !== 'sociacl-oidc-attest-v1' || c.iss !== r.cred.iss || c.tenant !== r.cred.tenant || c.sub !== r.cred.sub || c.principal !== r.principal || c.iat !== r.issuedAt || c.nonce !== r.nonce ? fail('bad-attestation') : ok(true);
+}
+/** @param {unknown} x @param {Jwks} jwks @param {SiwePolicy} policy @param {number} now @param {KeyState} keyState @returns {Result<WalletLink>} */
+export function verifyWalletLink(x,jwks,policy,now,keyState) {
+  const p=record(x); if (!p.ok) return p; const r=p.value;
+  if (r.kind !== 'wallet') return fail('bad-record');
+  const t=time(r.issuedAt,now,policy?.clockSkewSeconds??0); if (!t.ok) return t;
+  const k=linkKey(r,keyState); if (!k.ok) return k;
+  const w=walletWitness(r,jwks,policy,now); return w.ok ? ok(r) : w;
 }
 /** @param {unknown} x @param {Jwks} jwks @param {ReadonlySet<string>} pinnedIss @param {number} now @param {KeyState} keyState @param {number} [clockSkewSeconds] @returns {Result<OidcLink>} */
-export function verifyOidcLink(x, jwks, pinnedIss, now, keyState, clockSkewSeconds = 0) {
-  const p = record(x); if (!p.ok) return p; const r = p.value;
+export function verifyOidcLink(x,jwks,pinnedIss,now,keyState,clockSkewSeconds=0) {
+  const p=record(x); if (!p.ok) return p; const r=p.value;
   if (r.kind !== 'oidc') return fail('bad-record');
-  const t = time(r.issuedAt, now, clockSkewSeconds); if (!t.ok) return t;
+  const t=time(r.issuedAt,now,clockSkewSeconds); if (!t.ok) return t;
   if (!pinnedIss.has(r.cred.iss)) return fail('untrusted-issuer');
-  if (!keyState || !keyState.key || !keyState.currentKey || (keyState.retainedLinks !== null && !Array.isArray(keyState.retainedLinks))) return fail('missing-history');
-  if (!keyVerify(keyState.key, r.keySig, bytes(r))) return fail('bad-signature');
-  if (keyState.retainedLinks !== null && !keyState.retainedLinks.includes(hex(sha256(bytes(r))))) return fail('unretained-link');
-  const a = attestVerify(r.attest, jwks, now, clockSkewSeconds); if (!a.ok) return a;
-  const c = a.value;
-  if (!only(c, ['typ', 'iss', 'tenant', 'sub', 'principal', 'iat', 'exp', 'nonce']) || c.typ !== 'sociacl-oidc-attest-v1' || c.iss !== r.cred.iss || c.tenant !== r.cred.tenant || c.sub !== r.cred.sub || c.principal !== r.principal || c.iat !== r.issuedAt || c.nonce !== r.nonce) return fail('bad-attestation');
-  return ok(r);
+  const k=linkKey(r,keyState); if (!k.ok) return k;
+  const w=oidcWitness(r,jwks,pinnedIss,now,clockSkewSeconds); return w.ok ? ok(r) : w;
 }
-/** @param {unknown} x @param {PrincipalId} currentKey @param {number} now @returns {Result<Revoke>} */
-export function verifyRevoke(x, currentKey, now) {
+/** @param {unknown} x @param {PrincipalId} currentKey @param {Jwks} jwks @param {number} now @returns {Result<Revoke>} */
+export function verifyRevoke(x, currentKey, jwks, now) {
   const p = record(x); if (!p.ok) return p; const r = p.value;
   if (r.kind !== 'revoke') return fail('bad-record');
   const t = time(r.issuedAt, now); if (!t.ok) return t;
-  return keyVerify(currentKey, r.keySig, bytes(r)) ? ok(r) : fail('bad-signature');
+  if (!keyVerify(currentKey,r.keySig,bytes(r))) return fail('bad-signature');
+  const a=attestVerify(r.attest,jwks,now); if (!a.ok) return a;
+  const c=a.value;
+  if (!only(c,['typ','principal','recordId','iat','exp']) || c.typ!=='sociacl-revoke-attest-v1' || c.principal!==r.principal || c.recordId!==hex(sha256(bytes(r))) || c.iat!==r.issuedAt) return fail('bad-attestation');
+  return ok(r);
 }
 /** Derive state ONLY from an authenticated successful resolution, complete through until.
  * @param {PrincipalId} genesis @param {readonly Rotate[]} history @param {number} at @param {number} until @returns {KeyState} */
@@ -227,32 +245,79 @@ function state(history, principal, at, until) {
   if (typeof history !== 'function') return fail('missing-history');
   try { return history(principal, at, until); } catch { return fail('missing-history'); }
 }
-/** @param {WalletLink} r @param {ResolutionContext} ctx @param {number} until @returns {Result<WalletLink>} */
-function historicalLink(r, ctx, until) {
-  const t = time(r.issuedAt, until); if (!t.ok) return t;
-  const h = state(ctx.history, r.principal, r.issuedAt, until); if (!h.ok) return h;
-  const v = verifyWalletLink(r, ctx.jwks, ctx.policy, r.issuedAt, h.value); if (!v.ok) return v;
-  const id = hex(sha256(bytes(r)));
-  return h.value.retainedLinks !== null && !h.value.retainedLinks.includes(id) ? fail('unretained-link') : v;
+/** @param {WalletLink|OidcLink} r @param {ResolutionContext} ctx @param {number} until @returns {Result<WalletLink|OidcLink>} */
+function historicalLink(r,ctx,until) {
+  const t=time(r.issuedAt,until); if (!t.ok) return t;
+  const witness=r.kind === 'wallet' ? walletWitness(r,ctx.jwks,ctx.policy,r.issuedAt) : oidcWitness(r,ctx.jwks,ctx.pinnedIss,r.issuedAt);
+  if (!witness.ok) return witness;
+  const h=state(ctx.history,r.principal,r.issuedAt,until); if (!h.ok) return h;
+  const k=linkKey(r,h.value); return k.ok ? ok(r) : k;
+}
+/** @param {Diagnostic[]} ds @param {Diagnostic['source']} source @param {number} index @param {import('./types.js').Reason} reason */
+function report(ds,source,index,reason) {
+  if (!ds.some(d=>d.source===source && d.index===index && d.reason===reason)) ds.push({source,index,reason});
+}
+/** Revokes never choose a key/history from attacker-controlled fields.
+ * @param {WalletLink|OidcLink} link @param {readonly unknown[]} revocations @param {PrincipalId} currentKey @param {number} now @param {Jwks} jwks @param {Diagnostic[]} diagnostics */
+function revokedAt(link,revocations,currentKey,now,jwks,diagnostics) {
+  const id=hex(sha256(bytes(link))); let revoked=false;
+  for (const [index,raw] of revocations.entries()) {
+    const p=record(raw);
+    if (!p.ok || p.value.kind !== 'revoke') { report(diagnostics,'revoke',index,p.ok?'bad-record':p.reason); continue; }
+    const r=p.value,t=time(r.issuedAt,now);
+    if (!t.ok) {report(diagnostics,'revoke',index,t.reason);continue;}
+    if (r.principal !== link.principal || r.linkId !== id || r.issuedAt < link.issuedAt) continue;
+    const v=verifyRevoke(r,currentKey,jwks,r.issuedAt);
+    if (!v.ok) report(diagnostics,'revoke',index,v.reason); else revoked=true;
+  }
+  return revoked;
 }
 /** @param {unknown} x @param {PrincipalId} currentKey @param {ResolutionContext} ctx @returns {Result<Rotate>} */
-export function verifyRotate(x, currentKey, ctx) {
+export function verifyRotate(x,currentKey,ctx) {return checkRotate(x,currentKey,ctx,[]);}
+/** @param {unknown} x @param {PrincipalId} currentKey @param {ResolutionContext} ctx @param {Diagnostic[]} diagnostics @returns {Result<Rotate>} */
+function checkRotate(x,currentKey,ctx,diagnostics) {
   if (typeof ctx.history !== 'function') return fail('missing-history');
-  const p = record(x); if (!p.ok) return p; const r = p.value;
+  const p=record(x); if (!p.ok) return p; const r=p.value;
   if (r.kind !== 'rotate') return fail('bad-record');
-  const t = time(r.issuedAt, ctx.now, ctx.policy.clockSkewSeconds ?? 0); if (!t.ok) return t;
+  const t=time(r.issuedAt,ctx.now,ctx.policy.clockSkewSeconds??0); if (!t.ok) return t;
   if (r.prevKey !== currentKey || r.nextKey === currentKey) return fail('bad-sequence');
-  if (!keyVerify(r.nextKey, r.nextSig, bytes(r))) return fail('bad-signature');
-  const a = attestVerify(r.attest, ctx.jwks, ctx.now, ctx.policy.clockSkewSeconds ?? 0); if (!a.ok) return a;
-  const c = a.value;
-  if (!only(c, ['typ', 'principal', 'nextKey', 'seq', 'iat', 'exp', 'auth', 'retainedLinks']) || c.typ !== 'sociacl-rotate-attest-v1' || c.principal !== r.principal || c.nextKey !== r.nextKey || c.seq !== r.seq || c.iat !== r.issuedAt || c.auth !== r.authorizer.kind || JSON.stringify(c.retainedLinks) !== JSON.stringify(r.retainedLinks)) return fail('bad-attestation');
+  if (!keyVerify(r.nextKey,r.nextSig,bytes(r))) return fail('bad-signature');
+  const a=attestVerify(r.attest,ctx.jwks,ctx.now,ctx.policy.clockSkewSeconds??0); if (!a.ok) return a;
+  const c=a.value;
+  if (!only(c,['typ','principal','nextKey','seq','iat','exp','auth','linkId','retainedLinks']) || c.typ !== 'sociacl-rotate-attest-v2' || c.principal !== r.principal || c.nextKey !== r.nextKey || c.seq !== r.seq || c.iat !== r.issuedAt || c.auth !== r.authorizer.kind || c.linkId !== r.authorizer.link || JSON.stringify(c.retainedLinks) !== JSON.stringify(r.retainedLinks)) return fail('bad-attestation');
+  // Validate the authorizing credential and every retained ID against the pre-rotation state.
+  /** @type {Map<string,WalletLink|OidcLink>} */ const checked=new Map();
+  for (const id of new Set([r.authorizer.link,...r.retainedLinks])) {
+    if (!ctx.links.has(id)) return fail('unknown-link');
+    const raw=record(ctx.links.get(id)); if (!raw.ok) return raw;
+    const l=raw.value;
+    if (!['wallet','oidc'].includes(l.kind) || l.principal !== r.principal || hex(sha256(bytes(l))) !== id) return fail('unknown-link');
+    const v=historicalLink(/** @type {WalletLink|OidcLink} */ (l),ctx,r.issuedAt); if (!v.ok) return v;
+    if (revokedAt(v.value,ctx.revocations??[],currentKey,r.issuedAt,ctx.jwks,diagnostics)) return fail('revoked-link');
+    checked.set(id,v.value);
+  }
+  const authorizer=/** @type {WalletLink|OidcLink} */ (checked.get(r.authorizer.link));
   if (r.authorizer.kind === 'wallet') {
-    if (!ctx.links.has(r.authorizer.link)) return fail('unknown-link');
-    const raw = record(ctx.links.get(r.authorizer.link)); if (!raw.ok) return raw;
-    if (raw.value.kind !== 'wallet') return fail('bad-record');
-    const l = historicalLink(raw.value, ctx, r.issuedAt); if (!l.ok) return l;
-    if (hex(sha256(bytes(l.value))) !== r.authorizer.link || l.value.principal !== r.principal) return fail('unknown-link');
-    const s = siweVerify(r.authorizer.siwe, l.value.address, bytes(r), r.issuedAt, ctx.now, ctx.policy); if (!s.ok) return s;
+    if (authorizer.kind !== 'wallet') return fail('unknown-link');
+    const s=siweVerify(r.authorizer.siwe,authorizer.address,bytes(r),r.issuedAt,ctx.now,ctx.policy); if (!s.ok) return s;
+  } else {
+    if (authorizer.kind !== 'oidc') return fail('unknown-link');
+    // OIDC recovery is restricted to accounts with no active wallet, including wallets the candidate drops.
+    const entries=[...ctx.links].sort((a,b)=>a[0]<b[0]?-1:a[0]>b[0]?1:0);
+    for (const [index,[id,raw]] of entries.entries()) {
+      const parsed=record(raw);
+      if (!parsed.ok) {report(diagnostics,'link',index,parsed.reason);continue;}
+      const l=parsed.value;
+      if (l.kind !== 'wallet' || l.principal !== r.principal) continue;
+      if (hex(sha256(bytes(l))) !== id) {report(diagnostics,'link',index,'unknown-link');continue;}
+      const v=historicalLink(l,ctx,r.issuedAt);
+      if (!v.ok) {
+        report(diagnostics,'link',index,v.reason);
+        if (v.reason==='missing-history'||v.reason==='rotation-fork') return v;
+        continue;
+      }
+      if (!revokedAt(v.value,ctx.revocations??[],currentKey,r.issuedAt,ctx.jwks,diagnostics)) return fail('wallet-required');
+    }
   }
   return ok(r);
 }
@@ -279,14 +344,14 @@ export function resolveCurrentKey(genesis, rotations, ctx) {
       /** @type {Result<Rotate>} */ let result;
       if (n !== seq || raw.issuedAt <= lastTime || raw.nextKey === genesis || history.some(r => r.nextKey === raw.nextKey)) result = fail('bad-sequence');
       else {
-        result = verifyRotate(raw,current,candidate);
+        result = checkRotate(raw,current,candidate,diagnostics);
         if (result.ok && raw.authorizer.kind === 'wallet') {
           const own = record(ctx.links.get(raw.authorizer.link));
           if (!own.ok) result = own;
           else if (own.value.kind !== 'wallet') result = fail('bad-record');
           else {
             const lookup = resolveWalletLink(own.value.address, [...ctx.links].sort((a,b) => a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0).map(e => e[1]), ctx.revocations ?? [], candidate);
-            diagnostics.push(...lookup.diagnostics);
+            for (const d of lookup.diagnostics) report(diagnostics,d.source,d.index,d.reason);
             if (!lookup.ok) result = lookup;
             else if (hex(sha256(bytes(lookup.value))) !== raw.authorizer.link) result = fail('ambiguous-link');
           }
@@ -309,24 +374,19 @@ export function resolveWalletLink(address, links, revocations, ctx) {
   /** @type {Map<string,WalletLink>} */ const valid = new Map();
   for (const [index,raw] of links.entries()) {
     const p=record(raw);
-    const v = !p.ok ? p : p.value.kind !== 'wallet' ? fail('bad-record') : historicalLink(p.value,ctx,ctx.now);
-    if (!v.ok) { diagnostics.push({source:'link',index,reason:v.reason}); if (v.reason === 'missing-history' || v.reason === 'rotation-fork') return { ...v, diagnostics }; continue; }
-    if (v.value.address === address) valid.set(hex(sha256(bytes(v.value))),v.value);
+    if (!p.ok) {report(diagnostics,'link',index,p.reason);continue;}
+    if (p.value.kind !== 'wallet' || p.value.address !== address) continue;
+    const v=historicalLink(p.value,ctx,ctx.now);
+    if (!v.ok) {report(diagnostics,'link',index,v.reason);if (v.reason==='missing-history'||v.reason==='rotation-fork') return {...v,diagnostics};continue;}
+    valid.set(hex(sha256(bytes(v.value))),/** @type {WalletLink} */ (v.value));
   }
   const sorted=[...valid].sort((a,b) => b[1].issuedAt-a[1].issuedAt || (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
   if (!sorted.length) return { ...fail('unknown-link'), diagnostics };
   const [id,newest]=sorted[0];
   if (sorted.length > 1 && sorted[1][1].issuedAt === newest.issuedAt) return { ...fail('ambiguous-link'), diagnostics };
-  let revoked=false;
-  for (const [index,raw] of revocations.entries()) {
-    const p=record(raw);
-    if (!p.ok || p.value.kind !== 'revoke') { diagnostics.push({source:'revoke',index,reason:p.ok?'bad-record':p.reason}); continue; }
-    const r=p.value, h=state(ctx.history,r.principal,r.issuedAt,ctx.now);
-    // Retired keys cannot backdate revocations. Rotation commitments replace their old authority.
-    const v=h.ok ? verifyRevoke(r,h.value.currentKey,ctx.now) : h;
-    if (!v.ok) { diagnostics.push({source:'revoke',index,reason:v.reason}); if (v.reason === 'missing-history' || v.reason === 'rotation-fork') return { ...v, diagnostics }; continue; }
-    if (r.principal === newest.principal && r.linkId === id && r.issuedAt >= newest.issuedAt) revoked=true;
-  }
+  const h=state(ctx.history,newest.principal,newest.issuedAt,ctx.now);
+  if (!h.ok) return {...h,diagnostics};
+  const revoked=revokedAt(newest,revocations,h.value.currentKey,ctx.now,ctx.jwks,diagnostics);
   return { ...(revoked ? fail('revoked-link') : ok(newest)), diagnostics };
 }
 export const verifyWalletLinkAtKey = verifyWalletLink;

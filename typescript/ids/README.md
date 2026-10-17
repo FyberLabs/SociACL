@@ -99,9 +99,11 @@ and nonce must all match. A rotation always requires Panopticon attestation,
 including when a wallet authorizes it. This package performs no token fetching,
 login, storage, nonce consumption or enrollment.
 
-The 0.2 contract adds a mandatory wallet timestamp attestation and rotation
-retention commitments. See the [normative amendment](../../docs/identity-review-amendment.md)
-for signing fields, exact claims, grammar, and migration requirements.
+The 0.3 contract requires wallet and revoke timestamp attestations, rotation
+retention commitments, and an enrolled credential bound into the v2 rotation
+signature and attestation. OIDC recovery is limited to accounts with no active
+wallet. See the [normative amendment](../../docs/identity-review-amendment.md) for
+signing fields, exact claims, grammar, and migration requirements.
 
 `verifyWalletLink(record, jwks, policy, now, keyState)` and
 `verifyOidcLink(record, jwks, pinnedIss, now, keyState, clockSkewSeconds?)`
@@ -120,21 +122,27 @@ bytes, timestamp equality, or the exact horizon of history resolution. OIDC
 accepts the same optional tolerance as its last argument (Rust:
 `verify_oidc_link_with_skew`). Every attestation's lifetime is at most 900 seconds.
 
-`verifyRevoke(record, currentKey, now)` requires the key current at the evaluation
-horizon. A retired key cannot backdate a new revoke. Rotation retention
-commitments replace the authority of older revocations: dropping an ID removes
-it; retaining an ID explicitly carries it forward. The service issuing rotation
-attestations must compute this set from authenticated link/revocation state.
+`verifyRevoke(record, currentKey, jwks, now)` requires the key current at the
+evaluation horizon and a Panopticon timestamp witness bound to the revoke's
+canonical signing-byte hash and exact issuance time. Before accepting a rotation,
+the verifier authenticates its authorizer and every retained ID and rejects links
+revoked at or before that rotation under the preceding current key. Thus a
+rotation cannot revive a revoked link, and a stolen retired key cannot forge a
+backdated revoke to roll the accepted history back. The service assigns witness
+timestamps and computes retained sets from authenticated state.
 
-`ResolutionContext` contains `{jwks, links, revocations?, now, policy, history}`.
+`ResolutionContext` contains `{jwks, pinnedIss, links, revocations?, now, policy, history}`.
 `history(principal, issuedAt, until)` is required and returns `Result<KeyState>`
 from a complete authenticated snapshot through `until`. `historyState` computes
 that state from previously verified rotations. It does **not** authenticate its
 arguments. `resolveCurrentKey` resolves its own account internally and calls
 `history` for other accounts, so a rotated conflicting account's link is checked
 with its actual historical key. Unknown context returns `missing-history`;
-a fork in the required context propagates `rotation-fork`. These are unavailable
-verification context, not forged records that can be ignored.
+a fork in the required context propagates `rotation-fork`. Wallet lookup filters
+the requested address and checks time, SIWE and attestation before requesting
+history. Revokes use the already authenticated current key and never select a
+history lookup. Unrelated or unwitnessed index entries cannot cause a fatal
+context failure.
 
 `resolveCurrentKey(genesis, rotations, context)` returns
 `{ok:true,value:{currentKey,rotations},diagnostics}` or
@@ -150,8 +158,12 @@ An expired enrollment attestation does not retroactively invalidate a completed
 rotation. A rotation's new key signs records issued **after** its timestamp;
 a same-second revoke by the preceding key can block that rotation. Once the
 rotation is accepted, its retained set is authoritative at that horizon.
-`verifyRotate(record, currentKey, context)` checks the proof and referenced link;
-use `resolveCurrentKey` to apply untrusted history with revocation and conflicting
+`verifyRotate(record, currentKey, context)` checks the proof, authorizing link,
+every retained link, and pre-rotation revocations. OIDC authorizers name an
+enrolled, retained, unrevoked OIDC link with a pinned issuer; the rotation
+attestation binds its ID. An active wallet blocks OIDC recovery with
+`wallet-required`, including a wallet omitted from the candidate's retained set.
+Use `resolveCurrentKey` to apply untrusted history with revocation and conflicting
 wallet-owner checks.
 
 `resolveWalletLink(address, links, revocations, context)` returns a wallet link
@@ -165,10 +177,13 @@ Rust returns `Resolution<T> { result: Result<T, Reason>, diagnostics }`. Both
 languages expose `*_at_key` / `*AtKey` aliases for the explicit proof/history APIs.
 The context must include complete known link, revocation, and rotation history;
 a pure verifier cannot discover omitted records or establish global freshness.
-Never treat a partial offline snapshot as proof that an account has no rotations.
+Never treat a partial offline snapshot as proof that an account has no rotations
+or active wallets. Enforce input-size and work budgets at the caller; never
+silently truncate a history to satisfy those budgets.
 
-`Reason` additionally includes `missing-history` and `unretained-link`, alongside
-proof, ordering, fork, revocation, ambiguity, unsupported-wallet and RNG errors.
+`Reason` additionally includes `missing-history`, `unretained-link`, and
+`wallet-required`, alongside proof, ordering, fork, revocation, ambiguity,
+unsupported-wallet and RNG errors.
 
 ## Validation and distribution
 
@@ -203,15 +218,15 @@ compiles against its exported types and runs its parsers. The browser check
 bundles the runtime dependency graph and rejects Node imports. Node built-ins
 are used only in build/test tooling, outside the shipped runtime.
 
-After review and merge, tag `ids-v0.2.0`. The release job waits for the full test
+After review and merge, tag `ids-v0.3.0`. The release job waits for the full test
 job, requires a protected `master` and verifies the tag commit is its ancestor.
 A read-only job installs dependencies with scripts disabled, explicitly builds,
 and checks the tag against `package.json`. A separate write-token job only
 downloads the resulting artifact, checks its SHA-256, and attaches
-`sociacl-ids-0.2.0.tgz` and its SHA-256 file. Consumers then install:
+`sociacl-ids-0.3.0.tgz` and its SHA-256 file. Consumers then install:
 
 ```sh
-npm install https://github.com/FyberLabs/SociACL/releases/download/ids-v0.2.0/sociacl-ids-0.2.0.tgz
+npm install https://github.com/FyberLabs/SociACL/releases/download/ids-v0.3.0/sociacl-ids-0.3.0.tgz
 ```
 
 Commit the consumer lockfile with tarball integrity. This URL becomes usable

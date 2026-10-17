@@ -44,6 +44,7 @@ pub enum Reason {
     RngFailure,
     MissingHistory,
     UnretainedLink,
+    WalletRequired,
 }
 impl fmt::Display for Reason {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

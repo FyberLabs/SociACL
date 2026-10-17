@@ -1,6 +1,19 @@
 # Changelog
 
-## sociacl-ids 0.2.0 — unreleased
+## sociacl-ids 0.3.0 — unreleased
+
+- Authenticate relevant link witnesses before requesting history; reject or skip
+  unrelated, future and forged index records without fetching their history.
+- Enforce pre-rotation revocations for every retained credential. Require a
+  timestamp attestation on revokes to prevent retired-key rollback on replay.
+- Bind the authorizing link and kind into rotation v2 signing bytes and
+  attestations. OIDC recovery requires an enrolled, retained, unrevoked OIDC
+  credential and no active wallet, with explicit issuer pinning in the context.
+- Reject noncanonical did:web ports, encoded unreserved/control URL bytes and
+  nonalphabetic final hostname labels. Add shared attack regressions and update
+  the normative contract and migration prerequisites.
+
+## sociacl-ids 0.2.0 — superseded before release
 
 - Require Panopticon wallet timestamp attestations and sorted retained-link
   commitments in rotation signatures and attestations. Require authenticated key

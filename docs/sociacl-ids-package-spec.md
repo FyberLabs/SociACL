@@ -1,6 +1,6 @@
 # Spec: `sociacl-ids`, the shared identity package (TypeScript + Rust)
 
-Status: locked design (decisions A–F, 2026-10-16). This is the full spec for one PR. It assumes no prior context.
+Status: initial design dated 2026-10-16, amended for sociacl-ids 0.3 during review of #57. Sections 4.4–4.6 below reflect the current record contract. The [normative review amendment](identity-review-amendment.md) supersedes the original grammar and history rules where stated; the [package README](../typescript/ids/README.md) documents the implemented API.
 
 Repos referenced:
 - `FyberLabs/SociACL`: Rust workspace `crates/*`, JS package `typescript/` (ESM, JSDoc, `tsc --strict`), vectors in `vectors/`.
@@ -169,7 +169,7 @@ All signatures cover `LP(domain) LP(field1) … LP(fieldN)` (§3).
 |---|---|---|
 | Key → wallet link | `sociacl-link-wallet-v1` | principal, eip55, issuedAt (decimal seconds), nonce |
 | Key → OIDC link | `sociacl-link-oidc-v1` | principal, iss, tenant, sub, issuedAt, nonce |
-| Rotation | `sociacl-rotate-v1` | principal, seq (decimal), prevKey, nextKey, issuedAt |
+| Rotation | `sociacl-rotate-v2` | principal, seq (decimal), prevKey, nextKey, issuedAt, authorizer.kind, authorizer.link, retainedLinks.length (decimal), each retained ID in order |
 | Revocation | `sociacl-revoke-v1` | principal, linkId, issuedAt |
 
 `linkId` = lowercase hex sha256 of the record's signing bytes. Record identity never depends on signature bytes (ECDSA malleability).
@@ -177,29 +177,55 @@ All signatures cover `LP(domain) LP(field1) … LP(fieldN)` (§3).
 ### 4.5 Signatures
 - **SEA key signatures:** ECDSA P-256 over SHA-256 of the signing bytes, a raw 64-byte `r||s`, base64url without padding. These can be produced from the SEA pair with WebCrypto, as s3r.ch `lib/views-backup.ts` already does for manifests. Verifiers accept high-S and low-S. The SEA `SEA{m,s}` envelope is **not** used.
 - **SIWE:** an EIP-4361 message whose `statement` is exactly `SociACL link: ` + hex(sha256(signing bytes)) and whose `address` is the `Eip55`. Signed with EIP-191 `personal_sign` (secp256k1, keccak256). Verification recovers the address and compares it with `===`. EIP-1271 smart-contract wallets: reject with `"unsupported-wallet"` (out of scope).
-- **Panopticon attestation:** compact JWS, `alg` = `ES256`, `kid` required. The verifier is handed a pinned JWKS. Claims are `{typ:"sociacl-oidc-attest-v1", iss, tenant, sub, principal, iat, exp, nonce}` for links, and `{typ:"sociacl-rotate-attest-v1", principal, nextKey, seq, iat, exp, auth:"wallet"|"oidc-fresh-login"}` for rotation.
+- **Panopticon attestation:** compact JWS, `alg` = `ES256`, unique `kid` required in the caller-pinned JWKS. `iat` must equal the record's `issuedAt`; `exp` must be later and no more than 900 seconds after `iat`. Exact claims:
+  - Wallet: `{typ:"sociacl-wallet-attest-v1", principal, linkId, iat, exp}`.
+  - OIDC: `{typ:"sociacl-oidc-attest-v1", iss, tenant, sub, principal, iat, exp, nonce}`.
+  - Rotation: `{typ:"sociacl-rotate-attest-v2", principal, nextKey, seq, iat, exp, auth:"wallet"|"oidc-fresh-login", linkId, retainedLinks}`. `linkId` equals `authorizer.link` and `retainedLinks` equals the signed array.
+  - Revoke: `{typ:"sociacl-revoke-attest-v1", principal, recordId, iat, exp}`. `recordId` hashes the revoke signing bytes, including its target link and timestamp.
+- Panopticon assigns wallet/revoke timestamps after verifying the proofs and current account state. A client-supplied date is not a timestamp witness. OIDC rotation additionally requires a fresh login to the exact credential named by the enrolled link.
 
 ### 4.6 Records
 ```ts
 export type WalletLink = { v: 1; kind: "wallet"; principal: PrincipalId; address: Eip55; issuedAt: number; nonce: string;
-  keySig: string /* SEA key over link-wallet bytes */; siwe: { message: string; signature: `0x${string}` } };
+  keySig: string /* SEA key over link-wallet bytes */; siwe: { message: string; signature: `0x${string}` };
+  attest: string /* Panopticon timestamp JWS */ };
 export type OidcLink = { v: 1; kind: "oidc"; principal: PrincipalId; cred: OidcCredential; issuedAt: number; nonce: string;
   keySig: string; attest: string /* Panopticon JWS */ };
 export type Rotate = { v: 1; kind: "rotate"; principal: PrincipalId; seq: number /* 1.. */; prevKey: PrincipalId; nextKey: PrincipalId;
-  issuedAt: number; nextSig: string /* new key */; authorizer: { kind: "wallet"; link: string /* linkId */; siwe: {message:string; signature:`0x${string}`} }
-              | { kind: "oidc-fresh-login" }; attest: string /* Panopticon JWS, required in both cases */ };
-export type Revoke = { v: 1; kind: "revoke"; principal: PrincipalId; linkId: string; issuedAt: number; keySig: string };
+  issuedAt: number; retainedLinks: readonly string[] /* sorted unique link IDs, at most 1024 */;
+  nextSig: string /* new key over rotation v2 bytes */;
+  authorizer: { kind: "wallet"; link: string /* linkId */; siwe: {message:string; signature:`0x${string}`} }
+            | { kind: "oidc-fresh-login"; link: string /* enrolled OIDC linkId */ };
+  attest: string /* Panopticon JWS, required in both cases */ };
+export type Revoke = { v: 1; kind: "revoke"; principal: PrincipalId; linkId: string; issuedAt: number;
+  keySig: string; attest: string /* Panopticon timestamp JWS */ };
 
-verifyWalletLink(r: unknown, now: number): Result<WalletLink>
-verifyOidcLink(r: unknown, jwks: Jwks, pinnedIss: ReadonlySet<string>, now: number): Result<OidcLink>
-verifyRotate(r: unknown, currentKey: PrincipalId, links: ReadonlyMap<string, WalletLink>, jwks: Jwks, now: number): Result<Rotate>
-resolveCurrentKey(genesis: PrincipalId, rotations: readonly unknown[], ...ctx): Result<PrincipalId>
-  // Applies rotations in strictly increasing seq; each prevKey must equal the current key.
-  // Two valid records with the same seq → { ok:false, reason:"rotation-fork" } (fail closed, account frozen).
+verifyWalletLink(r: unknown, jwks: Jwks, policy: SiwePolicy, now: number, keyState: KeyState): Result<WalletLink>
+verifyOidcLink(r: unknown, jwks: Jwks, pinnedIss: ReadonlySet<string>, now: number, keyState: KeyState, clockSkewSeconds?: number): Result<OidcLink>
+verifyRevoke(r: unknown, currentKey: PrincipalId, jwks: Jwks, now: number): Result<Revoke>
+verifyRotate(r: unknown, currentKey: PrincipalId, context: ResolutionContext): Result<Rotate>
+resolveCurrentKey(genesis: PrincipalId, rotations: readonly unknown[], context: ResolutionContext): Resolution<{currentKey: PrincipalId; rotations: readonly Rotate[]}>
+resolveWalletLink(address: Eip55, links: readonly unknown[], revocations: readonly unknown[], context: ResolutionContext): Resolution<WalletLink>
 ```
+
+`Resolution<T>` adds `{source,index,reason}` diagnostics to the success/failure
+result. `ResolutionContext` requires pinned `jwks`, `pinnedIss`, `policy`, `now`,
+a link map and a `history` resolver; it optionally includes `revocations`.
+`KeyState` contains the signing key before a record's timestamp, the current key
+at the horizon, and the intersection of retained IDs from subsequent rotations
+(or `null` when none followed). The caller must authenticate complete history;
+`historyState` only computes state from previously verified rotations.
+
 Rules:
-- A record's signatures are checked by the current key at the time of `issuedAt`.
-- Two links for one wallet pointing at different principals: the newest SIWE `issuedAt` wins, and a `Revoke` signed by the wallet's principal removes a link.
+- A link's SEA signature uses its key at issuance. Every subsequent rotation must retain the link ID for it to remain usable. A retired key cannot enroll a new backdated credential through an earlier retained set.
+- Rotations use contiguous sequences starting at one, strictly increasing timestamps, matching previous keys and no signing-key reuse. Two distinct valid records at the same sequence freeze the account with `rotation-fork`. Malformed/forged candidates are skipped with diagnostics; exact duplicates are idempotent.
+- The rotation's authorizer and every retained ID must be valid links of that principal in the pre-rotation state. Any revoke witnessed at or before the rotation and signed by its preceding current key blocks retaining or authorizing with that link. An omitted ID cannot be restored by a later rotation.
+- OIDC recovery requires a retained, unrevoked enrolled OIDC link, a pinned issuer and a rotation attestation bound to that link. Any active wallet of that principal blocks OIDC recovery, even if the candidate drops that wallet from `retainedLinks`.
+- Revoke verification uses the key current at the evaluation horizon and a mandatory timestamp witness. The pre-rotation check enforces earlier revocations before retiring that key; a forged backdated revoke cannot roll history back. Same-second revokes use the preceding key; the new key signs records strictly after the rotation timestamp.
+- Wallet lookup filters the requested address and verifies time, SIWE and timestamp attestation before requesting history. Revokes are filtered by target/principal/time and cannot request unrelated history. Missing history or a fork is fatal only for relevant, independently witnessed links.
+- The newest valid wallet link wins. Distinct equal-time links are ambiguous, even for the same principal. Revoking the newest binding never revives an older binding.
+- Historical witnesses are checked at issuance; their later expiry does not invalidate history. Direct wallet/OIDC/rotation proof checks allow explicitly configured clock skew of 0–300 seconds; revokes and history admission apply no skew.
+- A pure verifier cannot detect omitted history, prove the absence of an omitted wallet, fetch trusted keys or consume nonces. Callers must supply complete authenticated state and enforce input/work budgets without silently truncating histories.
 - Link records are published under `userSoul(principal)` (Gun `~pub` space). Private keys, PRF wraps and SIWE session cookies are never published.
 - Wrapped key backups live in Panopticon storage. That is outside this package.
 

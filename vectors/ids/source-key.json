@@ -118,6 +118,11 @@
       "name": "url-corpus-13-13",
       "input": "sr1:activitypub/https%3A%2F%2Faaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.com%2Fa%2520b/feed/feed",
       "canonical": "sr1:activitypub/https%3A%2F%2Faaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.com%2Fa%2520b/feed/feed"
+    },
+    {
+      "name": "did-web-port-nondefault",
+      "input": "sr1:atproto/did%3Aweb%3As3r.ch%253A8443%3Auser%3Aalice/feed/feed",
+      "canonical": "sr1:atproto/did%3Aweb%3As3r.ch%253A8443%3Auser%3Aalice/feed/feed"
     }
   ],
   "reject": [
@@ -1156,6 +1161,46 @@
     {
       "name": "url-corpus-14-13",
       "input": "sr1:activitypub/https%3A%2F%2Faaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.com%2Fa%2520b/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "did-web-port-padded",
+      "input": "sr1:atproto/did%3Aweb%3As3r.ch%253A0443%3Auser%3Aalice/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "did-web-port-default",
+      "input": "sr1:atproto/did%3Aweb%3As3r.ch%253A443%3Auser%3Aalice/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "did-web-port-lowercase-escape",
+      "input": "sr1:atproto/did%3Aweb%3As3r.ch%253a8443%3Auser%3Aalice/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "did-web-port-zero",
+      "input": "sr1:atproto/did%3Aweb%3As3r.ch%253A0%3Auser%3Aalice/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "escaped-unreserved",
+      "input": "sr1:activitypub/https%3A%2F%2Fs3r.ch%2F%2541/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "escaped-nul",
+      "input": "sr1:activitypub/https%3A%2F%2Fs3r.ch%2F%2500/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "escaped-linefeed",
+      "input": "sr1:activitypub/https%3A%2F%2Fs3r.ch%2F%250A/feed/feed",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "escaped-delete",
+      "input": "sr1:activitypub/https%3A%2F%2Fs3r.ch%2F%257F/feed/feed",
       "reason": "bad-alphabet"
     }
   ]

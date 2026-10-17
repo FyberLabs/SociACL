@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import * as ids from '../src/index.js';
 const f=JSON.parse(readFileSync(new URL('../../../vectors/ids/records.json',import.meta.url),'utf8'));
-const ctx={...f.context,links:new Map(f.context.links),history:(p,at,until)=>({ok:true,value:ids.historyState(p,[],at,until)})};
+const ctx={...f.context,links:new Map(f.context.links),pinnedIss:new Set(f.context.pinnedIss),history:(p,at,until)=>({ok:true,value:ids.historyState(p,[],at,until)})};
 const rotation=f.accept.find(c=>c.name==='wallet-rotate').input;
 test('hostile link-map values and retained-link arrays never run getters',()=>{
   let reads=0;

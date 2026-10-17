@@ -90,6 +90,12 @@ fn run(f: &Family, c: &Case, v: &Value) -> Result<Value, Reason> {
         let revs = ctx["revocations"].as_array().unwrap_or(&empty);
         let policy: SiwePolicy = serde_json::from_value(ctx["policy"].clone()).unwrap();
         let history = |p: &PrincipalId, at, until| {
+            if let Some(e) = ctx["historyErrors"]
+                .as_array()
+                .and_then(|es| es.iter().find(|e| e[0] == p.as_ref()))
+            {
+                return Err(serde_json::from_value(e[1].clone()).unwrap());
+            }
             if !ctx["authenticatedAccounts"]
                 .as_array()
                 .unwrap()
@@ -122,12 +128,19 @@ fn run(f: &Family, c: &Case, v: &Value) -> Result<Value, Reason> {
         if ctx["missingHistory"] == true {
             return Err(Reason::MissingHistory);
         }
+        let pinned_iss = ctx["pinnedIss"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap().to_owned())
+            .collect();
         let rc = ResolutionContext {
             jwks: &jwks,
             links: &ls,
             revocations: revs,
             now,
             policy: &policy,
+            pinned_iss: &pinned_iss,
             history: &history,
         };
         let key_state = if ctx["directState"].is_object() {
@@ -166,7 +179,7 @@ fn run(f: &Family, c: &Case, v: &Value) -> Result<Value, Reason> {
                 .principal
             }
             "rotate" => verify_rotate(v, &key, &rc)?.principal,
-            "revoke" => verify_revoke(v, &key, now)?.principal,
+            "revoke" => verify_revoke(v, &key, &jwks, now)?.principal,
             "resolve" => {
                 resolution(
                     resolve_current_key(
@@ -177,6 +190,28 @@ fn run(f: &Family, c: &Case, v: &Value) -> Result<Value, Reason> {
                     c,
                 )?
                 .current_key
+            }
+            "resolve-and-wallet" => {
+                let genesis = parse_principal_id(ctx["genesis"].as_str().unwrap()).unwrap();
+                let account = resolve_current_key(&genesis, v.as_array().unwrap(), &rc).result?;
+                let resolved = |p: &PrincipalId, at, until| {
+                    if p == &genesis {
+                        Ok(history_state(p, &account.rotations, at, until))
+                    } else {
+                        history(p, at, until)
+                    }
+                };
+                resolve_wallet_link(
+                    &parse_eip55(ctx["address"].as_str().unwrap()).unwrap(),
+                    &ls.values().cloned().collect::<Vec<_>>(),
+                    revs,
+                    &ResolutionContext {
+                        history: &resolved,
+                        ..rc
+                    },
+                )
+                .result?
+                .principal
             }
             "wallet-resolve" => {
                 resolution(

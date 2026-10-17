@@ -181,6 +181,16 @@
       "name": "url-host-14",
       "input": "s3rch:https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.com:443;key=1212121212121212121212121212121212121212121212121212121212121212",
       "reason": "bad-host"
+    },
+    {
+      "name": "alphabetic-tld-s3r.0x1",
+      "input": "s3rch:https://s3r.0x1:443;key=1212121212121212121212121212121212121212121212121212121212121212",
+      "reason": "bad-host"
+    },
+    {
+      "name": "alphabetic-tld-s3r.123a",
+      "input": "s3rch:https://s3r.123a:443;key=1212121212121212121212121212121212121212121212121212121212121212",
+      "reason": "bad-host"
     }
   ]
 }

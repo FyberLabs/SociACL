@@ -322,10 +322,12 @@ fn unpct(s: &str) -> Result<String, Reason> {
 fn did_web(s: &str) -> bool {
     let parts: Vec<_> = s[8..].split(':').collect();
     let host = parts[0];
-    let host = if let Some((h, port)) = host.split_once("%3A").or_else(|| host.split_once("%3a")) {
+    let host = if let Some((h, port)) = host.split_once("%3A") {
         if port.len() > 5
             || !port.bytes().all(|c| c.is_ascii_digit())
-            || !port.parse::<u16>().is_ok_and(|n| n > 0)
+            || !port
+                .parse::<u16>()
+                .is_ok_and(|n| n > 0 && n.to_string() == port && n != 443)
         {
             return false;
         }

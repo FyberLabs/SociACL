@@ -12,7 +12,11 @@ pub(crate) fn public_host(host: &str) -> bool {
                 && l.bytes()
                     .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'-')
         })
-        && !labels.last().unwrap().bytes().all(|c| c.is_ascii_digit())
+        && labels
+            .last()
+            .unwrap()
+            .bytes()
+            .all(|c| c.is_ascii_lowercase())
         && ![
             "localhost",
             "local",
@@ -69,6 +73,10 @@ pub(crate) fn web_uri(s: &str, origin: bool, https_only: bool) -> bool {
                 .iter()
                 .all(|c| c.is_ascii_digit() || (b'A'..=b'F').contains(c))
         {
+            let n = u8::from_str_radix(&path[i + 1..i + 3], 16).expect("checked hex");
+            if n < 32 || n == 127 || n.is_ascii_alphanumeric() || b"._~-".contains(&n) {
+                return false;
+            }
             i += 3;
         } else {
             return false;

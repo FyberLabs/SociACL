@@ -83,8 +83,8 @@ export const pct = (s) => encodeURIComponent(s).replace(/[!'()*]/g, c => '%' + c
 /** @param {string} s */
 function didWeb(s) {
   const [host, ...path] = s.slice(8).split(':');
-  const m = /^([a-z0-9.-]+)(?:%3[Aa]([0-9]{1,5}))?$/.exec(host);
-  return !!m && publicHost(m[1]) && (!m[2] || (+m[2] >= 1 && +m[2] <= 65535)) && path.every(p => /^(?:[A-Za-z0-9._~-]|%[0-9A-Fa-f]{2})+$/.test(p));
+  const m = /^([a-z0-9.-]+)(?:%3A([0-9]{1,5}))?$/.exec(host);
+  return !!m && publicHost(m[1]) && (!m[2] || (+m[2] >= 1 && +m[2] <= 65535 && String(+m[2]) === m[2] && m[2] !== '443')) && path.every(p => /^(?:[A-Za-z0-9._~-]|%[0-9A-Fa-f]{2})+$/.test(p));
 }
 /** @param {unknown} x @returns {Result<SourceKey>} */
 export function parseSourceKey(x) {
