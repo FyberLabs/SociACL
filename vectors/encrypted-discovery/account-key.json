@@ -1,0 +1,41 @@
+{
+  "v": 1,
+  "family": "account-key",
+  "signingPub": "YP7UuiVanTHJYet0xjVtaMBJuJI7Yfps5mliLmDyn7Y.eQP-EAi4vJmkGunpVii8ZPLxsgwtfp9Rd6PClNRGIpk",
+  "signingPriv": "ya-p2EW6dRZrXCFXZ7HWk05Qw9s26JsSe4piKxIPZyE",
+  "signingScalarHex": "C9AFA9D845BA75166B5C215767B1D6934E50C3DB36E89B127B8A622B120F6721",
+  "epub": "EMvdmXTv89JPyMx5n3blU3L_D70U-6JoVaVzTvSzgYg.B_b0CP3o9X3I7tWrxA_F1VhXpjeMuIJCtQWnOh7LN5c",
+  "epriv": "6EXhKuFCyTddo7uvYddNjXON5iKEMV7v8bCol7XOHt8",
+  "laneId": "05e57cbbd329896b1f6a2b13ce15cda256ed2fc854b3fb2edadd08933448e385",
+  "principal": "YP7UuiVanTHJYet0xjVtaMBJuJI7Yfps5mliLmDyn7Y.eQP-EAi4vJmkGunpVii8ZPLxsgwtfp9Rd6PClNRGIpk",
+  "principalKey": "p_60fed4ba255a9d31c961eb74c6356d68c049b8923b61fa6ce669622e60f29fb67903fe1008b8bc99a41ae9e95628bc64f2f1b20c2d7e9f5177a3c294d4462299",
+  "wallet": "0x1efF47bc3a10a45D4B230B5d10E37751FE6AA718",
+  "gunDocument": "{\"soul\":\"~YP7UuiVanTHJYet0xjVtaMBJuJI7Yfps5mliLmDyn7Y.eQP-EAi4vJmkGunpVii8ZPLxsgwtfp9Rd6PClNRGIpk\",\"account\":\"YP7UuiVanTHJYet0xjVtaMBJuJI7Yfps5mliLmDyn7Y.eQP-EAi4vJmkGunpVii8ZPLxsgwtfp9Rd6PClNRGIpk\",\"pub\":\"YP7UuiVanTHJYet0xjVtaMBJuJI7Yfps5mliLmDyn7Y.eQP-EAi4vJmkGunpVii8ZPLxsgwtfp9Rd6PClNRGIpk\",\"epub\":\"EMvdmXTv89JPyMx5n3blU3L_D70U-6JoVaVzTvSzgYg.B_b0CP3o9X3I7tWrxA_F1VhXpjeMuIJCtQWnOh7LN5c\"}",
+  "nonIdentities": [
+    {"name": "wallet", "input": "0x1efF47bc3a10a45D4B230B5d10E37751FE6AA718", "reason": "bad-length"},
+    {"name": "handle", "input": "alice", "reason": "bad-length"},
+    {"name": "oidc-sub", "input": "Case-Sensitive/Subject", "reason": "bad-length"},
+    {"name": "label", "input": "0xalice", "reason": "bad-length"},
+    {"name": "gun-chain", "input": "0xattacker.get('s3rch').get('users').get('0xvictim')", "reason": "gun-chain"},
+    {"name": "trailing-space", "input": "YP7UuiVanTHJYet0xjVtaMBJuJI7Yfps5mliLmDyn7Y.eQP-EAi4vJmkGunpVii8ZPLxsgwtfp9Rd6PClNRGIpk ", "reason": "whitespace"}
+  ],
+  "deliveries": ["enrollment", "hop", "hint", "wrap", "request", "inbox"],
+  "backupWrap": {
+    "domain": "sociacl-account-key-wrap-v1",
+    "kdfDomain": "s3rch-sea-secret-v1",
+    "transportScalarHex": "0000000000000000000000000000000000000000000000000000000000000002",
+    "ephemeralScalarHex": "0000000000000000000000000000000000000000000000000000000000000003",
+    "nonceHex": "000102030405060708090a0b",
+    "wrapId": "wrap_00112233445566778899aabbccddeeff",
+    "ciphertextHex": "01045ecbe4d1a6330a44c8f7ef951d4bf165e6c6b721efada985fb41661bc6e7fd6c8734640c4998ff7e374b06ce1a64a2ecd82ab036384fb83d9a79b127a27d5032000102030405060708090a0b3b4d6e7d00787266490e8a8134fb1fa033e939a27e7c21a0e35e9d766cce8431f5a1a6364fc787d02a72dae99bd0a2859a7a0cab740b669305d7fe5b6f0031257bcd520e9b8b2d90ad32b82be0ae84558ece253a50ec6fe7053ca1d5688eafe5e10bad43d53e642bc976fd3a3d5826444a506fd75a879e35a56801b04d888a68d9663220d77523cc2d371ade8baa14a0017d767d198a89106a3a002e90403607dc7fc42611619a2cc3e82e109f29ef3e38c60972a333411d988a2d17b5dcc616b30d53bb299b8a711831f0ce8c624e6278407d41d8b4fc781c805f75d57b291d943b887ef98dee4a1eb1b33ca3952da9c47da0e2b8a3208ac85c3114d691377d9223852670f39800fdf33e143e31f8f465bee7aafde7d1e25ab41bda6b42eadda30d1df46123c0037f935519c4f216145638dbdd5926a3d6f1366eff46e578fc7cacd0f44e079bd8568562c671f578d071376db718345d7555581b58de09d803fc08e3f4b8ed9462367ff4607f6032f8ed2593346cf29187aed755d1bb088e84114be2c8c35bb6"
+  },
+  "contentWrap": {
+    "dekHex": "1111111111111111111111111111111111111111111111111111111111111111",
+    "ephemeralScalarHex": "0000000000000000000000000000000000000000000000000000000000000004",
+    "nonceHex": "0b0a09080706050403020100",
+    "epoch": 1,
+    "objectId": "item_00112233445566778899aabbccddeeff",
+    "revisionId": "7959127078e9212a046160203b536df084c7884f9f1c18f439fda77f28450008",
+    "wrappedKey": "0104e2534a3532d08fbba02dde659ee62bd0031fe2db785596ef509302446b030852e0f1575a4c633cc719dfee5fda862d764efc96c3f30ee0055c42c23f184ed8c60b0a09080706050403020100ed02c388bf3e917109d48f35d17a43c8ec22af92542c472a8cc5edf737ed7cd65533a09773e2f7764b8b1f1aa2415fffcf8427870e01839e0cab3c77d77c862c542418ee8479144352aea4433af16ed754c3759c26b472f2ac6d12e7981435c49dd3c62572b1058a51c5fa50ef162430127e35f801866dc8c8aa7fc7db272e5205ad4eb338e1f89e2958089452c55a04ede93e5be7d24759b4e160ef5839ea7f2f2226866cabd2659d9b49b43c45aa97087ab35ca0adbce43c9c8e2369b4b2448fc2325c18052567a6a61fb4ac0ca4360a8d27a1fda8345121d522c0ba1366b1345639b06b44ef387f45f719f106ac4dac70b17a2713ff1ac23236cd9d165c80ac35b3d34dbd9cc1650e7da6ed26b47fb9527e11573114252af0988fa7d7b2ffc357b7f6ea25451bfb752f5479a4804821bbd7f5c633b4a869e2fe9f1bb394ec6b5abbe9db716f155c75f33bf8d0a196e46b47e95487ad3a"
+  }
+}

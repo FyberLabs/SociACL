@@ -147,6 +147,10 @@ impl AccountSeaSecret {
         &self.account
     }
 
+    pub fn lane_id(&self) -> &str {
+        &self.lane_id
+    }
+
     pub fn sea_pub(&self) -> &str {
         &self.sea_pub
     }
@@ -417,14 +421,14 @@ pub(crate) fn lane_id_well_formed(lane_id: &str) -> bool {
     lane_id.len() == 64 && crate::hexutil::decode_hex(lane_id).is_ok()
 }
 
-fn require_lane(lane_id: &str) -> Result<(), EncDiscError> {
+pub(crate) fn require_lane(lane_id: &str) -> Result<(), EncDiscError> {
     if !lane_id_well_formed(lane_id) {
         return Err(EncDiscError::BadLane);
     }
     Ok(())
 }
 
-fn json_string(value: &str) -> String {
+pub(crate) fn json_string(value: &str) -> String {
     let mut out = String::from("\"");
     for character in value.chars() {
         match character {

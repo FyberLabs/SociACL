@@ -150,9 +150,11 @@ A device enrolled to the same account holds the same SEA keypair, so it can unwr
 
 ## Account key
 
-Each account has one SEA keypair. `pub` and `epub` may sit on the user node. `priv` and `epriv` never go on Gun.
+Each account has one SEA keypair. The account **is** its genesis signing `pub`: the `sociacl-ids` `PrincipalId` (SEA `base64url(x).base64url(y)`), minted once through `principalFromSec1` / `principal_from_sec1` from the 64 raw point bytes. That id never changes. The path key is `formatPrincipalKey` (`p_` plus the lowercase hex of those bytes), not an escaped copy of the pub. `pub` and `epub` may sit on the user node (`userSoul(principal)`). `priv` and `epriv` never go on Gun, in any encoding.
 
-Devices do not mint a second SEA keypair. A device inherits the account keypair through enrollment. Enrollment copies the keypair onto the device. It does not write `priv` or `epriv` to Gun, and it does not mint a grant. The inbox lane stays one per account, not one per device. Wraps for that account use the one `epub`.
+Devices do not mint a second SEA keypair and do not mint an identity. A device inherits that one keypair through enrollment. A temporary ECDH key may carry the enrollment ciphertext; it is not a `PrincipalId` and it is not stored as an account. Enrollment copies the keypair onto the device. It does not write `priv` or `epriv` to Gun, and it does not mint a grant. The encrypted backup of the keypair lives in a Panopticon index and wrap store. That store is an adapter. It is not the authority and it does not choose the current key. The inbox lane stays one per account, not one per device. Wraps for that account use the one `epub`.
+
+Wallets and OIDC subjects are linked credentials (`WalletLink`, `OidcLink`). They are not principals. The current signing key, when it differs from genesis, is whatever `resolveCurrentKey` returns under the package's witnessed rotation rules. This page does not define a second rotation scheme, and a rotation does not mint a second `epub`.
 
 ## Epoch manifest
 

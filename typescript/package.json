@@ -18,6 +18,8 @@
     "typecheck": "tsc --strict --noEmit -p tsconfig.json"
   },
   "devDependencies": {
+    "@noble/curves": "2.0.1",
+    "@noble/hashes": "2.0.1",
     "@types/node": "24.7.0",
     "typescript": "5.9.3"
   }

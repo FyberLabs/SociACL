@@ -71,4 +71,10 @@ pub enum EncDiscError {
     ForbiddenHop,
     #[error("inbox append rejected")]
     InboxRejected,
+    #[error("not a principal ({0})")]
+    NotPrincipal(String),
+    #[error("identity rejected ({0})")]
+    IdentityRejected(String),
+    #[error("wrap store rejected")]
+    StoreRejected,
 }
