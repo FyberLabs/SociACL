@@ -168,21 +168,31 @@ function isHttpUrlLeaf(id) {
 
 /**
  * Canonical accessor id from the see/post path. Empty is rejected.
+ * The raw string must be Unicode scalar values. U+0085 and U+FEFF are
+ * rejected so this trim matches Rust.
  * @param {string} requester
  */
 export function canonicalRequestAccessor(requester) {
-  const id = canonicalAccessorId(requester == null ? "" : String(requester));
+  const raw = requester == null ? "" : String(requester);
+  requireUnicodeScalars(raw);
+  rejectTrimMismatch(raw);
+  const id = canonicalAccessorId(raw);
   if (!id) throw new Error(FIELD);
   return id;
 }
 
 /**
  * Object key for a request id. aclKey, with an aliasable item soul
- * reduced to the raw id's aclKey. A held claim does not alias.
+ * reduced to the raw id's aclKey when that inner contains no `_`.
+ * A held claim does not alias. The raw string must be Unicode scalar
+ * values. U+0085 and U+FEFF are rejected so this trim matches Rust.
  * @param {string} source
  */
 export function canonicalRequestObject(source) {
-  const id = String(source ?? "").trim();
+  const raw = String(source ?? "");
+  requireUnicodeScalars(raw);
+  rejectTrimMismatch(raw);
+  const id = raw.trim();
   if (!id || closedSource(id)) throw new Error(FIELD);
   const inner = reducibleItemInner(id);
   if (inner) {
@@ -198,6 +208,8 @@ export function canonicalRequestObject(source) {
 /**
  * Item soul whose reconstructed form equals the trimmed source.
  * A spaced segment such as `s3rch/items/ foo` is not the raw id `foo`.
+ * An inner `_` is also what aclKey writes for `/`, so `s3rch/items/a_b`
+ * is not the request key of `a/b`.
  * @param {string} id
  * @returns {string | null}
  */
@@ -205,11 +217,37 @@ function reducibleItemInner(id) {
   const segments = soulSegments(id);
   if (!segments || segments.length !== 3 || segments[0] !== "s3rch" || segments[1] !== "items") return null;
   const inner = segments[2] ?? "";
-  if (!inner || inner.includes("/") || encodeKey(inner) !== inner) return null;
+  if (!inner || inner.includes("/") || inner.includes("_") || encodeKey(inner) !== inner) return null;
   if (!mayAliasToItemSoul(inner) || isItemShaped(inner)) return null;
   const soul = `s3rch/items/${encodeKey(inner)}`;
   if (soul !== id.trim()) return null;
   return inner;
+}
+
+/** Unpaired UTF-16 is not a Unicode scalar value. @param {string} text */
+function requireUnicodeScalars(text) {
+  for (let i = 0; i < text.length; i += 1) {
+    const unit = text.charCodeAt(i);
+    if (unit >= 0xd800 && unit <= 0xdbff) {
+      const next = text.charCodeAt(i + 1);
+      if (!(next >= 0xdc00 && next <= 0xdfff)) throw new Error(FIELD);
+      i += 1;
+      continue;
+    }
+    if (unit >= 0xdc00 && unit <= 0xdfff) throw new Error(FIELD);
+  }
+}
+
+/**
+ * Rust `trim` strips U+0085 and keeps U+FEFF. JavaScript `trim` does
+ * the opposite. Either character in a requester or source is rejected.
+ * @param {string} text
+ */
+function rejectTrimMismatch(text) {
+  for (let i = 0; i < text.length; i += 1) {
+    const unit = text.charCodeAt(i);
+    if (unit === 0x0085 || unit === 0xfeff) throw new Error(FIELD);
+  }
 }
 
 /** @param {Uint8Array} bytes */
@@ -271,16 +309,7 @@ function canonicalStatus(status) {
 /** @param {string} message */
 function canonicalMessage(message) {
   if (typeof message !== "string") throw new Error(FIELD);
-  for (let i = 0; i < message.length; i += 1) {
-    const unit = message.charCodeAt(i);
-    if (unit >= 0xd800 && unit <= 0xdbff) {
-      const next = message.charCodeAt(i + 1);
-      if (!(next >= 0xdc00 && next <= 0xdfff)) throw new Error(FIELD);
-      i += 1;
-      continue;
-    }
-    if (unit >= 0xdc00 && unit <= 0xdfff) throw new Error(FIELD);
-  }
+  requireUnicodeScalars(message);
   if (Array.from(message).length > ACCESS_MESSAGE_MAX) throw new Error(FIELD);
   return message;
 }

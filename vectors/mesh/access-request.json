@@ -132,7 +132,25 @@
       "name": "dot-soul",
       "requester": " 0xbob ",
       "source": "s3rch/items/room_alpha",
-      "id": "0bd79addf07dcdfa1afefd6443e0eaa73388d6e0a54ec66d9b84e25610430c10"
+      "id": "83571ebe99602837abb8623511ff4d0c81c9fcb5575864c08667e476686035b2"
+    },
+    {
+      "name": "slash-raw",
+      "requester": "0xbob",
+      "source": "a/b",
+      "id": "4477db15f9232defb9dbac7d79b5e8add7eab56c6cd7aa3568bf2140f754bc5a"
+    },
+    {
+      "name": "slash-flat",
+      "requester": "0xbob",
+      "source": "a_b",
+      "id": "4477db15f9232defb9dbac7d79b5e8add7eab56c6cd7aa3568bf2140f754bc5a"
+    },
+    {
+      "name": "slash-soul",
+      "requester": "0xbob",
+      "source": "s3rch/items/a_b",
+      "id": "506f06bfe45cc0f6d74a86f7174e5bc04b275f032fde199b2cad6e9980e6d85c"
     }
   ],
   "signing": [
@@ -223,8 +241,8 @@
       "scope": "read",
       "message": "x",
       "status": "pending",
-      "id": "0bd79addf07dcdfa1afefd6443e0eaa73388d6e0a54ec66d9b84e25610430c10",
-      "hex": "1700000073337263682d6163636573732d726571756573742d76314000000030626437396164646630376463646661316166656664363434336530656161373333383864366530613534656336366439623834653235363130343330633130040000007265616401000000780700000070656e64696e67"
+      "id": "83571ebe99602837abb8623511ff4d0c81c9fcb5575864c08667e476686035b2",
+      "hex": "1700000073337263682d6163636573732d726571756573742d76314000000038333537316562653939363032383337616262383632333531316666346430633831633966636235353735383634633038363637653437363638363033356232040000007265616401000000780700000070656e64696e67"
     },
     {
       "name": "message-max",
@@ -411,6 +429,38 @@
       "name": "blank-source",
       "requester": "0xbob",
       "source": "   ",
+      "scope": "read",
+      "message": "",
+      "status": "pending"
+    },
+    {
+      "name": "requester-next-line",
+      "requester": "\u00850xbob",
+      "source": "room:alpha",
+      "scope": "read",
+      "message": "",
+      "status": "pending"
+    },
+    {
+      "name": "source-next-line",
+      "requester": "0xbob",
+      "source": "room:alpha\u0085",
+      "scope": "read",
+      "message": "",
+      "status": "pending"
+    },
+    {
+      "name": "source-bom",
+      "requester": "0xbob",
+      "source": "\ufeffroom:alpha",
+      "scope": "read",
+      "message": "",
+      "status": "pending"
+    },
+    {
+      "name": "requester-bom-segment",
+      "requester": "s3rch/users/\ufeff0xbob",
+      "source": "room:alpha",
       "scope": "read",
       "message": "",
       "status": "pending"

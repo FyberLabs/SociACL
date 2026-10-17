@@ -614,16 +614,20 @@ export const ACCESS_MESSAGE_MAX: 280;
  * Canonical accessor id. Same as aclPrincipalKey.
  * `s3rch/users/<wallet>` and the wallet are this id. Each segment
  * is trimmed and an empty segment is dropped. Empty is rejected.
+ * The raw string is Unicode scalar values. U+0085 and U+FEFF are
+ * rejected so this trim matches Rust.
  */
 export function canonicalRequestAccessor(requester: AccessorId): string;
 
 /**
  * Object key for a request id. aclKey, with an aliasable item soul
- * reduced to the raw id's aclKey. A held claim id does not alias to
- * an item soul. `s3rch/items/ foo` does not alias to `foo`.
- * meta, acl, a dest-ACL soul, gun.get('s3rch').get('meta'),
- * gun.get('s3rch').get('acl'), and an HTTP leaf in any scheme case
- * are rejected.
+ * reduced to the raw id's aclKey when that inner contains no `_`.
+ * A held claim id does not alias to an item soul.
+ * `s3rch/items/ foo` does not alias to `foo`. `a/b` does not alias
+ * to `s3rch/items/a_b`. The raw string is Unicode scalar values.
+ * U+0085 and U+FEFF are rejected. meta, acl, a dest-ACL soul,
+ * gun.get('s3rch').get('meta'), gun.get('s3rch').get('acl'), and an
+ * HTTP leaf in any scheme case are rejected.
  * Grant rows still store the in-graph object id.
  */
 export function canonicalRequestObject(source: CheckObjectId): string;

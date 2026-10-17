@@ -244,6 +244,66 @@ test("a surrogate pair is one scalar and an unpaired surrogate is rejected", () 
   }
 });
 
+test("a slash id does not share a request with the flattened item soul", () => {
+  const slash = accessRequestId("0xbob", "a/b");
+  const flat = accessRequestId("0xbob", "a_b");
+  const soul = accessRequestId("0xbob", "s3rch/items/a_b");
+  assert.equal(slash, flat);
+  assert.notEqual(slash, soul);
+  const graph = new MemoryGroupGraph();
+  graph.putObject("a/b", "0xalice");
+  graph.putObject("s3rch/items/a_b", "0xalice");
+  const bob = signer("0xbob");
+  graph.enrollSigner("0xbob", bob.publicKey);
+  const signed = {
+    requester: "0xbob",
+    source: "a/b",
+    scope: "read",
+    message: "",
+    status: "pending",
+  };
+  signed.signature = signAccessRequest(bob.privateKey, signed);
+  const swapped = { ...signed, source: "s3rch/items/a_b" };
+  const denied = grantApprovedRequest(graph, "0xalice", swapped, { from: 0, until: 80 }, null);
+  assert.equal(denied.granted, false);
+  assert.equal(denied.reason, "signature");
+  assert.equal(graph.seeGrant("a/b", "0xbob"), undefined);
+  assert.equal(graph.seeGrant("s3rch/items/a_b", "0xbob"), undefined);
+  const granted = grantApprovedRequest(graph, "0xalice", signed, { from: 0, until: 80 }, null);
+  assert.equal(granted.granted, true);
+  assert.ok(graph.seeGrant("a/b", "0xbob"));
+  assert.equal(graph.seeGrant("s3rch/items/a_b", "0xbob"), undefined);
+});
+
+test("an unpaired surrogate in the requester or source is rejected", () => {
+  const graph = new MemoryGroupGraph();
+  graph.putObject("room\uFFFD", "0xalice");
+  graph.putObject("room\ud800", "0xalice");
+  const bob = signer("0xbob");
+  graph.enrollSigner("0xbob", bob.publicKey);
+  const signed = {
+    requester: "0xbob",
+    source: "room\uFFFD",
+    scope: "read",
+    message: "",
+    status: "pending",
+  };
+  signed.signature = signAccessRequest(bob.privateKey, signed);
+  assert.notEqual(accessRequestId("0xbob", "room\uFFFD"), "");
+  for (const request of [
+    { ...signed, source: "room\ud800" },
+    { ...signed, requester: "\ud800" },
+    { ...signed, requester: "s3rch/users/\ud800" },
+  ]) {
+    assert.throws(
+      () => grantApprovedRequest(graph, "0xalice", request, { from: 0, until: 80 }, null),
+      /access request field is not canonical/,
+    );
+  }
+  assert.equal(graph.seeGrant("room\uFFFD", "0xbob"), undefined);
+  assert.equal(graph.seeGrant("room\ud800", "0xbob"), undefined);
+});
+
 test("a spaced item soul does not authorize the trimmed object", () => {
   const spaced = accessRequestId("0xbob", "s3rch/items/ foo");
   const raw = accessRequestId("0xbob", "foo");

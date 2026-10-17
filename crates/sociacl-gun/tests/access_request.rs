@@ -467,6 +467,34 @@ fn owner_client_writes_rows_and_a_request_does_not() {
 }
 
 #[test]
+fn a_slash_id_does_not_share_a_request_with_the_flattened_item_soul() {
+    let slash = access_request_id("0xbob", "a/b").unwrap();
+    let flat = access_request_id("0xbob", "a_b").unwrap();
+    let soul = access_request_id("0xbob", "s3rch/items/a_b").unwrap();
+    assert_eq!(slash, flat);
+    assert_ne!(slash, soul);
+    let bob = signer("0xbob");
+    let mut graph = MeshSeeGraph::new();
+    graph.put_object("a/b", "0xalice");
+    graph.put_object("s3rch/items/a_b", "0xalice");
+    graph.enroll_signer("0xbob", bob.verify_key()).unwrap();
+    let mut request = request_of("0xbob", "a/b", "read", "", "pending");
+    request.signature = sign_access_request(&bob, &request).unwrap();
+    let mut swapped = request.clone();
+    swapped.source = "s3rch/items/a_b".into();
+    assert!(graph
+        .grant_approved_request("0xalice", &swapped, 0, 80, None)
+        .is_err());
+    assert!(graph.grant_edge("a/b", "0xbob").is_none());
+    assert!(graph.grant_edge("s3rch/items/a_b", "0xbob").is_none());
+    graph
+        .grant_approved_request("0xalice", &request, 0, 80, None)
+        .unwrap();
+    assert!(graph.grant_edge("a/b", "0xbob").is_some());
+    assert!(graph.grant_edge("s3rch/items/a_b", "0xbob").is_none());
+}
+
+#[test]
 fn user_soul_segments_and_non_http_uris_share_one_id() {
     let bob = access_request_id("bob", "room:alpha").unwrap();
     assert_eq!(

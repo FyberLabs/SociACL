@@ -12,8 +12,11 @@
 //! canonical accessor id and a canonical object key. `0xbob` and
 //! `s3rch/users/0xbob` are one accessor (`canonical_accessor_id`).
 //! `room:alpha` and `s3rch/items/room:alpha` are one object when the raw
-//! id may alias to that item soul. A held claim id does not. `aclKey`
-//! spellings such as `rss3:act/1#x` and `rss3:act_1_x` are one object.
+//! id may alias to that item soul and the inner id contains no `_`.
+//! `a/b` and `s3rch/items/a_b` are different objects. A held claim id
+//! does not alias. `aclKey` spellings such as `rss3:act/1#x` and
+//! `rss3:act_1_x` are one object. Requester and source are Unicode
+//! scalar values. U+0085 and U+FEFF are rejected.
 //! Scope, message, and status are not part of the id. Scope is only
 //! `read` or `read+post`. Status is only `pending` or `withdrawn`.
 //! Other spellings are rejected.
@@ -107,7 +110,10 @@ pub struct OwnerGrantRows {
 }
 
 /// Canonical accessor id from #51. Empty is rejected.
+/// The raw string is Unicode scalar values (`str`). U+0085 and U+FEFF
+/// are rejected so this trim matches JavaScript.
 pub fn canonical_request_accessor(requester: &str) -> Result<String, GunError> {
+    reject_trim_mismatch(requester)?;
     let id = canonical_accessor_id(requester);
     if id.is_empty() {
         return Err(GunError::AccessRequestField);
@@ -118,11 +124,13 @@ pub fn canonical_request_accessor(requester: &str) -> Result<String, GunError> {
 /// Object key for a request id.
 ///
 /// `aclKey` spellings collapse. An item soul collapses to the `aclKey`
-/// of its raw id when that raw id may alias to the soul. A held claim
-/// id without `/` does not collapse to an item soul. `s3rch/meta`,
-/// dest ACL, and a URL leaf are rejected. The in-graph spelling used
-/// on grant rows is still `canonical_object_id`.
+/// of its raw id when that raw id may alias to the soul and the inner
+/// id contains no `_`. A held claim id without `/` does not collapse
+/// to an item soul. `s3rch/meta`, dest ACL, and a URL leaf are rejected.
+/// U+0085 and U+FEFF are rejected. The in-graph spelling used on grant
+/// rows is still `canonical_object_id`.
 pub fn canonical_request_object(source: &str) -> Result<String, GunError> {
+    reject_trim_mismatch(source)?;
     let id = source.trim();
     if id.is_empty() || closed_reason(id).is_some() {
         return Err(GunError::AccessRequestField);
@@ -345,6 +353,15 @@ fn canonical_message(message: &str) -> Result<String, GunError> {
     Ok(message.to_string())
 }
 
+/// Rust strips U+0085 and keeps U+FEFF. JavaScript does the opposite.
+/// Either character in a requester or source is rejected.
+fn reject_trim_mismatch(text: &str) -> Result<(), GunError> {
+    if text.chars().any(|ch| ch == '\u{0085}' || ch == '\u{FEFF}') {
+        return Err(GunError::AccessRequestField);
+    }
+    Ok(())
+}
+
 fn canonical_window(from: u64, until: u64) -> Result<(), GunError> {
     if from > JS_SAFE_INTEGER_MAX || until > JS_SAFE_INTEGER_MAX || from >= until {
         return Err(GunError::AccessRequestField);
@@ -359,7 +376,8 @@ fn reducible_item_inner(id: &str) -> Option<String> {
         return None;
     }
     let inner = soul.segments().get(2)?.clone();
-    if inner.is_empty() || inner.contains('/') || encode_key(&inner) != inner {
+    if inner.is_empty() || inner.contains('/') || inner.contains('_') || encode_key(&inner) != inner
+    {
         return None;
     }
     if !may_alias_to_item_soul(&inner) || is_item_shaped(&inner) {
