@@ -396,9 +396,10 @@ export type S3rchAcl = "acl";
 export function aclKey(id: string): string;
 
 /**
- * Owner / accessor key on dest ACL. `s3rch/users/<wallet>` collapses
- * to the wallet. Each segment is trimmed and an empty segment is
- * dropped, so `s3rch/users/ bob ` and `s3rch/users//bob` are `bob`.
+ * Owner / accessor key on dest ACL. `s3rch/users/<wallet>` and
+ * `gun.get('s3rch').get('users').get(wallet)` collapse to the wallet.
+ * Each segment is trimmed and an empty segment is dropped, so
+ * `s3rch/users/ bob ` and `s3rch/users//bob` are `bob`.
  * Anything else is aclKey.
  */
 export function aclPrincipalKey(id: string): string;

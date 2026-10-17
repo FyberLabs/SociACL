@@ -51,6 +51,30 @@
       "id": "f07e03cd64b869a6ffeea9b93e0f5b425f4c14c93f2eebcfaea7c9eb524280a2"
     },
     {
+      "name": "gun-get-user",
+      "requester": "gun.get('s3rch').get('users').get('0xbob')",
+      "source": "room:alpha",
+      "id": "f07e03cd64b869a6ffeea9b93e0f5b425f4c14c93f2eebcfaea7c9eb524280a2"
+    },
+    {
+      "name": "gun-get-user-quotes",
+      "requester": "gun.get(\"s3rch\").get(\"users\").get(\"0xbob\")",
+      "source": "room:alpha",
+      "id": "f07e03cd64b869a6ffeea9b93e0f5b425f4c14c93f2eebcfaea7c9eb524280a2"
+    },
+    {
+      "name": "gun-get-user-spaced",
+      "requester": "gun.get('s3rch').get('users').get(' 0xbob ')",
+      "source": "room:alpha",
+      "id": "f07e03cd64b869a6ffeea9b93e0f5b425f4c14c93f2eebcfaea7c9eb524280a2"
+    },
+    {
+      "name": "gun-get-item-accessor",
+      "requester": "gun.get('s3rch').get('items').get('room')",
+      "source": "room:alpha",
+      "id": "f2e83746ccbb0cf844cfcb22752ab1e3e7ab419857261f8a59f00e44c6b10826"
+    },
+    {
       "name": "raw-foo",
       "requester": "0xbob",
       "source": "foo",
@@ -463,6 +487,21 @@
       "source": "room:alpha",
       "scope": "read",
       "message": "x",
+      "status": "pending",
+      "from": 0,
+      "until": 80,
+      "now": 10,
+      "expect": "see"
+    },
+    {
+      "name": "owner-gun-get-requester",
+      "mode": "owner",
+      "object": "room:alpha",
+      "owner": "0xalice",
+      "requester": "gun.get('s3rch').get('users').get('0xbob')",
+      "source": "room:alpha",
+      "scope": "read",
+      "message": "",
       "status": "pending",
       "from": 0,
       "until": 80,
