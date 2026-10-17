@@ -42,3 +42,17 @@ test('optional revoke witness never invokes getters and history aliases stay wit
   const present=ids.resolveWalletLinkNow(w.address,[w],[offline],ctx);
   assert.equal(present.ok,false);assert.equal(present.reason,'revoked-link');
 });
+
+test('damaged duplicate rotation proof getters cannot run or veto a valid copy',()=>{
+  let reads=0;
+  const damaged={...rotation,authorizer:{...rotation.authorizer,siwe:{
+    get message(){reads++;throw Error('getter');},signature:'0x'+'00'.repeat(65),
+  }}};
+  for(const copies of [[damaged,rotation],[rotation,damaged]]) {
+    const r=ids.resolveCurrentKey(ctx.genesis,copies,ctx);
+    assert.equal(r.ok,true);assert.equal(r.value.currentKey,rotation.nextKey);
+    assert.deepEqual(r.diagnostics.map(d=>d.reason),['missing-history']);
+    assert.deepEqual(r.value.rotations,[rotation]);
+  }
+  assert.equal(reads,0);
+});

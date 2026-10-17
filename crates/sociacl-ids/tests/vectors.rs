@@ -160,11 +160,44 @@ fn run(f: &Family, c: &Case, v: &Value) -> Result<Value, Reason> {
             }
         };
         let principal = match c.extra["operation"].as_str().unwrap() {
-            "wallet-link" => {
-                verify_wallet_link_at_key(v, &jwks, &policy, now, &key_state)?.principal
+            "prepare-retained-links-now" => {
+                // Reference caller step over fixture candidates; no attestation is issued here.
+                let mut retained = Vec::new();
+                for id in v.as_array().unwrap() {
+                    let id = id.as_str().unwrap();
+                    let raw = ls.get(id).unwrap();
+                    let principal = parse_principal_id(raw["principal"].as_str().unwrap())?;
+                    let issued_at = raw["issuedAt"].as_f64().unwrap() as u64;
+                    let state = history(&principal, issued_at, now)?;
+                    let proof = if raw["kind"] == "wallet" {
+                        IdentityRecord::Wallet(verify_wallet_link(
+                            raw, &jwks, &policy, issued_at, &state,
+                        )?)
+                    } else {
+                        IdentityRecord::Oidc(verify_oidc_link(
+                            raw,
+                            &jwks,
+                            &pinned_iss,
+                            issued_at,
+                            &state,
+                        )?)
+                    };
+                    assert_eq!(link_id(&proof)?, id);
+                    let revoked = revs.iter().any(|raw| {
+                        verify_revoke_now(raw, &state.current_key, now).is_ok_and(|r| {
+                            r.principal == principal && r.link_id == id && r.issued_at >= issued_at
+                        })
+                    });
+                    if !revoked {
+                        retained.push(id);
+                    }
+                }
+                retained.sort();
+                return Ok(serde_json::to_value(retained).unwrap());
             }
+            "wallet-link" => verify_wallet_link(v, &jwks, &policy, now, &key_state)?.principal,
             "oidc-link" => {
-                verify_oidc_link_at_key(
+                verify_oidc_link(
                     v,
                     &jwks,
                     &ctx["pinnedIss"]

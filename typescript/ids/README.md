@@ -100,7 +100,7 @@ and nonce must all match. A rotation always requires Panopticon attestation,
 including when a wallet authorizes it. This package performs no token fetching,
 login, storage, nonce consumption or enrollment.
 
-The 0.5 contract requires wallet timestamp attestations and witnessed revokes
+The 0.6 contract requires wallet timestamp attestations and witnessed revokes
 for history, and permits current-key offline revokes for present lookups. Rotation
 retention commitments and an enrolled credential are bound into the v2 rotation
 signature and attestation. OIDC recovery is limited to accounts with no active
@@ -153,10 +153,18 @@ rotation. The same offline revoke is ignored by historical/as-of
 `resolveWalletLink`, `verifyRotate` and `resolveCurrentKey`; never use a `Now`
 API for a historical query or choose its current key from `issuedAt`.
 
-Use present eligibility before a new login/recovery authorization. For OIDC,
-check matching revokes with `verifyRevokeNow` using the authenticated current key.
-The historical rotation verifier does not perform this present authorization
-step. Cached JWKS and enrollment proofs still authenticate existing links;
+Panopticon and clients **MUST exclude present-revoked links from `retainedLinks`**
+when constructing a rotation. Panopticon **MUST check present revocation before
+attesting any rotation or login**. For wallet authorization, use
+`resolveWalletLinkNow` and require the selected link ID to equal the authorizer
+ID. For OIDC, authenticate the enrolled link and check `verifyRevokeNow` using the
+final authenticated current key: match principal, target ID and
+`revoke.issuedAt >= link.issuedAt`. A revoked authorizer denies the attempt even
+if omitted from retention. Check every candidate retained credential, including
+credentials of the other kind. Clients sign the filtered set; Panopticon
+independently verifies it and rechecks if account state changes. Historical
+rotation verification does not perform this present authorization step. Cached
+JWKS and enrollment proofs still authenticate existing links;
 complete authenticated history and a trusted latest-state checkpoint remain
 necessary. The offline revoke itself requires no network request.
 
@@ -176,11 +184,15 @@ context failure.
 `resolveCurrentKey(genesis, rotations, context)` returns
 `{ok:true,value:{currentKey,rotations},diagnostics}` or
 `{ok:false,reason,diagnostics}`. It sorts sequences, verifies each candidate,
-skips malformed/forged candidates, and reports `{source,index,reason}` diagnostics.
+skips unauthenticated malformed/forged candidates, and reports `{source,index,reason}` diagnostics.
 Once a rotation's new-key signature and attestation authenticate its references,
-missing or unverifiable authorizer/retained-link evidence is fatal
-`missing-history`. A witnessed revocation or wallet-eligibility contradiction
-returns fatal `rotation-conflict`. Neither failure returns a current key or
+copies are compared by signing-bytes hash. Any fully verified copy satisfies
+that rotation ID; a damaged duplicate cannot veto it in either input order.
+Failed copies still produce diagnostics. Missing/unverifiable authorizer or
+retained-link evidence, or missing/malformed rotation SIWE, is fatal
+`missing-history` only if no copy of that authenticated ID fully verifies.
+A valid different ID cannot substitute for it. A witnessed revocation or
+wallet-eligibility contradiction returns fatal `rotation-conflict`. Neither failure returns a current key or
 partial successful account state; callers must never fall back to genesis.
 Accepted transitions start at one, are contiguous, strictly increase in time,
 and never reuse an earlier signing key. Invalid/gapped candidates do not change
@@ -210,7 +222,17 @@ languages. Diagnostics identify input positions; they are not authorization.
 
 Rust returns `Resolution<T> { result: Result<T, Reason>, diagnostics }`. Both
 languages expose `*_at_key` / `*AtKey` aliases for the explicit proof/history APIs;
-these remain witness-only and do not alias the new present-time entry points.
+these are deprecated compatibility aliases. Use the canonical names in new
+code. They remain witness-only and do not alias the present-time entry points.
+
+`ResolutionContext.links` accepts one proof copy per ID. Callers **must retain
+a copy that verifies** against authenticated key state and pinned witnesses;
+keep alternatives until this verification is possible. Neither first-write nor
+last-write wins over untrusted copies is safe: link IDs exclude signature/SIWE/
+attestation bytes, and a corrupt copy must not overwrite a verified one. Missing
+required evidence remains fatal. There is no storage/index deduplication adapter
+in this package.
+
 The context must include complete known link, revocation, and rotation history;
 a pure verifier cannot discover omitted records or establish global freshness.
 Never treat a partial offline snapshot as proof that an account has no rotations
@@ -255,15 +277,15 @@ present/historical revocation boundary. The browser check
 bundles the runtime dependency graph and rejects Node imports. Node built-ins
 are used only in build/test tooling, outside the shipped runtime.
 
-After review and merge, tag `ids-v0.5.0`. The release job waits for the full test
+After review and merge, tag `ids-v0.6.0`. The release job waits for the full test
 job, requires a protected `master` and verifies the tag commit is its ancestor.
 A read-only job installs dependencies with scripts disabled, explicitly builds,
 and checks the tag against `package.json`. A separate write-token job only
 downloads the resulting artifact, checks its SHA-256, and attaches
-`sociacl-ids-0.5.0.tgz` and its SHA-256 file. Consumers then install:
+`sociacl-ids-0.6.0.tgz` and its SHA-256 file. Consumers then install:
 
 ```sh
-npm install https://github.com/FyberLabs/SociACL/releases/download/ids-v0.5.0/sociacl-ids-0.5.0.tgz
+npm install https://github.com/FyberLabs/SociACL/releases/download/ids-v0.6.0/sociacl-ids-0.6.0.tgz
 ```
 
 Commit the consumer lockfile with tarball integrity. This URL becomes usable

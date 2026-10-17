@@ -399,6 +399,43 @@ accept('records','present-revoke-does-not-certify-witness',{...rev,attest:'broke
 bad('historical-revoke-still-validates-witness',{...rev,attest:'broken'},'bad-attestation','revoke');
 bad('present-witnessed-revoke-blocks-wallet',[w],'revoked-link','wallet-resolve-now',{address:wallet,revocations:[rev]});
 
+// Round 4: unsigned proof fields cannot turn an authentic duplicate into an account freeze.
+const damagedRotation = r => ({...r,authorizer:{...r.authorizer,siwe:{...r.authorizer.siwe,signature:'0x'+'00'.repeat(65)}}});
+const damagedRot=damagedRotation(rot);
+accept('signing-bytes','damaged-rotation-proof-same-id',damagedRot,hex(bytes(rot)),{linkId:val(ids.linkId(rot))});
+for(const [order,copies] of [['valid-first',[rot,damagedRot]],['valid-last',[damagedRot,rot]]]) {
+  accept('records','rotation-duplicate-proof-'+order,copies,p2,{operation:'resolve',diagnosticReasons:['missing-history']});
+  accept('records','rotation-duplicate-present-lookup-'+order,copies,p,{operation:'resolve-and-wallet-now',address:wallet});
+  bad('duplicate-proof-cannot-hide-valid-fork-'+order,[...copies,fork],'rotation-fork','resolve',{diagnosticReasons:['missing-history']});
+  bad('duplicate-proof-cannot-hide-witness-conflict-'+order,copies,'rotation-conflict','resolve',{revocations:[rev],diagnosticReasons:['rotation-conflict','rotation-conflict']});
+  bad('duplicate-proof-cannot-supply-missing-link-'+order,copies,'missing-history','resolve',{links:[],diagnosticReasons:['missing-history','missing-history']});
+}
+bad('no-verifying-copy-of-authenticated-rotation',[damagedRot,{...rot,nextSig:zero}],'missing-history','resolve',{diagnosticReasons:['missing-history','bad-signature']});
+for(const [order,copies] of [['valid-first',[rot,damagedRotation(fork)]],['valid-last',[damagedRotation(fork),rot]]]) bad('distinct-authenticated-id-still-needs-proof-'+order,copies,'missing-history','resolve',{diagnosticReasons:['missing-history']});
+accept('records','duplicate-proof-at-next-sequence',[rot,damagedRotation(secondRotation),secondRotation],p3,{operation:'resolve',diagnosticReasons:['missing-history']});
+accept('records','duplicate-proof-plus-unattested-copy',[damagedRot,{...rot,attest:'broken'},rot],p2,{operation:'resolve',diagnosticReasons:['missing-history','bad-attestation']});
+for(const [order,links] of [['valid-first',[w,invalidLink]],['valid-last',[invalidLink,w]]]) accept('records','wallet-list-keeps-verifying-copy-'+order,links,p,{operation:'wallet-resolve-now',address:wallet,diagnosticReasons:['bad-signature']});
+for(const [name,siwe] of [['absent',undefined],['null',null],['short-signature',{...rot.authorizer.siwe,signature:'0x1234'}],['bad-message',{...rot.authorizer.siwe,message:42}],['extra-field',{...rot.authorizer.siwe,extra:true}]]) {
+  const damaged={...rot,authorizer:{kind:'wallet',link:wid,...(siwe===undefined?{}:{siwe})}};
+  bad('authenticated-rotation-proof-'+name,[damaged],'missing-history','resolve',{diagnosticReasons:['missing-history']});
+  for(const [order,copies] of [['first',[damaged,rot]],['last',[rot,damaged]]]) accept('records','duplicate-malformed-proof-'+name+'-'+order,copies,p2,{operation:'resolve',diagnosticReasons:['missing-history']});
+}
+const noSiwe={...rot,authorizer:{kind:'wallet',link:wid}};
+accept('records','missing-proof-without-valid-witness-cannot-freeze',[{...noSiwe,attest:'broken'}],p,{operation:'resolve',links:[],diagnosticReasons:['bad-attestation']});
+accept('records','missing-proof-without-valid-new-key-signature-cannot-freeze',[{...noSiwe,nextSig:zero}],p,{operation:'resolve',links:[],diagnosticReasons:['bad-signature']});
+bad('direct-rotation-proof-missing',noSiwe,'missing-history','rotate');
+// Caller pre-attestation obligations: refuse a revoked authorizer; omit revoked retention.
+for(const [name,revs,expected] of [
+  ['wallet',[offlineRev],[oid]],['oidc',[offline(revokedOidc)],[wid]],
+  ['both',[offlineRev,offline(revokedOidc)],[]],
+  ['forged',[{...offlineRev,keySig:zero}],[wid,oid].sort()],
+]) accept('records','retention-excludes-present-revoked-'+name,[wid,oid].sort(),expected,{operation:'prepare-retained-links-now',revocations:revs});
+accept('records','retention-ignores-retired-key-offline-revoke',[wid],[wid],{operation:'prepare-retained-links-now',histories:[[p,[rot]]],revocations:[offlineRev]});
+bad('retention-cannot-use-missing-history',[wid],'missing-history','prepare-retained-links-now',{missingHistory:true});
+bad('panopticon-present-check-refuses-offline-revoked-wallet',[w],'revoked-link','wallet-resolve-now',{address:wallet,revocations:[offlineRev]});
+accept('records','build-rotation-excluding-offline-revoked-oidc',[rot],p2,{operation:'resolve',revocations:[offline(revokedOidc)]});
+bad('excluded-offline-revoked-oidc-remains-unusable',oidc,'unretained-link','oidc-link',{directState:{key:p,currentKey:p2,retainedLinks:[wid]}});
+
 const root = new URL('../../../vectors/ids/',import.meta.url); mkdirSync(root,{recursive:true});
 for(const [name,value] of families) writeFileSync(new URL(name+'.json',root),JSON.stringify(value,null,2).replace(/"issuedAt": 1700000000,/g, name==='edges'?'"issuedAt": 1700000000,':'"issuedAt": 1700000000.0,')+'\n');
 writeFileSync(new URL('test-keys.json',new URL('../test/',import.meta.url)),JSON.stringify({p,p2,p3,wallet,tenant,obj,network,source,secretScalars:[1,2,3,4,5]},null,2)+'\n');

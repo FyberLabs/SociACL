@@ -82,6 +82,16 @@ function record(x, unsigned = false) {
   }
   return ok(Object.freeze({ ...base, retainedLinks: Object.freeze(retainedLinks), kind: 'rotate', seq: /** @type {number} */ (r.seq), prevKey: prev.value, nextKey: next.value, nextSig: sig.value, attest: attest.value, authorizer: Object.freeze(authorizer) }));
 }
+/** Preserve an authenticated rotation's identity even when its unsigned SIWE proof is missing.
+ * The replacement proof cannot verify; it only lets signature/witness checks run before failing.
+ * @param {unknown} x @returns {Result<IdentityRecord>} */
+function rotationCandidate(x) {
+  const parsed=record(x); if (parsed.ok) return parsed;
+  const d=data(x); if (!d.ok || d.value.kind !== 'rotate') return parsed;
+  const a=data(d.value.authorizer); if (!a.ok || a.value.kind !== 'wallet') return parsed;
+  const candidate=record({...d.value,authorizer:{...a.value,siwe:{message:'',signature:'0x'+'00'.repeat(65)}}});
+  return candidate.ok ? candidate : parsed;
+}
 /** @param {UnsignedRecord} r @returns {Result<Uint8Array>} */
 export function signingBytes(r) {
   const p = record(r, true); if (!p.ok) return p;
@@ -293,7 +303,7 @@ export function verifyRotate(x,currentKey,ctx) {return checkRotate(x,currentKey,
 /** @param {unknown} x @param {PrincipalId} currentKey @param {ResolutionContext} ctx @param {Diagnostic[]} diagnostics @returns {Result<Rotate>} */
 function checkRotate(x,currentKey,ctx,diagnostics) {
   if (typeof ctx.history !== 'function') return fail('missing-history');
-  const p=record(x); if (!p.ok) return p; const r=p.value;
+  const p=rotationCandidate(x); if (!p.ok) return p; const r=p.value;
   if (r.kind !== 'rotate') return fail('bad-record');
   const t=time(r.issuedAt,ctx.now,ctx.policy.clockSkewSeconds??0); if (!t.ok) return t;
   if (r.prevKey !== currentKey || r.nextKey === currentKey) return fail('bad-sequence');
@@ -337,7 +347,8 @@ function checkRotate(x,currentKey,ctx,diagnostics) {
   }
   return ok(r);
 }
-/** Unauthenticated junk is diagnostic; missing evidence and authenticated conflicts fail closed.
+/** Copies share signing-byte identity: any fully verified copy satisfies that rotation ID.
+ * Unauthenticated junk is diagnostic; unresolved authenticated evidence fails closed.
  * @param {PrincipalId} genesis @param {readonly unknown[]} rotations @param {ResolutionContext} ctx @returns {Resolution<ResolvedAccount>} */
 export function resolveCurrentKey(genesis, rotations, ctx) {
   /** @type {Diagnostic[]} */ const diagnostics = [];
@@ -345,7 +356,7 @@ export function resolveCurrentKey(genesis, rotations, ctx) {
   /** @type {Rotate[]} */ const history = [];
   /** @type {Map<number, {r:Rotate,index:number}[]>} */ const groups = new Map();
   for (const [index,raw] of rotations.entries()) {
-    const p = record(raw);
+    const p = rotationCandidate(raw);
     const reason = !p.ok ? p.reason : p.value.kind !== 'rotate' || p.value.principal !== genesis ? 'bad-record' : p.value.issuedAt > ctx.now ? 'future-record' : null;
     if (reason) { diagnostics.push({source:'rotation',index,reason}); continue; }
     const r = /** @type {Rotate} */ (/** @type {{ok:true,value:IdentityRecord}} */ (p).value);
@@ -354,6 +365,7 @@ export function resolveCurrentKey(genesis, rotations, ctx) {
   let current = genesis, seq = 1, lastTime = -1;
   for (const [n,group] of [...groups].sort((a,b) => a[0]-b[0])) {
     /** @type {Map<string,Rotate>} */ const valid = new Map();
+    /** @type {Map<string,import('./types.js').Reason>} */ const unresolved = new Map();
     for (const {r:raw,index} of group) {
       /** @type {ResolutionContext} */ const candidate = { ...ctx, now:raw.issuedAt,
         history:(p,at,until) => p === genesis ? ok(historyState(genesis,history,at,until)) : state(ctx.history,p,at,until) };
@@ -374,9 +386,15 @@ export function resolveCurrentKey(genesis, rotations, ctx) {
           }
         }
       }
-      if (!result.ok) { diagnostics.push({source:'rotation',index,reason:result.reason}); if (result.reason === 'missing-history' || result.reason === 'rotation-fork' || result.reason === 'rotation-conflict') return { ...result, diagnostics }; continue; }
-      valid.set(hex(sha256(bytes(result.value))),result.value);
+      const id=hex(sha256(bytes(raw)));
+      if (!result.ok) {
+        diagnostics.push({source:'rotation',index,reason:result.reason});
+        if (['missing-history','rotation-fork','rotation-conflict'].includes(result.reason) && !unresolved.has(id)) unresolved.set(id,result.reason);
+      } else valid.set(id,result.value);
     }
+    // A damaged proof copy must not veto a verified copy of the same signed transition.
+    // A different authenticated ID still requires evidence, even if another ID verifies.
+    for (const [id,reason] of unresolved) if (!valid.has(id)) return {...fail(reason),diagnostics};
     if (valid.size > 1) return { ...fail('rotation-fork'), diagnostics };
     const next = [...valid.values()][0];
     if (next) { current=next.nextKey; lastTime=next.issuedAt; history.push(next); seq++; }
@@ -416,7 +434,11 @@ function resolveWallet(address, links, revocations, ctx, present) {
   const revoked=revokedAt(newest,revocations,h.value.currentKey,ctx.now,ctx.jwks,diagnostics,present);
   return { ...(revoked ? fail('revoked-link') : ok(newest)), diagnostics };
 }
+/** @deprecated Use verifyWalletLink; this alias retains historical verification semantics. */
 export const verifyWalletLinkAtKey = verifyWalletLink;
+/** @deprecated Use verifyOidcLink; this alias retains historical verification semantics. */
 export const verifyOidcLinkAtKey = verifyOidcLink;
+/** @deprecated Use verifyRotate; this alias retains historical verification semantics. */
 export const verifyRotateAtKey = verifyRotate;
+/** @deprecated Use resolveWalletLink; this alias retains historical verification semantics. */
 export const resolveWalletLinkAtKey = resolveWalletLink;

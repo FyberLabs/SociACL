@@ -13,7 +13,7 @@ SociACL [#56](https://github.com/FyberLabs/SociACL/pull/56) merged. The separate
 s3r.ch [#125](https://github.com/FyberLabs/s3r.ch/pull/125) was open when this work began.
 
 Implementation PR: [SociACL #57](https://github.com/FyberLabs/SociACL/pull/57).
-Grok/Codex findings are addressed in the 0.5 amendment in this PR. Local validation
+Grok/Codex findings are addressed in the 0.6 amendment in this PR. Local validation
 is recorded in the PR; merge, release, and consumer migration remain pending.
 
 ## Delivery status
@@ -39,7 +39,7 @@ have been removed.
 
 1. **Publish the reviewed package.** Merge after Grok/Codex review and CI, then
    configure branch protection and required CI/review on `master`, then publish
-   `ids-v0.5.0` through the release workflow. Record the immutable asset
+   `ids-v0.6.0` through the release workflow. Record the immutable asset
    URL and SHA-256. Consumer PRs must pin lockfile integrity; no unresolvable
    release URL or vendored replacement validator belongs in a merged consumer.
 2. **SociACL core boundaries.** Replace TS `gun`, `post`, `group`, `request` and
@@ -60,11 +60,18 @@ have been removed.
    OIDC recovery must prove fresh login to the enrolled issuer/tenant/subject
    and require no active wallet. Supply complete authenticated link, revocation
    and rotation snapshots to the package, with explicit request/work budgets.
+   When constructing link maps, preserve a copy that verifies for each ID;
+   keep alternatives until verification is possible and never overwrite it with
+   an unverified proof copy. Shared vectors cover duplicate rotation proofs and
+   pre-attestation retention filtering; the production adapter is still planned.
    Preserve trusted latest-state checkpoints: an index's assertion of completeness
    is not sufficient, and a verifier cannot detect an entirely omitted rotation.
    Use `resolveWalletLinkNow` for present wallet login/recovery eligibility and
    `verifyRevokeNow` with matched principal/target/time for OIDC revocations;
-   keep rotation and as-of checks witness-only. Current-key offline revokes
+   Panopticon must perform this check before attesting any rotation or login.
+   Clients and Panopticon must exclude every present-revoked link from the signed
+   retained set, check the authorizer independently, and recheck on state changes.
+   Keep rotation and as-of checks witness-only. Current-key offline revokes
    need no live Panopticon request but stop applying when their signer retires.
    Preserve removal through the retained set or a witnessed revoke consistent
    with the transition; do not infer persistent revocation from claimed times.
@@ -113,7 +120,7 @@ References for protocol details: [EIP-4361](https://eips.ethereum.org/EIPS/eip-4
 
 ## Review amendment and legacy audit
 
-The [0.5 normative amendment](identity-review-amendment.md) supersedes the original
+The [0.6 normative amendment](identity-review-amendment.md) supersedes the original
 proof/URL contract where stated. Wallet/revoke timestamp witnesses, v2 rotation
 credential binding, witnessed pre-rotation revocations, current-key offline
 present revocation, OIDC-only recovery,

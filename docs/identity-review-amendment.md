@@ -1,8 +1,8 @@
-# sociacl-ids 0.5 review amendment
+# sociacl-ids 0.6 review amendment
 
 This amendment and the updated record sections of the
-[package specification](sociacl-ids-package-spec.md) define the 0.5 contract.
-Versions 0.1 through 0.4 were never released. The review changes require a minor
+[package specification](sociacl-ids-package-spec.md) define the 0.6 contract.
+Versions 0.1 through 0.5 were never released. The review changes require a minor
 version bump because they change signing bytes, record shapes and URL grammar.
 Wallet and revoke timestamp attestations, rotation retention commitments, and
 skipping invalid history with diagnostics were explicitly approved during review.
@@ -66,14 +66,29 @@ rotation or rewrite history without the historical witness requirements. A
 current-key offline revoke also cannot establish pre-rotation eligibility or
 remove a wallet from historical OIDC recovery checks.
 
-Consumers must use the present API before authorizing a new login or recovery
-attempt. For an OIDC credential, use `verifyRevokeNow` with the resolved account
-key and match the verified revoke's principal, target link ID and issuance time
-to that credential. Rotation-history verification remains witness-only; it does
-not replace the present authorization check. To preserve removal across a
-rotation, omit the credential from the retained set or obtain a witnessed revoke
-consistent with the authenticated transition. Never treat a past success from
-`verifyRevokeNow` as proof of a historical timestamp.
+Panopticon and clients **MUST exclude every present-revoked credential** when
+constructing `retainedLinks`. Panopticon **MUST run the present-revocation check
+before attesting any rotation or login**, against the final authenticated current
+key and the same complete snapshot used to construct the transition. For a wallet
+authorizer, use `resolveWalletLinkNow` and require that its selected link ID equals
+the authorizer ID. For OIDC, authenticate the enrolled credential and use
+`verifyRevokeNow`, matching principal, target ID and `revoke.issuedAt >= link.issuedAt`.
+A matching revoke denies the login or recovery attempt; it is not enough merely
+to omit a revoked authorizer from the retained set.
+
+Check every candidate retained credential as well as the authorizer, including
+credentials of the other kind. Clients construct the filtered set before signing;
+Panopticon independently checks that set before attesting and refuses an
+inconsistent request. Recheck on account-state changes. Shared caller-integration
+vectors demonstrate retention filtering and refusal of a revoked wallet before
+attestation. The package provides these verification primitives; Panopticon's
+endpoint implementation remains a separate delivery.
+
+These are additional present authorization checks. Rotation-history verification
+remains witness-only, and its pre-rotation credential rules still apply. To
+preserve removal across a rotation, omit the credential from the retained set
+or obtain a witnessed revoke consistent with the authenticated transition.
+Never treat a past success from `verifyRevokeNow` as a historical timestamp.
 
 Offline lookup can use cached enrollment witnesses, pinned keys and complete
 authenticated account history. It still requires that trusted context and a
@@ -125,7 +140,10 @@ active wallet link for the principal blocks OIDC recovery with `wallet-required`
 in direct proof verification, including a wallet the candidate attempts to drop.
 During history resolution, that contradiction with the witnessed rotation is
 fatal `rotation-conflict`. Conflicting wallet ownership also freezes resolution.
-These restrictions use complete pre-rotation link and revocation history.
+These restrictions use complete pre-rotation link and revocation history. A
+malicious Panopticon witness can force this visible freeze by attesting contradictory OIDC
+recovery on an account with an active wallet. It cannot thereby obtain account
+authority; callers must not fall back to an earlier key after a freeze.
 
 Every rotation at or after a link's issuance must retain its ID for it to remain
 usable. The history adapter returns the intersection of these commitments.
@@ -154,16 +172,31 @@ index records cannot force a lookup of unavailable or forked account history.
 Missing history for a relevant, independently witnessed link fails with
 `missing-history`; a verified fork in that required context propagates failure.
 
-Malformed records, bad rotation signatures/attestations and gapped sequences
-are skipped with source/index/reason diagnostics. They cannot advance the key
-or manufacture a fork. After a rotation's new-key signature and Panopticon
-attestation authenticate its references, a missing or unverifiable authorizer or
-retained link is fatal `missing-history`. This includes tampered link signatures,
-SIWE proofs and attestations, and a missing valid wallet proof for the rotation
-itself. Referenced fork/conflict errors propagate. Discarding such a rotation
-would silently restore an older key. Unrelated invalid index entries remain
-skippable; they cannot trigger these failures without an authenticated reference.
-Distinct **valid** transitions at the same sequence freeze the account. Duplicate record IDs are idempotent.
+Unauthenticated malformed records, bad rotation signatures/attestations and
+gapped sequences are skipped with source/index/reason diagnostics. At each
+sequence, resolution compares copies by rotation ID (the signing-bytes hash).
+A fully verified copy satisfies that ID; another copy with damaged SIWE proof
+cannot veto it, regardless of input order. Failed copies remain diagnostics.
+Two distinct fully verified IDs at the same sequence freeze with `rotation-fork`.
+
+After a new-key signature and Panopticon attestation authenticate a rotation's
+references, missing or unverifiable evidence is fatal only if **no copy of that
+ID fully verifies**. Missing/tampered authorizer and retained links, and missing
+or malformed SIWE proofs on the rotation itself, return `missing-history`.
+Witnessed contradictions and referenced fork/conflict errors remain fatal.
+A valid copy of a different ID cannot discharge this requirement. Discarding an
+unresolved authenticated ID could otherwise restore an older key. No proof bytes
+are repaired into an accepted rotation; success always uses a fully verified copy.
+
+`ResolutionContext.links` holds one copy per link ID. Because link IDs exclude
+`keySig`, `siwe` and `attest`, callers **MUST preserve a verifying copy** when
+assembling this map. Keep alternative copies until credential signatures,
+witnesses and the relevant authenticated key state can be checked. Never use
+first-write/last-write wins over untrusted proof copies, or let a damaged copy
+overwrite an authenticated one. If no required copy verifies, fail with
+`missing-history`; do not omit the authenticated rotation. The package does not
+provide a storage/index deduplication adapter.
+
 Distinct wallet links tied at the newest timestamp are ambiguous, including
 links to the same principal. A revoked newest binding does not revive an older
 binding. Direct proof verification is distinct from applying full history.

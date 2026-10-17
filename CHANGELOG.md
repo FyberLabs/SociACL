@@ -1,6 +1,19 @@
 # Changelog
 
-## sociacl-ids 0.5.0 — unreleased
+## sociacl-ids 0.6.0 — unreleased
+
+- Resolve rotation copies by signing-byte ID. A fully verified copy satisfies
+  its ID despite damaged duplicates; unresolved authenticated IDs still fail
+  closed, and distinct verified IDs still freeze with `rotation-fork`.
+- Preserve authenticated rotation evidence when its unsigned SIWE proof is
+  missing or malformed, preventing proof stripping from restoring a retired key.
+- Require callers to retain verifying link-map copies and explicitly require
+  Panopticon present-revocation checks before attestation. Clients and Panopticon
+  must exclude present-revoked credentials from rotation retention.
+- Add shared duplicate-proof and caller pre-attestation regressions; deprecate
+  the historical `*AtKey` compatibility aliases without changing their behavior.
+
+## sociacl-ids 0.5.0 — superseded before release
 
 - Add explicit present-time `verifyRevokeNow` / `resolveWalletLinkNow` APIs
   (Rust snake_case equivalents). Revokes signed by the final authenticated

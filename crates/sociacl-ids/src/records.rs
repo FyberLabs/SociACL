@@ -902,6 +902,10 @@ pub fn verify_wallet_link(
     wallet_witness(w, jwks, policy, now)?;
     Ok(w.clone())
 }
+#[deprecated(
+    since = "0.6.0",
+    note = "Use verify_wallet_link; this alias retains historical verification semantics"
+)]
 pub use verify_wallet_link as verify_wallet_link_at_key;
 pub fn verify_oidc_link(
     v: &Value,
@@ -968,6 +972,10 @@ pub fn verify_revoke(
     }
     Ok(rev)
 }
+#[deprecated(
+    since = "0.6.0",
+    note = "Use verify_oidc_link; this alias retains historical verification semantics"
+)]
 pub use verify_oidc_link as verify_oidc_link_at_key;
 
 /// Use only with authenticated history complete through `until`.
@@ -1076,13 +1084,25 @@ pub fn verify_rotate(
 ) -> Result<Rotate, Reason> {
     check_rotate(v, current_key, ctx, &mut Vec::new())
 }
+// A missing/malformed unsigned SIWE proof must not hide an authenticated transition.
+// This placeholder always fails proof verification after the key signature and witness checks.
+fn rotation_candidate(v: &Value) -> Result<IdentityRecord, Reason> {
+    let parsed = record(v, false);
+    if parsed.is_ok() || v["kind"] != "rotate" || v["authorizer"]["kind"] != "wallet" {
+        return parsed;
+    }
+    let mut candidate = v.clone();
+    candidate["authorizer"]["siwe"] =
+        serde_json::json!({"message":"", "signature":format!("0x{}", "00".repeat(65))});
+    record(&candidate, false).or(parsed)
+}
 fn check_rotate(
     v: &Value,
     current_key: &PrincipalId,
     ctx: &ResolutionContext<'_>,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Result<Rotate, Reason> {
-    let r = record(v, false)?;
+    let r = rotation_candidate(v)?;
     let IdentityRecord::Rotate(rot) = &r else {
         return Err(Reason::BadRecord);
     };
@@ -1219,8 +1239,14 @@ fn check_rotate(
     }
     Ok(rot.clone())
 }
+#[deprecated(
+    since = "0.6.0",
+    note = "Use verify_rotate; this alias retains historical verification semantics"
+)]
 pub use verify_rotate as verify_rotate_at_key;
 
+/// Copies share signing-byte identity: any fully verified copy satisfies that rotation ID.
+/// Unresolved authenticated evidence still fails closed.
 pub fn resolve_current_key(
     genesis: &PrincipalId,
     rotations: &[Value],
@@ -1234,7 +1260,7 @@ pub fn resolve_current_key(
         let mut groups: BTreeMap<u64, Vec<(usize, Rotate)>> = BTreeMap::new();
         for (index, raw) in rotations.iter().enumerate() {
             let parsed = (|| {
-                let IdentityRecord::Rotate(r) = record(raw, false)? else {
+                let IdentityRecord::Rotate(r) = rotation_candidate(raw)? else {
                     return Err(Reason::BadRecord);
                 };
                 if &r.principal != genesis {
@@ -1253,6 +1279,8 @@ pub fn resolve_current_key(
         let mut seq = 1;
         for (n, group) in groups {
             let mut valid = BTreeMap::new();
+            // Preserve first-seen failure order while deferring the verdict until all copies verify.
+            let mut unresolved = Vec::new();
             for (index, raw) in group {
                 let history_at = |p: &PrincipalId, at, until| {
                     if p == genesis {
@@ -1315,9 +1343,10 @@ pub fn resolve_current_key(
                     }
                     Ok(r)
                 })();
+                let id = link_id(&IdentityRecord::Rotate(raw))?;
                 match verified {
                     Ok(r) => {
-                        valid.insert(link_id(&IdentityRecord::Rotate(r.clone()))?, r);
+                        valid.insert(id, r);
                     }
                     Err(e) => {
                         diagnostic(&mut diagnostics, "rotation", index, e);
@@ -1327,9 +1356,15 @@ pub fn resolve_current_key(
                                 | Reason::RotationFork
                                 | Reason::RotationConflict
                         ) {
-                            return Err(e);
+                            unresolved.push((id, e));
                         }
                     }
+                }
+            }
+            // A valid copy satisfies only its own ID; another authenticated ID cannot be dropped.
+            for (id, reason) in unresolved {
+                if !valid.contains_key(&id) {
+                    return Err(reason);
                 }
             }
             if valid.len() > 1 {
@@ -1441,6 +1476,10 @@ fn resolve_wallet(
         diagnostics,
     }
 }
+#[deprecated(
+    since = "0.6.0",
+    note = "Use resolve_wallet_link; this alias retains historical verification semantics"
+)]
 pub use resolve_wallet_link as resolve_wallet_link_at_key;
 
 /// JSON wire boundary. Rust `str` cannot carry unpaired UTF-16 surrogates.
