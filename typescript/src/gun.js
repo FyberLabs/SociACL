@@ -40,8 +40,36 @@ function grantNamesObject(grant, object) {
   return sameObjectId(id, object);
 }
 
+/**
+ * Injective path escape. `~` is the escape character.
+ * @param {string} id
+ * @param {boolean} slash
+ */
+function escapeKey(id, slash) {
+  return String(id).replace(slash ? /[~.#$[\]/]/g : /[~.#$[\]]/g, (ch) => {
+    switch (ch) {
+      case "~":
+        return "~0";
+      case ".":
+        return "~1";
+      case "#":
+        return "~2";
+      case "$":
+        return "~3";
+      case "[":
+        return "~4";
+      case "]":
+        return "~5";
+      case "/":
+        return "~6";
+      default:
+        return ch;
+    }
+  });
+}
+
 export function encodeKey(id) {
-  return String(id).replace(/[.#$[\]]/g, "_");
+  return escapeKey(id, false);
 }
 
 export function itemSoul(id) {
@@ -57,7 +85,7 @@ export function metaSoul() {
 }
 
 export function aclKey(id) {
-  return encodeKey(id).replace(/\//g, "_");
+  return escapeKey(String(id).trim(), true);
 }
 
 export function aclPrincipalKey(id) {

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   MemorySeeAcl,
+  aclKey,
   applySeeGrant,
   applyPostGrant,
   cancelPost,
@@ -13,10 +14,11 @@ import {
   itemSoul,
   userSoul,
 } from "../src/gun.js";
+import { canonicalAccessorId } from "../src/post.js";
 
 test("souls match the s3r.ch consume contract", () => {
-  assert.equal(encodeKey("rss3:act/1#x"), "rss3:act/1_x");
-  assert.equal(itemSoul("rss3:act/1#x"), "s3rch/items/rss3:act/1_x");
+  assert.equal(encodeKey("rss3:act/1#x"), "rss3:act/1~2x");
+  assert.equal(itemSoul("rss3:act/1#x"), "s3rch/items/rss3:act/1~2x");
   assert.equal(userSoul("0xalice"), "s3rch/users/0xalice");
 });
 
@@ -63,4 +65,35 @@ test("checkPost requires see and does not keep a cancelled allow", () => {
   cancelPost(acl, "0xalice", "0xbob", object);
   assert.equal(checkPost(acl, object, "0xbob", 10).allowed, false);
   assert.equal(checkSee(acl, object, "0xbob", 10).allowed, true);
+});
+
+test("acl keys for dot, underscore, and slash stay distinct", () => {
+  const dot = aclKey("room.alpha");
+  const under = aclKey("room_alpha");
+  const slash = aclKey("room/alpha");
+  assert.notEqual(dot, under);
+  assert.notEqual(dot, slash);
+  assert.notEqual(under, slash);
+  assert.equal(encodeKey("a/b"), "a/b");
+  assert.notEqual(aclKey("a/b"), aclKey("a_b"));
+});
+
+test("a grant names one object and a gun chain is not the inner wallet", () => {
+  const acl = new MemorySeeAcl();
+  for (const object of ["room.alpha", "room_alpha", "room/alpha", "alpha", "room/chat/alpha"]) {
+    acl.putObject(object, "0xalice");
+  }
+  const window = { accessor: "0xbob", from: 0, until: 100 };
+  applySeeGrant(acl, "0xalice", { ...window, claimId: "room.alpha" });
+  applySeeGrant(acl, "0xalice", { ...window, claimId: "alpha" });
+  assert.equal(checkSee(acl, "room.alpha", "0xbob", 10).allowed, true);
+  assert.equal(checkSee(acl, "alpha", "0xbob", 10).allowed, true);
+  assert.equal(checkSee(acl, "room_alpha", "0xbob", 10).allowed, false);
+  assert.equal(checkSee(acl, "room/alpha", "0xbob", 10).allowed, false);
+  assert.equal(checkSee(acl, "room/chat/alpha", "0xbob", 10).allowed, false);
+  const spoof = "0xattacker.get('s3rch').get('users').get('0xvictim')";
+  assert.notEqual(canonicalAccessorId(spoof), "0xvictim");
+  acl.putObject("doc", "0xvictim");
+  assert.equal(checkSee(acl, "doc", spoof, 10).allowed, false);
+  assert.equal(checkSee(acl, "doc", "0xvictim", 10).allowed, true);
 });

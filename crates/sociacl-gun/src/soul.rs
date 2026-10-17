@@ -12,14 +12,52 @@ pub const S3RCH_META: &str = "meta";
 /// object. Grants HAM-merge here; they do not fork items or users.
 pub const S3RCH_ACL: &str = "acl";
 
-/// s3r.ch `encodeKey`: replace `. # $ [ ]` with `_`.
+/// Injective path escape. `~` is the escape character.
+/// `. # $ [ ]` each get their own form. `/` stays here so an item
+/// soul does not gain a new spelling of a slash-bearing id.
 pub fn encode_key(id: &str) -> String {
-    id.chars()
-        .map(|c| match c {
-            '.' | '#' | '$' | '[' | ']' => '_',
-            _ => c,
-        })
-        .collect()
+    escape_key(id, false)
+}
+
+fn escape_key(id: &str, slash: bool) -> String {
+    let mut out = String::with_capacity(id.len());
+    for ch in id.chars() {
+        match ch {
+            '~' => out.push_str("~0"),
+            '.' => out.push_str("~1"),
+            '#' => out.push_str("~2"),
+            '$' => out.push_str("~3"),
+            '[' => out.push_str("~4"),
+            ']' => out.push_str("~5"),
+            '/' if slash => out.push_str("~6"),
+            _ => out.push(ch),
+        }
+    }
+    out
+}
+
+/// Reverse of [`acl_key`]. A bad escape is not a set id.
+pub(crate) fn unescape_acl_key(id: &str) -> Option<String> {
+    let mut out = String::with_capacity(id.len());
+    let mut chars = id.chars();
+    while let Some(ch) = chars.next() {
+        if ch != '~' {
+            out.push(ch);
+            continue;
+        }
+        let decoded = match chars.next()? {
+            '0' => '~',
+            '1' => '.',
+            '2' => '#',
+            '3' => '$',
+            '4' => '[',
+            '5' => ']',
+            '6' => '/',
+            _ => return None,
+        };
+        out.push(decoded);
+    }
+    Some(out)
 }
 
 /// Gun soul path. Maps onto an existing [`NodeId`].
@@ -83,17 +121,14 @@ impl GunSoul {
         ])
     }
 
-    /// Slash or `gun.get('a').get('b')` form. Does not verify the graph.
+    /// Slash form. A string containing `.get(` is rejected.
+    /// Does not verify the graph.
     pub fn parse(s: &str) -> Result<Self, crate::GunError> {
         let s = s.trim();
-        if s.is_empty() {
+        if s.is_empty() || s.contains(".get(") {
             return Err(crate::GunError::HintCorrupt);
         }
-        let soul = if s.contains(".get(") {
-            parse_gun_gets(s)?
-        } else {
-            Self::new(s.split('/'))
-        };
+        let soul = Self::new(s.split('/'));
         if soul.segments.is_empty() {
             return Err(crate::GunError::HintCorrupt);
         }
@@ -143,45 +178,21 @@ impl GunSoul {
     }
 }
 
-fn parse_gun_gets(s: &str) -> Result<GunSoul, crate::GunError> {
-    let mut segments = Vec::new();
-    let mut rest = s.trim();
-    while let Some(i) = rest.find(".get(") {
-        rest = &rest[i + 5..];
-        let quote = rest.chars().next().ok_or(crate::GunError::HintCorrupt)?;
-        if quote != '\'' && quote != '"' {
-            return Err(crate::GunError::HintCorrupt);
-        }
-        rest = &rest[1..];
-        let end = rest.find(quote).ok_or(crate::GunError::HintCorrupt)?;
-        let part = rest[..end].trim();
-        if part.is_empty() {
-            return Err(crate::GunError::HintCorrupt);
-        }
-        segments.push(part.to_string());
-        rest = rest[end + 1..].trim_start();
-        if rest.starts_with(')') {
-            rest = rest[1..].trim_start();
-        }
-    }
-    if segments.is_empty() {
-        return Err(crate::GunError::HintCorrupt);
-    }
-    Ok(GunSoul { segments })
-}
-
-/// Dest-ACL path key. `encodeKey` then `/` → `_` so a grant soul
-/// stays five segments when the object id still contains slashes
-/// (`rss3:act/1_x`, `s3rch/items/…`). Not a second `encodeKey` for
-/// items or users — those keep the locked replace-only rule.
+/// Dest-ACL path key. The same escape as [`encode_key`], plus `/`,
+/// so a grant soul stays five segments. `room.alpha`, `room_alpha`,
+/// and `room/alpha` are three keys. Not a second spelling of an item.
 pub fn acl_key(id: &str) -> String {
-    encode_key(id.trim()).replace('/', "_")
+    escape_key(id.trim(), true)
 }
 
 /// Owner / accessor key on dest ACL. A locked user soul collapses
-/// to the wallet. Anything else is [`acl_key`].
+/// to the wallet. A string containing `.get(` is not parsed.
+/// Anything else is [`acl_key`].
 pub fn acl_principal_key(id: &str) -> String {
     let id = id.trim();
+    if id.contains(".get(") {
+        return acl_key(id);
+    }
     if let Ok(soul) = GunSoul::parse(id) {
         if let Some(wallet) = soul.wallet() {
             return encode_key(wallet);
@@ -245,5 +256,31 @@ impl GunNode {
 
     pub fn as_node_id(&self) -> NodeId {
         self.soul.as_node_id()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn acl_keys_for_dot_underscore_and_slash_stay_distinct() {
+        let dot = acl_key("room.alpha");
+        let under = acl_key("room_alpha");
+        let slash = acl_key("room/alpha");
+        assert_ne!(dot, under);
+        assert_ne!(dot, slash);
+        assert_ne!(under, slash);
+        assert_eq!(encode_key("a/b"), "a/b");
+        assert_ne!(acl_key("a/b"), acl_key("a_b"));
+        assert_eq!(acl_key("room~1alpha"), "room~01alpha");
+        assert_ne!(acl_key("room.alpha"), acl_key("room~1alpha"));
+    }
+
+    #[test]
+    fn a_gun_chain_is_not_the_inner_wallet() {
+        let spoof = "0xattacker.get('s3rch').get('users').get('0xvictim')";
+        assert!(GunSoul::parse(spoof).is_err());
+        assert_ne!(canonical_accessor_id(spoof), "0xvictim");
     }
 }

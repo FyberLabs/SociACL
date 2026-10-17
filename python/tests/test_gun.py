@@ -56,9 +56,9 @@ def test_url_leaf_is_not_a_node():
 
 
 def test_feed_item_checks_the_same_as_a_claim():
-    assert encode_key("rss3:act/1#x") == "rss3:act/1_x"
+    assert encode_key("rss3:act/1#x") == "rss3:act/1~2x"
     object_id = item_soul("rss3:act/1#x")
-    assert object_id == "s3rch/items/rss3:act/1_x"
+    assert object_id == "s3rch/items/rss3:act/1~2x"
     plane = Plane()
     alice = user_soul("0xalice")
     bob = user_soul("0xbob")

@@ -248,7 +248,7 @@ export type SeeAcl = SeeGraph & {
   ): void;
 };
 
-/** id.replace(/[.#$\[\]]/g, '_') */
+/** Injective escape of `~ . # $ [ ]`. `/` is left for aclKey. */
 export function encodeKey(id: string): string;
 
 /** s3rch/items/<encodeKey(id)> */
@@ -388,16 +388,16 @@ export function cancelSee(
 export type S3rchAcl = "acl";
 
 /**
- * Dest-ACL path key. encodeKey, then `/` → `_`, so a grant soul stays
- * five segments when the object id still contains slashes
- * (`rss3:act/1_x`, `s3rch/items/…`). Not a second encodeKey for items
- * or users.
+ * Dest-ACL path key. encodeKey, then `/` escaped to a form that is
+ * not `_`, so a grant soul stays five segments and `room.alpha`,
+ * `room_alpha`, and `room/alpha` are three keys. Not a second
+ * encodeKey for items or users.
  */
 export function aclKey(id: string): string;
 
 /**
- * Owner / accessor key on dest ACL. `s3rch/users/<wallet>` and
- * `gun.get('s3rch').get('users').get(wallet)` collapse to the wallet.
+ * Owner / accessor key on dest ACL. `s3rch/users/<wallet>` collapses
+ * to the wallet. A string containing `.get(` is rejected, not parsed.
  * Each segment is trimmed and an empty segment is dropped, so
  * `s3rch/users/ bob ` and `s3rch/users//bob` are `bob`.
  * Anything else is aclKey.

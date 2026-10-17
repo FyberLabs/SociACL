@@ -471,7 +471,8 @@ fn a_slash_id_does_not_share_a_request_with_the_flattened_item_soul() {
     let slash = access_request_id("0xbob", "a/b").unwrap();
     let flat = access_request_id("0xbob", "a_b").unwrap();
     let soul = access_request_id("0xbob", "s3rch/items/a_b").unwrap();
-    assert_eq!(slash, flat);
+    assert_ne!(slash, flat);
+    assert_ne!(flat, soul);
     assert_ne!(slash, soul);
     let bob = signer("0xbob");
     let mut graph = MeshSeeGraph::new();
@@ -630,4 +631,87 @@ fn see_at_the_js_safe_ceiling_does_not_grow_a_post() {
     let see = graph.grant_edge("room:alpha", "0xbob").unwrap();
     assert_eq!(see.grant.stated, 1);
     assert_eq!(see.ham_state, JS_SAFE_INTEGER_MAX);
+}
+
+#[test]
+fn folded_alias_at_the_js_safe_ceiling_does_not_grow_a_post() {
+    const JS_SAFE_INTEGER_MAX: u64 = (1 << 53) - 1;
+    let mut graph = MeshSeeGraph::new();
+    graph.merge_edge(GunAclEdge::new(
+        "0xalice",
+        MeshSeeGrant::live("room", "0xbob", 0, 80),
+        1,
+    ));
+    graph.merge_edge(GunAclEdge::new(
+        "0xalice",
+        MeshSeeGrant::live("s3rch/items/room", "0xbob", 0, 80),
+        JS_SAFE_INTEGER_MAX,
+    ));
+    graph.put_object("room", "0xalice");
+    let bob = signer("0xbob");
+    graph.enroll_signer("0xbob", bob.verify_key()).unwrap();
+    let mut request = request_of("0xbob", "room", "read+post", "", "pending");
+    request.signature = sign_access_request(&bob, &request).unwrap();
+    let err = graph
+        .grant_approved_request("0xalice", &request, 0, 80, None)
+        .unwrap_err();
+    assert_eq!(reason_of(err), "see");
+    assert!(graph.post_edge("room", "0xbob").is_none());
+    let see = graph.grant_edge("room", "0xbob").unwrap();
+    assert!(see.ham_state <= JS_SAFE_INTEGER_MAX);
+}
+
+#[test]
+fn members_gate_uses_the_stored_object_id() {
+    let mut graph = MeshSeeGraph::new();
+    graph.put_object("room", "0xalice");
+    let alice = signer("0xalice");
+    let bob = signer("0xbob");
+    graph.enroll_signer("0xalice", alice.verify_key()).unwrap();
+    graph.enroll_signer("0xbob", bob.verify_key()).unwrap();
+    graph
+        .record_set_owner("0xalice", GroupPredicate::SameGroup, "0xalice/ops")
+        .unwrap();
+    graph
+        .name_object_set(
+            "0xalice",
+            "room",
+            GroupPredicate::SameGroup,
+            "0xalice/ops",
+            &alice,
+        )
+        .unwrap();
+    graph
+        .state_membership(
+            "0xbob",
+            GroupPredicate::SameGroup,
+            "0xalice/ops",
+            "0xbob",
+            &bob,
+        )
+        .unwrap();
+    graph
+        .state_membership(
+            "0xalice",
+            GroupPredicate::SameGroup,
+            "0xalice/ops",
+            "0xbob",
+            &alice,
+        )
+        .unwrap();
+    let mut request = request_of("0xbob", "s3rch/items/room", "read", "", "pending");
+    request.signature = sign_access_request(&bob, &request).unwrap();
+    let rows = graph
+        .grant_approved_request(
+            "0xalice",
+            &request,
+            0,
+            80,
+            Some(MembersAutoApprove {
+                predicate: GroupPredicate::SameGroup,
+                now: Timestamp(10),
+            }),
+        )
+        .unwrap();
+    assert_eq!(rows.see.grant.object, "room");
 }

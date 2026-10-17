@@ -325,14 +325,58 @@ function setIdBindsOwner(setId, owner) {
   return ownerKey.length > 0 && aclPrincipalKey(head) === ownerKey;
 }
 
+/**
+ * Injective path escape. `~` is the escape character.
+ * @param {string} id
+ * @param {boolean} slash
+ */
+function escapeKey(id, slash) {
+  return String(id).replace(slash ? /[~.#$[\]/]/g : /[~.#$[\]]/g, (ch) => {
+    switch (ch) {
+      case "~":
+        return "~0";
+      case ".":
+        return "~1";
+      case "#":
+        return "~2";
+      case "$":
+        return "~3";
+      case "[":
+        return "~4";
+      case "]":
+        return "~5";
+      case "/":
+        return "~6";
+      default:
+        return ch;
+    }
+  });
+}
+
+/** @param {string} id */
+function unescapeKey(id) {
+  let out = "";
+  for (let i = 0; i < id.length; i += 1) {
+    if (id[i] !== "~") {
+      out += id[i];
+      continue;
+    }
+    const decoded = { 0: "~", 1: ".", 2: "#", 3: "$", 4: "[", 5: "]", 6: "/" }[id[i + 1]];
+    if (decoded == null) return null;
+    out += decoded;
+    i += 1;
+  }
+  return out;
+}
+
 /** @param {string} id */
 export function encodeKey(id) {
-  return String(id).replace(/[.#$[\]]/g, "_");
+  return escapeKey(id, false);
 }
 
 /** @param {string} id */
 export function aclKey(id) {
-  return encodeKey(String(id).trim()).replace(/\//g, "_");
+  return escapeKey(String(id).trim(), true);
 }
 
 /** @param {string} id */
@@ -992,6 +1036,7 @@ export class MemoryGroupGraph {
     const accessor = grant.accessor;
     const rows = this.matchingSee(owner, object, accessor);
     const hamState = rows.reduce((max, row) => Math.max(max, row.grant.hamState ?? 0), 0) + 1;
+    if (!Number.isSafeInteger(hamState)) return;
     for (const row of rows) this.grants.delete(row.key);
     /** @type {SeeGrant} */
     const stored = {
@@ -1044,16 +1089,20 @@ export class MemoryGroupGraph {
     const requested = record?.id ?? aclKey(String(object).trim());
     const who = aclPrincipalKey(accessor);
     const ownerNow = record?.owner;
+    /** @type {{ soul: string, owner: string, hamState: number, grant: { object: string, accessor: string, from: number, until: number, stated: number } } | undefined} */
+    let best;
     for (const grant of this.grants.values()) {
       const grantId = grantObject(grant);
       if (!sameObjectId(grantId, requested)) continue;
       if (aclPrincipalKey(grant.accessor) !== who) continue;
       const owner = grant.owner ?? "";
       if (!ownerNow || aclPrincipalKey(owner) !== aclPrincipalKey(ownerNow)) continue;
-      return {
+      const hamState = grant.hamState ?? 0;
+      if (best && hamState < best.hamState) continue;
+      best = {
         soul: `s3rch/acl/${aclPrincipalKey(owner)}/${aclKey(requested)}/${who}`,
         owner,
-        hamState: grant.hamState ?? 0,
+        hamState,
         grant: {
           object: grantObject(grant),
           accessor: grant.accessor,
@@ -1063,7 +1112,7 @@ export class MemoryGroupGraph {
         },
       };
     }
-    return undefined;
+    return best;
   }
 
   /**
@@ -1463,8 +1512,7 @@ export class MemoryGroupGraph {
     }
     for (const [key, owner] of other.setOwners) {
       const setKey = key.split("\0")[1] ?? "";
-      const slash = setKey.lastIndexOf("_");
-      const setId = slash > 0 ? `${setKey.slice(0, slash)}/${setKey.slice(slash + 1)}` : "";
+      const setId = unescapeKey(setKey);
       if (!setId || !setIdBindsOwner(setId, owner)) continue;
       const canonical = canonicalSetId(setId);
       if (!canonical) continue;

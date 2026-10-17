@@ -281,7 +281,12 @@ impl MeshSeeGraph {
 
     /// In-range rows that name this object, accessor, and owner, folded
     /// with the post HAM rule. A raw id and its item soul count once.
-    fn folded_post(&self, object: &str, accessor: &str, owner: &str) -> Option<GunPostEdge> {
+    pub(crate) fn folded_post(
+        &self,
+        object: &str,
+        accessor: &str,
+        owner: &str,
+    ) -> Option<GunPostEdge> {
         self.posts
             .values()
             .filter(|edge| post_row_in_range(edge) && same_post_row(edge, object, accessor, owner))

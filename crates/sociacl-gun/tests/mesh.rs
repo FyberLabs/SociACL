@@ -41,16 +41,16 @@ fn slhp(channel: AttestationChannel, att: &[u8], token: Option<&str>) -> Vec<u8>
 
 #[test]
 fn dest_acl_soul_does_not_fork_items_or_users() {
-    assert_eq!(acl_key("rss3:act/1#x"), "rss3:act_1_x");
+    assert_eq!(acl_key("rss3:act/1#x"), "rss3:act~61~2x");
     assert_eq!(
         acl_key("s3rch/items/rss3:act/1_x"),
-        "s3rch_items_rss3:act_1_x"
+        "s3rch~6items~6rss3:act~61_x"
     );
     assert_eq!(acl_principal_key("0xalice"), "0xalice");
     assert_eq!(acl_principal_key("s3rch/users/0xalice"), "0xalice");
     assert_eq!(
         grant_soul("0xalice", "rss3:act/1#x", "0xbob").as_str(),
-        "s3rch/acl/0xalice/rss3:act_1_x/0xbob"
+        "s3rch/acl/0xalice/rss3:act~61~2x/0xbob"
     );
     assert_eq!(
         acl_soul("s3rch/users/0xalice").as_str(),
@@ -68,13 +68,13 @@ fn dest_acl_soul_does_not_fork_items_or_users() {
     assert!(!soul.is_s3rch_user());
     assert_eq!(
         GunSoul::s3rch_item("rss3:act/1#x").as_node_id().as_str(),
-        "s3rch/items/rss3:act/1_x"
+        "s3rch/items/rss3:act/1~2x"
     );
     assert_eq!(
         GunSoul::s3rch_user("0xalice").as_node_id().as_str(),
         "s3rch/users/0xalice"
     );
-    assert_eq!(encode_key("rss3:act/1#x"), "rss3:act/1_x");
+    assert_eq!(encode_key("rss3:act/1#x"), "rss3:act/1~2x");
 }
 
 #[test]
@@ -632,7 +632,7 @@ fn mesh_grant_on_plane_feed_item_matches_claim() {
     )
     .unwrap();
     assert!(check_see(&plane, &object, &bob, None).unwrap().allowed);
-    assert_eq!(object.as_str(), "s3rch/items/rss3:act/1_x");
+    assert_eq!(object.as_str(), "s3rch/items/rss3:act/1~2x");
 }
 
 #[test]

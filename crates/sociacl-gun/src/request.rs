@@ -11,11 +11,12 @@
 //! The request id is the SHA-256 of a length-prefixed domain plus the
 //! canonical accessor id and a canonical object key. `0xbob` and
 //! `s3rch/users/0xbob` are one accessor (`canonical_accessor_id`).
-//! `room:alpha` and `s3rch/items/room:alpha` are one object when the raw
-//! id may alias to that item soul and the inner id contains no `_`.
-//! `a/b` and `s3rch/items/a_b` are different objects. A held claim id
-//! does not alias. `aclKey` spellings such as `rss3:act/1#x` and
-//! `rss3:act_1_x` are one object. Requester and source are Unicode
+//! A string containing `.get(` is rejected, not parsed. `room:alpha`
+//! and `s3rch/items/room:alpha` are one object when the raw id may
+//! alias to that item soul and the inner id contains no `_`.
+//! `a/b`, `a_b`, and `s3rch/items/a_b` are different objects.
+//! `room.alpha`, `room_alpha`, and `room/alpha` are different keys.
+//! A held claim id does not alias. Requester and source are Unicode
 //! scalar values. U+0085 and U+FEFF are rejected.
 //! Scope, message, and status are not part of the id. Scope is only
 //! `read` or `read+post`. Status is only `pending` or `withdrawn`.
@@ -113,6 +114,9 @@ pub struct OwnerGrantRows {
 /// The raw string is Unicode scalar values (`str`). U+0085 and U+FEFF
 /// are rejected so this trim matches JavaScript.
 pub fn canonical_request_accessor(requester: &str) -> Result<String, GunError> {
+    if requester.contains(".get(") {
+        return Err(GunError::AccessRequestField);
+    }
     reject_trim_mismatch(requester)?;
     let id = canonical_accessor_id(requester);
     if id.is_empty() {
@@ -123,13 +127,18 @@ pub fn canonical_request_accessor(requester: &str) -> Result<String, GunError> {
 
 /// Object key for a request id.
 ///
-/// `aclKey` spellings collapse. An item soul collapses to the `aclKey`
-/// of its raw id when that raw id may alias to the soul and the inner
-/// id contains no `_`. A held claim id without `/` does not collapse
-/// to an item soul. `s3rch/meta`, dest ACL, and a URL leaf are rejected.
+/// `aclKey` is injective, so `.`, `_`, and `/` do not share a key.
+/// An item soul collapses to the `aclKey` of its raw id when that raw
+/// id may alias to the soul and the inner id contains no `_`. A held
+/// claim id without `/` does not collapse to an item soul. A string
+/// containing `.get(` is rejected. `s3rch/meta`, dest ACL, and a URL
+/// leaf are rejected.
 /// U+0085 and U+FEFF are rejected. The in-graph spelling used on grant
 /// rows is still `canonical_object_id`.
 pub fn canonical_request_object(source: &str) -> Result<String, GunError> {
+    if source.contains(".get(") {
+        return Err(GunError::AccessRequestField);
+    }
     reject_trim_mismatch(source)?;
     let id = source.trim();
     if id.is_empty() || closed_reason(id).is_some() {
@@ -249,7 +258,7 @@ impl MeshSeeGraph {
         if let Some(rule) = members {
             let see = self.check_group_see(
                 rule.predicate,
-                &request.source,
+                &stored_id,
                 &accepted.requester,
                 rule.now,
                 None,
@@ -260,13 +269,13 @@ impl MeshSeeGraph {
             }
         }
         let accessor = accepted.requester.clone();
-        if let Some(edge) = self.grant_edge(&stored_id, &accessor) {
+        if let Some(edge) = self.folded_see(&stored_id, &accessor, owner) {
             if edge.ham_state.saturating_add(1) > JS_SAFE_INTEGER_MAX {
                 return Err(GunError::SeeGrantCeiling);
             }
         }
         if accepted.scope == ACCESS_SCOPE_READ_POST {
-            if let Some(edge) = self.post_edge(&stored_id, &accessor) {
+            if let Some(edge) = self.folded_post(&stored_id, &accessor, owner) {
                 if edge.ham_state.saturating_add(1) > JS_SAFE_INTEGER_MAX {
                     return Err(GunError::PostGrantField);
                 }

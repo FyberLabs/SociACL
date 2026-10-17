@@ -40,16 +40,40 @@ function stated(value: number): 0 | 1 {
 
 type CurrentGrant = GunAclEdge;
 
+function escapeKey(id: string, slash: boolean): string {
+  return id.replace(slash ? /[~.#$[\]/]/g : /[~.#$[\]]/g, (ch) => {
+    switch (ch) {
+      case "~":
+        return "~0";
+      case ".":
+        return "~1";
+      case "#":
+        return "~2";
+      case "$":
+        return "~3";
+      case "[":
+        return "~4";
+      case "]":
+        return "~5";
+      case "/":
+        return "~6";
+      default:
+        return ch;
+    }
+  });
+}
+
 function encodeKey(id: string): string {
-  return id.replace(/[.#$[\]]/g, "_");
+  return escapeKey(id, false);
 }
 
 function aclKey(id: string): string {
-  return encodeKey(id.trim()).replaceAll("/", "_");
+  return escapeKey(id.trim(), true);
 }
 
 function aclPrincipalKey(id: string): string {
   const trimmed = id.trim();
+  if (trimmed.includes(".get(")) return aclKey(trimmed);
   const parts = trimmed.split("/").filter((part) => part.length > 0);
   if (parts.length === 3 && parts[0] === "s3rch" && parts[1] === "users") {
     return encodeKey(parts[2] ?? "");

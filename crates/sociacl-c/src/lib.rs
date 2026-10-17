@@ -2973,7 +2973,7 @@ mod tests {
         let item_soul = unsafe { CStr::from_ptr(item.as_ptr()) }
             .to_string_lossy()
             .into_owned();
-        assert_eq!(item_soul, "s3rch/items/rss3:act/1_x");
+        assert_eq!(item_soul, "s3rch/items/rss3:act/1~2x");
         sociacl_plane_free(plane);
     }
 

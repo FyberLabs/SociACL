@@ -626,7 +626,12 @@ impl MeshSeeGraph {
 
     /// In-range see rows that name this object, accessor, and owner.
     /// A raw id and its item soul count once.
-    fn folded_see(&self, object: &str, accessor: &str, owner: &str) -> Option<GunAclEdge> {
+    pub(crate) fn folded_see(
+        &self,
+        object: &str,
+        accessor: &str,
+        owner: &str,
+    ) -> Option<GunAclEdge> {
         let canonical = self.canonical_object_id(object);
         self.grants
             .values()
@@ -807,5 +812,53 @@ mod tests {
         );
         assert!(!denied.allowed);
         assert_eq!(denied.reason, MESH_REASON_MISSING);
+    }
+
+    #[test]
+    fn a_grant_names_one_object_and_a_gun_chain_is_not_a_record() {
+        let mut graph = MeshSeeGraph::new();
+        for object in [
+            "room.alpha",
+            "room_alpha",
+            "room/alpha",
+            "alpha",
+            "room/chat/alpha",
+        ] {
+            graph.put_object(object, "0xalice");
+        }
+        graph
+            .state_see_grant("0xalice", MeshSeeGrant::live("room.alpha", "0xbob", 0, 80))
+            .unwrap();
+        graph
+            .state_see_grant("0xalice", MeshSeeGrant::live("alpha", "0xbob", 0, 80))
+            .unwrap();
+        let now = Timestamp(10);
+        assert!(
+            graph
+                .check_see("room.alpha", "0xbob", now, None, None)
+                .allowed
+        );
+        assert!(graph.check_see("alpha", "0xbob", now, None, None).allowed);
+        assert!(
+            !graph
+                .check_see("room_alpha", "0xbob", now, None, None)
+                .allowed
+        );
+        assert!(
+            !graph
+                .check_see("room/alpha", "0xbob", now, None, None)
+                .allowed
+        );
+        assert!(
+            !graph
+                .check_see("room/chat/alpha", "0xbob", now, None, None)
+                .allowed
+        );
+        let chain = "0xattacker.get('s3rch').get('users').get('0xvictim')";
+        assert!(graph.object_record(chain).is_none());
+        assert_ne!(crate::soul::canonical_accessor_id(chain), "0xvictim");
+        graph.put_object("doc", "0xvictim");
+        assert!(!graph.check_see("doc", chain, now, None, None).allowed);
+        assert!(graph.check_see("doc", "0xvictim", now, None, None).allowed);
     }
 }

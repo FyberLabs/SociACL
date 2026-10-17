@@ -2155,7 +2155,7 @@ fn colliding_set_ids_are_rejected_and_check_uses_the_canonical_id() {
     let soul = graph
         .membership_row_soul(GroupPredicate::SameGroup, "0xalice/ops", "0xbob")
         .unwrap();
-    assert!(soul.contains("/0xalice_ops/"));
+    assert!(soul.contains("/0xalice~6ops/"));
     assert!(!soul.contains("ops/core"));
     assert!(!soul.contains("ops_core"));
 }

@@ -51,30 +51,6 @@
       "id": "f07e03cd64b869a6ffeea9b93e0f5b425f4c14c93f2eebcfaea7c9eb524280a2"
     },
     {
-      "name": "gun-get-user",
-      "requester": "gun.get('s3rch').get('users').get('0xbob')",
-      "source": "room:alpha",
-      "id": "f07e03cd64b869a6ffeea9b93e0f5b425f4c14c93f2eebcfaea7c9eb524280a2"
-    },
-    {
-      "name": "gun-get-user-quotes",
-      "requester": "gun.get(\"s3rch\").get(\"users\").get(\"0xbob\")",
-      "source": "room:alpha",
-      "id": "f07e03cd64b869a6ffeea9b93e0f5b425f4c14c93f2eebcfaea7c9eb524280a2"
-    },
-    {
-      "name": "gun-get-user-spaced",
-      "requester": "gun.get('s3rch').get('users').get(' 0xbob ')",
-      "source": "room:alpha",
-      "id": "f07e03cd64b869a6ffeea9b93e0f5b425f4c14c93f2eebcfaea7c9eb524280a2"
-    },
-    {
-      "name": "gun-get-item-accessor",
-      "requester": "gun.get('s3rch').get('items').get('room')",
-      "source": "room:alpha",
-      "id": "f2e83746ccbb0cf844cfcb22752ab1e3e7ab419857261f8a59f00e44c6b10826"
-    },
-    {
       "name": "raw-foo",
       "requester": "0xbob",
       "source": "foo",
@@ -96,7 +72,7 @@
       "name": "held",
       "requester": "s3rch/users/0xbob",
       "source": "ens:alice.eth",
-      "id": "e3ec48d774821c6513d68d02b9cde2ecc93345f5215437088851ea3f01d61cd5"
+      "id": "d18635156adaeae58981c83c235852de99d004444a14aadd739d3dc431fa5b14"
     },
     {
       "name": "held-key",
@@ -108,13 +84,13 @@
       "name": "held-soul",
       "requester": "0xbob",
       "source": "s3rch/items/ens:alice_eth",
-      "id": "ee81ba60943e5ae2b110d365469ef0324607e01ee4a24de07191f98bc9f4bb37"
+      "id": "d58ed43ce9362fc291647227c4454bf7ea55cda7c815972897b12744175be6b7"
     },
     {
       "name": "feed",
       "requester": "0xbob",
       "source": "rss3:act/1#x",
-      "id": "1a93b2de163b11e883e86c66a67a37e1689a436764a05ed5aa63ef7d242b9f96"
+      "id": "12afbaaf42226f8a9b4de28c5329d346775eb3807e0f5671a89c50862a11bcc1"
     },
     {
       "name": "feed-key",
@@ -126,19 +102,19 @@
       "name": "dot",
       "requester": "0xbob",
       "source": "room.alpha",
-      "id": "0bd79addf07dcdfa1afefd6443e0eaa73388d6e0a54ec66d9b84e25610430c10"
+      "id": "b0c0fecd316d413af74fc3c1bcd821df59c102a994cb08b721dcb88b847eb1f7"
     },
     {
       "name": "dot-soul",
       "requester": " 0xbob ",
       "source": "s3rch/items/room_alpha",
-      "id": "83571ebe99602837abb8623511ff4d0c81c9fcb5575864c08667e476686035b2"
+      "id": "e327a070371fb6a6becc23a545f3560bff7eed9f6a31367e13a44030926ba91d"
     },
     {
       "name": "slash-raw",
       "requester": "0xbob",
       "source": "a/b",
-      "id": "4477db15f9232defb9dbac7d79b5e8add7eab56c6cd7aa3568bf2140f754bc5a"
+      "id": "d5061f63d8b0839a7226315f65fb1a91e08946f53200791cf5ede5066936234d"
     },
     {
       "name": "slash-flat",
@@ -150,7 +126,7 @@
       "name": "slash-soul",
       "requester": "0xbob",
       "source": "s3rch/items/a_b",
-      "id": "506f06bfe45cc0f6d74a86f7174e5bc04b275f032fde199b2cad6e9980e6d85c"
+      "id": "cae82847908b83983fa1d9da7b81e1c83d6058fd92353281bef4abc78b442205"
     }
   ],
   "signing": [
@@ -231,8 +207,8 @@
       "scope": "read+post",
       "message": "join",
       "status": "pending",
-      "id": "1a93b2de163b11e883e86c66a67a37e1689a436764a05ed5aa63ef7d242b9f96",
-      "hex": "1700000073337263682d6163636573732d726571756573742d7631400000003161393362326465313633623131653838336538366336366136376133376531363839613433363736346130356564356161363365663764323432623966393609000000726561642b706f7374040000006a6f696e0700000070656e64696e67"
+      "id": "12afbaaf42226f8a9b4de28c5329d346775eb3807e0f5671a89c50862a11bcc1",
+      "hex": "1700000073337263682d6163636573732d726571756573742d7631400000003132616662616166343232323666386139623464653238633533323964333436373735656233383037653066353637316138396335303836326131316263633109000000726561642b706f7374040000006a6f696e0700000070656e64696e67"
     },
     {
       "name": "dot",
@@ -241,8 +217,8 @@
       "scope": "read",
       "message": "x",
       "status": "pending",
-      "id": "83571ebe99602837abb8623511ff4d0c81c9fcb5575864c08667e476686035b2",
-      "hex": "1700000073337263682d6163636573732d726571756573742d76314000000038333537316562653939363032383337616262383632333531316666346430633831633966636235353735383634633038363637653437363638363033356232040000007265616401000000780700000070656e64696e67"
+      "id": "e327a070371fb6a6becc23a545f3560bff7eed9f6a31367e13a44030926ba91d",
+      "hex": "1700000073337263682d6163636573732d726571756573742d76314000000065333237613037303337316662366136626563633233613534356633353630626666376565643966366133313336376531336134343033303932366261393164040000007265616401000000780700000070656e64696e67"
     },
     {
       "name": "message-max",
@@ -256,6 +232,46 @@
     }
   ],
   "rejected": [
+    {
+      "name": "gun-get-user",
+      "requester": "gun.get('s3rch').get('users').get('0xbob')",
+      "source": "room:alpha",
+      "scope": "read",
+      "message": "",
+      "status": "pending"
+    },
+    {
+      "name": "gun-get-user-quotes",
+      "requester": "gun.get(\"s3rch\").get(\"users\").get(\"0xbob\")",
+      "source": "room:alpha",
+      "scope": "read",
+      "message": "",
+      "status": "pending"
+    },
+    {
+      "name": "gun-get-user-spaced",
+      "requester": "gun.get('s3rch').get('users').get(' 0xbob ')",
+      "source": "room:alpha",
+      "scope": "read",
+      "message": "",
+      "status": "pending"
+    },
+    {
+      "name": "gun-get-item-accessor",
+      "requester": "gun.get('s3rch').get('items').get('room')",
+      "source": "room:alpha",
+      "scope": "read",
+      "message": "",
+      "status": "pending"
+    },
+    {
+      "name": "gun-chain-spoof",
+      "requester": "0xattacker.get('s3rch').get('users').get('0xvictim')",
+      "source": "room:alpha",
+      "scope": "read",
+      "message": "",
+      "status": "pending"
+    },
     {
       "name": "scope-read-capital",
       "requester": "0xbob",
@@ -556,7 +572,7 @@
       "from": 0,
       "until": 80,
       "now": 10,
-      "expect": "see"
+      "expect": "field"
     },
     {
       "name": "owner-empty-segment-soul",

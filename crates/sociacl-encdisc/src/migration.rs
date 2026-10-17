@@ -795,21 +795,36 @@ fn grant_soul(owner: &str, object: &str, accessor: &str) -> String {
     )
 }
 
+fn escape_key(id: &str, slash: bool) -> String {
+    let mut out = String::with_capacity(id.len());
+    for ch in id.chars() {
+        match ch {
+            '~' => out.push_str("~0"),
+            '.' => out.push_str("~1"),
+            '#' => out.push_str("~2"),
+            '$' => out.push_str("~3"),
+            '[' => out.push_str("~4"),
+            ']' => out.push_str("~5"),
+            '/' if slash => out.push_str("~6"),
+            other => out.push(other),
+        }
+    }
+    out
+}
+
 fn encode_key(id: &str) -> String {
-    id.chars()
-        .map(|character| match character {
-            '.' | '#' | '$' | '[' | ']' => '_',
-            other => other,
-        })
-        .collect()
+    escape_key(id, false)
 }
 
 fn acl_key(id: &str) -> String {
-    encode_key(id.trim()).replace('/', "_")
+    escape_key(id.trim(), true)
 }
 
 fn acl_principal_key(id: &str) -> String {
     let id = id.trim();
+    if id.contains(".get(") {
+        return acl_key(id);
+    }
     let parts: Vec<&str> = id.split('/').filter(|part| !part.is_empty()).collect();
     if parts.len() == 3 && parts[0] == "s3rch" && parts[1] == "users" {
         return encode_key(parts[2]);
@@ -1332,6 +1347,19 @@ mod tests {
             let expected = sociacl_gun::grant_soul(owner, object, accessor);
             assert_eq!(grant_soul(owner, object, accessor), expected.as_str());
         }
+    }
+
+    #[test]
+    fn acl_keys_do_not_fold_and_a_gun_chain_is_not_a_wallet() {
+        assert_ne!(acl_key("room.alpha"), acl_key("room_alpha"));
+        assert_ne!(acl_key("room.alpha"), acl_key("room/alpha"));
+        assert_ne!(acl_key("room_alpha"), acl_key("room/alpha"));
+        let chain = "0xattacker.get('s3rch').get('users').get('0xvictim')";
+        assert_ne!(acl_principal_key(chain), "0xvictim");
+        assert_ne!(
+            grant_soul("0xalice", "room", chain),
+            grant_soul("0xalice", "room", "0xvictim")
+        );
     }
 
     #[test]

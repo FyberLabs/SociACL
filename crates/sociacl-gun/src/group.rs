@@ -23,7 +23,7 @@ use sha2::{Digest, Sha256};
 use sociacl_core::{AttestationSig, IssuerSecret, Timestamp, VerifyKey};
 
 use crate::mesh::{closed_reason, MeshCheckResult, MeshSeeGraph};
-use crate::soul::{acl_key, acl_principal_key, S3RCH_ACL, S3RCH_ROOT};
+use crate::soul::{acl_key, acl_principal_key, unescape_acl_key, S3RCH_ACL, S3RCH_ROOT};
 use crate::{GunError, HandoffHint, HopFactor};
 
 /// `same-group` or `named-circle`. The accessor does not pick a richer one.
@@ -1546,11 +1546,8 @@ fn canonical_set_id(set_id: &str) -> Result<String, GunError> {
 }
 
 fn set_id_from_key(key: &str) -> Option<String> {
-    let (head, name) = key.rsplit_once('_')?;
-    if head.is_empty() || name.is_empty() || name.contains('_') {
-        return None;
-    }
-    Some(format!("{head}/{name}"))
+    let set_id = unescape_acl_key(key)?;
+    canonical_set_id(&set_id).ok()
 }
 
 fn set_id_binds_owner(set_id: &str, owner: &str) -> bool {

@@ -31,57 +31,55 @@ export const POST_GRANT_SCOPE = "post";
 
 const JS_SAFE_INTEGER_MAX = Number.MAX_SAFE_INTEGER;
 
+/**
+ * Injective path escape. `~` is the escape character.
+ * `. # $ [ ]` each get their own form. `/` stays, so an item soul
+ * does not gain a new spelling of a slash-bearing id.
+ * @param {string} id
+ * @param {boolean} slash
+ */
+function escapeKey(id, slash) {
+  return String(id).replace(slash ? /[~.#$[\]/]/g : /[~.#$[\]]/g, (ch) => {
+    switch (ch) {
+      case "~":
+        return "~0";
+      case ".":
+        return "~1";
+      case "#":
+        return "~2";
+      case "$":
+        return "~3";
+      case "[":
+        return "~4";
+      case "]":
+        return "~5";
+      case "/":
+        return "~6";
+      default:
+        return ch;
+    }
+  });
+}
+
 /** @param {string} id */
 function encodeKey(id) {
-  return String(id).replace(/[.#$[\]]/g, "_");
+  return escapeKey(id, false);
 }
 
 /** @param {string} id */
 function aclKey(id) {
-  return encodeKey(String(id).trim()).replace(/\//g, "_");
-}
-
-/**
- * Quoted `gun.get` parts. A corrupt chain is not a soul.
- * @param {string} text
- * @returns {string[] | null}
- */
-function gunGetSegments(text) {
-  /** @type {string[]} */
-  const segments = [];
-  let rest = text.trim();
-  while (rest.includes(".get(")) {
-    rest = rest.slice(rest.indexOf(".get(") + 5);
-    const quote = rest[0];
-    if (quote !== "'" && quote !== '"') return null;
-    rest = rest.slice(1);
-    const end = rest.indexOf(quote);
-    if (end < 0) return null;
-    const part = rest.slice(0, end).trim();
-    if (!part) return null;
-    segments.push(part);
-    rest = rest.slice(end + 1).replace(/^\s+/, "");
-    if (rest.startsWith(")")) rest = rest.slice(1).replace(/^\s+/, "");
-  }
-  return segments.length === 0 ? null : segments;
+  return escapeKey(String(id).trim(), true);
 }
 
 /** @param {string} id */
 function aclPrincipalKey(id) {
   const text = String(id).trim();
-  const segments = text.includes(".get(")
-    ? gunGetSegments(text)
-    : text
-        .split("/")
-        .map((part) => part.trim())
-        .filter((part) => part !== "");
-  if (
-    segments &&
-    segments.length === 3 &&
-    segments[0] === "s3rch" &&
-    segments[1] === "users" &&
-    segments[2]
-  ) {
+  if (text.includes(".get(")) return aclKey(text);
+  const segments = text
+    .split("/")
+    .map((part) => part.trim())
+    .filter((part) => part !== "");
+  if (segments.length === 3 && segments[0] === "s3rch" && segments[1] === "users" && segments[2]) {
     return encodeKey(segments[2]);
   }
   return aclKey(text);

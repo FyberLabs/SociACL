@@ -662,7 +662,7 @@ test("colliding set ids are rejected", () => {
   graph.recordSetOwner("0xalice", "same-group", "0xalice/ops");
   stateBoth(graph, "same-group", "0xalice/ops", "0xbob");
   const soul = membershipSoul("0xalice", "same-group", "0xalice/ops", "0xbob");
-  assert.match(soul, /\/0xalice_ops\//);
+  assert.match(soul, /\/0xalice~6ops\//);
   assert.equal(graph.membership("same-group", "0xalice/ops", "0xbob")?.setId, "0xalice/ops");
 });
 

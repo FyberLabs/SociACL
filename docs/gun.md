@@ -48,9 +48,9 @@ gun.get('s3rch').get('acl').get(aclPrincipalKey(owner))
      .get('post').get(aclKey(object)).get(aclPrincipalKey(accessor))  → MeshPostGrant
 ```
 
-`aclKey` is `encodeKey` then `/` → `_` so dest-ACL souls stay five segments. It is not a second `encodeKey` for items or users. `s3rch/acl` is dest ACL, not a Check object.
+`aclKey` is `encodeKey` plus an escape of `/` that is not `_`, so dest-ACL souls stay five segments. `room.alpha`, `room_alpha`, and `room/alpha` are three keys. It is not a second `encodeKey` for items or users. `s3rch/acl` is dest ACL, not a Check object.
 
-`encodeKey`: `id.replace(/[.#$\[\]]/g, '_')`.
+`encodeKey`: injective escape of `~ . # $ [ ]`. `/` is not folded.
 
 `GunFeedNode` (in-graph = native SociACL object):
 
