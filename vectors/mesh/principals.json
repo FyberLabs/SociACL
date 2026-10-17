@@ -1,5 +1,5 @@
 {
-  "note": "Principal parse and object-id cases shared by TypeScript and Rust. A failed principal is null, never an empty string. An object id with surrounding whitespace is rejected and does not replace an owner.",
+  "note": "Principal parse and object-id cases shared by TypeScript and Rust. A failed principal is null, never an empty string. An object id with surrounding whitespace is rejected and does not replace an owner. The groups section is a live same-group edge on doc; a spaced query must not trim into that object.",
   "principals": [
     {"id": ".", "canonical": null},
     {"id": "..", "canonical": null},
@@ -102,5 +102,23 @@
     {"secret": "secret", "other": "other", "accessor": "/"},
     {"secret": "secret", "other": "other", "accessor": "0xbob/x"},
     {"secret": "secret", "other": "other", "accessor": "../meta"}
-  ]
+  ],
+  "groups": {
+    "stored": "doc",
+    "predicate": "same-group",
+    "setId": "0xalice/ops",
+    "accessor": "0xbob",
+    "queries": [
+      {"name": "nbsp", "object": "\u00a0doc", "allowed": false, "reason": "missing"},
+      {"name": "leading-space", "object": " doc", "allowed": false, "reason": "missing"},
+      {"name": "ideographic-space", "object": "\u3000doc", "allowed": false, "reason": "missing"},
+      {"name": "line-separator", "object": "doc\u2028", "allowed": false, "reason": "missing"},
+      {"name": "tab", "object": "\tdoc", "allowed": false, "reason": "missing"},
+      {"name": "spaces", "object": " doc ", "allowed": false, "reason": "missing"},
+      {"name": "next-line", "object": "\u0085doc", "allowed": false, "reason": "missing"},
+      {"name": "bom", "object": "\ufeffdoc", "allowed": false, "reason": "missing"},
+      {"name": "exact", "object": "doc", "allowed": true, "reason": "same-group"},
+      {"name": "accessor-ascii-space", "object": "doc", "accessor": " 0xbob ", "allowed": true, "reason": "same-group"}
+    ]
+  }
 }

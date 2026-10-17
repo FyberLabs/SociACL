@@ -1707,13 +1707,21 @@ function grantKey(owner, object, accessor) {
   return `${ownerKey}\0${aclKey(object)}\0${accessorKey}`;
 }
 
-/** @param {SeeGrant} grant */
+/**
+ * Signing bytes for an equal-ham see tie-break.
+ * A principal that does not parse is null, matching Rust `Option`.
+ * @param {SeeGrant} grant
+ * @returns {Uint8Array | null}
+ */
 function canonicalGrantBytes(grant) {
+  const owner = aclPrincipalKey(grant.owner ?? "");
+  const accessor = aclPrincipalKey(grant.accessor);
+  if (owner == null || accessor == null) return null;
   /** @type {Uint8Array[]} */
   const parts = [domainBytes("sociacl-see-grant-v1")];
-  pushStr(parts, aclPrincipalKey(grant.owner ?? ""));
+  pushStr(parts, owner);
   pushStr(parts, aclKey(grantObject(grant)));
-  pushStr(parts, aclPrincipalKey(grant.accessor));
+  pushStr(parts, accessor);
   const times = new Uint8Array(16);
   const view = new DataView(times.buffer);
   view.setBigUint64(0, BigInt(grant.from ?? 0));
@@ -1756,7 +1764,11 @@ function preferGrant(local, incoming) {
   const incomingNarrower = windowInside(incoming, local);
   if (localNarrower && !incomingNarrower) return local;
   if (incomingNarrower && !localNarrower) return incoming;
-  return bytesBefore(canonicalGrantBytes(incoming), canonicalGrantBytes(local)) ? incoming : local;
+  const incomingBytes = canonicalGrantBytes(incoming);
+  const localBytes = canonicalGrantBytes(local);
+  if (incomingBytes == null) return local;
+  if (localBytes == null) return incoming;
+  return bytesBefore(incomingBytes, localBytes) ? incoming : local;
 }
 
 /**

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
+import { checkSee } from "../src/gun.js";
 import {
   MemoryGroupGraph,
   checkGroupPresentation,
@@ -1002,8 +1003,8 @@ test("a corrupt party signature does not drop a valid cancel", () => {
 
 test("a spaced object id does not see the stored group", () => {
   const vectors = JSON.parse(
-    readFileSync(new URL("../../vectors/mesh/group-object.json", import.meta.url), "utf8"),
-  );
+    readFileSync(new URL("../../vectors/mesh/principals.json", import.meta.url), "utf8"),
+  ).groups;
   const graph = liveGraph();
   const presented = { predicate: vectors.predicate, setId: vectors.setId };
   for (const row of vectors.queries) {
@@ -1011,6 +1012,9 @@ test("a spaced object id does not see the stored group", () => {
     const see = checkGroupSee(graph, vectors.predicate, row.object, accessor, 1);
     assert.equal(see.allowed, row.allowed, row.name);
     assert.equal(see.reason, row.reason, row.name);
+    if (!row.allowed) {
+      assert.equal(checkSee(graph, row.object, accessor, 1).allowed, false, row.name);
+    }
     const presentation = checkGroupPresentation(
       graph,
       presented,

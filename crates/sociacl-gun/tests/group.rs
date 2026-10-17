@@ -129,6 +129,11 @@ fn same_group_requires_both_live_edges() {
 }
 
 #[derive(serde::Deserialize)]
+struct PrincipalVectorFile {
+    groups: GroupObjectVectors,
+}
+
+#[derive(serde::Deserialize)]
 struct GroupObjectVectors {
     predicate: String,
     #[serde(rename = "setId")]
@@ -149,8 +154,9 @@ struct GroupObjectQuery {
 
 #[test]
 fn a_spaced_object_id_does_not_see_the_stored_group() {
-    let vectors: GroupObjectVectors =
-        serde_json::from_str(include_str!("../../../vectors/mesh/group-object.json")).unwrap();
+    let file: PrincipalVectorFile =
+        serde_json::from_str(include_str!("../../../vectors/mesh/principals.json")).unwrap();
+    let vectors = file.groups;
     assert_eq!(vectors.predicate, GroupPredicate::SameGroup.as_str());
     let graph = group_graph();
     let group = presented(GroupPredicate::SameGroup, &vectors.set_id);
@@ -166,6 +172,15 @@ fn a_spaced_object_id_does_not_see_the_stored_group() {
         );
         assert_eq!(see.allowed, row.allowed, "{}", row.name);
         assert_eq!(see.reason, row.reason, "{}", row.name);
+        if !row.allowed {
+            assert!(
+                !graph
+                    .check_see(&row.object, accessor, Timestamp(1), None, None)
+                    .allowed,
+                "{}",
+                row.name
+            );
+        }
         let presentation = graph.check_group_presentation(
             Some(&group),
             &row.object,
