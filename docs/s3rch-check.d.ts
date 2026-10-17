@@ -248,7 +248,7 @@ export type SeeAcl = SeeGraph & {
   ): void;
 };
 
-/** id.replace(/[.#$\[\]]/g, '_') */
+/** Injective escape of `~ . # $ [ ]`. `/` is left for aclKey. */
 export function encodeKey(id: string): string;
 
 /** s3rch/items/<encodeKey(id)> */
@@ -388,27 +388,32 @@ export function cancelSee(
 export type S3rchAcl = "acl";
 
 /**
- * Dest-ACL path key. encodeKey, then `/` → `_`, so a grant soul stays
- * five segments when the object id still contains slashes
- * (`rss3:act/1_x`, `s3rch/items/…`). Not a second encodeKey for items
- * or users.
+ * Dest-ACL path key. encodeKey, then `/` escaped to a form that is
+ * not `_`, so a grant soul stays five segments and `room.alpha`,
+ * `room_alpha`, and `room/alpha` are three keys. Not a second
+ * encodeKey for items or users.
  */
 export function aclKey(id: string): string;
 
 /**
- * Owner / accessor key on dest ACL. `s3rch/users/<wallet>` and
- * `gun.get('s3rch').get('users').get(wallet)` collapse to the wallet.
- * Each segment is trimmed and an empty segment is dropped, so
+ * Owner / accessor key on dest ACL. An exact `s3rch/users/<wallet>`
+ * collapses to that wallet text. A bare id may contain `.` and must
+ * not be `.` or `..`. It must not contain `/ # $ [ ] ~`, an inner
+ * space, a control, Unicode whitespace, a format character, `.get(`,
+ * an unpaired surrogate, or more than 256 scalar values. A failed
+ * parse is null and is not a soul segment. Trim is ASCII whitespace
+ * only, so U+FEFF and U+0085 are rejected rather than stripped.
+ * escapeKey is for object keys, not principals. Each user-soul
+ * segment is ASCII-trimmed and an empty segment is dropped, so
  * `s3rch/users/ bob ` and `s3rch/users//bob` are `bob`.
- * Anything else is aclKey.
  */
-export function aclPrincipalKey(id: string): string;
+export function aclPrincipalKey(id: string): string | null;
 
 /**
  * Owner dest-ACL root. Not a Check object.
  * gun.get('s3rch').get('acl').get(aclPrincipalKey(owner))
  */
-export function aclSoul(owner: AccessorId): string;
+export function aclSoul(owner: AccessorId): string | null;
 
 /**
  * Jointly stated see grant under the object owner's dest ACL.
@@ -422,7 +427,7 @@ export function grantSoul(
   owner: AccessorId,
   object: CheckObjectId,
   accessor: AccessorId,
-): string;
+): string | null;
 
 /**
  * In-graph see grant. HAM-merges across peers.
@@ -489,7 +494,7 @@ export type PostGrantInput = {
  * item soul share that one row when they already name one object.
  */
 export type GunPostEdge = {
-  soul: string;
+  soul: string | null;
   owner: AccessorId;
   grant: MeshPostGrant;
   hamState: number;
@@ -514,7 +519,7 @@ export function postSoul(
   owner: AccessorId,
   object: CheckObjectId,
   accessor: AccessorId,
-): string;
+): string | null;
 
 /**
  * Length-prefixed row encoding a later owner signature can cover.
@@ -621,10 +626,11 @@ export function canonicalRequestAccessor(requester: AccessorId): string;
 
 /**
  * Object key for a request id. aclKey, with an aliasable item soul
- * reduced to the raw id's aclKey when that inner contains no `_`.
+ * reduced to the raw id's aclKey. An underscore in that raw id stays.
  * A held claim id does not alias to an item soul.
- * `s3rch/items/ foo` does not alias to `foo`. `a/b` does not alias
- * to `s3rch/items/a_b`. The raw string is Unicode scalar values.
+ * `s3rch/items/ foo` does not alias to `foo`. `a_b` and
+ * `s3rch/items/a_b` are one source. `a/b` is not. The raw string is
+ * Unicode scalar values.
  * U+0085 and U+FEFF are rejected. meta, acl, a dest-ACL soul,
  * gun.get('s3rch').get('meta'), gun.get('s3rch').get('acl'), and an
  * HTTP leaf in any scheme case are rejected.

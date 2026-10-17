@@ -146,17 +146,20 @@ fn apply_window_post(
 
 fn apply_merge(graph: &mut MeshSeeGraph, case: &GraphCase, edges: &[MergeEdge]) {
     for edge in edges {
-        graph.merge_post_edge(GunPostEdge::new(
-            &case.owner,
-            MeshPostGrant {
-                object: case.object.clone(),
-                accessor: case.accessor.clone(),
-                from: Timestamp(edge.from),
-                until: Timestamp(edge.until),
-                stated: edge.stated,
-            },
-            edge.ham_state,
-        ));
+        graph.merge_post_edge(
+            GunPostEdge::new(
+                &case.owner,
+                MeshPostGrant {
+                    object: case.object.clone(),
+                    accessor: case.accessor.clone(),
+                    from: Timestamp(edge.from),
+                    until: Timestamp(edge.until),
+                    stated: edge.stated,
+                },
+                edge.ham_state,
+            )
+            .unwrap(),
+        );
     }
 }
 
@@ -310,14 +313,16 @@ fn post_row_is_not_a_see_row() {
             .check_see("room:alpha", "0xbob", Timestamp(1), None, None)
             .allowed
     );
-    let soul = post_soul("0xalice", "room:alpha", "0xbob");
+    let soul = post_soul("0xalice", "room:alpha", "0xbob").unwrap();
     assert_eq!(soul.as_str(), "s3rch/acl/0xalice/post/room:alpha/0xbob");
     let parsed = GunSoul::parse(soul.as_str()).unwrap();
     assert!(parsed.is_s3rch_acl());
     assert!(!parsed.is_s3rch_acl_grant());
     assert_ne!(
         soul.as_str(),
-        sociacl_gun::grant_soul("0xalice", "room:alpha", "0xbob").as_str()
+        sociacl_gun::grant_soul("0xalice", "room:alpha", "0xbob")
+            .unwrap()
+            .as_str()
     );
 }
 
@@ -536,23 +541,29 @@ fn an_out_of_range_post_integer_does_not_restore_a_cancel() {
     graph
         .unstate_post_grant("0xalice", "0xbob", "room:alpha")
         .unwrap();
-    graph.merge_post_edge(GunPostEdge::new(
-        "0xalice",
-        MeshPostGrant::live("room:alpha", "0xbob", 0, 80),
-        u64::MAX,
-    ));
+    graph.merge_post_edge(
+        GunPostEdge::new(
+            "0xalice",
+            MeshPostGrant::live("room:alpha", "0xbob", 0, 80),
+            u64::MAX,
+        )
+        .unwrap(),
+    );
     let past_safe = (1_u64 << 53) - 1;
-    graph.merge_post_edge(GunPostEdge::new(
-        "0xalice",
-        MeshPostGrant {
-            object: "room:alpha".into(),
-            accessor: "0xbob".into(),
-            from: Timestamp(past_safe + 1),
-            until: Timestamp(past_safe + 2),
-            stated: 1,
-        },
-        9,
-    ));
+    graph.merge_post_edge(
+        GunPostEdge::new(
+            "0xalice",
+            MeshPostGrant {
+                object: "room:alpha".into(),
+                accessor: "0xbob".into(),
+                from: Timestamp(past_safe + 1),
+                until: Timestamp(past_safe + 2),
+                stated: 1,
+            },
+            9,
+        )
+        .unwrap(),
+    );
     let got = graph.check_post("room:alpha", "0xbob", Timestamp(10), None, None);
     assert!(!got.allowed, "{}", got.reason);
     assert_eq!(got.reason, MESH_REASON_CANCELLED);
@@ -595,11 +606,14 @@ fn a_cancel_at_the_ham_ceiling_stays_representable() {
         .state_see_grant("0xalice", MeshSeeGrant::live("room:alpha", "0xbob", 0, 80))
         .unwrap();
     let max = (1_u64 << 53) - 1;
-    graph.merge_post_edge(GunPostEdge::new(
-        "0xalice",
-        MeshPostGrant::live("room:alpha", "0xbob", 0, 80),
-        max,
-    ));
+    graph.merge_post_edge(
+        GunPostEdge::new(
+            "0xalice",
+            MeshPostGrant::live("room:alpha", "0xbob", 0, 80),
+            max,
+        )
+        .unwrap(),
+    );
     graph
         .unstate_post_grant("0xalice", "0xbob", "room:alpha")
         .unwrap();
@@ -609,11 +623,14 @@ fn a_cancel_at_the_ham_ceiling_stays_representable() {
     let got = graph.check_post("room:alpha", "0xbob", Timestamp(10), None, None);
     assert!(!got.allowed, "{}", got.reason);
     assert_eq!(got.reason, MESH_REASON_CANCELLED);
-    graph.merge_post_edge(GunPostEdge::new(
-        "0xalice",
-        MeshPostGrant::live("room:alpha", "0xbob", 0, 80),
-        max,
-    ));
+    graph.merge_post_edge(
+        GunPostEdge::new(
+            "0xalice",
+            MeshPostGrant::live("room:alpha", "0xbob", 0, 80),
+            max,
+        )
+        .unwrap(),
+    );
     let again = graph.check_post("room:alpha", "0xbob", Timestamp(10), None, None);
     assert_eq!(again.reason, MESH_REASON_CANCELLED);
     assert_eq!(
@@ -635,11 +652,14 @@ fn a_cancel_at_the_ham_ceiling_stays_representable() {
 #[test]
 fn a_post_merge_waits_for_the_current_owner() {
     let mut graph = MeshSeeGraph::new();
-    graph.merge_post_edge(GunPostEdge::new(
-        "0xalice",
-        MeshPostGrant::live("room:alpha", "0xbob", 0, 80),
-        4,
-    ));
+    graph.merge_post_edge(
+        GunPostEdge::new(
+            "0xalice",
+            MeshPostGrant::live("room:alpha", "0xbob", 0, 80),
+            4,
+        )
+        .unwrap(),
+    );
     graph.put_object("room:alpha", "0xalice");
     graph
         .state_see_grant("0xalice", MeshSeeGrant::live("room:alpha", "0xbob", 0, 80))
@@ -647,28 +667,63 @@ fn a_post_merge_waits_for_the_current_owner() {
     let staged = graph.check_post("room:alpha", "0xbob", Timestamp(10), None, None);
     assert!(!staged.allowed, "{}", staged.reason);
     assert_eq!(staged.reason, MESH_REASON_MISSING);
-    graph.merge_post_edge(GunPostEdge::new(
-        "0xcarol",
-        MeshPostGrant::live("room:alpha", "0xbob", 0, 80),
-        9,
-    ));
+    graph.merge_post_edge(
+        GunPostEdge::new(
+            "0xcarol",
+            MeshPostGrant::live("room:alpha", "0xbob", 0, 80),
+            9,
+        )
+        .unwrap(),
+    );
     assert_eq!(
         graph
             .check_post("room:alpha", "0xbob", Timestamp(10), None, None)
             .reason,
         MESH_REASON_MISSING
     );
-    graph.merge_post_edge(GunPostEdge::new(
-        "0xalice",
-        MeshPostGrant::live("room:alpha", "0xbob", 0, 80),
-        2,
-    ));
+    graph.merge_post_edge(
+        GunPostEdge::new(
+            "0xalice",
+            MeshPostGrant::live("room:alpha", "0xbob", 0, 80),
+            2,
+        )
+        .unwrap(),
+    );
     assert_eq!(
         graph
             .check_post("room:alpha", "0xbob", Timestamp(10), None, None)
             .reason,
         MESH_REASON_POST
     );
+}
+
+#[test]
+fn a_rejected_accessor_does_not_replace_a_post_row() {
+    let mut graph = MeshSeeGraph::new();
+    graph.put_object("doc", "0xalice");
+    graph
+        .state_post_grant("0xalice", MeshPostGrant::live("doc", "0xbob", 0, 80))
+        .unwrap();
+    let local = graph.post_edge("doc", "0xbob").unwrap().clone();
+    let bad = GunPostEdge {
+        soul: String::new(),
+        owner: "0xalice".into(),
+        grant: MeshPostGrant {
+            object: "doc".into(),
+            accessor: "/".into(),
+            from: Timestamp(0),
+            until: Timestamp(80),
+            stated: 1,
+        },
+        ham_state: local.ham_state,
+    };
+    assert_eq!(local.clone().ham_merge(bad.clone()).grant.accessor, "0xbob");
+    graph.merge_post_edge(bad);
+    assert_eq!(
+        graph.post_edge("doc", "0xbob").unwrap().grant.accessor,
+        "0xbob"
+    );
+    assert!(graph.post_edge("doc", "/").is_none());
 }
 
 fn hex(bytes: &[u8]) -> String {

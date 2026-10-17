@@ -40,25 +40,90 @@ function stated(value: number): 0 | 1 {
 
 type CurrentGrant = GunAclEdge;
 
-function encodeKey(id: string): string {
-  return id.replace(/[.#$[\]]/g, "_");
+function escapeKey(id: string, slash: boolean): string {
+  return id.replace(slash ? /[~.#$[\]/]/g : /[~.#$[\]]/g, (ch) => {
+    switch (ch) {
+      case "~":
+        return "~0";
+      case ".":
+        return "~1";
+      case "#":
+        return "~2";
+      case "$":
+        return "~3";
+      case "[":
+        return "~4";
+      case "]":
+        return "~5";
+      case "/":
+        return "~6";
+      default:
+        return ch;
+    }
+  });
+}
+
+function asciiTrim(text: string): string {
+  let start = 0;
+  let end = text.length;
+  const space = (code: number) =>
+    code === 0x09 || code === 0x0a || code === 0x0b || code === 0x0c || code === 0x0d || code === 0x20;
+  while (start < end && space(text.charCodeAt(start))) start += 1;
+  while (end > start && space(text.charCodeAt(end - 1))) end -= 1;
+  return text.slice(start, end);
 }
 
 function aclKey(id: string): string {
-  return encodeKey(id.trim()).replaceAll("/", "_");
+  return escapeKey(asciiTrim(id), true);
 }
 
-function aclPrincipalKey(id: string): string {
-  const trimmed = id.trim();
-  const parts = trimmed.split("/").filter((part) => part.length > 0);
-  if (parts.length === 3 && parts[0] === "s3rch" && parts[1] === "users") {
-    return encodeKey(parts[2] ?? "");
+function hasUnpairedSurrogate(text: string): boolean {
+  for (let i = 0; i < text.length; i += 1) {
+    const code = text.charCodeAt(i);
+    if (code >= 0xd800 && code <= 0xdbff) {
+      const next = text.charCodeAt(i + 1);
+      if (!(next >= 0xdc00 && next <= 0xdfff)) return true;
+      i += 1;
+      continue;
+    }
+    if (code >= 0xdc00 && code <= 0xdfff) return true;
   }
-  return aclKey(trimmed);
+  return false;
 }
 
-function grantSoul(owner: string, object: string, accessor: string): string {
-  return `s3rch/acl/${aclPrincipalKey(owner)}/${aclKey(object)}/${aclPrincipalKey(accessor)}`;
+function barePrincipal(id: string): string | null {
+  if (id.length === 0 || id === "." || id === ".." || id === "..." || id.includes(".get(") || id.includes(" ")) return null;
+  if (hasUnpairedSurrogate(id)) return null;
+  if ([...id].length > 256) return null;
+  if (/[/#$[\]~]/.test(id)) return null;
+  if (/\p{Z}|\p{Cf}/u.test(id)) return null;
+  for (let i = 0; i < id.length; i += 1) {
+    const code = id.charCodeAt(i);
+    if (code <= 0x1f || (code >= 0x7f && code <= 0x9f)) return null;
+  }
+  return id;
+}
+
+function aclPrincipalKey(id: string): string | null {
+  if (hasUnpairedSurrogate(id)) return null;
+  const trimmed = asciiTrim(id);
+  if (trimmed.length === 0 || trimmed.includes(".get(")) return null;
+  const parts = trimmed
+    .split("/")
+    .map((part) => asciiTrim(part))
+    .filter((part) => part.length > 0);
+  if (parts.length === 3 && parts[0] === "s3rch" && parts[1] === "users") {
+    return barePrincipal(parts[2] ?? "");
+  }
+  if (trimmed.includes("/")) return null;
+  return barePrincipal(trimmed);
+}
+
+function grantSoul(owner: string, object: string, accessor: string): string | null {
+  const ownerKey = aclPrincipalKey(owner);
+  const accessorKey = aclPrincipalKey(accessor);
+  if (ownerKey == null || accessorKey == null) return null;
+  return `s3rch/acl/${ownerKey}/${aclKey(object)}/${accessorKey}`;
 }
 
 function currentGrants(input: MigrationAdmissionInput): CurrentGrant[] {
@@ -70,6 +135,7 @@ function currentGrants(input: MigrationAdmissionInput): CurrentGrant[] {
       edge.owner !== input.owner ||
       grant.object !== input.migration.object ||
       grant.accessor.length === 0 ||
+      grantSoul(input.owner, input.migration.object, grant.accessor) == null ||
       edge.soul !== grantSoul(input.owner, input.migration.object, grant.accessor) ||
       !safe(edge.hamState) ||
       !safe(grant.from) ||

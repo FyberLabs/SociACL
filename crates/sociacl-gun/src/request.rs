@@ -11,11 +11,14 @@
 //! The request id is the SHA-256 of a length-prefixed domain plus the
 //! canonical accessor id and a canonical object key. `0xbob` and
 //! `s3rch/users/0xbob` are one accessor (`canonical_accessor_id`).
-//! `room:alpha` and `s3rch/items/room:alpha` are one object when the raw
-//! id may alias to that item soul and the inner id contains no `_`.
-//! `a/b` and `s3rch/items/a_b` are different objects. A held claim id
-//! does not alias. `aclKey` spellings such as `rss3:act/1#x` and
-//! `rss3:act_1_x` are one object. Requester and source are Unicode
+//! A string containing `.get(` is rejected, not parsed. `room:alpha`
+//! and `s3rch/items/room:alpha` are one object when the raw id may
+//! alias to that item soul. An underscore in the raw id stays.
+//! `a/b` is not `a_b`. `a_b` and `s3rch/items/a_b` are one object.
+//! `room.alpha`, `room_alpha`, and `room/alpha` are different keys.
+//! `s3rch/items/room~1alpha` is the item soul of `room.alpha` and
+//! shares that request id. A principal is not an object escape.
+//! A held claim id does not alias. Requester and source are Unicode
 //! scalar values. U+0085 and U+FEFF are rejected.
 //! Scope, message, and status are not part of the id. Scope is only
 //! `read` or `read+post`. Status is only `pending` or `withdrawn`.
@@ -34,7 +37,7 @@ use sha2::{Digest, Sha256};
 use sociacl_core::{AttestationSig, IssuerSecret, Timestamp};
 
 use crate::mesh::{closed_reason, is_item_shaped, may_alias_to_item_soul};
-use crate::soul::{acl_key, canonical_accessor_id, encode_key, GunSoul};
+use crate::soul::{acl_key, canonical_accessor_id, encode_key, unescape_acl_key, GunSoul};
 use crate::{
     post_grant_signing_bytes, GroupPredicate, GunAclEdge, GunError, GunPostEdge, MeshPostGrant,
     MeshSeeGrant, MeshSeeGraph,
@@ -113,23 +116,28 @@ pub struct OwnerGrantRows {
 /// The raw string is Unicode scalar values (`str`). U+0085 and U+FEFF
 /// are rejected so this trim matches JavaScript.
 pub fn canonical_request_accessor(requester: &str) -> Result<String, GunError> {
-    reject_trim_mismatch(requester)?;
-    let id = canonical_accessor_id(requester);
-    if id.is_empty() {
+    if requester.contains(".get(") {
         return Err(GunError::AccessRequestField);
     }
-    Ok(id)
+    reject_trim_mismatch(requester)?;
+    canonical_accessor_id(requester).ok_or(GunError::AccessRequestField)
 }
 
 /// Object key for a request id.
 ///
-/// `aclKey` spellings collapse. An item soul collapses to the `aclKey`
-/// of its raw id when that raw id may alias to the soul and the inner
-/// id contains no `_`. A held claim id without `/` does not collapse
-/// to an item soul. `s3rch/meta`, dest ACL, and a URL leaf are rejected.
+/// `aclKey` is injective, so `.` and `/` do not share a key with `_`.
+/// An item soul collapses to the `aclKey` of its raw id when that raw
+/// id may alias to the soul. `a_b` and `s3rch/items/a_b` are one key.
+/// `a/b` is not. A held claim id without `/` does not collapse to an
+/// item soul. A string
+/// containing `.get(` is rejected. `s3rch/meta`, dest ACL, and a URL
+/// leaf are rejected.
 /// U+0085 and U+FEFF are rejected. The in-graph spelling used on grant
 /// rows is still `canonical_object_id`.
 pub fn canonical_request_object(source: &str) -> Result<String, GunError> {
+    if source.contains(".get(") {
+        return Err(GunError::AccessRequestField);
+    }
     reject_trim_mismatch(source)?;
     let id = source.trim();
     if id.is_empty() || closed_reason(id).is_some() {
@@ -249,7 +257,7 @@ impl MeshSeeGraph {
         if let Some(rule) = members {
             let see = self.check_group_see(
                 rule.predicate,
-                &request.source,
+                &stored_id,
                 &accepted.requester,
                 rule.now,
                 None,
@@ -260,13 +268,13 @@ impl MeshSeeGraph {
             }
         }
         let accessor = accepted.requester.clone();
-        if let Some(edge) = self.grant_edge(&stored_id, &accessor) {
+        if let Some(edge) = self.folded_see(&stored_id, &accessor, owner) {
             if edge.ham_state.saturating_add(1) > JS_SAFE_INTEGER_MAX {
                 return Err(GunError::SeeGrantCeiling);
             }
         }
         if accepted.scope == ACCESS_SCOPE_READ_POST {
-            if let Some(edge) = self.post_edge(&stored_id, &accessor) {
+            if let Some(edge) = self.folded_post(&stored_id, &accessor, owner) {
                 if edge.ham_state.saturating_add(1) > JS_SAFE_INTEGER_MAX {
                     return Err(GunError::PostGrantField);
                 }
@@ -369,25 +377,29 @@ fn canonical_window(from: u64, until: u64) -> Result<(), GunError> {
     Ok(())
 }
 
-/// Item soul `s3rch/items/<inner>` whose inner id may alias to that soul.
+/// Item soul `s3rch/items/<encodeKey(raw)>`. The inner segment is
+/// decoded once, then the caller applies `acl_key` to that raw id.
 fn reducible_item_inner(id: &str) -> Option<String> {
     let soul = GunSoul::parse(id).ok()?;
     if !soul.is_s3rch_item() {
         return None;
     }
-    let inner = soul.segments().get(2)?.clone();
-    if inner.is_empty() || inner.contains('/') || inner.contains('_') || encode_key(&inner) != inner
-    {
+    let encoded = soul.segments().get(2)?.clone();
+    if encoded.is_empty() || encoded.contains('/') {
         return None;
     }
-    if !may_alias_to_item_soul(&inner) || is_item_shaped(&inner) {
+    let raw = unescape_acl_key(&encoded)?;
+    if raw.is_empty() || raw.contains('/') || encode_key(&raw) != encoded {
         return None;
     }
-    let expected = GunSoul::s3rch_item(&inner).as_node_id();
+    if !may_alias_to_item_soul(&raw) || is_item_shaped(&raw) {
+        return None;
+    }
+    let expected = GunSoul::s3rch_item(&raw).as_node_id();
     if expected.as_str() != id.trim() {
         return None;
     }
-    Some(inner)
+    Some(raw)
 }
 
 fn length_prefixed(fields: &[String]) -> Result<Vec<u8>, GunError> {

@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
+import { checkSee } from "../src/gun.js";
 import {
   MemoryGroupGraph,
   checkGroupPresentation,
@@ -454,7 +456,7 @@ test("object owner checks use the canonical object key", () => {
   mallory.nameObjectSet("0xmallory", "foo_bar", "same-group", "0xalice/ops", secret("0xmallory").privateKey);
   alice.mergeFrom(mallory);
   assert.equal(alice.ownerOf("foo/bar"), "0xalice");
-  assert.equal(alice.ownerOf("foo_bar"), "0xalice");
+  assert.equal(alice.ownerOf("foo_bar"), "0xmallory");
   assert.equal(alice.objectSet("foo/bar"), undefined);
   assert.equal(checkGroupSee(alice, "same-group", "foo/bar", "0xbob", 1).allowed, false);
 });
@@ -662,7 +664,7 @@ test("colliding set ids are rejected", () => {
   graph.recordSetOwner("0xalice", "same-group", "0xalice/ops");
   stateBoth(graph, "same-group", "0xalice/ops", "0xbob");
   const soul = membershipSoul("0xalice", "same-group", "0xalice/ops", "0xbob");
-  assert.match(soul, /\/0xalice_ops\//);
+  assert.match(soul, /\/0xalice~6ops\//);
   assert.equal(graph.membership("same-group", "0xalice/ops", "0xbob")?.setId, "0xalice/ops");
 });
 
@@ -996,5 +998,32 @@ test("a corrupt party signature does not drop a valid cancel", () => {
     const result = checkGroupSee(graph, "same-group", "doc", "0xbob", 1);
     assert.equal(result.allowed, false);
     assert.equal(result.reason, "cancelled");
+  }
+});
+
+test("a spaced object id does not see the stored group", () => {
+  const vectors = JSON.parse(
+    readFileSync(new URL("../../vectors/mesh/principals.json", import.meta.url), "utf8"),
+  ).groups;
+  const graph = liveGraph();
+  const presented = { predicate: vectors.predicate, setId: vectors.setId };
+  for (const row of vectors.queries) {
+    const accessor = row.accessor ?? vectors.accessor;
+    const see = checkGroupSee(graph, vectors.predicate, row.object, accessor, 1);
+    assert.equal(see.allowed, row.allowed, row.name);
+    assert.equal(see.reason, row.reason, row.name);
+    if (!row.allowed) {
+      assert.equal(checkSee(graph, row.object, accessor, 1).allowed, false, row.name);
+    }
+    const presentation = checkGroupPresentation(
+      graph,
+      presented,
+      row.object,
+      accessor,
+      livePayload,
+      10,
+    );
+    assert.equal(presentation.allowed, row.allowed, row.name);
+    assert.equal(presentation.reason, row.reason, row.name);
   }
 });

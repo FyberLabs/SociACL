@@ -70,14 +70,42 @@ export const ACCESS_MESSAGE_MAX = 280;
 const FIELD = "access request field is not canonical";
 const HELD_CLAIM_PREFIXES = ["ens:", "unstoppable:", "fc:", "lens:", "rss3:"];
 
+/**
+ * Same injective escape as post.js. `/` is escaped only by aclKey.
+ * @param {string} id
+ * @param {boolean} slash
+ */
+function escapeKey(id, slash) {
+  return String(id).replace(slash ? /[~.#$[\]/]/g : /[~.#$[\]]/g, (ch) => {
+    switch (ch) {
+      case "~":
+        return "~0";
+      case ".":
+        return "~1";
+      case "#":
+        return "~2";
+      case "$":
+        return "~3";
+      case "[":
+        return "~4";
+      case "]":
+        return "~5";
+      case "/":
+        return "~6";
+      default:
+        return ch;
+    }
+  });
+}
+
 /** @param {string} id */
 function encodeKey(id) {
-  return String(id).replace(/[.#$[\]]/g, "_");
+  return escapeKey(id, false);
 }
 
 /** @param {string} id */
 function aclKey(id) {
-  return encodeKey(String(id).trim()).replace(/\//g, "_");
+  return escapeKey(String(id).trim(), true);
 }
 
 /** @param {string} id */
@@ -116,38 +144,17 @@ function isAclSoul(text) {
 }
 
 /**
- * Slash souls trim each segment and drop empty ones. `gun.get`
- * souls use the quoted parts. A corrupt chain is not a soul.
+ * Slash souls trim each segment and drop empty ones.
+ * A string containing `.get(` is not a soul.
  * @param {string} text
  * @returns {string[] | null}
  */
 function soulSegments(text) {
-  if (text.includes(".get(")) return gunGetSegments(text);
+  if (text.includes(".get(")) return null;
   const segments = text
     .split("/")
     .map((part) => part.trim())
     .filter((part) => part !== "");
-  return segments.length === 0 ? null : segments;
-}
-
-/** @param {string} text @returns {string[] | null} */
-function gunGetSegments(text) {
-  /** @type {string[]} */
-  const segments = [];
-  let rest = text.trim();
-  while (rest.includes(".get(")) {
-    rest = rest.slice(rest.indexOf(".get(") + 5);
-    const quote = rest[0];
-    if (quote !== "'" && quote !== '"') return null;
-    rest = rest.slice(1);
-    const end = rest.indexOf(quote);
-    if (end < 0) return null;
-    const part = rest.slice(0, end).trim();
-    if (!part) return null;
-    segments.push(part);
-    rest = rest.slice(end + 1).replace(/^\s+/, "");
-    if (rest.startsWith(")")) rest = rest.slice(1).replace(/^\s+/, "");
-  }
   return segments.length === 0 ? null : segments;
 }
 
@@ -173,7 +180,8 @@ function isHttpUrlLeaf(id) {
  * @param {string} requester
  */
 export function canonicalRequestAccessor(requester) {
-  const raw = requester == null ? "" : String(requester);
+  if (typeof requester !== "string" || requester.includes(".get(")) throw new Error(FIELD);
+  const raw = requester;
   requireUnicodeScalars(raw);
   rejectTrimMismatch(raw);
   const id = canonicalAccessorId(raw);
@@ -183,13 +191,14 @@ export function canonicalRequestAccessor(requester) {
 
 /**
  * Object key for a request id. aclKey, with an aliasable item soul
- * reduced to the raw id's aclKey when that inner contains no `_`.
+ * reduced to the raw id's aclKey. An underscore in that raw id stays.
  * A held claim does not alias. The raw string must be Unicode scalar
  * values. U+0085 and U+FEFF are rejected so this trim matches Rust.
  * @param {string} source
  */
 export function canonicalRequestObject(source) {
-  const raw = String(source ?? "");
+  if (typeof source !== "string" || source.includes(".get(")) throw new Error(FIELD);
+  const raw = source;
   requireUnicodeScalars(raw);
   rejectTrimMismatch(raw);
   const id = raw.trim();
@@ -206,22 +215,46 @@ export function canonicalRequestObject(source) {
 }
 
 /**
+ * Reverse of encodeKey. A bad escape is not an item id.
+ * @param {string} encoded
+ * @returns {string | null}
+ */
+function unescapeEncodeKey(encoded) {
+  let out = "";
+  for (let i = 0; i < encoded.length; i += 1) {
+    if (encoded[i] !== "~") {
+      out += encoded[i];
+      continue;
+    }
+    const decoded = { 0: "~", 1: ".", 2: "#", 3: "$", 4: "[", 5: "]", 6: "/" }[encoded[i + 1]];
+    if (decoded == null) return null;
+    out += decoded;
+    i += 1;
+  }
+  return out;
+}
+
+/**
  * Item soul whose reconstructed form equals the trimmed source.
+ * The inner segment is encodeKey(raw), decoded once before aclKey.
  * A spaced segment such as `s3rch/items/ foo` is not the raw id `foo`.
- * An inner `_` is also what aclKey writes for `/`, so `s3rch/items/a_b`
- * is not the request key of `a/b`.
+ * `s3rch/items/a_b` is the item soul of `a_b` and shares that request
+ * key. It is not the request key of `a/b`.
  * @param {string} id
  * @returns {string | null}
  */
 function reducibleItemInner(id) {
   const segments = soulSegments(id);
   if (!segments || segments.length !== 3 || segments[0] !== "s3rch" || segments[1] !== "items") return null;
-  const inner = segments[2] ?? "";
-  if (!inner || inner.includes("/") || inner.includes("_") || encodeKey(inner) !== inner) return null;
-  if (!mayAliasToItemSoul(inner) || isItemShaped(inner)) return null;
-  const soul = `s3rch/items/${encodeKey(inner)}`;
+  const encoded = segments[2] ?? "";
+  if (!encoded || encoded.includes("/")) return null;
+  const raw = unescapeEncodeKey(encoded);
+  if (raw == null || !raw || raw.includes("/")) return null;
+  if (encodeKey(raw) !== encoded) return null;
+  if (!mayAliasToItemSoul(raw) || isItemShaped(raw)) return null;
+  const soul = `s3rch/items/${encodeKey(raw)}`;
   if (soul !== id.trim()) return null;
-  return inner;
+  return raw;
 }
 
 /** Unpaired UTF-16 is not a Unicode scalar value. @param {string} text */
@@ -392,20 +425,26 @@ export function acceptAccessRequest(request) {
   return { requester, source, scope, message, status, id, signingBytes };
 }
 
+/** @param {unknown} value */
+function snapshotString(value) {
+  if (typeof value !== "string") throw new Error(FIELD);
+  return value;
+}
+
 /**
- * One plain copy of the request fields. Later reads use this copy,
- * so a getter cannot change the source between verification and lookup.
+ * One plain string copy of the request fields. A non-string is rejected,
+ * so a stateful toString cannot change the source after signing.
  * @param {AccessRequestInput} request
  * @returns {AccessRequestInput}
  */
 function captureRequest(request) {
   const signature = request?.signature;
   return {
-    requester: request?.requester,
-    source: request?.source,
-    scope: request?.scope,
-    message: request?.message,
-    status: request?.status,
+    requester: snapshotString(request?.requester),
+    source: snapshotString(request?.source),
+    scope: snapshotString(request?.scope),
+    message: snapshotString(request?.message),
+    status: snapshotString(request?.status),
     signature: signature instanceof Uint8Array ? Uint8Array.from(signature) : signature,
   };
 }
@@ -454,7 +493,7 @@ export function grantApprovedRequest(graph, owner, request, window, members) {
     if (members.predicate !== "same-group" && members.predicate !== "named-circle") throw new Error(FIELD);
     if (!Number.isSafeInteger(members.now) || members.now < 0) throw new Error(FIELD);
     if (typeof graph.checkGroupSee !== "function") return { granted: false, reason: "not-member" };
-    const see = graph.checkGroupSee(members.predicate, captured.source, accepted.requester, members.now);
+    const see = graph.checkGroupSee(members.predicate, record.id, accepted.requester, members.now);
     if (!see || see.allowed !== true) return { granted: false, reason: "not-member" };
   }
   const accessor = accepted.requester;

@@ -3,12 +3,12 @@ use sociacl_core::{
     Relation, Timestamp, VerbError,
 };
 use sociacl_gun::{
-    accept_hint, accept_hint_bytes, add_claim, add_item, add_wallet, apply_see_grant, cancel,
-    check, check_execute, check_see, check_see_grant, client_check, client_elect_from_hint,
-    client_mint_grant, client_remint, elect_from_delegate, elect_from_hint, encode_key,
-    from_gun_node, remint, to_gun_node, FeedItem, FeedSource, FeedTab, GunError, GunNode, GunSoul,
-    GunUserNode, HandoffHint, IdentityClaimKind, IdentitySeeGrant, ItemShape, OffGraphKind,
-    UrlLeaf, HINT_MAGIC, S3RCH_ITEMS, S3RCH_META, S3RCH_ROOT, S3RCH_USERS, SEE,
+    accept_hint, accept_hint_bytes, acl_principal_key, add_claim, add_item, add_wallet,
+    apply_see_grant, cancel, check, check_execute, check_see, check_see_grant, client_check,
+    client_elect_from_hint, client_mint_grant, client_remint, elect_from_delegate, elect_from_hint,
+    encode_key, from_gun_node, remint, to_gun_node, FeedItem, FeedSource, FeedTab, GunError,
+    GunNode, GunSoul, GunUserNode, HandoffHint, IdentityClaimKind, IdentitySeeGrant, ItemShape,
+    OffGraphKind, UrlLeaf, HINT_MAGIC, S3RCH_ITEMS, S3RCH_META, S3RCH_ROOT, S3RCH_USERS, SEE,
 };
 
 fn wallet_plane() -> (
@@ -295,10 +295,9 @@ fn locked_user_soul_is_the_only_user_node() {
     let mut plane = Plane::new();
     let alice = add_wallet(&mut plane, "0xalice");
     assert_eq!(alice.as_str(), "s3rch/users/0xalice");
-    let soul = GunSoul::parse("gun.get('s3rch').get('users').get('0xalice')").unwrap();
-    assert!(soul.is_s3rch_user());
-    assert_eq!(soul.wallet(), Some("0xalice"));
-    assert_eq!(soul.as_node_id(), alice);
+    let chain = "gun.get('s3rch').get('users').get('0xalice')";
+    assert!(GunSoul::parse(chain).is_err());
+    assert_eq!(acl_principal_key(chain), None);
     assert_eq!(GunSoul::s3rch_user("0xalice").segments()[0], S3RCH_ROOT);
     assert_eq!(GunSoul::s3rch_user("0xalice").segments()[1], S3RCH_USERS);
     assert_eq!(GunNode::user("0xalice").as_node_id(), alice);
@@ -362,11 +361,11 @@ fn sample_feed_item() -> FeedItem {
 
 #[test]
 fn encode_key_and_item_soul_match_s3rch() {
-    assert_eq!(encode_key("rss3:act/1#x"), "rss3:act/1_x");
-    assert_eq!(encode_key("a.b#$[c]"), "a_b___c_");
+    assert_eq!(encode_key("rss3:act/1#x"), "rss3:act/1~2x");
+    assert_eq!(encode_key("a.b#$[c]"), "a~1b~2~3~4c~5");
     let soul = GunSoul::s3rch_item("rss3:act/1#x");
     assert!(soul.is_s3rch_item());
-    assert_eq!(soul.as_node_id().as_str(), "s3rch/items/rss3:act/1_x");
+    assert_eq!(soul.as_node_id().as_str(), "s3rch/items/rss3:act/1~2x");
     assert_eq!(
         GunSoul::s3rch_item("rss3:act/1#x").segments()[1],
         S3RCH_ITEMS
@@ -392,7 +391,7 @@ fn feed_item_checks_the_same_as_a_claim() {
     assert_eq!(back.tags, vec!["social", "farcaster"]);
 
     let object = add_item(&mut plane, &item, &alice).unwrap();
-    assert_eq!(object.as_str(), "s3rch/items/rss3:act/1_x");
+    assert_eq!(object.as_str(), "s3rch/items/rss3:act/1~2x");
     plane
         .set_object_property(&object, "predicate", PredicateId::DELEGATE)
         .unwrap();

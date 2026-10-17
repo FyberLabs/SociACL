@@ -57,12 +57,15 @@ function signer(name) {
 function seeResult(graph, object, accessor, now) {
   const owner = graph.ownerOf(object);
   if (!owner) return { allowed: false, reason: "missing" };
-  if (canonicalAccessorId(owner) === canonicalAccessorId(accessor)) {
+  const ownerKey = canonicalAccessorId(owner);
+  const accessorKey = canonicalAccessorId(accessor);
+  if (ownerKey != null && ownerKey === accessorKey) {
     return { allowed: true, reason: "owner" };
   }
   const live = graph.seeGrants(object).some((grant) => {
     return (
-      canonicalAccessorId(grant.accessor) === canonicalAccessorId(accessor) &&
+      canonicalAccessorId(grant.accessor) != null &&
+      canonicalAccessorId(grant.accessor) === accessorKey &&
       grant.stated !== 0 &&
       now >= grant.from &&
       now < grant.until
@@ -244,12 +247,18 @@ test("a surrogate pair is one scalar and an unpaired surrogate is rejected", () 
   }
 });
 
-test("a slash id does not share a request with the flattened item soul", () => {
+test("a slash id does not share a request with the underscore item soul", () => {
   const slash = accessRequestId("0xbob", "a/b");
   const flat = accessRequestId("0xbob", "a_b");
   const soul = accessRequestId("0xbob", "s3rch/items/a_b");
-  assert.equal(slash, flat);
+  const dotted = accessRequestId("0xbob", "room.alpha");
+  const under = accessRequestId("0xbob", "room_alpha");
+  const underSoul = accessRequestId("0xbob", "s3rch/items/room_alpha");
+  assert.notEqual(slash, flat);
+  assert.equal(flat, soul);
   assert.notEqual(slash, soul);
+  assert.equal(under, underSoul);
+  assert.notEqual(under, dotted);
   const graph = new MemoryGroupGraph();
   graph.putObject("a/b", "0xalice");
   graph.putObject("s3rch/items/a_b", "0xalice");
@@ -513,4 +522,131 @@ test("owner client writes rows and a request does not", () => {
       assertNoRows(graph, row);
     }
   }
+});
+
+test("an encoded item soul shares the raw object's request id", () => {
+  const raw = accessRequestId("0xbob", "room.alpha");
+  const soul = accessRequestId("0xbob", "s3rch/items/room~1alpha");
+  assert.equal(soul, raw);
+  assert.notEqual(aclKey(aclKey("room.alpha")), aclKey("room.alpha"));
+});
+
+test("a dotted principal round-trips through enroll and approval", () => {
+  const graph = new MemoryGroupGraph();
+  graph.putObject("room:alpha", "0xalice");
+  const bob = signer("bob.name");
+  graph.enrollSigner("bob.name", bob.publicKey);
+  const canonical = canonicalRequestAccessor("bob.name");
+  assert.equal(canonical, "bob.name");
+  assert.ok(graph.enrolledKey(canonical));
+  const request = {
+    requester: "bob.name",
+    source: "room:alpha",
+    scope: "read",
+    message: "",
+    status: "pending",
+  };
+  assert.equal(accessRequestId(canonical, request.source), accessRequestId(request.requester, request.source));
+  request.signature = signAccessRequest(bob.privateKey, request);
+  const granted = grantApprovedRequest(graph, "0xalice", request, { from: 0, until: 80 });
+  assert.equal(granted.granted, true);
+  assert.equal(granted.see.grant.accessor, "bob.name");
+  assert.equal(graph.seeGrant("room:alpha", "bob.name").grant.stated, 1);
+  assert.equal(graph.seeGrant("room:alpha", canonical).grant.stated, 1);
+});
+
+test("a gun chain does not canonicalize to the inner wallet", () => {
+  const spoof = "0xattacker.get('s3rch').get('users').get('0xvictim')";
+  assert.notEqual(canonicalAccessorId(spoof), "0xvictim");
+  assert.throws(() => canonicalRequestAccessor(spoof), /access request field is not canonical/);
+});
+
+test("a stateful toString source is rejected before any grant", () => {
+  const graph = new MemoryGroupGraph();
+  graph.putObject("doc-a", "0xalice");
+  graph.putObject("doc-b", "0xalice");
+  let calls = 0;
+  const source = {
+    toString() {
+      calls += 1;
+      return calls < 3 ? "doc-a" : "doc-b";
+    },
+  };
+  const bob = signer("0xbob");
+  graph.enrollSigner("0xbob", bob.publicKey);
+  assert.throws(
+    () =>
+      grantApprovedRequest(
+        graph,
+        "0xalice",
+        { requester: "0xbob", source, scope: "read", message: "", status: "pending" },
+        { from: 0, until: 80 },
+      ),
+    /access request field is not canonical/,
+  );
+  assert.equal(graph.seeGrant("doc-a", "0xbob"), undefined);
+  assert.equal(graph.seeGrant("doc-b", "0xbob"), undefined);
+});
+
+test("folded see rows at the ham ceiling do not grow a post", () => {
+  const graph = new MemoryGroupGraph();
+  const row = (object, hamState) => ({
+    object,
+    accessor: "0xbob",
+    from: 0,
+    until: 80,
+    stated: 1,
+    hamState,
+    owner: "0xalice",
+  });
+  graph.grants.set("low", row("room", 1));
+  graph.grants.set("high", row("s3rch/items/room", Number.MAX_SAFE_INTEGER));
+  graph.putObject("room", "0xalice");
+  const bob = signer("0xbob");
+  graph.enrollSigner("0xbob", bob.publicKey);
+  const request = {
+    requester: "0xbob",
+    source: "room",
+    scope: "read+post",
+    message: "",
+    status: "pending",
+    signature: undefined,
+  };
+  request.signature = signAccessRequest(bob.privateKey, request);
+  assert.throws(
+    () => grantApprovedRequest(graph, "0xalice", request, { from: 0, until: 80 }),
+    /see grant cannot advance/,
+  );
+  assert.equal(graph.postGrant("room", "0xbob"), undefined);
+  assert.equal(graph.seeGrant("room", "0xbob").hamState, Number.MAX_SAFE_INTEGER);
+});
+
+test("members auto-approve uses the stored object id", () => {
+  const graph = new MemoryGroupGraph();
+  graph.putObject("room", "0xalice");
+  const alice = signer("0xalice");
+  const bob = signer("0xbob");
+  graph.enrollSigner("0xalice", alice.publicKey);
+  graph.enrollSigner("0xbob", bob.publicKey);
+  graph.recordSetOwner("0xalice", "same-group", "0xalice/ops");
+  graph.nameObjectSet("0xalice", "room", "same-group", "0xalice/ops", alice.privateKey);
+  graph.stateMembership("0xbob", "same-group", "0xalice/ops", "0xbob", bob.privateKey);
+  graph.stateMembership("0xalice", "same-group", "0xalice/ops", "0xbob", alice.privateKey);
+  const request = {
+    requester: "0xbob",
+    source: "s3rch/items/room",
+    scope: "read",
+    message: "",
+    status: "pending",
+  };
+  request.signature = signAccessRequest(bob.privateKey, request);
+  const granted = grantApprovedRequest(
+    graph,
+    "0xalice",
+    request,
+    { from: 0, until: 80 },
+    { predicate: "same-group", now: 10 },
+  );
+  assert.equal(granted.granted, true);
+  assert.equal(granted.see.grant.object, "room");
 });

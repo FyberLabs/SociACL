@@ -1,0 +1,124 @@
+{
+  "note": "Principal parse and object-id cases shared by TypeScript and Rust. A failed principal is null, never an empty string. An object id with surrounding whitespace is rejected and does not replace an owner. The groups section is a live same-group edge on doc; a spaced query must not trim into that object.",
+  "principals": [
+    {"id": ".", "canonical": null},
+    {"id": "..", "canonical": null},
+    {"id": "...", "canonical": null},
+    {"id": "bob.name", "canonical": "bob.name"},
+    {"id": "0x bob", "canonical": null},
+    {"id": "0xbob/x", "canonical": null},
+    {"id": "x~1get('s3rch')", "canonical": null},
+    {"id": "../meta", "canonical": null},
+    {"id": "a\u0000b", "canonical": null},
+    {"id": "\uFEFF0xvictim", "canonical": null},
+    {"id": "0xvictim\uFEFF", "canonical": null},
+    {"id": "\u00850xvictim", "canonical": null},
+    {"id": "s3rch/users/0xbob", "canonical": "0xbob"},
+    {"id": "s3rch/users/ 0xbob ", "canonical": "0xbob"},
+    {"repeat": "a", "count": 256, "canonical": "repeat"},
+    {"repeat": "a", "count": 257, "canonical": null}
+  ],
+  "grants": [
+    {"owner": "0xalice", "object": "doc", "accessor": "0xbob/x", "soul": null},
+    {"owner": "0xalice", "object": "doc", "accessor": "x~1get('s3rch')", "soul": null},
+    {"owner": "0xalice", "object": "doc", "accessor": "../meta", "soul": null},
+    {"owner": "0xalice", "object": "doc", "accessor": "...", "soul": null},
+    {"owner": "0xalice", "object": "doc", "accessor": "0xbob", "soul": "s3rch/acl/0xalice/doc/0xbob"}
+  ],
+  "objects": [
+    {
+      "name": "feff-owner",
+      "stored": "doc",
+      "owner": "0xalice",
+      "query": "\uFEFFdoc",
+      "accessor": "0xalice",
+      "allowed": false,
+      "ownerAfter": "0xalice"
+    },
+    {
+      "name": "next-line",
+      "stored": "doc",
+      "owner": "0xalice",
+      "query": "\u0085doc",
+      "accessor": "0xalice",
+      "allowed": false,
+      "ownerAfter": "0xalice"
+    },
+    {
+      "name": "nbsp-put",
+      "stored": "doc",
+      "owner": "0xalice",
+      "put": "\u00A0doc",
+      "putOwner": "0xmallory",
+      "hasPutId": false,
+      "query": "doc",
+      "accessor": "0xalice",
+      "allowed": true,
+      "ownerAfter": "0xalice"
+    },
+    {
+      "name": "tab-put",
+      "stored": "doc",
+      "owner": "0xalice",
+      "put": "\tdoc",
+      "putOwner": "0xmallory",
+      "hasPutId": false,
+      "ownerAfter": "0xalice"
+    },
+    {
+      "name": "space-put",
+      "stored": "doc",
+      "owner": "0xalice",
+      "put": " doc ",
+      "putOwner": "0xmallory",
+      "hasPutId": false,
+      "ownerAfter": "0xalice"
+    },
+    {
+      "name": "same-id",
+      "stored": "doc",
+      "owner": "0xalice",
+      "put": "doc",
+      "putOwner": "0xcarol",
+      "query": "doc",
+      "accessor": "0xcarol",
+      "allowed": true,
+      "ownerAfter": "0xcarol"
+    },
+    {
+      "name": "item-soul",
+      "stored": "room:alpha",
+      "owner": "0xalice",
+      "put": "s3rch/items/room:alpha",
+      "putOwner": "0xmallory",
+      "hasPutId": true,
+      "query": "room:alpha",
+      "accessor": "0xalice",
+      "allowed": true,
+      "ownerAfter": "0xalice"
+    }
+  ],
+  "nullKeys": [
+    {"secret": "secret", "other": "other", "accessor": "/"},
+    {"secret": "secret", "other": "other", "accessor": "0xbob/x"},
+    {"secret": "secret", "other": "other", "accessor": "../meta"}
+  ],
+  "groups": {
+    "stored": "doc",
+    "predicate": "same-group",
+    "setId": "0xalice/ops",
+    "accessor": "0xbob",
+    "queries": [
+      {"name": "nbsp", "object": "\u00a0doc", "allowed": false, "reason": "missing"},
+      {"name": "leading-space", "object": " doc", "allowed": false, "reason": "missing"},
+      {"name": "ideographic-space", "object": "\u3000doc", "allowed": false, "reason": "missing"},
+      {"name": "line-separator", "object": "doc\u2028", "allowed": false, "reason": "missing"},
+      {"name": "tab", "object": "\tdoc", "allowed": false, "reason": "missing"},
+      {"name": "spaces", "object": " doc ", "allowed": false, "reason": "missing"},
+      {"name": "next-line", "object": "\u0085doc", "allowed": false, "reason": "missing"},
+      {"name": "bom", "object": "\ufeffdoc", "allowed": false, "reason": "missing"},
+      {"name": "exact", "object": "doc", "allowed": true, "reason": "same-group"},
+      {"name": "accessor-ascii-space", "object": "doc", "accessor": " 0xbob ", "allowed": true, "reason": "same-group"}
+    ]
+  }
+}

@@ -20,7 +20,9 @@ use std::cmp::Ordering;
 use sociacl_core::{NodeId, Timestamp};
 
 use crate::mesh::{accessor_names, object_names};
-use crate::soul::{acl_key, acl_principal_key, canonical_accessor_id, S3RCH_ACL, S3RCH_ROOT};
+use crate::soul::{
+    acl_key, acl_principal_key, ascii_trim, object_id_rejected, S3RCH_ACL, S3RCH_ROOT,
+};
 use crate::{
     GunError, MeshCheckResult, MeshSeeGraph, MESH_REASON_CANCELLED, MESH_REASON_MISSING,
     MESH_REASON_OWNER,
@@ -95,28 +97,41 @@ pub struct GunPostEdge {
 }
 
 impl GunPostEdge {
-    pub fn new(owner: impl Into<String>, grant: MeshPostGrant, ham_state: u64) -> Self {
+    pub fn new(
+        owner: impl Into<String>,
+        grant: MeshPostGrant,
+        ham_state: u64,
+    ) -> Result<Self, GunError> {
         let owner = owner.into();
-        let soul = post_soul(&owner, &grant.object, &grant.accessor)
-            .as_str()
-            .to_string();
-        Self {
-            soul,
+        let Some(soul) = post_soul(&owner, &grant.object, &grant.accessor) else {
+            return Err(GunError::EmptyPrincipal);
+        };
+        Ok(Self {
+            soul: soul.as_str().to_string(),
             owner,
             grant,
             ham_state,
-        }
+        })
     }
 
     /// Soul rebuilt from owner, object, and accessor. A peer map key
     /// or a copied soul does not choose where the grant lands.
     pub fn canonical(self) -> Self {
-        Self::new(self.owner, self.grant, self.ham_state)
+        Self::new(self.owner.clone(), self.grant.clone(), self.ham_state).unwrap_or(self)
     }
 
     /// Higher HAM state wins. At the same state a cancellation wins,
     /// then the narrower window, then the smaller signing bytes.
+    /// A row whose owner or accessor does not parse is dropped.
     pub fn ham_merge(self, incoming: Self) -> Self {
+        let incoming_ok = post_edge_parsable(&incoming);
+        let local_ok = post_edge_parsable(&self);
+        if !incoming_ok {
+            return self;
+        }
+        if !local_ok {
+            return incoming.canonical();
+        }
         let local = self.canonical();
         let incoming = incoming.canonical();
         if incoming.ham_state > local.ham_state {
@@ -138,13 +153,14 @@ pub fn post_soul(
     owner: impl AsRef<str>,
     object: impl AsRef<str>,
     accessor: impl AsRef<str>,
-) -> NodeId {
-    NodeId::new(format!(
-        "{S3RCH_ROOT}/{S3RCH_ACL}/{}/{POST_GRANT_SCOPE}/{}/{}",
-        acl_principal_key(owner.as_ref()),
+) -> Option<NodeId> {
+    let owner = acl_principal_key(owner.as_ref())?;
+    let accessor = acl_principal_key(accessor.as_ref())?;
+    Some(NodeId::new(format!(
+        "{S3RCH_ROOT}/{S3RCH_ACL}/{owner}/{POST_GRANT_SCOPE}/{}/{}",
         acl_key(object.as_ref()),
-        acl_principal_key(accessor.as_ref()),
-    ))
+        accessor,
+    )))
 }
 
 /// Length-prefixed UTF-8 fields an owner signature can cover.
@@ -160,7 +176,7 @@ pub fn post_grant_signing_bytes(
     let fields = [
         POST_GRANT_DOMAIN.to_string(),
         acl_key(&grant.object),
-        acl_principal_key(&grant.accessor),
+        acl_principal_key(&grant.accessor).ok_or(GunError::PostGrantField)?,
         canonical_decimal(u64::from(grant.stated))?,
         canonical_decimal(grant.from.0)?,
         canonical_decimal(grant.until.0)?,
@@ -200,7 +216,12 @@ fn equal_ham_post_order(left: &GunPostEdge, right: &GunPostEdge) -> Ordering {
     if let Some(order) = narrower_window(&left.grant, &right.grant) {
         return order;
     }
-    canonical_post_bytes(left).cmp(&canonical_post_bytes(right))
+    match (canonical_post_bytes(left), canonical_post_bytes(right)) {
+        (Some(left_bytes), Some(right_bytes)) => left_bytes.cmp(&right_bytes),
+        (Some(_), None) => Ordering::Less,
+        (None, Some(_)) => Ordering::Greater,
+        (None, None) => Ordering::Equal,
+    }
 }
 
 fn narrower_window(left: &MeshPostGrant, right: &MeshPostGrant) -> Option<Ordering> {
@@ -217,21 +238,24 @@ fn narrower_window(left: &MeshPostGrant, right: &MeshPostGrant) -> Option<Orderi
     }
 }
 
-fn canonical_post_bytes(edge: &GunPostEdge) -> Vec<u8> {
+fn canonical_post_bytes(edge: &GunPostEdge) -> Option<Vec<u8>> {
     post_grant_signing_bytes(&edge.grant, edge.ham_state)
-        .unwrap_or_else(|_| fallback_post_bytes(edge))
+        .ok()
+        .or_else(|| fallback_post_bytes(edge))
 }
 
-fn fallback_post_bytes(edge: &GunPostEdge) -> Vec<u8> {
+fn fallback_post_bytes(edge: &GunPostEdge) -> Option<Vec<u8>> {
+    let owner = acl_principal_key(&edge.owner)?;
+    let accessor = acl_principal_key(&edge.grant.accessor)?;
     let mut buf = b"sociacl-post-grant-fallback-v1\0".to_vec();
-    push_str(&mut buf, &acl_principal_key(&edge.owner));
+    push_str(&mut buf, &owner);
     push_str(&mut buf, &acl_key(&edge.grant.object));
-    push_str(&mut buf, &acl_principal_key(&edge.grant.accessor));
+    push_str(&mut buf, &accessor);
     buf.extend_from_slice(&edge.grant.from.0.to_be_bytes());
     buf.extend_from_slice(&edge.grant.until.0.to_be_bytes());
     buf.push(edge.grant.stated);
     buf.extend_from_slice(&edge.ham_state.to_be_bytes());
-    buf
+    Some(buf)
 }
 
 fn push_str(buf: &mut Vec<u8>, value: &str) {
@@ -239,6 +263,10 @@ fn push_str(buf: &mut Vec<u8>, value: &str) {
     let len = u32::try_from(bytes.len()).unwrap_or(u32::MAX);
     buf.extend_from_slice(&len.to_be_bytes());
     buf.extend_from_slice(&bytes[..usize::try_from(len).unwrap_or(bytes.len())]);
+}
+
+fn post_edge_parsable(edge: &GunPostEdge) -> bool {
+    post_soul(&edge.owner, &edge.grant.object, &edge.grant.accessor).is_some()
 }
 
 fn post_row_in_range(edge: &GunPostEdge) -> bool {
@@ -250,7 +278,7 @@ fn post_row_in_range(edge: &GunPostEdge) -> bool {
 fn same_post_row(edge: &GunPostEdge, object: &str, accessor: &str, owner: &str) -> bool {
     edge.grant.names_object(object)
         && edge.grant.names_accessor(accessor)
-        && canonical_accessor_id(&edge.owner) == canonical_accessor_id(owner)
+        && accessor_names(&edge.owner, owner)
 }
 
 impl MeshSeeGraph {
@@ -262,7 +290,7 @@ impl MeshSeeGraph {
                 post_row_in_range(edge)
                     && edge.grant.names_object(object)
                     && edge.grant.is_stated()
-                    && canonical_accessor_id(&edge.owner) == canonical_accessor_id(owner)
+                    && accessor_names(&edge.owner, owner)
             })
             .map(|edge| &edge.grant)
             .collect()
@@ -281,7 +309,12 @@ impl MeshSeeGraph {
 
     /// In-range rows that name this object, accessor, and owner, folded
     /// with the post HAM rule. A raw id and its item soul count once.
-    fn folded_post(&self, object: &str, accessor: &str, owner: &str) -> Option<GunPostEdge> {
+    pub(crate) fn folded_post(
+        &self,
+        object: &str,
+        accessor: &str,
+        owner: &str,
+    ) -> Option<GunPostEdge> {
         self.posts
             .values()
             .filter(|edge| post_row_in_range(edge) && same_post_row(edge, object, accessor, owner))
@@ -295,12 +328,12 @@ impl MeshSeeGraph {
         owner: impl AsRef<str>,
         grant: MeshPostGrant,
     ) -> Result<(), GunError> {
-        let owner = owner.as_ref().trim();
+        let owner = ascii_trim(owner.as_ref());
         let (stored_id, object_owner) = self
             .object_record(&grant.object)
             .map(|(id, object_owner)| (id.to_string(), object_owner.to_string()))
             .ok_or(GunError::ObjectNotInGraph)?;
-        if canonical_accessor_id(&object_owner) != canonical_accessor_id(owner) {
+        if !accessor_names(&object_owner, owner) {
             return Err(GunError::AclOwnerOnly);
         }
         let mut grant = grant;
@@ -316,7 +349,7 @@ impl MeshSeeGraph {
         if ham_state > JS_SAFE_INTEGER_MAX {
             return Err(GunError::PostGrantField);
         }
-        self.merge_post_edge(GunPostEdge::new(owner, grant, ham_state));
+        self.merge_post_edge(GunPostEdge::new(owner, grant, ham_state)?);
         Ok(())
     }
 
@@ -327,14 +360,17 @@ impl MeshSeeGraph {
         accessor: impl AsRef<str>,
         object: impl AsRef<str>,
     ) -> Result<(), GunError> {
-        let owner = owner.as_ref().trim();
-        let object = object.as_ref().trim();
-        let accessor = accessor.as_ref().trim();
+        let owner = ascii_trim(owner.as_ref());
+        let object = object.as_ref();
+        if object_id_rejected(object) {
+            return Err(GunError::ObjectNotInGraph);
+        }
+        let accessor = ascii_trim(accessor.as_ref());
         let (stored_id, object_owner) = self
             .object_record(object)
             .map(|(id, object_owner)| (id.to_string(), object_owner.to_string()))
             .ok_or(GunError::ObjectNotInGraph)?;
-        if canonical_accessor_id(&object_owner) != canonical_accessor_id(owner) {
+        if !accessor_names(&object_owner, owner) {
             return Err(GunError::AclOwnerOnly);
         }
         let existing = self.folded_post(&stored_id, accessor, owner);
@@ -361,7 +397,7 @@ impl MeshSeeGraph {
             }
             None => 1,
         };
-        self.merge_post_edge(GunPostEdge::new(owner, grant, ham_state));
+        self.merge_post_edge(GunPostEdge::new(owner, grant, ham_state)?);
         Ok(())
     }
 
@@ -373,7 +409,7 @@ impl MeshSeeGraph {
     /// must be that object's current owner. A row that arrives earlier
     /// is not retained.
     pub fn merge_post_edge(&mut self, incoming: GunPostEdge) {
-        if !post_row_in_range(&incoming) {
+        if !post_row_in_range(&incoming) || !post_edge_parsable(&incoming) {
             return;
         }
         let Some((stored_id, object_owner)) = self
@@ -382,7 +418,7 @@ impl MeshSeeGraph {
         else {
             return;
         };
-        if canonical_accessor_id(&object_owner) != canonical_accessor_id(&incoming.owner) {
+        if !accessor_names(&object_owner, &incoming.owner) {
             return;
         }
         let mut incoming = incoming.canonical();
@@ -443,12 +479,12 @@ impl MeshSeeGraph {
             return see;
         }
         let object = self.canonical_object_id(object.as_ref());
-        let accessor = accessor.as_ref().trim();
+        let accessor = ascii_trim(accessor.as_ref());
         let owner = self.owner_of(&object).unwrap_or("");
         if let Some(edge) = self.post_edge(&object, accessor) {
             let names = edge.grant.names_object(&object)
                 && edge.grant.names_accessor(accessor)
-                && canonical_accessor_id(&edge.owner) == canonical_accessor_id(owner);
+                && accessor_names(&edge.owner, owner);
             if names && edge.grant.live_at(now) {
                 return MeshCheckResult {
                     allowed: true,

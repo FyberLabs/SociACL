@@ -56,9 +56,9 @@ def test_url_leaf_is_not_a_node():
 
 
 def test_feed_item_checks_the_same_as_a_claim():
-    assert encode_key("rss3:act/1#x") == "rss3:act/1_x"
+    assert encode_key("rss3:act/1#x") == "rss3:act/1~2x"
     object_id = item_soul("rss3:act/1#x")
-    assert object_id == "s3rch/items/rss3:act/1_x"
+    assert object_id == "s3rch/items/rss3:act/1~2x"
     plane = Plane()
     alice = user_soul("0xalice")
     bob = user_soul("0xbob")
@@ -82,8 +82,17 @@ def test_feed_item_checks_the_same_as_a_claim():
     plane.close()
 
 
+def test_encode_key_fits_the_expanded_form():
+    dotted = "." * 128
+    encoded = encode_key(dotted)
+    assert encoded == "~1" * 128
+    assert len(encoded) == 256
+    assert item_soul(dotted) == "s3rch/items/" + encoded
+
+
 if __name__ == "__main__":
     test_hint_is_not_a_grant_dest_check_is()
     test_url_leaf_is_not_a_node()
     test_feed_item_checks_the_same_as_a_claim()
+    test_encode_key_fits_the_expanded_form()
     print("ok")

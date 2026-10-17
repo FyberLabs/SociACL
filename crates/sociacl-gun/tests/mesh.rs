@@ -41,19 +41,24 @@ fn slhp(channel: AttestationChannel, att: &[u8], token: Option<&str>) -> Vec<u8>
 
 #[test]
 fn dest_acl_soul_does_not_fork_items_or_users() {
-    assert_eq!(acl_key("rss3:act/1#x"), "rss3:act_1_x");
+    assert_eq!(acl_key("rss3:act/1#x"), "rss3:act~61~2x");
     assert_eq!(
         acl_key("s3rch/items/rss3:act/1_x"),
-        "s3rch_items_rss3:act_1_x"
+        "s3rch~6items~6rss3:act~61_x"
     );
-    assert_eq!(acl_principal_key("0xalice"), "0xalice");
-    assert_eq!(acl_principal_key("s3rch/users/0xalice"), "0xalice");
+    assert_eq!(acl_principal_key("0xalice").as_deref(), Some("0xalice"));
     assert_eq!(
-        grant_soul("0xalice", "rss3:act/1#x", "0xbob").as_str(),
-        "s3rch/acl/0xalice/rss3:act_1_x/0xbob"
+        acl_principal_key("s3rch/users/0xalice").as_deref(),
+        Some("0xalice")
     );
     assert_eq!(
-        acl_soul("s3rch/users/0xalice").as_str(),
+        grant_soul("0xalice", "rss3:act/1#x", "0xbob")
+            .unwrap()
+            .as_str(),
+        "s3rch/acl/0xalice/rss3:act~61~2x/0xbob"
+    );
+    assert_eq!(
+        acl_soul("s3rch/users/0xalice").unwrap().as_str(),
         "s3rch/acl/0xalice"
     );
 
@@ -68,13 +73,13 @@ fn dest_acl_soul_does_not_fork_items_or_users() {
     assert!(!soul.is_s3rch_user());
     assert_eq!(
         GunSoul::s3rch_item("rss3:act/1#x").as_node_id().as_str(),
-        "s3rch/items/rss3:act/1_x"
+        "s3rch/items/rss3:act/1~2x"
     );
     assert_eq!(
         GunSoul::s3rch_user("0xalice").as_node_id().as_str(),
         "s3rch/users/0xalice"
     );
-    assert_eq!(encode_key("rss3:act/1#x"), "rss3:act/1_x");
+    assert_eq!(encode_key("rss3:act/1#x"), "rss3:act/1~2x");
 }
 
 #[test]
@@ -110,6 +115,7 @@ fn held_claim_id_is_the_claim_id_itself() {
         );
         assert_eq!(
             grant_soul("0xalice", claim, "0xbob")
+                .unwrap()
                 .as_str()
                 .matches('/')
                 .count(),
@@ -483,7 +489,8 @@ fn meta_acl_and_url_fail_closed() {
 
 #[test]
 fn ham_merge_higher_state_wins() {
-    let older = GunAclEdge::new("0xalice", MeshSeeGrant::live("claim-1", "0xbob", 0, 80), 1);
+    let older =
+        GunAclEdge::new("0xalice", MeshSeeGrant::live("claim-1", "0xbob", 0, 80), 1).unwrap();
     let newer = GunAclEdge::new(
         "0xalice",
         MeshSeeGrant {
@@ -494,7 +501,8 @@ fn ham_merge_higher_state_wins() {
             stated: 0,
         },
         2,
-    );
+    )
+    .unwrap();
     let merged = older.ham_merge(newer);
     assert_eq!(merged.ham_state, 2);
     assert_eq!(merged.grant.stated, 0);
@@ -536,7 +544,8 @@ fn equal_ham_see_grants_keep_the_narrower_window() {
 
 #[test]
 fn merge_edge_uses_the_grant_identity_not_the_soul() {
-    let mut edge = GunAclEdge::new("0xalice", MeshSeeGrant::live("doc", "0xbob", 0, 80), 1);
+    let mut edge =
+        GunAclEdge::new("0xalice", MeshSeeGrant::live("doc", "0xbob", 0, 80), 1).unwrap();
     edge.soul = GunSoul::s3rch_acl_grant("0xalice", "doc", "0xcarol");
     let mut graph = MeshSeeGraph::new();
     graph.put_object("doc", "0xalice");
@@ -632,7 +641,7 @@ fn mesh_grant_on_plane_feed_item_matches_claim() {
     )
     .unwrap();
     assert!(check_see(&plane, &object, &bob, None).unwrap().allowed);
-    assert_eq!(object.as_str(), "s3rch/items/rss3:act/1_x");
+    assert_eq!(object.as_str(), "s3rch/items/rss3:act/1~2x");
 }
 
 #[test]

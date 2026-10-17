@@ -11,6 +11,35 @@ import type {
 import { sha256Hex, wrapReceiptBytes, wrapReceiptSha256 } from "../contract/canonical.ts";
 import { applyProtocolMigration } from "../contract/migration.ts";
 
+function plainGrant(object: string, accessor: string, soul: string) {
+  return applyProtocolMigration({
+    migration: {
+      object,
+      fromVersion: 1,
+      toVersion: 2,
+      versionGate: 2,
+      readers: [],
+      rewrapped: [],
+    },
+    owner: "0xalice",
+    caller: "0xalice",
+    now: 10,
+    storage: "public-plain",
+    grants: [
+      {
+        soul,
+        owner: "0xalice",
+        hamState: 1,
+        grant: { object, accessor, from: 0, until: 80, stated: 1 },
+      },
+    ],
+    payloads: [],
+    receipts: [],
+    readerVersions: [],
+    soulHamState: 1,
+  });
+}
+
 type GrantJson = {
   soul?: string;
   owner: string;
@@ -152,4 +181,29 @@ test("wrap receipt bytes match the canonical vector", () => {
   const bytes = wrapReceiptBytes(object, accessor, version, revisionId, entryId);
   assert.equal(sha256Hex(bytes), row.sha256);
   assert.equal(wrapReceiptSha256(object, accessor, version, revisionId, entryId), row.sha256);
+});
+
+test("grant souls use the injective key and do not parse a gun chain", () => {
+  assert.equal(plainGrant("room.alpha", "0xbob", "s3rch/acl/0xalice/room~1alpha/0xbob").skippedPublic, true);
+  assert.throws(
+    () => plainGrant("room.alpha", "0xbob", "s3rch/acl/0xalice/room_alpha/0xbob"),
+    /migration rejected/,
+  );
+  assert.equal(plainGrant("room_alpha", "0xbob", "s3rch/acl/0xalice/room_alpha/0xbob").skippedPublic, true);
+  assert.equal(plainGrant("room/alpha", "0xbob", "s3rch/acl/0xalice/room~6alpha/0xbob").skippedPublic, true);
+  const chain = "0xattacker.get('s3rch').get('users').get('0xvictim')";
+  assert.throws(() => plainGrant("room", chain, "s3rch/acl/0xalice/room/0xvictim"), /migration rejected/);
+  for (const accessor of ["0xbob/x", "x~1get('s3rch')", "../meta", "..."]) {
+    assert.throws(() => plainGrant("doc", accessor, ""), /migration rejected/, accessor);
+    assert.throws(
+      () => plainGrant("doc", accessor, `s3rch/acl/0xalice/doc/${accessor}`),
+      /migration rejected/,
+      accessor,
+    );
+  }
+  assert.equal(plainGrant("item-1", "0xbob", "s3rch/acl/0xalice/item-1/0xbob").skippedPublic, true);
+  assert.equal(
+    plainGrant("item-1", "s3rch/users/0xbob", "s3rch/acl/0xalice/item-1/0xbob").skippedPublic,
+    true,
+  );
 });

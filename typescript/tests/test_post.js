@@ -249,6 +249,26 @@ test("a noncanonical post row is dropped and does not abort merge", () => {
   assert.equal(empty.postGrant("room:alpha", "0xbob"), undefined);
 });
 
+test("preferPost drops a rejected accessor instead of throwing", () => {
+  const local = {
+    soul: "s3rch/acl/0xalice/post/doc/0xbob",
+    owner: "0xalice",
+    hamState: 1,
+    grant: { object: "doc", accessor: "0xbob", from: 0, until: 80, stated: 1 },
+  };
+  const rejected = {
+    soul: "",
+    owner: "0xalice",
+    hamState: 1,
+    grant: { object: "doc", accessor: "/", from: 0, until: 80, stated: 1 },
+  };
+  assert.equal(postRowEncodable(rejected), false);
+  assert.equal(postRowEncodable(local), true);
+  assert.equal(preferPost(local, rejected).grant.accessor, "0xbob");
+  assert.equal(preferPost(rejected, local).grant.accessor, "0xbob");
+  assert.doesNotThrow(() => preferPost(rejected, rejected));
+});
+
 test("light acl: post requires see, and cancel is the next check", () => {
   const acl = new MemorySeeAcl();
   const object = "room:alpha";

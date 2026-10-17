@@ -15,17 +15,20 @@ export {
   postSoul,
 } from "./post.js";
 
-import { canonicalAccessorId, nextPostHam, postGrantKey, postRowEncodable, postSoul, sameObjectId } from "./post.js";
+import { canonicalAccessorId, nextPostHam, objectIdRejected, postGrantKey, postRowEncodable, postSoul, sameObjectId } from "./post.js";
 
 /** @param {string | null | undefined} left @param {string | null | undefined} right */
 function samePrincipal(left, right) {
   if (left == null || right == null) return false;
-  return canonicalAccessorId(left) === canonicalAccessorId(right);
+  const leftKey = canonicalAccessorId(left);
+  const rightKey = canonicalAccessorId(right);
+  return leftKey != null && leftKey === rightKey;
 }
 
 /** @param {Map<string, string>} objects @param {string} object */
 function canonicalStoredObject(objects, object) {
-  const text = String(object ?? "").trim();
+  const text = String(object ?? "");
+  if (objectIdRejected(text)) return text;
   if (objects.has(text)) return text;
   for (const id of objects.keys()) {
     if (sameObjectId(id, text)) return id;
@@ -35,13 +38,41 @@ function canonicalStoredObject(objects, object) {
 
 /** @param {{ claimId?: string, object?: string }} grant @param {string} object */
 function grantNamesObject(grant, object) {
-  const id = String(grant.claimId ?? grant.object ?? "").trim();
-  if (!id) return false;
+  const id = String(grant.claimId ?? grant.object ?? "");
+  if (objectIdRejected(id) || objectIdRejected(object)) return false;
   return sameObjectId(id, object);
 }
 
+/**
+ * Injective path escape. `~` is the escape character.
+ * @param {string} id
+ * @param {boolean} slash
+ */
+function escapeKey(id, slash) {
+  return String(id).replace(slash ? /[~.#$[\]/]/g : /[~.#$[\]]/g, (ch) => {
+    switch (ch) {
+      case "~":
+        return "~0";
+      case ".":
+        return "~1";
+      case "#":
+        return "~2";
+      case "$":
+        return "~3";
+      case "[":
+        return "~4";
+      case "]":
+        return "~5";
+      case "/":
+        return "~6";
+      default:
+        return ch;
+    }
+  });
+}
+
 export function encodeKey(id) {
-  return String(id).replace(/[.#$[\]]/g, "_");
+  return escapeKey(id, false);
 }
 
 export function itemSoul(id) {
@@ -56,8 +87,19 @@ export function metaSoul() {
   return "s3rch/meta";
 }
 
+function asciiTrim(text) {
+  const value = String(text);
+  let start = 0;
+  let end = value.length;
+  const space = (code) =>
+    code === 0x09 || code === 0x0a || code === 0x0b || code === 0x0c || code === 0x0d || code === 0x20;
+  while (start < end && space(value.charCodeAt(start))) start += 1;
+  while (end > start && space(value.charCodeAt(end - 1))) end -= 1;
+  return value.slice(start, end);
+}
+
 export function aclKey(id) {
-  return encodeKey(id).replace(/\//g, "_");
+  return escapeKey(asciiTrim(id), true);
 }
 
 export function aclPrincipalKey(id) {
@@ -65,11 +107,16 @@ export function aclPrincipalKey(id) {
 }
 
 export function aclSoul(owner) {
-  return `s3rch/acl/${aclPrincipalKey(owner)}`;
+  const ownerKey = aclPrincipalKey(owner);
+  if (ownerKey == null) return null;
+  return `s3rch/acl/${ownerKey}`;
 }
 
 export function grantSoul(owner, object, accessor) {
-  return `${aclSoul(owner)}/${aclKey(object)}/${aclPrincipalKey(accessor)}`;
+  const ownerKey = aclPrincipalKey(owner);
+  const accessorKey = aclPrincipalKey(accessor);
+  if (ownerKey == null || accessorKey == null) return null;
+  return `s3rch/acl/${ownerKey}/${aclKey(object)}/${accessorKey}`;
 }
 
 export function toGunNode(item) {
@@ -204,7 +251,8 @@ export class MemorySeeAcl {
   }
 
   hasObject(object) {
-    const text = String(object ?? "").trim();
+    const text = String(object ?? "");
+    if (objectIdRejected(text)) return false;
     if (this.objects.has(text)) return true;
     for (const id of this.objects.keys()) {
       if (sameObjectId(id, text)) return true;
@@ -217,33 +265,34 @@ export class MemorySeeAcl {
   }
 
   seeGrants(object) {
-    const text = String(object ?? "").trim();
+    const text = String(object ?? "");
+    if (objectIdRejected(text)) return [];
     return [...this.grants.values()].filter((g) => {
-      const id = String(g.claimId ?? g.object ?? "").trim();
+      const id = String(g.claimId ?? g.object ?? "");
       return sameObjectId(id, text) && g.stated !== 0;
     });
   }
 
   putObject(object, owner) {
-    const id = String(object).trim();
-    const next = String(owner).trim();
+    const id = String(object);
+    if (objectIdRejected(id)) return;
+    const next = asciiTrim(String(owner));
     if (this.objects.has(id)) {
       this.objects.set(id, next);
       return;
     }
     for (const stored of this.objects.keys()) {
-      if (sameObjectId(stored, id)) {
-        this.objects.set(stored, next);
-        return;
-      }
+      if (sameObjectId(stored, id)) return;
     }
     this.objects.set(id, next);
   }
 
   stateSeeGrant(owner, grant) {
-    const query = String(grant.claimId ?? grant.object ?? "").trim();
+    const query = String(grant.claimId ?? grant.object ?? "");
+    if (objectIdRejected(query)) return;
     const object = canonicalStoredObject(this.objects, query);
     const key = postGrantKey(owner, object, grant.accessor);
+    if (key == null) return;
     const stored = { ...grant, stated: 1, owner };
     if (stored.claimId != null) stored.claimId = object;
     if (stored.object != null || stored.claimId == null) stored.object = object;
@@ -251,8 +300,10 @@ export class MemorySeeAcl {
   }
 
   unstateSeeGrant(owner, accessor, object) {
+    if (objectIdRejected(object)) return;
     const id = canonicalStoredObject(this.objects, object);
     const key = postGrantKey(owner, id, accessor);
+    if (key == null) return;
     let prevKey = this.grants.has(key) ? key : undefined;
     if (!prevKey) {
       for (const [rowKey, grant] of this.grants) {
@@ -279,15 +330,17 @@ export class MemorySeeAcl {
   }
 
   seeGrant(object, accessor) {
+    if (objectIdRejected(object)) return undefined;
     const id = canonicalStoredObject(this.objects, object);
     const ownerNow = this.ownerOf(id);
     if (!ownerNow) return undefined;
-    const grant = this.grants.get(postGrantKey(ownerNow, id, accessor));
+    const key = postGrantKey(ownerNow, id, accessor);
+    if (key == null) return undefined;
+    const grant = this.grants.get(key);
     const grantOwner = grant?.owner ?? "";
     if (!grant || !grantOwner) return undefined;
-    if (postGrantKey(grantOwner, id, grant.accessor) !== postGrantKey(ownerNow, id, accessor)) {
-      return undefined;
-    }
+    const storedKey = postGrantKey(grantOwner, id, grant.accessor);
+    if (storedKey == null || storedKey !== key) return undefined;
     const grantId = grant.claimId ?? grant.object ?? id;
     return {
       soul: grantSoul(grantOwner, grantId, grant.accessor),
@@ -304,16 +357,21 @@ export class MemorySeeAcl {
   }
 
   postGrant(object, accessor) {
+    if (objectIdRejected(object)) return undefined;
     const id = canonicalStoredObject(this.objects, object);
     const owner = this.ownerOf(id) ?? "";
-    return this.posts.get(postGrantKey(owner, id, accessor));
+    const key = postGrantKey(owner, id, accessor);
+    if (key == null) return undefined;
+    return this.posts.get(key);
   }
 
   statePostGrant(owner, grant) {
-    const query = String(grant.claimId ?? grant.object ?? "").trim();
+    const query = String(grant.claimId ?? grant.object ?? "");
+    if (objectIdRejected(query)) return;
     const object = canonicalStoredObject(this.objects, query);
     if (!samePrincipal(this.ownerOf(object), owner)) return;
     const key = postGrantKey(owner, object, grant.accessor);
+    if (key == null) return;
     const prev = this.posts.get(key);
     const hamState = nextPostHam(prev?.hamState, false);
     if (hamState === undefined) return;
@@ -334,9 +392,11 @@ export class MemorySeeAcl {
   }
 
   unstatePostGrant(owner, accessor, object) {
+    if (objectIdRejected(object)) return;
     const id = canonicalStoredObject(this.objects, object);
     if (!samePrincipal(this.ownerOf(id), owner)) return;
     const key = postGrantKey(owner, id, accessor);
+    if (key == null) return;
     const prev = this.posts.get(key);
     const hamState = nextPostHam(prev?.hamState, true);
     if (hamState === undefined) return;
