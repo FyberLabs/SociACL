@@ -14,7 +14,7 @@
  *   stated: number,
  * }} PostGrantRow
  * @typedef {{
- *   soul: string,
+ *   soul: string | null,
  *   owner: string,
  *   hamState: number,
  *   grant: PostGrantRow,
@@ -66,57 +66,111 @@ function encodeKey(id) {
   return escapeKey(id, false);
 }
 
-/** @param {string} id */
-function aclKey(id) {
-  return escapeKey(String(id).trim(), true);
+/**
+ * ASCII whitespace only: tab, LF, VT, FF, CR, space.
+ * U+FEFF and U+0085 stay in the text so a principal can reject them.
+ * @param {string} text
+ */
+function asciiTrim(text) {
+  let start = 0;
+  let end = text.length;
+  while (start < end && isAsciiSpace(text.charCodeAt(start))) start += 1;
+  while (end > start && isAsciiSpace(text.charCodeAt(end - 1))) end -= 1;
+  return text.slice(start, end);
+}
+
+/** @param {number} code */
+function isAsciiSpace(code) {
+  return code === 0x09 || code === 0x0a || code === 0x0b || code === 0x0c || code === 0x0d || code === 0x20;
 }
 
 /**
- * A bare principal. `.` is allowed. `/ # $ [ ] ~`, controls, and
- * `.get(` are not. Empty is not a principal.
+ * A lone UTF-16 surrogate is not a Unicode scalar value.
+ * Checked before a Unicode property escape, which throws on one.
+ * @param {string} text
+ */
+function hasUnpairedSurrogate(text) {
+  for (let i = 0; i < text.length; i += 1) {
+    const code = text.charCodeAt(i);
+    if (code >= 0xd800 && code <= 0xdbff) {
+      const next = text.charCodeAt(i + 1);
+      if (!(next >= 0xdc00 && next <= 0xdfff)) return true;
+      i += 1;
+      continue;
+    }
+    if (code >= 0xdc00 && code <= 0xdfff) return true;
+  }
+  return false;
+}
+
+/** @param {string} id */
+function aclKey(id) {
+  return escapeKey(asciiTrim(String(id)), true);
+}
+
+/**
+ * A bare principal, or null. `.` may occur inside an id. The whole id
+ * cannot be `.` or `..`. `/ # $ [ ] ~`, an inner space, a control,
+ * Unicode whitespace, a format character, `.get(`, an unpaired
+ * surrogate, and more than 256 scalar values are rejected.
+ * Never returns "".
  * @param {string} id
+ * @returns {string | null}
  */
 function barePrincipal(id) {
-  if (!id || id.includes(".get(")) return false;
-  if (/[/#$[\]~]/.test(id)) return false;
+  if (!id || id === "." || id === ".." || id.includes(".get(") || id.includes(" ")) return null;
+  if (hasUnpairedSurrogate(id)) return null;
+  if ([...id].length > 256) return null;
+  if (/[/#$[\]~]/.test(id)) return null;
+  if (/\p{Z}|\p{Cf}/u.test(id)) return null;
   for (let i = 0; i < id.length; i += 1) {
     const code = id.charCodeAt(i);
-    if (code <= 0x1f || (code >= 0x7f && code <= 0x9f)) return false;
+    if (code <= 0x1f || (code >= 0x7f && code <= 0x9f)) return null;
   }
-  return true;
+  return id;
 }
 
 /**
  * Owner / accessor key. An exact `s3rch/users/<wallet>` collapses to
- * that wallet. Anything else must be a bare principal. Rejected text
- * is empty so it cannot become a soul segment. Not an object escape.
- * @param {string} id
+ * that wallet. Anything else must be a bare principal. A failed parse
+ * is null and is not a soul segment. Not an object escape.
+ * @param {string | null | undefined} id
+ * @returns {string | null}
  */
 function aclPrincipalKey(id) {
-  const text = String(id).trim();
-  if (!text || text.includes(".get(")) return "";
+  if (typeof id !== "string" || hasUnpairedSurrogate(id)) return null;
+  const text = asciiTrim(id);
+  if (!text || text.includes(".get(")) return null;
   const segments = text
     .split("/")
-    .map((part) => part.trim())
+    .map((part) => asciiTrim(part))
     .filter((part) => part !== "");
   if (segments.length === 3 && segments[0] === "s3rch" && segments[1] === "users") {
-    return barePrincipal(segments[2]) ? segments[2] : "";
+    return barePrincipal(segments[2] ?? "");
   }
-  if (text.includes("/")) return "";
-  return barePrincipal(text) ? text : "";
+  if (text.includes("/")) return null;
+  return barePrincipal(text);
+}
+
+/** @param {string | null | undefined} left @param {string | null | undefined} right */
+function sameParsed(left, right) {
+  if (left == null || right == null) return false;
+  const a = aclPrincipalKey(left);
+  const b = aclPrincipalKey(right);
+  return a != null && a === b;
 }
 
 const HELD_CLAIM_PREFIXES = ["ens:", "unstoppable:", "fc:", "lens:", "rss3:"];
 
 /** @param {string} id */
 function isItemShaped(id) {
-  const parts = String(id).trim().split("/");
+  const parts = asciiTrim(String(id)).split("/");
   return parts.length === 3 && parts[0] === "s3rch" && parts[1] === "items" && parts[2] !== "";
 }
 
 /** @param {string} id */
 function mayAliasToItemSoul(id) {
-  const text = String(id).trim();
+  const text = asciiTrim(String(id));
   if (isItemShaped(text)) return true;
   if (!text.includes("/") && HELD_CLAIM_PREFIXES.some((prefix) => text.startsWith(prefix))) return false;
   return true;
@@ -124,7 +178,7 @@ function mayAliasToItemSoul(id) {
 
 /** @param {string} id */
 function itemSoulOf(id) {
-  return `s3rch/items/${encodeKey(String(id).trim())}`;
+  return `s3rch/items/${encodeKey(asciiTrim(String(id)))}`;
 }
 
 /**
@@ -134,8 +188,8 @@ function itemSoulOf(id) {
  * @param {string} right
  */
 function itemSoulAlias(left, right) {
-  const a = String(left).trim();
-  const b = String(right).trim();
+  const a = asciiTrim(String(left));
+  const b = asciiTrim(String(right));
   if (!isItemShaped(a) && !isItemShaped(b)) return false;
   if (!mayAliasToItemSoul(a) || !mayAliasToItemSoul(b)) return false;
   return itemSoulOf(a) === b || itemSoulOf(b) === a;
@@ -148,7 +202,8 @@ function objectNames(stored, query) {
 
 /**
  * One accessor id. `s3rch/users/<wallet>` and the wallet are this key.
- * @param {string} id
+ * @param {string | null | undefined} id
+ * @returns {string | null}
  */
 export function canonicalAccessorId(id) {
   return aclPrincipalKey(id);
@@ -161,8 +216,8 @@ export function canonicalAccessorId(id) {
  * @param {string} right
  */
 export function sameObjectId(left, right) {
-  const a = String(left ?? "").trim();
-  const b = String(right ?? "").trim();
+  const a = asciiTrim(String(left ?? ""));
+  const b = asciiTrim(String(right ?? ""));
   if (!a || !b) return false;
   return objectNames(a, b);
 }
@@ -175,7 +230,7 @@ export function sameObjectId(left, right) {
 export function postSoul(owner, object, accessor) {
   const ownerKey = aclPrincipalKey(owner);
   const accessorKey = aclPrincipalKey(accessor);
-  if (!ownerKey || !accessorKey) return "";
+  if (ownerKey == null || accessorKey == null) return null;
   return `s3rch/acl/${ownerKey}/${POST_GRANT_SCOPE}/${aclKey(object)}/${accessorKey}`;
 }
 
@@ -232,7 +287,10 @@ export function nextPostHam(prev, forCancel) {
  * @param {string} accessor
  */
 export function postGrantKey(owner, object, accessor) {
-  return `${aclPrincipalKey(owner)}\0${aclKey(object)}\0${aclPrincipalKey(accessor)}`;
+  const ownerKey = aclPrincipalKey(owner);
+  const accessorKey = aclPrincipalKey(accessor);
+  if (ownerKey == null || accessorKey == null) return null;
+  return `${ownerKey}\0${aclKey(object)}\0${accessorKey}`;
 }
 
 /** @param {readonly string[]} fields */
@@ -262,10 +320,14 @@ function lengthPrefixed(fields) {
  */
 export function postGrantSigningBytes(edge) {
   const grant = edge.grant;
+  const accessorKey = aclPrincipalKey(grant.accessor);
+  if (accessorKey == null) {
+    throw new Error("post grant field is not a canonical integer");
+  }
   return lengthPrefixed([
     POST_GRANT_DOMAIN,
     aclKey(grant.object),
-    aclPrincipalKey(grant.accessor),
+    accessorKey,
     canonicalDecimal(grant.stated),
     canonicalDecimal(grant.from),
     canonicalDecimal(grant.until),
@@ -317,11 +379,11 @@ export function canonicalPostEdge(edge) {
   const grant = edge.grant;
   return {
     soul: postSoul(edge.owner, grant.object, grant.accessor),
-    owner: String(edge.owner).trim(),
+    owner: asciiTrim(String(edge.owner)),
     hamState: edge.hamState,
     grant: {
-      object: String(grant.object).trim(),
-      accessor: String(grant.accessor).trim(),
+      object: asciiTrim(String(grant.object)),
+      accessor: asciiTrim(String(grant.accessor)),
       from: grant.from,
       until: grant.until,
       stated: grant.stated,
@@ -367,7 +429,7 @@ function seeDecision(graph, object, accessor, now) {
   if (closed) return { allowed: false, reason: closed };
   const owner = graph.ownerOf(String(object).trim());
   if (!owner) return { allowed: false, reason: "missing" };
-  if (canonicalAccessorId(owner) === canonicalAccessorId(accessor)) {
+  if (sameParsed(owner, accessor)) {
     return { allowed: true, reason: "owner" };
   }
   const edge = graph.seeGrant(object, accessor);
@@ -375,8 +437,8 @@ function seeDecision(graph, object, accessor, now) {
   const grant = edge.grant;
   const names =
     sameObjectId(grant.object, object) &&
-    canonicalAccessorId(grant.accessor) === canonicalAccessorId(accessor) &&
-    canonicalAccessorId(edge.owner) === canonicalAccessorId(owner);
+    sameParsed(grant.accessor, accessor) &&
+    sameParsed(edge.owner, owner);
   if (!names) return { allowed: false, reason: "missing" };
   if (grant.stated !== 1) return { allowed: false, reason: "cancelled" };
   if (now >= grant.from && now < grant.until) return { allowed: true, reason: "delegate" };
@@ -407,8 +469,8 @@ export function checkPost(graph, object, accessor, now, hint, hop) {
   const grant = edge.grant;
   const names =
     sameObjectId(grant.object, object) &&
-    canonicalAccessorId(grant.accessor) === canonicalAccessorId(accessor) &&
-    canonicalAccessorId(edge.owner) === canonicalAccessorId(owner);
+    sameParsed(grant.accessor, accessor) &&
+    sameParsed(edge.owner, owner);
   if (!names) return { allowed: false, reason: "missing", ...echoed };
   if (grant.stated !== 1) return { allowed: false, reason: "cancelled", ...echoed };
   if (now >= grant.from && now < grant.until) {

@@ -22,7 +22,7 @@ function samePrincipal(left, right) {
   if (left == null || right == null) return false;
   const leftKey = canonicalAccessorId(left);
   const rightKey = canonicalAccessorId(right);
-  return leftKey !== "" && leftKey === rightKey;
+  return leftKey != null && leftKey === rightKey;
 }
 
 /** @param {Map<string, string>} objects @param {string} object */
@@ -86,8 +86,19 @@ export function metaSoul() {
   return "s3rch/meta";
 }
 
+function asciiTrim(text) {
+  const value = String(text);
+  let start = 0;
+  let end = value.length;
+  const space = (code) =>
+    code === 0x09 || code === 0x0a || code === 0x0b || code === 0x0c || code === 0x0d || code === 0x20;
+  while (start < end && space(value.charCodeAt(start))) start += 1;
+  while (end > start && space(value.charCodeAt(end - 1))) end -= 1;
+  return value.slice(start, end);
+}
+
 export function aclKey(id) {
-  return escapeKey(String(id).trim(), true);
+  return escapeKey(asciiTrim(id), true);
 }
 
 export function aclPrincipalKey(id) {
@@ -96,14 +107,14 @@ export function aclPrincipalKey(id) {
 
 export function aclSoul(owner) {
   const ownerKey = aclPrincipalKey(owner);
-  if (!ownerKey) return "";
+  if (ownerKey == null) return null;
   return `s3rch/acl/${ownerKey}`;
 }
 
 export function grantSoul(owner, object, accessor) {
   const ownerKey = aclPrincipalKey(owner);
   const accessorKey = aclPrincipalKey(accessor);
-  if (!ownerKey || !accessorKey) return "";
+  if (ownerKey == null || accessorKey == null) return null;
   return `s3rch/acl/${ownerKey}/${aclKey(object)}/${accessorKey}`;
 }
 
@@ -260,8 +271,8 @@ export class MemorySeeAcl {
   }
 
   putObject(object, owner) {
-    const id = String(object).trim();
-    const next = String(owner).trim();
+    const id = asciiTrim(String(object));
+    const next = asciiTrim(String(owner));
     if (this.objects.has(id)) {
       this.objects.set(id, next);
       return;

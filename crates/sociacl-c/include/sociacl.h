@@ -567,7 +567,8 @@ int sociacl_gun_item_soul(
     size_t dst_len
 );
 
-/* s3r.ch encodeKey: replace . # $ [ ] with _. */
+/* s3r.ch encodeKey: injective escape. ~ . # $ [ ] become ~0 ~1 ~2 ~3 ~4 ~5.
+ * / is not escaped. This is not the older fold of those characters into _. */
 int sociacl_gun_encode_key(
     const char *id,
     char *dst,

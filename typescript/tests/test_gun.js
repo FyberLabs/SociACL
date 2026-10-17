@@ -16,7 +16,7 @@ import {
   itemSoul,
   userSoul,
 } from "../src/gun.js";
-import { canonicalAccessorId, postGrantKey, postSoul } from "../src/post.js";
+import { canonicalAccessorId, postGrantKey, postSoul, sameObjectId } from "../src/post.js";
 
 test("souls match the s3r.ch consume contract", () => {
   assert.equal(encodeKey("rss3:act/1#x"), "rss3:act/1~2x");
@@ -94,7 +94,7 @@ test("a grant names one object and a gun chain is not the inner wallet", () => {
   assert.equal(checkSee(acl, "room/alpha", "0xbob", 10).allowed, false);
   assert.equal(checkSee(acl, "room/chat/alpha", "0xbob", 10).allowed, false);
   const spoof = "0xattacker.get('s3rch').get('users').get('0xvictim')";
-  assert.equal(canonicalAccessorId(spoof), "");
+  assert.equal(canonicalAccessorId(spoof), null);
   assert.notEqual(canonicalAccessorId(spoof), "0xvictim");
   acl.putObject("doc", "0xvictim");
   assert.equal(checkSee(acl, "doc", spoof, 10).allowed, false);
@@ -103,22 +103,39 @@ test("a grant names one object and a gun chain is not the inner wallet", () => {
 
 test("a rejected principal is not a grant path", () => {
   const injected = "s3rch/acl/0xalice/doc/0xbob/x";
-  assert.equal(grantSoul("0xalice", "doc", "0xbob/x"), "");
-  assert.equal(grantSoul("0xalice/doc", "0xbob", "x"), "");
+  assert.equal(grantSoul("0xalice", "doc", "0xbob/x"), null);
+  assert.equal(grantSoul("0xalice/doc", "0xbob", "x"), null);
   assert.notEqual(grantSoul("0xalice", "doc", "0xbob/x"), injected);
   assert.equal(grantSoul("0xalice", "doc", "0xbob"), "s3rch/acl/0xalice/doc/0xbob");
-  assert.equal(aclSoul("../meta"), "");
-  assert.equal(canonicalAccessorId("a\u0000b"), "");
-  assert.equal(postGrantKey("0xalice", "doc", "a\u0000b"), "0xalice\0doc\0");
+  assert.equal(aclSoul("../meta"), null);
+  assert.equal(canonicalAccessorId("a\u0000b"), null);
+  assert.equal(postGrantKey("0xalice", "doc", "a\u0000b"), null);
   assert.notEqual(postGrantKey("0xalice", "doc", "a\u0000b"), "0xalice\0doc\0a\u0000b");
-  assert.equal(postSoul("0xalice", "doc", "a\u0000b"), "");
-  assert.equal(canonicalAccessorId("bob~name"), "");
-  assert.equal(canonicalAccessorId("x~1get('s3rch')"), "");
-  assert.equal(grantSoul("0xalice", "doc", "x~1get('s3rch')"), "");
+  assert.equal(postSoul("0xalice", "doc", "a\u0000b"), null);
+  assert.equal(canonicalAccessorId("bob~name"), null);
+  assert.equal(canonicalAccessorId("x~1get('s3rch')"), null);
+  assert.equal(grantSoul("0xalice", "doc", "x~1get('s3rch')"), null);
+  assert.equal(canonicalAccessorId("."), null);
+  assert.equal(canonicalAccessorId(".."), null);
+  assert.equal(canonicalAccessorId("0x bob"), null);
+  assert.equal(canonicalAccessorId("a".repeat(257)), null);
+  assert.equal(canonicalAccessorId("a".repeat(256)), "a".repeat(256));
+  assert.equal(canonicalAccessorId("\uFEFF0xvictim"), null);
+  assert.equal(canonicalAccessorId("0xvictim\uFEFF"), null);
+  assert.equal(canonicalAccessorId("\u00850xvictim"), null);
+  assert.equal(sameObjectId("\uFEFFroom", "room"), false);
+  assert.equal(sameObjectId(" room ", "room"), true);
+  assert.equal(canonicalAccessorId("0x\ud800victim"), null);
   assert.equal(canonicalAccessorId("bob.name"), "bob.name");
   assert.equal(canonicalAccessorId("s3rch/users/0xbob"), "0xbob");
+  assert.equal(canonicalAccessorId("s3rch/users/ 0xbob "), "0xbob");
   const acl = new MemorySeeAcl();
   acl.putObject("doc", "../meta");
   assert.equal(checkSee(acl, "doc", "a\u0000b", 10).allowed, false);
   assert.equal(checkSee(acl, "doc", "../meta", 10).allowed, false);
+  assert.equal(checkSee(acl, "doc", "\uFEFF../meta", 10).allowed, false);
+  acl.putObject("owned", "0xalice");
+  assert.equal(checkSee(acl, "owned", "\uFEFF0xalice", 10).allowed, false);
+  assert.equal(checkSee(acl, "owned", "0xalice\uFEFF", 10).allowed, false);
+  assert.equal(checkSee(acl, "owned", "\u00850xalice", 10).allowed, false);
 });

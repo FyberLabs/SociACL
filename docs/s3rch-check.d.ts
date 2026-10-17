@@ -398,19 +398,22 @@ export function aclKey(id: string): string;
 /**
  * Owner / accessor key on dest ACL. An exact `s3rch/users/<wallet>`
  * collapses to that wallet text. A bare id may contain `.` and must
- * not contain `/ # $ [ ] ~`, a control character, or `.get(`.
- * Anything else is empty and is not a soul segment. escapeKey is for
- * object keys, not principals. Each user-soul segment is trimmed and
- * an empty segment is dropped, so `s3rch/users/ bob ` and
- * `s3rch/users//bob` are `bob`.
+ * not be `.` or `..`. It must not contain `/ # $ [ ] ~`, an inner
+ * space, a control, Unicode whitespace, a format character, `.get(`,
+ * an unpaired surrogate, or more than 256 scalar values. A failed
+ * parse is null and is not a soul segment. Trim is ASCII whitespace
+ * only, so U+FEFF and U+0085 are rejected rather than stripped.
+ * escapeKey is for object keys, not principals. Each user-soul
+ * segment is ASCII-trimmed and an empty segment is dropped, so
+ * `s3rch/users/ bob ` and `s3rch/users//bob` are `bob`.
  */
-export function aclPrincipalKey(id: string): string;
+export function aclPrincipalKey(id: string): string | null;
 
 /**
  * Owner dest-ACL root. Not a Check object.
  * gun.get('s3rch').get('acl').get(aclPrincipalKey(owner))
  */
-export function aclSoul(owner: AccessorId): string;
+export function aclSoul(owner: AccessorId): string | null;
 
 /**
  * Jointly stated see grant under the object owner's dest ACL.
@@ -424,7 +427,7 @@ export function grantSoul(
   owner: AccessorId,
   object: CheckObjectId,
   accessor: AccessorId,
-): string;
+): string | null;
 
 /**
  * In-graph see grant. HAM-merges across peers.
@@ -491,7 +494,7 @@ export type PostGrantInput = {
  * item soul share that one row when they already name one object.
  */
 export type GunPostEdge = {
-  soul: string;
+  soul: string | null;
   owner: AccessorId;
   grant: MeshPostGrant;
   hamState: number;
@@ -516,7 +519,7 @@ export function postSoul(
   owner: AccessorId,
   object: CheckObjectId,
   accessor: AccessorId,
-): string;
+): string | null;
 
 /**
  * Length-prefixed row encoding a later owner signature can cover.

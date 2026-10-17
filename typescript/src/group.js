@@ -263,9 +263,9 @@ function concatBytes(parts) {
   return out;
 }
 
-/** @param {Uint8Array[]} parts @param {string} value */
+/** @param {Uint8Array[]} parts @param {string | null | undefined} value */
 function pushStr(parts, value) {
-  const bytes = new TextEncoder().encode(value);
+  const bytes = new TextEncoder().encode(value == null ? "" : String(value));
   const len = new Uint8Array(4);
   new DataView(len.buffer).setUint32(0, bytes.length);
   parts.push(len, bytes);
@@ -304,7 +304,7 @@ function grantObject(grant) {
 
 /** @param {string} setId */
 export function canonicalSetId(setId) {
-  const id = String(setId ?? "").trim();
+  const id = asciiTrim(String(setId ?? ""));
   if (!id) return null;
   const slash = id.indexOf("/");
   if (slash <= 0 || slash !== id.lastIndexOf("/")) return null;
@@ -322,7 +322,7 @@ function setIdBindsOwner(setId, owner) {
   if (!canonical) return false;
   const head = canonical.slice(0, canonical.indexOf("/"));
   const ownerKey = aclPrincipalKey(owner);
-  return ownerKey.length > 0 && aclPrincipalKey(head) === ownerKey;
+  return ownerKey != null && aclPrincipalKey(head) === ownerKey;
 }
 
 /**
@@ -374,27 +374,54 @@ export function encodeKey(id) {
   return escapeKey(id, false);
 }
 
-/** @param {string} id */
-export function aclKey(id) {
-  return escapeKey(String(id).trim(), true);
+/**
+ * ASCII whitespace only. U+FEFF and U+0085 are not trimmed.
+ * @param {string} text
+ */
+function asciiTrim(text) {
+  const value = String(text);
+  let start = 0;
+  let end = value.length;
+  /** @param {number} code */
+  const space = (code) =>
+    code === 0x09 || code === 0x0a || code === 0x0b || code === 0x0c || code === 0x0d || code === 0x20;
+  while (start < end && space(value.charCodeAt(start))) start += 1;
+  while (end > start && space(value.charCodeAt(end - 1))) end -= 1;
+  return value.slice(start, end);
 }
 
 /** @param {string} id */
+export function aclKey(id) {
+  return escapeKey(asciiTrim(id), true);
+}
+
+/** @param {string | null | undefined} id */
 export function aclPrincipalKey(id) {
   return canonicalAccessorId(id);
+}
+
+/**
+ * Both sides must parse. null is not the same principal as null.
+ * @param {string | null | undefined} left
+ * @param {string | null | undefined} right
+ */
+function samePrincipal(left, right) {
+  const a = aclPrincipalKey(left);
+  const b = aclPrincipalKey(right);
+  return a != null && a === b;
 }
 
 const HELD_CLAIM_PREFIXES = ["ens:", "unstoppable:", "fc:", "lens:", "rss3:"];
 
 /** @param {string} id */
 function isItemShaped(id) {
-  const parts = String(id).trim().split("/");
+  const parts = asciiTrim(String(id)).split("/");
   return parts.length === 3 && parts[0] === "s3rch" && parts[1] === "items" && parts[2] !== "";
 }
 
 /** @param {string} id */
 function mayAliasToItemSoul(id) {
-  const text = String(id).trim();
+  const text = asciiTrim(String(id));
   if (isItemShaped(text)) return true;
   if (!text.includes("/") && HELD_CLAIM_PREFIXES.some((prefix) => text.startsWith(prefix))) return false;
   return true;
@@ -402,7 +429,7 @@ function mayAliasToItemSoul(id) {
 
 /** @param {string} id */
 function itemSoulOf(id) {
-  return `s3rch/items/${encodeKey(String(id).trim())}`;
+  return `s3rch/items/${encodeKey(asciiTrim(String(id)))}`;
 }
 
 /**
@@ -412,8 +439,8 @@ function itemSoulOf(id) {
  * @param {string} right
  */
 function itemSoulAlias(left, right) {
-  const a = String(left).trim();
-  const b = String(right).trim();
+  const a = asciiTrim(String(left));
+  const b = asciiTrim(String(right));
   if (!isItemShaped(a) && !isItemShaped(b)) return false;
   if (!mayAliasToItemSoul(a) || !mayAliasToItemSoul(b)) return false;
   return itemSoulOf(a) === b || itemSoulOf(b) === a;
@@ -539,13 +566,16 @@ function newCancelId(replicaId, prior) {
  * @param {readonly string[]} observed
  */
 function partyMessage(record, role, stated, hamState, observed) {
+  const accessor = aclPrincipalKey(record.membership.accessor);
+  const owner = aclPrincipalKey(record.setOwner);
+  if (accessor == null || owner == null) return null;
   /** @type {Uint8Array[]} */
   const parts = [domainBytes("sociacl-membership-assent-v1")];
   pushStr(parts, role);
   pushStr(parts, record.membership.predicate);
   pushStr(parts, record.membership.setId);
-  pushStr(parts, aclPrincipalKey(record.membership.accessor));
-  pushStr(parts, aclPrincipalKey(record.setOwner));
+  pushStr(parts, accessor);
+  pushStr(parts, owner);
   parts.push(Uint8Array.of(stated ? 1 : 0));
   const ham = new Uint8Array(8);
   new DataView(ham.buffer).setBigUint64(0, BigInt(hamState));
@@ -556,10 +586,12 @@ function partyMessage(record, role, stated, hamState, observed) {
 
 /** @param {ObjectSetRecord} record */
 function objectMessage(record) {
+  const owner = aclPrincipalKey(record.objectOwner);
+  if (owner == null) return null;
   /** @type {Uint8Array[]} */
   const parts = [domainBytes("sociacl-object-set-v1")];
   pushStr(parts, aclKey(record.name.object));
-  pushStr(parts, aclPrincipalKey(record.objectOwner));
+  pushStr(parts, owner);
   pushStr(parts, record.name.predicate);
   pushStr(parts, record.name.setId);
   parts.push(Uint8Array.of(record.signedStated));
@@ -577,6 +609,7 @@ function objectMessage(record) {
  * @param {readonly string[]} prior
  */
 function cancelMessage(kind, rowKey, id, prior) {
+  if (!rowKey) return null;
   const idBytes = decodeCanonicalHex(id);
   if (!idBytes) return null;
   /** @type {Uint8Array[]} */
@@ -590,12 +623,17 @@ function cancelMessage(kind, rowKey, id, prior) {
 
 /** @param {MembershipRecord} record */
 function membershipRowKey(record) {
-  return `${record.membership.predicate}\0${record.membership.setId}\0${aclPrincipalKey(record.membership.accessor)}`;
+  const accessor = aclPrincipalKey(record.membership.accessor);
+  if (accessor == null) return null;
+  return `${record.membership.predicate}\0${record.membership.setId}\0${accessor}`;
 }
 
 /** @param {Map<string, Uint8Array>} enrolled @returns {KeyLookup} */
 function mapLookup(enrolled) {
-  return (principal) => enrolled.get(aclPrincipalKey(principal));
+  return (principal) => {
+    const id = aclPrincipalKey(principal);
+    return id == null ? undefined : enrolled.get(id);
+  };
 }
 
 /** @param {GroupSeeGraph} graph @returns {KeyLookup} */
@@ -677,7 +715,13 @@ function partySignatureOk(lookup, party, role, record) {
  * @param {MembershipRecord} record
  */
 function publishMembership(lookup, record) {
-  const ids = verifiedIds(lookup, record.cancels, "membership", membershipRowKey(record), (signer) =>
+  const rowKey = membershipRowKey(record);
+  if (rowKey == null) {
+    record.membership.stated = 0;
+    record.removed = false;
+    return;
+  }
+  const ids = verifiedIds(lookup, record.cancels, "membership", rowKey, (signer) =>
     membershipCancelSigner(record, signer),
   );
   const live = (/** @type {PartyStatement} */ party, /** @type {"member" | "set"} */ role) =>
@@ -713,7 +757,7 @@ function objectSignatureOk(lookup, record) {
 function refreshObject(lookup, record) {
   const ids = verifiedIds(lookup, record.cancels, "object-set", aclKey(record.name.object), (signer) => {
     const key = aclPrincipalKey(signer);
-    return key.length > 0 && key === aclPrincipalKey(record.objectOwner);
+    return key != null && key === aclPrincipalKey(record.objectOwner);
   });
   const live =
     record.signedStated === 1 &&
@@ -751,6 +795,7 @@ function pickParty(local, incoming, ids, localOk, incomingOk) {
  */
 function retainAuthenticMembership(lookup, record) {
   const rowKey = membershipRowKey(record);
+  if (rowKey == null) return null;
   const allow = (/** @type {string} */ signer) => membershipCancelSigner(record, signer);
   record.cancels = uniqueCancels(
     record.cancels.flatMap((cancel) => {
@@ -779,6 +824,7 @@ function mergeMembership(lookup, local, incoming) {
   const cancels = uniqueCancels(structuredClone(local.cancels));
   const rowKey = membershipRowKey(incoming);
   const allow = (/** @type {string} */ signer) => membershipCancelSigner(incoming, signer);
+  if (rowKey == null) return local;
   for (const cancel of incoming.cancels) {
     const accepted = acceptedCancel(lookup, cancel, "membership", rowKey, allow);
     if (accepted && !cancels.some((row) => row.id === accepted.id)) cancels.push(accepted);
@@ -837,7 +883,7 @@ function retainAuthenticObject(lookup, record) {
   const rowKey = aclKey(record.name.object);
   const allow = (/** @type {string} */ signer) => {
     const key = aclPrincipalKey(signer);
-    return key.length > 0 && key === aclPrincipalKey(record.objectOwner);
+    return key != null && key === aclPrincipalKey(record.objectOwner);
   };
   record.cancels = uniqueCancels(
     record.cancels.flatMap((cancel) => {
@@ -865,7 +911,7 @@ function mergeObjectSet(lookup, local, incoming) {
   const cancels = uniqueCancels(structuredClone(local.cancels));
   const rowKey = aclKey(incoming.name.object);
   const allow = (/** @type {string} */ signer) =>
-    aclPrincipalKey(signer) === aclPrincipalKey(incoming.objectOwner);
+    samePrincipal(signer, incoming.objectOwner);
   for (const cancel of incoming.cancels) {
     const accepted = acceptedCancel(lookup, cancel, "object-set", rowKey, allow);
     if (accepted && !cancels.some((row) => row.id === accepted.id)) cancels.push(accepted);
@@ -990,14 +1036,14 @@ export class MemoryGroupGraph {
     const directKey = aclKey(id);
     if (this.objects.has(directKey)) {
       const prev = this.objects.get(directKey);
-      if (prev && canonicalAccessorId(prev.owner) !== canonicalAccessorId(next)) this.objectSets.delete(directKey);
+      if (prev && !samePrincipal(prev.owner, next)) this.objectSets.delete(directKey);
       this.objects.set(directKey, { id, owner: next });
       return;
     }
     const existing = this.objectRecord(id);
     if (existing) {
       const key = aclKey(existing.id);
-      if (canonicalAccessorId(existing.owner) !== canonicalAccessorId(next)) this.objectSets.delete(key);
+      if (!samePrincipal(existing.owner, next)) this.objectSets.delete(key);
       this.objects.set(key, { id: existing.id, owner: next });
       return;
     }
@@ -1044,7 +1090,7 @@ export class MemoryGroupGraph {
     const record = this.objectRecord(query);
     const ownerKey = canonicalAccessorId(owner);
     const accessor = grant.accessor;
-    if (!query || !record || !ownerKey || !canonicalAccessorId(accessor) || canonicalAccessorId(record.owner) !== ownerKey) return;
+    if (!query || !record || !ownerKey || !canonicalAccessorId(accessor) || !samePrincipal(record.owner, owner)) return;
     const object = record.id;
     const rows = this.matchingSee(owner, object, accessor);
     const hamState = rows.reduce((max, row) => Math.max(max, row.grant.hamState ?? 0), 0) + 1;
@@ -1060,7 +1106,9 @@ export class MemoryGroupGraph {
       owner: String(owner).trim(),
     };
     if (stored.claimId != null) stored.claimId = object;
-    this.grants.set(grantKey(owner, object, accessor), stored);
+    const key = grantKey(owner, object, accessor);
+    if (key == null) return;
+    this.grants.set(key, stored);
   }
 
   /**
@@ -1070,10 +1118,10 @@ export class MemoryGroupGraph {
    */
   unstateSeeGrant(owner, accessor, object) {
     const query = String(object).trim();
-    const who = String(accessor).trim();
+    const who = asciiTrim(String(accessor));
     const record = this.objectRecord(query);
     const ownerKey = canonicalAccessorId(owner);
-    if (!query || !who || !canonicalAccessorId(who) || !record || !ownerKey || canonicalAccessorId(record.owner) !== ownerKey) return;
+    if (!query || !who || !canonicalAccessorId(who) || !record || !ownerKey || !samePrincipal(record.owner, owner)) return;
     const id = record.id;
     const rows = this.matchingSee(owner, id, who);
     const prev = rows.reduce((best, row) => {
@@ -1081,7 +1129,9 @@ export class MemoryGroupGraph {
       return best;
     }, /** @type {SeeGrant | undefined} */ (undefined));
     for (const row of rows) this.grants.delete(row.key);
-    this.grants.set(grantKey(owner, id, who), {
+    const key = grantKey(owner, id, who);
+    if (key == null) return;
+    this.grants.set(key, {
       ...(prev ?? {}),
       object: id,
       accessor: who,
@@ -1157,12 +1207,13 @@ export class MemoryGroupGraph {
    */
   statePostGrant(owner, grant) {
     const query = String(grant.object ?? grant.claimId ?? "").trim();
-    const who = String(grant.accessor ?? "").trim();
+    const who = asciiTrim(String(grant.accessor ?? ""));
     const record = this.objectRecord(query);
     const ownerKey = aclPrincipalKey(owner);
-    if (!query || !who || !aclPrincipalKey(who) || !record || !ownerKey || aclPrincipalKey(record.owner) !== ownerKey) return;
+    if (!query || !who || !aclPrincipalKey(who) || !record || !ownerKey || !samePrincipal(record.owner, owner)) return;
     const object = record.id;
     const key = grantKey(owner, object, who);
+    if (key == null) return;
     const prev = this.posts.get(key);
     const hamState = nextPostHam(prev?.hamState, false);
     if (hamState === undefined) return;
@@ -1184,12 +1235,13 @@ export class MemoryGroupGraph {
    */
   unstatePostGrant(owner, accessor, object) {
     const query = String(object).trim();
-    const who = String(accessor).trim();
+    const who = asciiTrim(String(accessor));
     const record = this.objectRecord(query);
     const ownerKey = aclPrincipalKey(owner);
-    if (!query || !who || !aclPrincipalKey(who) || !record || !ownerKey || aclPrincipalKey(record.owner) !== ownerKey) return;
+    if (!query || !who || !aclPrincipalKey(who) || !record || !ownerKey || !samePrincipal(record.owner, owner)) return;
     const id = record.id;
     const key = grantKey(owner, id, who);
+    if (key == null) return;
     const prev = this.posts.get(key);
     const hamState = nextPostHam(prev?.hamState, true);
     if (hamState === undefined) return;
@@ -1215,12 +1267,13 @@ export class MemoryGroupGraph {
     const query = String(incoming.grant?.object ?? "").trim();
     const record = this.objectRecord(query);
     const grantOwner = incoming.owner ?? "";
-    if (!query || !record || !grantOwner || aclPrincipalKey(record.owner) !== aclPrincipalKey(grantOwner)) return;
+    if (!query || !record || !grantOwner || !samePrincipal(record.owner, grantOwner)) return;
     const edge = canonicalPostEdge({
       ...incoming,
       grant: { ...incoming.grant, object: record.id },
     });
     const key = grantKey(edge.owner, edge.grant.object, edge.grant.accessor);
+    if (key == null) return;
     const local = this.posts.get(key);
     this.posts.set(key, local ? preferPost(local, edge) : edge);
   }
@@ -1239,7 +1292,8 @@ export class MemoryGroupGraph {
 
   /** @param {string} principal */
   enrolledKey(principal) {
-    return this.enrolled.get(aclPrincipalKey(principal));
+    const id = aclPrincipalKey(principal);
+    return id == null ? undefined : this.enrolled.get(id);
   }
 
   /**
@@ -1248,8 +1302,8 @@ export class MemoryGroupGraph {
    * @param {string} setId
    */
   recordSetOwner(owner, predicate, setId) {
-    const name = String(owner).trim();
-    const id = String(setId).trim();
+    const name = asciiTrim(String(owner));
+    const id = asciiTrim(String(setId));
     if (!name || !id) throw new Error("group name is empty");
     const canonical = canonicalSetId(id);
     if (!canonical) throw new Error("set id is not bound to this owner");
@@ -1285,8 +1339,8 @@ export class MemoryGroupGraph {
     const owner = this.ownerOfSet(predicate, setId);
     if (!owner) throw new Error("set owner is unknown");
     const speakerKey = aclPrincipalKey(speaker);
-    const speaksMember = speakerKey.length > 0 && speakerKey === aclPrincipalKey(accessor);
-    const speaksSet = speakerKey.length > 0 && speakerKey === aclPrincipalKey(owner);
+    const speaksMember = speakerKey != null && speakerKey === aclPrincipalKey(accessor);
+    const speaksSet = speakerKey != null && speakerKey === aclPrincipalKey(owner);
     if (!speaksMember && !speaksSet) throw new Error("membership speaker is not the member or the set owner");
     return [speaksMember, speaksSet];
   }
@@ -1296,7 +1350,8 @@ export class MemoryGroupGraph {
    * @param {KeyObject} secret
    */
   #requireSecret(principal, secret) {
-    const key = this.enrolled.get(aclPrincipalKey(principal));
+    const id = aclPrincipalKey(principal);
+    const key = id == null ? undefined : this.enrolled.get(id);
     if (!key) throw new Error("signer is not enrolled");
     const probe = signBytes(secret, domainBytes("sociacl-signer-probe-v1"));
     if (!verifyBytes(key, domainBytes("sociacl-signer-probe-v1"), probe)) {
@@ -1323,7 +1378,7 @@ export class MemoryGroupGraph {
     cancels.push({
       id,
       prior,
-      signer: signer.trim(),
+      signer: asciiTrim(signer),
       signature: signBytes(secret, message),
     });
   }
@@ -1336,8 +1391,8 @@ export class MemoryGroupGraph {
    * @param {KeyObject} secret
    */
   stateMembership(speaker, predicate, setId, accessor, secret) {
-    const id = String(setId).trim();
-    const who = String(accessor).trim();
+    const id = asciiTrim(String(setId));
+    const who = asciiTrim(String(accessor));
     if (!id || !who) throw new Error("group name is empty");
     const [speaksMember, speaksSet] = this.#speaker(speaker, predicate, id, who);
     const canonical = canonicalSetId(id);
@@ -1345,7 +1400,9 @@ export class MemoryGroupGraph {
     this.#requireSecret(speaker, secret);
     const owner = this.ownerOfSet(predicate, canonical);
     if (!owner) throw new Error("set owner is unknown");
-    const key = `${predicate}\0${aclKey(canonical)}\0${aclPrincipalKey(who)}`;
+    const whoKey = aclPrincipalKey(who);
+    if (whoKey == null) throw new Error("group name is empty");
+    const key = `${predicate}\0${aclKey(canonical)}\0${whoKey}`;
     const record = this.memberships.get(key) ?? {
       membership: { predicate, setId: canonical, accessor: who, stated: /** @type {0} */ (0), hamState: 0 },
       member: absentParty(),
@@ -1374,8 +1431,8 @@ export class MemoryGroupGraph {
    * @param {KeyObject} secret
    */
   cancelMembership(speaker, predicate, setId, accessor, secret) {
-    const id = String(setId).trim();
-    const who = String(accessor).trim();
+    const id = asciiTrim(String(setId));
+    const who = asciiTrim(String(accessor));
     if (!id || !who) throw new Error("group name is empty");
     const [speaksMember, speaksSet] = this.#speaker(speaker, predicate, id, who);
     const canonical = canonicalSetId(id);
@@ -1383,7 +1440,9 @@ export class MemoryGroupGraph {
     this.#requireSecret(speaker, secret);
     const owner = this.ownerOfSet(predicate, canonical);
     if (!owner) throw new Error("set owner is unknown");
-    const key = `${predicate}\0${aclKey(canonical)}\0${aclPrincipalKey(who)}`;
+    const whoKey = aclPrincipalKey(who);
+    if (whoKey == null) throw new Error("group name is empty");
+    const key = `${predicate}\0${aclKey(canonical)}\0${whoKey}`;
     const record = this.memberships.get(key) ?? {
       membership: { predicate, setId: canonical, accessor: who, stated: /** @type {0} */ (0), hamState: 0 },
       member: absentParty(),
@@ -1396,7 +1455,9 @@ export class MemoryGroupGraph {
     record.soul = membershipSoul(owner, predicate, canonical, who);
     record.setOwner = owner;
     record.membership.setId = canonical;
-    this.#pushCancel(record.cancels, "membership", membershipRowKey(record), speaker, secret);
+    const rowKey = membershipRowKey(record);
+    if (!rowKey) throw new Error("group name is empty");
+    this.#pushCancel(record.cancels, "membership", rowKey, speaker, secret);
     const observed = cancelIds(record.cancels);
     if (speaksMember) this.#signParty(record, record.member, "member", false, observed, secret);
     if (speaksSet) this.#signParty(record, record.setParty, "set", false, observed, secret);
@@ -1432,7 +1493,9 @@ export class MemoryGroupGraph {
   membership(predicate, setId, accessor) {
     const canonical = canonicalSetId(setId);
     if (!canonical) return undefined;
-    const key = `${predicate}\0${aclKey(canonical)}\0${aclPrincipalKey(accessor)}`;
+    const accessorKey = aclPrincipalKey(accessor);
+    if (accessorKey == null) return undefined;
+    const key = `${predicate}\0${aclKey(canonical)}\0${accessorKey}`;
     const record = this.memberships.get(key);
     if (!record) return undefined;
     return {
@@ -1453,14 +1516,14 @@ export class MemoryGroupGraph {
    * @param {KeyObject} secret
    */
   nameObjectSet(owner, object, predicate, setId, secret) {
-    const id = String(setId).trim();
+    const id = asciiTrim(String(setId));
     if (!id) throw new Error("group name is empty");
     const canonical = canonicalSetId(id);
     if (!canonical) throw new Error("set id is not bound to this owner");
     const objectId = String(object).trim();
     const objectOwner = this.ownerOf(objectId);
     if (!objectOwner) throw new Error("mesh object is not in-graph");
-    if (aclPrincipalKey(objectOwner) !== aclPrincipalKey(owner)) throw new Error("dest ACL write is owner-only");
+    if (!samePrincipal(objectOwner, owner)) throw new Error("dest ACL write is owner-only");
     const setOwner = this.ownerOfSet(predicate, canonical);
     if (setOwner && !setIdBindsOwner(canonical, setOwner)) throw new Error("set id is not bound to this owner");
     this.#requireSecret(owner, secret);
@@ -1476,7 +1539,7 @@ export class MemoryGroupGraph {
     const objectId = String(object).trim();
     const objectOwner = this.ownerOf(objectId);
     if (!objectOwner) throw new Error("mesh object is not in-graph");
-    if (aclPrincipalKey(objectOwner) !== aclPrincipalKey(owner)) throw new Error("dest ACL write is owner-only");
+    if (!samePrincipal(objectOwner, owner)) throw new Error("dest ACL write is owner-only");
     this.#requireSecret(owner, secret);
     const existing = this.objectSets.get(aclKey(objectId));
     if (!existing) {
@@ -1513,7 +1576,7 @@ export class MemoryGroupGraph {
       const query = grantObject(incoming);
       const record = this.objectRecord(query);
       const grantOwner = incoming.owner ?? "";
-      if (!query || !record || !grantOwner || canonicalAccessorId(record.owner) !== canonicalAccessorId(grantOwner)) {
+      if (!query || !record || !grantOwner || !samePrincipal(record.owner, grantOwner)) {
         continue;
       }
       const object = record.id;
@@ -1526,7 +1589,9 @@ export class MemoryGroupGraph {
       }
       const chosen = local ? preferGrant(local, normalized) : normalized;
       const stored = { ...chosen, object };
-      this.grants.set(grantKey(grantOwner, object, stored.accessor), stored);
+      const storedKey = grantKey(grantOwner, object, stored.accessor);
+      if (storedKey == null) continue;
+      this.grants.set(storedKey, stored);
     }
     for (const incoming of other.posts.values()) {
       this.mergePost(incoming);
@@ -1547,7 +1612,9 @@ export class MemoryGroupGraph {
       if (!canonical || incoming.membership.setId !== canonical) continue;
       if (!setIdBindsOwner(canonical, incoming.setOwner)) continue;
       if (!this.#membershipOwnerMatches(incoming)) continue;
-      const key = `${incoming.membership.predicate}\0${aclKey(canonical)}\0${aclPrincipalKey(incoming.membership.accessor)}`;
+      const accessorKey = aclPrincipalKey(incoming.membership.accessor);
+      if (accessorKey == null) continue;
+      const key = `${incoming.membership.predicate}\0${aclKey(canonical)}\0${accessorKey}`;
       const local = this.memberships.get(key);
       if (!local) {
         const kept = retainAuthenticMembership(lookup, structuredClone(incoming));
@@ -1575,13 +1642,13 @@ export class MemoryGroupGraph {
   /** @param {MembershipRecord} record */
   #membershipOwnerMatches(record) {
     const owner = this.ownerOfSet(record.membership.predicate, record.membership.setId);
-    return owner != null && aclPrincipalKey(owner) === aclPrincipalKey(record.setOwner);
+    return samePrincipal(owner, record.setOwner);
   }
 
   /** @param {ObjectSetRecord} record */
   #objectOwnerMatches(record) {
     const owner = this.ownerOf(record.name.object);
-    return owner != null && aclPrincipalKey(owner) === aclPrincipalKey(record.objectOwner);
+    return samePrincipal(owner, record.objectOwner);
   }
 
   /**
@@ -1624,7 +1691,10 @@ export class MemoryGroupGraph {
 
 /** @param {string} owner @param {string} object @param {string} accessor */
 function grantKey(owner, object, accessor) {
-  return `${aclPrincipalKey(owner)}\0${aclKey(object)}\0${aclPrincipalKey(accessor)}`;
+  const ownerKey = aclPrincipalKey(owner);
+  const accessorKey = aclPrincipalKey(accessor);
+  if (ownerKey == null || accessorKey == null) return null;
+  return `${ownerKey}\0${aclKey(object)}\0${accessorKey}`;
 }
 
 /** @param {SeeGrant} grant */
@@ -1686,7 +1756,7 @@ function preferGrant(local, incoming) {
  */
 function edgeAuthentic(graph, edge, owner) {
   if (edge.stated !== 1 || !edge.objectOwner || !edge.signature || !edge.observed || !edge.cancels) return false;
-  if (aclPrincipalKey(edge.objectOwner) !== aclPrincipalKey(owner)) return false;
+  if (!samePrincipal(edge.objectOwner, owner)) return false;
   const lookup = graphLookup(graph);
   if (!lookup(edge.objectOwner)) return false;
   /** @type {ObjectSetRecord} */
@@ -1701,7 +1771,7 @@ function edgeAuthentic(graph, edge, owner) {
   };
   const ids = verifiedIds(lookup, record.cancels, "object-set", aclKey(record.name.object), (signer) => {
     const key = aclPrincipalKey(signer);
-    return key.length > 0 && key === aclPrincipalKey(record.objectOwner);
+    return key != null && key === aclPrincipalKey(record.objectOwner);
   });
   return (
     record.signedStated === 1 &&
@@ -1743,7 +1813,9 @@ function membershipAuthentic(graph, row) {
     setOwner: row.setOwner,
     cancels: row.cancels,
   };
-  const ids = verifiedIds(lookup, record.cancels, "membership", membershipRowKey(record), (signer) =>
+  const rowKey = membershipRowKey(record);
+  if (rowKey == null) return false;
+  const ids = verifiedIds(lookup, record.cancels, "membership", rowKey, (signer) =>
     membershipCancelSigner(record, signer),
   );
   const live = (/** @type {PartyStatement} */ party, /** @type {"member" | "set"} */ role) =>
@@ -1762,14 +1834,14 @@ function checkSee(graph, object, accessor, now) {
   if (closed) return { allowed: false, reason: closed };
   const owner = graph.ownerOf(object);
   if (!owner) return { allowed: false, reason: "missing" };
-  if (canonicalAccessorId(owner) === canonicalAccessorId(accessor)) return { allowed: true, reason: "owner" };
+  if (samePrincipal(owner, accessor)) return { allowed: true, reason: "owner" };
   const live = graph.seeGrants(object).some((grant) => {
     const grantOwner = grant.owner;
-    const ownerOk = grantOwner == null || canonicalAccessorId(grantOwner) === canonicalAccessorId(owner);
+    const ownerOk = grantOwner == null || samePrincipal(grantOwner, owner);
     return (
       ownerOk &&
       sameObjectId(grantObject(grant), object) &&
-      canonicalAccessorId(grant.accessor) === canonicalAccessorId(accessor) &&
+      samePrincipal(grant.accessor, accessor) &&
       grant.stated !== 0 &&
       now >= grant.from &&
       now < grant.until
@@ -1810,7 +1882,7 @@ export function checkGroupSee(graph, predicate, object, accessor, now, hint, hop
   const edge = graph.objectSet(requestedObject);
   if (!edge) return deny("missing");
   if (!edge.object || aclKey(edge.object) !== aclKey(requestedObject)) return deny("missing");
-  if (!edge.objectOwner || aclPrincipalKey(edge.objectOwner) !== aclPrincipalKey(owner)) return deny("missing");
+  if (!edge.objectOwner || !samePrincipal(edge.objectOwner, owner)) return deny("missing");
   if (edge.predicate !== predicate) return deny("missing");
   if (edge.stated !== 1) return deny("cancelled");
   const canonical = canonicalSetId(edge.setId);
@@ -1821,8 +1893,8 @@ export function checkGroupSee(graph, predicate, object, accessor, now, hint, hop
   const membership = graph.membership(predicate, canonical, accessor);
   if (!membership) return deny("missing");
   if (membership.predicate !== predicate || membership.setId !== canonical) return deny("missing");
-  if (aclPrincipalKey(membership.accessor) !== aclPrincipalKey(accessor)) return deny("missing");
-  if (membership.setOwner == null || aclPrincipalKey(membership.setOwner) !== aclPrincipalKey(setOwner)) {
+  if (!samePrincipal(membership.accessor, accessor)) return deny("missing");
+  if (membership.setOwner == null || !samePrincipal(membership.setOwner, setOwner)) {
     return deny("missing");
   }
   if (membership.stated === 1 && membershipAuthentic(graph, membership)) {

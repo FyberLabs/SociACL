@@ -12,7 +12,8 @@ use std::collections::{HashMap, HashSet};
 use sociacl_core::{NodeId, Timestamp};
 
 use crate::soul::{
-    acl_key, acl_principal_key, canonical_accessor_id, GunSoul, S3RCH_ACL, S3RCH_META, S3RCH_ROOT,
+    acl_key, acl_principal_key, ascii_trim, canonical_accessor_id, GunSoul, S3RCH_ACL, S3RCH_META,
+    S3RCH_ROOT,
 };
 use crate::{GunError, HandoffHint, HopFactor, IdentitySeeGrant, UrlLeaf};
 
@@ -78,9 +79,10 @@ pub(crate) fn object_names(stored: &str, query: &str) -> bool {
 }
 
 pub(crate) fn accessor_names(stored: &str, query: &str) -> bool {
-    let stored = canonical_accessor_id(stored);
-    let query = canonical_accessor_id(query);
-    !stored.is_empty() && stored == query
+    match (canonical_accessor_id(stored), canonical_accessor_id(query)) {
+        (Some(stored), Some(query)) => stored == query,
+        _ => false,
+    }
 }
 
 impl From<&IdentitySeeGrant> for MeshSeeGrant {
@@ -106,15 +108,25 @@ pub struct GunAclEdge {
 }
 
 impl GunAclEdge {
-    pub fn new(owner: impl Into<String>, grant: MeshSeeGrant, ham_state: u64) -> Self {
+    pub fn new(
+        owner: impl Into<String>,
+        grant: MeshSeeGrant,
+        ham_state: u64,
+    ) -> Result<Self, crate::GunError> {
         let owner = owner.into();
+        if acl_principal_key(&owner).is_none() || acl_principal_key(&grant.accessor).is_none() {
+            return Err(crate::GunError::EmptyPrincipal);
+        }
         let soul = GunSoul::s3rch_acl_grant(&owner, &grant.object, &grant.accessor);
-        Self {
+        if !soul.is_s3rch_acl_grant() {
+            return Err(crate::GunError::EmptyPrincipal);
+        }
+        Ok(Self {
             soul,
             owner,
             grant,
             ham_state,
-        }
+        })
     }
 
     pub fn soul_key(&self) -> String {
@@ -124,7 +136,7 @@ impl GunAclEdge {
     /// Soul rebuilt from owner, object, and accessor. A peer map
     /// key or a copied soul does not choose where the grant lands.
     pub fn canonical(self) -> Self {
-        Self::new(self.owner, self.grant, self.ham_state)
+        Self::new(self.owner.clone(), self.grant.clone(), self.ham_state).unwrap_or(self)
     }
 
     /// Higher HAM state wins. At the same state a cancellation wins,
@@ -176,9 +188,17 @@ fn narrower_window(left: &MeshSeeGrant, right: &MeshSeeGrant) -> Option<Ordering
 
 fn canonical_grant_bytes(edge: &GunAclEdge) -> Vec<u8> {
     let mut buf = b"sociacl-see-grant-v1\0".to_vec();
-    push_grant_str(&mut buf, &acl_principal_key(&edge.owner));
+    push_grant_str(
+        &mut buf,
+        acl_principal_key(&edge.owner).as_deref().unwrap_or(""),
+    );
     push_grant_str(&mut buf, &acl_key(&edge.grant.object));
-    push_grant_str(&mut buf, &acl_principal_key(&edge.grant.accessor));
+    push_grant_str(
+        &mut buf,
+        acl_principal_key(&edge.grant.accessor)
+            .as_deref()
+            .unwrap_or(""),
+    );
     buf.extend_from_slice(&edge.grant.from.0.to_be_bytes());
     buf.extend_from_slice(&edge.grant.until.0.to_be_bytes());
     buf.push(edge.grant.stated);
@@ -268,13 +288,15 @@ impl MeshSeeGraph {
     }
 
     pub fn put_object(&mut self, object: impl AsRef<str>, owner: impl AsRef<str>) {
-        let id = object.as_ref().trim().to_string();
-        let owner = owner.as_ref().trim().to_string();
+        let id = ascii_trim(object.as_ref()).to_string();
+        let owner = ascii_trim(owner.as_ref()).to_string();
         let direct_key = object_store_key(&id);
         if self.objects.contains_key(&direct_key) {
-            if self.objects.get(&direct_key).is_some_and(|existing| {
-                canonical_accessor_id(&existing.owner) != canonical_accessor_id(&owner)
-            }) {
+            if self
+                .objects
+                .get(&direct_key)
+                .is_some_and(|existing| !principals_are(existing.owner.as_str(), owner.as_str()))
+            {
                 self.groups.drop_object_set(&id);
             }
             self.objects.insert(direct_key, MeshObject { id, owner });
@@ -282,9 +304,11 @@ impl MeshSeeGraph {
         }
         if let Some(existing_id) = self.lookup_object(&id).map(|existing| existing.id.clone()) {
             let key = object_store_key(&existing_id);
-            if self.objects.get(&key).is_some_and(|existing| {
-                canonical_accessor_id(&existing.owner) != canonical_accessor_id(&owner)
-            }) {
+            if self
+                .objects
+                .get(&key)
+                .is_some_and(|existing| !principals_are(existing.owner.as_str(), owner.as_str()))
+            {
                 self.groups.drop_object_set(&existing_id);
             }
             self.objects.insert(
@@ -328,13 +352,18 @@ impl MeshSeeGraph {
 
     /// Record a person-to-person edge. Check never walks it.
     pub fn state_friend(&mut self, a: impl AsRef<str>, b: impl AsRef<str>) {
-        self.friends
-            .insert((acl_principal_key(a.as_ref()), acl_principal_key(b.as_ref())));
+        let (Some(a), Some(b)) = (acl_principal_key(a.as_ref()), acl_principal_key(b.as_ref()))
+        else {
+            return;
+        };
+        self.friends.insert((a, b));
     }
 
     pub fn has_friend(&self, a: &str, b: &str) -> bool {
-        self.friends
-            .contains(&(acl_principal_key(a), acl_principal_key(b)))
+        let (Some(a), Some(b)) = (acl_principal_key(a), acl_principal_key(b)) else {
+            return false;
+        };
+        self.friends.contains(&(a, b))
     }
 
     /// Owner-only. Writes a live grant at the dest-ACL soul.
@@ -345,7 +374,7 @@ impl MeshSeeGraph {
         owner: impl AsRef<str>,
         grant: MeshSeeGrant,
     ) -> Result<(), GunError> {
-        let owner = owner.as_ref().trim();
+        let owner = ascii_trim(owner.as_ref());
         let (stored_id, object_owner) = self
             .object_record(&grant.object)
             .map(|(id, object_owner)| (id.to_string(), object_owner.to_string()))
@@ -359,7 +388,7 @@ impl MeshSeeGraph {
             .folded_see(&grant.object, &grant.accessor, owner)
             .map(|edge| edge.ham_state.saturating_add(1))
             .unwrap_or(1);
-        self.merge_edge(GunAclEdge::new(owner, grant, ham_state));
+        self.merge_edge(GunAclEdge::new(owner, grant, ham_state)?);
         Ok(())
     }
 
@@ -371,9 +400,9 @@ impl MeshSeeGraph {
         accessor: impl AsRef<str>,
         object: impl AsRef<str>,
     ) -> Result<(), GunError> {
-        let owner = owner.as_ref().trim();
-        let object = object.as_ref().trim();
-        let accessor = accessor.as_ref().trim();
+        let owner = ascii_trim(owner.as_ref());
+        let object = ascii_trim(object.as_ref());
+        let accessor = ascii_trim(accessor.as_ref());
         let (stored_id, object_owner) = self
             .object_record(object)
             .map(|(id, object_owner)| (id.to_string(), object_owner.to_string()))
@@ -397,7 +426,7 @@ impl MeshSeeGraph {
         let ham_state = existing
             .map(|edge| edge.ham_state.saturating_add(1))
             .unwrap_or(1);
-        self.merge_edge(GunAclEdge::new(owner, grant, ham_state));
+        self.merge_edge(GunAclEdge::new(owner, grant, ham_state)?);
         Ok(())
     }
 
@@ -520,8 +549,8 @@ impl MeshSeeGraph {
         hint: Option<&HandoffHint>,
         hop: Option<&HopFactor>,
     ) -> MeshCheckResult {
-        let object = object.as_ref().trim();
-        let accessor = accessor.as_ref().trim();
+        let object = ascii_trim(object.as_ref());
+        let accessor = ascii_trim(accessor.as_ref());
         let hint = hint.cloned();
         let hop = hop.cloned();
 
@@ -707,6 +736,13 @@ fn is_url_leaf(object: &str) -> bool {
     matches!(scheme.as_deref(), Some("http") | Some("https")) && UrlLeaf::parse(s).is_ok()
 }
 
+fn principals_are(left: &str, right: &str) -> bool {
+    match (canonical_accessor_id(left), canonical_accessor_id(right)) {
+        (Some(a), Some(b)) => a == b,
+        _ => false,
+    }
+}
+
 fn is_meta_object(object: &str) -> bool {
     let s = object.trim();
     s == S3RCH_META
@@ -730,13 +766,21 @@ pub fn grant_soul(
     owner: impl AsRef<str>,
     object: impl AsRef<str>,
     accessor: impl AsRef<str>,
-) -> NodeId {
-    GunSoul::s3rch_acl_grant(owner, object, accessor).as_node_id()
+) -> Option<NodeId> {
+    let soul = GunSoul::s3rch_acl_grant(owner, object, accessor);
+    if !soul.is_s3rch_acl_grant() {
+        return None;
+    }
+    Some(soul.as_node_id())
 }
 
 /// Owner dest-ACL root. Not a Check object.
-pub fn acl_soul(owner: impl AsRef<str>) -> NodeId {
-    GunSoul::s3rch_acl(owner).as_node_id()
+pub fn acl_soul(owner: impl AsRef<str>) -> Option<NodeId> {
+    let soul = GunSoul::s3rch_acl(owner);
+    if soul.segments().len() != 3 {
+        return None;
+    }
+    Some(soul.as_node_id())
 }
 
 #[cfg(test)]
@@ -854,8 +898,7 @@ mod tests {
         );
         let chain = "0xattacker.get('s3rch').get('users').get('0xvictim')";
         assert!(graph.object_record(chain).is_none());
-        assert_eq!(crate::soul::canonical_accessor_id(chain), "");
-        assert_ne!(crate::soul::canonical_accessor_id(chain), "0xvictim");
+        assert_eq!(crate::soul::canonical_accessor_id(chain), None);
         graph.put_object("doc", "0xvictim");
         assert!(!graph.check_see("doc", chain, now, None, None).allowed);
         assert!(graph.check_see("doc", "0xvictim", now, None, None).allowed);
@@ -868,6 +911,22 @@ mod tests {
         let now = Timestamp(10);
         assert!(!graph.check_see("doc", "a\u{0}b", now, None, None).allowed);
         assert!(!graph.check_see("doc", "../meta", now, None, None).allowed);
+        graph.put_object("owned", "0xalice");
+        assert!(
+            !graph
+                .check_see("owned", "\u{FEFF}0xalice", now, None, None)
+                .allowed
+        );
+        assert!(
+            !graph
+                .check_see("owned", "0xalice\u{FEFF}", now, None, None)
+                .allowed
+        );
+        assert!(
+            !graph
+                .check_see("owned", "\u{0085}0xalice", now, None, None)
+                .allowed
+        );
         assert!(
             !graph
                 .check_see("doc", "x~1get('s3rch')", now, None, None)

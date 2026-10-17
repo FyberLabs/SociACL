@@ -62,7 +62,7 @@ See grants are Gun nodes under the **object owner's dest ACL**, not under `items
 s3rch/acl/<aclPrincipalKey(owner)>/<aclKey(object)>/<aclPrincipalKey(accessor)>
 ```
 
-`s3rch/users/<wallet>` collapses to the wallet text on dest ACL. A principal is that wallet, or a bare id. `.` is allowed. `/ # $ [ ] ~`, a control character, and `.get(` are rejected. Rejected text is empty and is not a soul segment. It is not an `escapeKey` form. Examples:
+`s3rch/users/<wallet>` collapses to the wallet text on dest ACL. A principal is that wallet, or a bare id. `.` is allowed inside an id. The whole id cannot be `.` or `..`. `/ # $ [ ] ~`, an inner space, a control, Unicode whitespace, a format character, `.get(`, an unpaired surrogate, and more than 256 scalar values are rejected. A failed parse is null, not an empty string, and is not a soul segment. Trim is ASCII whitespace only (tab, LF, VT, FF, CR, space), so U+FEFF and U+0085 stay in the text and are rejected. It is not an `escapeKey` form. Examples:
 
 ```
 s3rch/acl/0xalice/rss3:act~61~2x/0xbob        // feed item rss3:act/1#x

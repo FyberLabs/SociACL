@@ -193,6 +193,9 @@ test("grant souls use the injective key and do not parse a gun chain", () => {
   assert.equal(plainGrant("room/alpha", "0xbob", "s3rch/acl/0xalice/room~6alpha/0xbob").skippedPublic, true);
   const chain = "0xattacker.get('s3rch').get('users').get('0xvictim')";
   assert.throws(() => plainGrant("room", chain, "s3rch/acl/0xalice/room/0xvictim"), /migration rejected/);
+  for (const accessor of ["0xbob/x", "x~1get('s3rch')", "../meta"]) {
+    assert.throws(() => plainGrant("doc", accessor, ""), /migration rejected/, accessor);
+  }
   assert.equal(plainGrant("item-1", "0xbob", "s3rch/acl/0xalice/item-1/0xbob").skippedPublic, true);
   assert.equal(
     plainGrant("item-1", "s3rch/users/0xbob", "s3rch/acl/0xalice/item-1/0xbob").skippedPublic,

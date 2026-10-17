@@ -120,11 +120,7 @@ pub fn canonical_request_accessor(requester: &str) -> Result<String, GunError> {
         return Err(GunError::AccessRequestField);
     }
     reject_trim_mismatch(requester)?;
-    let id = canonical_accessor_id(requester);
-    if id.is_empty() {
-        return Err(GunError::AccessRequestField);
-    }
-    Ok(id)
+    canonical_accessor_id(requester).ok_or(GunError::AccessRequestField)
 }
 
 /// Object key for a request id.

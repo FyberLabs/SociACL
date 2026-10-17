@@ -786,65 +786,8 @@ fn align_wraps(
     Ok(())
 }
 
-fn grant_soul(owner: &str, object: &str, accessor: &str) -> String {
-    let owner = acl_principal_key(owner);
-    let accessor = acl_principal_key(accessor);
-    if owner.is_empty() || accessor.is_empty() {
-        return String::new();
-    }
-    format!("s3rch/acl/{}/{}/{}", owner, acl_key(object), accessor)
-}
-
-fn escape_key(id: &str, slash: bool) -> String {
-    let mut out = String::with_capacity(id.len());
-    for ch in id.chars() {
-        match ch {
-            '~' => out.push_str("~0"),
-            '.' => out.push_str("~1"),
-            '#' => out.push_str("~2"),
-            '$' => out.push_str("~3"),
-            '[' => out.push_str("~4"),
-            ']' => out.push_str("~5"),
-            '/' if slash => out.push_str("~6"),
-            other => out.push(other),
-        }
-    }
-    out
-}
-
-fn acl_key(id: &str) -> String {
-    escape_key(id.trim(), true)
-}
-
-fn bare_principal(id: &str) -> bool {
-    !id.is_empty()
-        && !id.contains(".get(")
-        && !id.contains(['/', '#', '$', '[', ']', '~'])
-        && !id.chars().any(|ch| ch.is_control())
-}
-
-fn acl_principal_key(id: &str) -> String {
-    let id = id.trim();
-    if id.is_empty() || id.contains(".get(") {
-        return String::new();
-    }
-    let parts: Vec<&str> = id
-        .split('/')
-        .map(str::trim)
-        .filter(|part| !part.is_empty())
-        .collect();
-    if parts.len() == 3 && parts[0] == "s3rch" && parts[1] == "users" {
-        return if bare_principal(parts[2]) {
-            parts[2].to_string()
-        } else {
-            String::new()
-        };
-    }
-    if id.contains('/') || !bare_principal(id) {
-        String::new()
-    } else {
-        id.to_string()
-    }
+fn grant_soul(owner: &str, object: &str, accessor: &str) -> Option<String> {
+    sociacl_gun::grant_soul(owner, object, accessor).map(|id| id.as_str().to_string())
 }
 
 fn current_grants(
@@ -856,11 +799,10 @@ fn current_grants(
     let mut current = Vec::new();
     let mut seen = Vec::new();
     for grant in grants {
-        if grant.owner != owner
-            || grant.grant.object != object
-            || grant.grant.accessor.is_empty()
-            || grant.soul != grant_soul(owner, object, &grant.grant.accessor)
-        {
+        let Some(expected) = grant_soul(owner, object, &grant.grant.accessor) else {
+            return Err(EncDiscError::MigrationRejected);
+        };
+        if grant.owner != owner || grant.grant.object != object || grant.soul != expected {
             return Err(EncDiscError::MigrationRejected);
         }
         safe_int(grant.ham_state)?;
@@ -1360,21 +1302,72 @@ mod tests {
             ("alice.name", "a.b", "carol"),
         ] {
             let expected = sociacl_gun::grant_soul(owner, object, accessor);
-            assert_eq!(grant_soul(owner, object, accessor), expected.as_str());
+            assert_eq!(
+                grant_soul(owner, object, accessor).as_deref(),
+                expected.as_ref().map(|id| id.as_str())
+            );
         }
     }
 
     #[test]
     fn acl_keys_do_not_fold_and_a_gun_chain_is_not_a_wallet() {
-        assert_ne!(acl_key("room.alpha"), acl_key("room_alpha"));
-        assert_ne!(acl_key("room.alpha"), acl_key("room/alpha"));
-        assert_ne!(acl_key("room_alpha"), acl_key("room/alpha"));
+        assert_ne!(
+            sociacl_gun::acl_key("room.alpha"),
+            sociacl_gun::acl_key("room_alpha")
+        );
+        assert_ne!(
+            sociacl_gun::acl_key("room.alpha"),
+            sociacl_gun::acl_key("room/alpha")
+        );
+        assert_ne!(
+            sociacl_gun::acl_key("room_alpha"),
+            sociacl_gun::acl_key("room/alpha")
+        );
         let chain = "0xattacker.get('s3rch').get('users').get('0xvictim')";
-        assert_ne!(acl_principal_key(chain), "0xvictim");
+        assert_eq!(sociacl_gun::acl_principal_key(chain), None);
         assert_ne!(
             grant_soul("0xalice", "room", chain),
             grant_soul("0xalice", "room", "0xvictim")
         );
+    }
+
+    #[test]
+    fn an_invalid_principal_is_not_admitted_as_an_empty_soul() {
+        let migration = ProtocolMigration {
+            object: "doc".to_string(),
+            from_version: 1,
+            to_version: 2,
+            rewrapped: Vec::new(),
+            readers: Vec::new(),
+            version_gate: 2,
+        };
+        for accessor in ["0xbob/x", "x~1get('s3rch')", "../meta"] {
+            let grant = MigrationGrant {
+                soul: String::new(),
+                owner: "0xalice".to_string(),
+                grant: MeshSeeGrant {
+                    object: "doc".to_string(),
+                    accessor: accessor.to_string(),
+                    from: 0,
+                    until: 80,
+                    stated: GrantStated::Live,
+                },
+                ham_state: 1,
+            };
+            let err = apply_protocol_migration(&MigrationAdmissionInput {
+                migration: &migration,
+                owner: "0xalice",
+                caller: "0xalice",
+                now: 10,
+                storage: GrantStorage::PublicPlain,
+                grants: std::slice::from_ref(&grant),
+                payloads: &[],
+                receipts: &[],
+                reader_versions: &[],
+                soul_ham_state: 1,
+            });
+            assert!(err.is_err(), "{accessor}");
+        }
     }
 
     #[test]

@@ -23,7 +23,9 @@ use sha2::{Digest, Sha256};
 use sociacl_core::{AttestationSig, IssuerSecret, Timestamp, VerifyKey};
 
 use crate::mesh::{closed_reason, MeshCheckResult, MeshSeeGraph};
-use crate::soul::{acl_key, acl_principal_key, unescape_acl_key, S3RCH_ACL, S3RCH_ROOT};
+use crate::soul::{
+    acl_key, acl_principal_key, ascii_trim, unescape_acl_key, S3RCH_ACL, S3RCH_ROOT,
+};
 use crate::{GunError, HandoffHint, HopFactor};
 
 /// `same-group` or `named-circle`. The accessor does not pick a richer one.
@@ -268,10 +270,12 @@ impl GroupRows {
         )) else {
             return;
         };
-        if acl_principal_key(owner) != acl_principal_key(&incoming.set_owner) {
+        if !principals_match(owner, &incoming.set_owner) {
             return;
         }
-        let key = membership_key(&incoming.membership);
+        let Some(key) = membership_key(&incoming.membership) else {
+            return;
+        };
         let enrolled = self.enrolled.clone();
         let merged = match self.memberships.remove(&key) {
             Some(local) => merge_membership_records(local, incoming, &enrolled),
@@ -296,7 +300,7 @@ impl GroupRows {
         let Some(owner) = retained_object_owner(object_owners, &incoming.name.object) else {
             return;
         };
-        if acl_principal_key(owner) != acl_principal_key(&incoming.object_owner) {
+        if !principals_match(owner, &incoming.object_owner) {
             return;
         }
         if incoming.signed_stated == 1 && canonical_set_id(&incoming.name.set_id).is_err() {
@@ -334,11 +338,12 @@ pub fn membership_soul(
     set_id: &str,
     accessor: &str,
 ) -> String {
-    let owner = acl_principal_key(set_owner);
-    let accessor = acl_principal_key(accessor);
-    if owner.is_empty() || accessor.is_empty() {
+    let Some(owner) = acl_principal_key(set_owner) else {
         return String::new();
-    }
+    };
+    let Some(accessor) = acl_principal_key(accessor) else {
+        return String::new();
+    };
     let set_key = canonical_set_id(set_id)
         .map(|id| acl_key(&id))
         .unwrap_or_else(|_| acl_key(set_id));
@@ -352,10 +357,9 @@ pub fn membership_soul(
 /// five-segment grant soul and not a Check object. The path stays
 /// on the object; the set id lives in the row, not in the soul.
 pub fn object_set_soul(object_owner: &str, object: &str) -> String {
-    let owner = acl_principal_key(object_owner);
-    if owner.is_empty() {
+    let Some(owner) = acl_principal_key(object_owner) else {
         return String::new();
-    }
+    };
     format!(
         "{S3RCH_ROOT}/{S3RCH_ACL}/{owner}/object-set/edge/{}",
         acl_key(object),
@@ -370,19 +374,18 @@ impl MeshSeeGraph {
         predicate: GroupPredicate,
         set_id: impl AsRef<str>,
     ) -> Result<(), GunError> {
-        let owner = owner.as_ref().trim();
-        let set_id = set_id.as_ref().trim();
+        let owner = ascii_trim(owner.as_ref());
+        let set_id = ascii_trim(set_id.as_ref());
         if owner.is_empty() || set_id.is_empty() {
             return Err(GunError::EmptyGroupName);
         }
         let canonical = canonical_set_id(set_id)?;
         let key = (predicate, set_map_key(&canonical));
-        let owner_key = acl_principal_key(owner);
-        if owner_key.is_empty() {
+        if acl_principal_key(owner).is_none() {
             return Err(GunError::UnboundSetOwner);
         }
         if let Some(existing) = self.groups.set_owners.get(&key) {
-            if acl_principal_key(existing) != owner_key {
+            if !principals_match(existing, owner) {
                 return Err(GunError::SetOwnerConflict);
             }
             return Ok(());
@@ -395,7 +398,7 @@ impl MeshSeeGraph {
     }
 
     pub fn owner_of_set(&self, predicate: GroupPredicate, set_id: &str) -> Option<&str> {
-        let canonical = canonical_set_id(set_id.trim()).ok()?;
+        let canonical = canonical_set_id(ascii_trim(set_id)).ok()?;
         self.groups
             .set_owners
             .get(&(predicate, set_map_key(&canonical)))
@@ -409,11 +412,13 @@ impl MeshSeeGraph {
         principal: impl AsRef<str>,
         key: VerifyKey,
     ) -> Result<(), GunError> {
-        let principal = principal.as_ref().trim();
+        let principal = ascii_trim(principal.as_ref());
         if principal.is_empty() || !key.is_valid() {
             return Err(GunError::SignerNotEnrolled);
         }
-        let id = acl_principal_key(principal);
+        let Some(id) = acl_principal_key(principal) else {
+            return Err(GunError::SignerNotEnrolled);
+        };
         if let Some(existing) = self.groups.enrolled.get(&id) {
             if existing != &key {
                 return Err(GunError::SignerNotEnrolled);
@@ -427,10 +432,8 @@ impl MeshSeeGraph {
     /// Verify key enrolled for this principal. Lookup uses the canonical
     /// accessor id. A missing enrollment is not a key.
     pub fn enrolled_key(&self, principal: &str) -> Option<VerifyKey> {
-        self.groups
-            .enrolled
-            .get(&acl_principal_key(principal))
-            .copied()
+        let id = acl_principal_key(principal)?;
+        self.groups.enrolled.get(&id).copied()
     }
 
     /// One side of a direct membership. Live only when both the member
@@ -444,8 +447,8 @@ impl MeshSeeGraph {
         accessor: impl AsRef<str>,
         secret: &IssuerSecret,
     ) -> Result<(), GunError> {
-        let set_id = set_id.as_ref().trim();
-        let accessor = accessor.as_ref().trim();
+        let set_id = ascii_trim(set_id.as_ref());
+        let accessor = ascii_trim(accessor.as_ref());
         if set_id.is_empty() || accessor.is_empty() {
             return Err(GunError::EmptyGroupName);
         }
@@ -453,7 +456,8 @@ impl MeshSeeGraph {
             self.membership_speaker(speaker.as_ref(), predicate, set_id, accessor)?;
         let canonical = canonical_set_id(set_id)?;
         self.require_secret(speaker.as_ref(), secret)?;
-        let key = membership_key_parts(predicate, &canonical, accessor);
+        let key = membership_key_parts(predicate, &canonical, accessor)
+            .ok_or(GunError::EmptyPrincipal)?;
         let owner = self
             .owner_of_set(predicate, &canonical)
             .ok_or(GunError::SetUnknown)?
@@ -499,8 +503,8 @@ impl MeshSeeGraph {
         accessor: impl AsRef<str>,
         secret: &IssuerSecret,
     ) -> Result<(), GunError> {
-        let set_id = set_id.as_ref().trim();
-        let accessor = accessor.as_ref().trim();
+        let set_id = ascii_trim(set_id.as_ref());
+        let accessor = ascii_trim(accessor.as_ref());
         if set_id.is_empty() || accessor.is_empty() {
             return Err(GunError::EmptyGroupName);
         }
@@ -508,7 +512,8 @@ impl MeshSeeGraph {
             self.membership_speaker(speaker.as_ref(), predicate, set_id, accessor)?;
         let canonical = canonical_set_id(set_id)?;
         self.require_secret(speaker.as_ref(), secret)?;
-        let key = membership_key_parts(predicate, &canonical, accessor);
+        let key = membership_key_parts(predicate, &canonical, accessor)
+            .ok_or(GunError::EmptyPrincipal)?;
         let owner = self
             .owner_of_set(predicate, &canonical)
             .ok_or(GunError::SetUnknown)?
@@ -587,7 +592,7 @@ impl MeshSeeGraph {
         set_id: impl AsRef<str>,
         secret: &IssuerSecret,
     ) -> Result<(), GunError> {
-        let set_id = set_id.as_ref().trim();
+        let set_id = ascii_trim(set_id.as_ref());
         if set_id.is_empty() {
             return Err(GunError::EmptyGroupName);
         }
@@ -649,7 +654,7 @@ impl MeshSeeGraph {
         hop: Option<&HopFactor>,
     ) -> MeshCheckResult {
         let object = object.as_ref().trim();
-        let accessor = accessor.as_ref().trim();
+        let accessor = ascii_trim(accessor.as_ref());
         let hint = hint.cloned();
         let hop = hop.cloned();
         let _ = now;
@@ -672,7 +677,7 @@ impl MeshSeeGraph {
         let object_owner = object_owner.to_string();
         let owner_key = acl_principal_key(&object_owner);
         let accessor_key = acl_principal_key(accessor);
-        if !owner_key.is_empty() && owner_key == accessor_key {
+        if owner_key.is_some() && owner_key == accessor_key {
             return MeshCheckResult {
                 allowed: true,
                 reason: crate::MESH_REASON_OWNER.into(),
@@ -683,7 +688,7 @@ impl MeshSeeGraph {
         let Some(edge) = self.object_set_record(&object_id) else {
             return closed(crate::MESH_REASON_MISSING, hint, hop);
         };
-        if acl_principal_key(&edge.object_owner) != acl_principal_key(&object_owner) {
+        if !principals_match(&edge.object_owner, &object_owner) {
             return closed(crate::MESH_REASON_MISSING, hint, hop);
         }
         if acl_key(&edge.name.object) != acl_key(&object_id) {
@@ -700,7 +705,7 @@ impl MeshSeeGraph {
                     &self.groups.enrolled,
                     "object-set",
                     &object_set_key(&object_id),
-                    |signer| acl_principal_key(signer) == acl_principal_key(&edge.object_owner),
+                    |signer| principals_match(signer, &edge.object_owner),
                 )
                 .is_empty()
             {
@@ -725,8 +730,8 @@ impl MeshSeeGraph {
         };
         if record.membership.predicate != predicate
             || record.membership.set_id != set_id
-            || acl_principal_key(&record.membership.accessor) != acl_principal_key(accessor)
-            || acl_principal_key(&record.set_owner) != acl_principal_key(set_owner)
+            || !principals_match(&record.membership.accessor, accessor)
+            || !principals_match(&record.set_owner, set_owner)
         {
             return closed(crate::MESH_REASON_MISSING, hint, hop);
         }
@@ -764,7 +769,7 @@ impl MeshSeeGraph {
         hop: Option<&HopFactor>,
     ) -> GroupPresentation {
         let object = object.as_ref().trim();
-        let accessor = accessor.as_ref().trim();
+        let accessor = ascii_trim(accessor.as_ref());
         let store_cancel = payload.stated == 0;
         let hinted = hint.cloned();
         let hopped = hop.cloned();
@@ -847,7 +852,10 @@ impl MeshSeeGraph {
     }
 
     fn require_secret(&self, principal: &str, secret: &IssuerSecret) -> Result<(), GunError> {
-        let Some(key) = self.groups.enrolled.get(&acl_principal_key(principal)) else {
+        let Some(id) = acl_principal_key(principal) else {
+            return Err(GunError::SignerNotEnrolled);
+        };
+        let Some(key) = self.groups.enrolled.get(&id) else {
             return Err(GunError::SignerNotEnrolled);
         };
         if secret.verify_key() != *key {
@@ -867,8 +875,8 @@ impl MeshSeeGraph {
             .owner_of_set(predicate, set_id)
             .ok_or(GunError::SetUnknown)?;
         let speaker_key = acl_principal_key(speaker);
-        let speaks_member = !speaker_key.is_empty() && speaker_key == acl_principal_key(accessor);
-        let speaks_set = !speaker_key.is_empty() && speaker_key == acl_principal_key(owner);
+        let speaks_member = speaker_key.is_some() && speaker_key == acl_principal_key(accessor);
+        let speaks_set = speaker_key.is_some() && speaker_key == acl_principal_key(owner);
         if !speaks_member && !speaks_set {
             return Err(GunError::MembershipSpeaker);
         }
@@ -883,7 +891,7 @@ impl MeshSeeGraph {
         let (object_id, object_owner) = self
             .object_record(object)
             .ok_or(GunError::ObjectNotInGraph)?;
-        if acl_principal_key(object_owner) != acl_principal_key(owner) {
+        if !principals_match(object_owner, owner) {
             return Err(GunError::AclOwnerOnly);
         }
         Ok((object_id.to_string(), object_owner.to_string()))
@@ -954,12 +962,12 @@ impl MeshSeeGraph {
         set_id: &str,
         accessor: &str,
     ) -> Option<&MembershipRecord> {
-        let Ok(canonical) = canonical_set_id(set_id.trim()) else {
+        let Ok(canonical) = canonical_set_id(ascii_trim(set_id)) else {
             return None;
         };
         self.groups
             .memberships
-            .get(&membership_key_parts(predicate, &canonical, accessor))
+            .get(&membership_key_parts(predicate, &canonical, accessor)?)
     }
 }
 
@@ -980,7 +988,7 @@ impl GroupRows {
             SignedCancel {
                 id,
                 prior,
-                signer: signer.trim().to_string(),
+                signer: ascii_trim(signer).to_string(),
                 signature,
             },
         );
@@ -1092,7 +1100,7 @@ fn retain_verified_object_cancels(
     let owner = acl_principal_key(&record.object_owner);
     record.cancels.retain(|_, cancel| {
         let ok = cancel_verifies(cancel, enrolled, "object-set", &row_key, |signer| {
-            !owner.is_empty() && acl_principal_key(signer) == owner
+            owner.is_some() && acl_principal_key(signer) == owner
         });
         if ok {
             *cancel = stored_cancel(cancel);
@@ -1188,7 +1196,7 @@ fn merge_object_records(
     let row_key = object_set_key(&incoming.name.object);
     for (id, cancel) in &incoming.cancels {
         if cancel_verifies(cancel, enrolled, "object-set", &row_key, |signer| {
-            acl_principal_key(signer) == acl_principal_key(&incoming.object_owner)
+            principals_match(signer, &incoming.object_owner)
         }) {
             cancels.entry(*id).or_insert_with(|| stored_cancel(cancel));
         }
@@ -1259,13 +1267,16 @@ fn object_live(record: &ObjectSetRecord, enrolled: &HashMap<String, VerifyKey>) 
         enrolled,
         "object-set",
         &object_set_key(&record.name.object),
-        |signer| acl_principal_key(signer) == acl_principal_key(&record.object_owner),
+        |signer| principals_match(signer, &record.object_owner),
     );
     ids.len() == record.cancels.len() && record.observed.is_superset(&ids)
 }
 
 fn object_signature_ok(record: &ObjectSetRecord, enrolled: &HashMap<String, VerifyKey>) -> bool {
-    let Some(key) = enrolled.get(&acl_principal_key(&record.object_owner)) else {
+    let Some(id) = acl_principal_key(&record.object_owner) else {
+        return false;
+    };
+    let Some(key) = enrolled.get(&id) else {
         return false;
     };
     key.verify(&object_message(record), &record.signature)
@@ -1298,6 +1309,9 @@ fn party_signature_ok(
     } else {
         acl_principal_key(&record.set_owner)
     };
+    let Some(principal) = principal else {
+        return false;
+    };
     let Some(key) = enrolled.get(&principal) else {
         return false;
     };
@@ -1322,7 +1336,7 @@ fn verified_membership_ids(
 
 fn membership_cancel_signer(record: &MembershipRecord, signer: &str) -> bool {
     let signer = acl_principal_key(signer);
-    !signer.is_empty()
+    signer.is_some()
         && (signer == acl_principal_key(&record.membership.accessor)
             || signer == acl_principal_key(&record.set_owner))
 }
@@ -1351,7 +1365,10 @@ fn cancel_verifies(
     if !allow(&cancel.signer) {
         return false;
     }
-    let Some(key) = enrolled.get(&acl_principal_key(&cancel.signer)) else {
+    let Some(id) = acl_principal_key(&cancel.signer) else {
+        return false;
+    };
+    let Some(key) = enrolled.get(&id) else {
         return false;
     };
     let Some(id) = canonical_cancel_id(&cancel_id_hex(&cancel.id)) else {
@@ -1453,8 +1470,18 @@ fn party_message(
     push_str(&mut buf, role);
     push_str(&mut buf, record.membership.predicate.as_str());
     push_str(&mut buf, &record.membership.set_id);
-    push_str(&mut buf, &acl_principal_key(&record.membership.accessor));
-    push_str(&mut buf, &acl_principal_key(&record.set_owner));
+    push_str(
+        &mut buf,
+        acl_principal_key(&record.membership.accessor)
+            .as_deref()
+            .unwrap_or(""),
+    );
+    push_str(
+        &mut buf,
+        acl_principal_key(&record.set_owner)
+            .as_deref()
+            .unwrap_or(""),
+    );
     buf.push(u8::from(stated));
     buf.extend_from_slice(&ham_state.to_be_bytes());
     push_ids(&mut buf, observed);
@@ -1464,7 +1491,12 @@ fn party_message(
 fn object_message(record: &ObjectSetRecord) -> Vec<u8> {
     let mut buf = b"sociacl-object-set-v1\0".to_vec();
     push_str(&mut buf, &acl_key(&record.name.object));
-    push_str(&mut buf, &acl_principal_key(&record.object_owner));
+    push_str(
+        &mut buf,
+        acl_principal_key(&record.object_owner)
+            .as_deref()
+            .unwrap_or(""),
+    );
     push_str(&mut buf, record.name.predicate.as_str());
     push_str(&mut buf, &record.name.set_id);
     buf.push(record.signed_stated);
@@ -1498,15 +1530,16 @@ fn push_ids(buf: &mut Vec<u8>, ids: &BTreeSet<CancelId>) {
 }
 
 fn membership_row_key(record: &MembershipRecord) -> String {
+    let accessor = acl_principal_key(&record.membership.accessor).unwrap_or_default();
     format!(
         "{}\0{}\0{}",
         record.membership.predicate.as_str(),
         record.membership.set_id,
-        acl_principal_key(&record.membership.accessor)
+        accessor
     )
 }
 
-fn membership_key(membership: &MeshMembership) -> MembershipKey {
+fn membership_key(membership: &MeshMembership) -> Option<MembershipKey> {
     membership_key_parts(
         membership.predicate,
         &membership.set_id,
@@ -1514,12 +1547,23 @@ fn membership_key(membership: &MeshMembership) -> MembershipKey {
     )
 }
 
-fn membership_key_parts(predicate: GroupPredicate, set_id: &str, accessor: &str) -> MembershipKey {
-    (predicate, set_map_key(set_id), acl_principal_key(accessor))
+fn principals_match(left: &str, right: &str) -> bool {
+    match (acl_principal_key(left), acl_principal_key(right)) {
+        (Some(a), Some(b)) => a == b,
+        _ => false,
+    }
+}
+
+fn membership_key_parts(
+    predicate: GroupPredicate,
+    set_id: &str,
+    accessor: &str,
+) -> Option<MembershipKey> {
+    Some((predicate, set_map_key(set_id), acl_principal_key(accessor)?))
 }
 
 fn object_set_key(object: &str) -> String {
-    acl_key(object.trim())
+    acl_key(object)
 }
 
 fn set_map_key(set_id: &str) -> String {
@@ -1529,7 +1573,7 @@ fn set_map_key(set_id: &str) -> String {
 /// `<principal>/<name>`. The name has no `/` or `_`, so `acl_key`
 /// is injective and the soul segment matches the map key.
 fn canonical_set_id(set_id: &str) -> Result<String, GunError> {
-    let set_id = set_id.trim();
+    let set_id = ascii_trim(set_id);
     if set_id.is_empty() {
         return Err(GunError::EmptyGroupName);
     }
@@ -1550,8 +1594,10 @@ fn canonical_set_id(set_id: &str) -> Result<String, GunError> {
     {
         return Err(GunError::UnboundSetOwner);
     }
-    let principal = acl_principal_key(head);
-    if principal.is_empty() || principal != head {
+    let Some(principal) = acl_principal_key(head) else {
+        return Err(GunError::UnboundSetOwner);
+    };
+    if principal != head {
         return Err(GunError::UnboundSetOwner);
     }
     Ok(format!("{principal}/{name}"))
@@ -1569,8 +1615,10 @@ fn set_id_binds_owner(set_id: &str, owner: &str) -> bool {
     let Some((head, _)) = canonical.split_once('/') else {
         return false;
     };
-    let owner_key = acl_principal_key(owner);
-    !owner_key.is_empty() && acl_principal_key(head) == owner_key
+    let Some(owner_key) = acl_principal_key(owner) else {
+        return false;
+    };
+    acl_principal_key(head).as_deref() == Some(owner_key.as_str())
 }
 
 fn retained_object_owner<'a>(owners: &'a HashMap<String, String>, object: &str) -> Option<&'a str> {
@@ -1655,8 +1703,10 @@ mod tests {
     fn merge_rekeys_rows_from_the_signed_fields() {
         let (alice, bob) = pair();
         let mut source = live(&alice, &bob);
-        let bob_key = membership_key_parts(GroupPredicate::SameGroup, "0xalice/ops", "0xbob");
-        let carol_key = membership_key_parts(GroupPredicate::SameGroup, "0xalice/ops", "0xcarol");
+        let bob_key =
+            membership_key_parts(GroupPredicate::SameGroup, "0xalice/ops", "0xbob").unwrap();
+        let carol_key =
+            membership_key_parts(GroupPredicate::SameGroup, "0xalice/ops", "0xcarol").unwrap();
         let membership = source.groups.memberships.get(&bob_key).unwrap().clone();
         source.groups.memberships.insert(carol_key, membership);
         let edge = source
@@ -1705,7 +1755,7 @@ mod tests {
                 &alice,
             )
             .unwrap();
-        let key = membership_key_parts(GroupPredicate::SameGroup, "0xalice/ops", "0xbob");
+        let key = membership_key_parts(GroupPredicate::SameGroup, "0xalice/ops", "0xbob").unwrap();
         cancelled
             .groups
             .memberships
@@ -1747,7 +1797,7 @@ mod tests {
                 &alice,
             )
             .unwrap();
-        let key = membership_key_parts(GroupPredicate::SameGroup, "0xalice/ops", "0xbob");
+        let key = membership_key_parts(GroupPredicate::SameGroup, "0xalice/ops", "0xbob").unwrap();
         let real = cancelled
             .groups
             .memberships
@@ -1924,7 +1974,7 @@ mod tests {
             &alice,
         )
         .unwrap();
-        let key = membership_key_parts(GroupPredicate::SameGroup, "0xalice/ops", "0xbob");
+        let key = membership_key_parts(GroupPredicate::SameGroup, "0xalice/ops", "0xbob").unwrap();
         let first = *base
             .groups
             .memberships
@@ -2090,13 +2140,15 @@ mod tests {
 
 fn membership_hidden(record: &MembershipRecord, members: &[GroupSnapshotMember]) -> bool {
     let ham = record.membership.ham_state;
-    let accessor = acl_principal_key(&record.membership.accessor);
+    let Some(accessor) = acl_principal_key(&record.membership.accessor) else {
+        return true;
+    };
     let best = members
         .iter()
         .filter(|row| {
             row.predicate == record.membership.predicate
                 && row.set_id == record.membership.set_id
-                && acl_principal_key(&row.accessor) == accessor
+                && acl_principal_key(&row.accessor).as_deref() == Some(accessor.as_str())
         })
         .max_by_key(|row| (row.ham_state, u8::from(row.stated == 0)));
     match best {

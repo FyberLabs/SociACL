@@ -20,7 +20,7 @@ use std::cmp::Ordering;
 use sociacl_core::{NodeId, Timestamp};
 
 use crate::mesh::{accessor_names, object_names};
-use crate::soul::{acl_key, acl_principal_key, S3RCH_ACL, S3RCH_ROOT};
+use crate::soul::{acl_key, acl_principal_key, ascii_trim, S3RCH_ACL, S3RCH_ROOT};
 use crate::{
     GunError, MeshCheckResult, MeshSeeGraph, MESH_REASON_CANCELLED, MESH_REASON_MISSING,
     MESH_REASON_OWNER,
@@ -95,23 +95,27 @@ pub struct GunPostEdge {
 }
 
 impl GunPostEdge {
-    pub fn new(owner: impl Into<String>, grant: MeshPostGrant, ham_state: u64) -> Self {
+    pub fn new(
+        owner: impl Into<String>,
+        grant: MeshPostGrant,
+        ham_state: u64,
+    ) -> Result<Self, GunError> {
         let owner = owner.into();
-        let soul = post_soul(&owner, &grant.object, &grant.accessor)
-            .as_str()
-            .to_string();
-        Self {
-            soul,
+        let Some(soul) = post_soul(&owner, &grant.object, &grant.accessor) else {
+            return Err(GunError::EmptyPrincipal);
+        };
+        Ok(Self {
+            soul: soul.as_str().to_string(),
             owner,
             grant,
             ham_state,
-        }
+        })
     }
 
     /// Soul rebuilt from owner, object, and accessor. A peer map key
     /// or a copied soul does not choose where the grant lands.
     pub fn canonical(self) -> Self {
-        Self::new(self.owner, self.grant, self.ham_state)
+        Self::new(self.owner.clone(), self.grant.clone(), self.ham_state).unwrap_or(self)
     }
 
     /// Higher HAM state wins. At the same state a cancellation wins,
@@ -138,17 +142,14 @@ pub fn post_soul(
     owner: impl AsRef<str>,
     object: impl AsRef<str>,
     accessor: impl AsRef<str>,
-) -> NodeId {
-    let owner = acl_principal_key(owner.as_ref());
-    let accessor = acl_principal_key(accessor.as_ref());
-    if owner.is_empty() || accessor.is_empty() {
-        return NodeId::new("");
-    }
-    NodeId::new(format!(
+) -> Option<NodeId> {
+    let owner = acl_principal_key(owner.as_ref())?;
+    let accessor = acl_principal_key(accessor.as_ref())?;
+    Some(NodeId::new(format!(
         "{S3RCH_ROOT}/{S3RCH_ACL}/{owner}/{POST_GRANT_SCOPE}/{}/{}",
         acl_key(object.as_ref()),
         accessor,
-    ))
+    )))
 }
 
 /// Length-prefixed UTF-8 fields an owner signature can cover.
@@ -164,7 +165,7 @@ pub fn post_grant_signing_bytes(
     let fields = [
         POST_GRANT_DOMAIN.to_string(),
         acl_key(&grant.object),
-        acl_principal_key(&grant.accessor),
+        acl_principal_key(&grant.accessor).ok_or(GunError::PostGrantField)?,
         canonical_decimal(u64::from(grant.stated))?,
         canonical_decimal(grant.from.0)?,
         canonical_decimal(grant.until.0)?,
@@ -228,9 +229,17 @@ fn canonical_post_bytes(edge: &GunPostEdge) -> Vec<u8> {
 
 fn fallback_post_bytes(edge: &GunPostEdge) -> Vec<u8> {
     let mut buf = b"sociacl-post-grant-fallback-v1\0".to_vec();
-    push_str(&mut buf, &acl_principal_key(&edge.owner));
+    push_str(
+        &mut buf,
+        acl_principal_key(&edge.owner).as_deref().unwrap_or(""),
+    );
     push_str(&mut buf, &acl_key(&edge.grant.object));
-    push_str(&mut buf, &acl_principal_key(&edge.grant.accessor));
+    push_str(
+        &mut buf,
+        acl_principal_key(&edge.grant.accessor)
+            .as_deref()
+            .unwrap_or(""),
+    );
     buf.extend_from_slice(&edge.grant.from.0.to_be_bytes());
     buf.extend_from_slice(&edge.grant.until.0.to_be_bytes());
     buf.push(edge.grant.stated);
@@ -304,7 +313,7 @@ impl MeshSeeGraph {
         owner: impl AsRef<str>,
         grant: MeshPostGrant,
     ) -> Result<(), GunError> {
-        let owner = owner.as_ref().trim();
+        let owner = ascii_trim(owner.as_ref());
         let (stored_id, object_owner) = self
             .object_record(&grant.object)
             .map(|(id, object_owner)| (id.to_string(), object_owner.to_string()))
@@ -325,7 +334,7 @@ impl MeshSeeGraph {
         if ham_state > JS_SAFE_INTEGER_MAX {
             return Err(GunError::PostGrantField);
         }
-        self.merge_post_edge(GunPostEdge::new(owner, grant, ham_state));
+        self.merge_post_edge(GunPostEdge::new(owner, grant, ham_state)?);
         Ok(())
     }
 
@@ -336,9 +345,9 @@ impl MeshSeeGraph {
         accessor: impl AsRef<str>,
         object: impl AsRef<str>,
     ) -> Result<(), GunError> {
-        let owner = owner.as_ref().trim();
-        let object = object.as_ref().trim();
-        let accessor = accessor.as_ref().trim();
+        let owner = ascii_trim(owner.as_ref());
+        let object = ascii_trim(object.as_ref());
+        let accessor = ascii_trim(accessor.as_ref());
         let (stored_id, object_owner) = self
             .object_record(object)
             .map(|(id, object_owner)| (id.to_string(), object_owner.to_string()))
@@ -370,7 +379,7 @@ impl MeshSeeGraph {
             }
             None => 1,
         };
-        self.merge_post_edge(GunPostEdge::new(owner, grant, ham_state));
+        self.merge_post_edge(GunPostEdge::new(owner, grant, ham_state)?);
         Ok(())
     }
 
@@ -452,7 +461,7 @@ impl MeshSeeGraph {
             return see;
         }
         let object = self.canonical_object_id(object.as_ref());
-        let accessor = accessor.as_ref().trim();
+        let accessor = ascii_trim(accessor.as_ref());
         let owner = self.owner_of(&object).unwrap_or("");
         if let Some(edge) = self.post_edge(&object, accessor) {
             let names = edge.grant.names_object(&object)

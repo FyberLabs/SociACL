@@ -57,12 +57,15 @@ function signer(name) {
 function seeResult(graph, object, accessor, now) {
   const owner = graph.ownerOf(object);
   if (!owner) return { allowed: false, reason: "missing" };
-  if (canonicalAccessorId(owner) === canonicalAccessorId(accessor)) {
+  const ownerKey = canonicalAccessorId(owner);
+  const accessorKey = canonicalAccessorId(accessor);
+  if (ownerKey != null && ownerKey === accessorKey) {
     return { allowed: true, reason: "owner" };
   }
   const live = graph.seeGrants(object).some((grant) => {
     return (
-      canonicalAccessorId(grant.accessor) === canonicalAccessorId(accessor) &&
+      canonicalAccessorId(grant.accessor) != null &&
+      canonicalAccessorId(grant.accessor) === accessorKey &&
       grant.stated !== 0 &&
       now >= grant.from &&
       now < grant.until
