@@ -36,6 +36,13 @@ fn consume_contract_covers_light_check() {
         "postSoul",
         "postGrantSigningBytes",
         "s3rch-post-grant-v1",
+        "accessRequestId",
+        "accessRequestSigningBytes",
+        "grantApprovedRequest",
+        "s3rch-access-request-v1",
+        "s3rch-request",
+        "read+post",
+        "A present request never makes this a grant",
         "inbox delivery never grants",
         "acceptHint",
         "admitFeedNode",
@@ -216,6 +223,14 @@ fn consume_doc_says_browser_not_a_package() {
     assert!(
         md.contains("checkPost") && md.contains("vectors/mesh/post-grant.json"),
         "consume doc must name the post grant and its vectors"
+    );
+    assert!(
+        md.contains("grantApprovedRequest") && md.contains("vectors/mesh/access-request.json"),
+        "consume doc must name the access request and its vectors"
+    );
+    assert!(
+        lower.contains("no hosted evaluator"),
+        "consume doc must say there is no hosted evaluator"
     );
     assert!(
         lower.contains("inbox delivery never grants"),

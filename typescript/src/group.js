@@ -1,7 +1,7 @@
 /**
  * Plaintext same-group and named-circle rows for the s3r.ch light Check.
  * Hopcap 1. Both edges must be stated 1. One-sided membership is stored
- * and is not a grant. A hop, a hint, or a wrap never mints.
+ * and is not a grant. A hop, a hint, a wrap, or a request never mints.
  * A lower hamState does not hide a removal.
  *
  * Cancels are a grow-only set of collision-free ids. Each id is
@@ -129,6 +129,24 @@ export {
   postGrantSigningBytes,
   postSoul,
 } from "./post.js";
+
+export {
+  ACCESS_MESSAGE_MAX,
+  ACCESS_REQUEST_DOMAIN,
+  ACCESS_REQUEST_ID_DOMAIN,
+  ACCESS_SCOPE_READ,
+  ACCESS_SCOPE_READ_POST,
+  ACCESS_STATUS_PENDING,
+  ACCESS_STATUS_WITHDRAWN,
+  acceptAccessRequest,
+  accessRequestId,
+  accessRequestSigningBytes,
+  canonicalRequestAccessor,
+  canonicalRequestObject,
+  grantApprovedRequest,
+  requestIssuerFromSeed,
+  signAccessRequest,
+} from "./request.js";
 
 const PKCS8_PREFIX = Uint8Array.from([
   0x30, 0x2e, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x04, 0x22, 0x04, 0x20,
@@ -319,12 +337,7 @@ export function aclKey(id) {
 
 /** @param {string} id */
 export function aclPrincipalKey(id) {
-  const text = String(id).trim();
-  const parts = text.split("/");
-  if (parts.length === 3 && parts[0] === "s3rch" && parts[1] === "users") {
-    return encodeKey(parts[2] ?? "");
-  }
-  return aclKey(text);
+  return canonicalAccessorId(id);
 }
 
 const HELD_CLAIM_PREFIXES = ["ens:", "unstoppable:", "fc:", "lens:", "rss3:"];
@@ -901,6 +914,19 @@ export class MemoryGroupGraph {
   }
 
   /**
+   * Members auto-approve gate. Same check as the free function.
+   * Hop and hint are not arguments.
+   * @param {GroupPredicate} predicate
+   * @param {string} object
+   * @param {string} accessor
+   * @param {number} now
+   */
+  checkGroupSee(predicate, object, accessor, now) {
+    const graph = /** @type {GroupSeeGraph} */ (/** @type {unknown} */ (this));
+    return checkGroupSee(graph, predicate, object, accessor, now, null, null);
+  }
+
+  /**
    * @param {string} object
    * @param {string} owner
    */
@@ -1025,7 +1051,7 @@ export class MemoryGroupGraph {
       const owner = grant.owner ?? "";
       if (!ownerNow || aclPrincipalKey(owner) !== aclPrincipalKey(ownerNow)) continue;
       return {
-        soul: `s3rch/acl/${aclPrincipalKey(owner)}/${requested}/${who}`,
+        soul: `s3rch/acl/${aclPrincipalKey(owner)}/${aclKey(requested)}/${who}`,
         owner,
         hamState: grant.hamState ?? 0,
         grant: {

@@ -224,9 +224,14 @@ impl MeshCheckResult {
     pub fn inbox_is_grant(&self) -> bool {
         false
     }
+
+    /// An access request is never an input that sets `allowed`.
+    pub fn request_is_grant(&self) -> bool {
+        false
+    }
 }
 
-/// A hop, a hint, a wrap, or an inbox delivery never grants.
+/// A hop, a hint, a wrap, a request, or an inbox delivery never grants.
 /// Any other label is also not a grant.
 pub fn factor_grants(_kind: &str) -> bool {
     false
@@ -649,7 +654,7 @@ fn object_store_key(id: &str) -> String {
     acl_key(id)
 }
 
-fn is_item_shaped(id: &str) -> bool {
+pub(crate) fn is_item_shaped(id: &str) -> bool {
     GunSoul::parse(id)
         .map(|s| s.is_s3rch_item())
         .unwrap_or(false)
@@ -658,7 +663,7 @@ fn is_item_shaped(id: &str) -> bool {
 /// Alias a raw feed id to `s3rch/items/<encodeKey(id)>`. Held claim
 /// ids (`ens:…` / `fc:…` / … without a `/`) stay the claim id itself
 /// and must not rewrite into an item soul.
-fn may_alias_to_item_soul(id: &str) -> bool {
+pub(crate) fn may_alias_to_item_soul(id: &str) -> bool {
     if is_item_shaped(id) {
         return true;
     }
@@ -693,7 +698,10 @@ pub(crate) fn closed_reason(object: &str) -> Option<&'static str> {
 
 fn is_url_leaf(object: &str) -> bool {
     let s = object.trim();
-    (s.starts_with("http://") || s.starts_with("https://")) && UrlLeaf::parse(s).is_ok()
+    let scheme = s
+        .split_once("://")
+        .map(|(scheme, _)| scheme.to_ascii_lowercase());
+    matches!(scheme.as_deref(), Some("http") | Some("https")) && UrlLeaf::parse(s).is_ok()
 }
 
 fn is_meta_object(object: &str) -> bool {

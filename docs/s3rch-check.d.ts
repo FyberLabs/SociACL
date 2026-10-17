@@ -23,6 +23,7 @@
  *   revoke   = immediate for a current verifier; otherwise bounded by max-age
  *   hop      = optional Social Light factor; never a grant
  *   wrap     = SEA epub wrap of a DEK; never a grant
+ *   request  = access request; never a grant
  *   same-group / named-circle = direct edges only; no transitive inheritance
  *
  * Wrapped keys, recipient-side discovery, rotation on revoke:
@@ -174,6 +175,7 @@ export type CheckResult = {
    * Predicate / deny reason. A present hint never makes this a grant.
    * A present hop never makes this a grant.
    * A present wrap never makes this a grant.
+   * A present request never makes this a grant.
    */
   reason: string;
 };
@@ -310,7 +312,7 @@ export function checkSeeGrant(
  * A post row alone does not allow. A see row does not allow post.
  * checkGroupSee is not this gate. Hopcap is 1.
  * Hop missing does not fail. Hop alone never allows.
- * A hop, a hint, a wrap, or an inbox delivery never grants.
+ * A hop, a hint, a wrap, a request, or an inbox delivery never grants.
  * Do not cache an allow across a privilege-down merge.
  * This check does not verify a signature.
  */
@@ -324,11 +326,11 @@ export function checkPost(
 ): CheckResult;
 
 /**
- * A hop, a hint, a wrap, or an inbox delivery never grants.
+ * A hop, a hint, a wrap, a request, or an inbox delivery never grants.
  * The result is false for every kind.
  */
 export function factorGrants(
-  kind: "hop" | "hint" | "wrap" | "inbox",
+  kind: "hop" | "hint" | "wrap" | "inbox" | "request",
 ): false;
 
 /**
@@ -394,8 +396,11 @@ export type S3rchAcl = "acl";
 export function aclKey(id: string): string;
 
 /**
- * Owner / accessor key on dest ACL. `s3rch/users/<wallet>` collapses
- * to the wallet. Anything else is aclKey.
+ * Owner / accessor key on dest ACL. `s3rch/users/<wallet>` and
+ * `gun.get('s3rch').get('users').get(wallet)` collapse to the wallet.
+ * Each segment is trimmed and an empty segment is dropped, so
+ * `s3rch/users/ bob ` and `s3rch/users//bob` are `bob`.
+ * Anything else is aclKey.
  */
 export function aclPrincipalKey(id: string): string;
 
@@ -520,6 +525,174 @@ export function postSoul(
  * with no leading zeros. Check does not verify a signature.
  */
 export function postGrantSigningBytes(edge: GunPostEdge): Uint8Array;
+
+/**
+ * Access request. An untrusted hint. Not a grant.
+ * scope is only `read` or `read+post`. status is only `pending`
+ * or `withdrawn`. Any other spelling is rejected.
+ * message is at most 280 Unicode scalar values and may be empty.
+ */
+export type AccessRequest = {
+  requester: AccessorId;
+  source: CheckObjectId;
+  scope: string;
+  message: string;
+  status: string;
+  /**
+   * Ed25519 signature over accessRequestSigningBytes.
+   * 64 bytes. The owner's client checks it against the
+   * requester's enrolled key. Absent is not a grant.
+   * This is not an owner signature on a grant row.
+   */
+  signature?: Uint8Array;
+};
+
+/** Canonical request. requester is the accessor id. source is the object key. id is 64 lowercase hex. */
+export type AcceptedAccessRequest = {
+  requester: AccessorId;
+  source: string;
+  scope: "read" | "read+post";
+  message: string;
+  status: "pending" | "withdrawn";
+  id: string;
+  signingBytes: Uint8Array;
+};
+
+/**
+ * Members auto-approve on the owner's client.
+ * grantApprovedRequest evaluates checkGroupSee.
+ * Hop and hint are not inputs. There is no hosted evaluator.
+ */
+export type MembersAutoApprove = {
+  predicate: "same-group" | "named-circle";
+  now: number;
+};
+
+/**
+ * Owner-written rows. Unsigned. post is null for scope read.
+ * postSigningBytes is postGrantSigningBytes when a post row was written.
+ * A later owner signature can cover those bytes. This check does not verify one.
+ */
+export type OwnerGrantRows = {
+  requestId: string;
+  requestSigningBytes: Uint8Array;
+  see: GunAclEdge;
+  post: GunPostEdge | null;
+  postSigningBytes: Uint8Array | null;
+};
+
+/** No rows were written. not-member is not a standing deny. */
+export type AccessApproval =
+  | ({ granted: true } & OwnerGrantRows)
+  | {
+      granted: false;
+      reason: "withdrawn" | "owner" | "missing" | "not-member" | "signature";
+    };
+
+/** Length-prefixed domain for accessRequestSigningBytes. */
+export const ACCESS_REQUEST_DOMAIN: "s3rch-access-request-v1";
+
+/** Length-prefixed domain for accessRequestId. */
+export const ACCESS_REQUEST_ID_DOMAIN: "s3rch-request";
+
+/** Scope that writes a see grant only. */
+export const ACCESS_SCOPE_READ: "read";
+
+/** Scope that writes a see grant and a post grant. */
+export const ACCESS_SCOPE_READ_POST: "read+post";
+
+/** Requester status that the owner client may approve. */
+export const ACCESS_STATUS_PENDING: "pending";
+
+/** Requester status. A withdrawal writes no grant. */
+export const ACCESS_STATUS_WITHDRAWN: "withdrawn";
+
+/** Maximum message length in Unicode scalar values. A surrogate pair is one scalar. An unpaired surrogate is rejected. */
+export const ACCESS_MESSAGE_MAX: 280;
+
+/**
+ * Canonical accessor id. Same as aclPrincipalKey.
+ * `s3rch/users/<wallet>` and the wallet are this id. Each segment
+ * is trimmed and an empty segment is dropped. Empty is rejected.
+ * The raw string is Unicode scalar values. U+0085 and U+FEFF are
+ * rejected so this trim matches Rust.
+ */
+export function canonicalRequestAccessor(requester: AccessorId): string;
+
+/**
+ * Object key for a request id. aclKey, with an aliasable item soul
+ * reduced to the raw id's aclKey when that inner contains no `_`.
+ * A held claim id does not alias to an item soul.
+ * `s3rch/items/ foo` does not alias to `foo`. `a/b` does not alias
+ * to `s3rch/items/a_b`. The raw string is Unicode scalar values.
+ * U+0085 and U+FEFF are rejected. meta, acl, a dest-ACL soul,
+ * gun.get('s3rch').get('meta'), gun.get('s3rch').get('acl'), and an
+ * HTTP leaf in any scheme case are rejected.
+ * Grant rows still store the in-graph object id.
+ */
+export function canonicalRequestObject(source: CheckObjectId): string;
+
+/**
+ * SHA-256 lowercase hex of the length-prefixed id domain, the
+ * canonical accessor, and the canonical object key. Scope, message,
+ * and status are not inputs. Spelling variants of one pair share this id.
+ */
+export function accessRequestId(
+  requester: AccessorId,
+  source: CheckObjectId,
+): string;
+
+/**
+ * Length-prefixed bytes a later signature can cover.
+ * Domain s3rch-access-request-v1, the request id, scope, message,
+ * and status. Lengths are uint32 little-endian. Does not verify a
+ * signature and does not grant.
+ */
+export function accessRequestSigningBytes(request: AccessRequest): Uint8Array;
+
+/**
+ * Canonicalize a request. Does not read a graph and does not grant.
+ * A non-canonical scope, status, message, accessor, or source throws.
+ */
+export function acceptAccessRequest(request: AccessRequest): AcceptedAccessRequest;
+
+/**
+ * Owner's client. Writes a see grant for an approved pending request,
+ * and a post grant when the scope is read+post. Rows use the in-graph
+ * object id and the canonical accessor id. Before any write, the
+ * requester signature over accessRequestSigningBytes must verify
+ * under the enrolled key for that requester. An unsigned or badly
+ * signed request writes nothing. members, when supplied, runs
+ * checkGroupSee on the canonical accessor and writes only when that
+ * allows. A later check with the original user-soul spelling finds
+ * that row. Each request field is read once, and verification and
+ * the graph lookup use that snapshot. A see row whose next hamState
+ * is above 9007199254740991 does not advance and writes no post row.
+ * checkGroupSee is optional when members is omitted.
+ * A withdrawn request writes
+ * nothing. A caller who is not the object owner writes nothing.
+ * A hop, a hint, a wrap, a request, or an inbox delivery is not an
+ * approval. There is no hosted evaluator. Explicit deny and the policy
+ * queue are not this function. Grant rows stay unsigned.
+ */
+export function grantApprovedRequest(
+  graph: SeeAcl & {
+    objectRecord(
+      object: CheckObjectId,
+    ): { id: CheckObjectId; owner: AccessorId } | undefined;
+    enrolledKey(principal: AccessorId): Uint8Array | undefined;
+    checkGroupSee?(
+      predicate: "same-group" | "named-circle",
+      object: CheckObjectId,
+      accessor: AccessorId,
+      now: number,
+    ): CheckResult;
+  },
+  owner: AccessorId,
+  request: AccessRequest,
+  window: { from: number; until: number },
+  members?: MembersAutoApprove,
+): AccessApproval;
 
 /** Named Social Light channels. Same as sociacl-core. Hop is not a grant. */
 export type SocialLightChannel = "convention-badge" | "enrolled-station";

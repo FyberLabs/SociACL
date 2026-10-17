@@ -2,7 +2,8 @@
  * Light Check consume implementation for s3r.ch.
  * Same names as docs/s3rch-check.d.ts. Copy or import from here.
  * Hint and hop never set allowed. A post grant is a separate row.
- * A hop, a hint, a wrap, or an inbox delivery never grants.
+ * A hop, a hint, a wrap, a request, or an inbox delivery never grants.
+ * Request signing lives in group.js so this module does not load node:crypto.
  */
 
 export {
@@ -60,9 +61,7 @@ export function aclKey(id) {
 }
 
 export function aclPrincipalKey(id) {
-  const prefix = "s3rch/users/";
-  if (String(id).startsWith(prefix)) return String(id).slice(prefix.length);
-  return aclKey(id);
+  return canonicalAccessorId(id);
 }
 
 export function aclSoul(owner) {

@@ -13,7 +13,7 @@
 //!
 //! Allow-post requires see. The object owner passes see and may post.
 //! Any other accessor needs a live post row as well. A hop, a hint, a
-//! wrap, or an inbox delivery never grants. Hopcap stays 1.
+//! wrap, a request, or an inbox delivery never grants. Hopcap stays 1.
 
 use std::cmp::Ordering;
 

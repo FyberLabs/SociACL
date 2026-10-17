@@ -3,8 +3,8 @@
  * Separate from the see grant. Same cancel rule: stated 0 and a
  * hamState bump. At an equal hamState a cancellation wins, then the
  * narrower window, then the smaller signing bytes.
- * Check does not verify a signature. A hop, a hint, a wrap, or an
- * inbox delivery never grants.
+ * Check does not verify a signature. A hop, a hint, a wrap, a request,
+ * or an inbox delivery never grants.
  *
  * @typedef {{
  *   object: string,
@@ -41,12 +41,48 @@ function aclKey(id) {
   return encodeKey(String(id).trim()).replace(/\//g, "_");
 }
 
+/**
+ * Quoted `gun.get` parts. A corrupt chain is not a soul.
+ * @param {string} text
+ * @returns {string[] | null}
+ */
+function gunGetSegments(text) {
+  /** @type {string[]} */
+  const segments = [];
+  let rest = text.trim();
+  while (rest.includes(".get(")) {
+    rest = rest.slice(rest.indexOf(".get(") + 5);
+    const quote = rest[0];
+    if (quote !== "'" && quote !== '"') return null;
+    rest = rest.slice(1);
+    const end = rest.indexOf(quote);
+    if (end < 0) return null;
+    const part = rest.slice(0, end).trim();
+    if (!part) return null;
+    segments.push(part);
+    rest = rest.slice(end + 1).replace(/^\s+/, "");
+    if (rest.startsWith(")")) rest = rest.slice(1).replace(/^\s+/, "");
+  }
+  return segments.length === 0 ? null : segments;
+}
+
 /** @param {string} id */
 function aclPrincipalKey(id) {
   const text = String(id).trim();
-  const parts = text.split("/");
-  if (parts.length === 3 && parts[0] === "s3rch" && parts[1] === "users") {
-    return encodeKey(parts[2] ?? "");
+  const segments = text.includes(".get(")
+    ? gunGetSegments(text)
+    : text
+        .split("/")
+        .map((part) => part.trim())
+        .filter((part) => part !== "");
+  if (
+    segments &&
+    segments.length === 3 &&
+    segments[0] === "s3rch" &&
+    segments[1] === "users" &&
+    segments[2]
+  ) {
+    return encodeKey(segments[2]);
   }
   return aclKey(text);
 }
@@ -216,7 +252,7 @@ export function postGrantSigningBytes(edge) {
   ]);
 }
 
-/** A hop, a hint, a wrap, or an inbox delivery never grants. @param {string} _kind */
+/** A hop, a hint, a wrap, a request, or an inbox delivery never grants. @param {string} _kind */
 export function factorGrants(_kind) {
   return false;
 }
