@@ -43,6 +43,7 @@ node --experimental-strip-types --test --experimental-test-coverage \
   typescript/tests/test_inbox.ts \
   typescript/tests/test_epoch.ts \
   typescript/tests/test_migration.ts \
+  typescript/tests/test_account_key.ts \
   > target/coverage/typescript-report.txt 2>&1 || {
   cat target/coverage/typescript-report.txt
   exit 1

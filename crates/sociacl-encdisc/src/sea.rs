@@ -61,6 +61,10 @@ pub fn sea_pub_from_secret(secret: &SecretKey) -> Result<String, EncDiscError> {
     point_to_sea(&secret.public_key().to_encoded_point(false))
 }
 
+pub(crate) fn sea_pub_from_point(point: &PublicKey) -> Result<String, EncDiscError> {
+    point_to_sea(&point.to_encoded_point(false))
+}
+
 pub fn sea_priv_from_secret(secret: &SecretKey) -> Result<Zeroizing<String>, EncDiscError> {
     let mut raw = secret.to_bytes();
     let encoded = scalar_to_sea(raw.as_slice());
@@ -79,10 +83,11 @@ pub fn ecdh_secret(sea_epriv: &str) -> Result<SecretKey, EncDiscError> {
 }
 
 pub fn parse_sea_point(sea_pub: &str) -> Result<PublicKey, EncDiscError> {
-    let (x_text, y_text) = sea_pub.split_once('.').ok_or(EncDiscError::BadKey)?;
-    if y_text.contains('.') {
+    if !sea_pub_shape(sea_pub) {
         return Err(EncDiscError::BadKey);
     }
+    let x_text = &sea_pub[..SEA_COMPONENT_B64_LEN];
+    let y_text = &sea_pub[SEA_COMPONENT_B64_LEN + 1..];
     let x = decode_coord(x_text)?;
     let y = decode_coord(y_text)?;
     let mut uncompressed = [0u8; 65];
@@ -253,12 +258,40 @@ mod tests {
         assert!(decode_b64(&"A".repeat(1_000_000)).is_err());
         let oversized = format!("{x_text}.{y_text}A");
         assert!(parse_sea_point(&oversized).is_err());
+        assert!(parse_sea_point("").is_err());
+        assert!(parse_sea_point(&"A".repeat(86)).is_err());
+        assert!(parse_sea_point(&"A".repeat(87)).is_err());
+        assert!(parse_sea_point(&"A".repeat(88)).is_err());
+        assert!(parse_sea_point(&"A".repeat(100_000)).is_err());
     }
 }
 
 /// base64url (no padding) of 32 bytes. A longer component is rejected
 /// before a buffer is allocated.
 const SEA_COMPONENT_B64_LEN: usize = 43;
+
+/// `base64url(x).base64url(y)`. Length is checked before any decode.
+fn sea_pub_shape(sea_pub: &str) -> bool {
+    let bytes = sea_pub.as_bytes();
+    if bytes.len() != SEA_COMPONENT_B64_LEN * 2 + 1 {
+        return false;
+    }
+    if bytes[SEA_COMPONENT_B64_LEN] != b'.' {
+        return false;
+    }
+    bytes[..SEA_COMPONENT_B64_LEN]
+        .iter()
+        .copied()
+        .all(is_b64url)
+        && bytes[SEA_COMPONENT_B64_LEN + 1..]
+            .iter()
+            .copied()
+            .all(is_b64url)
+}
+
+fn is_b64url(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_'
+}
 
 fn decode_b64(text: &str) -> Result<Zeroizing<Vec<u8>>, EncDiscError> {
     if text.len() != SEA_COMPONENT_B64_LEN {

@@ -92,6 +92,7 @@ pub struct AcceptedIntro {
 
 impl AccountSeaSecret {
     /// Mint the one keypair for a new account, and one lane id.
+    #[deprecated(note = "label-as-account; use GenesisAccount/PrincipalId, see #65")]
     pub fn generate(account: &str) -> Result<Self, EncDiscError> {
         if account.is_empty() {
             return Err(EncDiscError::EmptyAccount);
@@ -108,6 +109,7 @@ impl AccountSeaSecret {
 
     /// Restore a device-local copy. Rejects a `pub` that does not match
     /// `priv`, or an `epub` that does not match `epriv`.
+    #[deprecated(note = "label-as-account; use GenesisAccount/PrincipalId, see #65")]
     pub fn import_local(
         account: &str,
         lane_id: &str,
@@ -145,6 +147,10 @@ impl AccountSeaSecret {
 
     pub fn account(&self) -> &str {
         &self.account
+    }
+
+    pub fn lane_id(&self) -> &str {
+        &self.lane_id
     }
 
     pub fn sea_pub(&self) -> &str {
@@ -240,6 +246,7 @@ impl AccountSeaSecret {
         sea::sign_sea(&self.sea_priv, &message)
     }
 
+    #[allow(deprecated)]
     fn from_generated(
         account: &str,
         lane_id: &str,
@@ -417,14 +424,14 @@ pub(crate) fn lane_id_well_formed(lane_id: &str) -> bool {
     lane_id.len() == 64 && crate::hexutil::decode_hex(lane_id).is_ok()
 }
 
-fn require_lane(lane_id: &str) -> Result<(), EncDiscError> {
+pub(crate) fn require_lane(lane_id: &str) -> Result<(), EncDiscError> {
     if !lane_id_well_formed(lane_id) {
         return Err(EncDiscError::BadLane);
     }
     Ok(())
 }
 
-fn json_string(value: &str) -> String {
+pub(crate) fn json_string(value: &str) -> String {
     let mut out = String::from("\"");
     for character in value.chars() {
         match character {

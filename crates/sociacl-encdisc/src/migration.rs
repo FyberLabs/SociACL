@@ -1290,6 +1290,7 @@ fn is_lower_hex(value: &str) -> bool {
 }
 
 #[cfg(test)]
+#[allow(deprecated)]
 mod tests {
     use super::*;
 

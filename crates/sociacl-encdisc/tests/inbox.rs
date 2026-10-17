@@ -4,6 +4,8 @@
 //! name fails closed. The accepting relay learns the writer. A replica
 //! of the row does not.
 
+#![allow(deprecated)]
+
 use sociacl_encdisc::{
     filter_inbox_append, inbox_body_of, inbox_entry_bytes, inbox_entry_id, inbox_pow_bytes,
     inbox_pow_digest, inbox_pow_sha256, inbox_stamp_bytes, inbox_stamp_sha256, lane_id_is_opaque,

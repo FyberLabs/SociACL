@@ -1,3 +1,5 @@
+#![allow(deprecated)]
+
 use serde::Deserialize;
 use sociacl_encdisc::{
     accept_migration, apply_protocol_migration, open_migrated_item, open_reader_wrap,

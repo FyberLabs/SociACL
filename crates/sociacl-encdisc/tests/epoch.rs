@@ -3,6 +3,8 @@
 //! A manifest, a finalization, a status proof, and a wrap are not grants.
 //! Privilege-down does not wait for the settle window.
 
+#![allow(deprecated)]
+
 use sociacl_encdisc::{
     acl_snapshot_id, epoch_finalization_id, epoch_finalization_sig_bytes, epoch_manifest_sig_bytes,
     epoch_revision_id, epoch_step_current, epoch_winner, group_epoch_config_bytes,
