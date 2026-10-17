@@ -186,8 +186,9 @@ pub fn acl_key(id: &str) -> String {
 }
 
 /// Owner / accessor key on dest ACL. A locked user soul collapses
-/// to the wallet. A string containing `.get(` is not parsed.
-/// Anything else is [`acl_key`].
+/// to the wallet text. A string containing `.get(` is an escaped
+/// literal and is not a wallet. Other principals stay the trimmed
+/// text. [`encode_key`] is for object keys, not principals.
 pub fn acl_principal_key(id: &str) -> String {
     let id = id.trim();
     if id.contains(".get(") {
@@ -195,10 +196,10 @@ pub fn acl_principal_key(id: &str) -> String {
     }
     if let Ok(soul) = GunSoul::parse(id) {
         if let Some(wallet) = soul.wallet() {
-            return encode_key(wallet);
+            return wallet.to_string();
         }
     }
-    acl_key(id)
+    id.to_string()
 }
 
 /// One accessor id. A user soul `s3rch/users/<wallet>` and the wallet
@@ -275,6 +276,16 @@ mod tests {
         assert_ne!(acl_key("a/b"), acl_key("a_b"));
         assert_eq!(acl_key("room~1alpha"), "room~01alpha");
         assert_ne!(acl_key("room.alpha"), acl_key("room~1alpha"));
+    }
+
+    #[test]
+    fn a_principal_is_not_run_through_the_object_escape() {
+        assert_eq!(acl_principal_key("bob.name"), "bob.name");
+        assert_eq!(
+            acl_principal_key(&acl_principal_key("bob.name")),
+            "bob.name"
+        );
+        assert_ne!(acl_key(&acl_key("room.alpha")), acl_key("room.alpha"));
     }
 
     #[test]

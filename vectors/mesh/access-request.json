@@ -81,7 +81,7 @@
       "id": "e3ec48d774821c6513d68d02b9cde2ecc93345f5215437088851ea3f01d61cd5"
     },
     {
-      "name": "held-soul",
+      "name": "underscore-held-item-not-claim",
       "requester": "0xbob",
       "source": "s3rch/items/ens:alice_eth",
       "id": "d58ed43ce9362fc291647227c4454bf7ea55cda7c815972897b12744175be6b7"
@@ -105,7 +105,19 @@
       "id": "b0c0fecd316d413af74fc3c1bcd821df59c102a994cb08b721dcb88b847eb1f7"
     },
     {
-      "name": "dot-soul",
+      "name": "item-soul-room-dot",
+      "requester": "0xbob",
+      "source": "s3rch/items/room~1alpha",
+      "id": "b0c0fecd316d413af74fc3c1bcd821df59c102a994cb08b721dcb88b847eb1f7"
+    },
+    {
+      "name": "dotted-principal",
+      "requester": "bob.name",
+      "source": "room:alpha",
+      "id": "29a3760849f8304391cc2d8ff1e1604fddae72d8449f16593e146b5ac354700e"
+    },
+    {
+      "name": "underscore-item-not-dotted-room",
       "requester": " 0xbob ",
       "source": "s3rch/items/room_alpha",
       "id": "e327a070371fb6a6becc23a545f3560bff7eed9f6a31367e13a44030926ba91d"

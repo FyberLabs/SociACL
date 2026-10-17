@@ -71,7 +71,13 @@ function aclKey(id) {
   return escapeKey(String(id).trim(), true);
 }
 
-/** @param {string} id */
+/**
+ * Owner / accessor key. A user soul collapses to its wallet.
+ * A string containing `.get(` is an escaped literal and matches no
+ * wallet. Other principals stay the trimmed text. escapeKey is for
+ * object keys, not principals.
+ * @param {string} id
+ */
 function aclPrincipalKey(id) {
   const text = String(id).trim();
   if (text.includes(".get(")) return aclKey(text);
@@ -80,9 +86,9 @@ function aclPrincipalKey(id) {
     .map((part) => part.trim())
     .filter((part) => part !== "");
   if (segments.length === 3 && segments[0] === "s3rch" && segments[1] === "users" && segments[2]) {
-    return encodeKey(segments[2]);
+    return segments[2];
   }
-  return aclKey(text);
+  return text;
 }
 
 const HELD_CLAIM_PREFIXES = ["ens:", "unstoppable:", "fc:", "lens:", "rss3:"];

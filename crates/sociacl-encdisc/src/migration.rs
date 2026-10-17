@@ -812,10 +812,6 @@ fn escape_key(id: &str, slash: bool) -> String {
     out
 }
 
-fn encode_key(id: &str) -> String {
-    escape_key(id, false)
-}
-
 fn acl_key(id: &str) -> String {
     escape_key(id.trim(), true)
 }
@@ -827,9 +823,9 @@ fn acl_principal_key(id: &str) -> String {
     }
     let parts: Vec<&str> = id.split('/').filter(|part| !part.is_empty()).collect();
     if parts.len() == 3 && parts[0] == "s3rch" && parts[1] == "users" {
-        return encode_key(parts[2]);
+        return parts[2].to_string();
     }
-    acl_key(id)
+    id.to_string()
 }
 
 fn current_grants(

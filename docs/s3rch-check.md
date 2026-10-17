@@ -62,7 +62,7 @@ See grants are Gun nodes under the **object owner's dest ACL**, not under `items
 s3rch/acl/<aclPrincipalKey(owner)>/<aclKey(object)>/<aclPrincipalKey(accessor)>
 ```
 
-`s3rch/users/<wallet>` collapses to the wallet on dest ACL. Examples:
+`s3rch/users/<wallet>` collapses to the wallet text on dest ACL. A principal is that trimmed accessor, not an `escapeKey` form. A string containing `.get(` is an escaped literal on Check and matches nothing. Examples:
 
 ```
 s3rch/acl/0xalice/rss3:act~61~2x/0xbob        // feed item rss3:act/1#x

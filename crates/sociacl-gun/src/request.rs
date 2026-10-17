@@ -16,6 +16,8 @@
 //! alias to that item soul and the inner id contains no `_`.
 //! `a/b`, `a_b`, and `s3rch/items/a_b` are different objects.
 //! `room.alpha`, `room_alpha`, and `room/alpha` are different keys.
+//! `s3rch/items/room~1alpha` is the item soul of `room.alpha` and
+//! shares that request id. A principal is not an object escape.
 //! A held claim id does not alias. Requester and source are Unicode
 //! scalar values. U+0085 and U+FEFF are rejected.
 //! Scope, message, and status are not part of the id. Scope is only
@@ -35,7 +37,7 @@ use sha2::{Digest, Sha256};
 use sociacl_core::{AttestationSig, IssuerSecret, Timestamp};
 
 use crate::mesh::{closed_reason, is_item_shaped, may_alias_to_item_soul};
-use crate::soul::{acl_key, canonical_accessor_id, encode_key, GunSoul};
+use crate::soul::{acl_key, canonical_accessor_id, encode_key, unescape_acl_key, GunSoul};
 use crate::{
     post_grant_signing_bytes, GroupPredicate, GunAclEdge, GunError, GunPostEdge, MeshPostGrant,
     MeshSeeGrant, MeshSeeGraph,
@@ -378,25 +380,29 @@ fn canonical_window(from: u64, until: u64) -> Result<(), GunError> {
     Ok(())
 }
 
-/// Item soul `s3rch/items/<inner>` whose inner id may alias to that soul.
+/// Item soul `s3rch/items/<encodeKey(raw)>`. The inner segment is
+/// decoded once, then the caller applies `acl_key` to that raw id.
 fn reducible_item_inner(id: &str) -> Option<String> {
     let soul = GunSoul::parse(id).ok()?;
     if !soul.is_s3rch_item() {
         return None;
     }
-    let inner = soul.segments().get(2)?.clone();
-    if inner.is_empty() || inner.contains('/') || inner.contains('_') || encode_key(&inner) != inner
-    {
+    let encoded = soul.segments().get(2)?.clone();
+    if encoded.is_empty() || encoded.contains('/') {
         return None;
     }
-    if !may_alias_to_item_soul(&inner) || is_item_shaped(&inner) {
+    let raw = unescape_acl_key(&encoded)?;
+    if raw.is_empty() || raw.contains('/') || raw.contains('_') || encode_key(&raw) != encoded {
         return None;
     }
-    let expected = GunSoul::s3rch_item(&inner).as_node_id();
+    if !may_alias_to_item_soul(&raw) || is_item_shaped(&raw) {
+        return None;
+    }
+    let expected = GunSoul::s3rch_item(&raw).as_node_id();
     if expected.as_str() != id.trim() {
         return None;
     }
-    Some(inner)
+    Some(raw)
 }
 
 fn length_prefixed(fields: &[String]) -> Result<Vec<u8>, GunError> {

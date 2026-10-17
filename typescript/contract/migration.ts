@@ -63,10 +63,6 @@ function escapeKey(id: string, slash: boolean): string {
   });
 }
 
-function encodeKey(id: string): string {
-  return escapeKey(id, false);
-}
-
 function aclKey(id: string): string {
   return escapeKey(id.trim(), true);
 }
@@ -76,9 +72,9 @@ function aclPrincipalKey(id: string): string {
   if (trimmed.includes(".get(")) return aclKey(trimmed);
   const parts = trimmed.split("/").filter((part) => part.length > 0);
   if (parts.length === 3 && parts[0] === "s3rch" && parts[1] === "users") {
-    return encodeKey(parts[2] ?? "");
+    return parts[2] ?? "";
   }
-  return aclKey(trimmed);
+  return trimmed;
 }
 
 function grantSoul(owner: string, object: string, accessor: string): string {

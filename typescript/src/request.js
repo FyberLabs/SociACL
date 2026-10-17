@@ -215,22 +215,46 @@ export function canonicalRequestObject(source) {
 }
 
 /**
+ * Reverse of encodeKey. A bad escape is not an item id.
+ * @param {string} encoded
+ * @returns {string | null}
+ */
+function unescapeEncodeKey(encoded) {
+  let out = "";
+  for (let i = 0; i < encoded.length; i += 1) {
+    if (encoded[i] !== "~") {
+      out += encoded[i];
+      continue;
+    }
+    const decoded = { 0: "~", 1: ".", 2: "#", 3: "$", 4: "[", 5: "]", 6: "/" }[encoded[i + 1]];
+    if (decoded == null) return null;
+    out += decoded;
+    i += 1;
+  }
+  return out;
+}
+
+/**
  * Item soul whose reconstructed form equals the trimmed source.
+ * The inner segment is encodeKey(raw), decoded once before aclKey.
  * A spaced segment such as `s3rch/items/ foo` is not the raw id `foo`.
- * An inner `_` is also what aclKey writes for `/`, so `s3rch/items/a_b`
- * is not the request key of `a/b`.
+ * An inner `_` is not reduced, so `s3rch/items/a_b` is not the request
+ * key of `a/b`.
  * @param {string} id
  * @returns {string | null}
  */
 function reducibleItemInner(id) {
   const segments = soulSegments(id);
   if (!segments || segments.length !== 3 || segments[0] !== "s3rch" || segments[1] !== "items") return null;
-  const inner = segments[2] ?? "";
-  if (!inner || inner.includes("/") || inner.includes("_") || encodeKey(inner) !== inner) return null;
-  if (!mayAliasToItemSoul(inner) || isItemShaped(inner)) return null;
-  const soul = `s3rch/items/${encodeKey(inner)}`;
+  const encoded = segments[2] ?? "";
+  if (!encoded || encoded.includes("/")) return null;
+  const raw = unescapeEncodeKey(encoded);
+  if (raw == null || !raw || raw.includes("/") || raw.includes("_")) return null;
+  if (encodeKey(raw) !== encoded) return null;
+  if (!mayAliasToItemSoul(raw) || isItemShaped(raw)) return null;
+  const soul = `s3rch/items/${encodeKey(raw)}`;
   if (soul !== id.trim()) return null;
-  return inner;
+  return raw;
 }
 
 /** Unpaired UTF-16 is not a Unicode scalar value. @param {string} text */

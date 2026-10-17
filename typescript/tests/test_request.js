@@ -516,6 +516,37 @@ test("owner client writes rows and a request does not", () => {
   }
 });
 
+test("an encoded item soul shares the raw object's request id", () => {
+  const raw = accessRequestId("0xbob", "room.alpha");
+  const soul = accessRequestId("0xbob", "s3rch/items/room~1alpha");
+  assert.equal(soul, raw);
+  assert.notEqual(aclKey(aclKey("room.alpha")), aclKey("room.alpha"));
+});
+
+test("a dotted principal round-trips through enroll and approval", () => {
+  const graph = new MemoryGroupGraph();
+  graph.putObject("room:alpha", "0xalice");
+  const bob = signer("bob.name");
+  graph.enrollSigner("bob.name", bob.publicKey);
+  const canonical = canonicalRequestAccessor("bob.name");
+  assert.equal(canonical, "bob.name");
+  assert.ok(graph.enrolledKey(canonical));
+  const request = {
+    requester: "bob.name",
+    source: "room:alpha",
+    scope: "read",
+    message: "",
+    status: "pending",
+  };
+  assert.equal(accessRequestId(canonical, request.source), accessRequestId(request.requester, request.source));
+  request.signature = signAccessRequest(bob.privateKey, request);
+  const granted = grantApprovedRequest(graph, "0xalice", request, { from: 0, until: 80 });
+  assert.equal(granted.granted, true);
+  assert.equal(granted.see.grant.accessor, "bob.name");
+  assert.equal(graph.seeGrant("room:alpha", "bob.name").grant.stated, 1);
+  assert.equal(graph.seeGrant("room:alpha", canonical).grant.stated, 1);
+});
+
 test("a gun chain does not canonicalize to the inner wallet", () => {
   const spoof = "0xattacker.get('s3rch').get('users').get('0xvictim')";
   assert.notEqual(canonicalAccessorId(spoof), "0xvictim");

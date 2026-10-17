@@ -634,6 +634,43 @@ fn see_at_the_js_safe_ceiling_does_not_grow_a_post() {
 }
 
 #[test]
+fn encoded_item_soul_shares_the_raw_object_request_id() {
+    let raw = access_request_id("0xbob", "room.alpha").unwrap();
+    let soul = access_request_id("0xbob", "s3rch/items/room~1alpha").unwrap();
+    assert_eq!(soul, raw);
+    assert_ne!(
+        sociacl_gun::acl_key(&sociacl_gun::acl_key("room.alpha")),
+        sociacl_gun::acl_key("room.alpha")
+    );
+}
+
+#[test]
+fn dotted_principal_round_trips_through_enroll_and_approval() {
+    let mut graph = MeshSeeGraph::new();
+    graph.put_object("room:alpha", "0xalice");
+    let bob = signer("bob.name");
+    graph.enroll_signer("bob.name", bob.verify_key()).unwrap();
+    let canonical = sociacl_gun::canonical_request_accessor("bob.name").unwrap();
+    assert_eq!(canonical, "bob.name");
+    assert!(graph.enrolled_key(&canonical).is_some());
+    let mut request = request_of("bob.name", "room:alpha", "read", "", "pending");
+    assert_eq!(
+        access_request_id(&canonical, &request.source).unwrap(),
+        access_request_id(&request.requester, &request.source).unwrap()
+    );
+    request.signature = sign_access_request(&bob, &request).unwrap();
+    let rows = graph
+        .grant_approved_request("0xalice", &request, 0, 80, None)
+        .unwrap();
+    assert_eq!(rows.see.grant.accessor, "bob.name");
+    assert!(
+        graph
+            .check_see("room:alpha", "bob.name", Timestamp(10), None, None)
+            .allowed
+    );
+}
+
+#[test]
 fn folded_alias_at_the_js_safe_ceiling_does_not_grow_a_post() {
     const JS_SAFE_INTEGER_MAX: u64 = (1 << 53) - 1;
     let mut graph = MeshSeeGraph::new();

@@ -397,10 +397,11 @@ export function aclKey(id: string): string;
 
 /**
  * Owner / accessor key on dest ACL. `s3rch/users/<wallet>` collapses
- * to the wallet. A string containing `.get(` is rejected, not parsed.
- * Each segment is trimmed and an empty segment is dropped, so
+ * to the wallet text. A string containing `.get(` is an escaped
+ * literal and matches no wallet. Other principals stay the trimmed
+ * text. escapeKey is for object keys, not principals. Each user-soul
+ * segment is trimmed and an empty segment is dropped, so
  * `s3rch/users/ bob ` and `s3rch/users//bob` are `bob`.
- * Anything else is aclKey.
  */
 export function aclPrincipalKey(id: string): string;
 
