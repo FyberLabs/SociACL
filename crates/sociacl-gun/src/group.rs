@@ -24,7 +24,8 @@ use sociacl_core::{AttestationSig, IssuerSecret, Timestamp, VerifyKey};
 
 use crate::mesh::{closed_reason, MeshCheckResult, MeshSeeGraph};
 use crate::soul::{
-    acl_key, acl_principal_key, ascii_trim, unescape_acl_key, S3RCH_ACL, S3RCH_ROOT,
+    acl_key, acl_principal_key, ascii_trim, object_id_rejected, unescape_acl_key, S3RCH_ACL,
+    S3RCH_ROOT,
 };
 use crate::{GunError, HandoffHint, HopFactor};
 
@@ -668,7 +669,7 @@ impl MeshSeeGraph {
         hint: Option<&HandoffHint>,
         hop: Option<&HopFactor>,
     ) -> MeshCheckResult {
-        let object = object.as_ref().trim();
+        let object = object.as_ref();
         let accessor = ascii_trim(accessor.as_ref());
         let hint = hint.cloned();
         let hop = hop.cloned();
@@ -682,6 +683,9 @@ impl MeshSeeGraph {
                 hop,
             };
 
+        if object_id_rejected(object) {
+            return closed(crate::MESH_REASON_MISSING, hint, hop);
+        }
         if let Some(reason) = closed_reason(object) {
             return closed(reason, hint, hop);
         }
@@ -783,7 +787,7 @@ impl MeshSeeGraph {
         hint: Option<&HandoffHint>,
         hop: Option<&HopFactor>,
     ) -> GroupPresentation {
-        let object = object.as_ref().trim();
+        let object = object.as_ref();
         let accessor = ascii_trim(accessor.as_ref());
         let store_cancel = payload.stated == 0;
         let hinted = hint.cloned();
@@ -796,6 +800,9 @@ impl MeshSeeGraph {
             store_cancel,
         };
 
+        if object_id_rejected(object) {
+            return finish(false, crate::MESH_REASON_MISSING.into());
+        }
         let named = self
             .object_set_record(object)
             .is_some_and(|edge| self.object_set_grantable(edge));
@@ -965,7 +972,9 @@ impl MeshSeeGraph {
     }
 
     fn object_set_record(&self, object: &str) -> Option<&ObjectSetRecord> {
-        let object = object.trim();
+        if object_id_rejected(object) {
+            return None;
+        }
         if let Some((id, _)) = self.object_record(object) {
             if let Some(found) = self.groups.object_sets.get(&object_set_key(id)) {
                 return Some(found);

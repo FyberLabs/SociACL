@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import {
   MemoryGroupGraph,
@@ -996,5 +997,29 @@ test("a corrupt party signature does not drop a valid cancel", () => {
     const result = checkGroupSee(graph, "same-group", "doc", "0xbob", 1);
     assert.equal(result.allowed, false);
     assert.equal(result.reason, "cancelled");
+  }
+});
+
+test("a spaced object id does not see the stored group", () => {
+  const vectors = JSON.parse(
+    readFileSync(new URL("../../vectors/mesh/group-object.json", import.meta.url), "utf8"),
+  );
+  const graph = liveGraph();
+  const presented = { predicate: vectors.predicate, setId: vectors.setId };
+  for (const row of vectors.queries) {
+    const accessor = row.accessor ?? vectors.accessor;
+    const see = checkGroupSee(graph, vectors.predicate, row.object, accessor, 1);
+    assert.equal(see.allowed, row.allowed, row.name);
+    assert.equal(see.reason, row.reason, row.name);
+    const presentation = checkGroupPresentation(
+      graph,
+      presented,
+      row.object,
+      accessor,
+      livePayload,
+      10,
+    );
+    assert.equal(presentation.allowed, row.allowed, row.name);
+    assert.equal(presentation.reason, row.reason, row.name);
   }
 });

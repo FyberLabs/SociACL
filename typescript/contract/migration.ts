@@ -92,7 +92,7 @@ function hasUnpairedSurrogate(text: string): boolean {
 }
 
 function barePrincipal(id: string): string | null {
-  if (id.length === 0 || id === "." || id === ".." || id.includes(".get(") || id.includes(" ")) return null;
+  if (id.length === 0 || id === "." || id === ".." || id === "..." || id.includes(".get(") || id.includes(" ")) return null;
   if (hasUnpairedSurrogate(id)) return null;
   if ([...id].length > 256) return null;
   if (/[/#$[\]~]/.test(id)) return null;

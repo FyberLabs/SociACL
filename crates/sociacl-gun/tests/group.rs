@@ -128,6 +128,58 @@ fn same_group_requires_both_live_edges() {
     );
 }
 
+#[derive(serde::Deserialize)]
+struct GroupObjectVectors {
+    predicate: String,
+    #[serde(rename = "setId")]
+    set_id: String,
+    accessor: String,
+    queries: Vec<GroupObjectQuery>,
+}
+
+#[derive(serde::Deserialize)]
+struct GroupObjectQuery {
+    name: String,
+    object: String,
+    #[serde(default)]
+    accessor: Option<String>,
+    allowed: bool,
+    reason: String,
+}
+
+#[test]
+fn a_spaced_object_id_does_not_see_the_stored_group() {
+    let vectors: GroupObjectVectors =
+        serde_json::from_str(include_str!("../../../vectors/mesh/group-object.json")).unwrap();
+    assert_eq!(vectors.predicate, GroupPredicate::SameGroup.as_str());
+    let graph = group_graph();
+    let group = presented(GroupPredicate::SameGroup, &vectors.set_id);
+    for row in &vectors.queries {
+        let accessor = row.accessor.as_deref().unwrap_or(vectors.accessor.as_str());
+        let see = graph.check_group_see(
+            GroupPredicate::SameGroup,
+            &row.object,
+            accessor,
+            Timestamp(1),
+            None,
+            None,
+        );
+        assert_eq!(see.allowed, row.allowed, "{}", row.name);
+        assert_eq!(see.reason, row.reason, "{}", row.name);
+        let presentation = graph.check_group_presentation(
+            Some(&group),
+            &row.object,
+            accessor,
+            &live_payload(),
+            Timestamp(10),
+            None,
+            None,
+        );
+        assert_eq!(presentation.allowed, row.allowed, "{}", row.name);
+        assert_eq!(presentation.reason, row.reason, "{}", row.name);
+    }
+}
+
 #[test]
 fn named_circle_is_direct_and_not_a_group() {
     let mut graph = new_graph();

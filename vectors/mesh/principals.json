@@ -22,6 +22,7 @@
     {"owner": "0xalice", "object": "doc", "accessor": "0xbob/x", "soul": null},
     {"owner": "0xalice", "object": "doc", "accessor": "x~1get('s3rch')", "soul": null},
     {"owner": "0xalice", "object": "doc", "accessor": "../meta", "soul": null},
+    {"owner": "0xalice", "object": "doc", "accessor": "...", "soul": null},
     {"owner": "0xalice", "object": "doc", "accessor": "0xbob", "soul": "s3rch/acl/0xalice/doc/0xbob"}
   ],
   "objects": [

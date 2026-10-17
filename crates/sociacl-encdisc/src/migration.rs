@@ -1341,32 +1341,34 @@ mod tests {
             readers: Vec::new(),
             version_gate: 2,
         };
-        for accessor in ["0xbob/x", "x~1get('s3rch')", "../meta"] {
-            let grant = MigrationGrant {
-                soul: String::new(),
-                owner: "0xalice".to_string(),
-                grant: MeshSeeGrant {
-                    object: "doc".to_string(),
-                    accessor: accessor.to_string(),
-                    from: 0,
-                    until: 80,
-                    stated: GrantStated::Live,
-                },
-                ham_state: 1,
-            };
-            let err = apply_protocol_migration(&MigrationAdmissionInput {
-                migration: &migration,
-                owner: "0xalice",
-                caller: "0xalice",
-                now: 10,
-                storage: GrantStorage::PublicPlain,
-                grants: std::slice::from_ref(&grant),
-                payloads: &[],
-                receipts: &[],
-                reader_versions: &[],
-                soul_ham_state: 1,
-            });
-            assert!(err.is_err(), "{accessor}");
+        for accessor in ["0xbob/x", "x~1get('s3rch')", "../meta", "..."] {
+            for soul in ["", &format!("s3rch/acl/0xalice/doc/{accessor}")] {
+                let grant = MigrationGrant {
+                    soul: soul.to_string(),
+                    owner: "0xalice".to_string(),
+                    grant: MeshSeeGrant {
+                        object: "doc".to_string(),
+                        accessor: accessor.to_string(),
+                        from: 0,
+                        until: 80,
+                        stated: GrantStated::Live,
+                    },
+                    ham_state: 1,
+                };
+                let err = apply_protocol_migration(&MigrationAdmissionInput {
+                    migration: &migration,
+                    owner: "0xalice",
+                    caller: "0xalice",
+                    now: 10,
+                    storage: GrantStorage::PublicPlain,
+                    grants: std::slice::from_ref(&grant),
+                    payloads: &[],
+                    receipts: &[],
+                    reader_versions: &[],
+                    soul_ham_state: 1,
+                });
+                assert!(err.is_err(), "{accessor} {soul}");
+            }
         }
     }
 
