@@ -2,6 +2,7 @@
 
 This amendment and the updated record sections of the
 [package specification](sociacl-ids-package-spec.md) define the 0.6 contract.
+sociacl-ids 0.7 adds the Rotate v3 section below and does not change the v2 record.
 Versions 0.1 through 0.5 were never released. The review changes require a minor
 version bump because they change signing bytes, record shapes and URL grammar.
 Wallet and revoke timestamp attestations, rotation retention commitments, and
@@ -118,8 +119,38 @@ The exact rotation attestation claims are:
 
 `auth` equals the authorizer kind, `linkId` equals `authorizer.link`, and
 `retainedLinks` exactly equals the signed array. The new key signature and the
-wallet SIWE proof, when present, cover the v2 bytes. Old rotation encodings and
-attestations are rejected; consumers must pin package version and integrity.
+wallet SIWE proof, when present, cover the v2 bytes. Encodings older than v2
+are rejected. A record with no `nextEpub` remains this v2 record. Consumers
+must pin package version and integrity.
+
+## Rotate v3 (`nextEpub`)
+
+sociacl-ids 0.7 adds an encryption public key to a rotation without changing
+the v2 record. `nextEpub` is optional. When it is absent, the v2 domain and
+attestation above are unchanged. When it is present, the record version stays
+`v: 1` and the signing bytes are:
+
+```text
+LP("sociacl-rotate-v3") LP(principal) LP(decimal(seq)) LP(prevKey)
+LP(nextKey) LP(nextEpub) LP(decimal(issuedAt)) LP(authorizer.kind) LP(authorizer.link)
+LP(decimal(retainedLinks.length)) LP(retainedLinks[0]) ... LP(retainedLinks[n-1])
+```
+
+`nextEpub` is a SEA P-256 point in the same 87-character form as `nextKey`,
+parsed by `parsePrincipalId` / `parse_principal_id`. It names the encryption
+public key after the rotation. It is not an account id and it is not a second
+account keypair.
+
+The v3 attestation uses typ `sociacl-rotate-attest-v3` and the v2 claims plus
+`nextEpub`. That claim equals the signed field. A v3 attestation on a v2
+record, a v2 attestation on a v3 record, a missing `nextEpub` claim, a
+malformed point, or a signature over a different byte string does not verify.
+
+`resolveCurrentKey` / `resolve_current_key` returns `currentEpub`: the
+`nextEpub` of the latest rotation that verified under the witnessed rules
+already in this package, or null when no v3 rotation was accepted. A later v2
+rotation advances the signing key and does not clear that epub. `historyState`
+does not carry an epub.
 
 The verifier authenticates the authorizing credential and **every retained ID**
 against the pre-rotation state. Each must belong to the principal and remain

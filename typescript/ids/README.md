@@ -182,8 +182,10 @@ history lookup. Unrelated or unwitnessed index entries cannot cause a fatal
 context failure.
 
 `resolveCurrentKey(genesis, rotations, context)` returns
-`{ok:true,value:{currentKey,rotations},diagnostics}` or
-`{ok:false,reason,diagnostics}`. It sorts sequences, verifies each candidate,
+`{ok:true,value:{currentKey,currentEpub,rotations},diagnostics}` or
+`{ok:false,reason,diagnostics}`. `currentEpub` is the `nextEpub` of the latest
+verified Rotate v3 record, or `null` when the accepted history has none. A v2
+record omits `nextEpub` and does not change `currentEpub`. It sorts sequences, verifies each candidate,
 skips unauthenticated malformed/forged candidates, and reports `{source,index,reason}` diagnostics.
 Once a rotation's new-key signature and attestation authenticate its references,
 copies are compared by signing-bytes hash. Any fully verified copy satisfies
@@ -277,15 +279,15 @@ present/historical revocation boundary. The browser check
 bundles the runtime dependency graph and rejects Node imports. Node built-ins
 are used only in build/test tooling, outside the shipped runtime.
 
-After review and merge, tag `ids-v0.6.0`. The release job waits for the full test
+After review and merge, tag `ids-v0.7.0`. The release job waits for the full test
 job, requires a protected `master` and verifies the tag commit is its ancestor.
 A read-only job installs dependencies with scripts disabled, explicitly builds,
 and checks the tag against `package.json`. A separate write-token job only
 downloads the resulting artifact, checks its SHA-256, and attaches
-`sociacl-ids-0.6.0.tgz` and its SHA-256 file. Consumers then install:
+`sociacl-ids-0.7.0.tgz` and its SHA-256 file. Consumers then install:
 
 ```sh
-npm install https://github.com/FyberLabs/SociACL/releases/download/ids-v0.6.0/sociacl-ids-0.6.0.tgz
+npm install https://github.com/FyberLabs/SociACL/releases/download/ids-v0.7.0/sociacl-ids-0.7.0.tgz
 ```
 
 Commit the consumer lockfile with tarball integrity. This URL becomes usable

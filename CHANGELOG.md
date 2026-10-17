@@ -1,6 +1,19 @@
 # Changelog
 
-## sociacl-ids 0.6.0 — unreleased
+## sociacl-ids 0.7.0 — unreleased
+
+- Add Rotate v3. A rotation that carries `nextEpub` signs `sociacl-rotate-v3`
+  with that SEA point immediately after `nextKey`, and its Panopticon
+  attestation is `sociacl-rotate-attest-v3` with the same claim. v2 records,
+  which omit `nextEpub`, keep their signing bytes and attestation.
+- `resolveCurrentKey` / `resolve_current_key` returns `currentEpub` from the
+  latest verified v3 rotation, or null when none has been accepted. The epub
+  is accepted only after the existing witnessed rotation checks.
+- Add shared accept and reject vectors for a v3 rotation, a tampered
+  `nextEpub`, a missing attestation claim, a malformed point, and a signature
+  over the v2 byte string.
+
+## sociacl-ids 0.6.0 — superseded before release
 
 - Resolve rotation copies by signing-byte ID. A fully verified copy satisfies
   its ID despite damaged duplicates; unresolved authenticated IDs still fail

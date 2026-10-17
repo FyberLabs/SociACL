@@ -211,19 +211,37 @@ fn run(f: &Family, c: &Case, v: &Value) -> Result<Value, Reason> {
                 )?
                 .principal
             }
-            "rotate" => verify_rotate(v, &key, &rc)?.principal,
+            "rotate" => {
+                let rot = verify_rotate(v, &key, &rc)?;
+                if let Some(expected) = c.extra.get("nextEpub") {
+                    assert_eq!(
+                        rot.next_epub.as_ref().map(AsRef::as_ref),
+                        expected.as_str(),
+                        "{} nextEpub",
+                        c.name
+                    );
+                }
+                rot.principal
+            }
             "revoke-now" => verify_revoke_now(v, &key, now)?.principal,
             "revoke" => verify_revoke(v, &key, &jwks, now)?.principal,
             "resolve" => {
-                resolution(
+                let account = resolution(
                     resolve_current_key(
                         &parse_principal_id(ctx["genesis"].as_str().unwrap()).unwrap(),
                         v.as_array().unwrap(),
                         &rc,
                     ),
                     c,
-                )?
-                .current_key
+                )?;
+                let expected = c.extra.get("currentEpub").and_then(Value::as_str);
+                assert_eq!(
+                    account.current_epub.as_ref().map(AsRef::as_ref),
+                    expected,
+                    "{} currentEpub",
+                    c.name
+                );
+                account.current_key
             }
             operation @ ("resolve-and-wallet" | "resolve-and-wallet-now") => {
                 let genesis = parse_principal_id(ctx["genesis"].as_str().unwrap()).unwrap();

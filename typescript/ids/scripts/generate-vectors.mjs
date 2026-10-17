@@ -47,6 +47,10 @@ const rotation = (kind = 'wallet', next = p2, n = 2, seq = 1, prev = p, issuedAt
   const r = { v: 1, kind: 'rotate', principal: p, seq, prevKey: prev, nextKey: next, issuedAt, retainedLinks, authorizer:{kind,link:kind==='wallet'?wid:oid} };
   return { ...r, nextSig: keySig(r, n), authorizer: kind === 'wallet' ? {...r.authorizer,siwe:siwe(r)} : r.authorizer, attest: jws({ typ: 'sociacl-rotate-attest-v2', principal: p, nextKey: next, seq, iat: issuedAt, exp: issuedAt + 600, auth: kind, linkId:r.authorizer.link, retainedLinks }) };
 };
+const rotationV3 = (kind = 'wallet', next = p2, n = 2, seq = 1, prev = p, issuedAt = at + 30, retainedLinks = kind==='wallet'?[wid]:[oid], nextEpub = principal(6)) => {
+  const r = { v: 1, kind: 'rotate', principal: p, seq, prevKey: prev, nextKey: next, nextEpub, issuedAt, retainedLinks, authorizer:{kind,link:kind==='wallet'?wid:oid} };
+  return { ...r, nextSig: keySig(r, n), authorizer: kind === 'wallet' ? {...r.authorizer,siwe:siwe(r)} : r.authorizer, attest: jws({ typ: 'sociacl-rotate-attest-v3', principal: p, nextKey: next, nextEpub, seq, iat: issuedAt, exp: issuedAt + 600, auth: kind, linkId:r.authorizer.link, retainedLinks }) };
+};
 const rot = rotation(), rotOidc = rotation('oidc-fresh-login'), fork = rotation('wallet', p3, 3);
 const stampRevoke=r=>jws({typ:'sociacl-revoke-attest-v1',principal:r.principal,recordId:val(ids.linkId(r)),iat:r.issuedAt,exp:r.issuedAt+600});
 const rev = { v: 1, kind: 'revoke', principal: p, linkId: wid, issuedAt: at + 20 }; rev.keySig = keySig(rev);rev.attest=stampRevoke(rev);
@@ -435,6 +439,24 @@ bad('retention-cannot-use-missing-history',[wid],'missing-history','prepare-reta
 bad('panopticon-present-check-refuses-offline-revoked-wallet',[w],'revoked-link','wallet-resolve-now',{address:wallet,revocations:[offlineRev]});
 accept('records','build-rotation-excluding-offline-revoked-oidc',[rot],p2,{operation:'resolve',revocations:[offline(revokedOidc)]});
 bad('excluded-offline-revoked-oidc-remains-unusable',oidc,'unretained-link','oidc-link',{directState:{key:p,currentKey:p2,retainedLinks:[wid]}});
+
+// Rotate v3: nextEpub is in the signed bytes and the attestation. v2 records above stay unchanged.
+const epub = principal(6), epub2 = principal(8);
+const rot3 = rotationV3();
+accept('signing-bytes','rotate-v3',rot3,hex(bytes(rot3)),{linkId:val(ids.linkId(rot3))});
+accept('records','rotate-v3-wallet',rot3,p,{operation:'rotate',nextEpub:epub});
+accept('records','rotate-v3-resolve',[rot3],p2,{operation:'resolve',currentEpub:epub});
+const rot3second = rotationV3('wallet',p3,3,2,p2,at+40,[wid],epub2);
+accept('records','rotate-v3-after-v2',[rot,rot3second],p3,{operation:'resolve',currentEpub:epub2});
+accept('records','v2-after-v3-keeps-epub',[rot3,rotation('wallet',p3,3,2,p2,at+40)],p3,{operation:'resolve',currentEpub:epub});
+bad('rotate-v3-next-epub-tampered',{...rot3,nextEpub:p3},'bad-signature','rotate');
+bad('rotate-v3-next-epub-missing',{...rot3,attest:jws({typ:'sociacl-rotate-attest-v3',principal:p,nextKey:p2,seq:1,iat:rot3.issuedAt,exp:rot3.issuedAt+600,auth:'wallet',linkId:wid,retainedLinks:rot3.retainedLinks})},'bad-attestation','rotate');
+bad('rotate-v3-next-epub-malformed',{...rot3,nextEpub:'A'.repeat(43)+'.'+'A'.repeat(43)},'not-on-curve','rotate');
+const v2Unsigned = { v:1, kind:'rotate', principal:p, seq:rot3.seq, prevKey:p, nextKey:p2, issuedAt:rot3.issuedAt, retainedLinks:rot3.retainedLinks, authorizer:{kind:'wallet',link:wid} };
+bad('rotate-v3-signed-bytes-mismatch',{...rot3,nextSig:keySig(v2Unsigned,2)},'bad-signature','rotate');
+accept('records','rotate-v3-tampered-does-not-resolve',[{...rot3,nextEpub:p3}],p,{operation:'resolve',diagnosticReasons:['bad-signature']});
+bad('rotate-v3-revoked-recovery',[rot3],'rotation-conflict','resolve',{diagnosticReasons:['rotation-conflict'],revocations:[rev]});
+bad('rotate-v3-attest-epub-mismatch',{...rot3,attest:jws({typ:'sociacl-rotate-attest-v3',principal:p,nextKey:p2,nextEpub:epub2,seq:1,iat:rot3.issuedAt,exp:rot3.issuedAt+600,auth:'wallet',linkId:wid,retainedLinks:rot3.retainedLinks})},'bad-attestation','rotate');
 
 const root = new URL('../../../vectors/ids/',import.meta.url); mkdirSync(root,{recursive:true});
 for(const [name,value] of families) writeFileSync(new URL(name+'.json',root),JSON.stringify(value,null,2).replace(/"issuedAt": 1700000000,/g, name==='edges'?'"issuedAt": 1700000000,':'"issuedAt": 1700000000.0,')+'\n');

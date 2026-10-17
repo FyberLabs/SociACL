@@ -29,7 +29,7 @@ export type WalletLink = Readonly<{ v: 1; kind: 'wallet'; principal: PrincipalId
 export type OidcLink = Readonly<{ v: 1; kind: 'oidc'; principal: PrincipalId; cred: OidcCredential;
   issuedAt: number; nonce: string; keySig: string; attest: string }>;
 export type Rotate = Readonly<{ v: 1; kind: 'rotate'; principal: PrincipalId; seq: number;
-  prevKey: PrincipalId; nextKey: PrincipalId; retainedLinks: readonly string[]; issuedAt: number; nextSig: string;
+  prevKey: PrincipalId; nextKey: PrincipalId; nextEpub?: PrincipalId; retainedLinks: readonly string[]; issuedAt: number; nextSig: string;
   authorizer: { kind: 'wallet'; link: string; siwe: Siwe } | { kind: 'oidc-fresh-login'; link: string }; attest: string }>;
 export type Revoke = Readonly<{ v: 1; kind: 'revoke'; principal: PrincipalId; linkId: string;
   issuedAt: number; keySig: string; attest?: string }>;
@@ -45,6 +45,6 @@ export type KeyState = Readonly<{ key: PrincipalId; currentKey: PrincipalId; ret
 export type HistoryResolver = (principal: PrincipalId, at: number, until: number) => Result<KeyState>;
 export type Diagnostic = Readonly<{ source: 'rotation' | 'link' | 'revoke'; index: number; reason: Reason }>;
 export type Resolution<T> = Result<T> & { diagnostics: readonly Diagnostic[] };
-export type ResolvedAccount = Readonly<{ currentKey: PrincipalId; rotations: readonly Rotate[] }>;
+export type ResolvedAccount = Readonly<{ currentKey: PrincipalId; currentEpub: PrincipalId | null; rotations: readonly Rotate[] }>;
 export type ResolutionContext = Readonly<{ jwks: Jwks; links: ReadonlyMap<string, unknown>;
   revocations?: readonly unknown[]; now: number; policy: SiwePolicy; pinnedIss: ReadonlySet<string>; history: HistoryResolver }>;
