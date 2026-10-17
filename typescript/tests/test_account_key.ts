@@ -5,7 +5,6 @@ import * as accountKey from "../contract/account-key.ts";
 import {
   accountGrantSoul,
   accountIdFromLabel,
-  accountKeyTestApi,
   contentWrapHex,
   currentSigningKey,
   deliveryMintsGrant,
@@ -21,6 +20,7 @@ import {
   sealAccountBackup,
   type EncryptedAccountWrap,
 } from "../contract/account-key.ts";
+import { contentWrapHexWith, sealAccountBackupWith } from "./support/account-key-deterministic.ts";
 import {
   historyState,
   parsePrincipalId,
@@ -303,10 +303,7 @@ test("backup wrap is stored off gun and both devices open one epub wrap", () => 
   const inherited = enroll(opened, "tablet");
   assert.equal(inherited.grantsSee, false);
   assert.equal(inherited.account.epub, genesis.epub);
-  const api = accountKeyTestApi();
-  assert.ok(api);
-  if (!api) return;
-  const wrapped = api.contentWrapHexWith(
+  const wrapped = contentWrapHexWith(
     genesis,
     vector.contentWrap.dekHex,
     vector.contentWrap.ephemeralScalarHex,
@@ -335,7 +332,7 @@ test("backup wrap is stored off gun and both devices open one epub wrap", () => 
   const phone = enroll(genesis, "phone");
   const laptop = enroll(genesis, "laptop");
   assert.equal(phone.account.epub, laptop.account.epub);
-  assert.equal(api.contentWrapHexWith(
+  assert.equal(contentWrapHexWith(
     laptop.account,
     vector.contentWrap.dekHex,
     vector.contentWrap.ephemeralScalarHex,
@@ -379,12 +376,9 @@ test("enrollment hop hint wrap request and inbox do not grant", () => {
 
 test("public transport key seal matches the shared vector", () => {
   const genesis = account();
-  const api = accountKeyTestApi();
-  assert.ok(api);
-  if (!api) return;
   const store = new MemoryKeyWrapStore();
   const context = emptyContext();
-  const wrap = api.sealAccountBackupWith(
+  const wrap = sealAccountBackupWith(
     genesis,
     vector.backupWrap.transportPub,
     vector.backupWrap.ephemeralScalarHex,
@@ -410,12 +404,9 @@ test("a wrap sealed to the victim transport pub by another account does not open
     vector.substitution.epub,
     vector.substitution.epriv,
   );
-  const api = accountKeyTestApi();
-  assert.ok(api);
-  if (!api) return;
   const store = new MemoryKeyWrapStore();
   const context = emptyContext();
-  const wrap = api.sealAccountBackupWith(
+  const wrap = sealAccountBackupWith(
     attacker,
     vector.backupWrap.transportPub,
     vector.substitution.ephemeralScalarHex,
@@ -441,11 +432,8 @@ test("seal is refused and open is rejected after rotation", () => {
   assert.ok(rotate);
   if (!rotate) return;
   const context = recordsContext();
-  const api = accountKeyTestApi();
-  assert.ok(api);
-  if (!api) return;
   const store = new MemoryKeyWrapStore();
-  const wrap = api.sealAccountBackupWith(
+  const wrap = sealAccountBackupWith(
     genesis,
     row.transportPub,
     row.ephemeralScalarHex,
@@ -469,17 +457,92 @@ test("seal is refused and open is rejected after rotation", () => {
   );
 });
 
-test("deterministic helpers are absent outside node --test", () => {
+test("a forged LinkedCredential is rejected", () => {
+  const victim = account().principal;
+  const reject = (run: () => void) => {
+    assert.throws(run, (error: unknown) => error instanceof Error && error.message === "unverified-credential");
+  };
+  reject(() => new (LinkedCredential as unknown as new (...args: unknown[]) => unknown)("wallet", victim, "x"));
+  reject(() => Reflect.construct(LinkedCredential, ["wallet", victim, "x"]));
+  reject(() => Reflect.construct(LinkedCredential, [Symbol("linked-credential-ctor"), "wallet", victim, "x"]));
+  reject(() => sameAccount(Object.create(LinkedCredential.prototype), victim));
+  reject(() => sameAccount(Object.setPrototypeOf({ principal: victim, kind: "wallet", label: "x" }, LinkedCredential.prototype), victim));
+  const previous = Object.getOwnPropertyDescriptor(LinkedCredential, Symbol.hasInstance);
+  Object.defineProperty(LinkedCredential, Symbol.hasInstance, { configurable: true, value: () => true });
+  try {
+    const plain = { principal: victim, kind: "wallet", label: "x" };
+    assert.equal(plain instanceof LinkedCredential, true);
+    reject(() => sameAccount(plain, victim));
+  } finally {
+    if (previous) Object.defineProperty(LinkedCredential, Symbol.hasInstance, previous);
+    else Reflect.deleteProperty(LinkedCredential, Symbol.hasInstance);
+  }
+});
+
+test("a verified principal cannot be replaced", () => {
+  const wallet = records.accept.find((row) => row.name === "wallet");
+  assert.ok(wallet);
+  if (!wallet) return;
+  const genesisId = parsePrincipalId(records.context.genesis);
+  assert.equal(genesisId.ok, true);
+  if (!genesisId.ok) return;
+  const keyState = { key: genesisId.value, currentKey: genesisId.value, retainedLinks: null };
+  const linked = LinkedCredential.fromWallet(wallet.input, records.context.jwks, records.context.policy, records.context.now, keyState);
+  assert.throws(() => {
+    (linked as { principal: PrincipalId }).principal = account().principal;
+  });
+  assert.equal(linked.principal, genesisId.value);
+  assert.equal(sameAccount(linked, genesisId.value), true);
+  assert.equal(sameAccount(linked, account().principal), false);
+});
+
+test("oversized and wrong-length transport pubs are bad-key", () => {
+  const genesis = account();
+  const wrapId = parseWrapObject(vector.backupWrap.wrapId);
+  const context = emptyContext();
+  for (const transportPub of ["", "A".repeat(10), "A".repeat(86), "A".repeat(87), "A".repeat(88), "A".repeat(100_000)]) {
+    assert.throws(
+      () => sealAccountBackup(genesis, transportPub, wrapId, new MemoryKeyWrapStore(), [], context),
+      (error: unknown) => error instanceof Error && error.message === "bad-key",
+      `length ${transportPub.length}`,
+    );
+  }
+});
+
+test("a malformed wrap id is rejected before signature verification", () => {
+  const genesis = account();
+  // A 128-hex signature passes the length check. If verification ran, this
+  // dummy signature would be `wrap-rejected`. `bad-alphabet` and `too-long`
+  // come only from parseWrapObject, which open calls first.
+  const wrap: EncryptedAccountWrap = {
+    principal: genesis.principal,
+    wrapId: "not-an-object" as EncryptedAccountWrap["wrapId"],
+    epub: genesis.epub,
+    ciphertextHex: "00",
+    signature: "ab".repeat(64),
+  };
+  assert.throws(
+    () => openAccountBackup("00".repeat(32), wrap, genesis.principal, [], emptyContext()),
+    (error: unknown) => error instanceof Error && error.message === "bad-alphabet",
+  );
+  const huge: EncryptedAccountWrap = { ...wrap, wrapId: "a".repeat(10_000) as EncryptedAccountWrap["wrapId"] };
+  assert.throws(
+    () => openAccountBackup("00".repeat(32), huge, genesis.principal, [], emptyContext()),
+    (error: unknown) => error instanceof Error && error.message === "too-long",
+  );
+});
+
+test("deterministic helpers are not production exports", () => {
   const names = Object.keys(accountKey);
   assert.equal(names.includes("sealAccountBackupWith"), false);
   assert.equal(names.includes("contentWrapHexWith"), false);
-  const previous = process.env.NODE_TEST_CONTEXT;
-  delete process.env.NODE_TEST_CONTEXT;
-  try {
-    assert.equal(accountKeyTestApi(), undefined);
-  } finally {
-    if (previous !== undefined) process.env.NODE_TEST_CONTEXT = previous;
-  }
+  assert.equal(names.includes("accountKeyTestApi"), false);
+  assert.equal(names.includes("encryptAccountBackup"), false);
+  assert.equal(names.includes("wrapContent"), false);
+  const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { exports: Record<string, string> };
+  const exported = JSON.stringify(pkg.exports);
+  assert.equal(exported.includes("account-key"), false);
+  assert.equal(exported.includes("account-key-deterministic"), false);
 });
 
 function recordsContext(): ResolutionContext {

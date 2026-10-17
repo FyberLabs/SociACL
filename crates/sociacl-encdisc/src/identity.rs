@@ -562,6 +562,7 @@ pub fn open_account_backup(
     rotations: &[serde_json::Value],
     context: &sociacl_ids::ResolutionContext<'_>,
 ) -> Result<GenesisAccount, EncDiscError> {
+    let wrap_id = parse_wrap_object(wrap.wrap_id.as_ref())?;
     if transport.is_account() {
         return Err(EncDiscError::IdentityRejected("transport".into()));
     }
@@ -575,7 +576,7 @@ pub fn open_account_backup(
         .try_into()
         .map_err(|_| EncDiscError::WrapRejected)?;
     let current = current_signing_key(expected, rotations, context)?;
-    let message = signature_message(&blob, transport.sea_pub(), wrap.wrap_id.as_ref())?;
+    let message = signature_message(&blob, transport.sea_pub(), wrap_id.as_ref())?;
     sea::verify_sea(current.as_ref(), &message, &wrap.signature)?;
     let ephemeral_sea = sea::sea_pub_from_point(&ephemeral)?;
     let secret = transport.secret_key()?;
@@ -583,13 +584,13 @@ pub fn open_account_backup(
     let aes_key = kdf_backup(
         &shared,
         expected.as_ref(),
-        wrap.wrap_id.as_ref(),
+        wrap_id.as_ref(),
         transport.sea_pub(),
         &ephemeral_sea,
     )?;
     let aad = aad_backup(
         expected.as_ref(),
-        wrap.wrap_id.as_ref(),
+        wrap_id.as_ref(),
         transport.sea_pub(),
         &ephemeral_sea,
     )?;
@@ -1276,6 +1277,47 @@ mod tests {
         )
         .unwrap_err();
         assert_eq!(err, EncDiscError::BadKey);
+    }
+
+    #[test]
+    fn oversized_and_wrong_length_transport_pubs_are_bad_key() {
+        let v = vector();
+        let account = fixture_account(&v);
+        let wrap_id = parse_wrap_object(v["backupWrap"]["wrapId"].as_str().unwrap()).unwrap();
+        let parts = empty_resolution();
+        let context = parts.context();
+        let samples = [
+            String::new(),
+            "A".repeat(10),
+            "A".repeat(86),
+            "A".repeat(87),
+            "A".repeat(88),
+            "A".repeat(100_000),
+        ];
+        for transport_pub in &samples {
+            let err = seal_account_backup(
+                &account,
+                transport_pub,
+                &wrap_id,
+                &[],
+                &context,
+                &mut MemoryKeyWrapStore::default(),
+            )
+            .unwrap_err();
+            assert_eq!(err, EncDiscError::BadKey, "len {}", transport_pub.len());
+        }
+    }
+
+    #[test]
+    fn malformed_wrap_id_is_rejected_before_it_is_an_object() {
+        assert_eq!(
+            parse_wrap_object("not-an-object").unwrap_err(),
+            EncDiscError::NotPrincipal("bad-alphabet".into())
+        );
+        assert_eq!(
+            parse_wrap_object(&"a".repeat(10_000)).unwrap_err(),
+            EncDiscError::NotPrincipal("too-long".into())
+        );
     }
 
     #[test]
