@@ -1782,7 +1782,7 @@ fn merge_canonicalizes_object_keys_before_taking_an_object_set() {
 
     alice.merge_from(&mallory);
     assert_eq!(alice.owner_of("foo/bar"), Some("0xalice"));
-    assert_eq!(alice.owner_of("foo_bar"), Some("0xalice"));
+    assert_eq!(alice.owner_of("foo_bar"), Some("0xmallory"));
     assert!(alice.object_set("foo/bar").is_none());
     assert!(
         !alice

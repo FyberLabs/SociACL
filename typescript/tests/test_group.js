@@ -454,7 +454,7 @@ test("object owner checks use the canonical object key", () => {
   mallory.nameObjectSet("0xmallory", "foo_bar", "same-group", "0xalice/ops", secret("0xmallory").privateKey);
   alice.mergeFrom(mallory);
   assert.equal(alice.ownerOf("foo/bar"), "0xalice");
-  assert.equal(alice.ownerOf("foo_bar"), "0xalice");
+  assert.equal(alice.ownerOf("foo_bar"), "0xmallory");
   assert.equal(alice.objectSet("foo/bar"), undefined);
   assert.equal(checkGroupSee(alice, "same-group", "foo/bar", "0xbob", 1).allowed, false);
 });

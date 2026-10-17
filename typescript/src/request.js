@@ -401,18 +401,18 @@ export function acceptAccessRequest(request) {
   return { requester, source, scope, message, status, id, signingBytes };
 }
 
-/**
- * One plain string copy of the request fields. A non-string is rejected,
- * so a stateful toString cannot change the source after signing.
- * @param {AccessRequestInput} request
- * @returns {AccessRequestInput}
- */
 /** @param {unknown} value */
 function snapshotString(value) {
   if (typeof value !== "string") throw new Error(FIELD);
   return value;
 }
 
+/**
+ * One plain string copy of the request fields. A non-string is rejected,
+ * so a stateful toString cannot change the source after signing.
+ * @param {AccessRequestInput} request
+ * @returns {AccessRequestInput}
+ */
 function captureRequest(request) {
   const signature = request?.signature;
   return {
