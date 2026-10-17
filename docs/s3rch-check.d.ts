@@ -396,12 +396,13 @@ export type S3rchAcl = "acl";
 export function aclKey(id: string): string;
 
 /**
- * Owner / accessor key on dest ACL. `s3rch/users/<wallet>` collapses
- * to the wallet text. A string containing `.get(` is an escaped
- * literal and matches no wallet. Other principals stay the trimmed
- * text. escapeKey is for object keys, not principals. Each user-soul
- * segment is trimmed and an empty segment is dropped, so
- * `s3rch/users/ bob ` and `s3rch/users//bob` are `bob`.
+ * Owner / accessor key on dest ACL. An exact `s3rch/users/<wallet>`
+ * collapses to that wallet text. A bare id may contain `.` and must
+ * not contain `/ # $ [ ] ~`, a control character, or `.get(`.
+ * Anything else is empty and is not a soul segment. escapeKey is for
+ * object keys, not principals. Each user-soul segment is trimmed and
+ * an empty segment is dropped, so `s3rch/users/ bob ` and
+ * `s3rch/users//bob` are `bob`.
  */
 export function aclPrincipalKey(id: string): string;
 
@@ -622,10 +623,11 @@ export function canonicalRequestAccessor(requester: AccessorId): string;
 
 /**
  * Object key for a request id. aclKey, with an aliasable item soul
- * reduced to the raw id's aclKey when that inner contains no `_`.
+ * reduced to the raw id's aclKey. An underscore in that raw id stays.
  * A held claim id does not alias to an item soul.
- * `s3rch/items/ foo` does not alias to `foo`. `a/b` does not alias
- * to `s3rch/items/a_b`. The raw string is Unicode scalar values.
+ * `s3rch/items/ foo` does not alias to `foo`. `a_b` and
+ * `s3rch/items/a_b` are one source. `a/b` is not. The raw string is
+ * Unicode scalar values.
  * U+0085 and U+FEFF are rejected. meta, acl, a dest-ACL soul,
  * gun.get('s3rch').get('meta'), gun.get('s3rch').get('acl'), and an
  * HTTP leaf in any scheme case are rejected.

@@ -99,7 +99,13 @@ impl GunSoul {
     /// Owner dest-ACL root.
     /// `gun.get('s3rch').get('acl').get(aclPrincipalKey(owner))`.
     pub fn s3rch_acl(owner: impl AsRef<str>) -> Self {
-        Self::new([S3RCH_ROOT, S3RCH_ACL, &acl_principal_key(owner.as_ref())])
+        let owner = acl_principal_key(owner.as_ref());
+        if owner.is_empty() {
+            return Self {
+                segments: Vec::new(),
+            };
+        }
+        Self::new([S3RCH_ROOT, S3RCH_ACL, &owner])
     }
 
     /// Jointly stated see grant under the object owner's dest ACL.
@@ -112,12 +118,19 @@ impl GunSoul {
         object: impl AsRef<str>,
         accessor: impl AsRef<str>,
     ) -> Self {
+        let owner = acl_principal_key(owner.as_ref());
+        let accessor = acl_principal_key(accessor.as_ref());
+        if owner.is_empty() || accessor.is_empty() {
+            return Self {
+                segments: Vec::new(),
+            };
+        }
         Self::new([
             S3RCH_ROOT,
             S3RCH_ACL,
-            &acl_principal_key(owner.as_ref()),
+            &owner,
             &acl_key(object.as_ref()),
-            &acl_principal_key(accessor.as_ref()),
+            &accessor,
         ])
     }
 
@@ -185,21 +198,42 @@ pub fn acl_key(id: &str) -> String {
     escape_key(id.trim(), true)
 }
 
-/// Owner / accessor key on dest ACL. A locked user soul collapses
-/// to the wallet text. A string containing `.get(` is an escaped
-/// literal and is not a wallet. Other principals stay the trimmed
-/// text. [`encode_key`] is for object keys, not principals.
+/// A bare principal. `.` is allowed. `/ # $ [ ] ~`, controls, and
+/// `.get(` are not.
+fn bare_principal(id: &str) -> bool {
+    !id.is_empty()
+        && !id.contains(".get(")
+        && !id.contains(['/', '#', '$', '[', ']', '~'])
+        && !id.chars().any(|ch| ch.is_control())
+}
+
+/// Owner / accessor key on dest ACL. An exact `s3rch/users/<wallet>`
+/// collapses to that wallet. Anything else must be a bare principal.
+/// Rejected text is empty so it cannot become a soul segment.
+/// [`encode_key`] is for object keys, not principals.
 pub fn acl_principal_key(id: &str) -> String {
     let id = id.trim();
-    if id.contains(".get(") {
-        return acl_key(id);
+    if id.is_empty() || id.contains(".get(") {
+        return String::new();
     }
     if let Ok(soul) = GunSoul::parse(id) {
-        if let Some(wallet) = soul.wallet() {
-            return wallet.to_string();
+        if soul.segments().len() == 3
+            && soul.segments()[0] == S3RCH_ROOT
+            && soul.segments()[1] == S3RCH_USERS
+        {
+            let wallet = &soul.segments()[2];
+            return if bare_principal(wallet) {
+                wallet.clone()
+            } else {
+                String::new()
+            };
         }
     }
-    id.to_string()
+    if id.contains('/') || !bare_principal(id) {
+        String::new()
+    } else {
+        id.to_string()
+    }
 }
 
 /// One accessor id. A user soul `s3rch/users/<wallet>` and the wallet
@@ -292,6 +326,29 @@ mod tests {
     fn a_gun_chain_is_not_the_inner_wallet() {
         let spoof = "0xattacker.get('s3rch').get('users').get('0xvictim')";
         assert!(GunSoul::parse(spoof).is_err());
+        assert_eq!(canonical_accessor_id(spoof), "");
         assert_ne!(canonical_accessor_id(spoof), "0xvictim");
+    }
+
+    #[test]
+    fn a_rejected_principal_is_not_a_grant_path() {
+        let injected = "s3rch/acl/0xalice/doc/0xbob/x";
+        assert_eq!(crate::grant_soul("0xalice", "doc", "0xbob/x").as_str(), "");
+        assert_eq!(crate::grant_soul("0xalice/doc", "0xbob", "x").as_str(), "");
+        assert_ne!(
+            crate::grant_soul("0xalice", "doc", "0xbob/x").as_str(),
+            injected
+        );
+        assert_eq!(
+            crate::grant_soul("0xalice", "doc", "0xbob").as_str(),
+            "s3rch/acl/0xalice/doc/0xbob"
+        );
+        assert_eq!(crate::acl_soul("../meta").as_str(), "");
+        assert_eq!(canonical_accessor_id("a\u{0}b"), "");
+        assert_eq!(crate::post_soul("0xalice", "doc", "a\u{0}b").as_str(), "");
+        assert_eq!(canonical_accessor_id("bob~name"), "");
+        assert_eq!(canonical_accessor_id("x~1get('s3rch')"), "");
+        assert_eq!(canonical_accessor_id("bob.name"), "bob.name");
+        assert_eq!(canonical_accessor_id("s3rch/users/0xbob"), "0xbob");
     }
 }

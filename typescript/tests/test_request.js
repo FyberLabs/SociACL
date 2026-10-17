@@ -244,13 +244,18 @@ test("a surrogate pair is one scalar and an unpaired surrogate is rejected", () 
   }
 });
 
-test("a slash id does not share a request with the flattened item soul", () => {
+test("a slash id does not share a request with the underscore item soul", () => {
   const slash = accessRequestId("0xbob", "a/b");
   const flat = accessRequestId("0xbob", "a_b");
   const soul = accessRequestId("0xbob", "s3rch/items/a_b");
+  const dotted = accessRequestId("0xbob", "room.alpha");
+  const under = accessRequestId("0xbob", "room_alpha");
+  const underSoul = accessRequestId("0xbob", "s3rch/items/room_alpha");
   assert.notEqual(slash, flat);
-  assert.notEqual(flat, soul);
+  assert.equal(flat, soul);
   assert.notEqual(slash, soul);
+  assert.equal(under, underSoul);
+  assert.notEqual(under, dotted);
   const graph = new MemoryGroupGraph();
   graph.putObject("a/b", "0xalice");
   graph.putObject("s3rch/items/a_b", "0xalice");

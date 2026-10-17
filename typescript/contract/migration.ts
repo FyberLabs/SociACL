@@ -67,18 +67,34 @@ function aclKey(id: string): string {
   return escapeKey(id.trim(), true);
 }
 
+function barePrincipal(id: string): boolean {
+  if (id.length === 0 || id.includes(".get(") || /[/#$[\]~]/.test(id)) return false;
+  for (let i = 0; i < id.length; i += 1) {
+    const code = id.charCodeAt(i);
+    if (code <= 0x1f || (code >= 0x7f && code <= 0x9f)) return false;
+  }
+  return true;
+}
+
 function aclPrincipalKey(id: string): string {
   const trimmed = id.trim();
-  if (trimmed.includes(".get(")) return aclKey(trimmed);
-  const parts = trimmed.split("/").filter((part) => part.length > 0);
+  if (trimmed.length === 0 || trimmed.includes(".get(")) return "";
+  const parts = trimmed
+    .split("/")
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0);
   if (parts.length === 3 && parts[0] === "s3rch" && parts[1] === "users") {
-    return parts[2] ?? "";
+    return barePrincipal(parts[2] ?? "") ? (parts[2] ?? "") : "";
   }
-  return trimmed;
+  if (trimmed.includes("/")) return "";
+  return barePrincipal(trimmed) ? trimmed : "";
 }
 
 function grantSoul(owner: string, object: string, accessor: string): string {
-  return `s3rch/acl/${aclPrincipalKey(owner)}/${aclKey(object)}/${aclPrincipalKey(accessor)}`;
+  const ownerKey = aclPrincipalKey(owner);
+  const accessorKey = aclPrincipalKey(accessor);
+  if (ownerKey.length === 0 || accessorKey.length === 0) return "";
+  return `s3rch/acl/${ownerKey}/${aclKey(object)}/${accessorKey}`;
 }
 
 function currentGrants(input: MigrationAdmissionInput): CurrentGrant[] {

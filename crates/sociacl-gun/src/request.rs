@@ -13,8 +13,8 @@
 //! `s3rch/users/0xbob` are one accessor (`canonical_accessor_id`).
 //! A string containing `.get(` is rejected, not parsed. `room:alpha`
 //! and `s3rch/items/room:alpha` are one object when the raw id may
-//! alias to that item soul and the inner id contains no `_`.
-//! `a/b`, `a_b`, and `s3rch/items/a_b` are different objects.
+//! alias to that item soul. An underscore in the raw id stays.
+//! `a/b` is not `a_b`. `a_b` and `s3rch/items/a_b` are one object.
 //! `room.alpha`, `room_alpha`, and `room/alpha` are different keys.
 //! `s3rch/items/room~1alpha` is the item soul of `room.alpha` and
 //! shares that request id. A principal is not an object escape.
@@ -129,10 +129,11 @@ pub fn canonical_request_accessor(requester: &str) -> Result<String, GunError> {
 
 /// Object key for a request id.
 ///
-/// `aclKey` is injective, so `.`, `_`, and `/` do not share a key.
+/// `aclKey` is injective, so `.` and `/` do not share a key with `_`.
 /// An item soul collapses to the `aclKey` of its raw id when that raw
-/// id may alias to the soul and the inner id contains no `_`. A held
-/// claim id without `/` does not collapse to an item soul. A string
+/// id may alias to the soul. `a_b` and `s3rch/items/a_b` are one key.
+/// `a/b` is not. A held claim id without `/` does not collapse to an
+/// item soul. A string
 /// containing `.get(` is rejected. `s3rch/meta`, dest ACL, and a URL
 /// leaf are rejected.
 /// U+0085 and U+FEFF are rejected. The in-graph spelling used on grant
@@ -392,7 +393,7 @@ fn reducible_item_inner(id: &str) -> Option<String> {
         return None;
     }
     let raw = unescape_acl_key(&encoded)?;
-    if raw.is_empty() || raw.contains('/') || raw.contains('_') || encode_key(&raw) != encoded {
+    if raw.is_empty() || raw.contains('/') || encode_key(&raw) != encoded {
         return None;
     }
     if !may_alias_to_item_soul(&raw) || is_item_shaped(&raw) {

@@ -431,9 +431,12 @@ function setMapKey(setId) {
  * @param {string} accessor
  */
 export function membershipSoul(setOwner, predicate, setId, accessor) {
+  const ownerKey = aclPrincipalKey(setOwner);
+  const accessorKey = aclPrincipalKey(accessor);
+  if (!ownerKey || !accessorKey) return "";
   const canonical = canonicalSetId(setId);
   const setKey = canonical ? aclKey(canonical) : aclKey(setId);
-  return `s3rch/acl/${aclPrincipalKey(setOwner)}/membership/${predicate}/${setKey}/${aclPrincipalKey(accessor)}`;
+  return `s3rch/acl/${ownerKey}/membership/${predicate}/${setKey}/${accessorKey}`;
 }
 
 /**
@@ -441,7 +444,9 @@ export function membershipSoul(setOwner, predicate, setId, accessor) {
  * @param {string} object
  */
 export function objectSetSoul(objectOwner, object) {
-  return `s3rch/acl/${aclPrincipalKey(objectOwner)}/object-set/edge/${aclKey(object)}`;
+  const ownerKey = aclPrincipalKey(objectOwner);
+  if (!ownerKey) return "";
+  return `s3rch/acl/${ownerKey}/object-set/edge/${aclKey(object)}`;
 }
 
 /** @param {string} object */
@@ -648,6 +653,7 @@ function verifiedIds(lookup, cancels, kind, rowKey, allow) {
 /** @param {MembershipRecord} record @param {string} signer */
 function membershipCancelSigner(record, signer) {
   const key = aclPrincipalKey(signer);
+  if (!key) return false;
   return key === aclPrincipalKey(record.membership.accessor) || key === aclPrincipalKey(record.setOwner);
 }
 
@@ -706,7 +712,8 @@ function objectSignatureOk(lookup, record) {
  */
 function refreshObject(lookup, record) {
   const ids = verifiedIds(lookup, record.cancels, "object-set", aclKey(record.name.object), (signer) => {
-    return aclPrincipalKey(signer) === aclPrincipalKey(record.objectOwner);
+    const key = aclPrincipalKey(signer);
+    return key.length > 0 && key === aclPrincipalKey(record.objectOwner);
   });
   const live =
     record.signedStated === 1 &&
@@ -828,7 +835,10 @@ function pickObject(lookup, local, incoming, ids) {
  */
 function retainAuthenticObject(lookup, record) {
   const rowKey = aclKey(record.name.object);
-  const allow = (/** @type {string} */ signer) => aclPrincipalKey(signer) === aclPrincipalKey(record.objectOwner);
+  const allow = (/** @type {string} */ signer) => {
+    const key = aclPrincipalKey(signer);
+    return key.length > 0 && key === aclPrincipalKey(record.objectOwner);
+  };
   record.cancels = uniqueCancels(
     record.cancels.flatMap((cancel) => {
       const accepted = acceptedCancel(lookup, cancel, "object-set", rowKey, allow);
@@ -1015,9 +1025,10 @@ export class MemoryGroupGraph {
     const ownerKey = canonicalAccessorId(owner);
     /** @type {{ key: string, grant: SeeGrant }[]} */
     const rows = [];
+    if (!who) return rows;
     for (const [key, grant] of this.grants) {
       if (canonicalAccessorId(grant.accessor) !== who) continue;
-      if (grant.owner != null && canonicalAccessorId(grant.owner) !== ownerKey) continue;
+      if (grant.owner != null && (!ownerKey || canonicalAccessorId(grant.owner) !== ownerKey)) continue;
       if (!sameObjectId(grantObject(grant), requested)) continue;
       rows.push({ key, grant });
     }
@@ -1031,9 +1042,10 @@ export class MemoryGroupGraph {
   stateSeeGrant(owner, grant) {
     const query = grantObject(grant);
     const record = this.objectRecord(query);
-    if (!query || !record || canonicalAccessorId(record.owner) !== canonicalAccessorId(owner)) return;
-    const object = record.id;
+    const ownerKey = canonicalAccessorId(owner);
     const accessor = grant.accessor;
+    if (!query || !record || !ownerKey || !canonicalAccessorId(accessor) || canonicalAccessorId(record.owner) !== ownerKey) return;
+    const object = record.id;
     const rows = this.matchingSee(owner, object, accessor);
     const hamState = rows.reduce((max, row) => Math.max(max, row.grant.hamState ?? 0), 0) + 1;
     if (!Number.isSafeInteger(hamState)) return;
@@ -1060,7 +1072,8 @@ export class MemoryGroupGraph {
     const query = String(object).trim();
     const who = String(accessor).trim();
     const record = this.objectRecord(query);
-    if (!query || !who || !record || canonicalAccessorId(record.owner) !== canonicalAccessorId(owner)) return;
+    const ownerKey = canonicalAccessorId(owner);
+    if (!query || !who || !canonicalAccessorId(who) || !record || !ownerKey || canonicalAccessorId(record.owner) !== ownerKey) return;
     const id = record.id;
     const rows = this.matchingSee(owner, id, who);
     const prev = rows.reduce((best, row) => {
@@ -1086,8 +1099,9 @@ export class MemoryGroupGraph {
    */
   seeGrant(object, accessor) {
     const record = this.objectRecord(object);
-    const requested = record?.id ?? aclKey(String(object).trim());
+    const requested = record?.id ?? String(object).trim();
     const who = aclPrincipalKey(accessor);
+    if (!who) return undefined;
     const ownerNow = record?.owner;
     /** @type {{ soul: string, owner: string, hamState: number, grant: { object: string, accessor: string, from: number, until: number, stated: number } } | undefined} */
     let best;
@@ -1096,11 +1110,12 @@ export class MemoryGroupGraph {
       if (!sameObjectId(grantId, requested)) continue;
       if (aclPrincipalKey(grant.accessor) !== who) continue;
       const owner = grant.owner ?? "";
-      if (!ownerNow || aclPrincipalKey(owner) !== aclPrincipalKey(ownerNow)) continue;
+      const ownerKey = aclPrincipalKey(owner);
+      if (!ownerNow || !ownerKey || ownerKey !== aclPrincipalKey(ownerNow)) continue;
       const hamState = grant.hamState ?? 0;
       if (best && hamState < best.hamState) continue;
       best = {
-        soul: `s3rch/acl/${aclPrincipalKey(owner)}/${aclKey(requested)}/${who}`,
+        soul: `s3rch/acl/${ownerKey}/${aclKey(requested)}/${who}`,
         owner,
         hamState,
         grant: {
@@ -1121,13 +1136,15 @@ export class MemoryGroupGraph {
    */
   postGrant(object, accessor) {
     const record = this.objectRecord(object);
-    const requested = record?.id ?? aclKey(String(object).trim());
+    const requested = record?.id ?? String(object).trim();
     const who = aclPrincipalKey(accessor);
+    if (!who) return undefined;
     const ownerNow = record?.owner;
     for (const edge of this.posts.values()) {
       if (!sameObjectId(edge.grant.object, requested)) continue;
       if (aclPrincipalKey(edge.grant.accessor) !== who) continue;
-      if (!ownerNow || aclPrincipalKey(edge.owner) !== aclPrincipalKey(ownerNow)) continue;
+      const ownerKey = aclPrincipalKey(edge.owner);
+      if (!ownerNow || !ownerKey || ownerKey !== aclPrincipalKey(ownerNow)) continue;
       return edge;
     }
     return undefined;
@@ -1142,7 +1159,8 @@ export class MemoryGroupGraph {
     const query = String(grant.object ?? grant.claimId ?? "").trim();
     const who = String(grant.accessor ?? "").trim();
     const record = this.objectRecord(query);
-    if (!query || !who || !record || aclPrincipalKey(record.owner) !== aclPrincipalKey(owner)) return;
+    const ownerKey = aclPrincipalKey(owner);
+    if (!query || !who || !aclPrincipalKey(who) || !record || !ownerKey || aclPrincipalKey(record.owner) !== ownerKey) return;
     const object = record.id;
     const key = grantKey(owner, object, who);
     const prev = this.posts.get(key);
@@ -1168,7 +1186,8 @@ export class MemoryGroupGraph {
     const query = String(object).trim();
     const who = String(accessor).trim();
     const record = this.objectRecord(query);
-    if (!query || !who || !record || aclPrincipalKey(record.owner) !== aclPrincipalKey(owner)) return;
+    const ownerKey = aclPrincipalKey(owner);
+    if (!query || !who || !aclPrincipalKey(who) || !record || !ownerKey || aclPrincipalKey(record.owner) !== ownerKey) return;
     const id = record.id;
     const key = grantKey(owner, id, who);
     const prev = this.posts.get(key);
@@ -1235,8 +1254,10 @@ export class MemoryGroupGraph {
     const canonical = canonicalSetId(id);
     if (!canonical) throw new Error("set id is not bound to this owner");
     const key = `${predicate}\0${aclKey(canonical)}`;
+    const nameKey = aclPrincipalKey(name);
+    if (!nameKey) throw new Error("set id is not bound to this owner");
     const existing = this.setOwners.get(key);
-    if (existing && aclPrincipalKey(existing) !== aclPrincipalKey(name)) {
+    if (existing && aclPrincipalKey(existing) !== nameKey) {
       throw new Error("set already has an owner");
     }
     if (!existing && !setIdBindsOwner(canonical, name)) throw new Error("set id is not bound to this owner");
@@ -1264,8 +1285,8 @@ export class MemoryGroupGraph {
     const owner = this.ownerOfSet(predicate, setId);
     if (!owner) throw new Error("set owner is unknown");
     const speakerKey = aclPrincipalKey(speaker);
-    const speaksMember = speakerKey === aclPrincipalKey(accessor);
-    const speaksSet = speakerKey === aclPrincipalKey(owner);
+    const speaksMember = speakerKey.length > 0 && speakerKey === aclPrincipalKey(accessor);
+    const speaksSet = speakerKey.length > 0 && speakerKey === aclPrincipalKey(owner);
     if (!speaksMember && !speaksSet) throw new Error("membership speaker is not the member or the set owner");
     return [speaksMember, speaksSet];
   }
@@ -1679,7 +1700,8 @@ function edgeAuthentic(graph, edge, owner) {
     cancels: edge.cancels,
   };
   const ids = verifiedIds(lookup, record.cancels, "object-set", aclKey(record.name.object), (signer) => {
-    return aclPrincipalKey(signer) === aclPrincipalKey(record.objectOwner);
+    const key = aclPrincipalKey(signer);
+    return key.length > 0 && key === aclPrincipalKey(record.objectOwner);
   });
   return (
     record.signedStated === 1 &&
@@ -1780,7 +1802,9 @@ export function checkGroupSee(graph, predicate, object, accessor, now, hint, hop
   if (closed) return deny(closed);
   const owner = graph.ownerOf(requestedObject);
   if (!owner) return deny("missing");
-  if (aclPrincipalKey(owner) === aclPrincipalKey(accessor)) {
+  const ownerKey = aclPrincipalKey(owner);
+  const accessorKey = aclPrincipalKey(accessor);
+  if (ownerKey && ownerKey === accessorKey) {
     return { allowed: true, reason: "owner", ...echoed };
   }
   const edge = graph.objectSet(requestedObject);

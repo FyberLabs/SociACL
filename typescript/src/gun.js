@@ -20,7 +20,9 @@ import { canonicalAccessorId, nextPostHam, postGrantKey, postRowEncodable, postS
 /** @param {string | null | undefined} left @param {string | null | undefined} right */
 function samePrincipal(left, right) {
   if (left == null || right == null) return false;
-  return canonicalAccessorId(left) === canonicalAccessorId(right);
+  const leftKey = canonicalAccessorId(left);
+  const rightKey = canonicalAccessorId(right);
+  return leftKey !== "" && leftKey === rightKey;
 }
 
 /** @param {Map<string, string>} objects @param {string} object */
@@ -93,11 +95,16 @@ export function aclPrincipalKey(id) {
 }
 
 export function aclSoul(owner) {
-  return `s3rch/acl/${aclPrincipalKey(owner)}`;
+  const ownerKey = aclPrincipalKey(owner);
+  if (!ownerKey) return "";
+  return `s3rch/acl/${ownerKey}`;
 }
 
 export function grantSoul(owner, object, accessor) {
-  return `${aclSoul(owner)}/${aclKey(object)}/${aclPrincipalKey(accessor)}`;
+  const ownerKey = aclPrincipalKey(owner);
+  const accessorKey = aclPrincipalKey(accessor);
+  if (!ownerKey || !accessorKey) return "";
+  return `s3rch/acl/${ownerKey}/${aclKey(object)}/${accessorKey}`;
 }
 
 export function toGunNode(item) {

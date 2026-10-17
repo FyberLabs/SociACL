@@ -191,7 +191,7 @@ export function canonicalRequestAccessor(requester) {
 
 /**
  * Object key for a request id. aclKey, with an aliasable item soul
- * reduced to the raw id's aclKey when that inner contains no `_`.
+ * reduced to the raw id's aclKey. An underscore in that raw id stays.
  * A held claim does not alias. The raw string must be Unicode scalar
  * values. U+0085 and U+FEFF are rejected so this trim matches Rust.
  * @param {string} source
@@ -238,8 +238,8 @@ function unescapeEncodeKey(encoded) {
  * Item soul whose reconstructed form equals the trimmed source.
  * The inner segment is encodeKey(raw), decoded once before aclKey.
  * A spaced segment such as `s3rch/items/ foo` is not the raw id `foo`.
- * An inner `_` is not reduced, so `s3rch/items/a_b` is not the request
- * key of `a/b`.
+ * `s3rch/items/a_b` is the item soul of `a_b` and shares that request
+ * key. It is not the request key of `a/b`.
  * @param {string} id
  * @returns {string | null}
  */
@@ -249,7 +249,7 @@ function reducibleItemInner(id) {
   const encoded = segments[2] ?? "";
   if (!encoded || encoded.includes("/")) return null;
   const raw = unescapeEncodeKey(encoded);
-  if (raw == null || !raw || raw.includes("/") || raw.includes("_")) return null;
+  if (raw == null || !raw || raw.includes("/")) return null;
   if (encodeKey(raw) !== encoded) return null;
   if (!mayAliasToItemSoul(raw) || isItemShaped(raw)) return null;
   const soul = `s3rch/items/${encodeKey(raw)}`;

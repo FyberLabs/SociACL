@@ -787,12 +787,12 @@ fn align_wraps(
 }
 
 fn grant_soul(owner: &str, object: &str, accessor: &str) -> String {
-    format!(
-        "s3rch/acl/{}/{}/{}",
-        acl_principal_key(owner),
-        acl_key(object),
-        acl_principal_key(accessor)
-    )
+    let owner = acl_principal_key(owner);
+    let accessor = acl_principal_key(accessor);
+    if owner.is_empty() || accessor.is_empty() {
+        return String::new();
+    }
+    format!("s3rch/acl/{}/{}/{}", owner, acl_key(object), accessor)
 }
 
 fn escape_key(id: &str, slash: bool) -> String {
@@ -816,16 +816,35 @@ fn acl_key(id: &str) -> String {
     escape_key(id.trim(), true)
 }
 
+fn bare_principal(id: &str) -> bool {
+    !id.is_empty()
+        && !id.contains(".get(")
+        && !id.contains(['/', '#', '$', '[', ']', '~'])
+        && !id.chars().any(|ch| ch.is_control())
+}
+
 fn acl_principal_key(id: &str) -> String {
     let id = id.trim();
-    if id.contains(".get(") {
-        return acl_key(id);
+    if id.is_empty() || id.contains(".get(") {
+        return String::new();
     }
-    let parts: Vec<&str> = id.split('/').filter(|part| !part.is_empty()).collect();
+    let parts: Vec<&str> = id
+        .split('/')
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .collect();
     if parts.len() == 3 && parts[0] == "s3rch" && parts[1] == "users" {
-        return parts[2].to_string();
+        return if bare_principal(parts[2]) {
+            parts[2].to_string()
+        } else {
+            String::new()
+        };
     }
-    id.to_string()
+    if id.contains('/') || !bare_principal(id) {
+        String::new()
+    } else {
+        id.to_string()
+    }
 }
 
 fn current_grants(

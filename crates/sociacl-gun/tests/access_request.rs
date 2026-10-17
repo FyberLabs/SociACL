@@ -467,13 +467,18 @@ fn owner_client_writes_rows_and_a_request_does_not() {
 }
 
 #[test]
-fn a_slash_id_does_not_share_a_request_with_the_flattened_item_soul() {
+fn a_slash_id_does_not_share_a_request_with_the_underscore_item_soul() {
     let slash = access_request_id("0xbob", "a/b").unwrap();
     let flat = access_request_id("0xbob", "a_b").unwrap();
     let soul = access_request_id("0xbob", "s3rch/items/a_b").unwrap();
+    let dotted = access_request_id("0xbob", "room.alpha").unwrap();
+    let under = access_request_id("0xbob", "room_alpha").unwrap();
+    let under_soul = access_request_id("0xbob", "s3rch/items/room_alpha").unwrap();
     assert_ne!(slash, flat);
-    assert_ne!(flat, soul);
+    assert_eq!(flat, soul);
     assert_ne!(slash, soul);
+    assert_eq!(under, under_soul);
+    assert_ne!(under, dotted);
     let bob = signer("0xbob");
     let mut graph = MeshSeeGraph::new();
     graph.put_object("a/b", "0xalice");

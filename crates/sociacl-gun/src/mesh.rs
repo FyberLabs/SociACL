@@ -78,7 +78,9 @@ pub(crate) fn object_names(stored: &str, query: &str) -> bool {
 }
 
 pub(crate) fn accessor_names(stored: &str, query: &str) -> bool {
-    canonical_accessor_id(stored) == canonical_accessor_id(query)
+    let stored = canonical_accessor_id(stored);
+    let query = canonical_accessor_id(query);
+    !stored.is_empty() && stored == query
 }
 
 impl From<&IdentitySeeGrant> for MeshSeeGrant {
@@ -320,7 +322,7 @@ impl MeshSeeGraph {
         self.grants.values().find(|edge| {
             edge.grant.names_object(&canonical)
                 && edge.grant.names_accessor(accessor)
-                && canonical_accessor_id(&edge.owner) == canonical_accessor_id(owner)
+                && accessor_names(&edge.owner, owner)
         })
     }
 
@@ -348,7 +350,7 @@ impl MeshSeeGraph {
             .object_record(&grant.object)
             .map(|(id, object_owner)| (id.to_string(), object_owner.to_string()))
             .ok_or(GunError::ObjectNotInGraph)?;
-        if canonical_accessor_id(&object_owner) != canonical_accessor_id(owner) {
+        if !accessor_names(&object_owner, owner) {
             return Err(GunError::AclOwnerOnly);
         }
         let mut grant = grant;
@@ -376,7 +378,7 @@ impl MeshSeeGraph {
             .object_record(object)
             .map(|(id, object_owner)| (id.to_string(), object_owner.to_string()))
             .ok_or(GunError::ObjectNotInGraph)?;
-        if canonical_accessor_id(&object_owner) != canonical_accessor_id(owner) {
+        if !accessor_names(&object_owner, owner) {
             return Err(GunError::AclOwnerOnly);
         }
         let existing = self.folded_see(&stored_id, accessor, owner);
@@ -422,7 +424,7 @@ impl MeshSeeGraph {
                 .filter(|(_, edge)| {
                     edge.grant.names_object(&object)
                         && edge.grant.names_accessor(&accessor)
-                        && canonical_accessor_id(&edge.owner) == canonical_accessor_id(&owner)
+                        && accessor_names(&edge.owner, &owner)
                 })
                 .map(|(key, _)| key.clone())
                 .collect();
@@ -480,9 +482,7 @@ impl MeshSeeGraph {
             .values()
             .filter(|edge| {
                 self.lookup_object(&edge.grant.object)
-                    .is_some_and(|object| {
-                        canonical_accessor_id(&object.owner) == canonical_accessor_id(&edge.owner)
-                    })
+                    .is_some_and(|object| accessor_names(&object.owner, &edge.owner))
             })
             .cloned()
             .collect();
@@ -494,9 +494,7 @@ impl MeshSeeGraph {
             .values()
             .filter(|edge| {
                 self.lookup_object(&edge.grant.object)
-                    .is_some_and(|object| {
-                        canonical_accessor_id(&object.owner) == canonical_accessor_id(&edge.owner)
-                    })
+                    .is_some_and(|object| accessor_names(&object.owner, &edge.owner))
             })
             .cloned()
             .collect();
@@ -545,7 +543,7 @@ impl MeshSeeGraph {
             };
         };
 
-        if canonical_accessor_id(&obj.owner) == canonical_accessor_id(accessor) {
+        if accessor_names(&obj.owner, accessor) {
             return MeshCheckResult {
                 allowed: true,
                 reason: MESH_REASON_OWNER.into(),
@@ -557,7 +555,7 @@ impl MeshSeeGraph {
         if let Some(edge) = self.grant_edge(object, accessor) {
             let names = edge.grant.names_object(object)
                 && edge.grant.names_accessor(accessor)
-                && canonical_accessor_id(&edge.owner) == canonical_accessor_id(&obj.owner);
+                && accessor_names(&edge.owner, &obj.owner);
             if names && edge.grant.live_at(now) {
                 return MeshCheckResult {
                     allowed: true,
@@ -638,7 +636,7 @@ impl MeshSeeGraph {
             .filter(|edge| {
                 edge.grant.names_object(&canonical)
                     && edge.grant.names_accessor(accessor)
-                    && canonical_accessor_id(&edge.owner) == canonical_accessor_id(owner)
+                    && accessor_names(&edge.owner, owner)
             })
             .cloned()
             .reduce(|left, right| left.ham_merge(right))
@@ -856,9 +854,24 @@ mod tests {
         );
         let chain = "0xattacker.get('s3rch').get('users').get('0xvictim')";
         assert!(graph.object_record(chain).is_none());
+        assert_eq!(crate::soul::canonical_accessor_id(chain), "");
         assert_ne!(crate::soul::canonical_accessor_id(chain), "0xvictim");
         graph.put_object("doc", "0xvictim");
         assert!(!graph.check_see("doc", chain, now, None, None).allowed);
         assert!(graph.check_see("doc", "0xvictim", now, None, None).allowed);
+    }
+
+    #[test]
+    fn rejected_principals_do_not_match_as_the_owner() {
+        let mut graph = MeshSeeGraph::new();
+        graph.put_object("doc", "../meta");
+        let now = Timestamp(10);
+        assert!(!graph.check_see("doc", "a\u{0}b", now, None, None).allowed);
+        assert!(!graph.check_see("doc", "../meta", now, None, None).allowed);
+        assert!(
+            !graph
+                .check_see("doc", "x~1get('s3rch')", now, None, None)
+                .allowed
+        );
     }
 }

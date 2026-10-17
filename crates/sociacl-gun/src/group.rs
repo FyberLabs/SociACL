@@ -334,15 +334,17 @@ pub fn membership_soul(
     set_id: &str,
     accessor: &str,
 ) -> String {
+    let owner = acl_principal_key(set_owner);
+    let accessor = acl_principal_key(accessor);
+    if owner.is_empty() || accessor.is_empty() {
+        return String::new();
+    }
     let set_key = canonical_set_id(set_id)
         .map(|id| acl_key(&id))
         .unwrap_or_else(|_| acl_key(set_id));
     format!(
-        "{S3RCH_ROOT}/{S3RCH_ACL}/{}/membership/{}/{}/{}",
-        acl_principal_key(set_owner),
+        "{S3RCH_ROOT}/{S3RCH_ACL}/{owner}/membership/{}/{set_key}/{accessor}",
         predicate.as_str(),
-        set_key,
-        acl_principal_key(accessor),
     )
 }
 
@@ -350,9 +352,12 @@ pub fn membership_soul(
 /// five-segment grant soul and not a Check object. The path stays
 /// on the object; the set id lives in the row, not in the soul.
 pub fn object_set_soul(object_owner: &str, object: &str) -> String {
+    let owner = acl_principal_key(object_owner);
+    if owner.is_empty() {
+        return String::new();
+    }
     format!(
-        "{S3RCH_ROOT}/{S3RCH_ACL}/{}/object-set/edge/{}",
-        acl_principal_key(object_owner),
+        "{S3RCH_ROOT}/{S3RCH_ACL}/{owner}/object-set/edge/{}",
         acl_key(object),
     )
 }
@@ -372,8 +377,12 @@ impl MeshSeeGraph {
         }
         let canonical = canonical_set_id(set_id)?;
         let key = (predicate, set_map_key(&canonical));
+        let owner_key = acl_principal_key(owner);
+        if owner_key.is_empty() {
+            return Err(GunError::UnboundSetOwner);
+        }
         if let Some(existing) = self.groups.set_owners.get(&key) {
-            if acl_principal_key(existing) != acl_principal_key(owner) {
+            if acl_principal_key(existing) != owner_key {
                 return Err(GunError::SetOwnerConflict);
             }
             return Ok(());
@@ -661,7 +670,9 @@ impl MeshSeeGraph {
         };
         let object_id = object_id.to_string();
         let object_owner = object_owner.to_string();
-        if acl_principal_key(&object_owner) == acl_principal_key(accessor) {
+        let owner_key = acl_principal_key(&object_owner);
+        let accessor_key = acl_principal_key(accessor);
+        if !owner_key.is_empty() && owner_key == accessor_key {
             return MeshCheckResult {
                 allowed: true,
                 reason: crate::MESH_REASON_OWNER.into(),
@@ -856,8 +867,8 @@ impl MeshSeeGraph {
             .owner_of_set(predicate, set_id)
             .ok_or(GunError::SetUnknown)?;
         let speaker_key = acl_principal_key(speaker);
-        let speaks_member = speaker_key == acl_principal_key(accessor);
-        let speaks_set = speaker_key == acl_principal_key(owner);
+        let speaks_member = !speaker_key.is_empty() && speaker_key == acl_principal_key(accessor);
+        let speaks_set = !speaker_key.is_empty() && speaker_key == acl_principal_key(owner);
         if !speaks_member && !speaks_set {
             return Err(GunError::MembershipSpeaker);
         }
@@ -1081,7 +1092,7 @@ fn retain_verified_object_cancels(
     let owner = acl_principal_key(&record.object_owner);
     record.cancels.retain(|_, cancel| {
         let ok = cancel_verifies(cancel, enrolled, "object-set", &row_key, |signer| {
-            acl_principal_key(signer) == owner
+            !owner.is_empty() && acl_principal_key(signer) == owner
         });
         if ok {
             *cancel = stored_cancel(cancel);
@@ -1311,8 +1322,9 @@ fn verified_membership_ids(
 
 fn membership_cancel_signer(record: &MembershipRecord, signer: &str) -> bool {
     let signer = acl_principal_key(signer);
-    signer == acl_principal_key(&record.membership.accessor)
-        || signer == acl_principal_key(&record.set_owner)
+    !signer.is_empty()
+        && (signer == acl_principal_key(&record.membership.accessor)
+            || signer == acl_principal_key(&record.set_owner))
 }
 
 fn verified_cancel_ids(

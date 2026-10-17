@@ -72,23 +72,38 @@ function aclKey(id) {
 }
 
 /**
- * Owner / accessor key. A user soul collapses to its wallet.
- * A string containing `.get(` is an escaped literal and matches no
- * wallet. Other principals stay the trimmed text. escapeKey is for
- * object keys, not principals.
+ * A bare principal. `.` is allowed. `/ # $ [ ] ~`, controls, and
+ * `.get(` are not. Empty is not a principal.
+ * @param {string} id
+ */
+function barePrincipal(id) {
+  if (!id || id.includes(".get(")) return false;
+  if (/[/#$[\]~]/.test(id)) return false;
+  for (let i = 0; i < id.length; i += 1) {
+    const code = id.charCodeAt(i);
+    if (code <= 0x1f || (code >= 0x7f && code <= 0x9f)) return false;
+  }
+  return true;
+}
+
+/**
+ * Owner / accessor key. An exact `s3rch/users/<wallet>` collapses to
+ * that wallet. Anything else must be a bare principal. Rejected text
+ * is empty so it cannot become a soul segment. Not an object escape.
  * @param {string} id
  */
 function aclPrincipalKey(id) {
   const text = String(id).trim();
-  if (text.includes(".get(")) return aclKey(text);
+  if (!text || text.includes(".get(")) return "";
   const segments = text
     .split("/")
     .map((part) => part.trim())
     .filter((part) => part !== "");
-  if (segments.length === 3 && segments[0] === "s3rch" && segments[1] === "users" && segments[2]) {
-    return segments[2];
+  if (segments.length === 3 && segments[0] === "s3rch" && segments[1] === "users") {
+    return barePrincipal(segments[2]) ? segments[2] : "";
   }
-  return text;
+  if (text.includes("/")) return "";
+  return barePrincipal(text) ? text : "";
 }
 
 const HELD_CLAIM_PREFIXES = ["ens:", "unstoppable:", "fc:", "lens:", "rss3:"];
@@ -158,7 +173,10 @@ export function sameObjectId(left, right) {
  * @param {string} accessor
  */
 export function postSoul(owner, object, accessor) {
-  return `s3rch/acl/${aclPrincipalKey(owner)}/${POST_GRANT_SCOPE}/${aclKey(object)}/${aclPrincipalKey(accessor)}`;
+  const ownerKey = aclPrincipalKey(owner);
+  const accessorKey = aclPrincipalKey(accessor);
+  if (!ownerKey || !accessorKey) return "";
+  return `s3rch/acl/${ownerKey}/${POST_GRANT_SCOPE}/${aclKey(object)}/${accessorKey}`;
 }
 
 /**

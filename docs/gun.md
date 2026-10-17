@@ -48,7 +48,7 @@ gun.get('s3rch').get('acl').get(aclPrincipalKey(owner))
      .get('post').get(aclKey(object)).get(aclPrincipalKey(accessor))  → MeshPostGrant
 ```
 
-`aclKey` is `encodeKey` plus an escape of `/` that is not `_`, so dest-ACL souls stay five segments. `room.alpha`, `room_alpha`, and `room/alpha` are three keys. It is not a second `encodeKey` for items or users. `s3rch/acl` is dest ACL, not a Check object.
+`aclKey` is `encodeKey` plus an escape of `/` that is not `_`, so dest-ACL souls stay five segments. `room.alpha`, `room_alpha`, and `room/alpha` are three keys. It is not a second `encodeKey` for items or users. `aclPrincipalKey` is not that escape. It accepts an exact `s3rch/users/<wallet>` or a bare id. `.` is allowed in a principal. `/ # $ [ ] ~`, a control character, and `.get(` are rejected, and that text is not a soul segment. `s3rch/acl` is dest ACL, not a Check object.
 
 `encodeKey`: injective escape of `~ . # $ [ ]`. `/` is not folded.
 
