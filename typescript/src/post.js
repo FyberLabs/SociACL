@@ -44,7 +44,10 @@ function aclKey(id) {
 /** @param {string} id */
 function aclPrincipalKey(id) {
   const text = String(id).trim();
-  const parts = text.split("/");
+  const parts = text
+    .split("/")
+    .map((part) => part.trim())
+    .filter((part) => part !== "");
   if (parts.length === 3 && parts[0] === "s3rch" && parts[1] === "users") {
     return encodeKey(parts[2] ?? "");
   }

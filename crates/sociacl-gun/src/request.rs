@@ -242,7 +242,7 @@ impl MeshSeeGraph {
             let see = self.check_group_see(
                 rule.predicate,
                 &request.source,
-                &request.requester,
+                &accepted.requester,
                 rule.now,
                 None,
                 None,

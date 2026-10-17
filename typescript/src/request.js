@@ -50,7 +50,7 @@
  */
 
 import { createHash, createPrivateKey, createPublicKey, sign, verify } from "node:crypto";
-import { nextPostHam, postGrantSigningBytes } from "./post.js";
+import { canonicalAccessorId, nextPostHam, postGrantSigningBytes } from "./post.js";
 
 const PKCS8_PREFIX = Uint8Array.from([
   0x30, 0x2e, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x04, 0x22, 0x04, 0x20,
@@ -98,14 +98,61 @@ function mayAliasToItemSoul(id) {
 function closedSource(id) {
   const text = String(id).trim();
   if (isHttpUrlLeaf(text)) return true;
-  if (text === "s3rch/meta") return true;
-  if (text === "s3rch/acl" || text.startsWith("s3rch/acl/")) return true;
+  if (text === "meta" || text === "s3rch/meta" || isMetaSoul(text)) return true;
+  if (text === "acl" || text.startsWith("s3rch/acl") || isAclSoul(text)) return true;
   return false;
 }
 
-/** Same HTTP(S) leaf predicate as the Rust encoder. `ipfs://` is not one. @param {string} id */
+/** @param {string} text */
+function isMetaSoul(text) {
+  const segments = soulSegments(text);
+  return segments != null && segments.length === 2 && segments[0] === "s3rch" && segments[1] === "meta";
+}
+
+/** @param {string} text */
+function isAclSoul(text) {
+  const segments = soulSegments(text);
+  return segments != null && segments.length >= 2 && segments[0] === "s3rch" && segments[1] === "acl";
+}
+
+/**
+ * Slash souls trim each segment and drop empty ones. `gun.get`
+ * souls use the quoted parts. A corrupt chain is not a soul.
+ * @param {string} text
+ * @returns {string[] | null}
+ */
+function soulSegments(text) {
+  if (text.includes(".get(")) return gunGetSegments(text);
+  const segments = text
+    .split("/")
+    .map((part) => part.trim())
+    .filter((part) => part !== "");
+  return segments.length === 0 ? null : segments;
+}
+
+/** @param {string} text @returns {string[] | null} */
+function gunGetSegments(text) {
+  /** @type {string[]} */
+  const segments = [];
+  let rest = text.trim();
+  while (rest.includes(".get(")) {
+    rest = rest.slice(rest.indexOf(".get(") + 5);
+    const quote = rest[0];
+    if (quote !== "'" && quote !== '"') return null;
+    rest = rest.slice(1);
+    const end = rest.indexOf(quote);
+    if (end < 0) return null;
+    const part = rest.slice(0, end).trim();
+    if (!part) return null;
+    segments.push(part);
+    rest = rest.slice(end + 1).replace(/^\s+/, "");
+    if (rest.startsWith(")")) rest = rest.slice(1).replace(/^\s+/, "");
+  }
+  return segments.length === 0 ? null : segments;
+}
+
+/** Same HTTP(S) leaf predicate as the Rust encoder. The scheme is folded first. `ipfs://` is not one. @param {string} id */
 function isHttpUrlLeaf(id) {
-  if (!id.startsWith("http://") && !id.startsWith("https://")) return false;
   const hash = id.indexOf("#");
   const body = hash === -1 ? id : id.slice(0, hash);
   const mark = body.indexOf("://");
@@ -124,16 +171,7 @@ function isHttpUrlLeaf(id) {
  * @param {string} requester
  */
 export function canonicalRequestAccessor(requester) {
-  const text = String(requester ?? "").trim();
-  if (!text) throw new Error(FIELD);
-  const parts = text
-    .split("/")
-    .map((part) => part.trim())
-    .filter((part) => part !== "");
-  const id =
-    parts.length === 3 && parts[0] === "s3rch" && parts[1] === "users"
-      ? encodeKey(parts[2] ?? "")
-      : encodeKey(text).replace(/\//g, "_");
+  const id = canonicalAccessorId(requester == null ? "" : String(requester));
   if (!id) throw new Error(FIELD);
   return id;
 }
@@ -229,7 +267,13 @@ function canonicalMessage(message) {
   if (typeof message !== "string") throw new Error(FIELD);
   for (let i = 0; i < message.length; i += 1) {
     const unit = message.charCodeAt(i);
-    if (unit >= 0xd800 && unit <= 0xdfff) throw new Error(FIELD);
+    if (unit >= 0xd800 && unit <= 0xdbff) {
+      const next = message.charCodeAt(i + 1);
+      if (!(next >= 0xdc00 && next <= 0xdfff)) throw new Error(FIELD);
+      i += 1;
+      continue;
+    }
+    if (unit >= 0xdc00 && unit <= 0xdfff) throw new Error(FIELD);
   }
   if (Array.from(message).length > ACCESS_MESSAGE_MAX) throw new Error(FIELD);
   return message;
@@ -354,7 +398,7 @@ export function grantApprovedRequest(graph, owner, request, window, members) {
     if (members.predicate !== "same-group" && members.predicate !== "named-circle") throw new Error(FIELD);
     if (!Number.isSafeInteger(members.now) || members.now < 0) throw new Error(FIELD);
     if (typeof graph.checkGroupSee !== "function") return { granted: false, reason: "not-member" };
-    const see = graph.checkGroupSee(members.predicate, request.source, request.requester, members.now);
+    const see = graph.checkGroupSee(members.predicate, request.source, accepted.requester, members.now);
     if (!see || see.allowed !== true) return { granted: false, reason: "not-member" };
   }
   const accessor = accepted.requester;

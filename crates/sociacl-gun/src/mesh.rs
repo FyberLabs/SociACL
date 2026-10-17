@@ -698,7 +698,10 @@ pub(crate) fn closed_reason(object: &str) -> Option<&'static str> {
 
 fn is_url_leaf(object: &str) -> bool {
     let s = object.trim();
-    (s.starts_with("http://") || s.starts_with("https://")) && UrlLeaf::parse(s).is_ok()
+    let scheme = s
+        .split_once("://")
+        .map(|(scheme, _)| scheme.to_ascii_lowercase());
+    matches!(scheme.as_deref(), Some("http") | Some("https")) && UrlLeaf::parse(s).is_ok()
 }
 
 fn is_meta_object(object: &str) -> bool {

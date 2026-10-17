@@ -397,7 +397,9 @@ export function aclKey(id: string): string;
 
 /**
  * Owner / accessor key on dest ACL. `s3rch/users/<wallet>` collapses
- * to the wallet. Anything else is aclKey.
+ * to the wallet. Each segment is trimmed and an empty segment is
+ * dropped, so `s3rch/users/ bob ` and `s3rch/users//bob` are `bob`.
+ * Anything else is aclKey.
  */
 export function aclPrincipalKey(id: string): string;
 
@@ -604,19 +606,22 @@ export const ACCESS_STATUS_PENDING: "pending";
 /** Requester status. A withdrawal writes no grant. */
 export const ACCESS_STATUS_WITHDRAWN: "withdrawn";
 
-/** Maximum message length in Unicode scalar values. */
+/** Maximum message length in Unicode scalar values. A surrogate pair is one scalar. An unpaired surrogate is rejected. */
 export const ACCESS_MESSAGE_MAX: 280;
 
 /**
  * Canonical accessor id. Same as aclPrincipalKey.
- * `s3rch/users/<wallet>` and the wallet are this id. Empty is rejected.
+ * `s3rch/users/<wallet>` and the wallet are this id. Each segment
+ * is trimmed and an empty segment is dropped. Empty is rejected.
  */
 export function canonicalRequestAccessor(requester: AccessorId): string;
 
 /**
  * Object key for a request id. aclKey, with an aliasable item soul
  * reduced to the raw id's aclKey. A held claim id does not alias to
- * an item soul. meta, dest ACL, and a URL leaf are rejected.
+ * an item soul. meta, acl, a dest-ACL soul, gun.get('s3rch').get('meta'),
+ * gun.get('s3rch').get('acl'), and an HTTP leaf in any scheme case
+ * are rejected.
  * Grant rows still store the in-graph object id.
  */
 export function canonicalRequestObject(source: CheckObjectId): string;
@@ -652,8 +657,10 @@ export function acceptAccessRequest(request: AccessRequest): AcceptedAccessReque
  * requester signature over accessRequestSigningBytes must verify
  * under the enrolled key for that requester. An unsigned or badly
  * signed request writes nothing. members, when supplied, runs
- * checkGroupSee and writes only when that allows. checkGroupSee is
- * optional when members is omitted. A withdrawn request writes
+ * checkGroupSee on the canonical accessor and writes only when that
+ * allows. A later check with the original user-soul spelling finds
+ * that row. checkGroupSee is optional when members is omitted.
+ * A withdrawn request writes
  * nothing. A caller who is not the object owner writes nothing.
  * A hop, a hint, a wrap, a request, or an inbox delivery is not an
  * approval. There is no hosted evaluator. Explicit deny and the policy

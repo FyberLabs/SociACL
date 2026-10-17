@@ -61,9 +61,15 @@ export function aclKey(id) {
 }
 
 export function aclPrincipalKey(id) {
-  const prefix = "s3rch/users/";
-  if (String(id).startsWith(prefix)) return String(id).slice(prefix.length);
-  return aclKey(id);
+  const text = String(id).trim();
+  const parts = text
+    .split("/")
+    .map((part) => part.trim())
+    .filter((part) => part !== "");
+  if (parts.length === 3 && parts[0] === "s3rch" && parts[1] === "users") {
+    return encodeKey(parts[2] ?? "");
+  }
+  return aclKey(text);
 }
 
 export function aclSoul(owner) {

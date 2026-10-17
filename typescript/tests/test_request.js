@@ -219,18 +219,29 @@ test("user soul segments and a non-http uri share one id", () => {
   );
 });
 
-test("an unpaired surrogate is not a message", () => {
-  assert.throws(
-    () =>
-      accessRequestSigningBytes({
-        requester: "0xbob",
-        source: "room:alpha",
-        scope: "read",
-        message: "\ud800",
-        status: "pending",
-      }),
-    /access request field is not canonical/,
-  );
+test("a surrogate pair is one scalar and an unpaired surrogate is rejected", () => {
+  const pair = accessRequestSigningBytes({
+    requester: "0xbob",
+    source: "room:alpha",
+    scope: "read",
+    message: "hi\u{1F600}!",
+    status: "pending",
+  });
+  assert.ok(pair.length > 0);
+  for (const message of ["\ud800", "\udc00", "\ud83d\ud83d", "\udc00\ud83d", "a\ud800"]) {
+    assert.throws(
+      () =>
+        accessRequestSigningBytes({
+          requester: "0xbob",
+          source: "room:alpha",
+          scope: "read",
+          message,
+          status: "pending",
+        }),
+      /access request field is not canonical/,
+      message,
+    );
+  }
 });
 
 test("a cancelled see at the ham ceiling does not grow a post", () => {
