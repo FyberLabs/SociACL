@@ -244,6 +244,77 @@ test("a surrogate pair is one scalar and an unpaired surrogate is rejected", () 
   }
 });
 
+test("a spaced item soul does not authorize the trimmed object", () => {
+  const spaced = accessRequestId("0xbob", "s3rch/items/ foo");
+  const raw = accessRequestId("0xbob", "foo");
+  assert.notEqual(spaced, raw);
+  const graph = new MemoryGroupGraph();
+  graph.putObject("foo", "0xalice");
+  graph.putObject("s3rch/items/ foo", "0xalice");
+  const bob = signer("0xbob");
+  graph.enrollSigner("0xbob", bob.publicKey);
+  const signed = {
+    requester: "0xbob",
+    source: "foo",
+    scope: "read",
+    message: "",
+    status: "pending",
+  };
+  const signature = signAccessRequest(bob.privateKey, signed);
+  const swapped = grantApprovedRequest(
+    graph,
+    "0xalice",
+    { ...signed, source: "s3rch/items/ foo", signature },
+    { from: 0, until: 80 },
+  );
+  assert.equal(swapped.granted, false);
+  assert.equal(swapped.reason, "signature");
+  assert.equal(graph.seeGrant("foo", "0xbob"), undefined);
+  assert.equal(graph.seeGrant("s3rch/items/ foo", "0xbob"), undefined);
+});
+
+test("approval keeps the source captured before verification", () => {
+  const graph = new MemoryGroupGraph();
+  graph.putObject("doc-a", "0xalice");
+  graph.putObject("doc-b", "0xalice");
+  const bob = signer("0xbob");
+  graph.enrollSigner("0xbob", bob.publicKey);
+  const plain = {
+    requester: "0xbob",
+    source: "doc-a",
+    scope: "read",
+    message: "",
+    status: "pending",
+  };
+  const signature = signAccessRequest(bob.privateKey, plain);
+  let sourceReads = 0;
+  const request = {
+    get requester() {
+      return "0xbob";
+    },
+    get source() {
+      sourceReads += 1;
+      return sourceReads === 1 ? "doc-a" : "doc-b";
+    },
+    get scope() {
+      return "read";
+    },
+    get message() {
+      return "";
+    },
+    get status() {
+      return "pending";
+    },
+    get signature() {
+      return signature;
+    },
+  };
+  const result = grantApprovedRequest(graph, "0xalice", request, { from: 0, until: 80 });
+  assert.equal(result.granted, true);
+  assert.equal(result.see.grant.object, "doc-a");
+  assert.equal(graph.seeGrant("doc-b", "0xbob"), undefined);
+});
+
 test("a cancelled see at the ham ceiling does not grow a post", () => {
   const graph = new MemoryGroupGraph();
   graph.putObject("room:alpha", "0xalice");
@@ -278,6 +349,44 @@ test("a cancelled see at the ham ceiling does not grow a post", () => {
   );
   assert.equal(graph.postGrant("room:alpha", "0xbob"), undefined);
   assert.equal(graph.seeGrant("room:alpha", "0xbob").grant.stated, 0);
+});
+
+test("a see row at the safe integer ceiling does not grow a post", () => {
+  const graph = new MemoryGroupGraph();
+  graph.putObject("room:alpha", "0xalice");
+  const bob = signer("0xbob");
+  graph.enrollSigner("0xbob", bob.publicKey);
+  graph.grants.set(`0xalice\0room:alpha\0${"0xbob"}`, {
+    object: "room:alpha",
+    accessor: "0xbob",
+    from: 0,
+    until: 80,
+    stated: 1,
+    hamState: Number.MAX_SAFE_INTEGER,
+    owner: "0xalice",
+  });
+  const request = {
+    requester: "0xbob",
+    source: "room:alpha",
+    scope: "read+post",
+    message: "",
+    status: "pending",
+    signature: signAccessRequest(bob.privateKey, {
+      requester: "0xbob",
+      source: "room:alpha",
+      scope: "read+post",
+      message: "",
+      status: "pending",
+    }),
+  };
+  assert.throws(
+    () => grantApprovedRequest(graph, "0xalice", request, { from: 0, until: 80 }),
+    /see grant cannot advance/,
+  );
+  assert.equal(graph.postGrant("room:alpha", "0xbob"), undefined);
+  const see = graph.seeGrant("room:alpha", "0xbob");
+  assert.equal(see.grant.stated, 1);
+  assert.equal(see.hamState, Number.MAX_SAFE_INTEGER);
 });
 
 test("requester signature matches the enrolled key", () => {

@@ -51,6 +51,24 @@
       "id": "f07e03cd64b869a6ffeea9b93e0f5b425f4c14c93f2eebcfaea7c9eb524280a2"
     },
     {
+      "name": "raw-foo",
+      "requester": "0xbob",
+      "source": "foo",
+      "id": "3b4f2a20c68df671dfbf1326ee31b4601a662001963454b9e749691e5dea6719"
+    },
+    {
+      "name": "item-soul-foo",
+      "requester": "0xbob",
+      "source": "s3rch/items/foo",
+      "id": "3b4f2a20c68df671dfbf1326ee31b4601a662001963454b9e749691e5dea6719"
+    },
+    {
+      "name": "spaced-item-soul",
+      "requester": "0xbob",
+      "source": "s3rch/items/ foo",
+      "id": "d4f76214828394857a013b5ce1799ee6f72adca7ec0d5222a8a22ebe06cf9874"
+    },
+    {
       "name": "held",
       "requester": "s3rch/users/0xbob",
       "source": "ens:alice.eth",

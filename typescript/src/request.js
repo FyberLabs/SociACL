@@ -184,26 +184,32 @@ export function canonicalRequestAccessor(requester) {
 export function canonicalRequestObject(source) {
   const id = String(source ?? "").trim();
   if (!id || closedSource(id)) throw new Error(FIELD);
-  if (isItemShaped(id)) {
-    const inner = id.split("/")[2] ?? "";
-    if (
-      inner &&
-      !inner.includes("/") &&
-      encodeKey(inner) === inner &&
-      mayAliasToItemSoul(inner) &&
-      !isItemShaped(inner)
-    ) {
-      const soul = `s3rch/items/${encodeKey(inner)}`;
-      if (soul === id) {
-        const key = aclKey(inner);
-        if (!key) throw new Error(FIELD);
-        return key;
-      }
-    }
+  const inner = reducibleItemInner(id);
+  if (inner) {
+    const key = aclKey(inner);
+    if (!key) throw new Error(FIELD);
+    return key;
   }
   const key = aclKey(id);
   if (!key) throw new Error(FIELD);
   return key;
+}
+
+/**
+ * Item soul whose reconstructed form equals the trimmed source.
+ * A spaced segment such as `s3rch/items/ foo` is not the raw id `foo`.
+ * @param {string} id
+ * @returns {string | null}
+ */
+function reducibleItemInner(id) {
+  const segments = soulSegments(id);
+  if (!segments || segments.length !== 3 || segments[0] !== "s3rch" || segments[1] !== "items") return null;
+  const inner = segments[2] ?? "";
+  if (!inner || inner.includes("/") || encodeKey(inner) !== inner) return null;
+  if (!mayAliasToItemSoul(inner) || isItemShaped(inner)) return null;
+  const soul = `s3rch/items/${encodeKey(inner)}`;
+  if (soul !== id.trim()) return null;
+  return inner;
 }
 
 /** @param {Uint8Array} bytes */
@@ -299,15 +305,15 @@ export function signAccessRequest(privateKey, request) {
 
 /**
  * @param {Uint8Array | undefined} publicKey
- * @param {AccessRequestInput} request
+ * @param {Uint8Array} signingBytes
+ * @param {Uint8Array | undefined} signature
  */
-function requestSignatureOk(publicKey, request) {
-  const signature = request.signature;
+function requestSignatureOk(publicKey, signingBytes, signature) {
   if (!publicKey || publicKey.length !== 32 || !(signature instanceof Uint8Array) || signature.length !== 64) {
     return false;
   }
   try {
-    return verify(null, accessRequestSigningBytes(request), publicKeyFromRaw(publicKey), signature);
+    return verify(null, signingBytes, publicKeyFromRaw(publicKey), signature);
   } catch {
     return false;
   }
@@ -329,13 +335,14 @@ export function requestIssuerFromSeed(seed) {
  * @param {AccessRequestInput} request
  */
 export function accessRequestSigningBytes(request) {
-  const id = accessRequestId(request.requester, request.source);
+  const captured = captureRequest(request);
+  const id = accessRequestId(captured.requester, captured.source);
   return lengthPrefixed([
     ACCESS_REQUEST_DOMAIN,
     id,
-    canonicalScope(request.scope),
-    canonicalMessage(request.message),
-    canonicalStatus(request.status),
+    canonicalScope(captured.scope),
+    canonicalMessage(captured.message),
+    canonicalStatus(captured.status),
   ]);
 }
 
@@ -345,14 +352,33 @@ export function accessRequestSigningBytes(request) {
  * @returns {AcceptedAccessRequest}
  */
 export function acceptAccessRequest(request) {
-  const requester = canonicalRequestAccessor(request.requester);
-  const source = canonicalRequestObject(request.source);
-  const scope = canonicalScope(request.scope);
-  const status = canonicalStatus(request.status);
-  const message = canonicalMessage(request.message);
-  const signingBytes = accessRequestSigningBytes(request);
-  const id = accessRequestId(request.requester, request.source);
+  const captured = captureRequest(request);
+  const requester = canonicalRequestAccessor(captured.requester);
+  const source = canonicalRequestObject(captured.source);
+  const scope = canonicalScope(captured.scope);
+  const status = canonicalStatus(captured.status);
+  const message = canonicalMessage(captured.message);
+  const signingBytes = accessRequestSigningBytes(captured);
+  const id = accessRequestId(captured.requester, captured.source);
   return { requester, source, scope, message, status, id, signingBytes };
+}
+
+/**
+ * One plain copy of the request fields. Later reads use this copy,
+ * so a getter cannot change the source between verification and lookup.
+ * @param {AccessRequestInput} request
+ * @returns {AccessRequestInput}
+ */
+function captureRequest(request) {
+  const signature = request?.signature;
+  return {
+    requester: request?.requester,
+    source: request?.source,
+    scope: request?.scope,
+    message: request?.message,
+    status: request?.status,
+    signature: signature instanceof Uint8Array ? Uint8Array.from(signature) : signature,
+  };
 }
 
 /** @param {{ hamState?: number } | undefined} edge */
@@ -384,12 +410,13 @@ function canonicalWindow(window) {
  * @returns {AccessApproval}
  */
 export function grantApprovedRequest(graph, owner, request, window, members) {
-  const accepted = acceptAccessRequest(request);
+  const captured = captureRequest(request);
+  const accepted = acceptAccessRequest(captured);
   const key = typeof graph.enrolledKey === "function" ? graph.enrolledKey(accepted.requester) : undefined;
-  if (!requestSignatureOk(key, request)) return { granted: false, reason: "signature" };
+  if (!requestSignatureOk(key, accepted.signingBytes, captured.signature)) return { granted: false, reason: "signature" };
   if (accepted.status !== ACCESS_STATUS_PENDING) return { granted: false, reason: "withdrawn" };
   if (!canonicalWindow(window)) throw new Error(FIELD);
-  const record = typeof graph.objectRecord === "function" ? graph.objectRecord(request.source) : undefined;
+  const record = typeof graph.objectRecord === "function" ? graph.objectRecord(captured.source) : undefined;
   if (!record?.id || record.owner == null || record.owner === "") return { granted: false, reason: "missing" };
   if (canonicalRequestAccessor(record.owner) !== canonicalRequestAccessor(owner)) {
     return { granted: false, reason: "owner" };
@@ -398,7 +425,7 @@ export function grantApprovedRequest(graph, owner, request, window, members) {
     if (members.predicate !== "same-group" && members.predicate !== "named-circle") throw new Error(FIELD);
     if (!Number.isSafeInteger(members.now) || members.now < 0) throw new Error(FIELD);
     if (typeof graph.checkGroupSee !== "function") return { granted: false, reason: "not-member" };
-    const see = graph.checkGroupSee(members.predicate, request.source, accepted.requester, members.now);
+    const see = graph.checkGroupSee(members.predicate, captured.source, accepted.requester, members.now);
     if (!see || see.allowed !== true) return { granted: false, reason: "not-member" };
   }
   const accessor = accepted.requester;

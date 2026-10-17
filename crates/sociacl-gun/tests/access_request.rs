@@ -573,3 +573,33 @@ fn cancelled_see_at_ham_ceiling_does_not_grow_a_post() {
     assert_eq!(see.grant.stated, 0);
     assert_eq!(see.ham_state, u64::MAX);
 }
+
+#[test]
+fn see_at_the_js_safe_ceiling_does_not_grow_a_post() {
+    const JS_SAFE_INTEGER_MAX: u64 = (1 << 53) - 1;
+    let mut graph = MeshSeeGraph::new();
+    graph.put_object("room:alpha", "0xalice");
+    let bob = signer("0xbob");
+    graph.enroll_signer("0xbob", bob.verify_key()).unwrap();
+    graph.merge_edge(GunAclEdge::new(
+        "0xalice",
+        MeshSeeGrant {
+            object: "room:alpha".into(),
+            accessor: "0xbob".into(),
+            from: Timestamp(0),
+            until: Timestamp(80),
+            stated: 1,
+        },
+        JS_SAFE_INTEGER_MAX,
+    ));
+    let mut request = request_of("0xbob", "room:alpha", "read+post", "", "pending");
+    request.signature = sign_access_request(&bob, &request).unwrap();
+    let err = graph
+        .grant_approved_request("0xalice", &request, 0, 80, None)
+        .unwrap_err();
+    assert_eq!(reason_of(err), "see");
+    assert!(graph.post_edge("room:alpha", "0xbob").is_none());
+    let see = graph.grant_edge("room:alpha", "0xbob").unwrap();
+    assert_eq!(see.grant.stated, 1);
+    assert_eq!(see.ham_state, JS_SAFE_INTEGER_MAX);
+}

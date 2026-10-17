@@ -619,7 +619,8 @@ export function canonicalRequestAccessor(requester: AccessorId): string;
 /**
  * Object key for a request id. aclKey, with an aliasable item soul
  * reduced to the raw id's aclKey. A held claim id does not alias to
- * an item soul. meta, acl, a dest-ACL soul, gun.get('s3rch').get('meta'),
+ * an item soul. `s3rch/items/ foo` does not alias to `foo`.
+ * meta, acl, a dest-ACL soul, gun.get('s3rch').get('meta'),
  * gun.get('s3rch').get('acl'), and an HTTP leaf in any scheme case
  * are rejected.
  * Grant rows still store the in-graph object id.
@@ -659,7 +660,10 @@ export function acceptAccessRequest(request: AccessRequest): AcceptedAccessReque
  * signed request writes nothing. members, when supplied, runs
  * checkGroupSee on the canonical accessor and writes only when that
  * allows. A later check with the original user-soul spelling finds
- * that row. checkGroupSee is optional when members is omitted.
+ * that row. Each request field is read once, and verification and
+ * the graph lookup use that snapshot. A see row whose next hamState
+ * is above 9007199254740991 does not advance and writes no post row.
+ * checkGroupSee is optional when members is omitted.
  * A withdrawn request writes
  * nothing. A caller who is not the object owner writes nothing.
  * A hop, a hint, a wrap, a request, or an inbox delivery is not an

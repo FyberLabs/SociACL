@@ -253,7 +253,7 @@ impl MeshSeeGraph {
         }
         let accessor = accepted.requester.clone();
         if let Some(edge) = self.grant_edge(&stored_id, &accessor) {
-            if edge.ham_state == u64::MAX {
+            if edge.ham_state.saturating_add(1) > JS_SAFE_INTEGER_MAX {
                 return Err(GunError::SeeGrantCeiling);
             }
         }
