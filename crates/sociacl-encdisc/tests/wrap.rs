@@ -1,3 +1,5 @@
+#![allow(deprecated)]
+
 use sociacl_encdisc::{
     open_group_epoch_wrap, open_reader_wrap, wrap_group_key_to_members,
     wrap_item_dek_to_group_epoch, wrap_item_dek_to_readers, AccountSeaSecret, EncDiscError,

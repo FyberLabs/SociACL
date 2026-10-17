@@ -3,6 +3,8 @@
 //! A hop, a hint, or an opened wrap never sets `allowed`. A forbidden
 //! hop fails closed. The visible row has no owner pub and no blinding.
 
+#![allow(deprecated)]
+
 use sociacl_encdisc::{
     binding_for, check_presented_grant, commit_grant, decode_grant_bytes, epoch_step_current,
     grant_commitment_hash, grant_payload_bytes, grant_payload_digest, open_commitment,

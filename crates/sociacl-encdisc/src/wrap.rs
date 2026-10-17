@@ -795,6 +795,7 @@ fn read_field<'a>(input: &mut &'a [u8]) -> Result<&'a str, EncDiscError> {
 }
 
 #[cfg(test)]
+#[allow(deprecated)]
 mod tests {
     use super::{
         decode_blob, decrypt, kdf_group, seal_group, wrap_item_dek_to_group_epoch_with,

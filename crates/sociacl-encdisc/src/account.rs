@@ -92,6 +92,7 @@ pub struct AcceptedIntro {
 
 impl AccountSeaSecret {
     /// Mint the one keypair for a new account, and one lane id.
+    #[deprecated(note = "label-as-account; use GenesisAccount/PrincipalId, see #65")]
     pub fn generate(account: &str) -> Result<Self, EncDiscError> {
         if account.is_empty() {
             return Err(EncDiscError::EmptyAccount);
@@ -108,6 +109,7 @@ impl AccountSeaSecret {
 
     /// Restore a device-local copy. Rejects a `pub` that does not match
     /// `priv`, or an `epub` that does not match `epriv`.
+    #[deprecated(note = "label-as-account; use GenesisAccount/PrincipalId, see #65")]
     pub fn import_local(
         account: &str,
         lane_id: &str,
@@ -244,6 +246,7 @@ impl AccountSeaSecret {
         sea::sign_sea(&self.sea_priv, &message)
     }
 
+    #[allow(deprecated)]
     fn from_generated(
         account: &str,
         lane_id: &str,

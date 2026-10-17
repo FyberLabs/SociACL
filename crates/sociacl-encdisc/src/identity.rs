@@ -175,6 +175,7 @@ impl GenesisAccount {
         if epub == sea_pub {
             return Err(EncDiscError::EpubMismatch);
         }
+        #[allow(deprecated)]
         let secret = AccountSeaSecret::import_local(
             principal.as_ref(),
             lane_id,

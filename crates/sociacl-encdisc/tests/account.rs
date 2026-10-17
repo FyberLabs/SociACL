@@ -1,3 +1,5 @@
+#![allow(deprecated)]
+
 use sociacl_encdisc::{
     accept_first_contact, account_binding_bytes, length_prefixed, sign_sea, verify_item_auth,
     verify_sea, AccountKeyBinding, AccountSeaSecret, EncDiscError, EnrolledSeaPub,
