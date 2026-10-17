@@ -1,0 +1,1 @@
+{ "name": "sociacl-ids-consumer", "private": true, "type": "module", "engines": { "node": ">=24" } }

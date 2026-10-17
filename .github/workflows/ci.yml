@@ -4,6 +4,7 @@ on:
   pull_request:
   push:
     branches: [master]
+    tags: ["ids-v*"]
   workflow_dispatch:
 
 permissions:
@@ -65,3 +66,67 @@ jobs:
             target/coverage/python.json
             target/coverage/typescript-report.txt
           if-no-files-found: warn
+
+  pack-ids:
+    if: startsWith(github.ref, 'refs/tags/ids-v')
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Verify protected release ancestry
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/master
+          test "$(gh api "repos/$GH_REPO/branches/master" --jq .protected)" = true
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - name: Pack identity package
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          npm ci --ignore-scripts --prefix typescript/ids
+          version="$(node -p "JSON.parse(require('fs').readFileSync('typescript/ids/package.json')).version")"
+          test "$RELEASE_TAG" = "ids-v$version"
+          npm run build --prefix typescript/ids
+          npm pack --ignore-scripts ./typescript/ids --pack-destination "$RUNNER_TEMP"
+          cd "$RUNNER_TEMP" || exit
+          sha256sum "sociacl-ids-$version.tgz" > "sociacl-ids-$version.tgz.sha256"
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: identity-release
+          path: |
+            ${{ runner.temp }}/sociacl-ids-*.tgz
+            ${{ runner.temp }}/sociacl-ids-*.tgz.sha256
+          if-no-files-found: error
+
+  release-ids:
+    if: startsWith(github.ref, 'refs/tags/ids-v')
+    needs: pack-ids
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      # The write-token job never checks out or executes package source/scripts.
+      - uses: actions/download-artifact@v8.0.1
+        with:
+          name: identity-release
+          path: ${{ runner.temp }}/identity-release
+      - name: Publish identity release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          cd "$RUNNER_TEMP/identity-release" || exit
+          sha256sum --check sociacl-ids-*.tgz.sha256
+          gh release create "$RELEASE_TAG" --verify-tag --generate-notes \
+            sociacl-ids-*.tgz sociacl-ids-*.tgz.sha256

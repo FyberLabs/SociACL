@@ -1,0 +1,196 @@
+{
+  "v": 1,
+  "family": "network",
+  "accept": [
+    {
+      "name": "atproto",
+      "input": "atproto",
+      "canonical": "atproto",
+      "pathKey": "n_5f498d042b845933a91f5b930a970cc4efbc46759c855eed5270ed089a0af637"
+    },
+    {
+      "name": "farcaster",
+      "input": "farcaster",
+      "canonical": "farcaster",
+      "pathKey": "n_a8f4ee00f4d1f9d52486c497c51aae454cab7456164fbf1ffff7a2d687378fc9"
+    },
+    {
+      "name": "nostr",
+      "input": "nostr",
+      "canonical": "nostr",
+      "pathKey": "n_ec76eadc08dfc1f87a76908276a77834fa88115d0d319387cb46a3763fc162ed"
+    },
+    {
+      "name": "activitypub",
+      "input": "activitypub",
+      "canonical": "activitypub",
+      "pathKey": "n_2e1702bd1fd426a6eaba5859ab468b84a5d539c6cda55ddd805acb054d8ccf11"
+    },
+    {
+      "name": "rss",
+      "input": "rss",
+      "canonical": "rss",
+      "pathKey": "n_a125d1fee2fceea50cd7bf1e47e69c0fd10dcf852417009733822b537a9201c5"
+    },
+    {
+      "name": "s3rch:https://s3r.ch:443;key=1212121212121212121212121212121212121212121212121212121212121212",
+      "input": "s3rch:https://s3r.ch:443;key=1212121212121212121212121212121212121212121212121212121212121212",
+      "canonical": "s3rch:https://s3r.ch:443;key=1212121212121212121212121212121212121212121212121212121212121212",
+      "pathKey": "n_bfa43d65246cc91b1bdd7a8314bd16a99ac609be11401f1b42d058797d5a4c80"
+    },
+    {
+      "name": "url-host-0",
+      "input": "s3rch:https://s3r.ch:443;key=1212121212121212121212121212121212121212121212121212121212121212",
+      "canonical": "s3rch:https://s3r.ch:443;key=1212121212121212121212121212121212121212121212121212121212121212"
+    },
+    {
+      "name": "url-host-1",
+      "input": "s3rch:https://sub.s3r.ch:443;key=1212121212121212121212121212121212121212121212121212121212121212",
+      "canonical": "s3rch:https://sub.s3r.ch:443;key=1212121212121212121212121212121212121212121212121212121212121212"
+    },
+    {
+      "name": "url-host-13",
+      "input": "s3rch:https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.com:443;key=1212121212121212121212121212121212121212121212121212121212121212",
+      "canonical": "s3rch:https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.com:443;key=1212121212121212121212121212121212121212121212121212121212121212"
+    }
+  ],
+  "reject": [
+    {
+      "name": "null",
+      "input": null,
+      "reason": "not-string"
+    },
+    {
+      "name": "number",
+      "input": 42,
+      "reason": "not-string"
+    },
+    {
+      "name": "object",
+      "input": {
+        "toString": "no coercion"
+      },
+      "reason": "not-string"
+    },
+    {
+      "name": "array",
+      "input": [],
+      "reason": "not-string"
+    },
+    {
+      "name": "boolean",
+      "input": true,
+      "reason": "not-string"
+    },
+    {
+      "name": "ip",
+      "input": "s3rch:https://127.0.0.1:443;key=1212121212121212121212121212121212121212121212121212121212121212",
+      "reason": "bad-host"
+    },
+    {
+      "name": "hex-ip",
+      "input": "s3rch:https://0x7f.0.0.1:443;key=1212121212121212121212121212121212121212121212121212121212121212",
+      "reason": "bad-host"
+    },
+    {
+      "name": "private",
+      "input": "s3rch:https://box.local:443;key=1212121212121212121212121212121212121212121212121212121212121212",
+      "reason": "bad-host"
+    },
+    {
+      "name": "uppercase",
+      "input": "s3rch:https://S3R.CH:443;key=1212121212121212121212121212121212121212121212121212121212121212",
+      "reason": "bad-host"
+    },
+    {
+      "name": "trailing-dot",
+      "input": "s3rch:https://s3r.ch.:443;key=1212121212121212121212121212121212121212121212121212121212121212",
+      "reason": "bad-host"
+    },
+    {
+      "name": "port-0",
+      "input": "s3rch:https://s3r.ch:0;key=1212121212121212121212121212121212121212121212121212121212121212",
+      "reason": "bad-port"
+    },
+    {
+      "name": "port-65536",
+      "input": "s3rch:https://s3r.ch:65536;key=1212121212121212121212121212121212121212121212121212121212121212",
+      "reason": "bad-port"
+    },
+    {
+      "name": "port-0443",
+      "input": "s3rch:https://s3r.ch:0443;key=1212121212121212121212121212121212121212121212121212121212121212",
+      "reason": "bad-port"
+    },
+    {
+      "name": "url-host-2",
+      "input": "s3rch:https://xn--ab--.com:443;key=1212121212121212121212121212121212121212121212121212121212121212",
+      "reason": "bad-host"
+    },
+    {
+      "name": "url-host-3",
+      "input": "s3rch:https://xn--bcher-kva.de:443;key=1212121212121212121212121212121212121212121212121212121212121212",
+      "reason": "bad-host"
+    },
+    {
+      "name": "url-host-4",
+      "input": "s3rch:https://a.xn--ab--:443;key=1212121212121212121212121212121212121212121212121212121212121212",
+      "reason": "bad-host"
+    },
+    {
+      "name": "url-host-5",
+      "input": "s3rch:https://S3R.CH:443;key=1212121212121212121212121212121212121212121212121212121212121212",
+      "reason": "bad-host"
+    },
+    {
+      "name": "url-host-6",
+      "input": "s3rch:https://s3r.ch.:443;key=1212121212121212121212121212121212121212121212121212121212121212",
+      "reason": "bad-host"
+    },
+    {
+      "name": "url-host-7",
+      "input": "s3rch:https://127.0.0.1:443;key=1212121212121212121212121212121212121212121212121212121212121212",
+      "reason": "bad-host"
+    },
+    {
+      "name": "url-host-8",
+      "input": "s3rch:https://0x7f.0.0.1:443;key=1212121212121212121212121212121212121212121212121212121212121212",
+      "reason": "bad-host"
+    },
+    {
+      "name": "url-host-9",
+      "input": "s3rch:https://box.local:443;key=1212121212121212121212121212121212121212121212121212121212121212",
+      "reason": "bad-host"
+    },
+    {
+      "name": "url-host-10",
+      "input": "s3rch:https://-a.com:443;key=1212121212121212121212121212121212121212121212121212121212121212",
+      "reason": "bad-host"
+    },
+    {
+      "name": "url-host-11",
+      "input": "s3rch:https://a-.com:443;key=1212121212121212121212121212121212121212121212121212121212121212",
+      "reason": "bad-host"
+    },
+    {
+      "name": "url-host-12",
+      "input": "s3rch:https://a..com:443;key=1212121212121212121212121212121212121212121212121212121212121212",
+      "reason": "bad-host"
+    },
+    {
+      "name": "url-host-14",
+      "input": "s3rch:https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.com:443;key=1212121212121212121212121212121212121212121212121212121212121212",
+      "reason": "bad-host"
+    },
+    {
+      "name": "alphabetic-tld-s3r.0x1",
+      "input": "s3rch:https://s3r.0x1:443;key=1212121212121212121212121212121212121212121212121212121212121212",
+      "reason": "bad-host"
+    },
+    {
+      "name": "alphabetic-tld-s3r.123a",
+      "input": "s3rch:https://s3r.123a:443;key=1212121212121212121212121212121212121212121212121212121212121212",
+      "reason": "bad-host"
+    }
+  ]
+}

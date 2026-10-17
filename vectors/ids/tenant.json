@@ -1,0 +1,45 @@
+{
+  "v": 1,
+  "family": "tenant",
+  "accept": [
+    {
+      "name": "tenant",
+      "input": "01234567-89ab-cdef-0123-456789abcdef",
+      "canonical": "01234567-89ab-cdef-0123-456789abcdef"
+    }
+  ],
+  "reject": [
+    {
+      "name": "null",
+      "input": null,
+      "reason": "not-string"
+    },
+    {
+      "name": "number",
+      "input": 42,
+      "reason": "not-string"
+    },
+    {
+      "name": "object",
+      "input": {
+        "toString": "no coercion"
+      },
+      "reason": "not-string"
+    },
+    {
+      "name": "array",
+      "input": [],
+      "reason": "not-string"
+    },
+    {
+      "name": "boolean",
+      "input": true,
+      "reason": "not-string"
+    },
+    {
+      "name": "uppercase",
+      "input": "01234567-89AB-CDEF-0123-456789ABCDEF",
+      "reason": "non-canonical"
+    }
+  ]
+}
