@@ -126,7 +126,15 @@ pub(crate) fn deliver_keyring_with(
         wrap_id: wrap.wrap_id.clone(),
         epub: wrap.epub.clone(),
     };
-    store.put_wrap(&index, &wrap)?;
+    let hash = crate::store_write::wrap_ciphertext_hash(&wrap.ciphertext_hex)?;
+    let store_signature = crate::store_write::sign_store_write(
+        keyring.current_priv(),
+        &wrap.principal,
+        "put",
+        wrap.wrap_id.as_ref(),
+        &hash,
+    )?;
+    store.put_wrap(&index, &wrap, &store_signature, rotations, context)?;
     Ok(wrap)
 }
 
@@ -136,7 +144,10 @@ pub(crate) fn deliver_keyring_with(
 /// The current-key signature is checked before the plaintext is parsed.
 /// `recovery-stale` is returned only when the plaintext sequence is older
 /// and the signature also verifies under the key that was valid at that
-/// sequence. A codec failure on this path is `wrap-rejected`.
+/// sequence. That result is not proof the delivery is authentic: a copy
+/// signed by a key the rotation was meant to cut off, including the lost
+/// device's sequence-0 key, still returns `recovery-stale`. No key material
+/// is accepted. A codec failure on this path is `wrap-rejected`.
 pub fn open_delivered_keyring(
     transport: &TransportKey,
     wrap: &EncryptedAccountWrap,
@@ -294,6 +305,8 @@ fn open_authenticated_delivery(
 
 /// Unauthenticated plaintext. Read only the trailing sequence. `recovery-stale`
 /// requires a signature under the key that was current at that older sequence.
+/// That result is not proof the delivery is genuine: a key the rotation was
+/// meant to cut off can still produce it, and no key material is accepted.
 fn stale_or_rejected(
     plain: &[u8],
     expected: &PrincipalId,
@@ -314,6 +327,26 @@ fn stale_or_rejected(
     EncDiscError::WrapRejected
 }
 
+/// Rotation records whose own `seq` is at most `seq`. Array position is not a sequence.
+fn rotations_through(rotations: &[serde_json::Value], seq: u64) -> Vec<serde_json::Value> {
+    rotations
+        .iter()
+        .filter(|row| {
+            let Some(object) = row.as_object() else {
+                return false;
+            };
+            if object.get("kind").and_then(|kind| kind.as_str()) != Some("rotate") {
+                return false;
+            }
+            object
+                .get("seq")
+                .and_then(|value| value.as_u64())
+                .is_some_and(|record_seq| record_seq <= seq)
+        })
+        .cloned()
+        .collect()
+}
+
 fn historical_signature_ok(
     expected: &PrincipalId,
     rotations: &[serde_json::Value],
@@ -322,9 +355,8 @@ fn historical_signature_ok(
     message: &[u8],
     signature: &str,
 ) -> bool {
-    let prefix = usize::try_from(seq).unwrap_or(rotations.len());
-    let prefix = prefix.min(rotations.len());
-    let Ok(key) = current_signing_key(expected, &rotations[..prefix], context) else {
+    let through = rotations_through(rotations, seq);
+    let Ok(key) = current_signing_key(expected, &through, context) else {
         return false;
     };
     sea::verify_sea(key.as_ref(), message, signature).is_ok()
@@ -755,72 +787,97 @@ mod tests {
             sociacl_ids::parse_principal_id(ring()["genesis"]["principal"].as_str().unwrap())
                 .unwrap();
         let epub = ring()["genesis"]["epub"].as_str().unwrap().to_string();
+        let held = hold();
+        let ctx = context_of(&held);
+        let records = ring();
+        let signer = records["genesis"]["signingPriv"].as_str().unwrap();
         let mut store = MemoryKeyWrapStore::default();
         let mut ids = Vec::new();
         for n in 0..crate::limits::MAX_WRAPS_PER_PRINCIPAL {
             let wrap_id = parse_object_id(&format!("wrap_{n:032x}")).unwrap();
             ids.push(wrap_id.clone());
-            store
-                .put_wrap(
-                    &WrapIndex {
-                        principal: principal.clone(),
-                        wrap_id: wrap_id.clone(),
-                        epub: epub.clone(),
-                    },
-                    &dummy_wrap(&principal, &wrap_id, &epub, WrapClass::Delivery, "aa"),
-                )
-                .unwrap();
+            let class = if n == 0 {
+                WrapClass::Genesis
+            } else {
+                WrapClass::Delivery
+            };
+            put_dummy(
+                &mut store,
+                &principal,
+                &wrap_id,
+                &epub,
+                class,
+                &format!("{n:02x}"),
+                signer,
+                &ctx,
+            )
+            .unwrap();
         }
         assert_eq!(
             recovery()["limits"]["wrapsPerPrincipal"].as_u64().unwrap() as usize,
             crate::limits::MAX_WRAPS_PER_PRINCIPAL
         );
         let extra = parse_object_id(&format!("wrap_{:032x}", 80u32)).unwrap();
-        let capped = store.put_wrap(
+        let capped = put_dummy(
+            &mut store,
+            &principal,
+            &extra,
+            &epub,
+            WrapClass::Delivery,
+            "bb",
+            signer,
+            &ctx,
+        );
+        assert!(matches!(capped, Err(EncDiscError::StoreRejected)));
+        let unsigned = store.put_wrap(
             &WrapIndex {
                 principal: principal.clone(),
                 wrap_id: extra.clone(),
                 epub: epub.clone(),
             },
-            &dummy_wrap(&principal, &extra, &epub, WrapClass::Delivery, "bb"),
+            &dummy_wrap(&principal, &extra, &epub, WrapClass::Delivery, "ee"),
+            "00",
+            &[],
+            &ctx,
         );
-        assert!(matches!(capped, Err(EncDiscError::StoreRejected)));
+        assert!(matches!(unsigned, Err(EncDiscError::StoreRejected)));
         let first = ids[0].clone();
-        store
-            .put_wrap(
-                &WrapIndex {
-                    principal: principal.clone(),
-                    wrap_id: first.clone(),
-                    epub: epub.clone(),
-                },
-                &dummy_wrap(&principal, &first, &epub, WrapClass::Delivery, "cc"),
-            )
-            .unwrap();
-        assert_eq!(
-            store
-                .get_wrap(&principal, &first)
-                .unwrap()
-                .unwrap()
-                .ciphertext_hex,
-            "cc"
-        );
-        let stuck = store.put_wrap(
-            &WrapIndex {
-                principal: principal.clone(),
-                wrap_id: first.clone(),
-                epub: epub.clone(),
-            },
-            &dummy_wrap(&principal, &first, &epub, WrapClass::Genesis, "dd"),
+        let stuck = put_dummy(
+            &mut store,
+            &principal,
+            &first,
+            &epub,
+            WrapClass::Delivery,
+            "cc",
+            signer,
+            &ctx,
         );
         assert!(matches!(stuck, Err(EncDiscError::StoreRejected)));
+        let genesis_delete =
+            crate::delete_account_wrap(&principal, &first, signer, &[], &ctx, &mut store);
+        assert!(matches!(genesis_delete, Err(EncDiscError::StoreRejected)));
         assert_eq!(
             store
                 .get_wrap(&principal, &first)
                 .unwrap()
                 .unwrap()
                 .ciphertext_hex,
-            "cc"
+            "00"
         );
+        let delivery = ids[1].clone();
+        crate::delete_account_wrap(&principal, &delivery, signer, &[], &ctx, &mut store).unwrap();
+        assert!(store.get_wrap(&principal, &delivery).unwrap().is_none());
+        put_dummy(
+            &mut store,
+            &principal,
+            &extra,
+            &epub,
+            WrapClass::Delivery,
+            "bb",
+            signer,
+            &ctx,
+        )
+        .unwrap();
         assert_eq!(
             store.list_wraps(&principal).unwrap().len(),
             crate::limits::MAX_WRAPS_PER_PRINCIPAL
@@ -888,7 +945,8 @@ mod tests {
         };
         let retired = [(genesis_epub.as_str(), genesis_epriv.as_str())];
         let rotations = [rotation];
-        let keyring = AccountKeyring::import(
+        let prior = ring["importPriorLanes"]["priorLane"].as_str().unwrap();
+        let keyring = AccountKeyring::import_with_prior_lanes(
             &genesis_pub,
             &genesis_epub,
             &current_pub,
@@ -901,6 +959,7 @@ mod tests {
             ring["witnessed"]["rotationSeq"].as_u64().unwrap(),
             &rotations,
             &base,
+            &[prior],
         )
         .unwrap();
         let mut store = MemoryKeyWrapStore::default();
@@ -937,12 +996,50 @@ mod tests {
             open_delivered_keyring(&transport, &wrap, keyring.principal(), 2, &rotations, &base)
                 .unwrap_err();
         assert!(matches!(genuine, EncDiscError::RecoveryStale));
+        let mut padded = vec![serde_json::json!({"kind": "nope", "seq": 0})];
+        padded.extend(rotations.iter().cloned());
+        let reordered =
+            open_delivered_keyring(&transport, &wrap, keyring.principal(), 2, &padded, &base)
+                .unwrap_err();
+        assert!(matches!(reordered, EncDiscError::RecoveryStale));
         let mut zero = wrap.clone();
         zero.signature = "00".repeat(64);
         let forged =
             open_delivered_keyring(&transport, &zero, keyring.principal(), 2, &rotations, &base)
                 .unwrap_err();
         assert!(matches!(forged, EncDiscError::WrapRejected));
+    }
+
+    fn put_dummy(
+        store: &mut MemoryKeyWrapStore,
+        principal: &PrincipalId,
+        wrap_id: &sociacl_ids::ObjectId,
+        epub: &str,
+        class: WrapClass,
+        ciphertext_hex: &str,
+        signer: &str,
+        context: &ResolutionContext<'_>,
+    ) -> Result<(), EncDiscError> {
+        let wrap = dummy_wrap(principal, wrap_id, epub, class, ciphertext_hex);
+        let hash = crate::store_write::wrap_ciphertext_hash(&wrap.ciphertext_hex)?;
+        let signature = crate::store_write::sign_store_write(
+            signer,
+            principal,
+            "put",
+            wrap_id.as_ref(),
+            &hash,
+        )?;
+        store.put_wrap(
+            &WrapIndex {
+                principal: principal.clone(),
+                wrap_id: wrap_id.clone(),
+                epub: epub.to_string(),
+            },
+            &wrap,
+            &signature,
+            &[],
+            context,
+        )
     }
 
     fn dummy_wrap(

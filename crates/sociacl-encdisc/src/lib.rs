@@ -90,6 +90,7 @@ mod recovery;
 mod rotation;
 mod sea;
 mod see;
+mod store_write;
 mod unicode16;
 mod wrap;
 mod writer;
@@ -134,10 +135,10 @@ pub use grant::{
     MeshSeeGrant, SignedGrantPayload,
 };
 pub use identity::{
-    account_grant_soul, account_id_from_label, current_signing_key, delivery_mints_grant,
-    open_account_backup, parse_wrap_object, seal_account_backup, EncryptedAccountWrap,
-    GenesisAccount, InheritedDevice, KeyWrapStore, LinkedCredential, MemoryKeyWrapStore,
-    TransportKey, WrapClass, WrapIndex,
+    account_grant_soul, account_id_from_label, current_signing_key, delete_account_wrap,
+    delivery_mints_grant, open_account_backup, parse_wrap_object, seal_account_backup,
+    EncryptedAccountWrap, GenesisAccount, InheritedDevice, KeyWrapStore, LinkedCredential,
+    MemoryKeyWrapStore, TransportKey, WrapClass, WrapIndex,
 };
 pub use inbox::{
     filter_inbox_append, lane_id_is_opaque, lanes_per_device, replicated_row_admitted,
@@ -170,9 +171,9 @@ pub use presenter::{
     PresenterChallenge, VerifierChallengeState,
 };
 pub use recovery::{
-    commit_recovery_copy, encode_passphrase, open_recovery_copy, open_recovery_copy_str,
-    rotate_and_reseal, seal_recovery_copy, seal_recovery_copy_str, MemoryRecoveryStore,
-    RecoveryCopyStore, RecoveryEnvelope,
+    commit_recovery_copy, delete_recovery_copy, encode_passphrase, open_recovery_copy,
+    open_recovery_copy_str, rotate_and_reseal, seal_recovery_copy, seal_recovery_copy_str,
+    MemoryRecoveryStore, RecoveryCopyStore, RecoveryEnvelope,
 };
 pub use rotation::{
     rotate_on_revoke, CancelledGrant, EpochRotation, GrantStorage, PlainGrant, PriorRevision,
@@ -182,6 +183,9 @@ pub use sea::{sign_sea, verify_sea};
 pub use see::{
     check_group_see, check_opened_grant, hop_forbidden, CheckResult, GroupPredicate, HandoffHint,
     HopFactor, IdentitySeeGrant, MeshMembership, ObjectSetName, PresentedGroup, SeeGraph,
+};
+pub use store_write::{
+    sign_store_write, verify_store_write, wrap_ciphertext_hash, DOMAIN_STORE_WRITE,
 };
 pub use wrap::{
     open_group_epoch_wrap, open_reader_wrap, wrap_group_key_to_members,

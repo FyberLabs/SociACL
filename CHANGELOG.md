@@ -8,9 +8,9 @@
   output) as both the floor and the ceiling. Salt is 16 through 64 bytes.
   Open refuses a header outside that constant before the KDF. Refs #64.
 - Associated data binds the domain, the `PrincipalId`, the keyring version,
-  the KDF parameters, and the salt. A wrong passphrase and tampering share
-  `recovery-rejected`. A decrypted copy of another version is
-  `recovery-stale`.
+  the signing public key, the encryption public key, the KDF parameters, and
+  the salt. A wrong passphrase and tampering share `recovery-rejected`. A
+  decrypted copy of another version is `recovery-stale`.
 - `rotateAndReseal` / `rotate_and_reseal` writes a new copy for the new
   version. The store keeps ciphertext only.
 - Deliver the keyring to a device through the account-key wrap. The device
@@ -25,11 +25,26 @@
   16.0.0. Code points unassigned in that version are `recovery-params`
   before NFC. Whitespace is one explicit set in both languages and includes
   U+0085. Empty and whitespace-only passphrases are `recovery-params`.
-- A recovery `put` refuses a lower `rotationSeq` (`store-rejected`). An
-  equal sequence replaces that row. A higher sequence is stored as pending
-  and does not replace the current copy until `commitRecoveryCopy` /
-  `commit_recovery_copy` sees the rotation in the trusted chain. Adapters
-  replace a row atomically and only forward.
+  TypeScript `encodePassphrase` throws `unicode-version` when the runtime's
+  NFC is older than Unicode 16. The probe is U+11382 U+113C9 composing to
+  U+11383.
+- **Breaking for adapter authors:** every recovery-store and wrap-store
+  `put`, `commit`, and `delete` requires a `sociacl-store-write-v1`
+  signature by the account's current chain-head key. The store verifies it
+  against the resolved published chain. Session authentication is not this
+  check. Panopticon verifies and witnesses; it is not the authority. A
+  recovery `put` is accepted only at the resolved head, which replaces the
+  current copy and drops any pending copy, or at head + 1, which is the
+  only pending copy. Any other sequence is `store-rejected`. Commit promotes
+  a pending copy only when its public keys equal the resolved current key,
+  and only when the caller passes the chain read back from the published
+  source. A fork is dropped. A signed rotation that is not on that chain
+  stays pending. `deleteRecoveryCopy` / `delete_recovery_copy` and
+  `deleteAccountWrap` / `delete_account_wrap` use the same signature.
+  Deleting the current recovery copy does not promote a pending copy. The
+  genesis backup wrap can be replaced, never deleted. The 64-row cap stays.
+- Import and seal refuse a keyring unless `priorLanes.length` equals
+  `rotationSeq` (`bad-lane`). That is SociACL#68 F1 for this path. Refs #64.
 - Key the wrap store by principal and wrap id, so a second device delivery
   keeps the first. **Breaking for adapter authors:** `KeyWrapStore.get` /
   `get_wrap` now takes a wrap id, and `list` / `list_wraps` was added.
@@ -38,9 +53,13 @@
   genesis backup's wrap id.
 - Verify a delivery signature before parsing the plaintext. `recovery-stale`
   is returned only when that signature also verifies under the key that was
-  valid at the older sequence. Codec failures on the delivery path are
-  `wrap-rejected`. Delivery uses `sociacl-keyring-delivery-v1` and
+  valid at the older sequence. That key is chosen by each rotation record's
+  `seq`, not by array position. `recovery-stale` is not proof the delivery
+  is genuine. Codec failures on the delivery path are `wrap-rejected`.
+  Delivery uses `sociacl-keyring-delivery-v1` and
   `sociacl-keyring-delivery-sig-v1`.
+- The TypeScript wrap store copies a row on put, get, and list. `class` is
+  a store-only label and openers ignore it.
 - The recovery plaintext cap does not grow with the salt. `RECOVERY_ENVELOPE_MAX`
   is 262205. The pre-parse ceiling `RECOVERY_ABSOLUTE_MAX` is 262269.
 

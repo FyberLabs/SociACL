@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { argon2id } from "hash-wasm";
-import { MemoryKeyWrapStore, importGenesis, openAccountBackup, parseWrapObject, sealAccountBackup, type EncryptedAccountWrap } from "../contract/account-key.ts";
+import { MemoryKeyWrapStore, deleteAccountWrap, importGenesis, openAccountBackup, parseWrapObject, sealAccountBackup, type EncryptedAccountWrap } from "../contract/account-key.ts";
 import { AccountKeyring } from "../contract/account-keyring.ts";
 import {
   backupAad,
@@ -27,7 +27,9 @@ import {
   RECOVERY_ENVELOPE_MAX,
 } from "../contract/keyring-limits.ts";
 import * as recovery from "../contract/recovery.ts";
+import { canonicalDecimal } from "../contract/canonical.ts";
 import { encodePassphrase, MemoryRecoveryStore, openRecoveryCopy, type RecoveryEnvelope } from "../contract/recovery-seal.ts";
+import { DOMAIN_STORE_WRITE, recoveryEnvelopeHash, signStoreWrite, wrapCiphertextHash } from "../contract/store-write.ts";
 import { deliverKeyringWith, sealRecoveryCopyWith } from "./support/recovery-deterministic.ts";
 import {
   historyState,
@@ -58,6 +60,16 @@ const recoveryVector = JSON.parse(readFileSync(new URL("../../vectors/encrypted-
   unicodeVersion: string;
   passphraseRejects: { name: string; passphrase: string; error: string }[];
   retention: { downgrade: string; sameSeq: string; higherSeq: string; commitUnverified: string };
+  storeWrite: {
+    domain: string;
+    operations: string[];
+    pending: string;
+    equalSeqClearsPending: boolean;
+    commitKey: string;
+    fork: string;
+    unpublished: string;
+  };
+  unicodeRuntime: { minimum: string; probe: string; error: string };
   passphraseUtf8: string;
   wrongPassphraseUtf8: string;
   saltHex: string;
@@ -113,6 +125,7 @@ const ring = JSON.parse(readFileSync(new URL("../../vectors/encrypted-discovery/
     contentEpoch: number;
     rotationSeq: number;
   };
+  importPriorLanes: { rule: string; rotationSeq: number; priorLane: string; missingError: string };
 };
 
 const records = JSON.parse(readFileSync(new URL("../../vectors/ids/records.json", import.meta.url), "utf8")) as {
@@ -198,7 +211,7 @@ function craft(row: RejectRow, ciphertextLen: number, principal: PrincipalId): R
   header.set(salt, 33);
   const bytes = new Uint8Array(header.length + 12 + ciphertextLen);
   bytes.set(header, 0);
-  return { principal, rotationSeq: 0, bytes };
+  return { principal, rotationSeq: 0, signingPub: principal, epub: genesisEpub(), bytes };
 }
 
 test("limits match the shared vector", () => {
@@ -222,6 +235,14 @@ test("limits match the shared vector", () => {
   assert.equal(limits.wrapsPerPrincipal, MAX_WRAPS_PER_PRINCIPAL);
   assert.equal(recoveryVector.unicodeVersion, "16.0.0");
   assert.equal(RECOVERY_ABSOLUTE_MAX, RECOVERY_ENVELOPE_MAX + ARGON2ID_LIMITS.saltLength.ceiling);
+  assert.equal(recoveryVector.storeWrite.domain, DOMAIN_STORE_WRITE);
+  assert.deepEqual(recoveryVector.storeWrite.operations, ["put", "commit", "delete"]);
+  assert.equal(recoveryVector.storeWrite.pending, "head-plus-one");
+  assert.equal(recoveryVector.storeWrite.equalSeqClearsPending, true);
+  assert.equal(recoveryVector.storeWrite.commitKey, "resolved-current-key");
+  assert.equal(recoveryVector.unicodeRuntime.minimum, "16.0.0");
+  assert.equal(recoveryVector.unicodeRuntime.error, "unicode-version");
+  assert.equal("\u{11382}\u{113C9}".normalize("NFC"), "\u{11383}");
   assert.equal(recoveryVector.domain, "sociacl-recovery-copy-v1");
   assert.equal(recoveryVector.keyringDomain, "sociacl-keyring-plain-v1");
   assert.equal(recoveryVector.bindDomain, "sociacl-keyring-delivery-v1");
@@ -255,7 +276,7 @@ test("parameter and size rejects happen before the kdf", async () => {
     if (row.blobBytes !== undefined) continue;
     const envelope =
       row.envelopeBytes !== undefined
-        ? { principal, rotationSeq: 0, bytes: new Uint8Array(row.envelopeBytes) }
+        ? { principal, rotationSeq: 0, signingPub: principal, epub: genesisEpub(), bytes: new Uint8Array(row.envelopeBytes) }
         : craft(row, row.ciphertextBytes ?? 16, principal);
     const error = await errorMessage(() => openRecoveryCopy(new TextEncoder().encode("x"), envelope, principal, 0, [], context));
     assert.equal(error, row.error, row.name);
@@ -298,7 +319,16 @@ test("recovery copy matches the shared vector and stays off gun", { timeout: 180
   const context = witnessedContext();
   const store = new MemoryRecoveryStore();
   const passphrase = new TextEncoder().encode(recoveryVector.passphraseUtf8);
-  const envelope = await sealRecoveryCopyWith(keyring, passphrase, hexToBytes(recoveryVector.saltHex), hexToBytes(recoveryVector.nonceHex), store);
+  const envelope = await sealRecoveryCopyWith(
+    keyring,
+    passphrase,
+    hexToBytes(recoveryVector.saltHex),
+    hexToBytes(recoveryVector.nonceHex),
+    store,
+    [],
+    context,
+    keyring.currentPriv(),
+  );
   const hex = Buffer.from(envelope.bytes).toString("hex");
   assert.equal(hex, recoveryVector.envelopeHex);
   assert.ok(store.get(keyring.principal, 0));
@@ -325,6 +355,8 @@ test("recovery copy matches the shared vector and stays off gun", { timeout: 180
   const tampered: RecoveryEnvelope = {
     principal: envelope.principal,
     rotationSeq: envelope.rotationSeq,
+    signingPub: envelope.signingPub,
+    epub: envelope.epub,
     bytes: new Uint8Array(envelope.bytes),
   };
   const last = tampered.bytes.length - 1;
@@ -341,7 +373,19 @@ test("rotation reseals a new version and writes only the adapter", { timeout: 18
   const context = witnessedContext();
   const store = new MemoryRecoveryStore();
   const passphrase = new TextEncoder().encode(recoveryVector.passphraseUtf8);
-  store.put({ principal: keyring.principal, rotationSeq: 0, bytes: hexToBytes(recoveryVector.envelopeHex) });
+  putRecovery(
+    store,
+    {
+      principal: keyring.principal,
+      rotationSeq: 0,
+      signingPub: keyring.pub,
+      epub: keyring.epub,
+      bytes: hexToBytes(recoveryVector.envelopeHex),
+    },
+    keyring.currentPriv(),
+    [],
+    context,
+  );
   assert.ok(store.get(keyring.principal, 0));
   const { rotation, envelope } = await recovery.rotateAndReseal(
     keyring,
@@ -358,7 +402,7 @@ test("rotation reseals a new version and writes only the adapter", { timeout: 18
   assert.ok(store.get(keyring.principal, 1));
   assert.ok(store.get(keyring.principal, 0));
   assert.equal(
-    messageSync(() => recovery.commitRecoveryCopy(keyring.principal, [], context, store)),
+    messageSync(() => recovery.commitRecoveryCopy(keyring.principal, keyring.currentPriv(), [], context, store)),
     recoveryVector.retention.commitUnverified,
   );
   assert.ok(store.get(keyring.principal, 1));
@@ -371,6 +415,8 @@ test("rotation reseals a new version and writes only the adapter", { timeout: 18
   const old: RecoveryEnvelope = {
     principal: keyring.principal,
     rotationSeq: 0,
+    signingPub: keyring.pub,
+    epub: keyring.epub,
     bytes: hexToBytes(recoveryVector.envelopeHex),
   };
   const stale = await errorMessage(() => openRecoveryCopy(passphrase, old, keyring.principal, 1, [], context));
@@ -532,7 +578,23 @@ function scalarSea(n: number): { pub: string; priv: string } {
   return { pub, priv };
 }
 
-function dummyEnvelope(principal: PrincipalId, rotationSeq: number): RecoveryEnvelope {
+function genesisEpub(): PrincipalId {
+  const parsed = parsePrincipalId(ring.genesis.epub);
+  if (!parsed.ok) throw new Error(parsed.reason);
+  return parsed.value;
+}
+
+function priorLanes(count: number): string[] {
+  const extras = ["11", "22", "33", "44"].map((byte) => byte.repeat(32));
+  return [ring.importPriorLanes.priorLane, ...extras].slice(0, count);
+}
+
+function dummyEnvelope(
+  principal: PrincipalId,
+  rotationSeq: number,
+  signingPub: PrincipalId,
+  epub: PrincipalId,
+): RecoveryEnvelope {
   const bytes = new Uint8Array(33 + 16 + 12 + 16);
   const view = new DataView(bytes.buffer);
   bytes[0] = 1;
@@ -544,15 +606,68 @@ function dummyEnvelope(principal: PrincipalId, rotationSeq: number): RecoveryEnv
   view.setUint32(21, 16, true);
   view.setUint32(25, rotationSeq, true);
   bytes.fill(0x11, 33, 49);
-  return { principal, rotationSeq, bytes };
+  return { principal, rotationSeq, signingPub, epub, bytes };
+}
+
+function putRecovery(
+  store: MemoryRecoveryStore,
+  envelope: RecoveryEnvelope,
+  signerPriv: string,
+  rotations: readonly unknown[],
+  context: ResolutionContext,
+): void {
+  const signature = signStoreWrite(
+    signerPriv,
+    envelope.principal,
+    "put",
+    canonicalDecimal(envelope.rotationSeq),
+    recoveryEnvelopeHash(envelope),
+  );
+  store.put(envelope, signature, rotations, context);
+}
+
+function asPrincipal(sea: string): PrincipalId {
+  const parsed = parsePrincipalId(sea);
+  if (!parsed.ok) throw new Error(parsed.reason);
+  return parsed.value;
+}
+
+function putWrap(
+  store: MemoryKeyWrapStore,
+  principal: PrincipalId,
+  wrapId: ReturnType<typeof parseWrapObject>,
+  wrapClass: "genesis" | "delivery",
+  ciphertextHex: string,
+  signerPriv: string,
+  context: ResolutionContext,
+): void {
+  const wrap = {
+    principal,
+    wrapId,
+    epub: ring.genesis.epub,
+    class: wrapClass,
+    ciphertextHex,
+    signature: "ab".repeat(64),
+  };
+  const signature = signStoreWrite(signerPriv, principal, "put", wrapId, wrapCiphertextHash(ciphertextHex));
+  store.put({ principal, wrapId, epub: ring.genesis.epub }, wrap, signature, [], context);
+}
+
+function mintPubs(): { signingPub: PrincipalId; epub: PrincipalId } {
+  const signing = parsePrincipalId(ring.mint.signingPub);
+  const epub = parsePrincipalId(ring.mint.epub);
+  if (!signing.ok || !epub.ok) throw new Error("mint pubs");
+  return { signingPub: signing.value, epub: epub.value };
 }
 
 test("the store copies envelopes and keeps only the latest", () => {
-  const principal = principalOf();
+  const keyring = genesisKeyring();
+  const principal = keyring.principal;
+  const context = witnessedContext();
   const store = new MemoryRecoveryStore();
-  const older = dummyEnvelope(principal, 0);
+  const older = dummyEnvelope(principal, 0, keyring.pub, keyring.epub);
   const original = new Uint8Array(older.bytes);
-  store.put(older);
+  putRecovery(store, older, keyring.currentPriv(), [], context);
   older.bytes[40] = (older.bytes[40] ?? 0) ^ 0x01;
   const stored = store.get(principal, 0);
   if (!stored) throw new Error("missing copy");
@@ -561,31 +676,45 @@ test("the store copies envelopes and keeps only the latest", () => {
   const again = store.get(principal, 0);
   if (!again) throw new Error("missing copy");
   assert.deepEqual(again.bytes, original);
-  store.put(dummyEnvelope(principal, 1));
-  assert.ok(store.get(principal, 0));
-  assert.ok(store.get(principal, 1));
-  const resealed = dummyEnvelope(principal, 0);
-  resealed.bytes[40] = (resealed.bytes[40] ?? 0) ^ 0x11;
-  store.put(resealed);
-  assert.equal(store.get(principal, 0)?.bytes[40], resealed.bytes[40]);
-  assert.ok(store.get(principal, 1));
-  const high = new MemoryRecoveryStore();
-  high.put(dummyEnvelope(principal, 2));
   assert.throws(
-    () => high.put(dummyEnvelope(principal, 0)),
-    (error: unknown) => error instanceof Error && error.message === recoveryVector.retention.downgrade,
-  );
-  assert.ok(high.get(principal, 2));
-  assert.equal(high.get(principal, 0), undefined);
-  const gap = new MemoryRecoveryStore();
-  gap.put(dummyEnvelope(principal, 0));
-  gap.put(dummyEnvelope(principal, 2));
-  assert.throws(
-    () => gap.put(dummyEnvelope(principal, 1)),
+    () => store.put(older, "00", [], context),
     (error: unknown) => error instanceof Error && error.message === "store-rejected",
   );
+  assert.deepEqual(store.get(principal, 0)?.bytes, original);
+  const pending = mintPubs();
+  putRecovery(store, dummyEnvelope(principal, 1, pending.signingPub, pending.epub), keyring.currentPriv(), [], context);
+  assert.ok(store.get(principal, 0));
+  assert.ok(store.get(principal, 1));
+  const resealed = dummyEnvelope(principal, 0, keyring.pub, keyring.epub);
+  resealed.bytes[40] = (resealed.bytes[40] ?? 0) ^ 0x11;
+  putRecovery(store, resealed, keyring.currentPriv(), [], context);
+  assert.equal(store.get(principal, 0)?.bytes[40], resealed.bytes[40]);
+  assert.equal(store.pending(principal), undefined);
+  assert.equal(recoveryVector.retention.sameSeq, "replace-clears-pending");
+  assert.throws(
+    () => putRecovery(store, dummyEnvelope(principal, 99, keyring.pub, keyring.epub), keyring.currentPriv(), [], context),
+    (error: unknown) => error instanceof Error && error.message === recoveryVector.retention.downgrade,
+  );
+  assert.equal(store.get(principal, 99), undefined);
+  putRecovery(store, dummyEnvelope(principal, 1, pending.signingPub, pending.epub), keyring.currentPriv(), [], context);
+  assert.ok(store.pending(principal));
+  const high = new MemoryRecoveryStore();
+  assert.throws(
+    () => putRecovery(high, dummyEnvelope(principal, 2, keyring.pub, keyring.epub), keyring.currentPriv(), [], context),
+    (error: unknown) => error instanceof Error && error.message === recoveryVector.retention.downgrade,
+  );
+  assert.equal(high.get(principal, 2), undefined);
+  assert.equal(recoveryVector.retention.higherSeq, "pending-only-head-plus-one");
+  const gap = new MemoryRecoveryStore();
+  putRecovery(gap, dummyEnvelope(principal, 0, keyring.pub, keyring.epub), keyring.currentPriv(), [], context);
+  assert.throws(
+    () => putRecovery(gap, dummyEnvelope(principal, 2, keyring.pub, keyring.epub), keyring.currentPriv(), [], context),
+    (error: unknown) => error instanceof Error && error.message === "store-rejected",
+  );
+  putRecovery(gap, dummyEnvelope(principal, 1, pending.signingPub, pending.epub), keyring.currentPriv(), [], context);
   assert.ok(gap.get(principal, 0));
-  assert.ok(gap.get(principal, 2));
+  assert.ok(gap.get(principal, 1));
+  assert.equal(gap.get(principal, 2), undefined);
 });
 
 test("composed and decomposed passphrases derive the same key", async () => {
@@ -613,6 +742,8 @@ test("a cross-principal envelope is recovery-rejected", async () => {
   const envelope: RecoveryEnvelope = {
     principal,
     rotationSeq: 0,
+    signingPub: principal,
+    epub: genesisEpub(),
     bytes: hexToBytes(recoveryVector.envelopeHex),
   };
   const started = Date.now();
@@ -647,9 +778,16 @@ test("a recovery copy opens after rotation against its chain", { timeout: 180_00
     ring.witnessed.rotationSeq,
     [rotation.input],
     context,
+    priorLanes(ring.witnessed.rotationSeq),
   );
   const store = new MemoryRecoveryStore();
-  const envelope = await recovery.sealRecoveryCopyFromString(keyring, recoveryVector.passphraseUtf8, store);
+  const envelope = await recovery.sealRecoveryCopyFromString(
+    keyring,
+    recoveryVector.passphraseUtf8,
+    store,
+    [rotation.input],
+    context,
+  );
   const opened = await recovery.openRecoveryCopyFromString(
     recoveryVector.passphraseUtf8,
     envelope,
@@ -664,29 +802,46 @@ test("a recovery copy opens after rotation against its chain", { timeout: 180_00
     openRecoveryCopy(new TextEncoder().encode(recoveryVector.passphraseUtf8), envelope, keyring.principal, 1, [], context),
   );
   assert.equal(unsigned, "pub-mismatch");
+  const genesisPoint = asPrincipal(genesis.pub);
+  const genesisEncryption = asPrincipal(genesisEpub.pub);
+  const currentPoint = asPrincipal(current.pub);
+  const currentEncryption = asPrincipal(epub.pub);
   const forward = new MemoryRecoveryStore();
-  forward.put(dummyEnvelope(keyring.principal, 0));
-  forward.put(dummyEnvelope(keyring.principal, 1));
-  recovery.commitRecoveryCopy(keyring.principal, [rotation.input], context, forward);
+  putRecovery(forward, dummyEnvelope(keyring.principal, 0, genesisPoint, genesisEncryption), genesis.priv, [], context);
+  putRecovery(forward, dummyEnvelope(keyring.principal, 1, currentPoint, currentEncryption), genesis.priv, [], context);
+  recovery.commitRecoveryCopy(keyring.principal, current.priv, [rotation.input], context, forward);
   assert.equal(forward.get(keyring.principal, 0), undefined);
   assert.ok(forward.get(keyring.principal, 1));
   assert.equal(
-    messageSync(() => recovery.commitRecoveryCopy(keyring.principal, [rotation.input], context, forward)),
+    messageSync(() => recovery.commitRecoveryCopy(keyring.principal, current.priv, [rotation.input], context, forward)),
     "store-rejected",
   );
   assert.ok(forward.get(keyring.principal, 1));
   assert.throws(
-    () => forward.put(dummyEnvelope(keyring.principal, 0)),
+    () => putRecovery(forward, dummyEnvelope(keyring.principal, 0, genesisPoint, genesisEncryption), genesis.priv, [rotation.input], context),
     (error: unknown) => error instanceof Error && error.message === "store-rejected",
   );
   const stuck = new MemoryRecoveryStore();
-  stuck.put(dummyEnvelope(keyring.principal, 0));
-  stuck.put(dummyEnvelope(keyring.principal, 1));
+  putRecovery(stuck, dummyEnvelope(keyring.principal, 0, genesisPoint, genesisEncryption), genesis.priv, [], context);
+  putRecovery(stuck, dummyEnvelope(keyring.principal, 1, currentPoint, currentEncryption), genesis.priv, [], context);
   assert.equal(
-    messageSync(() => recovery.commitRecoveryCopy(keyring.principal, [], context, stuck)),
+    messageSync(() => recovery.commitRecoveryCopy(keyring.principal, genesis.priv, [], context, stuck)),
     recoveryVector.retention.commitUnverified,
   );
   assert.ok(stuck.get(keyring.principal, 0));
+  assert.ok(stuck.get(keyring.principal, 1));
+  const fork = new MemoryRecoveryStore();
+  const minted = mintPubs();
+  putRecovery(fork, dummyEnvelope(keyring.principal, 0, genesisPoint, genesisEncryption), genesis.priv, [], context);
+  putRecovery(fork, dummyEnvelope(keyring.principal, 1, minted.signingPub, minted.epub), genesis.priv, [], context);
+  assert.equal(
+    messageSync(() => recovery.commitRecoveryCopy(keyring.principal, current.priv, [rotation.input], context, fork)),
+    recoveryVector.storeWrite.fork,
+  );
+  assert.ok(fork.get(keyring.principal, 0));
+  assert.equal(fork.get(keyring.principal, 1), undefined);
+  recovery.deleteRecoveryCopy(keyring.principal, 0, genesis.priv, [], context, stuck);
+  assert.equal(stuck.get(keyring.principal, 0), undefined);
   assert.ok(stuck.get(keyring.principal, 1));
 });
 
@@ -763,41 +918,55 @@ test("two devices and the genesis backup share the store", () => {
 
 test("wrap rows are capped and a class sticks to its id", () => {
   const principal = principalOf();
+  const context = witnessedContext();
   const store = new MemoryKeyWrapStore();
+  const signer = ring.genesis.signingPriv;
   const ids: ReturnType<typeof parseWrapObject>[] = [];
   for (let n = 0; n < MAX_WRAPS_PER_PRINCIPAL; n += 1) {
     const wrapId = parseWrapObject(`wrap_${n.toString(16).padStart(32, "0")}`);
     ids.push(wrapId);
-    store.put(
-      { principal, wrapId, epub: ring.genesis.epub },
-      { principal, wrapId, epub: ring.genesis.epub, class: "delivery", ciphertextHex: "aa", signature: "ab".repeat(64) },
-    );
+    putWrap(store, principal, wrapId, n === 0 ? "genesis" : "delivery", n.toString(16).padStart(2, "0"), signer, context);
   }
   const extra = parseWrapObject(`wrap_${(80).toString(16).padStart(32, "0")}`);
+  assert.throws(
+    () => putWrap(store, principal, extra, "delivery", "bb", signer, context),
+    (error: unknown) => error instanceof Error && error.message === "store-rejected",
+  );
   assert.throws(
     () =>
       store.put(
         { principal, wrapId: extra, epub: ring.genesis.epub },
-        { principal, wrapId: extra, epub: ring.genesis.epub, class: "delivery", ciphertextHex: "bb", signature: "ab".repeat(64) },
+        { principal, wrapId: extra, epub: ring.genesis.epub, class: "delivery", ciphertextHex: "ee", signature: "ab".repeat(64) },
+        "00",
+        [],
+        context,
       ),
     (error: unknown) => error instanceof Error && error.message === "store-rejected",
   );
   const first = ids[0];
-  if (!first) throw new Error("missing wrap");
-  store.put(
-    { principal, wrapId: first, epub: ring.genesis.epub },
-    { principal, wrapId: first, epub: ring.genesis.epub, class: "delivery", ciphertextHex: "cc", signature: "ab".repeat(64) },
-  );
-  assert.equal(store.get(principal, first)?.ciphertextHex, "cc");
+  const delivery = ids[1];
+  if (!first || !delivery) throw new Error("missing wrap");
   assert.throws(
-    () =>
-      store.put(
-        { principal, wrapId: first, epub: ring.genesis.epub },
-        { principal, wrapId: first, epub: ring.genesis.epub, class: "genesis", ciphertextHex: "dd", signature: "ab".repeat(64) },
-      ),
+    () => putWrap(store, principal, first, "delivery", "cc", signer, context),
     (error: unknown) => error instanceof Error && error.message === "store-rejected",
   );
-  assert.equal(store.get(principal, first)?.ciphertextHex, "cc");
+  const viewed = store.get(principal, first);
+  if (!viewed) throw new Error("missing genesis wrap");
+  (viewed as { class: string }).class = "delivery";
+  assert.equal(store.get(principal, first)?.class, "genesis");
+  const listed = store.list(principal);
+  const listedGenesis = listed.find((row) => row.wrapId === first);
+  if (!listedGenesis) throw new Error("missing listed genesis wrap");
+  (listedGenesis as { class: string }).class = "delivery";
+  assert.equal(store.get(principal, first)?.class, "genesis");
+  assert.throws(
+    () => deleteAccountWrap(principal, first, signer, store, [], context),
+    (error: unknown) => error instanceof Error && error.message === "store-rejected",
+  );
+  assert.equal(store.get(principal, first)?.ciphertextHex, "00");
+  deleteAccountWrap(principal, delivery, signer, store, [], context);
+  assert.equal(store.get(principal, delivery), undefined);
+  putWrap(store, principal, extra, "delivery", "bb", signer, context);
   assert.equal(store.list(principal).length, MAX_WRAPS_PER_PRINCIPAL);
 });
 
@@ -822,6 +991,7 @@ test("a rotated delivery needs its chain and a stale seq wins", () => {
     ring.witnessed.rotationSeq,
     [rotation.input],
     context,
+    priorLanes(ring.witnessed.rotationSeq),
   );
   const store = new MemoryKeyWrapStore();
   const transport = scalarSea(4);
@@ -847,6 +1017,19 @@ test("a rotated delivery needs its chain and a stale seq wins", () => {
   );
   assert.equal(
     messageSync(() => delivery.openDeliveredKeyring(scalarHex(4), wrap, keyring.principal, 2, [rotation.input], context)),
+    "recovery-stale",
+  );
+  assert.equal(
+    messageSync(() =>
+      delivery.openDeliveredKeyring(
+        scalarHex(4),
+        wrap,
+        keyring.principal,
+        2,
+        [{ kind: "nope", seq: 0 }, rotation.input],
+        context,
+      ),
+    ),
     "recovery-stale",
   );
   const zero = { ...wrap, signature: "00".repeat(64) };

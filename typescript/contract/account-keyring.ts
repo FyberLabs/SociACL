@@ -104,6 +104,7 @@ export class AccountKeyring {
       throw new Error("content-epoch");
     }
     requireLaneSet(laneId, priorLanes);
+    if (priorLanes.length !== rotationSeq) throw new Error("bad-lane");
     this.principal = principal;
     this.genesisEpub = genesisEpub;
     this.pub = currentPub;

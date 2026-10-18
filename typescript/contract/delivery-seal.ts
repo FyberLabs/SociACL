@@ -22,6 +22,7 @@ import type { AccountKeyring } from "./account-keyring.ts";
 import { AccountKeyring as Keyring } from "./account-keyring.ts";
 import { decodeKeyring, encodeKeyring } from "./keyring-codec.ts";
 import { DELIVERY_BLOB_MAX, KEYRING_SERIAL_MAX } from "./keyring-limits.ts";
+import { signStoreWrite, wrapCiphertextHash } from "./store-write.ts";
 
 const DOMAIN_DELIVERY_BIND = "sociacl-keyring-delivery-v1";
 const DOMAIN_DELIVERY_SIG = "sociacl-keyring-delivery-sig-v1";
@@ -68,7 +69,14 @@ export function deliverKeyringWith(
       ciphertextHex: bytesToHex(blob),
       signature,
     };
-    store.put({ principal: wrap.principal, wrapId: wrap.wrapId, epub: wrap.epub }, wrap);
+    const storeSignature = signStoreWrite(
+      keyring.currentPriv(),
+      wrap.principal,
+      "put",
+      wrap.wrapId,
+      wrapCiphertextHash(wrap.ciphertextHex),
+    );
+    store.put({ principal: wrap.principal, wrapId: wrap.wrapId, epub: wrap.epub }, wrap, storeSignature, rotations, context);
     return wrap;
   } finally {
     plain.fill(0);
@@ -141,6 +149,8 @@ export function openDeliveredKeyring(
           fields.rotationSeq < expectedRotationSeq &&
           signatureAtSeq(expected, rotations, context, fields.rotationSeq, message, wrap.signature)
         ) {
+          // recovery-stale is not proof the delivery is authentic. A signature
+          // under a key the rotation was meant to cut off still lands here.
           throw new Error("recovery-stale");
         }
         throw new Error("wrap-rejected");
@@ -190,7 +200,7 @@ function signatureOk(signature: string, message: Uint8Array, seaPub: string): bo
   }
 }
 
-/** Signing key valid at `seq`: the prefix `rotations.slice(0, seq)`. A resolution failure is not a choosable error. */
+/** Signing key valid at `seq`: rotation records whose own `seq` is at most that value. Array position is not a sequence. A resolution failure is not a choosable error. */
 function signatureAtSeq(
   expected: PrincipalId,
   rotations: readonly unknown[],
@@ -200,11 +210,19 @@ function signatureAtSeq(
   signature: string,
 ): boolean {
   try {
-    const key = currentSigningKey(expected, rotations.slice(0, seq), context);
+    const key = currentSigningKey(expected, rotationsThrough(rotations, seq), context);
     return signatureOk(signature, message, key);
   } catch {
     return false;
   }
+}
+
+function rotationsThrough(rotations: readonly unknown[], seq: number): unknown[] {
+  return rotations.filter((row) => {
+    if (typeof row !== "object" || row === null) return false;
+    const record = row as { kind?: unknown; seq?: unknown };
+    return record.kind === "rotate" && typeof record.seq === "number" && Number.isSafeInteger(record.seq) && record.seq <= seq;
+  });
 }
 
 function trailingRotationSeq(bytes: Uint8Array): number | undefined {

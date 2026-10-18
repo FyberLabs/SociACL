@@ -8,7 +8,7 @@
  */
 import { createCipheriv, createDecipheriv } from "node:crypto";
 import { argon2id } from "hash-wasm";
-import { parsePrincipalId, type PrincipalId, type ResolutionContext } from "../ids/src/index.js";
+import { parsePrincipalId, resolveCurrentKey, type PrincipalId, type ResolutionContext } from "../ids/src/index.js";
 import { AccountKeyring } from "./account-keyring.ts";
 import { bytesToHex } from "./account-key-seal.ts";
 import { canonicalDecimal, lengthPrefixed } from "./canonical.ts";
@@ -22,82 +22,163 @@ import {
   RECOVERY_TAG_LEN,
 } from "./keyring-limits.ts";
 import { assigned, passphraseWhitespace } from "./unicode16.ts";
+import { recoveryEnvelopeHash, signStoreWrite, verifyStoreWrite } from "./store-write.ts";
 
 export const DOMAIN_RECOVERY = "sociacl-recovery-copy-v1";
 
 export type RecoveryEnvelope = {
   readonly principal: PrincipalId;
   readonly rotationSeq: number;
+  readonly signingPub: PrincipalId;
+  readonly epub: PrincipalId;
   readonly bytes: Uint8Array;
 };
 
 /** Ciphertext adapter. Not an authority, and not Gun.
  *
- * `put` refuses a rotationSeq below the stored copy. An equal sequence
- * replaces that row. A higher sequence is held beside the current copy
- * until `promote` runs. Adapters, Panopticon included, replace a row
- * atomically and only forward: write the new row, then drop the old one.
- * There is never a window with zero copies.
+ * Every put, commit, and delete carries a signature by the account's current
+ * chain-head key. Implementations must verify it against the resolved
+ * published chain before they write. Session authentication is not this
+ * check. Panopticon is a verifier and a witness, never the authority.
+ *
+ * A put at the resolved head replaces the current copy and drops any pending
+ * copy. A put at head + 1 is the only pending copy. Any other sequence is
+ * `store-rejected`.
  */
 export interface RecoveryCopyStore {
   readonly isAuthority: false;
   readonly seesPlaintext: false;
   readonly seesPassphrase: false;
-  put(envelope: RecoveryEnvelope): void;
+  put(envelope: RecoveryEnvelope, signature: string, rotations: readonly unknown[], context: ResolutionContext): void;
   get(principal: PrincipalId, rotationSeq: number): RecoveryEnvelope | undefined;
-  /** Move the pending copy onto the current copy when its sequence is `verifiedSeq`. */
-  promote(principal: PrincipalId, verifiedSeq: number): void;
+  pending(principal: PrincipalId): RecoveryEnvelope | undefined;
+  commit(principal: PrincipalId, signature: string, rotations: readonly unknown[], context: ResolutionContext): void;
+  delete(principal: PrincipalId, rotationSeq: number, signature: string, rotations: readonly unknown[], context: ResolutionContext): void;
 }
 
-type RecoverySlot = { current: RecoveryEnvelope; pending?: RecoveryEnvelope };
+type RecoverySlot = { current?: RecoveryEnvelope; pending?: RecoveryEnvelope };
 
 export class MemoryRecoveryStore implements RecoveryCopyStore {
   readonly isAuthority = false as const;
   readonly seesPlaintext = false as const;
   readonly seesPassphrase = false as const;
-  /** Current copy per principal, plus at most one newer pending copy. */
+  /** Current copy per principal, plus at most one pending copy at head + 1. */
   readonly #slots = new Map<string, RecoverySlot>();
 
-  put(envelope: RecoveryEnvelope): void {
+  put(envelope: RecoveryEnvelope, signature: string, rotations: readonly unknown[], context: ResolutionContext): void {
     if (envelope.bytes.length === 0 || envelope.bytes.length > RECOVERY_ABSOLUTE_MAX) throw new Error("store-rejected");
     if (headerRotationSeq(envelope.bytes) !== envelope.rotationSeq) throw new Error("store-rejected");
-    const copy = copyEnvelope(envelope);
+    const account = verifyStoreWrite(
+      envelope.principal,
+      "put",
+      canonicalDecimal(envelope.rotationSeq),
+      recoveryEnvelopeHash(envelope),
+      signature,
+      rotations,
+      context,
+    );
+    const head = account.rotations.length;
     const slot = this.#slots.get(envelope.principal);
-    if (!slot) {
+    if (slot?.current && slot.current.rotationSeq > head) throw new Error("store-rejected");
+    const copy = copyEnvelope(envelope);
+    if (copy.rotationSeq === head) {
+      if (copy.signingPub !== account.currentKey || (account.currentEpub !== null && copy.epub !== account.currentEpub)) {
+        throw new Error("store-rejected");
+      }
       this.#slots.set(envelope.principal, { current: copy });
       return;
     }
-    if (copy.rotationSeq < slot.current.rotationSeq) throw new Error("store-rejected");
-    if (copy.rotationSeq === slot.current.rotationSeq) {
-      slot.current = copy;
+    if (copy.rotationSeq === head + 1) {
+      this.#slots.set(envelope.principal, { current: slot?.current, pending: copy });
       return;
     }
-    if (slot.pending && copy.rotationSeq < slot.pending.rotationSeq) throw new Error("store-rejected");
-    if (slot.pending && copy.rotationSeq === slot.pending.rotationSeq) {
-      slot.pending = copy;
-      return;
-    }
-    slot.pending = copy;
+    throw new Error("store-rejected");
   }
 
   get(principal: PrincipalId, rotationSeq: number): RecoveryEnvelope | undefined {
     const slot = this.#slots.get(principal);
     if (!slot) return undefined;
-    if (slot.current.rotationSeq === rotationSeq) return copyEnvelope(slot.current);
-    if (slot.pending && slot.pending.rotationSeq === rotationSeq) return copyEnvelope(slot.pending);
+    if (slot.current?.rotationSeq === rotationSeq) return copyEnvelope(slot.current);
+    if (slot.pending?.rotationSeq === rotationSeq) return copyEnvelope(slot.pending);
     return undefined;
   }
 
-  promote(principal: PrincipalId, verifiedSeq: number): void {
+  pending(principal: PrincipalId): RecoveryEnvelope | undefined {
+    const pending = this.#slots.get(principal)?.pending;
+    return pending ? copyEnvelope(pending) : undefined;
+  }
+
+  commit(principal: PrincipalId, signature: string, rotations: readonly unknown[], context: ResolutionContext): void {
     const slot = this.#slots.get(principal);
-    if (!slot?.pending || slot.pending.rotationSeq !== verifiedSeq) throw new Error("store-rejected");
-    slot.current = slot.pending;
+    const pending = slot?.pending;
+    if (!slot || !pending) throw new Error("store-rejected");
+    const resolved = resolveCurrentKey(principal, rotations, context);
+    if (!resolved.ok) throw new Error("store-rejected");
+    const head = resolved.value.rotations.length;
+    const account = verifyStoreWrite(
+      principal,
+      "commit",
+      canonicalDecimal(head),
+      recoveryEnvelopeHash(pending),
+      signature,
+      rotations,
+      context,
+    );
+    if (pending.rotationSeq === head) {
+      if (account.currentEpub === null) throw new Error("store-rejected");
+      if (pending.signingPub === account.currentKey && pending.epub === account.currentEpub) {
+        slot.current = pending;
+        slot.pending = undefined;
+        return;
+      }
+      slot.pending = undefined;
+      if (!slot.current) this.#slots.delete(principal);
+      throw new Error("store-rejected");
+    }
+    if (pending.rotationSeq === head + 1) throw new Error("store-rejected");
     slot.pending = undefined;
+    if (!slot.current) this.#slots.delete(principal);
+    throw new Error("store-rejected");
+  }
+
+  delete(
+    principal: PrincipalId,
+    rotationSeq: number,
+    signature: string,
+    rotations: readonly unknown[],
+    context: ResolutionContext,
+  ): void {
+    const slot = this.#slots.get(principal);
+    const stored =
+      slot?.current?.rotationSeq === rotationSeq
+        ? slot.current
+        : slot?.pending?.rotationSeq === rotationSeq
+          ? slot.pending
+          : undefined;
+    if (!slot || !stored) throw new Error("store-rejected");
+    verifyStoreWrite(
+      principal,
+      "delete",
+      canonicalDecimal(rotationSeq),
+      recoveryEnvelopeHash(stored),
+      signature,
+      rotations,
+      context,
+    );
+    if (slot.current?.rotationSeq === rotationSeq) slot.current = undefined;
+    if (slot.pending?.rotationSeq === rotationSeq) slot.pending = undefined;
+    if (!slot.current && !slot.pending) this.#slots.delete(principal);
   }
 }
 
 function copyEnvelope(envelope: RecoveryEnvelope): RecoveryEnvelope {
-  return { principal: envelope.principal, rotationSeq: envelope.rotationSeq, bytes: new Uint8Array(envelope.bytes) };
+  return {
+    principal: envelope.principal,
+    rotationSeq: envelope.rotationSeq,
+    signingPub: envelope.signingPub,
+    epub: envelope.epub,
+    bytes: new Uint8Array(envelope.bytes),
+  };
 }
 
 /** NFC, then UTF-8, against Unicode 16.0.0.
@@ -107,8 +188,13 @@ function copyEnvelope(envelope: RecoveryEnvelope): RecoveryEnvelope {
  * not whitespace. Empty and whitespace-only passphrases are `recovery-params`.
  * Leading and trailing whitespace around other characters is preserved.
  * JavaScript strings cannot be wiped. The byte API does not normalize; it
- * applies the same Unicode 16 checks. */
+ * applies the same Unicode 16 checks.
+ *
+ * The runtime must normalize Unicode 16.0.0. A runtime whose NFC is older
+ * than Unicode 16 is `unicode-version` and does not derive a key. The probe
+ * is U+11382 U+113C9, which Unicode 16 composes to U+11383. */
 export function encodePassphrase(passphrase: string): Uint8Array {
+  if ("\u{11382}\u{113C9}".normalize("NFC") !== "\u{11383}") throw new Error("unicode-version");
   if (passphrase.length === 0 || !unicode16Text(passphrase)) throw new Error("recovery-params");
   const nfc = passphrase.normalize("NFC");
   if ([...nfc].every((ch) => passphraseWhitespace(ch.codePointAt(0) ?? -1))) throw new Error("recovery-params");
@@ -142,7 +228,11 @@ export async function sealRecoveryCopyWith(
   salt: Uint8Array,
   nonce: Uint8Array,
   store: RecoveryCopyStore,
+  rotations: readonly unknown[],
+  context: ResolutionContext,
+  signerPriv: string,
 ): Promise<RecoveryEnvelope> {
+  if (keyring.priorLanes().length !== keyring.rotationSeq) throw new Error("bad-lane");
   if (passphraseRejected(passphrase)) throw new Error("recovery-params");
   if (
     salt.length < ARGON2ID_LIMITS.saltLength.floor ||
@@ -166,6 +256,8 @@ export async function sealRecoveryCopyWith(
     const aad = recoveryAad(
       keyring.principal,
       keyring.rotationSeq,
+      keyring.pub,
+      keyring.epub,
       ARGON2ID_LIMITS.memoryKiB.floor,
       ARGON2ID_LIMITS.iterations.floor,
       ARGON2ID_LIMITS.parallelism.floor,
@@ -188,8 +280,21 @@ export async function sealRecoveryCopyWith(
     bytes.set(nonce, header.length);
     bytes.set(ciphertext, header.length + nonce.length);
     if (bytes.length > RECOVERY_ABSOLUTE_MAX) throw new Error("keyring-too-large");
-    const envelope: RecoveryEnvelope = { principal: keyring.principal, rotationSeq: keyring.rotationSeq, bytes };
-    store.put(envelope);
+    const envelope: RecoveryEnvelope = {
+      principal: keyring.principal,
+      rotationSeq: keyring.rotationSeq,
+      signingPub: keyring.pub,
+      epub: keyring.epub,
+      bytes,
+    };
+    const signature = signStoreWrite(
+      signerPriv,
+      envelope.principal,
+      "put",
+      canonicalDecimal(envelope.rotationSeq),
+      recoveryEnvelopeHash(envelope),
+    );
+    store.put(envelope, signature, rotations, context);
     return envelope;
   } finally {
     plain?.fill(0);
@@ -216,6 +321,8 @@ export async function openRecoveryCopy(
     const aad = recoveryAad(
       expected,
       header.rotationSeq,
+      envelope.signingPub,
+      envelope.epub,
       header.memoryKiB,
       header.iterations,
       header.parallelism,
@@ -232,7 +339,9 @@ export async function openRecoveryCopy(
     const fields = decodeKeyring(plain);
     const parsed = parsePrincipalId(fields.principal);
     if (!parsed.ok || parsed.value !== fields.principal || parsed.value !== expected) throw new Error("recovery-rejected");
-    if (fields.rotationSeq !== header.rotationSeq) throw new Error("recovery-rejected");
+    if (fields.rotationSeq !== header.rotationSeq || fields.pub !== envelope.signingPub || fields.epub !== envelope.epub) {
+      throw new Error("recovery-rejected");
+    }
     if (fields.rotationSeq !== expectedRotationSeq) throw new Error("recovery-stale");
     return AccountKeyring.import(
       fields.principal,
@@ -375,6 +484,8 @@ function writeHeader(
 function recoveryAad(
   principal: string,
   rotationSeq: number,
+  signingPub: string,
+  epub: string,
   memoryKiB: number,
   iterations: number,
   parallelism: number,
@@ -384,10 +495,16 @@ function recoveryAad(
 ): Uint8Array {
   const parsed = parsePrincipalId(principal);
   if (!parsed.ok || parsed.value !== principal) throw new Error("recovery-rejected");
+  const signing = parsePrincipalId(signingPub);
+  if (!signing.ok || signing.value !== signingPub) throw new Error("recovery-rejected");
+  const encryption = parsePrincipalId(epub);
+  if (!encryption.ok || encryption.value !== epub) throw new Error("recovery-rejected");
   return lengthPrefixed([
     DOMAIN_RECOVERY,
     parsed.value,
     canonicalDecimal(rotationSeq),
+    signing.value,
+    encryption.value,
     canonicalDecimal(memoryKiB),
     canonicalDecimal(iterations),
     canonicalDecimal(parallelism),

@@ -8,6 +8,7 @@ import { p256 } from "@noble/curves/nist.js";
 import { parseObjectId, resolveCurrentKey, type ObjectId, type PrincipalId, type ResolutionContext } from "../ids/src/index.js";
 import type { EncryptedAccountWrap, GenesisAccount, KeyWrapStore } from "./account-key.ts";
 import { canonicalDecimal, lengthPrefixed } from "./canonical.ts";
+import { signStoreWrite, wrapCiphertextHash } from "./store-write.ts";
 
 const DOMAIN_ACCOUNT_WRAP = "sociacl-account-key-wrap-v1";
 const DOMAIN_ACCOUNT_BIND = "sociacl-account-key-bind-v1";
@@ -86,7 +87,20 @@ export function encryptAccountBackup(
     ciphertextHex,
     signature,
   };
-  store.put({ principal: wrap.principal, wrapId: wrap.wrapId, epub: wrap.epub }, wrap);
+  const storeSignature = signStoreWrite(
+    account.priv,
+    wrap.principal,
+    "put",
+    wrap.wrapId,
+    wrapCiphertextHash(wrap.ciphertextHex),
+  );
+  store.put(
+    { principal: wrap.principal, wrapId: wrap.wrapId, epub: wrap.epub },
+    wrap,
+    storeSignature,
+    rotations,
+    context,
+  );
   return wrap;
 }
 

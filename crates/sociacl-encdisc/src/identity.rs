@@ -30,6 +30,7 @@ use crate::canonical;
 use crate::error::EncDiscError;
 use crate::hexutil::{self, encode_hex, encode_secret_hex};
 use crate::sea::{self, ecdh_secret, ecdh_x, uncompressed_point};
+use crate::store_write::{sign_store_write, verify_store_write, wrap_ciphertext_hash};
 use crate::wrap::{self, ItemDek, NamedSet, WrappedKey};
 
 const DOMAIN_ACCOUNT_WRAP: &str = "sociacl-account-key-wrap-v1";
@@ -69,6 +70,9 @@ pub struct WrapIndex {
 }
 
 /// Which seal produced a wrap. A wrap id stays in the class that first stored it.
+///
+/// `class` is a store-only label. The wrap blob signature and the store-write
+/// signature do not cover it. Openers ignore it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum WrapClass {
     Genesis,
@@ -88,11 +92,31 @@ pub struct EncryptedAccountWrap {
 }
 
 /// Panopticon index and wrap store. Not an authority.
+///
+/// Every put and delete carries a signature by the account's current
+/// chain-head key over [`crate::DOMAIN_STORE_WRITE`], in addition to the
+/// wrap's own blob signature. Implementations must verify the store-write
+/// signature against the resolved published chain before they write.
+/// Session authentication is not this check. Panopticon is a verifier and
+/// a witness. It is never the authority.
 pub trait KeyWrapStore {
     fn put_wrap(
         &mut self,
         index: &WrapIndex,
         wrap: &EncryptedAccountWrap,
+        store_signature: &str,
+        rotations: &[serde_json::Value],
+        context: &sociacl_ids::ResolutionContext<'_>,
+    ) -> Result<(), EncDiscError>;
+
+    /// Delete a delivery row. The genesis backup can be replaced, never deleted.
+    fn delete_wrap(
+        &mut self,
+        principal: &PrincipalId,
+        wrap_id: &ObjectId,
+        store_signature: &str,
+        rotations: &[serde_json::Value],
+        context: &sociacl_ids::ResolutionContext<'_>,
     ) -> Result<(), EncDiscError>;
 
     fn get_wrap(
@@ -125,7 +149,8 @@ pub trait KeyWrapStore {
 /// rows. Replacing an existing id does not count as a new row.
 ///
 /// Adapters, Panopticon included, replace a row in place. They do not
-/// delete it and insert the replacement as two steps.
+/// delete it and insert the replacement as two steps. They verify the
+/// store-write signature before either write. A genesis row is never deleted.
 #[derive(Clone, Debug, Default)]
 pub struct MemoryKeyWrapStore {
     by_principal: BTreeMap<String, BTreeMap<String, EncryptedAccountWrap>>,
@@ -405,6 +430,9 @@ impl KeyWrapStore for MemoryKeyWrapStore {
         &mut self,
         index: &WrapIndex,
         wrap: &EncryptedAccountWrap,
+        store_signature: &str,
+        rotations: &[serde_json::Value],
+        context: &sociacl_ids::ResolutionContext<'_>,
     ) -> Result<(), EncDiscError> {
         if index.principal != wrap.principal
             || index.wrap_id != wrap.wrap_id
@@ -418,6 +446,16 @@ impl KeyWrapStore for MemoryKeyWrapStore {
         {
             return Err(EncDiscError::StoreRejected);
         }
+        let hash = wrap_ciphertext_hash(&wrap.ciphertext_hex)?;
+        verify_store_write(
+            &wrap.principal,
+            "put",
+            wrap.wrap_id.as_ref(),
+            &hash,
+            store_signature,
+            rotations,
+            context,
+        )?;
         let rows = self
             .by_principal
             .entry(wrap.principal.as_ref().to_string())
@@ -430,6 +468,44 @@ impl KeyWrapStore for MemoryKeyWrapStore {
             return Err(EncDiscError::StoreRejected);
         }
         rows.insert(wrap.wrap_id.as_ref().to_string(), wrap.clone());
+        Ok(())
+    }
+
+    fn delete_wrap(
+        &mut self,
+        principal: &PrincipalId,
+        wrap_id: &ObjectId,
+        store_signature: &str,
+        rotations: &[serde_json::Value],
+        context: &sociacl_ids::ResolutionContext<'_>,
+    ) -> Result<(), EncDiscError> {
+        let row = self
+            .by_principal
+            .get(principal.as_ref())
+            .and_then(|rows| rows.get(wrap_id.as_ref()))
+            .cloned()
+            .ok_or(EncDiscError::StoreRejected)?;
+        let hash = wrap_ciphertext_hash(&row.ciphertext_hex)?;
+        verify_store_write(
+            principal,
+            "delete",
+            wrap_id.as_ref(),
+            &hash,
+            store_signature,
+            rotations,
+            context,
+        )?;
+        if row.class == WrapClass::Genesis {
+            return Err(EncDiscError::StoreRejected);
+        }
+        let rows = self
+            .by_principal
+            .get_mut(principal.as_ref())
+            .ok_or(EncDiscError::StoreRejected)?;
+        rows.remove(wrap_id.as_ref());
+        if rows.is_empty() {
+            self.by_principal.remove(principal.as_ref());
+        }
         Ok(())
     }
 
@@ -599,8 +675,37 @@ fn seal_account_backup_with(
         wrap_id: wrap.wrap_id.clone(),
         epub: wrap.epub.clone(),
     };
-    store.put_wrap(&index, &wrap)?;
+    let hash = wrap_ciphertext_hash(&wrap.ciphertext_hex)?;
+    let store_signature = sign_store_write(
+        account.local_priv(),
+        &wrap.principal,
+        "put",
+        wrap.wrap_id.as_ref(),
+        &hash,
+    )?;
+    store.put_wrap(&index, &wrap, &store_signature, rotations, context)?;
     Ok(wrap)
+}
+
+/// Delete a delivery row. The genesis backup can only be replaced.
+///
+/// `signer_priv` is the current chain-head key. The signature covers the
+/// stored ciphertext. A missing row and a genesis row are
+/// [`EncDiscError::StoreRejected`]. The genesis row stays.
+pub fn delete_account_wrap(
+    principal: &PrincipalId,
+    wrap_id: &ObjectId,
+    signer_priv: &str,
+    rotations: &[serde_json::Value],
+    context: &sociacl_ids::ResolutionContext<'_>,
+    store: &mut impl KeyWrapStore,
+) -> Result<(), EncDiscError> {
+    let row = store
+        .get_wrap(principal, wrap_id)?
+        .ok_or(EncDiscError::StoreRejected)?;
+    let hash = wrap_ciphertext_hash(&row.ciphertext_hex)?;
+    let signature = sign_store_write(signer_priv, principal, "delete", wrap_id.as_ref(), &hash)?;
+    store.delete_wrap(principal, wrap_id, &signature, rotations, context)
 }
 
 /// Open a wrap for `expected`. A store row that names some other account is rejected.
@@ -1275,6 +1380,15 @@ mod tests {
             open_account_backup(&transport, &huge, attacker.principal(), &[], &context).is_err()
         );
         // The adapter accepts a keyring-sized wrap. Genesis open still stops at 8192.
+        let huge_hash = wrap_ciphertext_hash(&huge.ciphertext_hex).unwrap();
+        let huge_sig = sign_store_write(
+            attacker.local_priv(),
+            &huge.principal,
+            "put",
+            huge.wrap_id.as_ref(),
+            &huge_hash,
+        )
+        .unwrap();
         assert!(store
             .put_wrap(
                 &WrapIndex {
@@ -1283,6 +1397,9 @@ mod tests {
                     epub: huge.epub.clone(),
                 },
                 &huge,
+                &huge_sig,
+                &[],
+                &context,
             )
             .is_ok());
         let mut over = wrap.clone();
@@ -1295,6 +1412,9 @@ mod tests {
                     epub: over.epub.clone(),
                 },
                 &over,
+                "",
+                &[],
+                &context,
             )
             .is_err());
     }

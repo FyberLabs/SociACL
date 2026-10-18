@@ -77,7 +77,13 @@ const vector = JSON.parse(readFileSync(new URL("../../vectors/encrypted-discover
     revisionId: string;
   };
   crossWrap: { ephemeralScalar: number; nonceByte: number; epoch: number; wrappedKey: string };
+  importPriorLanes: { rule: string; rotationSeq: number; priorLane: string; missingError: string };
 };
+
+function priorLanes(count: number): string[] {
+  const extras = ["11", "22", "33", "44"].map((byte) => byte.repeat(32));
+  return [vector.importPriorLanes.priorLane, ...extras].slice(0, count);
+}
 
 const accountKey = JSON.parse(readFileSync(new URL("../../vectors/encrypted-discovery/account-key.json", import.meta.url), "utf8")) as {
   contentWrap: { dekHex: string; epoch: number; objectId: string; revisionId: string; wrappedKey: string; ephemeralScalarHex: string; nonceHex: string };
@@ -353,6 +359,24 @@ test("null currentEpub refuses the seal and ignores gun", () => {
       [],
       context,
     )),
+    vector.importPriorLanes.missingError,
+  );
+  assert.equal(
+    message(() => AccountKeyring.import(
+      vector.genesis.principal,
+      vector.genesis.epub,
+      vector.mint.signingPub,
+      vector.mint.signingPriv,
+      vector.mint.epub,
+      vector.mint.epriv,
+      [{ epub: vector.genesis.epub, epriv: vector.genesis.epriv }],
+      vector.mint.laneId,
+      1,
+      vector.importPriorLanes.rotationSeq,
+      [],
+      context,
+      priorLanes(vector.importPriorLanes.rotationSeq),
+    )),
     vector.errors.pubMismatch,
   );
 });
@@ -384,6 +408,7 @@ test("witnessed import seals only the resolved epub", () => {
     vector.witnessed.rotationSeq,
     [rotation.input],
     context,
+    priorLanes(vector.witnessed.rotationSeq),
   );
   assert.equal(imported.principal, genesisPair.pub);
   assert.equal(imported.genesisEpub, genesisEpub.pub);
@@ -430,6 +455,7 @@ test("witnessed import seals only the resolved epub", () => {
       vector.witnessed.rotationSeq,
       [],
       context,
+      priorLanes(vector.witnessed.rotationSeq),
     )),
     vector.errors.pubMismatch,
   );
@@ -447,6 +473,7 @@ test("witnessed import seals only the resolved epub", () => {
       vector.witnessed.rotationSeq,
       [rotation.input],
       context,
+      priorLanes(vector.witnessed.rotationSeq),
     )),
     vector.errors.epubMismatch,
   );
@@ -480,6 +507,7 @@ test("witnessed import seals only the resolved epub", () => {
     vector.witnessed.rotationSeq,
     [rotation.input],
     recordsContext([{ kind: "nope" }]),
+    priorLanes(vector.witnessed.rotationSeq),
   );
   assert.equal(ignored.epub, epub.pub);
   assert.equal(
@@ -496,6 +524,7 @@ test("witnessed import seals only the resolved epub", () => {
       vector.witnessed.rotationSeq,
       [rotation.input],
       context,
+      priorLanes(vector.witnessed.rotationSeq),
     )),
     vector.errors.contentEpoch,
   );
@@ -620,6 +649,7 @@ test("builder refuses an older signing key", () => {
     2,
     chain.input,
     context,
+    priorLanes(2),
   );
   assert.equal(
     message(() => rotateKeyring(imported, vector.trusted, vector.lost, chain.input, context, () => ({
@@ -756,6 +786,7 @@ test("typescript seal opens and matches the shared rust wrap", () => {
     vector.witnessed.rotationSeq,
     [row.input],
     context,
+    priorLanes(vector.witnessed.rotationSeq),
   );
   const ephemeral = new Uint8Array(32);
   ephemeral[31] = vector.crossWrap.ephemeralScalar;

@@ -45,6 +45,12 @@
     "draftDocument": "{\"v\":1,\"kind\":\"rotate\",\"principal\":\"YP7UuiVanTHJYet0xjVtaMBJuJI7Yfps5mliLmDyn7Y.eQP-EAi4vJmkGunpVii8ZPLxsgwtfp9Rd6PClNRGIpk\",\"seq\":1,\"prevKey\":\"YP7UuiVanTHJYet0xjVtaMBJuJI7Yfps5mliLmDyn7Y.eQP-EAi4vJmkGunpVii8ZPLxsgwtfp9Rd6PClNRGIpk\",\"nextKey\":\"UVkLelFRQNLXhMhWCGaP3--Mgv0fW-UkIVVKDcPQM-0.4MF9qJBKcn2K4b82v4p5Jg0BLwDU2AiI0dC7RP2hbaQ\",\"nextEpub\":\"sBoXKnakYCyS0yQsuJfd4wJMdA3rshW0xrCq6Twikak.6FwQdDI32tVv7A4t-6cDeRwA93Acfha9_XxIU4_Hf-I\"}"
   },
   "wallet": "0x1efF47bc3a10a45D4B230B5d10E37751FE6AA718",
+  "importPriorLanes": {
+    "rule": "priorLanes.length == rotationSeq",
+    "rotationSeq": 1,
+    "priorLane": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "missingError": "bad-lane"
+  },
   "errors": {
     "epubUnknown": "epub-unknown",
     "epubReuse": "epub-reuse",

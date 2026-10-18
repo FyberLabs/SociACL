@@ -32,6 +32,7 @@ import {
   type SiwePolicy,
 } from "../ids/src/index.js";
 import { DELIVERY_BLOB_MAX, MAX_WRAPS_PER_PRINCIPAL } from "./keyring-limits.ts";
+import { signStoreWrite, verifyStoreWrite, wrapCiphertextHash } from "./store-write.ts";
 import {
   MAX_BACKUP_HEX,
   backupAad,
@@ -77,7 +78,9 @@ export type WrapIndex = {
   readonly epub: string;
 };
 
-/** Which seal produced a wrap. A wrap id stays in the class that first stored it. */
+/** Which seal produced a wrap. A wrap id stays in the class that first stored it.
+ * `class` is a store-only label. The wrap signature and the store-write
+ * signature do not cover it. Openers ignore it. */
 export type WrapClass = "genesis" | "delivery";
 
 export type EncryptedAccountWrap = WrapIndex & {
@@ -90,12 +93,29 @@ export type EncryptedAccountWrap = WrapIndex & {
  * Rows are keyed by `(principal, wrapId)`. The genesis backup and device
  * deliveries share the store. A delivery cannot replace the genesis backup's
  * wrap id. A principal holds at most `MAX_WRAPS_PER_PRINCIPAL` rows.
- * Replacing an existing id does not count as a new row. Adapters, Panopticon
- * included, replace a row in place. */
+ * Replacing an existing id does not count as a new row. Every put and delete
+ * carries a store-write signature by the current chain-head key. Adapters,
+ * Panopticon included, must verify that signature before they write. Session
+ * authentication is not this check. Panopticon is a verifier and a witness,
+ * never the authority. The genesis backup can be replaced, never deleted. */
 export interface KeyWrapStore {
   readonly isAuthority: false;
   readonly mintsGrant: false;
-  put(index: WrapIndex, wrap: EncryptedAccountWrap): void;
+  put(
+    index: WrapIndex,
+    wrap: EncryptedAccountWrap,
+    storeSignature: string,
+    rotations: readonly unknown[],
+    context: ResolutionContext,
+  ): void;
+  /** Delete a delivery row. A genesis row is `store-rejected` and stays. */
+  delete(
+    principal: PrincipalId,
+    wrapId: ObjectId,
+    storeSignature: string,
+    rotations: readonly unknown[],
+    context: ResolutionContext,
+  ): void;
   get(principal: PrincipalId, wrapId: ObjectId): EncryptedAccountWrap | undefined;
   list(principal: PrincipalId): EncryptedAccountWrap[];
 }
@@ -105,7 +125,13 @@ export class MemoryKeyWrapStore implements KeyWrapStore {
   readonly mintsGrant = false as const;
   readonly #wraps = new Map<string, Map<string, EncryptedAccountWrap>>();
 
-  put(index: WrapIndex, wrap: EncryptedAccountWrap): void {
+  put(
+    index: WrapIndex,
+    wrap: EncryptedAccountWrap,
+    storeSignature: string,
+    rotations: readonly unknown[],
+    context: ResolutionContext,
+  ): void {
     // Genesis seal and open stay at MAX_BACKUP_HEX. A delivered keyring may
     // use the full DELIVERY_BLOB_MAX, so the adapter accepts that.
     if (wrap.ciphertextHex.length > DELIVERY_BLOB_MAX * 2 || wrap.signature.length !== 128) {
@@ -122,6 +148,8 @@ export class MemoryKeyWrapStore implements KeyWrapStore {
     ) {
       throw new Error("store-rejected");
     }
+    const hash = wrapCiphertextHash(wrap.ciphertextHex);
+    verifyStoreWrite(wrap.principal, "put", wrap.wrapId, hash, storeSignature, rotations, context);
     const rows = this.#wraps.get(index.principal) ?? new Map<string, EncryptedAccountWrap>();
     const existing = rows.get(index.wrapId);
     if (existing) {
@@ -129,17 +157,45 @@ export class MemoryKeyWrapStore implements KeyWrapStore {
     } else if (rows.size >= MAX_WRAPS_PER_PRINCIPAL) {
       throw new Error("store-rejected");
     }
-    rows.set(index.wrapId, wrap);
+    rows.set(index.wrapId, copyWrap(wrap));
     this.#wraps.set(index.principal, rows);
   }
 
+  delete(
+    principal: PrincipalId,
+    wrapId: ObjectId,
+    storeSignature: string,
+    rotations: readonly unknown[],
+    context: ResolutionContext,
+  ): void {
+    const row = this.#wraps.get(principal)?.get(wrapId);
+    if (!row) throw new Error("store-rejected");
+    verifyStoreWrite(principal, "delete", wrapId, wrapCiphertextHash(row.ciphertextHex), storeSignature, rotations, context);
+    if (row.class === "genesis") throw new Error("store-rejected");
+    const rows = this.#wraps.get(principal);
+    rows?.delete(wrapId);
+    if (rows && rows.size === 0) this.#wraps.delete(principal);
+  }
+
   get(principal: PrincipalId, wrapId: ObjectId): EncryptedAccountWrap | undefined {
-    return this.#wraps.get(principal)?.get(wrapId);
+    const row = this.#wraps.get(principal)?.get(wrapId);
+    return row ? copyWrap(row) : undefined;
   }
 
   list(principal: PrincipalId): EncryptedAccountWrap[] {
-    return [...(this.#wraps.get(principal)?.values() ?? [])];
+    return [...(this.#wraps.get(principal)?.values() ?? [])].map(copyWrap);
   }
+}
+
+function copyWrap(wrap: EncryptedAccountWrap): EncryptedAccountWrap {
+  return {
+    principal: wrap.principal,
+    wrapId: wrap.wrapId,
+    epub: wrap.epub,
+    class: wrap.class,
+    ciphertextHex: wrap.ciphertextHex,
+    signature: wrap.signature,
+  };
 }
 
 const linkedBrand = Symbol("verified-link");
@@ -267,6 +323,21 @@ export function parseWrapObject(text: string): ObjectId {
  * Seal to `transportPub`. Randomness stays inside this function.
  * `rotations` and `context` are the trusted latest-state checkpoint (sociacl-ids §4.6).
  */
+/** Delete a delivery row. The genesis backup can only be replaced. */
+export function deleteAccountWrap(
+  principal: PrincipalId,
+  wrapId: ObjectId,
+  signerPriv: string,
+  store: KeyWrapStore,
+  rotations: readonly unknown[],
+  context: ResolutionContext,
+): void {
+  const row = store.get(principal, wrapId);
+  if (!row) throw new Error("store-rejected");
+  const signature = signStoreWrite(signerPriv, principal, "delete", wrapId, wrapCiphertextHash(row.ciphertextHex));
+  store.delete(principal, wrapId, signature, rotations, context);
+}
+
 export function sealAccountBackup(
   account: GenesisAccount,
   transportPub: string,

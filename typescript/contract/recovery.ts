@@ -19,6 +19,8 @@ import {
   type RecoveryCopyStore,
   type RecoveryEnvelope,
 } from "./recovery-seal.ts";
+import { recoveryEnvelopeHash, signStoreWrite } from "./store-write.ts";
+import { canonicalDecimal } from "./canonical.ts";
 import { resolveCurrentKey, type PrincipalId, type ResolutionContext } from "../ids/src/index.js";
 
 export { ARGON2ID_LIMITS, KEYRING_SERIAL_MAX, DELIVERY_BLOB_MAX, RECOVERY_ABSOLUTE_MAX, RECOVERY_ENVELOPE_MAX } from "./keyring-limits.ts";
@@ -29,13 +31,15 @@ export async function sealRecoveryCopy(
   keyring: AccountKeyring,
   passphrase: Uint8Array,
   store: RecoveryCopyStore,
+  rotations: readonly unknown[],
+  context: ResolutionContext,
 ): Promise<RecoveryEnvelope> {
   const salt = new Uint8Array(ARGON2ID_LIMITS.saltLength.floor);
   const nonce = new Uint8Array(12);
   crypto.getRandomValues(salt);
   crypto.getRandomValues(nonce);
   try {
-    return await sealRecoveryCopyWith(keyring, passphrase, salt, nonce, store);
+    return await sealRecoveryCopyWith(keyring, passphrase, salt, nonce, store, rotations, context, keyring.currentPriv());
   } finally {
     salt.fill(0);
     nonce.fill(0);
@@ -47,10 +51,12 @@ export async function sealRecoveryCopyFromString(
   keyring: AccountKeyring,
   passphrase: string,
   store: RecoveryCopyStore,
+  rotations: readonly unknown[],
+  context: ResolutionContext,
 ): Promise<RecoveryEnvelope> {
   const bytes = encodePassphrase(passphrase);
   try {
-    return await sealRecoveryCopy(keyring, bytes, store);
+    return await sealRecoveryCopy(keyring, bytes, store, rotations, context);
   } finally {
     bytes.fill(0);
   }
@@ -73,22 +79,58 @@ export async function openRecoveryCopyFromString(
   }
 }
 
-/** Promote the pending copy after the trusted chain includes that rotation.
- * A chain that does not resolve, or a verified sequence that is not the
- * pending copy, is `store-rejected`. Both copies stay. */
+/** Promote the pending copy when its sequence and public keys equal the resolved chain head.
+ *
+ * `signerPriv` is the current chain-head key. Commit must be given the chain
+ * read back from the published source. An unsigned draft does not resolve.
+ * A signed rotation that is not on that chain is not promoted: a pending copy
+ * at head + 1 stays. A pending copy whose public keys differ is dropped, and
+ * so is a pending copy at neither head nor head + 1. The current copy stays.
+ */
 export function commitRecoveryCopy(
   principal: PrincipalId,
+  signerPriv: string,
   rotations: readonly unknown[],
   context: ResolutionContext,
   store: RecoveryCopyStore,
 ): void {
+  const pending = store.pending(principal);
+  if (!pending) throw new Error("store-rejected");
   const resolved = resolveCurrentKey(principal, rotations, context);
   if (!resolved.ok) throw new Error("store-rejected");
-  store.promote(principal, resolved.value.rotations.length);
+  const signature = signStoreWrite(
+    signerPriv,
+    principal,
+    "commit",
+    canonicalDecimal(resolved.value.rotations.length),
+    recoveryEnvelopeHash(pending),
+  );
+  store.commit(principal, signature, rotations, context);
+}
+
+/** Delete the current or pending copy at `rotationSeq`. Does not promote. */
+export function deleteRecoveryCopy(
+  principal: PrincipalId,
+  rotationSeq: number,
+  signerPriv: string,
+  rotations: readonly unknown[],
+  context: ResolutionContext,
+  store: RecoveryCopyStore,
+): void {
+  const envelope = store.get(principal, rotationSeq);
+  if (!envelope) throw new Error("store-rejected");
+  const signature = signStoreWrite(
+    signerPriv,
+    principal,
+    "delete",
+    canonicalDecimal(rotationSeq),
+    recoveryEnvelopeHash(envelope),
+  );
+  store.delete(principal, rotationSeq, signature, rotations, context);
 }
 
 /** Rotate, then seal a pending recovery copy of the new keyring version.
- * The current copy stays until `commitRecoveryCopy` sees the rotation. */
+ * The pending put is signed by the key that is still the published chain head. */
 export async function rotateAndReseal(
   keyring: AccountKeyring,
   trusted: readonly string[],
@@ -100,6 +142,24 @@ export async function rotateAndReseal(
   mint: () => RotationMint,
 ): Promise<{ rotation: KeyringRotation; envelope: RecoveryEnvelope }> {
   const rotation = rotateKeyring(keyring, trusted, lost, rotations, context, mint);
-  const envelope = await sealRecoveryCopy(rotation.keyring, passphrase, store);
-  return { rotation, envelope };
+  const salt = new Uint8Array(ARGON2ID_LIMITS.saltLength.floor);
+  const nonce = new Uint8Array(12);
+  crypto.getRandomValues(salt);
+  crypto.getRandomValues(nonce);
+  try {
+    const envelope = await sealRecoveryCopyWith(
+      rotation.keyring,
+      passphrase,
+      salt,
+      nonce,
+      store,
+      rotations,
+      context,
+      keyring.currentPriv(),
+    );
+    return { rotation, envelope };
+  } finally {
+    salt.fill(0);
+    nonce.fill(0);
+  }
 }

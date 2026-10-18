@@ -21,33 +21,65 @@ use zeroize::{Zeroize, Zeroizing};
 
 use crate::canonical::{self, JS_SAFE_INTEGER_MAX};
 use crate::error::EncDiscError;
-use crate::hexutil::{self, encode_hex};
+use crate::hexutil::encode_hex;
 use crate::keyring::{rotate_keyring, AccountKeyring, KeyringRotation, RotationMint};
 use crate::limits::{
-    in_bound, ARGON2ID_LIMITS, KEYRING_SERIAL_MAX, RECOVERY_ABSOLUTE_MAX, RECOVERY_ENVELOPE_MAX,
-    RECOVERY_HEADER_LEN, RECOVERY_NONCE_LEN, RECOVERY_TAG_LEN,
+    in_bound, ARGON2ID_LIMITS, KEYRING_SERIAL_MAX, RECOVERY_ABSOLUTE_MAX, RECOVERY_HEADER_LEN,
+    RECOVERY_NONCE_LEN, RECOVERY_TAG_LEN,
 };
+use crate::store_write::{self, sign_store_write, verify_store_write};
 use unicode_normalization::UnicodeNormalization;
 pub(crate) const DOMAIN_RECOVERY: &str = "sociacl-recovery-copy-v1";
 pub(crate) const DOMAIN_KEYRING_PLAIN: &str = "sociacl-keyring-plain-v1";
 
 /// Ciphertext of one keyring version. The store does not see the passphrase.
+///
+/// `signing_pub` and `epub` are the keyring's current public keys, in the
+/// clear, and are covered by the recovery AAD and by the store-write hash.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RecoveryEnvelope {
     pub principal: PrincipalId,
     pub rotation_seq: u64,
+    pub signing_pub: PrincipalId,
+    pub epub: PrincipalId,
     pub bytes: Vec<u8>,
+}
+
+/// SHA-256 of the length-prefixed principal, decimal sequence, signing pub,
+/// epub, and lowercase hex of the envelope bytes.
+pub fn recovery_envelope_hash(envelope: &RecoveryEnvelope) -> Result<String, EncDiscError> {
+    let seq = canonical::canonical_decimal(envelope.rotation_seq)?;
+    let bytes_hex = encode_hex(&envelope.bytes);
+    canonical::sha256_fields(&[
+        envelope.principal.as_ref(),
+        seq.as_str(),
+        envelope.signing_pub.as_ref(),
+        envelope.epub.as_ref(),
+        bytes_hex.as_str(),
+    ])
 }
 
 /// Ciphertext adapter. Not an authority, and not Gun.
 ///
-/// `put_copy` refuses a `rotation_seq` below the stored copy. An equal
-/// sequence replaces that row. A higher sequence is held beside the current
-/// copy until [`commit_recovery_copy`] promotes it. Adapters, Panopticon
-/// included, replace a row atomically and only forward: write the new row,
-/// then drop the old one. There is never a window with zero copies.
+/// Every `put_copy`, `commit`, and `delete_copy` carries a signature by the
+/// account's current chain-head key over [`crate::DOMAIN_STORE_WRITE`].
+/// Implementations must verify that signature against the resolved published
+/// chain before they write. Session authentication is not this check.
+/// Panopticon is a verifier and a witness. It is never the authority.
+///
+/// A put at the resolved head replaces the current copy and drops any pending
+/// copy. A put at head + 1 is the only pending copy. Any other sequence is
+/// `store-rejected` and changes nothing. Promotion replaces the current row
+/// in place. There is never a window with zero copies when a current copy
+/// already exists.
 pub trait RecoveryCopyStore {
-    fn put_copy(&mut self, envelope: &RecoveryEnvelope) -> Result<(), EncDiscError>;
+    fn put_copy(
+        &mut self,
+        envelope: &RecoveryEnvelope,
+        signature: &str,
+        rotations: &[serde_json::Value],
+        context: &sociacl_ids::ResolutionContext<'_>,
+    ) -> Result<(), EncDiscError>;
 
     fn get_copy(
         &self,
@@ -55,12 +87,29 @@ pub trait RecoveryCopyStore {
         rotation_seq: u64,
     ) -> Result<Option<RecoveryEnvelope>, EncDiscError>;
 
-    /// Move the pending copy onto the current copy when its sequence is
-    /// `verified_seq`. The slot keeps a current copy for the whole call.
-    fn promote_pending(
+    /// The pending copy, if one is stored. Callers hash it before they sign a commit.
+    fn pending_copy(
+        &self,
+        principal: &PrincipalId,
+    ) -> Result<Option<RecoveryEnvelope>, EncDiscError>;
+
+    /// Promote, refuse, or clear the pending copy. See [`commit_recovery_copy`].
+    fn commit(
         &mut self,
         principal: &PrincipalId,
-        verified_seq: u64,
+        signature: &str,
+        rotations: &[serde_json::Value],
+        context: &sociacl_ids::ResolutionContext<'_>,
+    ) -> Result<(), EncDiscError>;
+
+    /// Delete the current or pending copy at `rotation_seq`. Does not promote.
+    fn delete_copy(
+        &mut self,
+        principal: &PrincipalId,
+        rotation_seq: u64,
+        signature: &str,
+        rotations: &[serde_json::Value],
+        context: &sociacl_ids::ResolutionContext<'_>,
     ) -> Result<(), EncDiscError>;
 
     fn is_authority(&self) -> bool {
@@ -76,10 +125,10 @@ pub trait RecoveryCopyStore {
     }
 }
 
-/// Current recovery copy, plus at most one newer copy waiting on the chain.
-#[derive(Clone, Debug)]
+/// Current recovery copy, plus at most one copy waiting at head + 1.
+#[derive(Clone, Debug, Default)]
 struct RecoverySlot {
-    current: RecoveryEnvelope,
+    current: Option<RecoveryEnvelope>,
     pending: Option<RecoveryEnvelope>,
 }
 
@@ -103,7 +152,13 @@ impl MemoryRecoveryStore {
 }
 
 impl RecoveryCopyStore for MemoryRecoveryStore {
-    fn put_copy(&mut self, envelope: &RecoveryEnvelope) -> Result<(), EncDiscError> {
+    fn put_copy(
+        &mut self,
+        envelope: &RecoveryEnvelope,
+        signature: &str,
+        rotations: &[serde_json::Value],
+        context: &sociacl_ids::ResolutionContext<'_>,
+    ) -> Result<(), EncDiscError> {
         if envelope.bytes.len() > RECOVERY_ABSOLUTE_MAX || envelope.bytes.is_empty() {
             return Err(EncDiscError::StoreRejected);
         }
@@ -111,36 +166,50 @@ impl RecoveryCopyStore for MemoryRecoveryStore {
         if seq != envelope.rotation_seq {
             return Err(EncDiscError::StoreRejected);
         }
+        let hash = recovery_envelope_hash(envelope)?;
+        let target = canonical::canonical_decimal(envelope.rotation_seq)
+            .map_err(|_| EncDiscError::StoreRejected)?;
+        let account = verify_store_write(
+            &envelope.principal,
+            "put",
+            &target,
+            &hash,
+            signature,
+            rotations,
+            context,
+        )?;
+        let head = account.rotations.len() as u64;
         let key = envelope.principal.as_ref().to_string();
-        let Some(slot) = self.by_principal.get_mut(&key) else {
-            self.by_principal.insert(
-                key,
-                RecoverySlot {
-                    current: envelope.clone(),
-                    pending: None,
-                },
-            );
-            return Ok(());
-        };
-        let incoming = envelope.rotation_seq;
-        if incoming < slot.current.rotation_seq {
+        if self
+            .by_principal
+            .get(&key)
+            .and_then(|slot| slot.current.as_ref())
+            .is_some_and(|current| current.rotation_seq > head)
+        {
             return Err(EncDiscError::StoreRejected);
         }
-        if incoming == slot.current.rotation_seq {
-            slot.current = envelope.clone();
-            return Ok(());
-        }
-        if let Some(pending) = &slot.pending {
-            if incoming < pending.rotation_seq {
+        if envelope.rotation_seq == head {
+            if envelope.signing_pub.as_ref() != account.current_key.as_ref() {
                 return Err(EncDiscError::StoreRejected);
             }
-            if incoming == pending.rotation_seq {
-                slot.pending = Some(envelope.clone());
-                return Ok(());
+            if account
+                .current_epub
+                .as_ref()
+                .is_some_and(|epub| epub.as_ref() != envelope.epub.as_ref())
+            {
+                return Err(EncDiscError::StoreRejected);
             }
+            let slot = self.by_principal.entry(key).or_default();
+            slot.current = Some(envelope.clone());
+            slot.pending = None;
+            return Ok(());
         }
-        slot.pending = Some(envelope.clone());
-        Ok(())
+        if envelope.rotation_seq == head.saturating_add(1) {
+            let slot = self.by_principal.entry(key).or_default();
+            slot.pending = Some(envelope.clone());
+            return Ok(());
+        }
+        Err(EncDiscError::StoreRejected)
     }
 
     fn get_copy(
@@ -151,8 +220,12 @@ impl RecoveryCopyStore for MemoryRecoveryStore {
         let Some(slot) = self.by_principal.get(principal.as_ref()) else {
             return Ok(None);
         };
-        if slot.current.rotation_seq == rotation_seq {
-            return Ok(Some(slot.current.clone()));
+        if slot
+            .current
+            .as_ref()
+            .is_some_and(|current| current.rotation_seq == rotation_seq)
+        {
+            return Ok(slot.current.clone());
         }
         Ok(slot.pending.as_ref().and_then(|pending| {
             if pending.rotation_seq == rotation_seq {
@@ -163,22 +236,120 @@ impl RecoveryCopyStore for MemoryRecoveryStore {
         }))
     }
 
-    fn promote_pending(
+    fn pending_copy(
+        &self,
+        principal: &PrincipalId,
+    ) -> Result<Option<RecoveryEnvelope>, EncDiscError> {
+        Ok(self
+            .by_principal
+            .get(principal.as_ref())
+            .and_then(|slot| slot.pending.clone()))
+    }
+
+    fn commit(
         &mut self,
         principal: &PrincipalId,
-        verified_seq: u64,
+        signature: &str,
+        rotations: &[serde_json::Value],
+        context: &sociacl_ids::ResolutionContext<'_>,
     ) -> Result<(), EncDiscError> {
-        let Some(slot) = self.by_principal.get_mut(principal.as_ref()) else {
+        let key = principal.as_ref().to_string();
+        let pending = self
+            .by_principal
+            .get(&key)
+            .and_then(|slot| slot.pending.clone())
+            .ok_or(EncDiscError::StoreRejected)?;
+        let resolved = sociacl_ids::resolve_current_key(principal, rotations, context);
+        let account = resolved.result.map_err(|_| EncDiscError::StoreRejected)?;
+        let head = account.rotations.len() as u64;
+        let target = canonical::canonical_decimal(head).map_err(|_| EncDiscError::StoreRejected)?;
+        let hash = recovery_envelope_hash(&pending)?;
+        let message =
+            store_write::store_write_message(principal.as_ref(), "commit", &target, &hash)?;
+        crate::sea::verify_sea(account.current_key.as_ref(), &message, signature)
+            .map_err(|_| EncDiscError::StoreRejected)?;
+        let Some(slot) = self.by_principal.get_mut(&key) else {
             return Err(EncDiscError::StoreRejected);
         };
-        let Some(pending) = slot.pending.take() else {
-            return Err(EncDiscError::StoreRejected);
-        };
-        if pending.rotation_seq != verified_seq {
-            slot.pending = Some(pending);
+        if pending.rotation_seq == head {
+            if account.current_epub.is_none() {
+                return Err(EncDiscError::StoreRejected);
+            }
+            let pubs_match = account.current_epub.as_ref().is_some_and(|epub| {
+                epub.as_ref() == pending.epub.as_ref()
+                    && account.current_key.as_ref() == pending.signing_pub.as_ref()
+            });
+            if pubs_match {
+                slot.current = Some(pending);
+                slot.pending = None;
+                return Ok(());
+            }
+            slot.pending = None;
+            let empty = slot.current.is_none();
+            if empty {
+                self.by_principal.remove(&key);
+            }
             return Err(EncDiscError::StoreRejected);
         }
-        slot.current = pending;
+        if pending.rotation_seq == head.saturating_add(1) {
+            return Err(EncDiscError::StoreRejected);
+        }
+        slot.pending = None;
+        if slot.current.is_none() {
+            self.by_principal.remove(&key);
+        }
+        Err(EncDiscError::StoreRejected)
+    }
+
+    fn delete_copy(
+        &mut self,
+        principal: &PrincipalId,
+        rotation_seq: u64,
+        signature: &str,
+        rotations: &[serde_json::Value],
+        context: &sociacl_ids::ResolutionContext<'_>,
+    ) -> Result<(), EncDiscError> {
+        let key = principal.as_ref().to_string();
+        let stored = self
+            .by_principal
+            .get(&key)
+            .and_then(|slot| {
+                slot.current
+                    .as_ref()
+                    .filter(|envelope| envelope.rotation_seq == rotation_seq)
+                    .or(slot
+                        .pending
+                        .as_ref()
+                        .filter(|envelope| envelope.rotation_seq == rotation_seq))
+            })
+            .cloned()
+            .ok_or(EncDiscError::StoreRejected)?;
+        let target =
+            canonical::canonical_decimal(rotation_seq).map_err(|_| EncDiscError::StoreRejected)?;
+        let hash = recovery_envelope_hash(&stored)?;
+        verify_store_write(
+            principal, "delete", &target, &hash, signature, rotations, context,
+        )?;
+        let Some(slot) = self.by_principal.get_mut(&key) else {
+            return Err(EncDiscError::StoreRejected);
+        };
+        if slot
+            .current
+            .as_ref()
+            .is_some_and(|envelope| envelope.rotation_seq == rotation_seq)
+        {
+            slot.current = None;
+        }
+        if slot
+            .pending
+            .as_ref()
+            .is_some_and(|envelope| envelope.rotation_seq == rotation_seq)
+        {
+            slot.pending = None;
+        }
+        if slot.current.is_none() && slot.pending.is_none() {
+            self.by_principal.remove(&key);
+        }
         Ok(())
     }
 }
@@ -223,10 +394,12 @@ pub fn encode_passphrase(passphrase: &str) -> Result<Zeroizing<Vec<u8>>, EncDisc
 pub fn seal_recovery_copy_str(
     keyring: &AccountKeyring,
     passphrase: &str,
+    rotations: &[serde_json::Value],
+    context: &sociacl_ids::ResolutionContext<'_>,
     store: &mut impl RecoveryCopyStore,
 ) -> Result<RecoveryEnvelope, EncDiscError> {
     let bytes = encode_passphrase(passphrase)?;
-    seal_recovery_copy(keyring, &bytes, store)
+    seal_recovery_copy(keyring, &bytes, rotations, context, store)
 }
 
 /// Open with a passphrase string. The string is normalized by [`encode_passphrase`].
@@ -252,16 +425,48 @@ pub fn open_recovery_copy_str(
 /// Seal `keyring` under `passphrase` and store the ciphertext.
 ///
 /// Salt and nonce are drawn here. The passphrase is not written to `store`.
+/// The store write is signed by this keyring's current private key, which
+/// must be the published chain-head key. A pending copy of the next keyring
+/// is signed by [`rotate_and_reseal`] with the key that is still the head.
 pub fn seal_recovery_copy(
     keyring: &AccountKeyring,
     passphrase: &[u8],
+    rotations: &[serde_json::Value],
+    context: &sociacl_ids::ResolutionContext<'_>,
+    store: &mut impl RecoveryCopyStore,
+) -> Result<RecoveryEnvelope, EncDiscError> {
+    seal_recovery_signed(
+        keyring,
+        passphrase,
+        keyring.current_priv(),
+        rotations,
+        context,
+        store,
+    )
+}
+
+fn seal_recovery_signed(
+    keyring: &AccountKeyring,
+    passphrase: &[u8],
+    signer_priv: &str,
+    rotations: &[serde_json::Value],
+    context: &sociacl_ids::ResolutionContext<'_>,
     store: &mut impl RecoveryCopyStore,
 ) -> Result<RecoveryEnvelope, EncDiscError> {
     let mut salt = vec![0u8; ARGON2ID_LIMITS.salt_length.floor as usize];
     OsRng.fill_bytes(&mut salt);
     let mut nonce = [0u8; RECOVERY_NONCE_LEN];
     OsRng.fill_bytes(&mut nonce);
-    let envelope = seal_recovery_copy_with(keyring, passphrase, &salt, &nonce, store);
+    let envelope = seal_recovery_copy_with(
+        keyring,
+        passphrase,
+        &salt,
+        &nonce,
+        signer_priv,
+        rotations,
+        context,
+        store,
+    );
     salt.zeroize();
     nonce.zeroize();
     envelope
@@ -273,8 +478,14 @@ pub(crate) fn seal_recovery_copy_with(
     passphrase: &[u8],
     salt: &[u8],
     nonce: &[u8],
+    signer_priv: &str,
+    rotations: &[serde_json::Value],
+    context: &sociacl_ids::ResolutionContext<'_>,
     store: &mut impl RecoveryCopyStore,
 ) -> Result<RecoveryEnvelope, EncDiscError> {
+    if keyring.prior_lanes().len() as u64 != keyring.rotation_seq() {
+        return Err(EncDiscError::BadLane);
+    }
     if passphrase_rejected(passphrase) {
         return Err(EncDiscError::RecoveryParams);
     }
@@ -296,6 +507,8 @@ pub(crate) fn seal_recovery_copy_with(
     let aad = recovery_aad(
         keyring.principal().as_ref(),
         keyring.rotation_seq(),
+        keyring.current_pub().as_ref(),
+        keyring.current_epub().as_ref(),
         ARGON2ID_LIMITS.memory_kib.floor,
         ARGON2ID_LIMITS.iterations.floor,
         ARGON2ID_LIMITS.parallelism.floor,
@@ -326,9 +539,14 @@ pub(crate) fn seal_recovery_copy_with(
     let envelope = RecoveryEnvelope {
         principal: keyring.principal().clone(),
         rotation_seq: keyring.rotation_seq(),
+        signing_pub: keyring.current_pub().clone(),
+        epub: keyring.current_epub().clone(),
         bytes,
     };
-    store.put_copy(&envelope)?;
+    let hash = recovery_envelope_hash(&envelope)?;
+    let target = canonical::canonical_decimal(envelope.rotation_seq)?;
+    let signature = sign_store_write(signer_priv, &envelope.principal, "put", &target, &hash)?;
+    store.put_copy(&envelope, &signature, rotations, context)?;
     Ok(envelope)
 }
 
@@ -373,6 +591,8 @@ pub fn open_recovery_copy(
     let aad = recovery_aad(
         expected.as_ref(),
         header.rotation_seq,
+        envelope.signing_pub.as_ref(),
+        envelope.epub.as_ref(),
         header.memory_kib,
         header.iterations,
         header.parallelism,
@@ -405,7 +625,10 @@ pub fn open_recovery_copy(
     if parsed.as_ref() != fields.principal.as_str() || parsed.as_ref() != expected.as_ref() {
         return Err(EncDiscError::RecoveryRejected);
     }
-    if fields.rotation_seq != header.rotation_seq {
+    if fields.rotation_seq != header.rotation_seq
+        || fields.current_pub.as_str() != envelope.signing_pub.as_ref()
+        || fields.current_epub.as_str() != envelope.epub.as_ref()
+    {
         return Err(EncDiscError::RecoveryRejected);
     }
     if fields.rotation_seq != expected_rotation_seq {
@@ -440,8 +663,12 @@ pub fn open_recovery_copy(
 
 /// Rotate, then seal a pending recovery copy of the new keyring version.
 ///
-/// The current copy stays until [`commit_recovery_copy`] sees that rotation
-/// in the trusted chain. An unpublished draft does not replace it.
+/// The pending put is signed by the keyring that is still the published
+/// chain head, not by the new key. The current copy stays until
+/// [`commit_recovery_copy`] promotes a pending copy whose public keys equal
+/// the resolved current key. Commit must be given the chain read back from
+/// the published source. An unsigned draft fails to resolve. A signed
+/// rotation that is not on that chain is not promoted.
 pub fn rotate_and_reseal<F>(
     keyring: &AccountKeyring,
     trusted: &[&str],
@@ -456,24 +683,66 @@ where
     F: FnOnce() -> Result<RotationMint, EncDiscError>,
 {
     let rotation = rotate_keyring(keyring, trusted, lost, rotations, context, mint)?;
-    let envelope = seal_recovery_copy(&rotation.keyring, passphrase, store)?;
+    let envelope = seal_recovery_signed(
+        &rotation.keyring,
+        passphrase,
+        keyring.current_priv(),
+        rotations,
+        context,
+        store,
+    )?;
     Ok((rotation, envelope))
 }
 
-/// Promote the pending copy after the trusted chain includes that rotation.
+/// Promote the pending copy when its sequence and public keys equal the
+/// resolved chain head.
 ///
-/// A chain that does not resolve, or a verified sequence that is not the
-/// pending copy, is [`EncDiscError::StoreRejected`]. Both copies stay.
+/// `signer_priv` is the current chain-head key after publication. The
+/// signature covers the stored pending envelope. A chain that does not
+/// resolve is [`EncDiscError::StoreRejected`] and both copies stay. A
+/// pending copy at head + 1 stays: that rotation is not on this chain yet.
+/// A pending copy whose public keys differ from the resolved key is dropped.
+/// A pending copy at neither head nor head + 1 is dropped. The current copy
+/// stays in both of those cases.
 pub fn commit_recovery_copy(
     principal: &PrincipalId,
+    signer_priv: &str,
     rotations: &[serde_json::Value],
     context: &sociacl_ids::ResolutionContext<'_>,
     store: &mut impl RecoveryCopyStore,
 ) -> Result<(), EncDiscError> {
+    let pending = store
+        .pending_copy(principal)?
+        .ok_or(EncDiscError::StoreRejected)?;
     let resolved = sociacl_ids::resolve_current_key(principal, rotations, context);
     let account = resolved.result.map_err(|_| EncDiscError::StoreRejected)?;
-    let verified = account.rotations.len() as u64;
-    store.promote_pending(principal, verified)
+    let head = account.rotations.len() as u64;
+    let target = canonical::canonical_decimal(head)?;
+    let hash = recovery_envelope_hash(&pending)?;
+    let signature = sign_store_write(signer_priv, principal, "commit", &target, &hash)?;
+    store.commit(principal, &signature, rotations, context)
+}
+
+/// Delete the current or pending copy at `rotation_seq`.
+///
+/// The signature is the same store-write signature as put and commit.
+/// Deleting the current copy does not promote a pending copy. A missing
+/// target is [`EncDiscError::StoreRejected`].
+pub fn delete_recovery_copy(
+    principal: &PrincipalId,
+    rotation_seq: u64,
+    signer_priv: &str,
+    rotations: &[serde_json::Value],
+    context: &sociacl_ids::ResolutionContext<'_>,
+    store: &mut impl RecoveryCopyStore,
+) -> Result<(), EncDiscError> {
+    let envelope = store
+        .get_copy(principal, rotation_seq)?
+        .ok_or(EncDiscError::StoreRejected)?;
+    let target = canonical::canonical_decimal(rotation_seq)?;
+    let hash = recovery_envelope_hash(&envelope)?;
+    let signature = sign_store_write(signer_priv, principal, "delete", &target, &hash)?;
+    store.delete_copy(principal, rotation_seq, &signature, rotations, context)
 }
 
 pub(crate) struct KeyringFields {
@@ -741,6 +1010,8 @@ fn write_header(
 fn recovery_aad(
     principal: &str,
     rotation_seq: u64,
+    signing_pub: &str,
+    epub: &str,
     memory_kib: u32,
     iterations: u32,
     parallelism: u32,
@@ -752,11 +1023,21 @@ fn recovery_aad(
     if parsed.as_ref() != principal {
         return Err(EncDiscError::RecoveryRejected);
     }
+    let signing = parse_principal_id(signing_pub).map_err(|_| EncDiscError::RecoveryRejected)?;
+    if signing.as_ref() != signing_pub {
+        return Err(EncDiscError::RecoveryRejected);
+    }
+    let encryption = parse_principal_id(epub).map_err(|_| EncDiscError::RecoveryRejected)?;
+    if encryption.as_ref() != epub {
+        return Err(EncDiscError::RecoveryRejected);
+    }
     let salt_hex = encode_hex(salt);
     canonical::length_prefixed(&[
         DOMAIN_RECOVERY,
         parsed.as_ref(),
         canonical::canonical_decimal(rotation_seq)?.as_str(),
+        signing.as_ref(),
+        encryption.as_ref(),
         canonical::canonical_decimal(u64::from(memory_kib))?.as_str(),
         canonical::canonical_decimal(u64::from(iterations))?.as_str(),
         canonical::canonical_decimal(u64::from(parallelism))?.as_str(),
@@ -876,6 +1157,8 @@ fn read_u64(bytes: &[u8], offset: usize) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::hexutil;
+    use crate::limits::RECOVERY_ENVELOPE_MAX;
     use crate::GenesisAccount;
     use serde_json::Value;
     use sociacl_ids::{
@@ -1015,10 +1298,13 @@ mod tests {
             }
             let name = row["name"].as_str().unwrap();
             let started = std::time::Instant::now();
+            let (signing_pub, epub) = genesis_pubs();
             let envelope = if let Some(bytes) = row["envelopeBytes"].as_u64() {
                 RecoveryEnvelope {
                     principal: principal.clone(),
                     rotation_seq: 0,
+                    signing_pub: signing_pub.clone(),
+                    epub: epub.clone(),
                     bytes: vec![0u8; bytes as usize],
                 }
             } else if let Some(ciphertext_bytes) = row["ciphertextBytes"].as_u64() {
@@ -1070,9 +1356,12 @@ mod tests {
         );
         bytes.extend_from_slice(&[0u8; 12]);
         bytes.extend_from_slice(&vec![0u8; ciphertext_len]);
+        let (signing_pub, epub) = genesis_pubs();
         RecoveryEnvelope {
             principal: principal.clone(),
             rotation_seq: 0,
+            signing_pub,
+            epub,
             bytes,
         }
     }
@@ -1172,6 +1461,9 @@ mod tests {
             v["passphraseUtf8"].as_str().unwrap().as_bytes(),
             &salt,
             &nonce,
+            keyring.current_priv(),
+            &[],
+            &ctx,
             &mut store,
         )
         .unwrap();
@@ -1247,12 +1539,15 @@ mod tests {
         let held = hold();
         let ctx = context_of(&held);
         let mut store = MemoryRecoveryStore::default();
+        let (signing_pub, epub) = genesis_pubs();
         let old = RecoveryEnvelope {
             principal: keyring.principal().clone(),
             rotation_seq: 0,
+            signing_pub,
+            epub,
             bytes: hexutil::decode_hex(v["envelopeHex"].as_str().unwrap()).unwrap(),
         };
-        store.put_copy(&old).unwrap();
+        put_as(&mut store, &old, keyring.current_priv(), &[], &ctx).unwrap();
         assert!(store.get_copy(keyring.principal(), 0).unwrap().is_some());
         let trusted: Vec<&str> = ring["trusted"]
             .as_array()
@@ -1285,8 +1580,14 @@ mod tests {
         assert_eq!(envelope.rotation_seq, 1);
         assert!(store.get_copy(keyring.principal(), 1).unwrap().is_some());
         assert!(store.get_copy(keyring.principal(), 0).unwrap().is_some());
-        let unpublished =
-            commit_recovery_copy(keyring.principal(), &[], &ctx, &mut store).unwrap_err();
+        let unpublished = commit_recovery_copy(
+            keyring.principal(),
+            keyring.current_priv(),
+            &[],
+            &ctx,
+            &mut store,
+        )
+        .unwrap_err();
         assert_eq!(
             token(&unpublished),
             v["retention"]["commitUnverified"].as_str().unwrap()
@@ -1325,11 +1626,15 @@ mod tests {
 
     #[test]
     fn the_store_copies_envelopes_and_keeps_only_the_latest() {
-        let principal = principal_of();
+        let keyring = genesis_keyring();
+        let principal = keyring.principal().clone();
+        let held = hold();
+        let ctx = context_of(&held);
         let mut store = MemoryRecoveryStore::default();
-        let mut older = dummy_envelope(&principal, 0);
+        let mut older =
+            dummy_envelope(&principal, 0, keyring.current_pub(), keyring.current_epub());
         let original = older.bytes.clone();
-        store.put_copy(&older).unwrap();
+        put_as(&mut store, &older, keyring.current_priv(), &[], &ctx).unwrap();
         older.bytes[40] ^= 0x01;
         let stored = store.get_copy(&principal, 0).unwrap().unwrap();
         assert_eq!(stored.bytes, original);
@@ -1339,39 +1644,84 @@ mod tests {
             store.get_copy(&principal, 0).unwrap().unwrap().bytes,
             original
         );
-        let newer = dummy_envelope(&principal, 1);
-        store.put_copy(&newer).unwrap();
+        let unsigned = store.put_copy(&older, "00", &[], &ctx);
+        assert!(matches!(unsigned, Err(EncDiscError::StoreRejected)));
+        assert_eq!(
+            store.get_copy(&principal, 0).unwrap().unwrap().bytes,
+            original
+        );
+        let pending_pub =
+            parse_principal_id(ring()["mint"]["signingPub"].as_str().unwrap()).unwrap();
+        let pending_epub = parse_principal_id(ring()["mint"]["epub"].as_str().unwrap()).unwrap();
+        let newer = dummy_envelope(&principal, 1, &pending_pub, &pending_epub);
+        put_as(&mut store, &newer, keyring.current_priv(), &[], &ctx).unwrap();
         assert!(store.get_copy(&principal, 0).unwrap().is_some());
         assert!(store.get_copy(&principal, 1).unwrap().is_some());
         assert_eq!(store.len(), 1);
-        let mut resealed = dummy_envelope(&principal, 0);
+        let mut resealed =
+            dummy_envelope(&principal, 0, keyring.current_pub(), keyring.current_epub());
         resealed.bytes[40] ^= 0x11;
-        store.put_copy(&resealed).unwrap();
+        put_as(&mut store, &resealed, keyring.current_priv(), &[], &ctx).unwrap();
         assert_eq!(
             store.get_copy(&principal, 0).unwrap().unwrap().bytes,
             resealed.bytes
         );
-        assert!(store.get_copy(&principal, 1).unwrap().is_some());
-        let downgrade = dummy_envelope(&principal, 0);
-        let mut high = MemoryRecoveryStore::default();
-        high.put_copy(&dummy_envelope(&principal, 2)).unwrap();
-        let refused = high.put_copy(&downgrade).unwrap_err();
+        assert!(store.get_copy(&principal, 1).unwrap().is_none());
+        let poisoned = dummy_envelope(
+            &principal,
+            99,
+            keyring.current_pub(),
+            keyring.current_epub(),
+        );
+        let pinned = put_as(&mut store, &poisoned, keyring.current_priv(), &[], &ctx);
         assert_eq!(
-            token(&refused),
+            token(&pinned.unwrap_err()),
             recovery()["retention"]["downgrade"].as_str().unwrap()
         );
-        assert!(high.get_copy(&principal, 2).unwrap().is_some());
-        assert!(high.get_copy(&principal, 0).unwrap().is_none());
-        let between = high.put_copy(&dummy_envelope(&principal, 1)).unwrap_err();
-        assert!(matches!(between, EncDiscError::StoreRejected));
-        assert!(high.get_copy(&principal, 2).unwrap().is_some());
+        assert!(store.get_copy(&principal, 99).unwrap().is_none());
+        put_as(&mut store, &newer, keyring.current_priv(), &[], &ctx).unwrap();
+        assert!(store.get_copy(&principal, 1).unwrap().is_some());
+        let mut high = MemoryRecoveryStore::default();
+        let refused = put_as(
+            &mut high,
+            &dummy_envelope(&principal, 2, keyring.current_pub(), keyring.current_epub()),
+            keyring.current_priv(),
+            &[],
+            &ctx,
+        );
+        assert_eq!(
+            token(&refused.unwrap_err()),
+            recovery()["retention"]["downgrade"].as_str().unwrap()
+        );
+        assert!(high.get_copy(&principal, 2).unwrap().is_none());
         let mut gap = MemoryRecoveryStore::default();
-        gap.put_copy(&dummy_envelope(&principal, 0)).unwrap();
-        gap.put_copy(&dummy_envelope(&principal, 2)).unwrap();
-        let skipped = gap.put_copy(&dummy_envelope(&principal, 1)).unwrap_err();
-        assert!(matches!(skipped, EncDiscError::StoreRejected));
+        put_as(
+            &mut gap,
+            &dummy_envelope(&principal, 0, keyring.current_pub(), keyring.current_epub()),
+            keyring.current_priv(),
+            &[],
+            &ctx,
+        )
+        .unwrap();
+        let skipped = put_as(
+            &mut gap,
+            &dummy_envelope(&principal, 2, keyring.current_pub(), keyring.current_epub()),
+            keyring.current_priv(),
+            &[],
+            &ctx,
+        );
+        assert!(matches!(skipped, Err(EncDiscError::StoreRejected)));
+        put_as(
+            &mut gap,
+            &dummy_envelope(&principal, 1, &pending_pub, &pending_epub),
+            keyring.current_priv(),
+            &[],
+            &ctx,
+        )
+        .unwrap();
         assert!(gap.get_copy(&principal, 0).unwrap().is_some());
-        assert!(gap.get_copy(&principal, 2).unwrap().is_some());
+        assert!(gap.get_copy(&principal, 1).unwrap().is_some());
+        assert!(gap.get_copy(&principal, 2).unwrap().is_none());
     }
 
     #[test]
@@ -1396,6 +1746,9 @@ mod tests {
             EncDiscError::RecoveryParams
         ));
         let vector = recovery();
+        let held = hold();
+        let ctx = context_of(&held);
+        let keyring = genesis_keyring();
         let rejects = vector["passphraseRejects"].as_array().unwrap();
         for row in rejects {
             let text = row["passphrase"].as_str().unwrap();
@@ -1403,10 +1756,13 @@ mod tests {
             assert_eq!(token(&rejected), row["error"].as_str().unwrap(), "{text:?}");
             let bytes = text.as_bytes();
             let sealed = seal_recovery_copy_with(
-                &genesis_keyring(),
+                &keyring,
                 bytes,
                 &[0x11; 16],
                 &[0x22; 12],
+                keyring.current_priv(),
+                &[],
+                &ctx,
                 &mut MemoryRecoveryStore::default(),
             )
             .unwrap_err();
@@ -1420,10 +1776,13 @@ mod tests {
         assert_eq!(spaced[0], b' ');
         let started = std::time::Instant::now();
         let rejected = seal_recovery_copy_with(
-            &genesis_keyring(),
+            &keyring,
             b"   ",
             &[0x11; 16],
             &[0x22; 12],
+            keyring.current_priv(),
+            &[],
+            &ctx,
             &mut MemoryRecoveryStore::default(),
         )
         .unwrap_err();
@@ -1438,9 +1797,12 @@ mod tests {
         let other = parse_principal_id(ring()["mint"]["signingPub"].as_str().unwrap()).unwrap();
         let held = hold();
         let ctx = context_of(&held);
+        let (signing_pub, epub) = genesis_pubs();
         let envelope = RecoveryEnvelope {
             principal: principal.clone(),
             rotation_seq: 0,
+            signing_pub,
+            epub,
             bytes: hexutil::decode_hex(v["envelopeHex"].as_str().unwrap()).unwrap(),
         };
         let started = std::time::Instant::now();
@@ -1473,7 +1835,7 @@ mod tests {
             .find(|item| item["name"] == ring["witnessed"]["rotationName"].as_str().unwrap())
             .unwrap()["input"]
             .clone();
-        let (genesis_pub, _genesis_priv) =
+        let (genesis_pub, genesis_priv) =
             scalar_sea(ring["witnessed"]["genesisScalar"].as_u64().unwrap() as u16);
         let (genesis_epub, genesis_epriv) =
             scalar_sea(ring["witnessed"]["genesisEpubScalar"].as_u64().unwrap() as u16);
@@ -1523,7 +1885,8 @@ mod tests {
         };
         let retired = [(genesis_epub.as_str(), genesis_epriv.as_str())];
         let rotations = [rotation];
-        let keyring = AccountKeyring::import(
+        let prior = ring["importPriorLanes"]["priorLane"].as_str().unwrap();
+        let keyring = AccountKeyring::import_with_prior_lanes(
             &genesis_pub,
             &genesis_epub,
             &current_pub,
@@ -1536,6 +1899,7 @@ mod tests {
             ring["witnessed"]["rotationSeq"].as_u64().unwrap(),
             &rotations,
             &base,
+            &[prior],
         )
         .unwrap();
         let mut store = MemoryRecoveryStore::default();
@@ -1546,6 +1910,9 @@ mod tests {
             v["passphraseUtf8"].as_str().unwrap().as_bytes(),
             &salt,
             &nonce,
+            keyring.current_priv(),
+            &rotations,
+            &base,
             &mut store,
         )
         .unwrap();
@@ -1570,35 +1937,129 @@ mod tests {
         )
         .unwrap_err();
         assert!(matches!(unsigned, EncDiscError::PubMismatch));
+        let genesis_point = parse_principal_id(&genesis_pub).unwrap();
+        let genesis_encryption = parse_principal_id(&genesis_epub).unwrap();
+        let current_point = parse_principal_id(&current_pub).unwrap();
+        let current_encryption = parse_principal_id(&current_epub).unwrap();
         let mut forward = MemoryRecoveryStore::default();
-        forward
-            .put_copy(&dummy_envelope(keyring.principal(), 0))
-            .unwrap();
-        forward
-            .put_copy(&dummy_envelope(keyring.principal(), 1))
-            .unwrap();
-        commit_recovery_copy(keyring.principal(), &rotations, &base, &mut forward).unwrap();
+        put_as(
+            &mut forward,
+            &dummy_envelope(keyring.principal(), 0, &genesis_point, &genesis_encryption),
+            genesis_priv.as_str(),
+            &[],
+            &base,
+        )
+        .unwrap();
+        put_as(
+            &mut forward,
+            &dummy_envelope(keyring.principal(), 1, &current_point, &current_encryption),
+            genesis_priv.as_str(),
+            &[],
+            &base,
+        )
+        .unwrap();
+        commit_recovery_copy(
+            keyring.principal(),
+            keyring.current_priv(),
+            &rotations,
+            &base,
+            &mut forward,
+        )
+        .unwrap();
         assert!(forward.get_copy(keyring.principal(), 0).unwrap().is_none());
         assert!(forward.get_copy(keyring.principal(), 1).unwrap().is_some());
-        let again = commit_recovery_copy(keyring.principal(), &rotations, &base, &mut forward);
+        let again = commit_recovery_copy(
+            keyring.principal(),
+            keyring.current_priv(),
+            &rotations,
+            &base,
+            &mut forward,
+        );
         assert!(matches!(again, Err(EncDiscError::StoreRejected)));
         assert!(forward.get_copy(keyring.principal(), 1).unwrap().is_some());
-        let older = forward.put_copy(&dummy_envelope(keyring.principal(), 0));
+        let older = put_as(
+            &mut forward,
+            &dummy_envelope(keyring.principal(), 0, &genesis_point, &genesis_encryption),
+            genesis_priv.as_str(),
+            &rotations,
+            &base,
+        );
         assert!(matches!(older, Err(EncDiscError::StoreRejected)));
         let mut stuck = MemoryRecoveryStore::default();
-        stuck
-            .put_copy(&dummy_envelope(keyring.principal(), 0))
-            .unwrap();
-        stuck
-            .put_copy(&dummy_envelope(keyring.principal(), 1))
-            .unwrap();
-        let unverified = commit_recovery_copy(keyring.principal(), &[], &base, &mut stuck);
+        put_as(
+            &mut stuck,
+            &dummy_envelope(keyring.principal(), 0, &genesis_point, &genesis_encryption),
+            genesis_priv.as_str(),
+            &[],
+            &base,
+        )
+        .unwrap();
+        put_as(
+            &mut stuck,
+            &dummy_envelope(keyring.principal(), 1, &current_point, &current_encryption),
+            genesis_priv.as_str(),
+            &[],
+            &base,
+        )
+        .unwrap();
+        let unverified = commit_recovery_copy(
+            keyring.principal(),
+            genesis_priv.as_str(),
+            &[],
+            &base,
+            &mut stuck,
+        );
         assert!(matches!(unverified, Err(EncDiscError::StoreRejected)));
         assert!(stuck.get_copy(keyring.principal(), 0).unwrap().is_some());
         assert!(stuck.get_copy(keyring.principal(), 1).unwrap().is_some());
+        let mut fork = MemoryRecoveryStore::default();
+        put_as(
+            &mut fork,
+            &dummy_envelope(keyring.principal(), 0, &genesis_point, &genesis_encryption),
+            genesis_priv.as_str(),
+            &[],
+            &base,
+        )
+        .unwrap();
+        let minted = parse_principal_id(ring["mint"]["signingPub"].as_str().unwrap()).unwrap();
+        let minted_epub = parse_principal_id(ring["mint"]["epub"].as_str().unwrap()).unwrap();
+        put_as(
+            &mut fork,
+            &dummy_envelope(keyring.principal(), 1, &minted, &minted_epub),
+            genesis_priv.as_str(),
+            &[],
+            &base,
+        )
+        .unwrap();
+        let forked = commit_recovery_copy(
+            keyring.principal(),
+            keyring.current_priv(),
+            &rotations,
+            &base,
+            &mut fork,
+        );
+        assert!(matches!(forked, Err(EncDiscError::StoreRejected)));
+        assert!(fork.get_copy(keyring.principal(), 0).unwrap().is_some());
+        assert!(fork.get_copy(keyring.principal(), 1).unwrap().is_none());
+        delete_recovery_copy(
+            keyring.principal(),
+            0,
+            genesis_priv.as_str(),
+            &[],
+            &base,
+            &mut stuck,
+        )
+        .unwrap();
+        assert!(stuck.get_copy(keyring.principal(), 0).unwrap().is_none());
+        assert!(stuck.get_copy(keyring.principal(), 1).unwrap().is_some());
     }
 
-    fn dummy_envelope(principal: &PrincipalId, seq: u64) -> RecoveryEnvelope {
+    fn dummy_envelope(
+        principal: &PrincipalId,
+        seq: u64,
+        signing_pub: &PrincipalId,
+        epub: &PrincipalId,
+    ) -> RecoveryEnvelope {
         let mut bytes = Vec::new();
         write_header(&mut bytes, 0x13, 65536, 3, 4, 32, &[0x11; 16], seq);
         bytes.extend_from_slice(&[0u8; 12]);
@@ -1606,8 +2067,31 @@ mod tests {
         RecoveryEnvelope {
             principal: principal.clone(),
             rotation_seq: seq,
+            signing_pub: signing_pub.clone(),
+            epub: epub.clone(),
             bytes,
         }
+    }
+
+    fn genesis_pubs() -> (PrincipalId, PrincipalId) {
+        let keyring = genesis_keyring();
+        (
+            keyring.current_pub().clone(),
+            keyring.current_epub().clone(),
+        )
+    }
+
+    fn put_as(
+        store: &mut MemoryRecoveryStore,
+        envelope: &RecoveryEnvelope,
+        signer: &str,
+        rotations: &[Value],
+        context: &ResolutionContext<'_>,
+    ) -> Result<(), EncDiscError> {
+        let hash = recovery_envelope_hash(envelope)?;
+        let target = canonical::canonical_decimal(envelope.rotation_seq)?;
+        let signature = sign_store_write(signer, &envelope.principal, "put", &target, &hash)?;
+        store.put_copy(envelope, &signature, rotations, context)
     }
 
     fn scalar_sea(n: u16) -> (String, Zeroizing<String>) {
