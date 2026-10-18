@@ -116,8 +116,11 @@ function decimal(text: string): number {
 
 class Cursor {
   private offset = 0;
+  private readonly bytes: Uint8Array;
 
-  constructor(private readonly bytes: Uint8Array) {}
+  constructor(bytes: Uint8Array) {
+    this.bytes = bytes;
+  }
 
   remaining(): number {
     return this.bytes.length - this.offset;

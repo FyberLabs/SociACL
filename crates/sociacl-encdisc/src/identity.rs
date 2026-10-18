@@ -1212,6 +1212,7 @@ mod tests {
         assert!(
             open_account_backup(&transport, &huge, attacker.principal(), &[], &context).is_err()
         );
+        // The adapter accepts a keyring-sized wrap. Genesis open still stops at 8192.
         assert!(store
             .put_wrap(
                 &WrapIndex {
@@ -1220,6 +1221,18 @@ mod tests {
                     epub: huge.epub.clone(),
                 },
                 &huge,
+            )
+            .is_ok());
+        let mut over = wrap.clone();
+        over.ciphertext_hex = "aa".repeat(crate::limits::DELIVERY_BLOB_MAX + 1);
+        assert!(store
+            .put_wrap(
+                &WrapIndex {
+                    principal: over.principal.clone(),
+                    wrap_id: over.wrap_id.clone(),
+                    epub: over.epub.clone(),
+                },
+                &over,
             )
             .is_err());
     }
