@@ -904,6 +904,20 @@ fn request_time(issued: u64, now: u64, skew: u64) -> Result<(), Reason> {
     }
     Ok(())
 }
+/// Present-revocation horizon for an unattested request. Historical checks stay skew-free.
+/// A sum past the safe-integer cap falls back to `now`, which is stricter.
+/// Direct [`verify_revoke_now`] does not use this.
+fn present_horizon(now: u64, skew: u64) -> u64 {
+    if now > MAX_SAFE || skew > MAX_SAFE {
+        return now;
+    }
+    let horizon = now.saturating_add(skew);
+    if horizon > MAX_SAFE {
+        now
+    } else {
+        horizon
+    }
+}
 fn wallet_witness(
     w: &WalletLink,
     jwks: &Jwks,
@@ -1397,57 +1411,30 @@ fn same_draft(raw: &Rotate, other: &Rotate) -> bool {
         && other.retained_links == raw.retained_links
         && (raw.issued_at == 0 || other.issued_at == raw.issued_at)
 }
-/// Client publish check and Panopticon attest check. Same rules.
-///
-/// Refuses a v2 record. An authenticated sibling with a different signing-byte
-/// id at the same (principal, seq) is `rotation-fork`. An identical sibling,
-/// including a draft of that same transition, is a retry and is not a fork.
-/// Junk and unattested siblings are skipped. Priors are whatever
-/// [`resolve_current_key`] accepts.
-/// A signed candidate with no attestation is checked by
-/// [`verify_rotation_request`] (its local checks only). Chain sequence,
-/// sibling forks, and epub reuse are applied here, after that call.
-/// Panopticon MUST call this function before attesting. It attests at most
-/// one genesis-epub binding per principal, only before the first rotation,
-/// and that limit is global across instances and signing keys (panopticon#499).
-/// Does not replace [`verify_rotate`]. Historical v2 records still verify there.
-pub fn check_rotation_publish(
-    candidate: &Value,
-    siblings: &[Value],
+struct LoadedChain {
+    history: Vec<Rotate>,
+    binding_epub: Option<PrincipalId>,
+}
+fn load_chain(
     genesis: &PrincipalId,
     prior_records: &[Value],
     ctx: &ResolutionContext<'_>,
+) -> Result<LoadedChain, Reason> {
+    let account = resolve_current_key(genesis, prior_records, ctx).result?;
+    Ok(LoadedChain {
+        history: account.rotations,
+        binding_epub: account.binding_epub,
+    })
+}
+fn publish_tail(
+    raw: Rotate,
+    siblings: &[Value],
+    genesis: &PrincipalId,
+    history: &[Rotate],
+    binding_epub: Option<&PrincipalId>,
+    ctx: &ResolutionContext<'_>,
+    draft: bool,
 ) -> Result<Rotate, Reason> {
-    let resolved = resolve_current_key(genesis, prior_records, ctx);
-    let account = resolved.result?;
-    let history = account.rotations;
-    let binding_epub = account.binding_epub;
-    let signed_request = candidate["kind"] == "rotate"
-        && candidate.get("attest").is_none()
-        && (candidate.get("nextSig").is_some() || candidate.get("authorizer").is_some());
-    let parsed = rotation_candidate(candidate);
-    let draft = !signed_request && !matches!(&parsed, Ok(IdentityRecord::Rotate(_)));
-    let raw = if !draft {
-        let current = history
-            .last()
-            .map(|item| item.next_key.clone())
-            .unwrap_or_else(|| genesis.clone());
-        let row = if signed_request {
-            verify_rotation_request(candidate, &current, ctx)?
-        } else {
-            check_rotate(candidate, &current, ctx, &mut Vec::new())?
-        };
-        if row.next_epub.is_none() || &row.principal != genesis {
-            return Err(Reason::BadRecord);
-        }
-        row
-    } else {
-        match draft_rotation(candidate) {
-            Ok(row) if &row.principal == genesis => row,
-            Ok(_) => return Err(Reason::BadRecord),
-            Err(_) => return parsed.and(Err(Reason::BadRecord)),
-        }
-    };
     let candidate_id = if draft {
         String::new()
     } else {
@@ -1482,11 +1469,96 @@ pub fn check_rotation_publish(
         || raw.prev_key != current
         || &raw.next_key == genesis
         || history.iter().any(|row| row.next_key == raw.next_key)
-        || reuses_epub(&raw, genesis, &history, binding_epub.as_ref())
+        || reuses_epub(&raw, genesis, history, binding_epub)
     {
         return Err(Reason::BadSequence);
     }
     Ok(raw)
+}
+/// Structural draft the keyring builder checks before a signature exists.
+///
+/// An unsigned draft has no `nextSig`, `authorizer`, `attest`, or required
+/// `issuedAt`. `retainedLinks` uses the signed-record rule. An identical
+/// attested sibling of the same transition is a retry and is not a fork.
+/// [`check_rotation_publish`] rejects this shape with `bad-record`. Only
+/// `rotate_keyring` calls this.
+pub fn check_rotation_draft(
+    candidate: &Value,
+    siblings: &[Value],
+    genesis: &PrincipalId,
+    prior_records: &[Value],
+    ctx: &ResolutionContext<'_>,
+) -> Result<Rotate, Reason> {
+    let chain = load_chain(genesis, prior_records, ctx)?;
+    let raw = draft_rotation(candidate)?;
+    if &raw.principal != genesis {
+        return Err(Reason::BadRecord);
+    }
+    publish_tail(
+        raw,
+        siblings,
+        genesis,
+        &chain.history,
+        chain.binding_epub.as_ref(),
+        ctx,
+        true,
+    )
+}
+/// Client publish check and Panopticon attest check. Same rules.
+///
+/// Refuses a v2 record and an unsigned draft (`bad-record`). Draft validation
+/// is [`check_rotation_draft`], and only the keyring builder calls it.
+/// An authenticated sibling with a different signing-byte id at the same
+/// (principal, seq) is `rotation-fork`. An identical attested sibling is a
+/// retry and is not a fork. Junk and unattested siblings are skipped. Priors
+/// are whatever [`resolve_current_key`] accepts.
+/// A signed candidate with no attestation is checked by
+/// [`verify_rotation_request`] (its local checks only). Freshness and present
+/// revocation apply only to that unattested request. An attested candidate
+/// uses the historical checks: `issuedAt` is an upper bound, and revocation
+/// is the witnessed check at `issuedAt`. Chain sequence, sibling forks, and
+/// epub reuse are applied here, after that call.
+/// Panopticon MUST call this function before attesting. It attests at most
+/// one genesis-epub binding per principal, only before the first rotation,
+/// and that limit is global across instances and signing keys (panopticon#499).
+/// Does not replace [`verify_rotate`]. Historical v2 records still verify there.
+pub fn check_rotation_publish(
+    candidate: &Value,
+    siblings: &[Value],
+    genesis: &PrincipalId,
+    prior_records: &[Value],
+    ctx: &ResolutionContext<'_>,
+) -> Result<Rotate, Reason> {
+    let signed_request = candidate["kind"] == "rotate"
+        && candidate.get("attest").is_none()
+        && (candidate.get("nextSig").is_some() || candidate.get("authorizer").is_some());
+    let parsed = rotation_candidate(candidate);
+    if !signed_request && !matches!(&parsed, Ok(IdentityRecord::Rotate(_))) {
+        return Err(Reason::BadRecord);
+    }
+    let chain = load_chain(genesis, prior_records, ctx)?;
+    let current = chain
+        .history
+        .last()
+        .map(|item| item.next_key.clone())
+        .unwrap_or_else(|| genesis.clone());
+    let raw = if signed_request {
+        verify_rotation_request(candidate, &current, ctx)?
+    } else {
+        check_rotate(candidate, &current, ctx, &mut Vec::new())?
+    };
+    if raw.next_epub.is_none() || &raw.principal != genesis {
+        return Err(Reason::BadRecord);
+    }
+    publish_tail(
+        raw,
+        siblings,
+        genesis,
+        &chain.history,
+        chain.binding_epub.as_ref(),
+        ctx,
+        false,
+    )
 }
 /// Local pre-attestation check for one v3 rotation request.
 ///
@@ -1500,6 +1572,12 @@ pub fn check_rotation_publish(
 /// those links at `issuedAt` and at `now` (`rotation-conflict`); and an
 /// unwitnessed current-key revoke of those links at `now` (`revoked-link`,
 /// [`verify_revoke_now`]).
+///
+/// Freshness and present revocation apply only to this unattested request.
+/// Present revocation honors `policy.clock_skew_seconds`: an offline revoke
+/// issued at or before `now + skew` removes the link. A revoke dated further
+/// ahead is ignored. Historical witnessed checks stay skew-free, and
+/// [`verify_revoke_now`] itself stays skew-free.
 ///
 /// Does not cover chain sequence, sibling forks, or epub reuse against history
 /// or the genesis-epub binding. Panopticon MUST call [`check_rotation_publish`]
@@ -1598,10 +1676,11 @@ fn check_rotate_record(
         return Err(Reason::BadSignature);
     }
     if require_attest {
+        // Historical records verify as of issued_at. The upper bound against ctx.now is proof_time above.
         let c = attest_verify(
             &rot.attest,
             ctx.jwks,
-            ctx.now,
+            rot.issued_at,
             ctx.policy.clock_skew_seconds,
         )?;
         if !rotation_claims_match(rot, &c) {
@@ -1654,7 +1733,7 @@ fn check_rotate_record(
                 &v,
                 ctx.revocations,
                 current_key,
-                ctx.now,
+                present_horizon(ctx.now, ctx.policy.clock_skew_seconds),
                 ctx.jwks,
                 diagnostics,
                 RevocationMode::Present,

@@ -12,7 +12,7 @@ import { p256 } from "@noble/curves/nist.js";
 import {
   parseEip55,
   parsePrincipalId,
-  checkRotationPublish,
+  checkRotationDraft,
   resolveCurrentKey,
   userSoul,
   type PrincipalId,
@@ -76,6 +76,7 @@ export class AccountKeyring {
   readonly #epriv: string;
   readonly #retired: readonly RetiredSecret[];
   readonly #laneId: string;
+  readonly #priorLanes: readonly string[];
 
   /**
    * Not a public entry. {@link fromGenesis}, {@link import}, and
@@ -91,16 +92,17 @@ export class AccountKeyring {
     currentEpriv: string,
     retired: readonly RetiredSecret[],
     laneId: string,
+    priorLanes: readonly string[],
     contentEpoch: number,
     rotationSeq: number,
     seal: typeof keyringSeal,
   ) {
-    if (seal !== keyringSeal) throw new Error("pub-mismatch");
+    if (seal !== keyringSeal) throw new Error("bad-construction");
     if (retired.length > 1024) throw new Error("too-many-keys");
     if (!Number.isSafeInteger(contentEpoch) || contentEpoch < 0 || !Number.isSafeInteger(rotationSeq) || rotationSeq < 0) {
       throw new Error("content-epoch");
     }
-    if (!/^[0-9a-f]{64}$/u.test(laneId)) throw new Error("bad-lane");
+    requireLaneSet(laneId, priorLanes);
     this.principal = principal;
     this.genesisEpub = genesisEpub;
     this.pub = currentPub;
@@ -109,6 +111,7 @@ export class AccountKeyring {
     this.#epriv = currentEpriv;
     this.#retired = retired;
     this.#laneId = laneId;
+    this.#priorLanes = priorLanes;
     this.contentEpoch = contentEpoch;
     this.rotationSeq = rotationSeq;
   }
@@ -124,6 +127,7 @@ export class AccountKeyring {
       account.epriv,
       [],
       account.laneId,
+      [],
       0,
       0,
     );
@@ -147,6 +151,7 @@ export class AccountKeyring {
     rotationSeq: number,
     rotations: readonly unknown[],
     context: ResolutionContext,
+    priorLanes: readonly string[] = [],
   ): AccountKeyring {
     const id = parsePrincipalId(principal);
     if (!id.ok) throw new Error(id.reason);
@@ -159,6 +164,7 @@ export class AccountKeyring {
       currentEpriv,
       retired,
       laneId,
+      priorLanes,
       contentEpoch,
       rotationSeq,
     );
@@ -180,6 +186,11 @@ export class AccountKeyring {
 
   laneId(): string {
     return this.#laneId;
+  }
+
+  /** Lane ids this keyring has already issued. A later mint cannot reuse one. */
+  priorLanes(): readonly string[] {
+    return [...this.#priorLanes];
   }
 
   /** Public fields only. Secrets stay off this projection. */
@@ -281,7 +292,8 @@ export function mintRotation(): RotationMint {
 }
 
 /** Mint the next v3 rotation. Name every trusted device except `lost`. Delivery is part 3.
- * `confirm` runs before the current epub is retired. */
+ * `confirm` runs before the current epub is retired. The draft is checked with
+ * `checkRotationDraft` before it is returned. A lane id is never reused. */
 export function rotateKeyring(
   keyring: AccountKeyring,
   trusted: readonly string[],
@@ -300,11 +312,10 @@ export function rotateKeyring(
   const minted = mint();
   const nextPub = signingPoint(minted.signingPub, minted.signingPriv);
   const nextEpub = encryptionPoint(minted.epub, minted.epriv);
-  if (!/^[0-9a-f]{64}$/u.test(minted.laneId)) throw new Error("bad-lane");
   if (nextEpub === nextPub || holdsPoint(keyring, nextEpub) || holdsPoint(keyring, nextPub)) {
     throw new Error("epub-reuse");
   }
-  if (minted.laneId === keyring.laneId()) throw new Error("bad-lane");
+  if (reusesLane(keyring, minted.laneId)) throw new Error("bad-lane");
   keyring.confirm(rotations, context);
   const resolved = resolveCurrentKey(keyring.principal, rotations, context);
   if (!resolved.ok) throw new Error(resolved.reason);
@@ -320,7 +331,8 @@ export function rotateKeyring(
   const retired = [...keyring.retired(), { epub: keyring.epub, epriv: keyring.currentEpriv() }];
   const seq = keyring.rotationSeq + 1;
   const epoch = keyring.contentEpoch + 1;
-  if (!Number.isSafeInteger(seq) || !Number.isSafeInteger(epoch)) throw new Error("rotation-rejected");
+  if (!Number.isSafeInteger(seq)) throw new Error("rotation-rejected");
+  if (!Number.isSafeInteger(epoch)) throw new Error("content-epoch");
   const rotated = new AccountKeyring(
     keyring.principal,
     keyring.genesisEpub,
@@ -330,6 +342,7 @@ export function rotateKeyring(
     minted.epriv,
     retired,
     minted.laneId,
+    [...keyring.priorLanes(), keyring.laneId()],
     epoch,
     seq,
     keyringSeal,
@@ -354,7 +367,7 @@ export function rotateKeyring(
     nextEpub,
     version: 3,
   };
-  const published = checkRotationPublish(
+  const published = checkRotationDraft(
     {
       v: 1,
       kind: "rotate",
@@ -387,6 +400,7 @@ function hold(
   currentEpriv: string,
   retired: readonly { epub: string; epriv: string }[],
   laneId: string,
+  priorLanes: readonly string[],
   contentEpoch: number,
   rotationSeq: number,
 ): AccountKeyring {
@@ -394,7 +408,7 @@ function hold(
   if (!Number.isSafeInteger(contentEpoch) || contentEpoch < 0 || !Number.isSafeInteger(rotationSeq) || rotationSeq < 0) {
     throw new Error("content-epoch");
   }
-  if (!/^[0-9a-f]{64}$/u.test(laneId)) throw new Error("bad-lane");
+  requireLaneSet(laneId, priorLanes);
   const genesisEpub = encryptionPoint(genesisEpubText, null);
   if (genesisEpub === principal) throw new Error("epub-mismatch");
   const currentPub = signingPoint(currentPubText, currentPriv);
@@ -422,10 +436,24 @@ function hold(
     currentEpriv,
     retiredKeys,
     laneId,
+    [...priorLanes],
     contentEpoch,
     rotationSeq,
     keyringSeal,
   );
+}
+
+function requireLaneSet(laneId: string, priorLanes: readonly string[]): void {
+  if (!/^[0-9a-f]{64}$/u.test(laneId)) throw new Error("bad-lane");
+  const seen = new Set<string>([laneId]);
+  for (const prior of priorLanes) {
+    if (!/^[0-9a-f]{64}$/u.test(prior) || seen.has(prior)) throw new Error("bad-lane");
+    seen.add(prior);
+  }
+}
+
+function reusesLane(keyring: AccountKeyring, laneId: string): boolean {
+  return !/^[0-9a-f]{64}$/u.test(laneId) || laneId === keyring.laneId() || keyring.priorLanes().includes(laneId);
 }
 
 function holdsPoint(keyring: AccountKeyring, point: PrincipalId): boolean {

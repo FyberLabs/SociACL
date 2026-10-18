@@ -67,6 +67,7 @@ export function openReaderWrap(
   revisionId: string,
 ): string {
   const scalar = unb64(epriv);
+  let plain: Uint8Array | undefined;
   try {
     if (seaPoint(scalar) !== epub) throw new Error("wrap-rejected");
     if (wrappedHex.length > MAX_WRAP_HEX || wrappedHex.length % 2 !== 0) throw new Error("wrap-rejected");
@@ -74,15 +75,18 @@ export function openReaderWrap(
     if (blob[0] !== 1 || blob.length < 1 + 65 + 12 + 16) throw new Error("wrap-rejected");
     const ephemeral = blob.slice(1, 66);
     const nonce = blob.slice(66, 78);
-    let plain: Uint8Array;
     try {
       plain = aesDecrypt(contentKdf(sharedX(scalar, ephemeral)), nonce, blob.slice(78));
     } catch (error) {
       if (error instanceof Error && error.message === "wrap-rejected") throw error;
       throw new Error("wrap-rejected");
     }
-    const fields = decodeLengthPrefixed(plain);
-    plain.fill(0);
+    let fields: string[];
+    try {
+      fields = decodeLengthPrefixed(plain);
+    } catch {
+      throw new Error("wrap-rejected");
+    }
     if (
       fields.length !== 9 ||
       fields[0] !== DOMAIN_WRAPPED_KEY ||
@@ -101,6 +105,7 @@ export function openReaderWrap(
     if (key === undefined) throw new Error("wrap-rejected");
     return key;
   } finally {
+    plain?.fill(0);
     scalar.fill(0);
   }
 }

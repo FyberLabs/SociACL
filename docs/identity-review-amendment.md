@@ -237,7 +237,13 @@ request only: it refuses v2 and any present `attest`; it requires
 the authorizer, the links, and the retained set; it applies historical
 revocation at `issuedAt` and present revocation at `now`
 (`verifyRevokeNow` / `resolveWalletLinkNow`) to the authorizer and every
-retained link. It does not check chain sequence or historical epub reuse.
+retained link. Freshness and present revocation apply only to that
+unattested request. An attested candidate does not use the window: its
+attestation is checked as of `issuedAt`, and revocation is the witnessed
+check at `issuedAt`. Present revocation honors `clockSkewSeconds` for an
+offline revoke dated at or before `now + skew`. A revoke dated further
+ahead is ignored. Historical witnessed checks and direct `verifyRevokeNow`
+stay skew-free. It does not check chain sequence or historical epub reuse.
 Panopticon requires that window, sets `iat` equal to the client-signed
 `issuedAt`, and sets `exp <= iat + 900`. It runs that present-revocation
 check before attesting. It also attests at most one `genesis-epub` binding
@@ -252,10 +258,15 @@ next-key signature and the full Panopticon claim both verify, including
 `auth`, `linkId`, `retainedLinks`, and the exact claim shape. Junk and
 unattested siblings are skipped and are not a fatal parse error. A distinct
 authenticated sibling at the same `(principal, seq)` is `rotation-fork`. An
-identical sibling is a retry, including a draft of that same transition, and
-is not a fork. A bad-signature prior does not block a later valid record. A
-null `currentEpub` still means do not seal and never fall back to Gun
-`user.epub`. A draft's `retainedLinks` use the signed-record rule.
+identical attested sibling is a retry and is not a fork. An unsigned draft
+is `bad-record` here. `checkRotationDraft` / `check_rotation_draft` is the
+builder's check before a signature exists, and Panopticon does not call it.
+A draft's `retainedLinks` use the signed-record rule, and an identical
+attested sibling of that draft is a retry. A bad-signature prior does not
+block a later valid record. A null `currentEpub` still means do not seal
+and never fall back to Gun `user.epub`. `verifyRotate` checks an attested
+record as of its `issuedAt`, so a historical record still verifies after
+the witness window.
 
 The verifier authenticates the authorizing credential and **every retained ID**
 against the pre-rotation state. Each must belong to the principal and remain

@@ -561,11 +561,25 @@ accept('records','r3-genesis-epub-request-skew',bindingRequest,p,{operation:'gen
   accept('records','r2-publish-altered-claim-sibling',{candidate:rot3,siblings:[sibling],prior:[]},p,{operation:'publish-check'});
 }
 const draftLinks={v:1,kind:'rotate',principal:p,seq:1,prevKey:p,nextKey:p2,nextEpub:epub,retainedLinks:[wid]};
-accept('records','r2-publish-draft-retained-links',{candidate:draftLinks,siblings:[],prior:[]},p,{operation:'publish-check',retainedLinks:[wid]});
-bad('r2-publish-draft-retained-junk',{candidate:{...draftLinks,retainedLinks:['zz']},siblings:[],prior:[]},'bad-record','publish-check');
+accept('records','r2-publish-draft-retained-links',{candidate:draftLinks,siblings:[],prior:[]},p,{operation:'draft-check',retainedLinks:[wid]});
+bad('r2-publish-draft-retained-junk',{candidate:{...draftLinks,retainedLinks:['zz']},siblings:[],prior:[]},'bad-record','draft-check');
 const draftSame={v:1,kind:'rotate',principal:p,seq:rot3.seq,prevKey:rot3.prevKey,nextKey:rot3.nextKey,nextEpub:rot3.nextEpub,retainedLinks:rot3.retainedLinks};
-accept('records','r2-publish-draft-identical-sibling',{candidate:draftSame,siblings:[rot3],prior:[]},p,{operation:'publish-check'});
-bad('r2-publish-draft-different-sibling',{candidate:{...draftSame,nextEpub:epub2},siblings:[rot3],prior:[]},'rotation-fork','publish-check');
+accept('records','r2-publish-draft-identical-sibling',{candidate:draftSame,siblings:[rot3],prior:[]},p,{operation:'draft-check'});
+bad('r2-publish-draft-different-sibling',{candidate:{...draftSame,nextEpub:epub2},siblings:[rot3],prior:[]},'rotation-fork','draft-check');
+bad('r4-publish-unsigned-draft',{candidate:draftLinks,siblings:[],prior:[]},'bad-record','publish-check');
+bad('r4-draft-signed-record',{candidate:rot3,siblings:[],prior:[]},'bad-record','draft-check');
+accept('records','r4-verify-rotate-after-expiry',rot3,p,{operation:'rotate',now:at+100000,nextEpub:epub});
+const skew60={...context.policy,clockSkewSeconds:60};
+const freshRequest=(()=>{ const row=rotationV3('wallet',p2,2,1,p,at+60,[wid],epub); const {attest:_a,...req}=row; return req; })();
+const offlineRevokeAt = issuedAt => { const row = { v: 1, kind: 'revoke', principal: p, linkId: wid, issuedAt }; row.keySig = keySig(row); return row; };
+const withinSkew = offlineRevokeAt(at + 90);
+const beyondSkew = offlineRevokeAt(at + 121);
+bad('r4-request-offline-revoke-within-skew',freshRequest,'revoked-link','rotation-request',{now:at+60,policy:skew60,revocations:[withinSkew]});
+bad('r4-publish-offline-revoke-within-skew',{candidate:freshRequest,siblings:[],prior:[]},'revoked-link','publish-check',{now:at+60,policy:skew60,revocations:[withinSkew]});
+accept('records','r4-request-offline-revoke-beyond-skew',freshRequest,p,{operation:'rotation-request',now:at+60,policy:skew60,revocations:[beyondSkew]});
+accept('records','r4-publish-offline-revoke-beyond-skew',{candidate:freshRequest,siblings:[],prior:[]},p,{operation:'publish-check',now:at+60,policy:skew60,revocations:[beyondSkew]});
+bad('r4-revoke-now-ignores-skew',withinSkew,'future-record','revoke-now',{now:at+60,policy:skew60});
+accept('records','r4-rotate-ignores-future-offline-revoke',rot3,p,{operation:'rotate',now:at+60,policy:skew60,revocations:[withinSkew],nextEpub:epub});
 
 const root = new URL('../../../vectors/ids/',import.meta.url); mkdirSync(root,{recursive:true});
 for(const [name,value] of families) writeFileSync(new URL(name+'.json',root),JSON.stringify(value,null,2).replace(/"issuedAt": 1700000000,/g, name==='edges'?'"issuedAt": 1700000000,':'"issuedAt": 1700000000.0,')+'\n');

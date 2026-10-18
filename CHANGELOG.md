@@ -32,10 +32,32 @@ here rather than in a later version. It replaces the unwitnessed
   next-key signature and the full Panopticon claim both verify (`auth`,
   `linkId`, `retainedLinks`, and the exact claim shape), checked as of the
   sibling's `issuedAt`, so an expired sibling still forks. Junk and
-  unattested siblings are skipped. An identical sibling is a retry, including
-  a draft of that same transition, and is not a fork. Priors are the rotations
-  `resolveCurrentKey` accepts. A distinct authenticated sibling at the same
-  (principal, seq) is `rotation-fork`.
+  unattested siblings are skipped. An identical attested sibling is a retry
+  and is not a fork. Priors are the rotations `resolveCurrentKey` accepts. A
+  distinct authenticated sibling at the same (principal, seq) is
+  `rotation-fork`.
+- An unsigned draft (no `nextSig`, `authorizer`, or `attest`) is
+  `bad-record` from `checkRotationPublish`. Draft validation is
+  `checkRotationDraft` / `check_rotation_draft`, and only the keyring
+  builder calls it. A draft's `retainedLinks` still use the signed-record
+  rule. An identical attested sibling of that draft is a retry.
+- Freshness and present revocation apply only to an unattested request.
+  An attested `checkRotationPublish` and `verifyRotate` do not use that
+  window. `verifyRotate` checks the attestation as of `issuedAt`, so a
+  historical record still verifies after the witness window. The `issuedAt`
+  upper bound against `now` remains.
+- Present revocation of an unattested request honors `clockSkewSeconds`.
+  An offline revoke dated at or before `now + skew` removes the link.
+  A revoke dated further ahead is ignored. Historical witnessed checks,
+  history admission, and direct `verifyRevokeNow` stay skew-free. The
+  request path passes `now + skew` as that present horizon.
+- Incrementing `contentEpoch` past `2^53 - 1` is `content-epoch`. A lane id
+  is never reused: the keyring keeps every prior lane and refuses a mint of
+  the current lane or any of them. Import restores that list
+  (`priorLanes` / `import_with_prior_lanes`). Lane ids stay off Gun.
+- Authenticated reader-wrap plaintext that is not length-prefixed is
+  `wrap-rejected`, and that plaintext is zeroed. Constructing
+  `AccountKeyring` without the module seal is `bad-construction`.
 - A binding counts toward the two-binding `rotation-fork` only when its
   `issuedAt` is strictly before the first accepted rotation. A later binding is
   skipped with `bad-sequence` and does not freeze a rotated account. With no

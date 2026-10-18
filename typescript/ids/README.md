@@ -47,7 +47,7 @@ object. Rust cannot represent an unpaired UTF-16 surrogate in `str`;
 | Signing | `signingBytes`, `linkId` |
 | Proofs | `verifyWalletLink`, `verifyOidcLink`, `verifyRotate`, `verifyRotationRequest`, `verifyGenesisEpubRequest`, `verifyRevoke` |
 | Present eligibility | `verifyRevokeNow`, `resolveWalletLinkNow` |
-| Histories | `resolveCurrentKey`, `resolveWalletLink`, `historyState` |
+| Histories | `resolveCurrentKey`, `resolveWalletLink`, `historyState`, `checkRotationPublish`, `checkRotationDraft` |
 
 Every parser/verifier returns `{ok:true,value}` or `{ok:false,reason}`. Scalar
 parsers check the input type before examining it. Object parsers snapshot own
@@ -204,17 +204,23 @@ set. An unwitnessed `genesisEpub` string is ignored. New rotations must be v3,
 and from 0.7 Panopticon attests only v3. From 0.8, Panopticon calls
 `checkRotationPublish` before it attests. That function calls
 `verifyRotationRequest` when the candidate has no attestation, then checks
-chain sequence, sibling forks, and epub reuse. The request helper covers one
+chain sequence, sibling forks, and epub reuse. Freshness and present
+revocation apply only to that unattested request. An attested candidate does
+not use them, and `verifyRotate` checks the attestation as of `issuedAt`.
+Present revocation honors clock skew for an offline revoke dated at or before
+`now + skew`. The request helper covers one
 v3 request: no `attest` field, `|issuedAt - now|` within clock skew, the
 next-key signature, the authorizer, the links, the retained set, historical
 revocation, and present revocation of the authorizer and every retained link.
-It does not check chain sequence or epub reuse. `verifyGenesisEpubRequest`
+It does not check chain sequence or epub reuse. An unsigned draft is
+`bad-record` from the publish check. `checkRotationDraft` is only the keyring
+builder's pre-signature check. `verifyGenesisEpubRequest`
 checks a genesis-epub request (shape, signature, freshness) before Panopticon
 attests it. A binding attestation is verified as of its `issuedAt`, and a
 sibling attestation is verified as of that sibling's `issuedAt`. A sibling
 counts only when its signature and the full claim match, including `auth`,
-`linkId`, and `retainedLinks`. An identical sibling is a retry and is not a
-fork. Junk is skipped.
+`linkId`, and `retainedLinks`. An identical attested sibling is a retry and is not a
+fork. An unsigned draft is `bad-record`. Junk is skipped.
 It refuses a v2 record with `bad-record` and two versions of one
 `(principal, seq)` with `rotation-fork`. It does not replace `verifyRotate`.
 The library still verifies historical v2.

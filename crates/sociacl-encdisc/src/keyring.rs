@@ -1,7 +1,8 @@
 //! Account keyring.
 //!
 //! Holds the current signing key, the current encryption key, the retired
-//! encryption keys, and the one lane id for this account. The account id
+//! encryption keys, the current lane id, and every lane id already issued.
+//! A later mint cannot reuse one. The account id
 //! stays the genesis signing pub. Import checks that pair against
 //! `resolve_current_key`. A null `current_epub` is not a match and is not
 //! Gun's `user.epub`. New rotations are v3 and mint a fresh epub.
@@ -44,7 +45,7 @@ impl std::fmt::Debug for RetiredEpriv {
     }
 }
 
-/// Current keys, retired encryption keys, and the one lane this keyring holds.
+/// Current keys, retired encryption keys, and the lanes this keyring has issued.
 #[derive(Clone)]
 pub struct AccountKeyring {
     principal: PrincipalId,
@@ -55,6 +56,7 @@ pub struct AccountKeyring {
     current_epriv: Zeroizing<String>,
     retired: Vec<RetiredEpriv>,
     lane_id: String,
+    prior_lanes: Vec<String>,
     content_epoch: u64,
     rotation_seq: u64,
 }
@@ -155,6 +157,7 @@ impl AccountKeyring {
             account.local_epriv(),
             &[],
             account.lane_id(),
+            &[],
             0,
             0,
         )
@@ -177,6 +180,40 @@ impl AccountKeyring {
         rotations: &[serde_json::Value],
         context: &sociacl_ids::ResolutionContext<'_>,
     ) -> Result<Self, EncDiscError> {
+        Self::import_with_prior_lanes(
+            principal,
+            genesis_epub,
+            current_pub,
+            current_priv,
+            current_epub,
+            current_epriv,
+            retired,
+            lane_id,
+            content_epoch,
+            rotation_seq,
+            rotations,
+            context,
+            &[],
+        )
+    }
+
+    /// Device import that also restores lane ids already issued. A later mint
+    /// cannot reuse the current lane or any of `prior_lanes`.
+    pub fn import_with_prior_lanes(
+        principal: &str,
+        genesis_epub: &str,
+        current_pub: &str,
+        current_priv: &str,
+        current_epub: &str,
+        current_epriv: &str,
+        retired: &[(&str, &str)],
+        lane_id: &str,
+        content_epoch: u64,
+        rotation_seq: u64,
+        rotations: &[serde_json::Value],
+        context: &sociacl_ids::ResolutionContext<'_>,
+        prior_lanes: &[&str],
+    ) -> Result<Self, EncDiscError> {
         let principal = parse_principal_id(principal).map_err(reject)?;
         let keyring = Self::hold(
             principal,
@@ -187,6 +224,7 @@ impl AccountKeyring {
             current_epriv,
             retired,
             lane_id,
+            prior_lanes,
             content_epoch,
             rotation_seq,
         )?;
@@ -226,6 +264,11 @@ impl AccountKeyring {
 
     pub fn lane_id(&self) -> &str {
         &self.lane_id
+    }
+
+    /// Lane ids this keyring has already issued. A later mint cannot reuse one.
+    pub fn prior_lanes(&self) -> &[String] {
+        &self.prior_lanes
     }
 
     pub fn content_epoch(&self) -> u64 {
@@ -365,10 +408,11 @@ impl AccountKeyring {
         current_epriv: &str,
         retired: &[(&str, &str)],
         lane_id: &str,
+        prior_lanes: &[&str],
         content_epoch: u64,
         rotation_seq: u64,
     ) -> Result<Self, EncDiscError> {
-        require_lane(lane_id)?;
+        require_lane_set(lane_id, prior_lanes)?;
         if retired.len() > 1024 {
             return Err(EncDiscError::IdentityRejected("too-many-keys".into()));
         }
@@ -421,6 +465,7 @@ impl AccountKeyring {
             current_epriv,
             retired: retired_keys,
             lane_id: lane_id.to_string(),
+            prior_lanes: prior_lanes.iter().map(|lane| (*lane).to_string()).collect(),
             content_epoch,
             rotation_seq,
         })
@@ -439,6 +484,7 @@ impl std::fmt::Debug for AccountKeyring {
             .field("epriv", &"<redacted>")
             .field("retired", &self.retired.len())
             .field("lane_id", &"<redacted>")
+            .field("prior_lanes", &self.prior_lanes.len())
             .field("content_epoch", &self.content_epoch)
             .field("rotation_seq", &self.rotation_seq)
             .finish()
@@ -482,8 +528,8 @@ pub fn mint_rotation() -> Result<RotationMint, EncDiscError> {
 /// Mint the next v3 rotation. Name every trusted device except `lost`.
 /// Delivery of the new keyring is part 3 and is not done here.
 /// The account id does not change. `confirm` runs before the current epub is
-/// retired. The draft is checked with `check_rotation_publish` before it is
-/// returned.
+/// retired. The draft is checked with `check_rotation_draft` before it is
+/// returned. A lane id is never reused.
 pub fn rotate_keyring<F>(
     keyring: &AccountKeyring,
     trusted: &[&str],
@@ -516,7 +562,7 @@ where
     {
         return Err(EncDiscError::EpubReuse);
     }
-    if minted.lane_id == keyring.lane_id {
+    if reuses_lane(keyring, &minted.lane_id) {
         return Err(EncDiscError::BadLane);
     }
     let account = keyring.confirm(rotations, context)?;
@@ -541,10 +587,18 @@ where
         .rotation_seq
         .checked_add(1)
         .ok_or(EncDiscError::RotationRejected)?;
+    if seq > 9_007_199_254_740_991 {
+        return Err(EncDiscError::RotationRejected);
+    }
     let epoch = keyring
         .content_epoch
         .checked_add(1)
         .ok_or(EncDiscError::EpochRejected)?;
+    if epoch > 9_007_199_254_740_991 {
+        return Err(EncDiscError::EpochRejected);
+    }
+    let mut prior_lanes = keyring.prior_lanes.clone();
+    prior_lanes.push(keyring.lane_id.clone());
     let rotated = AccountKeyring {
         principal: keyring.principal.clone(),
         genesis_epub: keyring.genesis_epub.clone(),
@@ -554,6 +608,7 @@ where
         current_epriv: next_epriv,
         retired,
         lane_id: minted.lane_id,
+        prior_lanes,
         content_epoch: epoch,
         rotation_seq: seq,
     };
@@ -585,7 +640,7 @@ where
         "nextEpub": draft.next_epub.as_ref(),
         "retainedLinks": [],
     });
-    sociacl_ids::check_rotation_publish(&draft_record, &[], &keyring.principal, rotations, context)
+    sociacl_ids::check_rotation_draft(&draft_record, &[], &keyring.principal, rotations, context)
         .map_err(reject)?;
     Ok(KeyringRotation {
         keyring: rotated,
@@ -593,6 +648,25 @@ where
         draft,
         lost_local_id: lost.to_string(),
     })
+}
+
+fn require_lane_set(lane_id: &str, prior_lanes: &[&str]) -> Result<(), EncDiscError> {
+    require_lane(lane_id)?;
+    let mut seen = vec![lane_id.to_string()];
+    for prior in prior_lanes {
+        require_lane(prior)?;
+        if seen.iter().any(|held| held == prior) {
+            return Err(EncDiscError::BadLane);
+        }
+        seen.push((*prior).to_string());
+    }
+    Ok(())
+}
+
+fn reuses_lane(keyring: &AccountKeyring, lane_id: &str) -> bool {
+    require_lane(lane_id).is_err()
+        || lane_id == keyring.lane_id
+        || keyring.prior_lanes.iter().any(|prior| prior == lane_id)
 }
 
 fn holds_point(keyring: &AccountKeyring, point: &PrincipalId) -> bool {
@@ -1760,6 +1834,354 @@ mod tests {
                 0,
                 &[],
                 &ctx,
+            )
+            .unwrap_err(),
+        );
+    }
+
+    #[test]
+    fn a_content_epoch_cannot_increment_past_the_safe_integer_cap() {
+        let v = ring();
+        let records = records();
+        let (signing_pub, signing_priv) = scalar_sea(1);
+        let (epub, epriv) = scalar_sea(9);
+        let mut hold = witness_hold(&v);
+        hold.binding = records["accept"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|item| item["name"] == "binding-valid-no-rotation")
+            .unwrap()["genesisEpubBindings"]
+            .as_array()
+            .unwrap()
+            .clone();
+        let ctx = witness_context(&hold);
+        let imported = AccountKeyring::import(
+            &signing_pub,
+            &epub,
+            &signing_pub,
+            signing_priv.as_str(),
+            &epub,
+            epriv.as_str(),
+            &[],
+            v["genesis"]["laneId"].as_str().unwrap(),
+            v["maxContentEpoch"].as_u64().unwrap(),
+            0,
+            &[],
+            &ctx,
+        )
+        .unwrap();
+        let (next_pub, next_priv) = scalar_sea_n(20);
+        let (next_epub, next_epriv) = scalar_sea_n(21);
+        let names = trusted(&v);
+        expect_err(
+            &v,
+            "contentEpoch",
+            rotate_keyring(
+                &imported,
+                &names,
+                v["lost"].as_str().unwrap(),
+                &[],
+                &ctx,
+                || {
+                    Ok(RotationMint {
+                        signing_pub: next_pub,
+                        signing_priv: next_priv,
+                        epub: next_epub,
+                        epriv: next_epriv,
+                        lane_id: "ee".repeat(32),
+                    })
+                },
+            )
+            .unwrap_err(),
+        );
+    }
+
+    fn b64url(bytes: &[u8]) -> String {
+        use base64ct::Encoding;
+        base64ct::Base64UrlUnpadded::encode_string(bytes)
+    }
+
+    fn sign_scalar(message: &[u8], n: u16) -> String {
+        use p256::ecdsa::signature::Signer;
+        let mut raw = [0u8; 32];
+        raw[30] = (n >> 8) as u8;
+        raw[31] = n as u8;
+        let secret = p256::SecretKey::from_slice(&raw).unwrap();
+        raw.zeroize();
+        let key = p256::ecdsa::SigningKey::from(secret);
+        let sig: p256::ecdsa::Signature = key.sign(message);
+        b64url(&sig.to_bytes())
+    }
+
+    fn sign_oidc_rotation(
+        principal: &str,
+        seq: u64,
+        prev: &str,
+        next: &str,
+        epub: &str,
+        issued_at: u64,
+        next_scalar: u16,
+        link: &str,
+    ) -> Value {
+        let unsigned = serde_json::json!({
+            "v": 1,
+            "kind": "rotate",
+            "principal": principal,
+            "seq": seq,
+            "prevKey": prev,
+            "nextKey": next,
+            "nextEpub": epub,
+            "issuedAt": issued_at,
+            "retainedLinks": [link],
+            "authorizer": {"kind": "oidc-fresh-login", "link": link},
+        });
+        let message = sociacl_ids::parse_signing_bytes(&unsigned).unwrap();
+        let next_sig = sign_scalar(&message, next_scalar);
+        let claims = serde_json::json!({
+            "typ": "sociacl-rotate-attest-v3",
+            "principal": principal,
+            "nextKey": next,
+            "nextEpub": epub,
+            "seq": seq,
+            "iat": issued_at,
+            "exp": issued_at + 600,
+            "auth": "oidc-fresh-login",
+            "linkId": link,
+            "retainedLinks": [link],
+        });
+        let header = b64url(br#"{"alg":"ES256","kid":"fixture-1","typ":"JWT"}"#);
+        let payload = b64url(serde_json::to_string(&claims).unwrap().as_bytes());
+        let body = format!("{header}.{payload}");
+        let sig = sign_scalar(body.as_bytes(), 5);
+        let mut signed = unsigned;
+        signed["nextSig"] = Value::String(next_sig);
+        signed["attest"] = Value::String(format!("{body}.{sig}"));
+        signed
+    }
+
+    #[test]
+    fn a_lane_id_cannot_be_reused_across_later_rotations() {
+        let v = ring();
+        let records = records();
+        let ctx_json = &records["context"];
+        let binding = records["accept"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|item| item["name"] == "binding-valid-no-rotation")
+            .unwrap()["genesisEpubBindings"]
+            .as_array()
+            .unwrap()
+            .clone();
+        let jwks: Jwks = serde_json::from_value(ctx_json["jwks"].clone()).unwrap();
+        let policy: SiwePolicy = serde_json::from_value(ctx_json["policy"].clone()).unwrap();
+        let pinned: BTreeSet<String> = ctx_json["pinnedIss"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|item| item.as_str().unwrap().to_string())
+            .collect();
+        let links: BTreeMap<String, Value> = ctx_json["links"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|pair| pair[1]["kind"] == "oidc")
+            .map(|pair| (pair[0].as_str().unwrap().to_string(), pair[1].clone()))
+            .collect();
+        let link = links.keys().next().unwrap().clone();
+        let authenticated = ctx_json["authenticatedAccounts"].clone();
+        let history = |principal: &PrincipalId, at, until| {
+            if !authenticated
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|item| item.as_str() == Some(principal.as_ref()))
+            {
+                return Err(Reason::MissingHistory);
+            }
+            Ok(history_state(principal, &Vec::<Rotate>::new(), at, until))
+        };
+        let resolver: &HistoryResolver<'_> = &history;
+        let revocations = Vec::new();
+        let now = ctx_json["now"].as_u64().unwrap();
+        let bound = ResolutionContext {
+            jwks: &jwks,
+            links: &links,
+            revocations: &revocations,
+            now,
+            policy: &policy,
+            pinned_iss: &pinned,
+            history: resolver,
+            genesis_epub_bindings: &binding,
+        };
+        let (signing_pub, signing_priv) = scalar_sea(1);
+        let (epub, epriv) = scalar_sea(9);
+        let lanes = [
+            "11".repeat(32),
+            "22".repeat(32),
+            "33".repeat(32),
+            "44".repeat(32),
+        ];
+        let mut current = AccountKeyring::import(
+            &signing_pub,
+            &epub,
+            &signing_pub,
+            signing_priv.as_str(),
+            &epub,
+            epriv.as_str(),
+            &[],
+            &lanes[0],
+            0,
+            0,
+            &[],
+            &bound,
+        )
+        .unwrap();
+        let mut chain = Vec::new();
+        let names = trusted(&v);
+        for step in 0..3 {
+            let sign_n = 20 + step as u16 * 2;
+            let epub_n = 21 + step as u16 * 2;
+            let (next_pub, next_priv) = scalar_sea_n(sign_n);
+            let (next_epub, next_epriv) = scalar_sea_n(epub_n);
+            let lane = lanes[step + 1].clone();
+            let outcome = rotate_keyring(
+                &current,
+                &names,
+                v["lost"].as_str().unwrap(),
+                &chain,
+                &bound,
+                || {
+                    Ok(RotationMint {
+                        signing_pub: next_pub.clone(),
+                        signing_priv: next_priv.clone(),
+                        epub: next_epub.clone(),
+                        epriv: next_epriv.clone(),
+                        lane_id: lane.clone(),
+                    })
+                },
+            )
+            .unwrap();
+            assert_eq!(outcome.keyring.lane_id(), lanes[step + 1]);
+            assert_eq!(
+                outcome.keyring.prior_lanes(),
+                &lanes[..=step].iter().cloned().collect::<Vec<_>>()
+            );
+            let published = format!(
+                "{}{}",
+                outcome.keyring.gun_document(),
+                serde_json::to_string(&serde_json::json!({
+                    "principal": outcome.keyring.principal().as_ref(),
+                    "genesisEpub": outcome.keyring.genesis_epub().as_ref(),
+                    "pub": outcome.keyring.current_pub().as_ref(),
+                    "epub": outcome.keyring.current_epub().as_ref(),
+                    "contentEpoch": outcome.keyring.content_epoch(),
+                    "rotationSeq": outcome.keyring.rotation_seq(),
+                }))
+                .unwrap()
+            );
+            for lane in &lanes {
+                assert!(!published.contains(lane));
+            }
+            chain.push(sign_oidc_rotation(
+                current.principal().as_ref(),
+                (step as u64) + 1,
+                current.current_pub().as_ref(),
+                &next_pub,
+                &next_epub,
+                now - 30 + step as u64 * 10,
+                sign_n,
+                &link,
+            ));
+            current = outcome.keyring;
+        }
+        let (reuse_pub, reuse_priv) = scalar_sea_n(40);
+        let (reuse_epub, reuse_epriv) = scalar_sea_n(41);
+        for lane in &lanes {
+            expect_err(
+                &v,
+                "badLane",
+                rotate_keyring(
+                    &current,
+                    &names,
+                    v["lost"].as_str().unwrap(),
+                    &chain,
+                    &bound,
+                    || {
+                        Ok(RotationMint {
+                            signing_pub: reuse_pub.clone(),
+                            signing_priv: reuse_priv.clone(),
+                            epub: reuse_epub.clone(),
+                            epriv: reuse_epriv.clone(),
+                            lane_id: lane.clone(),
+                        })
+                    },
+                )
+                .unwrap_err(),
+            );
+        }
+        let retired: Vec<(&str, &str)> = current
+            .retired()
+            .iter()
+            .map(|row| (row.epub().as_ref(), row.epriv()))
+            .collect();
+        let prior: Vec<&str> = current.prior_lanes().iter().map(String::as_str).collect();
+        let restored = AccountKeyring::import_with_prior_lanes(
+            current.principal().as_ref(),
+            current.genesis_epub().as_ref(),
+            current.current_pub().as_ref(),
+            current.current_priv(),
+            current.current_epub().as_ref(),
+            current.current_epriv(),
+            &retired,
+            current.lane_id(),
+            current.content_epoch(),
+            current.rotation_seq(),
+            &chain,
+            &bound,
+            &prior,
+        )
+        .unwrap();
+        expect_err(
+            &v,
+            "badLane",
+            rotate_keyring(
+                &restored,
+                &names,
+                v["lost"].as_str().unwrap(),
+                &chain,
+                &bound,
+                || {
+                    Ok(RotationMint {
+                        signing_pub: reuse_pub.clone(),
+                        signing_priv: reuse_priv.clone(),
+                        epub: reuse_epub.clone(),
+                        epriv: reuse_epriv.clone(),
+                        lane_id: lanes[0].clone(),
+                    })
+                },
+            )
+            .unwrap_err(),
+        );
+        let same = [current.lane_id()];
+        expect_err(
+            &v,
+            "badLane",
+            AccountKeyring::import_with_prior_lanes(
+                current.principal().as_ref(),
+                current.genesis_epub().as_ref(),
+                current.current_pub().as_ref(),
+                current.current_priv(),
+                current.current_epub().as_ref(),
+                current.current_epriv(),
+                &retired,
+                current.lane_id(),
+                current.content_epoch(),
+                current.rotation_seq(),
+                &chain,
+                &bound,
+                &same,
             )
             .unwrap_err(),
         );

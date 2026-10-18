@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
+import { createCipheriv, createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
+import { p256 } from "@noble/curves/nist.js";
 import {
   deliveryMintsGrant,
   importGenesis,
@@ -13,13 +15,15 @@ import {
   mintRotation,
   rotateKeyring,
 } from "../contract/account-keyring.ts";
-import { seaPoint } from "../contract/account-key-seal.ts";
+import { bytesToHex, seaPoint, sharedX, uncompressedFromSea } from "../contract/account-key-seal.ts";
+import { lengthPrefixed } from "../contract/canonical.ts";
 import { openReaderWrap } from "../contract/content-wrap.ts";
 import { sealContentWith } from "./support/account-key-deterministic.ts";
 import {
   formatPrincipalKey,
   historyState,
   parsePrincipalId,
+  signingBytes,
   type Jwks,
   type PrincipalId,
   type ResolutionContext,
@@ -41,6 +45,7 @@ const vector = JSON.parse(readFileSync(new URL("../../vectors/encrypted-discover
   wallet: string;
   genesisBinding: unknown;
   unsafeContentEpoch: number;
+  maxContentEpoch: number;
   errors: Record<string, string>;
   expected: {
     principal: string;
@@ -726,7 +731,7 @@ test("the constructor is not an import path", () => {
       0,
       0,
     ),
-    (error: unknown) => error instanceof Error && error.message === "pub-mismatch",
+    (error: unknown) => error instanceof Error && error.message === vector.errors.badConstruction,
   );
 });
 
@@ -785,5 +790,243 @@ test("typescript seal opens and matches the shared rust wrap", () => {
   assert.equal(
     message(() => openReaderWrap(epub.priv, epub.pub, tampered, vector.crossWrap.epoch, vector.witnessed.objectId, vector.witnessed.revisionId)),
     "wrap-rejected",
+  );
+});
+
+test("authenticated malformed plaintext is wrap-rejected", () => {
+  const reader = scalarSea(6);
+  const ephemeral = new Uint8Array(32);
+  ephemeral[31] = 12;
+  const nonce = new Uint8Array(12).fill(7);
+  const key = createHash("sha256")
+    .update(lengthPrefixed(["s3rch-sea-secret-v1", bytesToHex(sharedX(ephemeral, uncompressedFromSea(reader.pub)))]))
+    .digest();
+  const cipher = createCipheriv("aes-256-gcm", key, nonce);
+  cipher.setAAD(new Uint8Array());
+  const ct = Buffer.concat([cipher.update(new TextEncoder().encode("not-length-prefixed")), cipher.final(), cipher.getAuthTag()]);
+  const point = p256.getPublicKey(ephemeral, false);
+  const blob = new Uint8Array(1 + point.length + nonce.length + ct.length);
+  blob[0] = 1;
+  blob.set(point, 1);
+  blob.set(nonce, 1 + point.length);
+  blob.set(ct, 1 + point.length + nonce.length);
+  ephemeral.fill(0);
+  assert.equal(
+    message(() => openReaderWrap(reader.priv, reader.pub, bytesToHex(blob), 1, vector.witnessed.objectId, vector.witnessed.revisionId)),
+    "wrap-rejected",
+  );
+});
+
+test("a content epoch cannot increment past the safe integer cap", () => {
+  const row = records.accept.find((item) => item.name === "binding-valid-no-rotation") as { genesisEpubBindings?: unknown[] } | undefined;
+  if (!row?.genesisEpubBindings) throw new Error("missing binding vector");
+  const context = recordsContext(row.genesisEpubBindings);
+  const signing = scalarSea(1);
+  const enc = scalarSea(9);
+  const imported = AccountKeyring.import(
+    signing.pub,
+    enc.pub,
+    signing.pub,
+    signing.priv,
+    enc.pub,
+    enc.priv,
+    [],
+    vector.genesis.laneId,
+    vector.maxContentEpoch,
+    0,
+    [],
+    context,
+  );
+  const next = scalarSeaN(20);
+  const nextEnc = scalarSeaN(21);
+  assert.equal(
+    message(() => rotateKeyring(imported, vector.trusted, vector.lost, [], context, () => ({
+      signingPub: next.pub,
+      signingPriv: next.priv,
+      epub: nextEnc.pub,
+      epriv: nextEnc.priv,
+      laneId: "ee".repeat(32),
+    }))),
+    vector.errors.contentEpoch,
+  );
+});
+
+function oidcOnlyContext(bindings: readonly unknown[]): ResolutionContext {
+  const links = new Map(records.context.links.filter((pair) => (pair[1] as { kind?: string }).kind === "oidc"));
+  const history = (principal: PrincipalId, at: number, until: number) =>
+    records.context.authenticatedAccounts.includes(principal)
+      ? { ok: true as const, value: historyState(principal, [], at, until) }
+      : { ok: false as const, reason: "missing-history" as const };
+  return {
+    jwks: records.context.jwks,
+    links,
+    revocations: [],
+    now: records.context.now,
+    policy: records.context.policy,
+    pinnedIss: new Set(records.context.pinnedIss),
+    history,
+    genesisEpubBindings: bindings,
+  } as ResolutionContext;
+}
+
+function signOidcRotation(input: {
+  principal: string;
+  seq: number;
+  prevKey: string;
+  nextKey: string;
+  nextEpub: string;
+  issuedAt: number;
+  nextScalar: number;
+  link: string;
+}): Record<string, unknown> {
+  const retainedLinks = [input.link];
+  const unsigned = {
+    v: 1,
+    kind: "rotate",
+    principal: input.principal,
+    seq: input.seq,
+    prevKey: input.prevKey,
+    nextKey: input.nextKey,
+    nextEpub: input.nextEpub,
+    issuedAt: input.issuedAt,
+    retainedLinks,
+    authorizer: { kind: "oidc-fresh-login", link: input.link },
+  };
+  const messageBytes = signingBytes(unsigned);
+  if (!messageBytes.ok) throw new Error(messageBytes.reason);
+  const scalar = new Uint8Array(32);
+  scalar[31] = input.nextScalar;
+  const nextSig = Buffer.from(p256.sign(messageBytes.value, scalar, { lowS: false })).toString("base64url");
+  scalar.fill(0);
+  const claims = {
+    typ: "sociacl-rotate-attest-v3",
+    principal: input.principal,
+    nextKey: input.nextKey,
+    nextEpub: input.nextEpub,
+    seq: input.seq,
+    iat: input.issuedAt,
+    exp: input.issuedAt + 600,
+    auth: "oidc-fresh-login",
+    linkId: input.link,
+    retainedLinks,
+  };
+  const header = Buffer.from(JSON.stringify({ alg: "ES256", kid: "fixture-1", typ: "JWT" })).toString("base64url");
+  const payload = Buffer.from(JSON.stringify(claims)).toString("base64url");
+  const body = `${header}.${payload}`;
+  const witness = new Uint8Array(32);
+  witness[31] = 5;
+  const sig = Buffer.from(p256.sign(new TextEncoder().encode(body), witness, { lowS: false })).toString("base64url");
+  witness.fill(0);
+  return { ...unsigned, nextSig, attest: `${body}.${sig}` };
+}
+
+test("a lane id cannot be reused across later rotations", () => {
+  const row = records.accept.find((item) => item.name === "binding-valid-no-rotation") as { genesisEpubBindings?: unknown[] } | undefined;
+  if (!row?.genesisEpubBindings) throw new Error("missing binding vector");
+  const context = oidcOnlyContext(row.genesisEpubBindings);
+  const link = [...context.links.keys()][0];
+  if (!link) throw new Error("missing oidc link");
+  const signing = scalarSea(1);
+  const enc = scalarSea(9);
+  const lanes = ["11".repeat(32), "22".repeat(32), "33".repeat(32), "44".repeat(32)];
+  let current = AccountKeyring.import(
+    signing.pub,
+    enc.pub,
+    signing.pub,
+    signing.priv,
+    enc.pub,
+    enc.priv,
+    [],
+    lanes[0]!,
+    0,
+    0,
+    [],
+    context,
+  );
+  const chain: Record<string, unknown>[] = [];
+  for (let step = 0; step < 3; step++) {
+    const signN = 20 + step * 2;
+    const epubN = 21 + step * 2;
+    const next = scalarSeaN(signN);
+    const nextEnc = scalarSeaN(epubN);
+    const outcome = rotateKeyring(current, vector.trusted, vector.lost, chain, context, () => ({
+      signingPub: next.pub,
+      signingPriv: next.priv,
+      epub: nextEnc.pub,
+      epriv: nextEnc.priv,
+      laneId: lanes[step + 1]!,
+    }));
+    assert.equal(outcome.keyring.laneId(), lanes[step + 1]);
+    assert.deepEqual(outcome.keyring.priorLanes(), lanes.slice(0, step + 1));
+    chain.push(signOidcRotation({
+      principal: current.principal,
+      seq: step + 1,
+      prevKey: current.pub,
+      nextKey: next.pub,
+      nextEpub: nextEnc.pub,
+      issuedAt: records.context.now - 30 + step * 10,
+      nextScalar: signN,
+      link,
+    }));
+    current = outcome.keyring;
+    const published = JSON.stringify(current.toJSON()) + current.gunDocument();
+    for (const lane of lanes) assert.equal(published.includes(lane), false);
+  }
+  const reuse = scalarSeaN(40);
+  const reuseEnc = scalarSeaN(41);
+  for (const lane of [lanes[0]!, lanes[1]!, lanes[2]!, lanes[3]!]) {
+    assert.equal(
+      message(() => rotateKeyring(current, vector.trusted, vector.lost, chain, context, () => ({
+        signingPub: reuse.pub,
+        signingPriv: reuse.priv,
+        epub: reuseEnc.pub,
+        epriv: reuseEnc.priv,
+        laneId: lane,
+      }))),
+      vector.errors.badLane,
+    );
+  }
+  const restored = AccountKeyring.import(
+    current.principal,
+    current.genesisEpub,
+    current.pub,
+    current.currentPriv(),
+    current.epub,
+    current.currentEpriv(),
+    current.retired(),
+    current.laneId(),
+    current.contentEpoch,
+    current.rotationSeq,
+    chain,
+    context,
+    current.priorLanes(),
+  );
+  assert.equal(
+    message(() => rotateKeyring(restored, vector.trusted, vector.lost, chain, context, () => ({
+      signingPub: reuse.pub,
+      signingPriv: reuse.priv,
+      epub: reuseEnc.pub,
+      epriv: reuseEnc.priv,
+      laneId: lanes[0]!,
+    }))),
+    vector.errors.badLane,
+  );
+  assert.equal(
+    message(() => AccountKeyring.import(
+      current.principal,
+      current.genesisEpub,
+      current.pub,
+      current.currentPriv(),
+      current.epub,
+      current.currentEpriv(),
+      current.retired(),
+      current.laneId(),
+      current.contentEpoch,
+      current.rotationSeq,
+      chain,
+      context,
+      [current.laneId()],
+    )),
+    vector.errors.badLane,
   );
 });

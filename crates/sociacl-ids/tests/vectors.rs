@@ -217,12 +217,15 @@ fn run(f: &Family, c: &Case, v: &Value) -> Result<Value, Reason> {
                 )?
                 .principal
             }
-            "publish-check" => {
+            operation @ ("publish-check" | "draft-check") => {
                 let siblings = v["siblings"].as_array().unwrap();
                 let prior = v["prior"].as_array().unwrap();
                 let genesis = parse_principal_id(ctx["genesis"].as_str().unwrap())?;
-                let published =
-                    check_rotation_publish(&v["candidate"], siblings, &genesis, prior, &rc)?;
+                let published = if operation == "draft-check" {
+                    check_rotation_draft(&v["candidate"], siblings, &genesis, prior, &rc)?
+                } else {
+                    check_rotation_publish(&v["candidate"], siblings, &genesis, prior, &rc)?
+                };
                 if let Some(expected) = c.extra.get("retainedLinks") {
                     assert_eq!(
                         serde_json::to_value(&published.retained_links).unwrap(),
