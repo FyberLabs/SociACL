@@ -357,8 +357,10 @@ export function verifyRotate(x,currentKey,ctx) {return checkRotate(x,currentKey,
  * Freshness and present revocation apply only to this unattested request.
  * Present revocation honors `policy.clockSkewSeconds`: an offline revoke
  * issued at or before `now + skew` removes the link. A revoke dated further
- * ahead is ignored. Historical witnessed checks stay skew-free, and
- * `verifyRevokeNow` itself stays skew-free.
+ * ahead is ignored. The same horizon applies to the active-wallet check:
+ * a wallet linked after `issuedAt` but at or before `now + skew` still makes
+ * OIDC recovery `wallet-required`. Historical witnessed checks stay
+ * skew-free, and `verifyRevokeNow` itself stays skew-free.
  * Does not cover chain sequence, sibling forks, or epub reuse against
  * history or the genesis-epub binding. Panopticon MUST call
  * `checkRotationPublish` for those. This is the building block that
@@ -416,20 +418,29 @@ function checkRotateBody(r, currentKey, ctx, diagnostics, requireAttest) {
   } else {
     if (authorizer.kind !== 'oidc') return fail('missing-history');
     // OIDC recovery is restricted to accounts with no active wallet, including wallets the candidate drops.
+    // An unattested request also counts a wallet linked after issuedAt, up to now+skew.
     const entries=[...ctx.links].sort((a,b)=>a[0]<b[0]?-1:a[0]>b[0]?1:0);
-    for (const [index,[id,raw]] of entries.entries()) {
-      const parsed=record(raw);
-      if (!parsed.ok) {report(diagnostics,'link',index,parsed.reason);continue;}
-      const l=parsed.value;
-      if (l.kind !== 'wallet' || l.principal !== r.principal) continue;
-      if (hex(sha256(bytes(l))) !== id) {report(diagnostics,'link',index,'unknown-link');continue;}
-      const v=historicalLink(l,ctx,r.issuedAt);
-      if (!v.ok) {
-        report(diagnostics,'link',index,v.reason);
-        if (v.reason==='missing-history'||v.reason==='rotation-fork'||v.reason==='rotation-conflict') return v;
-        continue;
+    /** @param {number} until @returns {Result<true>} */
+    const walletAbsent = until => {
+      for (const [index,[id,raw]] of entries.entries()) {
+        const parsed=record(raw);
+        if (!parsed.ok) {report(diagnostics,'link',index,parsed.reason);continue;}
+        const l=parsed.value;
+        if (l.kind !== 'wallet' || l.principal !== r.principal) continue;
+        if (hex(sha256(bytes(l))) !== id) {report(diagnostics,'link',index,'unknown-link');continue;}
+        const v=historicalLink(l,ctx,until);
+        if (!v.ok) {
+          report(diagnostics,'link',index,v.reason);
+          if (v.reason==='missing-history'||v.reason==='rotation-fork'||v.reason==='rotation-conflict') return v;
+          continue;
+        }
+        if (!revokedAt(v.value,ctx.revocations??[],currentKey,until,ctx.jwks,diagnostics)) return fail('wallet-required');
       }
-      if (!revokedAt(v.value,ctx.revocations??[],currentKey,r.issuedAt,ctx.jwks,diagnostics)) return fail('wallet-required');
+      return ok(true);
+    };
+    const absent = walletAbsent(r.issuedAt); if (!absent.ok) return absent;
+    if (!requireAttest) {
+      const present = walletAbsent(presentHorizon(ctx.now, skew)); if (!present.ok) return present;
     }
   }
   return ok(r);

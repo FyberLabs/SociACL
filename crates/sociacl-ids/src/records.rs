@@ -1576,8 +1576,10 @@ pub fn check_rotation_publish(
 /// Freshness and present revocation apply only to this unattested request.
 /// Present revocation honors `policy.clock_skew_seconds`: an offline revoke
 /// issued at or before `now + skew` removes the link. A revoke dated further
-/// ahead is ignored. Historical witnessed checks stay skew-free, and
-/// [`verify_revoke_now`] itself stays skew-free.
+/// ahead is ignored. The same horizon applies to the active-wallet check:
+/// a wallet linked after `issuedAt` but at or before `now + skew` still makes
+/// OIDC recovery `wallet-required`. Historical witnessed checks stay
+/// skew-free, and [`verify_revoke_now`] itself stays skew-free.
 ///
 /// Does not cover chain sequence, sibling forks, or epub reuse against history
 /// or the genesis-epub binding. Panopticon MUST call [`check_rotation_publish`]
@@ -1762,48 +1764,59 @@ fn check_rotate_record(
         if !matches!(authorizer, IdentityRecord::Oidc(_)) {
             return Err(Reason::MissingHistory);
         }
-        for (index, (id, raw)) in ctx.links.iter().enumerate() {
-            let parsed = match record(raw, false) {
-                Ok(v) => v,
-                Err(e) => {
-                    diagnostic(diagnostics, "link", index, e);
-                    continue;
-                }
-            };
-            let IdentityRecord::Wallet(w) = &parsed else {
-                continue;
-            };
-            if w.principal != rot.principal {
-                continue;
-            }
-            if hex(&Sha256::digest(bytes(&parsed))) != *id {
-                diagnostic(diagnostics, "link", index, Reason::UnknownLink);
-                continue;
-            }
-            let v = match historical_link(&parsed, ctx, rot.issued_at) {
-                Ok(v) => v,
-                Err(e) => {
-                    diagnostic(diagnostics, "link", index, e);
-                    if matches!(
-                        e,
-                        Reason::MissingHistory | Reason::RotationFork | Reason::RotationConflict
-                    ) {
-                        return Err(e);
+        // OIDC recovery requires no active wallet. An unattested request also
+        // counts a wallet linked after issued_at, up to now+skew.
+        let mut wallet_absent = |until: u64| -> Result<(), Reason> {
+            for (index, (id, raw)) in ctx.links.iter().enumerate() {
+                let parsed = match record(raw, false) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        diagnostic(diagnostics, "link", index, e);
+                        continue;
                     }
+                };
+                let IdentityRecord::Wallet(w) = &parsed else {
+                    continue;
+                };
+                if w.principal != rot.principal {
                     continue;
                 }
-            };
-            if !revoked_at(
-                &v,
-                ctx.revocations,
-                current_key,
-                rot.issued_at,
-                ctx.jwks,
-                diagnostics,
-                RevocationMode::Witnessed,
-            ) {
-                return Err(Reason::WalletRequired);
+                if hex(&Sha256::digest(bytes(&parsed))) != *id {
+                    diagnostic(diagnostics, "link", index, Reason::UnknownLink);
+                    continue;
+                }
+                let v = match historical_link(&parsed, ctx, until) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        diagnostic(diagnostics, "link", index, e);
+                        if matches!(
+                            e,
+                            Reason::MissingHistory
+                                | Reason::RotationFork
+                                | Reason::RotationConflict
+                        ) {
+                            return Err(e);
+                        }
+                        continue;
+                    }
+                };
+                if !revoked_at(
+                    &v,
+                    ctx.revocations,
+                    current_key,
+                    until,
+                    ctx.jwks,
+                    diagnostics,
+                    RevocationMode::Witnessed,
+                ) {
+                    return Err(Reason::WalletRequired);
+                }
             }
+            Ok(())
+        };
+        wallet_absent(rot.issued_at)?;
+        if !require_attest {
+            wallet_absent(present_horizon(ctx.now, ctx.policy.clock_skew_seconds))?;
         }
     }
     Ok(rot.clone())

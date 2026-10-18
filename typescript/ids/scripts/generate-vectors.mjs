@@ -580,6 +580,14 @@ accept('records','r4-request-offline-revoke-beyond-skew',freshRequest,p,{operati
 accept('records','r4-publish-offline-revoke-beyond-skew',{candidate:freshRequest,siblings:[],prior:[]},p,{operation:'publish-check',now:at+60,policy:skew60,revocations:[beyondSkew]});
 bad('r4-revoke-now-ignores-skew',withinSkew,'future-record','revoke-now',{now:at+60,policy:skew60});
 accept('records','r4-rotate-ignores-future-offline-revoke',rot3,p,{operation:'rotate',now:at+60,policy:skew60,revocations:[withinSkew],nextEpub:epub});
+const oidcBackdated=(()=>{ const row=rotationV3('oidc-fresh-login',p2,2,1,p,at+45,[oid],epub); const {attest:_a,...req}=row; return req; })();
+const walletWithinHorizon=walletLink(p,at+50);
+const walletBeyondHorizon=walletLink(p,at+121);
+const withinLinks=[[val(ids.linkId(walletWithinHorizon)),walletWithinHorizon],[oid,oidc]];
+const beyondLinks=[[val(ids.linkId(walletBeyondHorizon)),walletBeyondHorizon],[oid,oidc]];
+bad('r5-request-oidc-wallet-within-skew',oidcBackdated,'wallet-required','rotation-request',{now:at+60,policy:skew60,links:withinLinks});
+bad('r5-publish-oidc-wallet-within-skew',{candidate:oidcBackdated,siblings:[],prior:[]},'wallet-required','publish-check',{now:at+60,policy:skew60,links:withinLinks});
+accept('records','r5-request-oidc-wallet-beyond-horizon',oidcBackdated,p,{operation:'rotation-request',now:at+60,policy:skew60,links:beyondLinks});
 
 const root = new URL('../../../vectors/ids/',import.meta.url); mkdirSync(root,{recursive:true});
 for(const [name,value] of families) writeFileSync(new URL(name+'.json',root),JSON.stringify(value,null,2).replace(/"issuedAt": 1700000000,/g, name==='edges'?'"issuedAt": 1700000000,':'"issuedAt": 1700000000.0,')+'\n');

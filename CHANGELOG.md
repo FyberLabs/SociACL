@@ -46,6 +46,10 @@ here rather than in a later version. It replaces the unwitnessed
   window. `verifyRotate` checks the attestation as of `issuedAt`, so a
   historical record still verifies after the witness window. The `issuedAt`
   upper bound against `now` remains.
+- An unattested OIDC recovery also treats a wallet linked at or before
+  `now + clockSkewSeconds` as active (`wallet-required`), including a wallet
+  enrolled after the request's `issuedAt`. Attested checks stay as of
+  `issuedAt`.
 - Present revocation of an unattested request honors `clockSkewSeconds`.
   An offline revoke dated at or before `now + skew` removes the link.
   A revoke dated further ahead is ignored. Historical witnessed checks,
