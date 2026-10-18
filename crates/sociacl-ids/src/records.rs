@@ -896,6 +896,14 @@ fn proof_time(issued: u64, now: u64, skew: u64) -> Result<(), Reason> {
     }
     Ok(())
 }
+/// Request mode only. Historical proofs stay an upper bound.
+fn request_time(issued: u64, now: u64, skew: u64) -> Result<(), Reason> {
+    proof_time(issued, now, skew)?;
+    if (issued as i128) < now as i128 - skew as i128 {
+        return Err(Reason::Expired);
+    }
+    Ok(())
+}
 fn wallet_witness(
     w: &WalletLink,
     jwks: &Jwks,
@@ -1223,10 +1231,11 @@ fn verify_genesis_epub(
     if !key_verify(&binding.principal, &binding.key_sig, &bytes(&signed)) {
         return Err(Reason::BadSignature);
     }
+    // The witness is checked as of issuance, so a binding does not expire.
     let c = attest_verify(
         &binding.attest,
         ctx.jwks,
-        ctx.now,
+        binding.issued_at,
         ctx.policy.clock_skew_seconds,
     )?;
     if !only(&c, &["typ", "principal", "epub", "iat", "exp"])
@@ -1315,7 +1324,7 @@ fn authenticated_sibling(raw: &Value, ctx: &ResolutionContext<'_>) -> Option<Rot
     let c = attest_verify(
         &row.attest,
         ctx.jwks,
-        ctx.now,
+        row.issued_at,
         ctx.policy.clock_skew_seconds,
     )
     .ok()?;
@@ -1396,10 +1405,11 @@ fn same_draft(raw: &Rotate, other: &Rotate) -> bool {
 /// Junk and unattested siblings are skipped. Priors are whatever
 /// [`resolve_current_key`] accepts.
 /// A signed candidate with no attestation is checked by
-/// [`verify_rotation_request`]: signature, wallet signature, links, retained
-/// set, revocation, reuse, and sequence. Panopticon attests at most one
-/// genesis-epub binding per principal, only before the first rotation, and
-/// that limit is global across instances and signing keys (panopticon#499).
+/// [`verify_rotation_request`] (its local checks only). Chain sequence,
+/// sibling forks, and epub reuse are applied here, after that call.
+/// Panopticon MUST call this function before attesting. It attests at most
+/// one genesis-epub binding per principal, only before the first rotation,
+/// and that limit is global across instances and signing keys (panopticon#499).
 /// Does not replace [`verify_rotate`]. Historical v2 records still verify there.
 pub fn check_rotation_publish(
     candidate: &Value,
@@ -1478,39 +1488,78 @@ pub fn check_rotation_publish(
     }
     Ok(raw)
 }
-fn parse_rotation_request(v: &Value) -> Result<IdentityRecord, Reason> {
-    if v["kind"] != "rotate" {
-        return Err(Reason::BadRecord);
-    }
-    if v.get("attest").is_none() {
-        let mut owned = v.clone();
-        owned["attest"] = Value::String("request".into());
-        return rotation_candidate(&owned);
-    }
-    rotation_candidate(v)
-}
-/// Pre-attestation check. Signature, wallet signature, links, retained set,
-/// revocation, local epub reuse, and sequence. No Panopticon attestation.
+/// Local pre-attestation check for one v3 rotation request.
 ///
-/// A missing `attest` is a request. [`verify_rotate`] still requires one.
-/// [`check_rotation_publish`] uses this for a signed candidate that has no
-/// attestation yet (panopticon#499).
+/// Covers: v3 (`nextEpub` required; v2 is `bad-record`); no `attest` field (a
+/// present attestation is `bad-record` and is not returned); `|issuedAt-now|`
+/// within `policy.clock_skew_seconds` (`future-record` or `expired`); `prevKey`
+/// equal to the supplied current key and `nextKey` different from it;
+/// `nextEpub` different from `nextKey` and `prevKey`; the next-key signature;
+/// the authorizer (wallet SIWE, or OIDC with no active wallet); every authorizer
+/// and retained link historically valid at `issuedAt`; witnessed revocation of
+/// those links at `issuedAt` and at `now` (`rotation-conflict`); and an
+/// unwitnessed current-key revoke of those links at `now` (`revoked-link`,
+/// [`verify_revoke_now`]).
+///
+/// Does not cover chain sequence, sibling forks, or epub reuse against history
+/// or the genesis-epub binding. Panopticon MUST call [`check_rotation_publish`]
+/// for those. This is the building block that function uses when the candidate
+/// has no attestation (panopticon#499). [`verify_rotate`] still requires an
+/// attestation and does not use this window.
 pub fn verify_rotation_request(
     v: &Value,
     current_key: &PrincipalId,
     ctx: &ResolutionContext<'_>,
 ) -> Result<Rotate, Reason> {
+    if v["kind"] != "rotate" || v.get("attest").is_some() || v.get("nextEpub").is_none() {
+        return Err(Reason::BadRecord);
+    }
+    let mut owned = v.clone();
+    owned["attest"] = Value::String("request".into());
     let mut rot = check_rotate_record(
-        &parse_rotation_request(v)?,
+        &rotation_candidate(&owned)?,
         current_key,
         ctx,
         &mut Vec::new(),
         false,
     )?;
-    if v.get("attest").is_none() {
-        rot.attest.clear();
+    if rot.next_epub.is_none() {
+        return Err(Reason::BadRecord);
     }
+    rot.attest.clear();
     Ok(rot)
+}
+/// Pre-attestation check for a genesis-epub binding.
+///
+/// Shape, epub canonical and distinct from the genesis pub, genesis-key
+/// signature, and `|issued_at - now| <= policy.clock_skew_seconds`
+/// (`future-record` or `expired`). A present `attest` is `bad-record`. Does
+/// not check that no rotation exists; Panopticon does that, then attests
+/// (panopticon#499).
+pub fn verify_genesis_epub_request(
+    v: &Value,
+    genesis: &PrincipalId,
+    now: u64,
+    policy: &SiwePolicy,
+) -> Result<GenesisEpub, Reason> {
+    if v["kind"] != "genesis-epub" || v.get("attest").is_some() {
+        return Err(Reason::BadRecord);
+    }
+    let mut owned = v.clone();
+    owned["attest"] = Value::String("request".into());
+    let IdentityRecord::GenesisEpub(mut binding) = record(&owned, false)? else {
+        return Err(Reason::BadRecord);
+    };
+    if &binding.principal != genesis {
+        return Err(Reason::BadRecord);
+    }
+    request_time(binding.issued_at, now, policy.clock_skew_seconds)?;
+    let signed = IdentityRecord::GenesisEpub(binding.clone());
+    if !key_verify(genesis, &binding.key_sig, &bytes(&signed)) {
+        return Err(Reason::BadSignature);
+    }
+    binding.attest.clear();
+    Ok(binding)
 }
 fn check_rotate(
     v: &Value,
@@ -1530,7 +1579,11 @@ fn check_rotate_record(
     let IdentityRecord::Rotate(rot) = r else {
         return Err(Reason::BadRecord);
     };
-    proof_time(rot.issued_at, ctx.now, ctx.policy.clock_skew_seconds)?;
+    if require_attest {
+        proof_time(rot.issued_at, ctx.now, ctx.policy.clock_skew_seconds)?;
+    } else {
+        request_time(rot.issued_at, ctx.now, ctx.policy.clock_skew_seconds)?;
+    }
     if &rot.prev_key != current_key || &rot.next_key == current_key {
         return Err(Reason::BadSequence);
     }
@@ -1582,6 +1635,32 @@ fn check_rotate_record(
             RevocationMode::Witnessed,
         ) {
             return Err(Reason::RotationConflict);
+        }
+        if !require_attest
+            && revoked_at(
+                &v,
+                ctx.revocations,
+                current_key,
+                ctx.now,
+                ctx.jwks,
+                diagnostics,
+                RevocationMode::Witnessed,
+            )
+        {
+            return Err(Reason::RotationConflict);
+        }
+        if !require_attest
+            && revoked_at(
+                &v,
+                ctx.revocations,
+                current_key,
+                ctx.now,
+                ctx.jwks,
+                diagnostics,
+                RevocationMode::Present,
+            )
+        {
+            return Err(Reason::RevokedLink);
         }
         checked.insert(id.clone(), v);
     }

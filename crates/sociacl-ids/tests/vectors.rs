@@ -234,6 +234,15 @@ fn run(f: &Family, c: &Case, v: &Value) -> Result<Value, Reason> {
                 published.principal
             }
             "rotation-request" => verify_rotation_request(v, &key, &rc)?.principal,
+            "genesis-epub-request" => {
+                verify_genesis_epub_request(
+                    v,
+                    &parse_principal_id(ctx["genesis"].as_str().unwrap())?,
+                    now,
+                    &policy,
+                )?
+                .principal
+            }
             "rotate" => {
                 let rot = verify_rotate(v, &key, &rc)?;
                 if let Some(expected) = c.extra.get("nextEpub") {

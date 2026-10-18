@@ -141,6 +141,12 @@ function keyVerify(p, sig, message) {
 }
 /** @param {number} issuedAt @param {number} now @param {number} [skew] */
 function time(issuedAt, now, skew = 0) { return !integer(now) || !integer(skew) || skew > 300 ? fail('bad-record') : issuedAt > now + skew ? fail('future-record') : ok(true); }
+/** Request mode only. Historical proofs stay an upper bound.
+ * @param {number} issuedAt @param {number} now @param {number} skew */
+function requestTime(issuedAt, now, skew) {
+  const t = time(issuedAt, now, skew); if (!t.ok) return t;
+  return issuedAt < now - skew ? fail('expired') : ok(true);
+}
 /** RFC3339 with an explicit offset; never accept JS date repair. @param {string} s */
 function date(s) {
   const m = /^(\d{4})-(\d{2})-(\d{2})[Tt](\d{2}):(\d{2}):(\d{2})(\.[0-9]+)?([Zz]|[+-]\d{2}:\d{2})$/.exec(s);
@@ -325,22 +331,31 @@ function requiredHistoryFailure(reason) {
 }
 /** @param {unknown} x @param {PrincipalId} currentKey @param {ResolutionContext} ctx @returns {Result<Rotate>} */
 export function verifyRotate(x,currentKey,ctx) {return checkRotate(x,currentKey,ctx,[]);}
-/** Pre-attestation check. Signature, wallet signature, links, retained set,
- * revocation, local epub reuse, and sequence. No Panopticon attestation.
- * A missing `attest` is a request; `verifyRotate` still requires one.
- * `checkRotationPublish` uses this for a signed candidate that has no
- * attestation yet (panopticon#499).
+/** Local pre-attestation check for one v3 rotation request.
+ * Covers: v3 (`nextEpub` required; v2 is `bad-record`); no `attest` field
+ * (a present attestation is `bad-record` and is not returned); `|issuedAt-now|`
+ * within `policy.clockSkewSeconds` (`future-record` or `expired`); `prevKey`
+ * equal to the supplied current key and `nextKey` different from it;
+ * `nextEpub` different from `nextKey` and `prevKey`; the next-key signature;
+ * the authorizer (wallet SIWE, or OIDC with no active wallet); every
+ * authorizer and retained link historically valid at `issuedAt`; witnessed
+ * revocation of those links at `issuedAt` and at `now` (`rotation-conflict`);
+ * and an unwitnessed current-key revoke of those links at `now`
+ * (`revoked-link`, `verifyRevokeNow`).
+ * Does not cover chain sequence, sibling forks, or epub reuse against
+ * history or the genesis-epub binding. Panopticon MUST call
+ * `checkRotationPublish` for those. This is the building block that
+ * function uses when the candidate has no attestation (panopticon#499).
+ * `verifyRotate` still requires an attestation and does not use this window.
  * @param {unknown} x @param {PrincipalId} currentKey @param {ResolutionContext} ctx @returns {Result<Rotate>} */
 export function verifyRotationRequest(x, currentKey, ctx) {
   if (typeof ctx.history !== 'function') return fail('missing-history');
   const d = data(x); if (!d.ok) return d;
-  if (d.value.kind !== 'rotate') return fail('bad-record');
-  const omitted = !Object.hasOwn(d.value, 'attest');
-  const source = omitted ? { ...d.value, attest: 'request' } : x;
-  const p = rotationCandidate(source); if (!p.ok) return p;
-  if (p.value.kind !== 'rotate') return fail('bad-record');
+  if (d.value.kind !== 'rotate' || Object.hasOwn(d.value, 'attest') || !Object.hasOwn(d.value, 'nextEpub')) return fail('bad-record');
+  const p = rotationCandidate({ ...d.value, attest: 'request' }); if (!p.ok) return p;
+  if (p.value.kind !== 'rotate' || !hasNextEpub(p.value)) return fail('bad-record');
   const checked = checkRotateBody(/** @type {Rotate} */ (p.value), currentKey, ctx, [], false);
-  if (!checked.ok || !omitted) return checked;
+  if (!checked.ok) return checked;
   return ok(/** @type {Rotate} */ ({ ...checked.value, attest: '' }));
 }
 /** Exact Panopticon rotation claim, including auth, linkId, and retainedLinks.
@@ -353,7 +368,9 @@ function rotationClaimsMatch(r, c) {
 }
 /** @param {Rotate} r @param {PrincipalId} currentKey @param {ResolutionContext} ctx @param {Diagnostic[]} diagnostics @param {boolean} requireAttest @returns {Result<Rotate>} */
 function checkRotateBody(r, currentKey, ctx, diagnostics, requireAttest) {
-  const t=time(r.issuedAt,ctx.now,ctx.policy.clockSkewSeconds??0); if (!t.ok) return t;
+  const skew = ctx.policy.clockSkewSeconds ?? 0;
+  const t = requireAttest ? time(r.issuedAt, ctx.now, skew) : requestTime(r.issuedAt, ctx.now, skew);
+  if (!t.ok) return t;
   if (r.prevKey !== currentKey || r.nextKey === currentKey) return fail('bad-sequence');
   if (hasNextEpub(r) && (r.nextEpub === r.nextKey || r.nextEpub === r.prevKey)) return fail('bad-sequence');
   if (!keyVerify(r.nextKey,r.nextSig,bytes(r))) return fail('bad-signature');
@@ -370,6 +387,8 @@ function checkRotateBody(r, currentKey, ctx, diagnostics, requireAttest) {
     if (!['wallet','oidc'].includes(l.kind) || l.principal !== r.principal || hex(sha256(bytes(l))) !== id) return fail('missing-history');
     const v=historicalLink(/** @type {WalletLink|OidcLink} */ (l),ctx,r.issuedAt); if (!v.ok) return fail(requiredHistoryFailure(v.reason));
     if (revokedAt(v.value,ctx.revocations??[],currentKey,r.issuedAt,ctx.jwks,diagnostics)) return fail('rotation-conflict');
+    if (!requireAttest && revokedAt(v.value,ctx.revocations??[],currentKey,ctx.now,ctx.jwks,diagnostics)) return fail('rotation-conflict');
+    if (!requireAttest && revokedAt(v.value,ctx.revocations??[],currentKey,ctx.now,ctx.jwks,diagnostics,true)) return fail('revoked-link');
     checked.set(id,v.value);
   }
   const authorizer=/** @type {WalletLink|OidcLink} */ (checked.get(r.authorizer.link));
@@ -417,12 +436,32 @@ function verifyGenesisEpub(raw, genesis, ctx) {
   if (p.value.kind !== 'genesis-epub') return fail('bad-record');
   const b = p.value;
   if (b.principal !== genesis) return fail('bad-record');
-  const t = time(b.issuedAt, ctx.now, ctx.policy.clockSkewSeconds ?? 0); if (!t.ok) return t;
+  const skew = ctx.policy.clockSkewSeconds ?? 0;
+  const t = time(b.issuedAt, ctx.now, skew); if (!t.ok) return t;
   if (!keyVerify(genesis, b.keySig, bytes(b))) return fail('bad-signature');
-  const a = attestVerify(b.attest, ctx.jwks, ctx.now, ctx.policy.clockSkewSeconds ?? 0); if (!a.ok) return a;
+  const a = attestVerify(b.attest, ctx.jwks, b.issuedAt, skew); if (!a.ok) return a;
   const c = a.value;
   if (!only(c, ['typ', 'principal', 'epub', 'iat', 'exp']) || c.typ !== 'sociacl-genesis-epub-attest-v1' || c.principal !== b.principal || c.epub !== b.epub || c.iat !== b.issuedAt) return fail('bad-attestation');
   return ok(b);
+}
+/** Pre-attestation check for a genesis-epub binding. Shape, epub canonical and
+ * distinct from the genesis pub, genesis-key signature, and
+ * `|issuedAt - now| <= policy.clockSkewSeconds` (`future-record` or `expired`).
+ * A present `attest` is `bad-record`. Does not check that no rotation exists;
+ * Panopticon does that, then attests (panopticon#499).
+ * @param {unknown} x @param {PrincipalId} genesis @param {number} now @param {SiwePolicy} policy @returns {Result<GenesisEpub>} */
+export function verifyGenesisEpubRequest(x, genesis, now, policy) {
+  const g = parsePrincipalId(genesis); if (!g.ok) return g;
+  const d = data(x); if (!d.ok) return d;
+  if (d.value.kind !== 'genesis-epub' || Object.hasOwn(d.value, 'attest')) return fail('bad-record');
+  const p = record({ ...d.value, attest: 'request' }); if (!p.ok) return p;
+  if (p.value.kind !== 'genesis-epub') return fail('bad-record');
+  const b = p.value;
+  if (b.principal !== g.value) return fail('bad-record');
+  const skew = policy?.clockSkewSeconds ?? 0;
+  const t = requestTime(b.issuedAt, now, skew); if (!t.ok) return t;
+  if (!keyVerify(g.value, b.keySig, bytes(b))) return fail('bad-signature');
+  return ok(/** @type {GenesisEpub} */ ({ ...b, attest: '' }));
 }
 /** nextEpub is a fresh point, and a later signing key is not an earlier epub.
  * `bindingEpub` is the in-force witnessed genesis epub, or null.
@@ -441,7 +480,7 @@ function authenticatedSibling(raw, ctx) {
   if (!parsed.ok || parsed.value.kind !== 'rotate') return null;
   const row = /** @type {Rotate} */ (parsed.value);
   if (!keyVerify(row.nextKey, row.nextSig, bytes(row))) return null;
-  const a = attestVerify(row.attest, ctx.jwks, ctx.now, ctx.policy.clockSkewSeconds ?? 0);
+  const a = attestVerify(row.attest, ctx.jwks, row.issuedAt, ctx.policy.clockSkewSeconds ?? 0);
   if (!a.ok) return null;
   if (!rotationClaimsMatch(row, a.value)) return null;
   return row;
@@ -480,10 +519,11 @@ function sameDraft(raw, other) {
  * unattested siblings are skipped. Priors are the records `resolveCurrentKey`
  * accepts, not raw JSON.
  * A signed candidate with no attestation is checked by `verifyRotationRequest`
- * (signature, wallet signature, links, retained set, revocation, reuse, and
- * sequence). Panopticon attests at most one genesis-epub binding per principal,
- * only before the first rotation, and that limit is global across instances
- * and signing keys (panopticon#499).
+ * (its local checks only). Chain sequence, sibling forks, and epub reuse are
+ * applied here, after that call. Panopticon MUST call this function before
+ * attesting. It attests at most one genesis-epub binding per principal, only
+ * before the first rotation, and that limit is global across instances and
+ * signing keys (panopticon#499).
  * Does not replace verifyRotate. Historical v2 records still verify there.
  * @param {unknown} candidate @param {readonly unknown[]} siblings @param {PrincipalId} genesis @param {readonly unknown[]} priorRecords @param {ResolutionContext} ctx @returns {Result<Rotate>} */
 export function checkRotationPublish(candidate, siblings, genesis, priorRecords, ctx) {

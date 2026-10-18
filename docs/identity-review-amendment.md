@@ -179,8 +179,11 @@ No wallet and no Keycloak login are required.
 Panopticon attests at most one binding per principal, and only before the
 first rotation. It refuses a binding when any rotation already exists. That
 one-per-principal record is global across instances and signing keys
-(panopticon#499). Panopticon sets `iat` itself, with `exp <= iat + 900`, and
-verifies the genesis-key signature before it attests. Callers pass the records
+(panopticon#499). Panopticon calls `verifyGenesisEpubRequest` /
+`verify_genesis_epub_request` before it attests: shape, canonical epub
+distinct from the genesis pub, genesis-key signature, and
+`|issuedAt - now| <= clockSkewSeconds`. It then sets `iat` equal to that
+`issuedAt`, with `exp <= iat + 900`. Callers pass the records
 as `ResolutionContext.genesisEpubBindings`. Invalid or junk bindings are
 skipped with a diagnostic. The fork count runs only over bindings whose
 `issuedAt` is strictly before the first accepted rotation. With no accepted
@@ -188,7 +191,9 @@ rotation, every valid binding counts, and two distinct ones freeze the account
 with `rotation-fork`. The diagnostic source `genesis-epub` distinguishes that
 freeze from a rotation fork. A binding issued at or after the first accepted
 rotation's `issuedAt` is skipped with `bad-sequence` and does not freeze the
-account or join the reuse set. `issuedAt` uses the policy clock skew.
+account or join the reuse set. `issuedAt` must be at or before `now` plus
+the policy clock skew. The attestation is verified as of `issuedAt`, so a
+binding stays valid after its 15-minute witness window.
 
 With no accepted rotation, `currentEpub` is that binding's epub, or null when
 none is in force. After a rotation is accepted, `currentEpub` still comes from
@@ -222,14 +227,25 @@ two signing-byte ids, offered for one `(principal, seq)` with `rotation-fork`.
 Panopticon must not attest a v2 record and must not attest both versions for
 that pair. A client must not publish either.
 
-Before it attests, Panopticon calls `verifyRotationRequest` /
-`verify_rotation_request` (panopticon#499). That check is the signature, the
-wallet signature, the links, the retained set, revocation, reuse, and
-sequence, with no attestation yet. `checkRotationPublish` uses it for a signed
-candidate that has no attestation, then applies the same reuse and sequence
-rules as resolution. Panopticon sets `iat` itself, with `exp <= iat + 900`.
-It also attests at most one `genesis-epub` binding per principal, only before
-the first rotation, across every instance and signing key. The publish check
+Before it attests, Panopticon calls `checkRotationPublish` /
+`check_rotation_publish` (panopticon#499). That function calls
+`verifyRotationRequest` / `verify_rotation_request` for a signed candidate
+with no attestation, then applies chain sequence, sibling forks, and epub
+reuse. The request helper is not sufficient on its own. It covers a v3
+request only: it refuses v2 and any present `attest`; it requires
+`|issuedAt - now| <= clockSkewSeconds`; it checks the next-key signature,
+the authorizer, the links, and the retained set; it applies historical
+revocation at `issuedAt` and present revocation at `now`
+(`verifyRevokeNow` / `resolveWalletLinkNow`) to the authorizer and every
+retained link. It does not check chain sequence or historical epub reuse.
+Panopticon requires that window, sets `iat` equal to the client-signed
+`issuedAt`, and sets `exp <= iat + 900`. It runs that present-revocation
+check before attesting. It also attests at most one `genesis-epub` binding
+per principal, only before the first rotation, across every instance and
+signing key. Before attesting a binding it calls `verifyGenesisEpubRequest`
+/ `verify_genesis_epub_request` (shape, canonical epub distinct from the
+genesis pub, genesis-key signature, and the same freshness window) and
+refuses the binding when any rotation exists. The publish check
 uses the rotations `resolveCurrentKey` accepts as the prior chain, including
 an in-force binding epub in the reuse set. A sibling counts only when its
 next-key signature and the full Panopticon claim both verify, including

@@ -5,6 +5,6 @@ export {
   objectKey, objectSoul, userSoul, aclSoul, grantSoul, postSoul,
   mintObjectId, deriveClaimId, deriveExternalId,
 } from './ids.js';
-export { signingBytes, linkId, verifyWalletLink, verifyOidcLink, verifyRotate, verifyRotationRequest, verifyRevoke, verifyRevokeNow,
+export { signingBytes, linkId, verifyWalletLink, verifyOidcLink, verifyRotate, verifyRotationRequest, verifyGenesisEpubRequest, verifyRevoke, verifyRevokeNow,
   resolveCurrentKey, resolveWalletLink, resolveWalletLinkNow, historyState, checkRotationPublish, verifyWalletLinkAtKey, verifyOidcLinkAtKey, verifyRotateAtKey, resolveWalletLinkAtKey } from './records.js';
 export { parseJsonInput } from './json.js';

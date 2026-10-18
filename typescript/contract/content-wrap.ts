@@ -67,36 +67,42 @@ export function openReaderWrap(
   revisionId: string,
 ): string {
   const scalar = unb64(epriv);
-  if (seaPoint(scalar) !== epub) {
+  try {
+    if (seaPoint(scalar) !== epub) throw new Error("wrap-rejected");
+    if (wrappedHex.length > MAX_WRAP_HEX || wrappedHex.length % 2 !== 0) throw new Error("wrap-rejected");
+    const blob = hexToBytes(wrappedHex);
+    if (blob[0] !== 1 || blob.length < 1 + 65 + 12 + 16) throw new Error("wrap-rejected");
+    const ephemeral = blob.slice(1, 66);
+    const nonce = blob.slice(66, 78);
+    let plain: Uint8Array;
+    try {
+      plain = aesDecrypt(contentKdf(sharedX(scalar, ephemeral)), nonce, blob.slice(78));
+    } catch (error) {
+      if (error instanceof Error && error.message === "wrap-rejected") throw error;
+      throw new Error("wrap-rejected");
+    }
+    const fields = decodeLengthPrefixed(plain);
+    plain.fill(0);
+    if (
+      fields.length !== 9 ||
+      fields[0] !== DOMAIN_WRAPPED_KEY ||
+      fields[1] !== "item-dek" ||
+      fields[2] !== canonicalDecimal(epoch) ||
+      fields[3] !== "reader-epub" ||
+      fields[4] !== epub ||
+      fields[5] !== objectId ||
+      fields[6] !== "" ||
+      fields[7] !== revisionId ||
+      !/^[0-9a-f]{64}$/u.test(fields[8] ?? "")
+    ) {
+      throw new Error("wrap-rejected");
+    }
+    const key = fields[8];
+    if (key === undefined) throw new Error("wrap-rejected");
+    return key;
+  } finally {
     scalar.fill(0);
-    throw new Error("wrap-rejected");
   }
-  if (wrappedHex.length > MAX_WRAP_HEX || wrappedHex.length % 2 !== 0) throw new Error("wrap-rejected");
-  const blob = hexToBytes(wrappedHex);
-  if (blob[0] !== 1 || blob.length < 1 + 65 + 12 + 16) throw new Error("wrap-rejected");
-  const ephemeral = blob.slice(1, 66);
-  const nonce = blob.slice(66, 78);
-  const plain = aesDecrypt(contentKdf(sharedX(scalar, ephemeral)), nonce, blob.slice(78));
-  scalar.fill(0);
-  const fields = decodeLengthPrefixed(plain);
-  plain.fill(0);
-  if (
-    fields.length !== 9 ||
-    fields[0] !== DOMAIN_WRAPPED_KEY ||
-    fields[1] !== "item-dek" ||
-    fields[2] !== canonicalDecimal(epoch) ||
-    fields[3] !== "reader-epub" ||
-    fields[4] !== epub ||
-    fields[5] !== objectId ||
-    fields[6] !== "" ||
-    fields[7] !== revisionId ||
-    !/^[0-9a-f]{64}$/u.test(fields[8] ?? "")
-  ) {
-    throw new Error("wrap-rejected");
-  }
-  const key = fields[8];
-  if (key === undefined) throw new Error("wrap-rejected");
-  return key;
 }
 
 function contentKdf(x: Uint8Array): Uint8Array {

@@ -59,6 +59,7 @@
     "contentEpoch": "content-epoch",
     "tooManyKeys": "too-many-keys"
   },
+  "unsafeContentEpoch": 9007199254740992,
   "witnessed": {
     "rotationName": "rotate-v3-wallet",
     "genesisScalar": 1,

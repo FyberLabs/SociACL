@@ -40,6 +40,7 @@ const vector = JSON.parse(readFileSync(new URL("../../vectors/encrypted-discover
   lost: string;
   wallet: string;
   genesisBinding: unknown;
+  unsafeContentEpoch: number;
   errors: Record<string, string>;
   expected: {
     principal: string;
@@ -104,8 +105,13 @@ function b64(bytes: Uint8Array): string {
 }
 
 function scalarSea(last: number): { pub: string; priv: string } {
+  return scalarSeaN(last);
+}
+
+function scalarSeaN(n: number): { pub: string; priv: string } {
   const bytes = new Uint8Array(32);
-  bytes[31] = last;
+  bytes[30] = (n >> 8) & 0xff;
+  bytes[31] = n & 0xff;
   const pub = seaPoint(bytes);
   const priv = b64(bytes);
   bytes.fill(0);
@@ -643,6 +649,87 @@ test("too many retired keys are refused", () => {
   );
 });
 
+test("the builder refuses a retired set that is already full", () => {
+  const row = records.accept.find((item) => item.name === "binding-valid-no-rotation") as { genesisEpubBindings?: unknown[] } | undefined;
+  if (!row?.genesisEpubBindings) throw new Error("missing binding vector");
+  const context = recordsContext(row.genesisEpubBindings);
+  const signing = scalarSea(1);
+  const enc = scalarSea(9);
+  const retired = [];
+  for (let n = 20; n < 1044; n++) {
+    const row = scalarSeaN(n);
+    retired.push({ epub: row.pub, epriv: row.priv });
+  }
+  const imported = AccountKeyring.import(
+    signing.pub,
+    enc.pub,
+    signing.pub,
+    signing.priv,
+    enc.pub,
+    enc.priv,
+    retired,
+    vector.genesis.laneId,
+    0,
+    0,
+    [],
+    context,
+  );
+  assert.equal(imported.retired().length, 1024);
+  const next = scalarSeaN(2000);
+  const nextEnc = scalarSeaN(2001);
+  assert.equal(
+    message(() => rotateKeyring(imported, vector.trusted, vector.lost, [], context, () => ({
+      signingPub: next.pub,
+      signingPriv: next.priv,
+      epub: nextEnc.pub,
+      epriv: nextEnc.priv,
+      laneId: "ee".repeat(32),
+    }))),
+    vector.errors.tooManyKeys,
+  );
+});
+
+test("an unsafe content epoch is refused", () => {
+  const signing = scalarSea(1);
+  const enc = scalarSea(9);
+  assert.equal(
+    message(() => AccountKeyring.import(
+      signing.pub,
+      enc.pub,
+      signing.pub,
+      signing.priv,
+      enc.pub,
+      enc.priv,
+      [],
+      vector.genesis.laneId,
+      vector.unsafeContentEpoch,
+      0,
+      [],
+      witnessedContext(),
+    )),
+    vector.errors.contentEpoch,
+  );
+});
+
+test("the constructor is not an import path", () => {
+  const signing = scalarSea(1);
+  assert.throws(
+    () => new (AccountKeyring as unknown as new (...args: unknown[]) => AccountKeyring)(
+      signing.pub,
+      signing.pub,
+      signing.pub,
+      signing.priv,
+      signing.pub,
+      signing.priv,
+      [],
+      vector.genesis.laneId,
+      0,
+      0,
+    ),
+    (error: unknown) => error instanceof Error && error.message === "pub-mismatch",
+  );
+});
+
 test("typescript seal opens and matches the shared rust wrap", () => {
   const row = records.accept.find((item) => item.name === "rotate-v3-wallet");
   if (!row) throw new Error("missing rotation");
@@ -691,6 +778,12 @@ test("typescript seal opens and matches the shared rust wrap", () => {
   );
   assert.equal(
     message(() => openReaderWrap(epub.priv, epub.pub, "ab".repeat(8193), vector.crossWrap.epoch, vector.witnessed.objectId, vector.witnessed.revisionId)),
+    "wrap-rejected",
+  );
+  const wrapped = vector.crossWrap.wrappedKey;
+  const tampered = wrapped.slice(0, -1) + (wrapped.endsWith("0") ? "1" : "0");
+  assert.equal(
+    message(() => openReaderWrap(epub.priv, epub.pub, tampered, vector.crossWrap.epoch, vector.witnessed.objectId, vector.witnessed.revisionId)),
     "wrap-rejected",
   );
 });

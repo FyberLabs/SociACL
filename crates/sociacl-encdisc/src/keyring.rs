@@ -372,6 +372,10 @@ impl AccountKeyring {
         if retired.len() > 1024 {
             return Err(EncDiscError::IdentityRejected("too-many-keys".into()));
         }
+        // Match TS Number.isSafeInteger. A larger epoch cannot be sealed in JS.
+        if content_epoch > 9_007_199_254_740_991 || rotation_seq > 9_007_199_254_740_991 {
+            return Err(EncDiscError::EpochRejected);
+        }
         let genesis_epub = encryption_point(genesis_epub, None)?.0;
         if genesis_epub == principal {
             return Err(EncDiscError::EpubMismatch);
@@ -524,6 +528,9 @@ where
         || account.binding_epub.as_ref() == Some(&next_epub)
     {
         return Err(EncDiscError::EpubReuse);
+    }
+    if keyring.retired.len() >= 1024 {
+        return Err(EncDiscError::IdentityRejected("too-many-keys".into()));
     }
     let mut retired = keyring.retired.clone();
     retired.push(RetiredEpriv {
@@ -707,8 +714,13 @@ mod tests {
     }
 
     fn scalar_sea(last: u8) -> (String, Zeroizing<String>) {
+        scalar_sea_n(u16::from(last))
+    }
+
+    fn scalar_sea_n(n: u16) -> (String, Zeroizing<String>) {
         let mut bytes = [0u8; 32];
-        bytes[31] = last;
+        bytes[30] = (n >> 8) as u8;
+        bytes[31] = n as u8;
         let secret = p256::SecretKey::from_slice(&bytes).unwrap();
         bytes.zeroize();
         (
@@ -1650,5 +1662,106 @@ mod tests {
         );
         let opened = open_reader_wrap(&wraps[0], reader_priv.as_str(), &reader).unwrap();
         assert_eq!(opened.key_bytes(), dek.as_bytes());
+        let mut tampered = wraps[0].clone();
+        let tail = tampered.wrapped_key.pop().unwrap();
+        tampered
+            .wrapped_key
+            .push(if tail == '0' { '1' } else { '0' });
+        assert!(matches!(
+            open_reader_wrap(&tampered, reader_priv.as_str(), &reader),
+            Err(EncDiscError::WrapRejected)
+        ));
+    }
+
+    #[test]
+    fn builder_refuses_a_retired_set_that_is_already_full() {
+        let v = ring();
+        let (signing_pub, signing_priv) = scalar_sea(1);
+        let (epub, epriv) = scalar_sea(9);
+        let retired_owned: Vec<_> = (20u16..1044).map(scalar_sea_n).collect();
+        let retired: Vec<(&str, &str)> = retired_owned
+            .iter()
+            .map(|(point, secret)| (point.as_str(), secret.as_str()))
+            .collect();
+        let records = records();
+        let mut hold = witness_hold(&v);
+        hold.binding = records["accept"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|item| item["name"] == "binding-valid-no-rotation")
+            .unwrap()["genesisEpubBindings"]
+            .as_array()
+            .unwrap()
+            .clone();
+        let ctx = witness_context(&hold);
+        let imported = AccountKeyring::import(
+            &signing_pub,
+            &epub,
+            &signing_pub,
+            signing_priv.as_str(),
+            &epub,
+            epriv.as_str(),
+            &retired,
+            v["genesis"]["laneId"].as_str().unwrap(),
+            0,
+            0,
+            &[],
+            &ctx,
+        )
+        .unwrap();
+        assert_eq!(imported.retired().len(), 1024);
+        let (next_pub, next_priv) = scalar_sea_n(2000);
+        let (next_epub, next_epriv) = scalar_sea_n(2001);
+        let names = trusted(&v);
+        expect_err(
+            &v,
+            "tooManyKeys",
+            rotate_keyring(
+                &imported,
+                &names,
+                v["lost"].as_str().unwrap(),
+                &[],
+                &ctx,
+                || {
+                    Ok(RotationMint {
+                        signing_pub: next_pub.clone(),
+                        signing_priv: next_priv.clone(),
+                        epub: next_epub.clone(),
+                        epriv: next_epriv.clone(),
+                        lane_id: "ee".repeat(32),
+                    })
+                },
+            )
+            .unwrap_err(),
+        );
+    }
+
+    #[test]
+    fn an_unsafe_content_epoch_is_refused() {
+        let v = ring();
+        let (signing_pub, signing_priv) = scalar_sea(1);
+        let (epub, epriv) = scalar_sea(9);
+        let hold = witness_hold(&v);
+        let ctx = witness_context(&hold);
+        expect_err(
+            &v,
+            "contentEpoch",
+            AccountKeyring::import(
+                &signing_pub,
+                &epub,
+                &signing_pub,
+                signing_priv.as_str(),
+                &epub,
+                epriv.as_str(),
+                &[],
+                v["genesis"]["laneId"].as_str().unwrap(),
+                v["unsafeContentEpoch"].as_u64().unwrap(),
+                0,
+                &[],
+                &ctx,
+            )
+            .unwrap_err(),
+        );
     }
 }

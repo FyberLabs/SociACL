@@ -45,7 +45,7 @@ object. Rust cannot represent an unpaired UTF-16 surrogate in `str`;
 | Souls | `objectSoul`, `userSoul`, `aclSoul`, `grantSoul`, `postSoul` |
 | Creation | `mintObjectId`, `deriveClaimId`, `deriveExternalId` |
 | Signing | `signingBytes`, `linkId` |
-| Proofs | `verifyWalletLink`, `verifyOidcLink`, `verifyRotate`, `verifyRevoke` |
+| Proofs | `verifyWalletLink`, `verifyOidcLink`, `verifyRotate`, `verifyRotationRequest`, `verifyGenesisEpubRequest`, `verifyRevoke` |
 | Present eligibility | `verifyRevokeNow`, `resolveWalletLinkNow` |
 | Histories | `resolveCurrentKey`, `resolveWalletLink`, `historyState` |
 
@@ -201,13 +201,20 @@ binding issued at or after that rotation is skipped with `bad-sequence` and
 does not freeze a rotated account. `issuedAt` uses the policy clock skew.
 Once a rotation is accepted, that binding epub joins the reuse
 set. An unwitnessed `genesisEpub` string is ignored. New rotations must be v3,
-and from 0.7 Panopticon attests only v3. From 0.8, `verifyRotationRequest` is
-the pre-attestation check (signature, wallet signature, links, retained set,
-revocation, reuse, and sequence). `checkRotationPublish` uses it when the
-candidate has no attestation yet. It is the check Panopticon runs before it
-attests and the check a client runs before it publishes. A sibling counts only
-when its signature and the full claim match, including `auth`, `linkId`, and
-`retainedLinks`. An identical sibling is a retry and is not a fork. Junk is skipped.
+and from 0.7 Panopticon attests only v3. From 0.8, Panopticon calls
+`checkRotationPublish` before it attests. That function calls
+`verifyRotationRequest` when the candidate has no attestation, then checks
+chain sequence, sibling forks, and epub reuse. The request helper covers one
+v3 request: no `attest` field, `|issuedAt - now|` within clock skew, the
+next-key signature, the authorizer, the links, the retained set, historical
+revocation, and present revocation of the authorizer and every retained link.
+It does not check chain sequence or epub reuse. `verifyGenesisEpubRequest`
+checks a genesis-epub request (shape, signature, freshness) before Panopticon
+attests it. A binding attestation is verified as of its `issuedAt`, and a
+sibling attestation is verified as of that sibling's `issuedAt`. A sibling
+counts only when its signature and the full claim match, including `auth`,
+`linkId`, and `retainedLinks`. An identical sibling is a retry and is not a
+fork. Junk is skipped.
 It refuses a v2 record with `bad-record` and two versions of one
 `(principal, seq)` with `rotation-fork`. It does not replace `verifyRotate`.
 The library still verifies historical v2.

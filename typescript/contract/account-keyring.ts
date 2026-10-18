@@ -62,6 +62,9 @@ export type KeyringRotation = {
 
 type RetiredSecret = { epub: PrincipalId; epriv: string };
 
+/** Module seal. The constructor is not an import path; it rejects any other caller. */
+const keyringSeal: unique symbol = Symbol("account-keyring");
+
 export class AccountKeyring {
   readonly principal: PrincipalId;
   readonly genesisEpub: PrincipalId;
@@ -74,7 +77,11 @@ export class AccountKeyring {
   readonly #retired: readonly RetiredSecret[];
   readonly #laneId: string;
 
-  /** Prefer {@link fromGenesis} or {@link import}. */
+  /**
+   * Not a public entry. {@link fromGenesis}, {@link import}, and
+   * {@link rotateKeyring} pass the module seal after the hold or rotation
+   * checks. Any other caller is rejected.
+   */
   constructor(
     principal: PrincipalId,
     genesisEpub: PrincipalId,
@@ -86,7 +93,14 @@ export class AccountKeyring {
     laneId: string,
     contentEpoch: number,
     rotationSeq: number,
+    seal: typeof keyringSeal,
   ) {
+    if (seal !== keyringSeal) throw new Error("pub-mismatch");
+    if (retired.length > 1024) throw new Error("too-many-keys");
+    if (!Number.isSafeInteger(contentEpoch) || contentEpoch < 0 || !Number.isSafeInteger(rotationSeq) || rotationSeq < 0) {
+      throw new Error("content-epoch");
+    }
+    if (!/^[0-9a-f]{64}$/u.test(laneId)) throw new Error("bad-lane");
     this.principal = principal;
     this.genesisEpub = genesisEpub;
     this.pub = currentPub;
@@ -302,6 +316,7 @@ export function rotateKeyring(
   if (historical.has(nextPub) || nextPub === resolved.value.bindingEpub || nextEpub === resolved.value.bindingEpub) {
     throw new Error("epub-reuse");
   }
+  if (keyring.retired().length >= 1024) throw new Error("too-many-keys");
   const retired = [...keyring.retired(), { epub: keyring.epub, epriv: keyring.currentEpriv() }];
   const seq = keyring.rotationSeq + 1;
   const epoch = keyring.contentEpoch + 1;
@@ -317,6 +332,7 @@ export function rotateKeyring(
     minted.laneId,
     epoch,
     seq,
+    keyringSeal,
   );
   const devices: KeyringDevice[] = [];
   for (const localId of trusted) {
@@ -408,6 +424,7 @@ function hold(
     laneId,
     contentEpoch,
     rotationSeq,
+    keyringSeal,
   );
 }
 

@@ -20,19 +20,34 @@ here rather than in a later version. It replaces the unwitnessed
   binding epub joins the reuse set inside `resolveCurrentKey`.
 - `checkRotationPublish` authenticates the candidate before Panopticon
   attests it. A signed candidate with no attestation is checked by
-  `verifyRotationRequest` / `verify_rotation_request`: signature, wallet
-  signature, links, retained set, revocation, reuse, and sequence. Siblings
-  count only when the next-key signature and the full Panopticon claim both
-  verify (`auth`, `linkId`, `retainedLinks`, and the exact claim shape). Junk
-  and unattested siblings are skipped. An identical sibling is a retry, including
+  `verifyRotationRequest` / `verify_rotation_request`, then this function
+  applies chain sequence, sibling forks, and epub reuse. Panopticon must
+  call `checkRotationPublish`; the request helper does not check those.
+  The request helper refuses v2 and any present `attest`. It requires
+  `|issuedAt - now| <= clockSkewSeconds` and applies present revocation
+  (`verifyRevokeNow`) to the authorizer and every retained link, in addition
+  to the historical check. A witnessed revoke is `rotation-conflict`. An
+  unwitnessed current-key revoke is `revoked-link`. A request outside the
+  window is `expired` or `future-record`. Siblings count only when the
+  next-key signature and the full Panopticon claim both verify (`auth`,
+  `linkId`, `retainedLinks`, and the exact claim shape), checked as of the
+  sibling's `issuedAt`, so an expired sibling still forks. Junk and
+  unattested siblings are skipped. An identical sibling is a retry, including
   a draft of that same transition, and is not a fork. Priors are the rotations
   `resolveCurrentKey` accepts. A distinct authenticated sibling at the same
   (principal, seq) is `rotation-fork`.
 - A binding counts toward the two-binding `rotation-fork` only when its
   `issuedAt` is strictly before the first accepted rotation. A later binding is
   skipped with `bad-sequence` and does not freeze a rotated account. With no
-  accepted rotation, every valid binding counts. The binding's `issuedAt` uses
-  the policy clock skew, the same window as its attestation.
+  accepted rotation, every valid binding counts. The binding's `issuedAt`
+  must be at or before `now` plus the policy clock skew. Its attestation is
+  verified as of `issuedAt`, so a binding does not expire after 15 minutes.
+- `verifyGenesisEpubRequest` / `verify_genesis_epub_request` checks a
+  genesis-epub request before Panopticon attests it: shape, epub canonical
+  and distinct from the genesis pub, genesis-key signature, and
+  `|issuedAt - now| <= clockSkewSeconds`. A present `attest` is
+  `bad-record`. Panopticon still refuses the binding when any rotation
+  exists.
 - A rotation draft validates `retainedLinks` with the signed-record rule:
   sorted, unique, 64-hex, at most 1024.
 - Add shared probes for a valid binding, a bad signature, a bad attestation,
