@@ -14,7 +14,13 @@
 //!
 //! A write whose resolved head is below the store's monotonic per-principal
 //! floor is [`EncDiscError::StoreRejected`] and changes nothing. The floor
-//! is the maximum of every accepted head and every stored recovery sequence.
+//! records every head the resolver reports, including a read or a rejected
+//! write, plus every stored current recovery sequence. A pending sequence
+//! is not included. The recovery store and the wrap store share one floor
+//! per principal.
+
+use std::collections::BTreeMap;
+use std::sync::{Arc, Mutex};
 
 use sociacl_ids::PrincipalId;
 
@@ -34,6 +40,54 @@ pub const STORE_CLASS_NONE: &str = "none";
 pub const STORE_CLASS_GENESIS: &str = "genesis";
 
 pub const STORE_CLASS_DELIVERY: &str = "delivery";
+
+/// Monotonic per-principal head floor.
+///
+/// [`HeadFloor`] is cloned by sharing the map. [`MemoryRecoveryStore`] and
+/// [`MemoryKeyWrapStore`] constructed with the same value enforce one floor.
+///
+/// [`MemoryRecoveryStore`]: crate::MemoryRecoveryStore
+/// [`MemoryKeyWrapStore`]: crate::MemoryKeyWrapStore
+#[derive(Clone, Debug, Default)]
+pub struct HeadFloor {
+    inner: Arc<Mutex<BTreeMap<String, u64>>>,
+}
+
+impl HeadFloor {
+    pub fn new() -> Self {
+        Self {
+            inner: Arc::new(Mutex::new(BTreeMap::new())),
+        }
+    }
+
+    /// Record `head` when it is at least the floor. A smaller head is
+    /// [`EncDiscError::StoreRejected`] and the floor stays where it is.
+    pub fn observe(&self, principal: &str, head: u64) -> Result<(), EncDiscError> {
+        let mut floors = self.inner.lock().map_err(|_| EncDiscError::StoreRejected)?;
+        let floor = floors.get(principal).copied().unwrap_or(0);
+        if head < floor {
+            return Err(EncDiscError::StoreRejected);
+        }
+        if head > floor {
+            floors.insert(principal.to_string(), head);
+        }
+        Ok(())
+    }
+
+    /// Raise the floor to `seq` when `seq` is greater. A smaller sequence
+    /// leaves the floor unchanged. Stored current recovery sequences use
+    /// this. Pending sequences do not.
+    pub fn raise(&self, principal: &str, seq: u64) {
+        let mut floors = self
+            .inner
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let floor = floors.get(principal).copied().unwrap_or(0);
+        if seq > floor {
+            floors.insert(principal.to_string(), seq);
+        }
+    }
+}
 
 /// The published account a store reads for itself. The writer does not supply it.
 pub trait PublishedChain {

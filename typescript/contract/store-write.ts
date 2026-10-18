@@ -14,8 +14,11 @@
  * authentication is not this check.
  *
  * A write whose resolved head is below the store's monotonic per-principal
- * floor is `store-rejected` and changes nothing. The floor is the maximum of
- * every accepted head and every stored recovery sequence.
+ * floor is `store-rejected` and changes nothing. The floor records every
+ * head the resolver reports, including a read or a rejected write, plus
+ * every stored current recovery sequence. A pending sequence is not
+ * included. The recovery store and the wrap store share one floor per
+ * principal.
  */
 import { p256 } from "@noble/curves/nist.js";
 import type { PrincipalId } from "../ids/src/index.js";
@@ -34,6 +37,24 @@ export const STORE_CLASS_GENESIS = "genesis";
 export const STORE_CLASS_DELIVERY = "delivery";
 
 const SEA_PUB = /^[A-Za-z0-9_-]{43}\.[A-Za-z0-9_-]{43}$/u;
+
+/** Monotonic per-principal head floor shared by the recovery and wrap stores. */
+export class HeadFloor {
+  readonly #values = new Map<string, number>();
+
+  /** Record `head` when it is at least the floor. A smaller head is `store-rejected`. */
+  observe(principal: string, head: number): void {
+    const floor = this.#values.get(principal) ?? 0;
+    if (head < floor) throw new Error("store-rejected");
+    if (head > floor) this.#values.set(principal, head);
+  }
+
+  /** Raise the floor to a stored current sequence. A smaller sequence leaves it. */
+  raise(principal: string, seq: number): void {
+    const floor = this.#values.get(principal) ?? 0;
+    if (seq > floor) this.#values.set(principal, seq);
+  }
+}
 
 export type StoreWriteAccount = {
   readonly currentKey: PrincipalId;

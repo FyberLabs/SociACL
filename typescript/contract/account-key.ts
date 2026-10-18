@@ -34,6 +34,7 @@ import {
 import { DELIVERY_BLOB_MAX, MAX_WRAPS_PER_PRINCIPAL } from "./keyring-limits.ts";
 import { canonicalDecimal } from "./canonical.ts";
 import {
+  HeadFloor,
   REPLACED_NONE,
   signStoreWrite,
   verifyStoreWrite,
@@ -120,16 +121,19 @@ export class MemoryKeyWrapStore implements KeyWrapStore {
   readonly isAuthority = false as const;
   readonly mintsGrant = false as const;
   readonly #wraps = new Map<string, Map<string, EncryptedAccountWrap>>();
-  readonly #floor = new Map<string, number>();
+  readonly #floor: HeadFloor;
   readonly #generation = new Map<string, number>();
   readonly #chain: (principal: PrincipalId) => StoreWriteAccount;
 
-  constructor(chain: (principal: PrincipalId) => StoreWriteAccount) {
+  constructor(chain: (principal: PrincipalId) => StoreWriteAccount, floor: HeadFloor = new HeadFloor()) {
     this.#chain = chain;
+    this.#floor = floor;
   }
 
   publishedAccount(principal: PrincipalId): StoreWriteAccount {
-    return this.#chain(principal);
+    const account = this.#chain(principal);
+    this.#floor.observe(principal, account.rotations.length);
+    return account;
   }
 
   writeGeneration(principal: PrincipalId): number {
@@ -179,7 +183,7 @@ export class MemoryKeyWrapStore implements KeyWrapStore {
     }
     rows.set(index.wrapId, copyWrap(wrap));
     this.#wraps.set(index.principal, rows);
-    this.#floor.set(wrap.principal, Math.max(this.#floor.get(wrap.principal) ?? 0, head));
+    this.#floor.raise(wrap.principal, head);
     this.#generation.set(wrap.principal, generation + 1);
   }
 
@@ -206,21 +210,17 @@ export class MemoryKeyWrapStore implements KeyWrapStore {
     const rows = this.#wraps.get(principal);
     rows?.delete(wrapId);
     if (rows && rows.size === 0) this.#wraps.delete(principal);
-    this.#floor.set(principal, Math.max(this.#floor.get(principal) ?? 0, head));
+    this.#floor.raise(principal, head);
     this.#generation.set(principal, generation + 1);
   }
 
   #account(principal: PrincipalId): StoreWriteAccount {
-    let account: StoreWriteAccount;
     try {
-      account = this.#chain(principal);
+      return this.publishedAccount(principal);
     } catch (error) {
       if (error instanceof Error && error.message === "store-rejected") throw error;
       throw new Error("store-rejected");
     }
-    const floor = this.#floor.get(principal) ?? 0;
-    if (account.rotations.length < floor) throw new Error("store-rejected");
-    return account;
   }
 
   get(principal: PrincipalId, wrapId: ObjectId): EncryptedAccountWrap | undefined {

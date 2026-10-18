@@ -36,8 +36,11 @@
   message is the domain, the `PrincipalId`, the operation, the target, the
   envelope or ciphertext hash, the decimal head, the hash of the row being
   replaced or `none`, the wrap class or `none`, and a per-principal write
-  generation. A write whose resolved head is below the store's monotonic
-  floor is `store-rejected` and changes nothing. A rejected commit leaves
+  generation. The monotonic floor records every head the resolver reports,
+  not only accepted writes, and one floor is shared by the recovery store
+  and the wrap store. A pending recovery sequence is not part of the floor.
+  A write whose resolved head is below that floor is `store-rejected` and
+  changes nothing. A rejected commit leaves
   the pending copy in place. A recovery `put` is accepted only at the
   resolved head, which replaces the current copy and drops any pending
   copy, or at head + 1, which is the only pending copy. Any other sequence

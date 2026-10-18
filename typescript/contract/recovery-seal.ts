@@ -24,6 +24,7 @@ import {
 import { checkRecoveryPassphrase } from "./passphrase-strength.ts";
 import { assigned, passphraseWhitespace } from "./unicode16.ts";
 import {
+  HeadFloor,
   recoveryEnvelopeHash,
   REPLACED_NONE,
   signStoreWrite,
@@ -78,16 +79,19 @@ export class MemoryRecoveryStore implements RecoveryCopyStore {
   readonly seesPassphrase = false as const;
   /** Current copy per principal, plus at most one pending copy at head + 1. */
   readonly #slots = new Map<string, RecoverySlot>();
-  readonly #floor = new Map<string, number>();
+  readonly #floor: HeadFloor;
   readonly #generation = new Map<string, number>();
   readonly #chain: (principal: PrincipalId) => StoreWriteAccount;
 
-  constructor(chain: (principal: PrincipalId) => StoreWriteAccount) {
+  constructor(chain: (principal: PrincipalId) => StoreWriteAccount, floor: HeadFloor = new HeadFloor()) {
     this.#chain = chain;
+    this.#floor = floor;
   }
 
   publishedAccount(principal: PrincipalId): StoreWriteAccount {
-    return this.#chain(principal);
+    const account = this.#chain(principal);
+    this.#floor.observe(principal, account.rotations.length);
+    return account;
   }
 
   writeGeneration(principal: PrincipalId): number {
@@ -213,24 +217,18 @@ export class MemoryRecoveryStore implements RecoveryCopyStore {
   }
 
   #account(principal: PrincipalId): StoreWriteAccount {
-    let account: StoreWriteAccount;
     try {
-      account = this.#chain(principal);
+      return this.publishedAccount(principal);
     } catch (error) {
       if (error instanceof Error && error.message === "store-rejected") throw error;
       throw new Error("store-rejected");
     }
-    const floor = this.#floor.get(principal) ?? 0;
-    if (account.rotations.length < floor) throw new Error("store-rejected");
-    return account;
   }
 
   #bump(principal: string, head: number): void {
-    const slot = this.#slots.get(principal);
-    let floor = Math.max(this.#floor.get(principal) ?? 0, head);
-    if (slot?.current) floor = Math.max(floor, slot.current.rotationSeq);
-    if (slot?.pending) floor = Math.max(floor, slot.pending.rotationSeq);
-    this.#floor.set(principal, floor);
+    this.#floor.raise(principal, head);
+    const current = this.#slots.get(principal)?.current;
+    if (current) this.#floor.raise(principal, current.rotationSeq);
     this.#generation.set(principal, (this.#generation.get(principal) ?? 0) + 1);
   }
 }

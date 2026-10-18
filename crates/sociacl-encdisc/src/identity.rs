@@ -163,19 +163,26 @@ pub trait KeyWrapStore {
 /// delete it and insert the replacement as two steps. They verify the
 /// store-write signature before either write. A genesis row is never deleted.
 /// `chain` is the published source. `head_floor` rejects a write resolved
-/// below every head this store has already accepted for that principal.
+/// below every head the resolver has reported for that principal. The same
+/// floor is shared with the recovery store.
 pub struct MemoryKeyWrapStore<C> {
     by_principal: BTreeMap<String, BTreeMap<String, EncryptedAccountWrap>>,
-    head_floor: BTreeMap<String, u64>,
+    head_floor: crate::store_write::HeadFloor,
     generation: BTreeMap<String, u64>,
     chain: C,
 }
 
 impl<C> MemoryKeyWrapStore<C> {
     pub fn new(chain: C) -> Self {
+        Self::sharing(chain, crate::store_write::HeadFloor::new())
+    }
+
+    /// `head_floor` is shared with a recovery store that should enforce the
+    /// same per-principal floor.
+    pub fn sharing(chain: C, head_floor: crate::store_write::HeadFloor) -> Self {
         Self {
             by_principal: BTreeMap::new(),
-            head_floor: BTreeMap::new(),
+            head_floor,
             generation: BTreeMap::new(),
             chain,
         }
@@ -451,12 +458,31 @@ impl<C> MemoryKeyWrapStore<C> {
     }
 }
 
+impl<C: crate::store_write::PublishedChain> MemoryKeyWrapStore<C> {
+    fn resolved(
+        &self,
+        principal: &PrincipalId,
+    ) -> Result<(sociacl_ids::ResolvedAccount, u64, u64), EncDiscError> {
+        let account = self.published_account(principal)?;
+        let head = account.rotations.len() as u64;
+        let generation = self
+            .generation
+            .get(principal.as_ref())
+            .copied()
+            .unwrap_or(0);
+        Ok((account, head, generation))
+    }
+}
+
 impl<C: crate::store_write::PublishedChain> KeyWrapStore for MemoryKeyWrapStore<C> {
     fn published_account(
         &self,
         principal: &PrincipalId,
     ) -> Result<sociacl_ids::ResolvedAccount, EncDiscError> {
-        self.chain.published_account(principal)
+        let account = self.chain.published_account(principal)?;
+        let head = account.rotations.len() as u64;
+        self.head_floor.observe(principal.as_ref(), head)?;
+        Ok(account)
     }
 
     fn write_generation(&self, principal: &PrincipalId) -> u64 {
@@ -484,14 +510,8 @@ impl<C: crate::store_write::PublishedChain> KeyWrapStore for MemoryKeyWrapStore<
         {
             return Err(EncDiscError::StoreRejected);
         }
-        let account = self.chain.published_account(&wrap.principal)?;
-        let head = account.rotations.len() as u64;
+        let (account, head, generation) = self.resolved(&wrap.principal)?;
         let key = wrap.principal.as_ref().to_string();
-        let floor = self.head_floor.get(&key).copied().unwrap_or(0);
-        if head < floor {
-            return Err(EncDiscError::StoreRejected);
-        }
-        let generation = self.generation.get(&key).copied().unwrap_or(0);
         let existing = self
             .by_principal
             .get(&key)
@@ -527,7 +547,7 @@ impl<C: crate::store_write::PublishedChain> KeyWrapStore for MemoryKeyWrapStore<
             .entry(key.clone())
             .or_default()
             .insert(wrap.wrap_id.as_ref().to_string(), wrap.clone());
-        self.head_floor.insert(key.clone(), floor.max(head));
+        self.head_floor.raise(&key, head);
         self.generation.insert(key, generation.saturating_add(1));
         Ok(())
     }
@@ -538,14 +558,8 @@ impl<C: crate::store_write::PublishedChain> KeyWrapStore for MemoryKeyWrapStore<
         wrap_id: &ObjectId,
         store_signature: &str,
     ) -> Result<(), EncDiscError> {
-        let account = self.chain.published_account(principal)?;
-        let head = account.rotations.len() as u64;
+        let (account, head, generation) = self.resolved(principal)?;
         let key = principal.as_ref().to_string();
-        let floor = self.head_floor.get(&key).copied().unwrap_or(0);
-        if head < floor {
-            return Err(EncDiscError::StoreRejected);
-        }
-        let generation = self.generation.get(&key).copied().unwrap_or(0);
         let row = self
             .by_principal
             .get(principal.as_ref())
@@ -576,7 +590,7 @@ impl<C: crate::store_write::PublishedChain> KeyWrapStore for MemoryKeyWrapStore<
         if rows.is_empty() {
             self.by_principal.remove(principal.as_ref());
         }
-        self.head_floor.insert(key.clone(), floor.max(head));
+        self.head_floor.raise(&key, head);
         self.generation.insert(key, generation.saturating_add(1));
         Ok(())
     }

@@ -146,20 +146,27 @@ struct RecoverySlot {
 /// alias the stored bytes. Promotion assigns the pending envelope onto
 /// `current` in place. A rejected commit does not clear pending.
 ///
-/// `head_floor` is the maximum accepted head and stored sequence.
-/// `generation` counts accepted writes and stays when the slot is emptied.
+/// `head_floor` is every head the resolver has reported and every stored
+/// current sequence. A pending sequence is not included. `generation`
+/// counts accepted writes and stays when the slot is emptied.
 pub struct MemoryRecoveryStore<C> {
     by_principal: BTreeMap<String, RecoverySlot>,
-    head_floor: BTreeMap<String, u64>,
+    head_floor: crate::store_write::HeadFloor,
     generation: BTreeMap<String, u64>,
     chain: C,
 }
 
 impl<C> MemoryRecoveryStore<C> {
     pub fn new(chain: C) -> Self {
+        Self::sharing(chain, crate::store_write::HeadFloor::new())
+    }
+
+    /// `head_floor` is shared with a wrap store that should enforce the same
+    /// per-principal floor.
+    pub fn sharing(chain: C, head_floor: crate::store_write::HeadFloor) -> Self {
         Self {
             by_principal: BTreeMap::new(),
-            head_floor: BTreeMap::new(),
+            head_floor,
             generation: BTreeMap::new(),
             chain,
         }
@@ -179,27 +186,25 @@ impl<C: crate::store_write::PublishedChain> MemoryRecoveryStore<C> {
         &self,
         principal: &PrincipalId,
     ) -> Result<(sociacl_ids::ResolvedAccount, u64, u64, u64), EncDiscError> {
-        let account = self.chain.published_account(principal)?;
+        let account = self.published_account(principal)?;
         let head = account.rotations.len() as u64;
-        let key = principal.as_ref();
-        let floor = self.head_floor.get(key).copied().unwrap_or(0);
-        if head < floor {
-            return Err(EncDiscError::StoreRejected);
-        }
-        let generation = self.generation.get(key).copied().unwrap_or(0);
-        Ok((account, head, floor, generation))
+        let generation = self
+            .generation
+            .get(principal.as_ref())
+            .copied()
+            .unwrap_or(0);
+        Ok((account, head, head, generation))
     }
 
     fn bump(&mut self, key: &str, generation: u64, head: u64) {
-        let slot = self.by_principal.get(key);
-        let mut floor = self.head_floor.get(key).copied().unwrap_or(0).max(head);
-        if let Some(current) = slot.and_then(|slot| slot.current.as_ref()) {
-            floor = floor.max(current.rotation_seq);
+        self.head_floor.raise(key, head);
+        if let Some(current) = self
+            .by_principal
+            .get(key)
+            .and_then(|slot| slot.current.as_ref())
+        {
+            self.head_floor.raise(key, current.rotation_seq);
         }
-        if let Some(pending) = slot.and_then(|slot| slot.pending.as_ref()) {
-            floor = floor.max(pending.rotation_seq);
-        }
-        self.head_floor.insert(key.to_string(), floor);
         self.generation
             .insert(key.to_string(), generation.saturating_add(1));
     }
@@ -210,7 +215,10 @@ impl<C: crate::store_write::PublishedChain> RecoveryCopyStore for MemoryRecovery
         &self,
         principal: &PrincipalId,
     ) -> Result<sociacl_ids::ResolvedAccount, EncDiscError> {
-        self.chain.published_account(principal)
+        let account = self.chain.published_account(principal)?;
+        let head = account.rotations.len() as u64;
+        self.head_floor.observe(principal.as_ref(), head)?;
+        Ok(account)
     }
 
     fn write_generation(&self, principal: &PrincipalId) -> u64 {
@@ -1300,6 +1308,7 @@ fn read_u64(bytes: &[u8], offset: usize) -> u64 {
 mod tests {
     use super::*;
     use crate::hexutil;
+    use crate::identity::KeyWrapStore;
     use crate::limits::RECOVERY_ENVELOPE_MAX;
     use crate::GenesisAccount;
     use serde_json::Value;
@@ -1945,13 +1954,12 @@ mod tests {
         assert!(store.get_copy(&principal, 0).unwrap().is_some());
         assert!(store.get_copy(&principal, 1).unwrap().is_some());
         assert_eq!(store.len(), 1);
-        let rolled = put_as(&mut store, &resealed, keyring.current_priv());
-        assert!(matches!(rolled, Err(EncDiscError::StoreRejected)));
+        put_as(&mut store, &resealed, keyring.current_priv()).unwrap();
         assert_eq!(
             store.get_copy(&principal, 0).unwrap().unwrap().bytes,
             resealed.bytes
         );
-        assert!(store.get_copy(&principal, 1).unwrap().is_some());
+        assert!(store.get_copy(&principal, 1).unwrap().is_none());
         let poisoned = dummy_envelope(
             &principal,
             99,
@@ -1964,8 +1972,7 @@ mod tests {
             recovery()["retention"]["downgrade"].as_str().unwrap()
         );
         assert!(store.get_copy(&principal, 99).unwrap().is_none());
-        let pending_again = put_as(&mut store, &newer, keyring.current_priv());
-        assert!(matches!(pending_again, Err(EncDiscError::StoreRejected)));
+        put_as(&mut store, &newer, keyring.current_priv()).unwrap();
         assert_eq!(
             store.get_copy(&principal, 1).unwrap().unwrap().bytes,
             newer.bytes
@@ -2270,11 +2277,9 @@ mod tests {
         assert!(matches!(unverified, Err(EncDiscError::StoreRejected)));
         assert!(stuck.get_copy(keyring.principal(), 0).unwrap().is_some());
         assert!(stuck.get_copy(keyring.principal(), 1).unwrap().is_some());
-        let blocked =
-            delete_recovery_copy(keyring.principal(), 0, genesis_priv.as_str(), &mut stuck);
-        assert!(matches!(blocked, Err(EncDiscError::StoreRejected)));
+        delete_recovery_copy(keyring.principal(), 1, genesis_priv.as_str(), &mut stuck).unwrap();
         assert!(stuck.get_copy(keyring.principal(), 0).unwrap().is_some());
-        assert!(stuck.get_copy(keyring.principal(), 1).unwrap().is_some());
+        assert!(stuck.get_copy(keyring.principal(), 1).unwrap().is_none());
         let fork_chain = std::cell::RefCell::new(Vec::<Value>::new());
         let chain = |principal: &PrincipalId| {
             let held = fork_chain.borrow();
@@ -2508,15 +2513,12 @@ mod tests {
             &early_account,
         )
         .unwrap();
-        assert!(matches!(
-            early.put_copy(&stolen, &early_sig).unwrap_err(),
-            EncDiscError::StoreRejected
-        ));
+        early.put_copy(&stolen, &early_sig).unwrap();
         assert_eq!(
             early.get_copy(&principal, 1).unwrap().unwrap().bytes,
-            kept.bytes
+            stolen.bytes
         );
-        assert!(early.get_copy(&principal, 2).unwrap().is_some());
+        assert!(early.get_copy(&principal, 2).unwrap().is_none());
 
         let mut live = MemoryRecoveryStore::new(watch(&chain, &base));
         let mut first = dummy_envelope(&principal, 2, &k2, &e2);
@@ -2639,6 +2641,212 @@ mod tests {
         );
         assert!(rejected_commit.get_copy(&principal, 1).unwrap().is_none());
         assert!(rejected_commit.get_copy(&principal, 0).unwrap().is_none());
+    }
+
+    #[test]
+    fn an_abandoned_pending_copy_does_not_freeze_recovery_writes() {
+        let held = hold();
+        let ctx = context_of(&held);
+        let keyring = genesis_keyring();
+        let (signing, encryption) = genesis_pubs();
+        let mut store = MemoryRecoveryStore::new(watch(&[], &ctx));
+        let current = dummy_envelope(keyring.principal(), 0, &signing, &encryption);
+        put_as(&mut store, &current, keyring.current_priv()).unwrap();
+        let mut pending = dummy_envelope(keyring.principal(), 1, &signing, &encryption);
+        pending.bytes[40] = 0x21;
+        put_as(&mut store, &pending, keyring.current_priv()).unwrap();
+        delete_recovery_copy(keyring.principal(), 1, keyring.current_priv(), &mut store).unwrap();
+        assert_eq!(
+            store
+                .get_copy(keyring.principal(), 0)
+                .unwrap()
+                .unwrap()
+                .bytes,
+            current.bytes
+        );
+        assert!(store.get_copy(keyring.principal(), 1).unwrap().is_none());
+        let mut replaced = pending.clone();
+        replaced.bytes[40] = 0x22;
+        put_as(&mut store, &replaced, keyring.current_priv()).unwrap();
+        assert_eq!(
+            store
+                .get_copy(keyring.principal(), 1)
+                .unwrap()
+                .unwrap()
+                .bytes[40],
+            0x22
+        );
+        let mut passphrase_change = current.clone();
+        passphrase_change.bytes[40] = 0x33;
+        put_as(&mut store, &passphrase_change, keyring.current_priv()).unwrap();
+        assert_eq!(
+            store
+                .get_copy(keyring.principal(), 0)
+                .unwrap()
+                .unwrap()
+                .bytes[40],
+            0x33
+        );
+        assert!(store.get_copy(keyring.principal(), 1).unwrap().is_none());
+    }
+
+    #[test]
+    fn a_resolved_head_raises_the_shared_floor() {
+        let records: Value = serde_json::from_str(RECORDS).unwrap();
+        let chain: Vec<Value> = records["accept"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|item| item["name"] == "probe-v3-then-v3")
+            .unwrap()["input"]
+            .as_array()
+            .unwrap()
+            .clone();
+        let (k0_pub, k0_priv) = scalar_sea(1);
+        let ctx = &records["context"];
+        let jwks: Jwks = serde_json::from_value(ctx["jwks"].clone()).unwrap();
+        let policy: SiwePolicy = serde_json::from_value(ctx["policy"].clone()).unwrap();
+        let pinned: BTreeSet<String> = ctx["pinnedIss"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|item| item.as_str().unwrap().to_string())
+            .collect();
+        let links: BTreeMap<String, Value> = ctx["links"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|pair| (pair[0].as_str().unwrap().to_string(), pair[1].clone()))
+            .collect();
+        let authenticated = ctx["authenticatedAccounts"].clone();
+        let history = |principal: &PrincipalId, at, until| {
+            if !authenticated
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|item| item.as_str() == Some(principal.as_ref()))
+            {
+                return Err(Reason::MissingHistory);
+            }
+            let empty: Vec<Rotate> = Vec::new();
+            Ok(history_state(principal, &empty, at, until))
+        };
+        let resolver: &HistoryResolver<'_> = &history;
+        let revocations = Vec::new();
+        let base = ResolutionContext {
+            jwks: &jwks,
+            links: &links,
+            revocations: &revocations,
+            now: ctx["now"].as_u64().unwrap(),
+            policy: &policy,
+            pinned_iss: &pinned,
+            history: resolver,
+            genesis_epub_bindings: &[],
+        };
+        let principal = parse_principal_id(&k0_pub).unwrap();
+        let published = std::cell::RefCell::new(chain.clone());
+        let seen = |principal: &PrincipalId| {
+            let held = published.borrow();
+            resolve_current_key(principal, held.as_slice(), &base)
+                .result
+                .map_err(|_| EncDiscError::StoreRejected)
+        };
+        let floor = crate::HeadFloor::new();
+        let mut recovery = MemoryRecoveryStore::sharing(seen, floor.clone());
+        let envelope = dummy_envelope(
+            &principal,
+            2,
+            &parse_principal_id(chain[1]["nextKey"].as_str().unwrap()).unwrap(),
+            &parse_principal_id(chain[1]["nextEpub"].as_str().unwrap()).unwrap(),
+        );
+        let bogus = crate::store_write::sign_store_write(
+            k0_priv.as_str(),
+            &principal,
+            "put",
+            "2",
+            &recovery_envelope_hash(&envelope).unwrap(),
+            "2",
+            crate::store_write::REPLACED_NONE,
+            crate::store_write::STORE_CLASS_NONE,
+            "0",
+        )
+        .unwrap();
+        assert!(matches!(
+            recovery.put_copy(&envelope, &bogus).unwrap_err(),
+            EncDiscError::StoreRejected
+        ));
+        assert_eq!(recovery.write_generation(&principal), 0);
+        assert!(recovery.get_copy(&principal, 2).unwrap().is_none());
+        published.replace(Vec::new());
+        assert!(matches!(
+            put_as(
+                &mut recovery,
+                &dummy_envelope(&principal, 0, &principal, &principal),
+                k0_priv.as_str(),
+            )
+            .unwrap_err(),
+            EncDiscError::StoreRejected
+        ));
+        assert_eq!(recovery.write_generation(&principal), 0);
+
+        let mut wraps = crate::MemoryKeyWrapStore::sharing(watch(&[], &base), floor);
+        let wrap_id =
+            sociacl_ids::parse_object_id("wrap_00112233445566778899aabbccddee11").unwrap();
+        let wrap = crate::EncryptedAccountWrap {
+            principal: principal.clone(),
+            wrap_id: wrap_id.clone(),
+            epub: chain[0]["nextEpub"].as_str().unwrap().to_string(),
+            ciphertext_hex: "aa".to_string(),
+            signature: "ab".repeat(64),
+            class: crate::WrapClass::Delivery,
+        };
+        let hash = crate::store_write::wrap_ciphertext_hash(&wrap.ciphertext_hex).unwrap();
+        let signature = crate::store_write::sign_store_write(
+            k0_priv.as_str(),
+            &principal,
+            "put",
+            wrap_id.as_ref(),
+            &hash,
+            "0",
+            crate::store_write::REPLACED_NONE,
+            crate::store_write::STORE_CLASS_DELIVERY,
+            "0",
+        )
+        .unwrap();
+        assert!(matches!(
+            wraps
+                .put_wrap(
+                    &crate::WrapIndex {
+                        principal: principal.clone(),
+                        wrap_id: wrap_id.clone(),
+                        epub: wrap.epub.clone(),
+                    },
+                    &wrap,
+                    &signature,
+                )
+                .unwrap_err(),
+            EncDiscError::StoreRejected
+        ));
+        assert!(wraps.list_wraps(&principal).unwrap().is_empty());
+        assert_eq!(wraps.write_generation(&principal), 0);
+
+        let shared = crate::HeadFloor::new();
+        let long = watch(&chain, &base);
+        let wrap_seen = crate::MemoryKeyWrapStore::sharing(long, shared.clone());
+        wrap_seen.published_account(&principal).unwrap();
+        assert_eq!(wrap_seen.write_generation(&principal), 0);
+        let mut recovery_stale = MemoryRecoveryStore::sharing(watch(&[], &base), shared);
+        assert!(matches!(
+            put_as(
+                &mut recovery_stale,
+                &dummy_envelope(&principal, 0, &principal, &principal),
+                k0_priv.as_str(),
+            )
+            .unwrap_err(),
+            EncDiscError::StoreRejected
+        ));
+        assert!(recovery_stale.get_copy(&principal, 0).unwrap().is_none());
+        assert_eq!(recovery_stale.write_generation(&principal), 0);
     }
 
     fn dummy_envelope(
