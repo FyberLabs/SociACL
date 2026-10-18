@@ -100,6 +100,10 @@ current-key revoke itself.
 
 ## Recovery records
 
+The passphrase recovery copy of an account keyring is specified in
+[Passphrase recovery copy](encrypted-discovery.md#passphrase-recovery-copy).
+This section is the rotation `retainedLinks` record.
+
 Rotations require `retainedLinks`: at most 1024 distinct 64-character lowercase
 hexadecimal IDs, in ascending ASCII order. Empty is allowed. Both authorizer
 kinds name an enrolled credential: `{kind:"wallet",link,siwe}` or

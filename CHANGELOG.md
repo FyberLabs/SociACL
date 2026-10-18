@@ -1,5 +1,26 @@
 # Changelog
 
+## Encrypted discovery — unreleased
+
+- Add a passphrase recovery copy of the account keyring
+  (`sociacl-recovery-copy-v1`). Argon2id is pinned to RFC 9106's second
+  recommended option (`m=64` MiB, `t=3`, `p=4`, version `0x13`, 32-byte
+  output) as both the floor and the ceiling. Salt is 16 through 64 bytes.
+  Open refuses a header outside that constant before the KDF. Refs #64.
+- Associated data binds the domain, the `PrincipalId`, the keyring version,
+  the KDF parameters, and the salt. A wrong passphrase and tampering share
+  `recovery-rejected`. A decrypted copy of another version is
+  `recovery-stale`.
+- `rotateAndReseal` / `rotate_and_reseal` writes a new copy for the new
+  version. The store keeps ciphertext only.
+- Deliver the keyring to a device through the account-key wrap. The device
+  inherits the one keypair and does not mint an identity.
+- Refuse a serialized keyring over 256 KiB before seal and before decrypt,
+  and apply that length check to the recovery envelope before decrypt. The
+  cap is a fixed byte limit. It is not a count of prior lanes.
+- The TypeScript KDF is hash-wasm, a single-threaded WASM build. `p=4` runs
+  its lanes one after another, including in a browser.
+
 ## sociacl-ids 0.8.0 — unreleased
 
 This version is still untagged, so the witnessed genesis-epub binding lands

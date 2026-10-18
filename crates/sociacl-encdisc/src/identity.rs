@@ -28,8 +28,8 @@ use crate::wrap::{self, ItemDek, NamedSet, WrappedKey};
 
 const DOMAIN_ACCOUNT_WRAP: &str = "sociacl-account-key-wrap-v1";
 /// KDF info and AES-GCM associated data. Not the content-wrap domain.
-const DOMAIN_ACCOUNT_BIND: &str = "sociacl-account-key-bind-v1";
-const DOMAIN_ACCOUNT_SIG: &str = "sociacl-account-key-wrap-sig-v1";
+pub(crate) const DOMAIN_ACCOUNT_BIND: &str = "sociacl-account-key-bind-v1";
+pub(crate) const DOMAIN_ACCOUNT_SIG: &str = "sociacl-account-key-wrap-sig-v1";
 const VER_BACKUP: u8 = 1;
 /// Same bound as a content wrap. Reject before decoding.
 const MAX_BACKUP_BYTES: usize = 8192;
@@ -343,7 +343,7 @@ impl TransportKey {
         Ok(Self { scalar, sea_pub })
     }
 
-    fn secret_key(&self) -> Result<p256::SecretKey, EncDiscError> {
+    pub(crate) fn secret_key(&self) -> Result<p256::SecretKey, EncDiscError> {
         p256::SecretKey::from_slice(self.scalar.as_slice()).map_err(|_| EncDiscError::BadKey)
     }
 }
@@ -380,7 +380,7 @@ impl KeyWrapStore for MemoryKeyWrapStore {
             || index.epub != wrap.epub
             || wrap.epub.is_empty()
             || wrap.signature.len() != 128
-            || wrap.ciphertext_hex.len() > MAX_BACKUP_BYTES * 2
+            || wrap.ciphertext_hex.len() > crate::limits::DELIVERY_BLOB_MAX * 2
             || wrap.ciphertext_hex.is_empty()
             || hexutil::decode_hex(&wrap.signature).is_err()
             || hexutil::decode_hex(&wrap.ciphertext_hex).is_err()

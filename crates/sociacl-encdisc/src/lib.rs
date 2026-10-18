@@ -74,6 +74,7 @@
 
 mod account;
 mod canonical;
+mod delivery;
 mod epoch;
 mod error;
 mod grant;
@@ -81,9 +82,11 @@ mod hexutil;
 mod identity;
 mod inbox;
 mod keyring;
+mod limits;
 mod migration;
 mod present;
 mod presenter;
+mod recovery;
 mod rotation;
 mod sea;
 mod see;
@@ -113,6 +116,7 @@ pub use canonical::{
     DOMAIN_PRESENTER_BINDING, DOMAIN_SEA_SECRET, DOMAIN_WRAPPED_KEY, DOMAIN_WRAP_RECEIPT,
     DOMAIN_WRITER_APPEND, DOMAIN_WRITER_CHANNEL, JS_SAFE_INTEGER_MAX,
 };
+pub use delivery::{deliver_keyring, open_delivered_keyring};
 pub use epoch::{
     acl_snapshot_bytes, acl_snapshot_id, epoch_read_key, epoch_step_current, epoch_winner,
     rebuild_grant_revision, select_group_epoch_config, settle_window_in_range,
@@ -146,6 +150,10 @@ pub use keyring::{
     epub_for_new_seal, mint_rotation, rotate_keyring, AccountKeyring, KeyringDevice,
     KeyringRotation, RetiredEpriv, RotationDraft, RotationMint,
 };
+pub use limits::{
+    Argon2Bound, Argon2IdLimits, ARGON2ID_LIMITS, DELIVERY_BLOB_MAX, KEYRING_SERIAL_MAX,
+    RECOVERY_ENVELOPE_MAX,
+};
 pub use migration::{
     accept_migration, apply_protocol_migration, open_migrated_item, prepare_protocol_migration,
     sign_wrap_receipt, EncryptedMigration, MigrationAdmissionInput, MigrationEpoch, MigrationGrant,
@@ -159,6 +167,10 @@ pub use present::{
 pub use presenter::{
     binding_for, verify_presenter_binding, AuthenticatedPresenterChannel, PresenterBinding,
     PresenterChallenge, VerifierChallengeState,
+};
+pub use recovery::{
+    open_recovery_copy, rotate_and_reseal, seal_recovery_copy, MemoryRecoveryStore,
+    RecoveryCopyStore, RecoveryEnvelope,
 };
 pub use rotation::{
     rotate_on_revoke, CancelledGrant, EpochRotation, GrantStorage, PlainGrant, PriorRevision,

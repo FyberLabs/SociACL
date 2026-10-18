@@ -526,7 +526,8 @@ pub fn mint_rotation() -> Result<RotationMint, EncDiscError> {
 }
 
 /// Mint the next v3 rotation. Name every trusted device except `lost`.
-/// Delivery of the new keyring is part 3 and is not done here.
+/// [`crate::rotate_and_reseal`] seals a recovery copy of the keyring this
+/// returns. Delivery to a device is [`crate::deliver_keyring`].
 /// The account id does not change. `confirm` runs before the current epub is
 /// retired. The draft is checked with `check_rotation_draft` before it is
 /// returned. A lane id is never reused.

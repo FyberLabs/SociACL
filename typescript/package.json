@@ -22,5 +22,8 @@
     "@noble/hashes": "2.0.1",
     "@types/node": "24.7.0",
     "typescript": "5.9.3"
+  },
+  "dependencies": {
+    "hash-wasm": "4.12.0"
   }
 }

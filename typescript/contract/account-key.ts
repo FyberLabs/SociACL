@@ -31,6 +31,7 @@ import {
   type ResolutionContext,
   type SiwePolicy,
 } from "../ids/src/index.js";
+import { DELIVERY_BLOB_MAX } from "./keyring-limits.ts";
 import {
   MAX_BACKUP_HEX,
   backupAad,
@@ -95,7 +96,9 @@ export class MemoryKeyWrapStore implements KeyWrapStore {
   readonly #wraps = new Map<string, EncryptedAccountWrap>();
 
   put(index: WrapIndex, wrap: EncryptedAccountWrap): void {
-    if (wrap.ciphertextHex.length > MAX_BACKUP_HEX || wrap.signature.length !== 128) {
+    // Genesis seal and open stay at MAX_BACKUP_HEX. A delivered keyring may
+    // use the full DELIVERY_BLOB_MAX, so the adapter accepts that.
+    if (wrap.ciphertextHex.length > DELIVERY_BLOB_MAX * 2 || wrap.signature.length !== 128) {
       throw new Error("store-rejected");
     }
     if (

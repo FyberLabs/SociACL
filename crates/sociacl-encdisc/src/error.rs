@@ -81,4 +81,12 @@ pub enum EncDiscError {
     IdentityRejected(String),
     #[error("wrap store rejected")]
     StoreRejected,
+    #[error("recovery rejected")]
+    RecoveryRejected,
+    #[error("recovery parameters rejected")]
+    RecoveryParams,
+    #[error("recovery copy is stale")]
+    RecoveryStale,
+    #[error("keyring is too large")]
+    KeyringTooLarge,
 }

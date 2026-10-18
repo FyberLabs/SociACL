@@ -5,7 +5,8 @@
  * against resolveCurrentKey. A null currentEpub is not a match and is not
  * Gun's user.epub. New rotations are v3 and mint a fresh epub.
  *
- * Argon2id recovery and HKDF per-contact lanes are not this module.
+ * Passphrase recovery lives in recovery.ts. HKDF per-contact lanes are not
+ * this module.
  */
 import { randomBytes } from "node:crypto";
 import { p256 } from "@noble/curves/nist.js";
@@ -291,7 +292,8 @@ export function mintRotation(): RotationMint {
   return mint;
 }
 
-/** Mint the next v3 rotation. Name every trusted device except `lost`. Delivery is part 3.
+/** Mint the next v3 rotation. Name every trusted device except `lost`.
+ * `rotateAndReseal` seals the recovery copy. `deliverKeyring` sends it to a device.
  * `confirm` runs before the current epub is retired. The draft is checked with
  * `checkRotationDraft` before it is returned. A lane id is never reused. */
 export function rotateKeyring(
