@@ -47,4 +47,6 @@ export type Diagnostic = Readonly<{ source: 'rotation' | 'link' | 'revoke'; inde
 export type Resolution<T> = Result<T> & { diagnostics: readonly Diagnostic[] };
 export type ResolvedAccount = Readonly<{ currentKey: PrincipalId; currentEpub: PrincipalId | null; rotations: readonly Rotate[] }>;
 export type ResolutionContext = Readonly<{ jwks: Jwks; links: ReadonlyMap<string, unknown>;
-  revocations?: readonly unknown[]; now: number; policy: SiwePolicy; pinnedIss: ReadonlySet<string>; history: HistoryResolver }>;
+  revocations?: readonly unknown[]; now: number; policy: SiwePolicy; pinnedIss: ReadonlySet<string>; history: HistoryResolver;
+  /** Bound by the account keyring. Absent or null does not set currentEpub. */
+  genesisEpub?: PrincipalId | null }>;

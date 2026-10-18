@@ -463,8 +463,7 @@ accept('records','rotate-v3-epub-reuses-prior-epub',[rot3,rotationV3('wallet',p3
 accept('records','rotate-v3-epub-reuses-earlier-signing-key',[rot3,rotationV3('wallet',p3,3,2,p2,at+40,[wid],epub2),rotationV3('wallet',principal(4),4,3,p3,at+50,[wid],p2)],p3,{operation:'resolve',currentEpub:epub2,diagnosticReasons:['bad-sequence']});
 accept('records','rotate-v3-nextkey-reuses-prior-epub',[rot3,rotationV3('wallet',epub,6,2,p2,at+40,[wid],epub2)],p2,{operation:'resolve',currentEpub:epub,diagnosticReasons:['bad-sequence']});
 
-// Round-1 review probes. Expectations that disagreed with the #64 lock are adjusted:
-// epub reuse is bad-sequence, and a v2 rotation after a v3 clears currentEpub.
+// Rotate v3 probes. Epub reuse is bad-sequence. A v2 rotation after a v3 clears currentEpub.
 const v3claims = (r, over={}) => ({typ:'sociacl-rotate-attest-v3',principal:p,nextKey:r.nextKey,nextEpub:r.nextEpub,seq:r.seq,iat:r.issuedAt,exp:r.issuedAt+600,auth:r.authorizer.kind,linkId:r.authorizer.link,retainedLinks:r.retainedLinks,...over});
 const v2claims = (r, over={}) => ({typ:'sociacl-rotate-attest-v2',principal:p,nextKey:r.nextKey,seq:r.seq,iat:r.issuedAt,exp:r.issuedAt+600,auth:r.authorizer.kind,linkId:r.authorizer.link,retainedLinks:r.retainedLinks,...over});
 bad('probe-epub-equals-nextkey',rotationV3('wallet',p2,2,1,p,at+30,[wid],p2),'bad-sequence','rotate');
@@ -495,6 +494,16 @@ accept('records','probe-v3-damaged-copy-plus-good',[{...rot3,authorizer:{kind:'w
 accept('records','probe-v3-then-v2-clears-epub',[rot3,rotation('wallet',p3,3,2,p2,at+40)],p3,{operation:'resolve'});
 accept('records','probe-v2-only-epub-null',[rot],p2,{operation:'resolve'});
 accept('records','probe-no-rotations-epub-null',[],p,{operation:'resolve'});
+// Part 2: the keyring binds the genesis epub and the reuse check includes it.
+const genesisEpub = principal(9);
+accept('records','probe-genesis-epub-at-seq-2',[rot3,rotationV3('wallet',p3,3,2,p2,at+40,[wid],genesisEpub)],p2,{operation:'resolve',currentEpub:epub,diagnosticReasons:['bad-sequence'],genesisEpub});
+accept('records','probe-v2-nextkey-reuses-prior-epub',[rot3,rotation('wallet',epub,6,2,p2,at+40)],p2,{operation:'resolve',currentEpub:epub,diagnosticReasons:['bad-sequence']});
+accept('records','probe-v3-v2-v3-reuses-first-epub',[rot3,rotation('wallet',p3,3,2,p2,at+40),rotationV3('wallet',principal(4),4,3,p3,at+50,[wid],epub)],p3,{operation:'resolve',diagnosticReasons:['bad-sequence']});
+accept('records','publish-v3',{candidate:rot3,siblings:[],prior:[]},p,{operation:'publish-check'});
+bad('publish-v2-refused',{candidate:rot,siblings:[],prior:[]},'bad-record','publish-check');
+bad('publish-both-versions',{candidate:rot3,siblings:[rot],prior:[]},'rotation-fork','publish-check');
+bad('publish-seq2-reuses-genesis-epub',{candidate:rotationV3('wallet',p3,3,2,p2,at+40,[wid],genesisEpub),siblings:[],prior:[rot3]},'bad-sequence','publish-check',{genesisEpub});
+bad('genesis-epub-malformed',[rot3],'not-on-curve','resolve',{genesisEpub:'A'.repeat(43)+'.'+'A'.repeat(43)});
 
 const root = new URL('../../../vectors/ids/',import.meta.url); mkdirSync(root,{recursive:true});
 for(const [name,value] of families) writeFileSync(new URL(name+'.json',root),JSON.stringify(value,null,2).replace(/"issuedAt": 1700000000,/g, name==='edges'?'"issuedAt": 1700000000,':'"issuedAt": 1700000000.0,')+'\n');

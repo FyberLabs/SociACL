@@ -135,6 +135,10 @@ pub struct ResolutionContext<'a> {
     pub policy: &'a SiwePolicy,
     pub pinned_iss: &'a BTreeSet<String>,
     pub history: &'a HistoryResolver<'a>,
+    /// Encryption public key bound by the account keyring at genesis.
+    /// Absent means the reuse check does not know that point. It never
+    /// becomes `current_epub`.
+    pub genesis_epub: Option<&'a PrincipalId>,
 }
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -1116,11 +1120,19 @@ fn rotation_candidate(v: &Value) -> Result<IdentityRecord, Reason> {
         serde_json::json!({"message":"", "signature":format!("0x{}", "00".repeat(65))});
     record(&candidate, false).or(parsed)
 }
-fn reuses_epub(raw: &Rotate, genesis: &PrincipalId, history: &[Rotate]) -> bool {
+fn reuses_epub(
+    raw: &Rotate,
+    genesis: &PrincipalId,
+    history: &[Rotate],
+    genesis_epub: Option<&PrincipalId>,
+) -> bool {
     if history
         .iter()
         .any(|h| h.next_epub.as_ref() == Some(&raw.next_key))
     {
+        return true;
+    }
+    if genesis_epub.is_some_and(|bound| bound == &raw.next_key) {
         return true;
     }
     let Some(epub) = &raw.next_epub else {
@@ -1128,9 +1140,66 @@ fn reuses_epub(raw: &Rotate, genesis: &PrincipalId, history: &[Rotate]) -> bool 
     };
     epub == &raw.next_key
         || epub == genesis
+        || genesis_epub.is_some_and(|bound| epub == bound)
         || history.iter().any(|h| {
             &h.next_key == epub || &h.prev_key == epub || h.next_epub.as_ref() == Some(epub)
         })
+}
+/// Client publish check and Panopticon attest check. Same rules.
+///
+/// Refuses a v2 record. Refuses two versions, or two signing-byte ids, for
+/// one (principal, seq). Runs the same reuse and sequence checks as
+/// resolution, including a bound genesis epub. Does not replace
+/// [`verify_rotate`]. Historical v2 records still verify there.
+pub fn check_rotation_publish(
+    candidate: &Value,
+    siblings: &[Value],
+    genesis: &PrincipalId,
+    accepted_prior: &[Value],
+    ctx: &ResolutionContext<'_>,
+) -> Result<Rotate, Reason> {
+    let IdentityRecord::Rotate(raw) = rotation_candidate(candidate)? else {
+        return Err(Reason::BadRecord);
+    };
+    if raw.next_epub.is_none() || &raw.principal != genesis {
+        return Err(Reason::BadRecord);
+    }
+    let candidate_id = link_id(&IdentityRecord::Rotate(raw.clone()))?;
+    for sibling in siblings {
+        let IdentityRecord::Rotate(other) = rotation_candidate(sibling)? else {
+            return Err(Reason::BadRecord);
+        };
+        if other.principal != raw.principal || other.seq != raw.seq {
+            continue;
+        }
+        let other_id = link_id(&IdentityRecord::Rotate(other.clone()))?;
+        if other.next_epub.is_none() || other_id != candidate_id {
+            return Err(Reason::RotationFork);
+        }
+    }
+    let mut history = Vec::with_capacity(accepted_prior.len());
+    for prior in accepted_prior {
+        let IdentityRecord::Rotate(row) = rotation_candidate(prior)? else {
+            return Err(Reason::BadRecord);
+        };
+        history.push(row);
+    }
+    let seq = history.len() as u64 + 1;
+    let current = history
+        .last()
+        .map(|row| row.next_key.clone())
+        .unwrap_or_else(|| genesis.clone());
+    let last_time = history.last().map(|row| row.issued_at);
+    if raw.seq != seq
+        || last_time.is_some_and(|time| raw.issued_at <= time)
+        || raw.prev_key != current
+        || &raw.next_key == genesis
+        || history.iter().any(|row| row.next_key == raw.next_key)
+        || reuses_epub(&raw, genesis, &history, ctx.genesis_epub)
+    {
+        return Err(Reason::BadSequence);
+    }
+    Ok(raw)
 }
 fn check_rotate(
     v: &Value,
@@ -1150,6 +1219,12 @@ fn check_rotate(
         .next_epub
         .as_ref()
         .is_some_and(|epub| epub == &rot.next_key || epub == &rot.prev_key)
+    {
+        return Err(Reason::BadSequence);
+    }
+    if ctx
+        .genesis_epub
+        .is_some_and(|bound| &rot.next_key == bound || rot.next_epub.as_ref() == Some(bound))
     {
         return Err(Reason::BadSequence);
     }
@@ -1186,7 +1261,12 @@ fn check_rotate(
         None => true,
     };
     if !only(&c, &attest_keys)
-        || c["typ"] != if v3 { "sociacl-rotate-attest-v3" } else { "sociacl-rotate-attest-v2" }
+        || c["typ"]
+            != if v3 {
+                "sociacl-rotate-attest-v3"
+            } else {
+                "sociacl-rotate-attest-v2"
+            }
         || c["principal"] != rot.principal.as_ref()
         || c["nextKey"] != rot.next_key.as_ref()
         || !epub_matches
@@ -1351,7 +1431,7 @@ pub fn resolve_current_key(
                         || history.last().is_some_and(|r| raw.issued_at <= r.issued_at)
                         || &raw.next_key == genesis
                         || history.iter().any(|r| r.next_key == raw.next_key)
-                        || reuses_epub(&raw, genesis, &history)
+                        || reuses_epub(&raw, genesis, &history, ctx.genesis_epub)
                     {
                         return Err(Reason::BadSequence);
                     }

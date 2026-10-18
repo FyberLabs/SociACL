@@ -1,0 +1,64 @@
+{
+  "v": 1,
+  "family": "account-keyring",
+  "genesis": {
+    "laneId": "05e57cbbd329896b1f6a2b13ce15cda256ed2fc854b3fb2edadd08933448e385",
+    "signingPub": "YP7UuiVanTHJYet0xjVtaMBJuJI7Yfps5mliLmDyn7Y.eQP-EAi4vJmkGunpVii8ZPLxsgwtfp9Rd6PClNRGIpk",
+    "signingPriv": "ya-p2EW6dRZrXCFXZ7HWk05Qw9s26JsSe4piKxIPZyE",
+    "signingScalarHex": "C9AFA9D845BA75166B5C215767B1D6934E50C3DB36E89B127B8A622B120F6721",
+    "epub": "EMvdmXTv89JPyMx5n3blU3L_D70U-6JoVaVzTvSzgYg.B_b0CP3o9X3I7tWrxA_F1VhXpjeMuIJCtQWnOh7LN5c",
+    "epriv": "6EXhKuFCyTddo7uvYddNjXON5iKEMV7v8bCol7XOHt8",
+    "principal": "YP7UuiVanTHJYet0xjVtaMBJuJI7Yfps5mliLmDyn7Y.eQP-EAi4vJmkGunpVii8ZPLxsgwtfp9Rd6PClNRGIpk"
+  },
+  "mint": {
+    "signingPub": "UVkLelFRQNLXhMhWCGaP3--Mgv0fW-UkIVVKDcPQM-0.4MF9qJBKcn2K4b82v4p5Jg0BLwDU2AiI0dC7RP2hbaQ",
+    "signingPriv": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAU",
+    "epub": "sBoXKnakYCyS0yQsuJfd4wJMdA3rshW0xrCq6Twikak.6FwQdDI32tVv7A4t-6cDeRwA93Acfha9_XxIU4_Hf-I",
+    "epriv": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY",
+    "laneId": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "trusted": ["phone", "laptop", "tablet"],
+  "lost": "laptop",
+  "expected": {
+    "principal": "YP7UuiVanTHJYet0xjVtaMBJuJI7Yfps5mliLmDyn7Y.eQP-EAi4vJmkGunpVii8ZPLxsgwtfp9Rd6PClNRGIpk",
+    "pub": "UVkLelFRQNLXhMhWCGaP3--Mgv0fW-UkIVVKDcPQM-0.4MF9qJBKcn2K4b82v4p5Jg0BLwDU2AiI0dC7RP2hbaQ",
+    "epub": "sBoXKnakYCyS0yQsuJfd4wJMdA3rshW0xrCq6Twikak.6FwQdDI32tVv7A4t-6cDeRwA93Acfha9_XxIU4_Hf-I",
+    "laneId": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "contentEpoch": 1,
+    "rotationSeq": 1,
+    "prevKey": "YP7UuiVanTHJYet0xjVtaMBJuJI7Yfps5mliLmDyn7Y.eQP-EAi4vJmkGunpVii8ZPLxsgwtfp9Rd6PClNRGIpk",
+    "nextKey": "UVkLelFRQNLXhMhWCGaP3--Mgv0fW-UkIVVKDcPQM-0.4MF9qJBKcn2K4b82v4p5Jg0BLwDU2AiI0dC7RP2hbaQ",
+    "nextEpub": "sBoXKnakYCyS0yQsuJfd4wJMdA3rshW0xrCq6Twikak.6FwQdDI32tVv7A4t-6cDeRwA93Acfha9_XxIU4_Hf-I",
+    "version": 3,
+    "devices": ["phone", "tablet"],
+    "retiredEpubs": ["EMvdmXTv89JPyMx5n3blU3L_D70U-6JoVaVzTvSzgYg.B_b0CP3o9X3I7tWrxA_F1VhXpjeMuIJCtQWnOh7LN5c"],
+    "gunDocument": "{\"soul\":\"~YP7UuiVanTHJYet0xjVtaMBJuJI7Yfps5mliLmDyn7Y.eQP-EAi4vJmkGunpVii8ZPLxsgwtfp9Rd6PClNRGIpk\",\"account\":\"YP7UuiVanTHJYet0xjVtaMBJuJI7Yfps5mliLmDyn7Y.eQP-EAi4vJmkGunpVii8ZPLxsgwtfp9Rd6PClNRGIpk\",\"pub\":\"UVkLelFRQNLXhMhWCGaP3--Mgv0fW-UkIVVKDcPQM-0.4MF9qJBKcn2K4b82v4p5Jg0BLwDU2AiI0dC7RP2hbaQ\",\"epub\":\"sBoXKnakYCyS0yQsuJfd4wJMdA3rshW0xrCq6Twikak.6FwQdDI32tVv7A4t-6cDeRwA93Acfha9_XxIU4_Hf-I\"}",
+    "draftDocument": "{\"v\":1,\"kind\":\"rotate\",\"principal\":\"YP7UuiVanTHJYet0xjVtaMBJuJI7Yfps5mliLmDyn7Y.eQP-EAi4vJmkGunpVii8ZPLxsgwtfp9Rd6PClNRGIpk\",\"seq\":1,\"prevKey\":\"YP7UuiVanTHJYet0xjVtaMBJuJI7Yfps5mliLmDyn7Y.eQP-EAi4vJmkGunpVii8ZPLxsgwtfp9Rd6PClNRGIpk\",\"nextKey\":\"UVkLelFRQNLXhMhWCGaP3--Mgv0fW-UkIVVKDcPQM-0.4MF9qJBKcn2K4b82v4p5Jg0BLwDU2AiI0dC7RP2hbaQ\",\"nextEpub\":\"sBoXKnakYCyS0yQsuJfd4wJMdA3rshW0xrCq6Twikak.6FwQdDI32tVv7A4t-6cDeRwA93Acfha9_XxIU4_Hf-I\"}"
+  },
+  "wallet": "0x1efF47bc3a10a45D4B230B5d10E37751FE6AA718",
+  "errors": {
+    "epubUnknown": "epub-unknown",
+    "epubReuse": "epub-reuse",
+    "pubMismatch": "pub-mismatch",
+    "epubMismatch": "epub-mismatch",
+    "rotationRejected": "rotation-rejected",
+    "lostDevice": "lost-device",
+    "duplicateDevice": "duplicate-device",
+    "deviceId": "device-id",
+    "badLane": "bad-lane",
+    "emptyDevice": "empty-device"
+  },
+  "witnessed": {
+    "rotationName": "rotate-v3-wallet",
+    "genesisScalar": 1,
+    "genesisEpubScalar": 9,
+    "currentScalar": 2,
+    "epubScalar": 6,
+    "laneId": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "contentEpoch": 4,
+    "rotationSeq": 1,
+    "dekHex": "1111111111111111111111111111111111111111111111111111111111111111",
+    "objectId": "item_00112233445566778899aabbccddeeff",
+    "revisionId": "7959127078e9212a046160203b536df084c7884f9f1c18f439fda77f28450008"
+  }
+}

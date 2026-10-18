@@ -39,7 +39,7 @@ have been removed.
 
 1. **Publish the reviewed package.** Merge after Grok/Codex review and CI, then
    configure branch protection and required CI/review on `master`, then publish
-   `ids-v0.7.0` through the release workflow. Record the immutable asset
+   `ids-v0.8.0` through the release workflow. Record the immutable asset
    URL and SHA-256. Consumer PRs must pin lockfile integrity; no unresolvable
    release URL or vendored replacement validator belongs in a merged consumer.
 2. **SociACL core boundaries.** Replace TS `gun`, `post`, `group`, `request` and

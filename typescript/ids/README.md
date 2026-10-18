@@ -188,12 +188,18 @@ context failure.
 `currentEpub`: a v3 record sets it to that `nextEpub`, and a v2 record sets it
 to null. Null means the encryption public key is unknown. Do not seal, and
 never fall back to Gun's `user.epub`. With no accepted v3 rotation,
-`currentEpub` stays null. New rotations must be v3, and from 0.7 Panopticon
-attests only v3. The library still verifies historical v2. Panopticon never
-attests both versions for the same principal and sequence; publishing both
-freezes the account with `rotation-fork`. `nextEpub` must not equal `nextKey`,
-genesis, any prior signing key, or any prior epub, and a later `nextKey` must
-not equal any prior epub (`bad-sequence`). It sorts sequences, verifies each candidate,
+`currentEpub` stays null. The genesis encryption public key does not become
+`currentEpub`. When the account keyring supplies `ResolutionContext.genesisEpub`,
+that point joins the reuse check and a collision is `bad-sequence`. New
+rotations must be v3, and from 0.7 Panopticon attests only v3. From 0.8,
+`checkRotationPublish` is the check Panopticon runs before it attests and the
+check a client runs before it publishes. It refuses a v2 record with
+`bad-record` and two versions of one `(principal, seq)` with `rotation-fork`.
+It does not replace `verifyRotate`. The library still verifies historical v2.
+Panopticon never attests both versions for the same principal and sequence;
+publishing both freezes the account with `rotation-fork`. `nextEpub` must not
+equal `nextKey`, genesis, any prior signing key, or any prior epub, and a later
+`nextKey` must not equal any prior epub (`bad-sequence`). It sorts sequences, verifies each candidate,
 skips unauthenticated malformed/forged candidates, and reports `{source,index,reason}` diagnostics.
 Once a rotation's new-key signature and attestation authenticate its references,
 copies are compared by signing-bytes hash. Any fully verified copy satisfies
@@ -287,15 +293,15 @@ present/historical revocation boundary. The browser check
 bundles the runtime dependency graph and rejects Node imports. Node built-ins
 are used only in build/test tooling, outside the shipped runtime.
 
-After review and merge, tag `ids-v0.7.0`. The release job waits for the full test
+After review and merge, tag `ids-v0.8.0`. The release job waits for the full test
 job, requires a protected `master` and verifies the tag commit is its ancestor.
 A read-only job installs dependencies with scripts disabled, explicitly builds,
 and checks the tag against `package.json`. A separate write-token job only
 downloads the resulting artifact, checks its SHA-256, and attaches
-`sociacl-ids-0.7.0.tgz` and its SHA-256 file. Consumers then install:
+`sociacl-ids-0.8.0.tgz` and its SHA-256 file. Consumers then install:
 
 ```sh
-npm install https://github.com/FyberLabs/SociACL/releases/download/ids-v0.7.0/sociacl-ids-0.7.0.tgz
+npm install https://github.com/FyberLabs/SociACL/releases/download/ids-v0.8.0/sociacl-ids-0.8.0.tgz
 ```
 
 Commit the consumer lockfile with tarball integrity. This URL becomes usable

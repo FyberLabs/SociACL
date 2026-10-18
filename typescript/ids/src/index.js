@@ -6,5 +6,5 @@ export {
   mintObjectId, deriveClaimId, deriveExternalId,
 } from './ids.js';
 export { signingBytes, linkId, verifyWalletLink, verifyOidcLink, verifyRotate, verifyRevoke, verifyRevokeNow,
-  resolveCurrentKey, resolveWalletLink, resolveWalletLinkNow, historyState, verifyWalletLinkAtKey, verifyOidcLinkAtKey, verifyRotateAtKey, resolveWalletLinkAtKey } from './records.js';
+  resolveCurrentKey, resolveWalletLink, resolveWalletLinkNow, historyState, checkRotationPublish, verifyWalletLinkAtKey, verifyOidcLinkAtKey, verifyRotateAtKey, resolveWalletLinkAtKey } from './records.js';
 export { parseJsonInput } from './json.js';

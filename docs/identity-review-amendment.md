@@ -162,8 +162,10 @@ encryption public key for the current signing key is unknown. Consumers must
 not seal, and they must never fall back to Gun's `user.epub` or any other
 unwitnessed point. With no accepted v3 rotation, including a v2-only history
 and an empty history, `currentEpub` stays null. The genesis encryption public
-key is not bound here; the part 2 keyring covers that case. `historyState`
-stays signing-key state and carries no epub.
+key does not become `currentEpub`. The account keyring binds it and supplies
+it as `ResolutionContext.genesisEpub` / `genesis_epub`. The reuse check then
+rejects that point, including at sequence 2 or later. `historyState` stays
+signing-key state and carries no epub.
 
 `nextEpub` must be a fresh point. It must not equal `nextKey`, the genesis
 signing key, any prior signing key, or any prior `nextEpub`. A later `nextKey`
@@ -171,6 +173,26 @@ must not equal any prior `nextEpub`. Those collisions are `bad-sequence`, the
 same reason as signing-key reuse. Direct `verifyRotate` rejects `nextEpub`
 equal to `nextKey` or `prevKey`. During resolution the colliding candidate is
 skipped and the prior key and epub stay in place.
+
+## Attest and publish
+
+Panopticon runs the same reuse and sequence checks as `resolveCurrentKey`
+before it attests a rotation. Clients run those same checks before they
+publish. `checkRotationPublish` / `check_rotation_publish` is that shared
+check. It is not a second rotation scheme and it does not replace
+`verifyRotate`.
+
+The check refuses a v2 record (no `nextEpub`) with `bad-record`. Historical
+`verifyRotate` still accepts a v2 record. The check refuses two versions, or
+two signing-byte ids, offered for one `(principal, seq)` with `rotation-fork`.
+Panopticon must not attest a v2 record and must not attest both versions for
+that pair. A client must not publish either.
+
+When the account keyring supplies `ResolutionContext.genesisEpub`, the reuse
+check includes that point. `nextEpub` equal to it, or a later `nextKey` equal
+to it, is `bad-sequence`, including at sequence 2 or later. The bound point
+does not become `currentEpub`. A null `currentEpub` stays null, and callers
+still must not seal or fall back to Gun `user.epub`.
 
 The verifier authenticates the authorizing credential and **every retained ID**
 against the pre-rotation state. Each must belong to the principal and remain

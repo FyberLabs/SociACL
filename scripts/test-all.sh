@@ -47,7 +47,7 @@ PYTHONPATH=python python3 python/tests/test_network.py
 npm ci --prefix typescript
 npx --prefix typescript tsc --strict --noEmit -p typescript/contract
 node --test typescript/tests/*.js
-node --experimental-strip-types --test typescript/tests/test_encdisc_vectors.ts typescript/tests/test_presentation.ts typescript/tests/test_inbox.ts typescript/tests/test_epoch.ts typescript/tests/test_migration.ts typescript/tests/test_account_key.ts
+node --experimental-strip-types --test typescript/tests/test_encdisc_vectors.ts typescript/tests/test_presentation.ts typescript/tests/test_inbox.ts typescript/tests/test_epoch.ts typescript/tests/test_migration.ts typescript/tests/test_account_key.ts typescript/tests/test_account_keyring.ts
 npm run --prefix typescript typecheck
 
 # Independent browser package: each language reports exactly which shared vectors ran.

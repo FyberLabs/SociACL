@@ -45,7 +45,7 @@ A wrap is not a grant. `checkSee` and `checkSeeGrant` do not take wrap bytes and
 
 Each reader account has **exactly one** private inbox lane (`RecipientInbox`). Every private grant row for that account is appended to that lane. The reader scans that lane and no other.
 
-Scanning a shared bucket is not allowed. A lane is not a bucket many readers trial-decrypt. There is no second lane per device, per sender, or per epoch. Devices of one account share the account lane because they share one SEA keypair. See [Account key](#account-key).
+Scanning a shared bucket is not allowed. A lane is not a bucket many readers trial-decrypt. There is no second lane per device, per sender, or per epoch. Devices of one account share the account lane because they share one SEA keypair. A keyring rotation replaces that lane id. It does not add another lane. HKDF per-contact lanes remain open under [SociACL#64](https://github.com/FyberLabs/SociACL/issues/64). See [Account key](#account-key).
 
 `laneId` is 32 bytes of lowercase hex. It is not the plaintext accessor id and not `grantSoul`. Registration rejects any other shape. This spec does not lock a new Gun collection name. The lane is one opaque soul. The reader discloses `laneId` to principals the [write policy](#inbox-write-policy) allows. Writers address that soul. They do not learn a shared bucket to scan.
 
@@ -160,7 +160,9 @@ Wallets and OIDC subjects are linked credentials (`WalletLink`, `OidcLink`) only
 
 The `rotations` passed to seal and to open, and the resolution context those calls use, must be the trusted latest-state checkpoint from sociacl-ids §4.6. Panopticon alone does not supply that checkpoint. Passing no rotations leaves the current key equal to genesis, so a genesis-signed wrap opens.
 
-**OPEN.** sociacl-ids Rotate v3 names the next encryption public key. `nextEpub` is in the signed rotation bytes and the Panopticon attestation, and `resolveCurrentKey` returns that witnessed `currentEpub`. A null `currentEpub` means the encryption public key is unknown: do not seal, and never fall back to Gun `user.epub`. How a recovered device obtains the current encryption key, the account keyring, the Argon2id passphrase recovery copy, and HKDF per-contact lanes remain [SociACL#64](https://github.com/FyberLabs/SociACL/issues/64). This page does not seal a keyring, derive a lane, or rotate `epub` at enrollment.
+The account keyring holds the current signing scalar, the current encryption scalar, the retired encryption scalars, and the one `laneId` for this account. Import checks that pair against `resolveCurrentKey`'s `(currentKey, currentEpub)` and rejects a mismatch. A null `currentEpub` refuses a new seal and never falls back to Gun `user.epub`. The keyring binds the genesis encryption public key and supplies it as `ResolutionContext.genesisEpub`, so the library reuse check rejects that point. Rotation mints a new signing pair, a fresh epub, and a new lane id. It re-enrolls the trusted devices and leaves out the lost one. It advances the content epoch. The draft is always Rotate v3. The builder refuses an epub it already holds, including the genesis epub. The account id stays the genesis signing pub. `priv`, `epriv`, and retired `epriv` values never go on Gun.
+
+**OPEN.** Argon2id passphrase recovery and HKDF per-contact lanes remain [SociACL#64](https://github.com/FyberLabs/SociACL/issues/64). This page does not seal a recovery copy and does not derive a lane per contact. The account still has one lane. Rotation replaces that lane id.
 
 ## Epoch manifest
 

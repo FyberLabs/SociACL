@@ -134,6 +134,11 @@ fn run(f: &Family, c: &Case, v: &Value) -> Result<Value, Reason> {
             .iter()
             .map(|v| v.as_str().unwrap().to_owned())
             .collect();
+        let genesis_epub_owned = ctx
+            .get("genesisEpub")
+            .and_then(Value::as_str)
+            .map(|text| parse_principal_id(text))
+            .transpose()?;
         let rc = ResolutionContext {
             jwks: &jwks,
             links: &ls,
@@ -142,6 +147,7 @@ fn run(f: &Family, c: &Case, v: &Value) -> Result<Value, Reason> {
             policy: &policy,
             pinned_iss: &pinned_iss,
             history: &history,
+            genesis_epub: genesis_epub_owned.as_ref(),
         };
         let key_state = if ctx["directState"].is_object() {
             KeyState {
@@ -210,6 +216,12 @@ fn run(f: &Family, c: &Case, v: &Value) -> Result<Value, Reason> {
                     &key_state,
                 )?
                 .principal
+            }
+            "publish-check" => {
+                let siblings = v["siblings"].as_array().unwrap();
+                let prior = v["prior"].as_array().unwrap();
+                let genesis = parse_principal_id(ctx["genesis"].as_str().unwrap())?;
+                check_rotation_publish(&v["candidate"], siblings, &genesis, prior, &rc)?.principal
             }
             "rotate" => {
                 let rot = verify_rotate(v, &key, &rc)?;

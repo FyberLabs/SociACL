@@ -50,6 +50,7 @@ function run(f, c) {
       }
       case 'wallet-link': r=ids.verifyWalletLink(c.input,ctx.jwks,ctx.policy,ctx.now,keyState); break;
       case 'oidc-link': r=ids.verifyOidcLink(c.input,ctx.jwks,new Set(ctx.pinnedIss),ctx.now,keyState); break;
+      case 'publish-check': r=ids.checkRotationPublish(c.input.candidate,c.input.siblings,ctx.genesis,c.input.prior,rc); break;
       case 'rotate': r=ids.verifyRotate(c.input,ctx.currentKey,rc); break;
       case 'revoke-now': r=ids.verifyRevokeNow(c.input,ctx.currentKey,ctx.now); break;
       case 'revoke': r=ids.verifyRevoke(c.input,ctx.currentKey,ctx.jwks,ctx.now); break;

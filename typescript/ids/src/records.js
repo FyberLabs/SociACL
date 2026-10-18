@@ -317,6 +317,8 @@ function checkRotate(x,currentKey,ctx,diagnostics) {
   const t=time(r.issuedAt,ctx.now,ctx.policy.clockSkewSeconds??0); if (!t.ok) return t;
   if (r.prevKey !== currentKey || r.nextKey === currentKey) return fail('bad-sequence');
   if (hasNextEpub(r) && (r.nextEpub === r.nextKey || r.nextEpub === r.prevKey)) return fail('bad-sequence');
+  const bound = genesisEpubOf(ctx); if (!bound.ok) return bound;
+  if (bound.value && (r.nextKey === bound.value || (hasNextEpub(r) && r.nextEpub === bound.value))) return fail('bad-sequence');
   if (!keyVerify(r.nextKey,r.nextSig,bytes(r))) return fail('bad-signature');
   const a=attestVerify(r.attest,ctx.jwks,ctx.now,ctx.policy.clockSkewSeconds??0); if (!a.ok) return a;
   const c=a.value;
@@ -359,13 +361,50 @@ function checkRotate(x,currentKey,ctx,diagnostics) {
   }
   return ok(r);
 }
+/** Bound genesis epub from the account keyring. Null means unbound.
+ * @param {ResolutionContext} ctx @returns {Result<PrincipalId|null>} */
+function genesisEpubOf(ctx) {
+  if (!Object.hasOwn(ctx, 'genesisEpub') || ctx.genesisEpub == null) return ok(null);
+  return parsePrincipalId(ctx.genesisEpub);
+}
 /** nextEpub is a fresh point, and a later signing key is not an earlier epub.
- * @param {Rotate} raw @param {PrincipalId} genesis @param {readonly Rotate[]} history */
-function reusesEpub(raw, genesis, history) {
+ * @param {Rotate} raw @param {PrincipalId} genesis @param {readonly Rotate[]} history @param {PrincipalId|null} genesisEpub */
+function reusesEpub(raw, genesis, history, genesisEpub) {
   if (history.some(h => h.nextEpub === raw.nextKey)) return true;
+  if (genesisEpub && raw.nextKey === genesisEpub) return true;
   if (!hasNextEpub(raw)) return false;
   const epub = raw.nextEpub;
-  return epub === raw.nextKey || epub === genesis || history.some(h => h.nextKey === epub || h.prevKey === epub || h.nextEpub === epub);
+  return epub === raw.nextKey || epub === genesis || epub === genesisEpub || history.some(h => h.nextKey === epub || h.prevKey === epub || h.nextEpub === epub);
+}
+/** Client publish check and Panopticon attest check. Same rules.
+ * Refuses v2. Refuses both versions, or two ids, for one (principal, seq).
+ * Does not replace verifyRotate. Historical v2 records still verify there.
+ * @param {unknown} candidate @param {readonly unknown[]} siblings @param {PrincipalId} genesis @param {readonly unknown[]} acceptedPrior @param {ResolutionContext} ctx @returns {Result<Rotate>} */
+export function checkRotationPublish(candidate, siblings, genesis, acceptedPrior, ctx) {
+  const bound = genesisEpubOf(ctx); if (!bound.ok) return bound;
+  const parsed = rotationCandidate(candidate); if (!parsed.ok) return parsed;
+  if (parsed.value.kind !== 'rotate') return fail('bad-record');
+  const raw = /** @type {Rotate} */ (parsed.value);
+  if (!hasNextEpub(raw) || raw.principal !== genesis) return fail('bad-record');
+  const id = hex(sha256(bytes(raw)));
+  for (const sibling of siblings) {
+    const other = rotationCandidate(sibling); if (!other.ok) return other;
+    if (other.value.kind !== 'rotate') return fail('bad-record');
+    const row = /** @type {Rotate} */ (other.value);
+    if (row.principal !== raw.principal || row.seq !== raw.seq) continue;
+    if (!hasNextEpub(row) || hex(sha256(bytes(row))) !== id) return fail('rotation-fork');
+  }
+  /** @type {Rotate[]} */ const history = [];
+  for (const prior of acceptedPrior) {
+    const row = rotationCandidate(prior); if (!row.ok) return row;
+    if (row.value.kind !== 'rotate') return fail('bad-record');
+    history.push(/** @type {Rotate} */ (row.value));
+  }
+  const seq = history.length + 1;
+  const current = history.length ? history[history.length - 1].nextKey : genesis;
+  const lastTime = history.length ? history[history.length - 1].issuedAt : -1;
+  if (raw.seq !== seq || raw.issuedAt <= lastTime || raw.prevKey !== current || raw.nextKey === genesis || history.some(r => r.nextKey === raw.nextKey) || reusesEpub(raw, genesis, history, bound.value)) return fail('bad-sequence');
+  return ok(raw);
 }
 /** Copies share signing-byte identity: any fully verified copy satisfies that rotation ID.
  * Unauthenticated junk is diagnostic; unresolved authenticated evidence fails closed.
@@ -373,6 +412,7 @@ function reusesEpub(raw, genesis, history) {
 export function resolveCurrentKey(genesis, rotations, ctx) {
   /** @type {Diagnostic[]} */ const diagnostics = [];
   if (!integer(ctx.now) || typeof ctx.history !== 'function') return { ...fail('missing-history'), diagnostics };
+  const bound = genesisEpubOf(ctx); if (!bound.ok) return { ...bound, diagnostics };
   /** @type {Rotate[]} */ const history = [];
   /** @type {Map<number, {r:Rotate,index:number}[]>} */ const groups = new Map();
   for (const [index,raw] of rotations.entries()) {
@@ -390,7 +430,7 @@ export function resolveCurrentKey(genesis, rotations, ctx) {
       /** @type {ResolutionContext} */ const candidate = { ...ctx, now:raw.issuedAt,
         history:(p,at,until) => p === genesis ? ok(historyState(genesis,history,at,until)) : state(ctx.history,p,at,until) };
       /** @type {Result<Rotate>} */ let result;
-      if (n !== seq || raw.issuedAt <= lastTime || raw.nextKey === genesis || history.some(r => r.nextKey === raw.nextKey) || reusesEpub(raw, genesis, history)) result = fail('bad-sequence');
+      if (n !== seq || raw.issuedAt <= lastTime || raw.nextKey === genesis || history.some(r => r.nextKey === raw.nextKey) || reusesEpub(raw, genesis, history, bound.value)) result = fail('bad-sequence');
       else {
         result = checkRotate(raw,current,candidate,diagnostics);
         // A witnessed OIDC rotation contradicted by an active wallet cannot be skipped.

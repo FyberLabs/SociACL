@@ -1,6 +1,21 @@
 # Changelog
 
-## sociacl-ids 0.7.0 — unreleased
+## sociacl-ids 0.8.0 — unreleased
+
+- Bind an optional genesis encryption public key on `ResolutionContext`
+  (`genesisEpub` / `genesis_epub`). The reuse check rejects that point as
+  `nextEpub` or as a later `nextKey`, including at sequence 2 or later. The
+  bound point does not become `currentEpub`.
+- Add `checkRotationPublish` / `check_rotation_publish`. Panopticon runs it
+  before attesting a rotation, and a client runs it before publishing. It
+  refuses a v2 record with `bad-record` and two versions, or two signing-byte
+  ids, of one (principal, seq) with `rotation-fork`. It does not replace
+  `verifyRotate`. Historical v2 records still verify there.
+- Add shared probes for a genesis epub reused at sequence 2, a v2 `nextKey`
+  equal to a prior epub, a v3 then v2 then v3 that reuses the first epub, and
+  the publish check.
+
+## sociacl-ids 0.7.0 — merged, not tagged
 
 - Add Rotate v3. A rotation that carries `nextEpub` signs `sociacl-rotate-v3`
   with that SEA point immediately after `nextKey`, and its Panopticon
