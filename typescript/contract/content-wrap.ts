@@ -94,7 +94,9 @@ export function openReaderWrap(
   ) {
     throw new Error("wrap-rejected");
   }
-  return fields[8];
+  const key = fields[8];
+  if (key === undefined) throw new Error("wrap-rejected");
+  return key;
 }
 
 function contentKdf(x: Uint8Array): Uint8Array {
