@@ -21,12 +21,25 @@
 - The TypeScript KDF is hash-wasm, a single-threaded WASM build. `p=4` runs
   its lanes one after another, including in a browser. Mobile uses the same
   64 MiB Argon2id parameters.
-- Normalize a passphrase string to Unicode NFC, then UTF-8. Empty and
-  whitespace-only passphrases are `recovery-params`.
+- Normalize a passphrase string to Unicode NFC, then UTF-8, against Unicode
+  16.0.0. Code points unassigned in that version are `recovery-params`
+  before NFC. Whitespace is one explicit set in both languages and includes
+  U+0085. Empty and whitespace-only passphrases are `recovery-params`.
+- A recovery `put` refuses a lower `rotationSeq` (`store-rejected`). An
+  equal sequence replaces that row. A higher sequence is stored as pending
+  and does not replace the current copy until `commitRecoveryCopy` /
+  `commit_recovery_copy` sees the rotation in the trusted chain. Adapters
+  replace a row atomically and only forward.
 - Key the wrap store by principal and wrap id, so a second device delivery
-  keeps the first. Re-seal keeps only the latest recovery copy per principal.
-- Return `recovery-stale` for an older delivery before the current-key
-  signature check. Delivery uses `sociacl-keyring-delivery-v1` and
+  keeps the first. **Breaking for adapter authors:** `KeyWrapStore.get` /
+  `get_wrap` now takes a wrap id, and `list` / `list_wraps` was added.
+  A principal holds at most 64 wrap rows. A wrap id stays in the class that
+  first stored it (`genesis` or `delivery`); a delivery cannot replace the
+  genesis backup's wrap id.
+- Verify a delivery signature before parsing the plaintext. `recovery-stale`
+  is returned only when that signature also verifies under the key that was
+  valid at the older sequence. Codec failures on the delivery path are
+  `wrap-rejected`. Delivery uses `sociacl-keyring-delivery-v1` and
   `sociacl-keyring-delivery-sig-v1`.
 - The recovery plaintext cap does not grow with the salt. `RECOVERY_ENVELOPE_MAX`
   is 262205. The pre-parse ceiling `RECOVERY_ABSOLUTE_MAX` is 262269.

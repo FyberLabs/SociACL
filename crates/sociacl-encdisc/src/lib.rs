@@ -90,6 +90,7 @@ mod recovery;
 mod rotation;
 mod sea;
 mod see;
+mod unicode16;
 mod wrap;
 mod writer;
 
@@ -136,7 +137,7 @@ pub use identity::{
     account_grant_soul, account_id_from_label, current_signing_key, delivery_mints_grant,
     open_account_backup, parse_wrap_object, seal_account_backup, EncryptedAccountWrap,
     GenesisAccount, InheritedDevice, KeyWrapStore, LinkedCredential, MemoryKeyWrapStore,
-    TransportKey, WrapIndex,
+    TransportKey, WrapClass, WrapIndex,
 };
 pub use inbox::{
     filter_inbox_append, lane_id_is_opaque, lanes_per_device, replicated_row_admitted,
@@ -152,7 +153,7 @@ pub use keyring::{
 };
 pub use limits::{
     Argon2Bound, Argon2IdLimits, ARGON2ID_LIMITS, DELIVERY_BLOB_MAX, KEYRING_SERIAL_MAX,
-    RECOVERY_ABSOLUTE_MAX, RECOVERY_ENVELOPE_MAX,
+    MAX_WRAPS_PER_PRINCIPAL, RECOVERY_ABSOLUTE_MAX, RECOVERY_ENVELOPE_MAX,
 };
 pub use migration::{
     accept_migration, apply_protocol_migration, open_migrated_item, prepare_protocol_migration,
@@ -169,9 +170,9 @@ pub use presenter::{
     PresenterChallenge, VerifierChallengeState,
 };
 pub use recovery::{
-    encode_passphrase, open_recovery_copy, open_recovery_copy_str, rotate_and_reseal,
-    seal_recovery_copy, seal_recovery_copy_str, MemoryRecoveryStore, RecoveryCopyStore,
-    RecoveryEnvelope,
+    commit_recovery_copy, encode_passphrase, open_recovery_copy, open_recovery_copy_str,
+    rotate_and_reseal, seal_recovery_copy, seal_recovery_copy_str, MemoryRecoveryStore,
+    RecoveryCopyStore, RecoveryEnvelope,
 };
 pub use rotation::{
     rotate_on_revoke, CancelledGrant, EpochRotation, GrantStorage, PlainGrant, PriorRevision,

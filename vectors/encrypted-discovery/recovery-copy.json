@@ -33,7 +33,27 @@
     "keyringSerialMax": 262144,
     "deliveryBlobMax": 262238,
     "recoveryEnvelopeMax": 262205,
-    "recoveryAbsoluteMax": 262269
+    "recoveryAbsoluteMax": 262269,
+    "wrapsPerPrincipal": 64
+  },
+  "unicodeVersion": "16.0.0",
+  "passphraseRejects": [
+    {
+      "name": "nel",
+      "passphrase": "\u0085",
+      "error": "recovery-params"
+    },
+    {
+      "name": "unicode-17-mark",
+      "passphrase": "x\u1ACF\u0323",
+      "error": "recovery-params"
+    }
+  ],
+  "retention": {
+    "downgrade": "store-rejected",
+    "sameSeq": "replace",
+    "higherSeq": "pending",
+    "commitUnverified": "store-rejected"
   },
   "passphraseUtf8": "correct horse battery staple",
   "wrongPassphraseUtf8": "wrong passphrase",

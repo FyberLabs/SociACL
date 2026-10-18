@@ -19,7 +19,7 @@ import {
   type RecoveryCopyStore,
   type RecoveryEnvelope,
 } from "./recovery-seal.ts";
-import type { PrincipalId, ResolutionContext } from "../ids/src/index.js";
+import { resolveCurrentKey, type PrincipalId, type ResolutionContext } from "../ids/src/index.js";
 
 export { ARGON2ID_LIMITS, KEYRING_SERIAL_MAX, DELIVERY_BLOB_MAX, RECOVERY_ABSOLUTE_MAX, RECOVERY_ENVELOPE_MAX } from "./keyring-limits.ts";
 export { encodePassphrase, MemoryRecoveryStore, openRecoveryCopy };
@@ -73,7 +73,22 @@ export async function openRecoveryCopyFromString(
   }
 }
 
-/** Rotate, then seal a recovery copy of the new keyring version. */
+/** Promote the pending copy after the trusted chain includes that rotation.
+ * A chain that does not resolve, or a verified sequence that is not the
+ * pending copy, is `store-rejected`. Both copies stay. */
+export function commitRecoveryCopy(
+  principal: PrincipalId,
+  rotations: readonly unknown[],
+  context: ResolutionContext,
+  store: RecoveryCopyStore,
+): void {
+  const resolved = resolveCurrentKey(principal, rotations, context);
+  if (!resolved.ok) throw new Error("store-rejected");
+  store.promote(principal, resolved.value.rotations.length);
+}
+
+/** Rotate, then seal a pending recovery copy of the new keyring version.
+ * The current copy stays until `commitRecoveryCopy` sees the rotation. */
 export async function rotateAndReseal(
   keyring: AccountKeyring,
   trusted: readonly string[],

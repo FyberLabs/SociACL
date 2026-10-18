@@ -551,6 +551,7 @@ test("a malformed wrap id is rejected before signature verification", () => {
     principal: genesis.principal,
     wrapId: "not-an-object" as EncryptedAccountWrap["wrapId"],
     epub: genesis.epub,
+    class: "genesis",
     ciphertextHex: "00",
     signature: "ab".repeat(64),
   };

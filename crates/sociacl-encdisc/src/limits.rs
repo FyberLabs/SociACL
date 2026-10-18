@@ -82,6 +82,9 @@ pub const RECOVERY_ENVELOPE_MAX: usize =
 pub const RECOVERY_ABSOLUTE_MAX: usize =
     RECOVERY_ENVELOPE_MAX + ARGON2ID_LIMITS.salt_length.ceiling as usize;
 
+/// Cap on wrap rows stored for one principal, including the genesis backup.
+pub const MAX_WRAPS_PER_PRINCIPAL: usize = 64;
+
 pub(crate) fn in_bound(value: u32, bound: Argon2Bound) -> bool {
     value >= bound.floor && value <= bound.ceiling
 }

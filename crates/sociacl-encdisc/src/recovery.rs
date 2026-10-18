@@ -40,6 +40,12 @@ pub struct RecoveryEnvelope {
 }
 
 /// Ciphertext adapter. Not an authority, and not Gun.
+///
+/// `put_copy` refuses a `rotation_seq` below the stored copy. An equal
+/// sequence replaces that row. A higher sequence is held beside the current
+/// copy until [`commit_recovery_copy`] promotes it. Adapters, Panopticon
+/// included, replace a row atomically and only forward: write the new row,
+/// then drop the old one. There is never a window with zero copies.
 pub trait RecoveryCopyStore {
     fn put_copy(&mut self, envelope: &RecoveryEnvelope) -> Result<(), EncDiscError>;
 
@@ -48,6 +54,14 @@ pub trait RecoveryCopyStore {
         principal: &PrincipalId,
         rotation_seq: u64,
     ) -> Result<Option<RecoveryEnvelope>, EncDiscError>;
+
+    /// Move the pending copy onto the current copy when its sequence is
+    /// `verified_seq`. The slot keeps a current copy for the whole call.
+    fn promote_pending(
+        &mut self,
+        principal: &PrincipalId,
+        verified_seq: u64,
+    ) -> Result<(), EncDiscError>;
 
     fn is_authority(&self) -> bool {
         false
@@ -62,13 +76,20 @@ pub trait RecoveryCopyStore {
     }
 }
 
-/// In-memory adapter. One ciphertext per principal: the latest put.
+/// Current recovery copy, plus at most one newer copy waiting on the chain.
+#[derive(Clone, Debug)]
+struct RecoverySlot {
+    current: RecoveryEnvelope,
+    pending: Option<RecoveryEnvelope>,
+}
+
+/// In-memory adapter. One slot per principal.
 ///
-/// Putting a copy deletes every older copy for that principal. `get_copy`
-/// returns a clone, so the caller cannot alias the stored bytes.
+/// `get_copy` returns a clone, so the caller cannot alias the stored bytes.
+/// Promotion assigns the pending envelope onto `current` in place.
 #[derive(Clone, Debug, Default)]
 pub struct MemoryRecoveryStore {
-    by_principal: BTreeMap<String, RecoveryEnvelope>,
+    by_principal: BTreeMap<String, RecoverySlot>,
 }
 
 impl MemoryRecoveryStore {
@@ -90,8 +111,35 @@ impl RecoveryCopyStore for MemoryRecoveryStore {
         if seq != envelope.rotation_seq {
             return Err(EncDiscError::StoreRejected);
         }
-        self.by_principal
-            .insert(envelope.principal.as_ref().to_string(), envelope.clone());
+        let key = envelope.principal.as_ref().to_string();
+        let Some(slot) = self.by_principal.get_mut(&key) else {
+            self.by_principal.insert(
+                key,
+                RecoverySlot {
+                    current: envelope.clone(),
+                    pending: None,
+                },
+            );
+            return Ok(());
+        };
+        let incoming = envelope.rotation_seq;
+        if incoming < slot.current.rotation_seq {
+            return Err(EncDiscError::StoreRejected);
+        }
+        if incoming == slot.current.rotation_seq {
+            slot.current = envelope.clone();
+            return Ok(());
+        }
+        if let Some(pending) = &slot.pending {
+            if incoming < pending.rotation_seq {
+                return Err(EncDiscError::StoreRejected);
+            }
+            if incoming == pending.rotation_seq {
+                slot.pending = Some(envelope.clone());
+                return Ok(());
+            }
+        }
+        slot.pending = Some(envelope.clone());
         Ok(())
     }
 
@@ -100,28 +148,75 @@ impl RecoveryCopyStore for MemoryRecoveryStore {
         principal: &PrincipalId,
         rotation_seq: u64,
     ) -> Result<Option<RecoveryEnvelope>, EncDiscError> {
-        Ok(self.by_principal.get(principal.as_ref()).and_then(|row| {
-            if row.rotation_seq == rotation_seq {
-                Some(row.clone())
+        let Some(slot) = self.by_principal.get(principal.as_ref()) else {
+            return Ok(None);
+        };
+        if slot.current.rotation_seq == rotation_seq {
+            return Ok(Some(slot.current.clone()));
+        }
+        Ok(slot.pending.as_ref().and_then(|pending| {
+            if pending.rotation_seq == rotation_seq {
+                Some(pending.clone())
             } else {
                 None
             }
         }))
     }
+
+    fn promote_pending(
+        &mut self,
+        principal: &PrincipalId,
+        verified_seq: u64,
+    ) -> Result<(), EncDiscError> {
+        let Some(slot) = self.by_principal.get_mut(principal.as_ref()) else {
+            return Err(EncDiscError::StoreRejected);
+        };
+        let Some(pending) = slot.pending.take() else {
+            return Err(EncDiscError::StoreRejected);
+        };
+        if pending.rotation_seq != verified_seq {
+            slot.pending = Some(pending);
+            return Err(EncDiscError::StoreRejected);
+        }
+        slot.current = pending;
+        Ok(())
+    }
 }
 
-/// NFC then UTF-8, in the style of an RFC 8265 OpaqueString.
+/// NFC then UTF-8, in the style of an RFC 8265 OpaqueString, against Unicode 16.0.0.
 ///
-/// An empty string and a whitespace-only string are [`EncDiscError::RecoveryParams`].
-/// Leading and trailing whitespace on a passphrase that also has a
-/// non-whitespace character is preserved. The byte API does not normalize;
-/// it receives these bytes.
+/// A code point unassigned in Unicode 16.0.0 is [`EncDiscError::RecoveryParams`]
+/// before NFC, so a later Unicode mark cannot reorder. Whitespace is the
+/// Unicode 16 `White_Space` set, including U+0085. U+FEFF is not whitespace.
+/// An empty string and a whitespace-only string are
+/// [`EncDiscError::RecoveryParams`]. Leading and trailing whitespace on a
+/// passphrase that also has a non-whitespace character is preserved.
+///
+/// The NFC buffer is [`Zeroizing`]. The caller's `&str` and any scratch
+/// inside `unicode-normalization` are not wiped. TypeScript strings cannot
+/// be wiped either. The byte API does not normalize; it receives these bytes
+/// and applies the same Unicode 16 checks.
 pub fn encode_passphrase(passphrase: &str) -> Result<Zeroizing<Vec<u8>>, EncDiscError> {
-    let nfc: String = passphrase.nfc().collect();
-    if nfc.is_empty() || nfc.chars().all(char::is_whitespace) {
+    debug_assert_eq!(crate::unicode16::UNICODE_VERSION, "16.0.0");
+    if passphrase.is_empty()
+        || passphrase
+            .chars()
+            .any(|ch| !crate::unicode16::assigned(ch as u32))
+    {
         return Err(EncDiscError::RecoveryParams);
     }
-    Ok(Zeroizing::new(nfc.into_bytes()))
+    let mut nfc = Zeroizing::new(String::new());
+    for ch in passphrase.nfc() {
+        nfc.push(ch);
+    }
+    if nfc
+        .chars()
+        .all(|ch| crate::unicode16::passphrase_whitespace(ch as u32))
+    {
+        return Err(EncDiscError::RecoveryParams);
+    }
+    let owned = std::mem::take(&mut *nfc);
+    Ok(Zeroizing::new(owned.into_bytes()))
 }
 
 /// Seal with a passphrase string. The string is normalized by [`encode_passphrase`].
@@ -343,7 +438,10 @@ pub fn open_recovery_copy(
     )
 }
 
-/// Rotate, then seal a recovery copy of the new keyring version.
+/// Rotate, then seal a pending recovery copy of the new keyring version.
+///
+/// The current copy stays until [`commit_recovery_copy`] sees that rotation
+/// in the trusted chain. An unpublished draft does not replace it.
 pub fn rotate_and_reseal<F>(
     keyring: &AccountKeyring,
     trusted: &[&str],
@@ -360,6 +458,22 @@ where
     let rotation = rotate_keyring(keyring, trusted, lost, rotations, context, mint)?;
     let envelope = seal_recovery_copy(&rotation.keyring, passphrase, store)?;
     Ok((rotation, envelope))
+}
+
+/// Promote the pending copy after the trusted chain includes that rotation.
+///
+/// A chain that does not resolve, or a verified sequence that is not the
+/// pending copy, is [`EncDiscError::StoreRejected`]. Both copies stay.
+pub fn commit_recovery_copy(
+    principal: &PrincipalId,
+    rotations: &[serde_json::Value],
+    context: &sociacl_ids::ResolutionContext<'_>,
+    store: &mut impl RecoveryCopyStore,
+) -> Result<(), EncDiscError> {
+    let resolved = sociacl_ids::resolve_current_key(principal, rotations, context);
+    let account = resolved.result.map_err(|_| EncDiscError::StoreRejected)?;
+    let verified = account.rotations.len() as u64;
+    store.promote_pending(principal, verified)
 }
 
 pub(crate) struct KeyringFields {
@@ -569,7 +683,13 @@ fn passphrase_rejected(bytes: &[u8]) -> bool {
         return true;
     }
     match std::str::from_utf8(bytes) {
-        Ok(text) => text.chars().all(char::is_whitespace),
+        Ok(text) => {
+            text.chars()
+                .any(|ch| !crate::unicode16::assigned(ch as u32))
+                || text
+                    .chars()
+                    .all(|ch| crate::unicode16::passphrase_whitespace(ch as u32))
+        }
         Err(_) => false,
     }
 }
@@ -860,6 +980,14 @@ mod tests {
             RECOVERY_ABSOLUTE_MAX
         );
         assert_eq!(
+            limits["wrapsPerPrincipal"].as_u64().unwrap() as usize,
+            crate::limits::MAX_WRAPS_PER_PRINCIPAL
+        );
+        assert_eq!(
+            v["unicodeVersion"].as_str().unwrap(),
+            crate::unicode16::UNICODE_VERSION
+        );
+        assert_eq!(
             RECOVERY_ABSOLUTE_MAX,
             RECOVERY_ENVELOPE_MAX + ARGON2ID_LIMITS.salt_length.ceiling as usize
         );
@@ -955,6 +1083,7 @@ mod tests {
             EncDiscError::RecoveryParams => "recovery-params".into(),
             EncDiscError::RecoveryStale => "recovery-stale".into(),
             EncDiscError::KeyringTooLarge => "keyring-too-large".into(),
+            EncDiscError::StoreRejected => "store-rejected".into(),
             EncDiscError::IdentityRejected(reason) => reason.clone(),
             other => panic!("unexpected {other}"),
         }
@@ -1155,7 +1284,15 @@ mod tests {
         assert_eq!(rotation.keyring.rotation_seq(), 1);
         assert_eq!(envelope.rotation_seq, 1);
         assert!(store.get_copy(keyring.principal(), 1).unwrap().is_some());
-        assert!(store.get_copy(keyring.principal(), 0).unwrap().is_none());
+        assert!(store.get_copy(keyring.principal(), 0).unwrap().is_some());
+        let unpublished =
+            commit_recovery_copy(keyring.principal(), &[], &ctx, &mut store).unwrap_err();
+        assert_eq!(
+            token(&unpublished),
+            v["retention"]["commitUnverified"].as_str().unwrap()
+        );
+        assert!(store.get_copy(keyring.principal(), 1).unwrap().is_some());
+        assert!(store.get_copy(keyring.principal(), 0).unwrap().is_some());
         let hex = encode_hex(&envelope.bytes);
         assert!(!hex.contains(rotation.keyring.current_priv()));
         assert!(!hex.contains(rotation.keyring.current_epriv()));
@@ -1202,10 +1339,39 @@ mod tests {
             store.get_copy(&principal, 0).unwrap().unwrap().bytes,
             original
         );
-        store.put_copy(&dummy_envelope(&principal, 1)).unwrap();
-        assert!(store.get_copy(&principal, 0).unwrap().is_none());
+        let newer = dummy_envelope(&principal, 1);
+        store.put_copy(&newer).unwrap();
+        assert!(store.get_copy(&principal, 0).unwrap().is_some());
         assert!(store.get_copy(&principal, 1).unwrap().is_some());
         assert_eq!(store.len(), 1);
+        let mut resealed = dummy_envelope(&principal, 0);
+        resealed.bytes[40] ^= 0x11;
+        store.put_copy(&resealed).unwrap();
+        assert_eq!(
+            store.get_copy(&principal, 0).unwrap().unwrap().bytes,
+            resealed.bytes
+        );
+        assert!(store.get_copy(&principal, 1).unwrap().is_some());
+        let downgrade = dummy_envelope(&principal, 0);
+        let mut high = MemoryRecoveryStore::default();
+        high.put_copy(&dummy_envelope(&principal, 2)).unwrap();
+        let refused = high.put_copy(&downgrade).unwrap_err();
+        assert_eq!(
+            token(&refused),
+            recovery()["retention"]["downgrade"].as_str().unwrap()
+        );
+        assert!(high.get_copy(&principal, 2).unwrap().is_some());
+        assert!(high.get_copy(&principal, 0).unwrap().is_none());
+        let between = high.put_copy(&dummy_envelope(&principal, 1)).unwrap_err();
+        assert!(matches!(between, EncDiscError::StoreRejected));
+        assert!(high.get_copy(&principal, 2).unwrap().is_some());
+        let mut gap = MemoryRecoveryStore::default();
+        gap.put_copy(&dummy_envelope(&principal, 0)).unwrap();
+        gap.put_copy(&dummy_envelope(&principal, 2)).unwrap();
+        let skipped = gap.put_copy(&dummy_envelope(&principal, 1)).unwrap_err();
+        assert!(matches!(skipped, EncDiscError::StoreRejected));
+        assert!(gap.get_copy(&principal, 0).unwrap().is_some());
+        assert!(gap.get_copy(&principal, 2).unwrap().is_some());
     }
 
     #[test]
@@ -1229,6 +1395,27 @@ mod tests {
             encode_passphrase(" \t\n").unwrap_err(),
             EncDiscError::RecoveryParams
         ));
+        let vector = recovery();
+        let rejects = vector["passphraseRejects"].as_array().unwrap();
+        for row in rejects {
+            let text = row["passphrase"].as_str().unwrap();
+            let rejected = encode_passphrase(text).unwrap_err();
+            assert_eq!(token(&rejected), row["error"].as_str().unwrap(), "{text:?}");
+            let bytes = text.as_bytes();
+            let sealed = seal_recovery_copy_with(
+                &genesis_keyring(),
+                bytes,
+                &[0x11; 16],
+                &[0x22; 12],
+                &mut MemoryRecoveryStore::default(),
+            )
+            .unwrap_err();
+            assert_eq!(token(&sealed), "recovery-params");
+        }
+        assert_eq!(
+            encode_hex(encode_passphrase("\u{feff}").unwrap().as_ref()),
+            "efbbbf"
+        );
         let spaced = encode_passphrase(" café").unwrap();
         assert_eq!(spaced[0], b' ');
         let started = std::time::Instant::now();
@@ -1383,6 +1570,32 @@ mod tests {
         )
         .unwrap_err();
         assert!(matches!(unsigned, EncDiscError::PubMismatch));
+        let mut forward = MemoryRecoveryStore::default();
+        forward
+            .put_copy(&dummy_envelope(keyring.principal(), 0))
+            .unwrap();
+        forward
+            .put_copy(&dummy_envelope(keyring.principal(), 1))
+            .unwrap();
+        commit_recovery_copy(keyring.principal(), &rotations, &base, &mut forward).unwrap();
+        assert!(forward.get_copy(keyring.principal(), 0).unwrap().is_none());
+        assert!(forward.get_copy(keyring.principal(), 1).unwrap().is_some());
+        let again = commit_recovery_copy(keyring.principal(), &rotations, &base, &mut forward);
+        assert!(matches!(again, Err(EncDiscError::StoreRejected)));
+        assert!(forward.get_copy(keyring.principal(), 1).unwrap().is_some());
+        let older = forward.put_copy(&dummy_envelope(keyring.principal(), 0));
+        assert!(matches!(older, Err(EncDiscError::StoreRejected)));
+        let mut stuck = MemoryRecoveryStore::default();
+        stuck
+            .put_copy(&dummy_envelope(keyring.principal(), 0))
+            .unwrap();
+        stuck
+            .put_copy(&dummy_envelope(keyring.principal(), 1))
+            .unwrap();
+        let unverified = commit_recovery_copy(keyring.principal(), &[], &base, &mut stuck);
+        assert!(matches!(unverified, Err(EncDiscError::StoreRejected)));
+        assert!(stuck.get_copy(keyring.principal(), 0).unwrap().is_some());
+        assert!(stuck.get_copy(keyring.principal(), 1).unwrap().is_some());
     }
 
     fn dummy_envelope(principal: &PrincipalId, seq: u64) -> RecoveryEnvelope {

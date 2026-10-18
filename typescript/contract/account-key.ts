@@ -31,7 +31,7 @@ import {
   type ResolutionContext,
   type SiwePolicy,
 } from "../ids/src/index.js";
-import { DELIVERY_BLOB_MAX } from "./keyring-limits.ts";
+import { DELIVERY_BLOB_MAX, MAX_WRAPS_PER_PRINCIPAL } from "./keyring-limits.ts";
 import {
   MAX_BACKUP_HEX,
   backupAad,
@@ -77,14 +77,21 @@ export type WrapIndex = {
   readonly epub: string;
 };
 
+/** Which seal produced a wrap. A wrap id stays in the class that first stored it. */
+export type WrapClass = "genesis" | "delivery";
+
 export type EncryptedAccountWrap = WrapIndex & {
+  readonly class: WrapClass;
   readonly ciphertextHex: string;
   readonly signature: string;
 };
 
 /** Index plus ciphertext. Not an authority and not a grant minter.
  * Rows are keyed by `(principal, wrapId)`. The genesis backup and device
- * deliveries share the store. */
+ * deliveries share the store. A delivery cannot replace the genesis backup's
+ * wrap id. A principal holds at most `MAX_WRAPS_PER_PRINCIPAL` rows.
+ * Replacing an existing id does not count as a new row. Adapters, Panopticon
+ * included, replace a row in place. */
 export interface KeyWrapStore {
   readonly isAuthority: false;
   readonly mintsGrant: false;
@@ -116,6 +123,12 @@ export class MemoryKeyWrapStore implements KeyWrapStore {
       throw new Error("store-rejected");
     }
     const rows = this.#wraps.get(index.principal) ?? new Map<string, EncryptedAccountWrap>();
+    const existing = rows.get(index.wrapId);
+    if (existing) {
+      if (existing.class !== wrap.class) throw new Error("store-rejected");
+    } else if (rows.size >= MAX_WRAPS_PER_PRINCIPAL) {
+      throw new Error("store-rejected");
+    }
     rows.set(index.wrapId, wrap);
     this.#wraps.set(index.principal, rows);
   }

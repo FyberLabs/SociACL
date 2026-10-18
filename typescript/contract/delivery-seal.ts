@@ -64,6 +64,7 @@ export function deliverKeyringWith(
       principal: keyring.principal,
       wrapId,
       epub: keyring.epub,
+      class: "delivery",
       ciphertextHex: bytesToHex(blob),
       signature,
     };
@@ -97,58 +98,137 @@ export function openDeliveredKeyring(
   if (blob.length > DELIVERY_BLOB_MAX) throw new Error("keyring-too-large");
   if (blob[0] !== 1 || blob.length < 1 + 65 + 12 + 16) throw new Error("wrap-rejected");
   const transport = hexToBytes(transportScalarHex);
-  if (transport.length !== 32) throw new Error("bad-key");
-  const transportPub = seaPoint(transport);
-  const ephemeral = blob.subarray(1, 66);
-  const nonce = blob.subarray(66, 78);
-  const ephemeralPub = seaPoint(ephemeral);
-  const shared = sharedX(transport, ephemeral);
-  const key = backupKdf(shared, expected, wrapId.value, transportPub, ephemeralPub, DOMAIN_DELIVERY_BIND);
-  shared.fill(0);
-  const aad = backupAad(expected, wrapId.value, transportPub, ephemeralPub, DOMAIN_DELIVERY_BIND);
+  if (transport.length !== 32) {
+    transport.fill(0);
+    throw new Error("bad-key");
+  }
+  let shared: Uint8Array | undefined;
+  let key: Uint8Array | undefined;
   let plain: Uint8Array | undefined;
   try {
+    const transportPub = seaPoint(transport);
+    const message = backupSignatureMessage(blob, transportPub, wrapId.value, DOMAIN_DELIVERY_SIG);
+    const current = currentSigningKey(expected, rotations, context);
+    const currentOk = signatureOk(wrap.signature, message, current);
+    const ephemeral = blob.subarray(1, 66);
+    const nonce = blob.subarray(66, 78);
+    let ephemeralPub: string;
+    try {
+      ephemeralPub = seaPoint(ephemeral);
+      shared = sharedX(transport, ephemeral);
+    } catch {
+      throw new Error("wrap-rejected");
+    }
+    key = backupKdf(shared, expected, wrapId.value, transportPub, ephemeralPub, DOMAIN_DELIVERY_BIND);
+    shared.fill(0);
+    const aad = backupAad(expected, wrapId.value, transportPub, ephemeralPub, DOMAIN_DELIVERY_BIND);
     try {
       plain = aesDecrypt(key, nonce, aad, blob.subarray(78));
     } catch {
       throw new Error("wrap-rejected");
     }
     if (plain.length > KEYRING_SERIAL_MAX) throw new Error("keyring-too-large");
-    const fields = decodeKeyring(plain);
-    if (fields.rotationSeq !== expectedRotationSeq) throw new Error("recovery-stale");
-    const current = currentSigningKey(expected, rotations, context);
-    const message = backupSignatureMessage(blob, transportPub, wrapId.value, DOMAIN_DELIVERY_SIG);
-    let signatureOk = false;
-    try {
-      signatureOk = p256.verify(hexToBytes(wrap.signature), message, uncompressedFromSea(current), { lowS: true, prehash: true });
-    } catch {
-      signatureOk = false;
+    if (currentOk) {
+      let fields;
+      try {
+        fields = decodeKeyring(plain);
+      } catch (error) {
+        if (error instanceof Error && error.message === "keyring-too-large") throw error;
+        throw new Error("wrap-rejected");
+      }
+      if (fields.rotationSeq !== expectedRotationSeq) {
+        if (
+          fields.rotationSeq < expectedRotationSeq &&
+          signatureAtSeq(expected, rotations, context, fields.rotationSeq, message, wrap.signature)
+        ) {
+          throw new Error("recovery-stale");
+        }
+        throw new Error("wrap-rejected");
+      }
+      const parsed = parsePrincipalId(fields.principal);
+      if (!parsed.ok || parsed.value !== fields.principal || parsed.value !== expected) throw new Error("wrap-rejected");
+      const keyring = Keyring.import(
+        fields.principal,
+        fields.genesisEpub,
+        fields.pub,
+        fields.priv,
+        fields.epub,
+        fields.epriv,
+        fields.retired,
+        fields.laneId,
+        fields.contentEpoch,
+        fields.rotationSeq,
+        rotations,
+        context,
+        fields.priorLanes,
+      );
+      if (keyring.epub !== wrap.epub) throw new Error("wrap-rejected");
+      return keyring;
     }
-    if (!signatureOk) throw new Error("wrap-rejected");
-    const parsed = parsePrincipalId(fields.principal);
-    if (!parsed.ok || parsed.value !== fields.principal || parsed.value !== expected) throw new Error("wrap-rejected");
-    const keyring = Keyring.import(
-      fields.principal,
-      fields.genesisEpub,
-      fields.pub,
-      fields.priv,
-      fields.epub,
-      fields.epriv,
-      fields.retired,
-      fields.laneId,
-      fields.contentEpoch,
-      fields.rotationSeq,
-      rotations,
-      context,
-      fields.priorLanes,
-    );
-    if (keyring.epub !== wrap.epub) throw new Error("wrap-rejected");
-    return keyring;
+    const seq = trailingRotationSeq(plain);
+    if (
+      seq !== undefined &&
+      seq < expectedRotationSeq &&
+      signatureAtSeq(expected, rotations, context, seq, message, wrap.signature)
+    ) {
+      throw new Error("recovery-stale");
+    }
+    throw new Error("wrap-rejected");
   } finally {
-    key.fill(0);
+    shared?.fill(0);
+    key?.fill(0);
     transport.fill(0);
     plain?.fill(0);
   }
+}
+
+function signatureOk(signature: string, message: Uint8Array, seaPub: string): boolean {
+  try {
+    return p256.verify(hexToBytes(signature), message, uncompressedFromSea(seaPub), { lowS: true, prehash: true });
+  } catch {
+    return false;
+  }
+}
+
+/** Signing key valid at `seq`: the prefix `rotations.slice(0, seq)`. A resolution failure is not a choosable error. */
+function signatureAtSeq(
+  expected: PrincipalId,
+  rotations: readonly unknown[],
+  context: ResolutionContext,
+  seq: number,
+  message: Uint8Array,
+  signature: string,
+): boolean {
+  try {
+    const key = currentSigningKey(expected, rotations.slice(0, seq), context);
+    return signatureOk(signature, message, key);
+  } catch {
+    return false;
+  }
+}
+
+function trailingRotationSeq(bytes: Uint8Array): number | undefined {
+  if (bytes.length === 0 || bytes.length > KEYRING_SERIAL_MAX) return undefined;
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  let offset = 0;
+  let last = "";
+  const text = new TextDecoder("utf-8", { fatal: true });
+  try {
+    while (offset < bytes.length) {
+      if (bytes.length - offset < 4) return undefined;
+      const len = view.getUint32(offset, true);
+      offset += 4;
+      if (bytes.length - offset < len) return undefined;
+      last = text.decode(bytes.subarray(offset, offset + len));
+      offset += len;
+    }
+  } catch {
+    return undefined;
+  }
+  if (!/^(0|[1-9][0-9]*)$/u.test(last)) return undefined;
+  const seq = Number(last);
+  if (!Number.isSafeInteger(seq)) return undefined;
+  return seq;
 }
 
 function transportPeer(keyring: AccountKeyring, transportPub: string): Uint8Array {

@@ -17,11 +17,12 @@ use rand::RngCore;
 use sociacl_ids::{parse_principal_id, ObjectId, PrincipalId};
 use zeroize::{Zeroize, Zeroizing};
 
+use crate::canonical;
 use crate::error::EncDiscError;
 use crate::hexutil::{self, encode_hex};
 use crate::identity::{
     aad_backup, current_signing_key, kdf_backup, signature_message, KeyWrapStore, TransportKey,
-    WrapIndex,
+    WrapClass, WrapIndex,
 };
 use crate::keyring::AccountKeyring;
 use crate::limits::{DELIVERY_BLOB_MAX, KEYRING_SERIAL_MAX};
@@ -118,6 +119,7 @@ pub(crate) fn deliver_keyring_with(
         epub: keyring.current_epub().as_ref().to_string(),
         ciphertext_hex: encode_hex(&blob),
         signature,
+        class: WrapClass::Delivery,
     };
     let index = WrapIndex {
         principal: wrap.principal.clone(),
@@ -131,7 +133,10 @@ pub(crate) fn deliver_keyring_with(
 /// Open a delivered keyring. The device does not mint a new identity.
 ///
 /// A blob longer than [`DELIVERY_BLOB_MAX`] is rejected before decrypt.
-/// `expected_rotation_seq` makes a copy of an older keyring version stale.
+/// The current-key signature is checked before the plaintext is parsed.
+/// `recovery-stale` is returned only when the plaintext sequence is older
+/// and the signature also verifies under the key that was valid at that
+/// sequence. A codec failure on this path is `wrap-rejected`.
 pub fn open_delivered_keyring(
     transport: &TransportKey,
     wrap: &EncryptedAccountWrap,
@@ -156,6 +161,7 @@ pub fn open_delivered_keyring(
     if blob.first().copied() != Some(VER_BACKUP) || blob.len() < 1 + 65 + 12 + 16 {
         return Err(EncDiscError::WrapRejected);
     }
+    // Parse the attacker-chosen point before copying the transport scalar.
     let ephemeral =
         p256::PublicKey::from_sec1_bytes(&blob[1..66]).map_err(|_| EncDiscError::WrapRejected)?;
     let nonce: [u8; 12] = blob[66..78]
@@ -163,8 +169,20 @@ pub fn open_delivered_keyring(
         .map_err(|_| EncDiscError::WrapRejected)?;
     let wrap_id = crate::parse_wrap_object(wrap.wrap_id.as_ref())?;
     let ephemeral_sea = sea::sea_pub_from_point(&ephemeral)?;
-    let secret = transport.secret_key()?;
-    let shared = ecdh_x(&secret, &ephemeral)?;
+    let message = signature_message(
+        DOMAIN_DELIVERY_SIG,
+        &blob,
+        transport.sea_pub(),
+        wrap_id.as_ref(),
+    )?;
+    // The caller's checkpoint. A forger does not choose this chain, so a
+    // resolution failure here still propagates.
+    let current = current_signing_key(expected, rotations, context)?;
+    let current_ok = sea::verify_sea(current.as_ref(), &message, &wrap.signature).is_ok();
+    let shared = {
+        let secret = transport.secret_key()?;
+        ecdh_x(&secret, &ephemeral)?
+    };
     let aes_key = kdf_backup(
         DOMAIN_DELIVERY_BIND,
         &shared,
@@ -185,29 +203,59 @@ pub fn open_delivered_keyring(
         plain.zeroize();
         return Err(EncDiscError::KeyringTooLarge);
     }
-    let fields = match decode_keyring(&plain) {
-        Ok(fields) => fields,
-        Err(error) => {
-            plain.zeroize();
-            return Err(error);
-        }
+    let opened = if current_ok {
+        open_authenticated_delivery(
+            &plain,
+            wrap,
+            expected,
+            expected_rotation_seq,
+            rotations,
+            context,
+            &message,
+        )
+    } else {
+        Err(stale_or_rejected(
+            &plain,
+            expected,
+            expected_rotation_seq,
+            rotations,
+            context,
+            &message,
+            &wrap.signature,
+        ))
     };
     plain.zeroize();
-    // Seq is inside the authenticated plaintext. Compare it before the
-    // current-key signature so an older delivery is `recovery-stale`
-    // rather than `wrap-rejected`.
+    opened
+}
+
+fn open_authenticated_delivery(
+    plain: &[u8],
+    wrap: &EncryptedAccountWrap,
+    expected: &PrincipalId,
+    expected_rotation_seq: u64,
+    rotations: &[serde_json::Value],
+    context: &sociacl_ids::ResolutionContext<'_>,
+    message: &[u8],
+) -> Result<AccountKeyring, EncDiscError> {
+    let fields = decode_keyring(plain).map_err(|error| match error {
+        EncDiscError::KeyringTooLarge => EncDiscError::KeyringTooLarge,
+        _ => EncDiscError::WrapRejected,
+    })?;
     if fields.rotation_seq != expected_rotation_seq {
-        return Err(EncDiscError::RecoveryStale);
+        if fields.rotation_seq < expected_rotation_seq
+            && historical_signature_ok(
+                expected,
+                rotations,
+                fields.rotation_seq,
+                context,
+                message,
+                &wrap.signature,
+            )
+        {
+            return Err(EncDiscError::RecoveryStale);
+        }
+        return Err(EncDiscError::WrapRejected);
     }
-    let current = current_signing_key(expected, rotations, context)?;
-    let message = signature_message(
-        DOMAIN_DELIVERY_SIG,
-        &blob,
-        transport.sea_pub(),
-        wrap_id.as_ref(),
-    )?;
-    sea::verify_sea(current.as_ref(), &message, &wrap.signature)
-        .map_err(|_| EncDiscError::WrapRejected)?;
     let parsed =
         parse_principal_id(fields.principal.as_str()).map_err(|_| EncDiscError::WrapRejected)?;
     if parsed.as_ref() != fields.principal.as_str() || parsed.as_ref() != expected.as_ref() {
@@ -242,6 +290,64 @@ pub fn open_delivered_keyring(
         return Err(EncDiscError::WrapRejected);
     }
     Ok(keyring)
+}
+
+/// Unauthenticated plaintext. Read only the trailing sequence. `recovery-stale`
+/// requires a signature under the key that was current at that older sequence.
+fn stale_or_rejected(
+    plain: &[u8],
+    expected: &PrincipalId,
+    expected_rotation_seq: u64,
+    rotations: &[serde_json::Value],
+    context: &sociacl_ids::ResolutionContext<'_>,
+    message: &[u8],
+    signature: &str,
+) -> EncDiscError {
+    let Some(seq) = trailing_rotation_seq(plain) else {
+        return EncDiscError::WrapRejected;
+    };
+    if seq < expected_rotation_seq
+        && historical_signature_ok(expected, rotations, seq, context, message, signature)
+    {
+        return EncDiscError::RecoveryStale;
+    }
+    EncDiscError::WrapRejected
+}
+
+fn historical_signature_ok(
+    expected: &PrincipalId,
+    rotations: &[serde_json::Value],
+    seq: u64,
+    context: &sociacl_ids::ResolutionContext<'_>,
+    message: &[u8],
+    signature: &str,
+) -> bool {
+    let prefix = usize::try_from(seq).unwrap_or(rotations.len());
+    let prefix = prefix.min(rotations.len());
+    let Ok(key) = current_signing_key(expected, &rotations[..prefix], context) else {
+        return false;
+    };
+    sea::verify_sea(key.as_ref(), message, signature).is_ok()
+}
+
+/// Last length-prefixed field, read as a canonical decimal. A walker failure
+/// is not a codec error the caller can observe.
+fn trailing_rotation_seq(bytes: &[u8]) -> Option<u64> {
+    if bytes.is_empty() || bytes.len() > KEYRING_SERIAL_MAX {
+        return None;
+    }
+    let mut offset = 0usize;
+    let mut last: Option<&[u8]> = None;
+    while offset < bytes.len() {
+        let len_bytes: [u8; 4] = bytes.get(offset..offset + 4)?.try_into().ok()?;
+        let len = u32::from_le_bytes(len_bytes) as usize;
+        offset += 4;
+        let end = offset.checked_add(len)?;
+        last = Some(bytes.get(offset..end)?);
+        offset = end;
+    }
+    let text = std::str::from_utf8(last?).ok()?;
+    canonical::parse_canonical_decimal(text).ok()
 }
 
 fn transport_peer(
@@ -338,6 +444,7 @@ mod tests {
             epub: g["epub"].as_str().unwrap().to_string(),
             ciphertext_hex: "aa".repeat(bytes),
             signature: "ab".repeat(64),
+            class: WrapClass::Delivery,
         };
         let transport =
             TransportKey::from_scalar_hex(v["delivery"]["transportScalarHex"].as_str().unwrap())
@@ -411,7 +518,65 @@ mod tests {
         bad.signature = String::from_utf8(signature).unwrap();
         let stale_bad = open_delivered_keyring(&transport, &bad, keyring.principal(), 1, &[], &ctx)
             .unwrap_err();
-        assert!(matches!(stale_bad, EncDiscError::RecoveryStale));
+        assert!(matches!(stale_bad, EncDiscError::WrapRejected));
+        let mut forged = wrap.clone();
+        forged.signature = "00".repeat(64);
+        let forged_stale =
+            open_delivered_keyring(&transport, &forged, keyring.principal(), 2, &[], &ctx)
+                .unwrap_err();
+        assert!(matches!(forged_stale, EncDiscError::WrapRejected));
+        let garbage = forged_plaintext(
+            &transport,
+            keyring.principal(),
+            keyring.current_epub().as_ref(),
+            b"xyz",
+            &"00".repeat(64),
+        );
+        let garbage_open =
+            open_delivered_keyring(&transport, &garbage, keyring.principal(), 2, &[], &ctx)
+                .unwrap_err();
+        assert!(matches!(garbage_open, EncDiscError::WrapRejected));
+        let seq_field = crate::canonical::length_prefixed(&["2"]).unwrap();
+        let at_expected = forged_plaintext(
+            &transport,
+            keyring.principal(),
+            keyring.current_epub().as_ref(),
+            &seq_field,
+            &"00".repeat(64),
+        );
+        let at_expected_open =
+            open_delivered_keyring(&transport, &at_expected, keyring.principal(), 2, &[], &ctx)
+                .unwrap_err();
+        assert!(matches!(at_expected_open, EncDiscError::WrapRejected));
+        let signed_garbage = {
+            let mut row = forged_plaintext(
+                &transport,
+                keyring.principal(),
+                keyring.current_epub().as_ref(),
+                b"xyz",
+                &"00".repeat(64),
+            );
+            let blob = hexutil::decode_hex(&row.ciphertext_hex).unwrap();
+            let message = signature_message(
+                DOMAIN_DELIVERY_SIG,
+                &blob,
+                transport.sea_pub(),
+                row.wrap_id.as_ref(),
+            )
+            .unwrap();
+            row.signature = sea::sign_sea(keyring.current_priv(), &message).unwrap();
+            row
+        };
+        let codec = open_delivered_keyring(
+            &transport,
+            &signed_garbage,
+            keyring.principal(),
+            0,
+            &[],
+            &ctx,
+        )
+        .unwrap_err();
+        assert!(matches!(codec, EncDiscError::WrapRejected));
         let rejected = open_delivered_keyring(&transport, &bad, keyring.principal(), 0, &[], &ctx)
             .unwrap_err();
         assert!(matches!(rejected, EncDiscError::WrapRejected));
@@ -562,6 +727,104 @@ mod tests {
                 .ciphertext_hex,
             replacement.ciphertext_hex
         );
+        let crossed = deliver_keyring_with(
+            &keyring,
+            second_transport.sea_pub(),
+            &second_ephemeral,
+            &second_nonce,
+            &genesis_id,
+            &[],
+            &ctx,
+            &mut store,
+        );
+        assert!(matches!(crossed, Err(EncDiscError::StoreRejected)));
+        assert_eq!(
+            store
+                .get_wrap(keyring.principal(), &genesis_id)
+                .unwrap()
+                .unwrap()
+                .ciphertext_hex,
+            genesis.ciphertext_hex
+        );
+        assert_eq!(store.list_wraps(keyring.principal()).unwrap().len(), 3);
+    }
+
+    #[test]
+    fn wrap_rows_are_capped_and_a_class_sticks_to_its_id() {
+        let principal =
+            sociacl_ids::parse_principal_id(ring()["genesis"]["principal"].as_str().unwrap())
+                .unwrap();
+        let epub = ring()["genesis"]["epub"].as_str().unwrap().to_string();
+        let mut store = MemoryKeyWrapStore::default();
+        let mut ids = Vec::new();
+        for n in 0..crate::limits::MAX_WRAPS_PER_PRINCIPAL {
+            let wrap_id = parse_object_id(&format!("wrap_{n:032x}")).unwrap();
+            ids.push(wrap_id.clone());
+            store
+                .put_wrap(
+                    &WrapIndex {
+                        principal: principal.clone(),
+                        wrap_id: wrap_id.clone(),
+                        epub: epub.clone(),
+                    },
+                    &dummy_wrap(&principal, &wrap_id, &epub, WrapClass::Delivery, "aa"),
+                )
+                .unwrap();
+        }
+        assert_eq!(
+            recovery()["limits"]["wrapsPerPrincipal"].as_u64().unwrap() as usize,
+            crate::limits::MAX_WRAPS_PER_PRINCIPAL
+        );
+        let extra = parse_object_id(&format!("wrap_{:032x}", 80u32)).unwrap();
+        let capped = store.put_wrap(
+            &WrapIndex {
+                principal: principal.clone(),
+                wrap_id: extra.clone(),
+                epub: epub.clone(),
+            },
+            &dummy_wrap(&principal, &extra, &epub, WrapClass::Delivery, "bb"),
+        );
+        assert!(matches!(capped, Err(EncDiscError::StoreRejected)));
+        let first = ids[0].clone();
+        store
+            .put_wrap(
+                &WrapIndex {
+                    principal: principal.clone(),
+                    wrap_id: first.clone(),
+                    epub: epub.clone(),
+                },
+                &dummy_wrap(&principal, &first, &epub, WrapClass::Delivery, "cc"),
+            )
+            .unwrap();
+        assert_eq!(
+            store
+                .get_wrap(&principal, &first)
+                .unwrap()
+                .unwrap()
+                .ciphertext_hex,
+            "cc"
+        );
+        let stuck = store.put_wrap(
+            &WrapIndex {
+                principal: principal.clone(),
+                wrap_id: first.clone(),
+                epub: epub.clone(),
+            },
+            &dummy_wrap(&principal, &first, &epub, WrapClass::Genesis, "dd"),
+        );
+        assert!(matches!(stuck, Err(EncDiscError::StoreRejected)));
+        assert_eq!(
+            store
+                .get_wrap(&principal, &first)
+                .unwrap()
+                .unwrap()
+                .ciphertext_hex,
+            "cc"
+        );
+        assert_eq!(
+            store.list_wraps(&principal).unwrap().len(),
+            crate::limits::MAX_WRAPS_PER_PRINCIPAL
+        );
     }
 
     #[test]
@@ -666,9 +929,89 @@ mod tests {
             open_delivered_keyring(&transport, &wrap, keyring.principal(), 1, &[], &base)
                 .unwrap_err();
         assert!(matches!(truncated, EncDiscError::WrapRejected));
-        let stale = open_delivered_keyring(&transport, &wrap, keyring.principal(), 0, &[], &base)
-            .unwrap_err();
-        assert!(matches!(stale, EncDiscError::RecoveryStale));
+        let not_older =
+            open_delivered_keyring(&transport, &wrap, keyring.principal(), 0, &[], &base)
+                .unwrap_err();
+        assert!(matches!(not_older, EncDiscError::WrapRejected));
+        let genuine =
+            open_delivered_keyring(&transport, &wrap, keyring.principal(), 2, &rotations, &base)
+                .unwrap_err();
+        assert!(matches!(genuine, EncDiscError::RecoveryStale));
+        let mut zero = wrap.clone();
+        zero.signature = "00".repeat(64);
+        let forged =
+            open_delivered_keyring(&transport, &zero, keyring.principal(), 2, &rotations, &base)
+                .unwrap_err();
+        assert!(matches!(forged, EncDiscError::WrapRejected));
+    }
+
+    fn dummy_wrap(
+        principal: &PrincipalId,
+        wrap_id: &sociacl_ids::ObjectId,
+        epub: &str,
+        class: WrapClass,
+        ciphertext_hex: &str,
+    ) -> EncryptedAccountWrap {
+        EncryptedAccountWrap {
+            principal: principal.clone(),
+            wrap_id: wrap_id.clone(),
+            epub: epub.to_string(),
+            ciphertext_hex: ciphertext_hex.to_string(),
+            signature: "ab".repeat(64),
+            class,
+        }
+    }
+
+    fn forged_plaintext(
+        transport: &TransportKey,
+        principal: &PrincipalId,
+        epub: &str,
+        plain: &[u8],
+        signature: &str,
+    ) -> EncryptedAccountWrap {
+        let ephemeral =
+            p256::SecretKey::from_slice(&hexutil::decode_hex(&format!("{:064x}", 7u32)).unwrap())
+                .unwrap();
+        let nonce = [9u8; 12];
+        let peer = ephemeral.public_key();
+        let shared = {
+            let secret = transport.secret_key().unwrap();
+            ecdh_x(&secret, &peer).unwrap()
+        };
+        let ephemeral_sea = sea::sea_pub_from_point(&peer).unwrap();
+        let wrap_id = parse_object_id("wrap_00112233445566778899aabbccddee09").unwrap();
+        let aes_key = kdf_backup(
+            DOMAIN_DELIVERY_BIND,
+            &shared,
+            principal.as_ref(),
+            wrap_id.as_ref(),
+            transport.sea_pub(),
+            &ephemeral_sea,
+        )
+        .unwrap();
+        let aad = aad_backup(
+            DOMAIN_DELIVERY_BIND,
+            principal.as_ref(),
+            wrap_id.as_ref(),
+            transport.sea_pub(),
+            &ephemeral_sea,
+        )
+        .unwrap();
+        let ciphertext = encrypt(&aes_key, &nonce, &aad, plain).unwrap();
+        let point = uncompressed_point(&peer).unwrap();
+        let mut blob = Vec::new();
+        blob.push(VER_BACKUP);
+        blob.extend_from_slice(&point);
+        blob.extend_from_slice(&nonce);
+        blob.extend_from_slice(&ciphertext);
+        EncryptedAccountWrap {
+            principal: principal.clone(),
+            wrap_id,
+            epub: epub.to_string(),
+            ciphertext_hex: encode_hex(&blob),
+            signature: signature.to_string(),
+            class: WrapClass::Delivery,
+        }
     }
 
     fn genesis_keyring() -> AccountKeyring {

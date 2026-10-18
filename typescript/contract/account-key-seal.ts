@@ -78,7 +78,14 @@ export function encryptAccountBackup(
   if (ciphertextHex.includes(privHex) || ciphertextHex.includes(eprivHex)) throw new Error("wrap-rejected");
   const message = backupSignatureMessage(blob, transportPub, wrapId);
   const signature = bytesToHex(p256.sign(message, unb64(account.priv), { lowS: true, prehash: true }));
-  const wrap: EncryptedAccountWrap = { principal: account.principal, wrapId, epub: account.epub, ciphertextHex, signature };
+  const wrap: EncryptedAccountWrap = {
+    principal: account.principal,
+    wrapId,
+    epub: account.epub,
+    class: "genesis",
+    ciphertextHex,
+    signature,
+  };
   store.put({ principal: wrap.principal, wrapId: wrap.wrapId, epub: wrap.epub }, wrap);
   return wrap;
 }

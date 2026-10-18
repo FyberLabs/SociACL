@@ -41,3 +41,6 @@ export const RECOVERY_ENVELOPE_MAX =
 
 /** Pre-parse ceiling: `RECOVERY_ENVELOPE_MAX` plus the salt ceiling. */
 export const RECOVERY_ABSOLUTE_MAX = RECOVERY_ENVELOPE_MAX + ARGON2ID_LIMITS.saltLength.ceiling;
+
+/** Cap on wrap rows stored for one principal, including the genesis backup. */
+export const MAX_WRAPS_PER_PRINCIPAL = 64;

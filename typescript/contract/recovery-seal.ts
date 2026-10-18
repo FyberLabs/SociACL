@@ -21,6 +21,7 @@ import {
   RECOVERY_NONCE_LEN,
   RECOVERY_TAG_LEN,
 } from "./keyring-limits.ts";
+import { assigned, passphraseWhitespace } from "./unicode16.ts";
 
 export const DOMAIN_RECOVERY = "sociacl-recovery-copy-v1";
 
@@ -30,32 +31,68 @@ export type RecoveryEnvelope = {
   readonly bytes: Uint8Array;
 };
 
-/** Ciphertext adapter. Not an authority, and not Gun. */
+/** Ciphertext adapter. Not an authority, and not Gun.
+ *
+ * `put` refuses a rotationSeq below the stored copy. An equal sequence
+ * replaces that row. A higher sequence is held beside the current copy
+ * until `promote` runs. Adapters, Panopticon included, replace a row
+ * atomically and only forward: write the new row, then drop the old one.
+ * There is never a window with zero copies.
+ */
 export interface RecoveryCopyStore {
   readonly isAuthority: false;
   readonly seesPlaintext: false;
   readonly seesPassphrase: false;
   put(envelope: RecoveryEnvelope): void;
   get(principal: PrincipalId, rotationSeq: number): RecoveryEnvelope | undefined;
+  /** Move the pending copy onto the current copy when its sequence is `verifiedSeq`. */
+  promote(principal: PrincipalId, verifiedSeq: number): void;
 }
+
+type RecoverySlot = { current: RecoveryEnvelope; pending?: RecoveryEnvelope };
 
 export class MemoryRecoveryStore implements RecoveryCopyStore {
   readonly isAuthority = false as const;
   readonly seesPlaintext = false as const;
   readonly seesPassphrase = false as const;
-  /** Latest envelope per principal. A new put deletes the previous one. */
-  readonly #latest = new Map<string, RecoveryEnvelope>();
+  /** Current copy per principal, plus at most one newer pending copy. */
+  readonly #slots = new Map<string, RecoverySlot>();
 
   put(envelope: RecoveryEnvelope): void {
     if (envelope.bytes.length === 0 || envelope.bytes.length > RECOVERY_ABSOLUTE_MAX) throw new Error("store-rejected");
     if (headerRotationSeq(envelope.bytes) !== envelope.rotationSeq) throw new Error("store-rejected");
-    this.#latest.set(envelope.principal, copyEnvelope(envelope));
+    const copy = copyEnvelope(envelope);
+    const slot = this.#slots.get(envelope.principal);
+    if (!slot) {
+      this.#slots.set(envelope.principal, { current: copy });
+      return;
+    }
+    if (copy.rotationSeq < slot.current.rotationSeq) throw new Error("store-rejected");
+    if (copy.rotationSeq === slot.current.rotationSeq) {
+      slot.current = copy;
+      return;
+    }
+    if (slot.pending && copy.rotationSeq < slot.pending.rotationSeq) throw new Error("store-rejected");
+    if (slot.pending && copy.rotationSeq === slot.pending.rotationSeq) {
+      slot.pending = copy;
+      return;
+    }
+    slot.pending = copy;
   }
 
   get(principal: PrincipalId, rotationSeq: number): RecoveryEnvelope | undefined {
-    const row = this.#latest.get(principal);
-    if (!row || row.rotationSeq !== rotationSeq) return undefined;
-    return copyEnvelope(row);
+    const slot = this.#slots.get(principal);
+    if (!slot) return undefined;
+    if (slot.current.rotationSeq === rotationSeq) return copyEnvelope(slot.current);
+    if (slot.pending && slot.pending.rotationSeq === rotationSeq) return copyEnvelope(slot.pending);
+    return undefined;
+  }
+
+  promote(principal: PrincipalId, verifiedSeq: number): void {
+    const slot = this.#slots.get(principal);
+    if (!slot?.pending || slot.pending.rotationSeq !== verifiedSeq) throw new Error("store-rejected");
+    slot.current = slot.pending;
+    slot.pending = undefined;
   }
 }
 
@@ -63,24 +100,39 @@ function copyEnvelope(envelope: RecoveryEnvelope): RecoveryEnvelope {
   return { principal: envelope.principal, rotationSeq: envelope.rotationSeq, bytes: new Uint8Array(envelope.bytes) };
 }
 
-/** NFC, then UTF-8. Empty and whitespace-only passphrases are recovery-params.
- * Leading and trailing whitespace around other characters is preserved. */
+/** NFC, then UTF-8, against Unicode 16.0.0.
+ *
+ * A code point unassigned in Unicode 16.0.0 is `recovery-params` before NFC.
+ * Whitespace is the Unicode 16 White_Space set, including U+0085. U+FEFF is
+ * not whitespace. Empty and whitespace-only passphrases are `recovery-params`.
+ * Leading and trailing whitespace around other characters is preserved.
+ * JavaScript strings cannot be wiped. The byte API does not normalize; it
+ * applies the same Unicode 16 checks. */
 export function encodePassphrase(passphrase: string): Uint8Array {
+  if (passphrase.length === 0 || !unicode16Text(passphrase)) throw new Error("recovery-params");
   const nfc = passphrase.normalize("NFC");
-  if (nfc.length === 0 || [...nfc].every((ch) => ch !== "\uFEFF" && ch.trim() === "")) {
-    throw new Error("recovery-params");
-  }
+  if ([...nfc].every((ch) => passphraseWhitespace(ch.codePointAt(0) ?? -1))) throw new Error("recovery-params");
   return new TextEncoder().encode(nfc);
+}
+
+function unicode16Text(text: string): boolean {
+  for (const ch of text) {
+    const cp = ch.codePointAt(0);
+    if (cp === undefined || !assigned(cp)) return false;
+  }
+  return true;
 }
 
 function passphraseRejected(bytes: Uint8Array): boolean {
   if (bytes.length === 0) return true;
+  let text: string;
   try {
-    const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-    return [...text].every((ch) => ch !== "\uFEFF" && ch.trim() === "");
+    text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
   } catch {
     return false;
   }
+  if (!unicode16Text(text)) return true;
+  return [...text].every((ch) => passphraseWhitespace(ch.codePointAt(0) ?? -1));
 }
 
 /** Caller-chosen salt and nonce. Tests use this through the support wrapper. */

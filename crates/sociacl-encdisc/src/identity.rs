@@ -17,7 +17,13 @@ use sociacl_ids::{
     format_principal_key, grant_soul, parse_eip55, parse_object_id, parse_principal_id,
     principal_from_sec1, user_soul, ObjectId, PrincipalId, Reason,
 };
-use zeroize::{Zeroize, Zeroizing};
+use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
+
+#[allow(dead_code)]
+fn _transport_secret_zeroizes_on_drop() {
+    fn assert_on_drop<T: ZeroizeOnDrop>() {}
+    assert_on_drop::<p256::SecretKey>();
+}
 
 use crate::account::{self, require_lane, AccountSeaSecret, EnrolledSeaPub};
 use crate::canonical;
@@ -62,7 +68,14 @@ pub struct WrapIndex {
     pub epub: String,
 }
 
-/// Ciphertext of the genesis keypair. The store holds this, not Gun.
+/// Which seal produced a wrap. A wrap id stays in the class that first stored it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WrapClass {
+    Genesis,
+    Delivery,
+}
+
+/// Ciphertext of a genesis backup or a delivered keyring. The store holds this, not Gun.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct EncryptedAccountWrap {
     pub principal: PrincipalId,
@@ -71,6 +84,7 @@ pub struct EncryptedAccountWrap {
     pub ciphertext_hex: String,
     /// Low-s P-1363 signature by the account's current signing key.
     pub signature: String,
+    pub class: WrapClass,
 }
 
 /// Panopticon index and wrap store. Not an authority.
@@ -105,7 +119,13 @@ pub trait KeyWrapStore {
 /// In-memory adapter. Wraps are keyed by `(principal, wrapId)`.
 ///
 /// The genesis backup and device deliveries share this store. A second
-/// wrap id does not replace the first.
+/// wrap id does not replace the first. Replacing a row is allowed only for
+/// the same [`WrapClass`]: a delivery cannot take the genesis backup's wrap
+/// id. A principal holds at most [`crate::limits::MAX_WRAPS_PER_PRINCIPAL`]
+/// rows. Replacing an existing id does not count as a new row.
+///
+/// Adapters, Panopticon included, replace a row in place. They do not
+/// delete it and insert the replacement as two steps.
 #[derive(Clone, Debug, Default)]
 pub struct MemoryKeyWrapStore {
     by_principal: BTreeMap<String, BTreeMap<String, EncryptedAccountWrap>>,
@@ -354,6 +374,7 @@ impl TransportKey {
     }
 
     pub(crate) fn secret_key(&self) -> Result<p256::SecretKey, EncDiscError> {
+        // `SecretKey` zeros on drop. Callers drop it as soon as `ecdh_x` returns.
         p256::SecretKey::from_slice(self.scalar.as_slice()).map_err(|_| EncDiscError::BadKey)
     }
 }
@@ -397,10 +418,18 @@ impl KeyWrapStore for MemoryKeyWrapStore {
         {
             return Err(EncDiscError::StoreRejected);
         }
-        self.by_principal
+        let rows = self
+            .by_principal
             .entry(wrap.principal.as_ref().to_string())
-            .or_default()
-            .insert(wrap.wrap_id.as_ref().to_string(), wrap.clone());
+            .or_default();
+        if let Some(existing) = rows.get(wrap.wrap_id.as_ref()) {
+            if existing.class != wrap.class {
+                return Err(EncDiscError::StoreRejected);
+            }
+        } else if rows.len() >= crate::limits::MAX_WRAPS_PER_PRINCIPAL {
+            return Err(EncDiscError::StoreRejected);
+        }
+        rows.insert(wrap.wrap_id.as_ref().to_string(), wrap.clone());
         Ok(())
     }
 
@@ -713,6 +742,7 @@ fn encrypt_backup(
         epub: account.epub().to_string(),
         ciphertext_hex: encode_hex(&blob),
         signature,
+        class: WrapClass::Genesis,
     })
 }
 
