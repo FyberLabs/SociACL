@@ -1009,7 +1009,7 @@ dependencies = [
 
 [[package]]
 name = "sociacl-ids"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "base64ct",
  "getrandom",
@@ -1021,6 +1021,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "sha3",
+ "zeroize",
 ]
 
 [[package]]

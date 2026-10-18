@@ -42,10 +42,10 @@ object. Rust cannot represent an unpaired UTF-16 surrogate in `str`;
 | --- | --- |
 | Edge parsers | `parsePrincipalId`, `parsePrincipalKey`, `parsePathKey`, `principalFromSec1`, `parseJsonInput`, `parseEip55`, `parseWalletInput`, `parseTenantId`, `parseOidcCredential`, `parseObjectId`, `parseNetworkId`, `parseSourceKey`, `parseSoul` |
 | Keys | `formatPrincipalKey`, `formatWalletKey`, `formatOidcKey`, `formatNetworkKey`, `formatSourcePathKey`, `objectKey` |
-| Souls | `objectSoul`, `userSoul`, `aclSoul`, `grantSoul`, `postSoul` |
+| Souls | `objectSoul`, `userSoul`, `aclSoul`, `grantSoul`, `postSoul`, `membershipSoul`, `objectSetSoul` |
 | Creation | `mintObjectId`, `deriveClaimId`, `deriveExternalId` |
-| Signing | `signingBytes`, `linkId` |
-| Proofs | `verifyWalletLink`, `verifyOidcLink`, `verifyRotate`, `verifyRotationRequest`, `verifyGenesisEpubRequest`, `verifyRevoke` |
+| Signing | `lengthPrefixed`, `signingBytes`, `linkId`, `verifyKeySignature`, `signWithKeyring` |
+| Proofs | `verifySignedAt`, `verifyAclAttestation`, `verifyWalletLink`, `verifyOidcLink`, `verifyRotate`, `verifyRotationRequest`, `verifyGenesisEpubRequest`, `verifyRevoke` |
 | Present eligibility | `verifyRevokeNow`, `resolveWalletLinkNow` |
 | Histories | `resolveCurrentKey`, `resolveWalletLink`, `historyState`, `checkRotationPublish`, `checkRotationDraft` |
 
@@ -55,8 +55,11 @@ data properties, reject accessors and unknown fields, and never coerce an
 object into an identifier. Returned records and nested credentials are frozen.
 
 Souls have fixed templates. `parseSoul` is the only inverse; object results
-include `[collection, objectId]`, user/ACL results `[principal]`, and grant/post
-results `[owner, objectId, accessor]`. All derived path keys exclude
+include `[collection, objectId]`, user/ACL results `[principal]`, grant/post
+results `[owner, objectId, accessor]`, membership results
+`[owner, predicate, setObjectId, accessor]`, and object-set results
+`[owner, objectId]`. A membership predicate is `same-group` or `named-circle`.
+All derived path keys exclude
 `/ . # $ [ ] ~ %`. Gun's `~pub` user soul is the explicit exception: the `~`
 marker and public key separator are part of Gun's user-space syntax, not a
 path key. SHA-256 path keys use domain-separated, little-endian length-prefixed
@@ -64,9 +67,11 @@ UTF-8 fields. Hash collision resistance is computational, not a mathematical
 claim of injectivity.
 
 Object ids are `<kind>_<32 lowercase hex>`, `claim_<64hex>`, `ext_<64hex>`, or the
-specified read-only `s3rch:` legacy formats. `claim`/`ext` cannot be minted as
-native kinds. Legacy timestamps retain the specified 1–12 decimal digit limit;
-legacy identifiers are opaque and confer no ownership authority. Native mints
+specified read-only `s3rch:` legacy formats. That includes
+`s3rch:post:<wallet>:<ts>:<hex>`. `claim`, `ext`, `post`, `member`,
+and `objset` cannot be minted as native kinds. Legacy timestamps retain the specified 1–12 decimal digit limit;
+legacy identifiers are opaque and confer no ownership authority. The wallet and
+timestamp inside a legacy post id are not read out. Native mints
 use `crypto.getRandomValues` (Rust: `getrandom`) for 128 bits.
 
 `SourceKey` ports the canonical SourceRef format from s3r.ch Views. s3r.ch owners
@@ -80,6 +85,16 @@ Signing bytes are `LP(domain) LP(field1) …`, with a 32-bit little-endian UTF-8
 byte length on each field. `linkId` is SHA-256 of these bytes and does not depend
 on an ECDSA signature. SEA proofs are raw P-256 `r||s` in canonical unpadded
 base64url; both high-S and low-S verify. SEA envelopes are not accepted.
+`verifySignedAt(principal, rotations, ctx, bytes, sig, issuedAt)`
+does not take a kind or an attestation. It resolves the current key first. A present key returns
+`{key, mode: "present"}` or `bad-signature`. Every retired-key row is
+`unwitnessed-retired-key`, including a witnessed cancel, until PR 2 of the #55 rebuild
+reads the `sociacl-cancel-v2` domain from the signed bytes. `mode: "witnessed"` is reserved for that check. A negative or fractional `issuedAt` is `bad-record`.
+`clockSkewSeconds` must be an integer from 0 through 300; a larger, non-finite,
+or non-numeric skew is `bad-record`. `issuedAt` past `now` plus that skew is
+`future-record`. `signWithKeyring(scalar, bytes, expectedKey)` signs only when
+the scalar's public key is `expectedKey`, and it wipes its copy of the scalar.
+Bad key material is `bad-key`. `lengthPrefixed` copies its input once and accepts only well-formed strings from that copy. A throwing getter or iterator is `bad-record`.
 
 Wallet proofs are EIP-4361 messages signed with EIP-191 `personal_sign`. The
 statement is exactly `SociACL link: <signing-byte sha256>`, the address must
@@ -311,8 +326,9 @@ reasons, and emit manifests that CI compares with the vector files themselves.
 The suites run 10,000 generated cases covering roundtrips, idempotence, path-key
 separation, distinct-value keys and soul templates; 100,000 arbitrary inputs;
 and one million CSPRNG mints each. Signing-byte and record vectors share fixed
-**public test-only** private scalars. `scripts/generate-vectors.mjs` is a manual
-fixture authoring tool, not part of CI: changing expectations requires review.
+**public test-only** private scalars. `scripts/generate-vectors.mjs` and
+`scripts/generate-signed-at.mjs` are manual fixture authoring tools, not part
+of CI: changing expectations requires review.
 
 `npm pack` builds declarations and ESM into the tarball. The consumer example at
 `examples/consumer` is copied to a fresh directory with an empty npm cache, installs that local tarball,
@@ -321,15 +337,15 @@ present/historical revocation boundary. The browser check
 bundles the runtime dependency graph and rejects Node imports. Node built-ins
 are used only in build/test tooling, outside the shipped runtime.
 
-After review and merge, tag `ids-v0.8.0`. The release job waits for the full test
+After review and merge, tag `ids-v0.9.0`. The release job waits for the full test
 job, requires a protected `master` and verifies the tag commit is its ancestor.
 A read-only job installs dependencies with scripts disabled, explicitly builds,
 and checks the tag against `package.json`. A separate write-token job only
 downloads the resulting artifact, checks its SHA-256, and attaches
-`sociacl-ids-0.8.0.tgz` and its SHA-256 file. Consumers then install:
+`sociacl-ids-0.9.0.tgz` and its SHA-256 file. Consumers then install:
 
 ```sh
-npm install https://github.com/FyberLabs/SociACL/releases/download/ids-v0.8.0/sociacl-ids-0.8.0.tgz
+npm install https://github.com/FyberLabs/SociACL/releases/download/ids-v0.9.0/sociacl-ids-0.9.0.tgz
 ```
 
 Commit the consumer lockfile with tarball integrity. This URL becomes usable

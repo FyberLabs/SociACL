@@ -34,6 +34,12 @@ fn string(v: &Value) -> Result<&str, Reason> {
 fn hex(b: &[u8]) -> String {
     b.iter().map(|c| format!("{c:02x}")).collect()
 }
+fn unhex_vec(s: &str) -> Vec<u8> {
+    (0..s.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
+        .collect()
+}
 fn context(f: &Family, c: &Case) -> Value {
     let mut ctx = f.context.clone();
     if let Some(o) = ctx.as_object_mut() {
@@ -326,13 +332,160 @@ fn run(f: &Family, c: &Case, v: &Value) -> Result<Value, Reason> {
         };
         return Ok(Value::String(principal.to_string()));
     }
+    if f.family == "signed-at" {
+        let ctx = context(f, c);
+        let now = ctx["now"].as_u64().unwrap();
+        let jwks: Jwks = serde_json::from_value(ctx["jwks"].clone()).unwrap();
+        let ls = links(&ctx);
+        let empty = vec![];
+        let revs = ctx["revocations"].as_array().unwrap_or(&empty);
+        if let Some(raw) = ctx["policy"].get("clockSkewSeconds") {
+            match raw {
+                Value::Number(n) if n.as_u64().is_some() => {}
+                _ => return Err(Reason::BadRecord),
+            }
+        }
+        let policy: SiwePolicy =
+            serde_json::from_value(ctx["policy"].clone()).map_err(|_| Reason::BadRecord)?;
+        let history = |p: &PrincipalId, at, until| {
+            if let Some(e) = ctx["historyErrors"]
+                .as_array()
+                .and_then(|es| es.iter().find(|e| e[0] == p.as_ref()))
+            {
+                return Err(serde_json::from_value(e[1].clone()).unwrap());
+            }
+            if !ctx["authenticatedAccounts"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|a| a.as_str() == Some(p.as_ref()))
+            {
+                return Err(Reason::MissingHistory);
+            }
+            Ok(history_state(p, &[], at, until))
+        };
+        let pinned_iss = ctx["pinnedIss"]
+            .as_array()
+            .unwrap_or(&empty)
+            .iter()
+            .map(|v| v.as_str().unwrap().to_owned())
+            .collect();
+        let bindings = ctx
+            .get("genesisEpubBindings")
+            .and_then(Value::as_array)
+            .unwrap_or(&empty);
+        let rc = ResolutionContext {
+            jwks: &jwks,
+            links: &ls,
+            revocations: revs,
+            now,
+            policy: &policy,
+            pinned_iss: &pinned_iss,
+            history: &history,
+            genesis_epub_bindings: bindings,
+        };
+        let rotations = c
+            .extra
+            .get("rotations")
+            .or_else(|| ctx.get("rotations"))
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        let plain = |r: Result<Value, Reason>| r;
+        return match c.extra["operation"].as_str().unwrap() {
+            "verify-signed-at" => {
+                let principal = parse_principal_id(v["principal"].as_str().unwrap())?;
+                let bytes = unhex_vec(v["bytes"].as_str().unwrap());
+                let Some(issued_at) = v["issuedAt"].as_u64() else {
+                    return Err(Reason::BadRecord);
+                };
+                plain(
+                    verify_signed_at(
+                        &principal,
+                        &rotations,
+                        &rc,
+                        &bytes,
+                        v["sig"].as_str().unwrap(),
+                        issued_at,
+                    )
+                    .map(|signed| serde_json::to_value(signed).unwrap()),
+                )
+            }
+            "verify-acl-attest" => {
+                let bytes = unhex_vec(v["bytes"].as_str().unwrap());
+                plain(
+                    verify_acl_attestation(
+                        v["jws"].as_str().unwrap(),
+                        &jwks,
+                        v["issuedAt"].as_u64().unwrap(),
+                        &bytes,
+                    )
+                    .map(|a| serde_json::to_value(a).unwrap()),
+                )
+            }
+            "verify-key-signature" => {
+                let key = parse_principal_id(v["key"].as_str().unwrap())?;
+                plain(
+                    verify_key_signature(
+                        &key,
+                        v["sig"].as_str().unwrap(),
+                        &unhex_vec(v["bytes"].as_str().unwrap()),
+                    )
+                    .map(|_| Value::Bool(true)),
+                )
+            }
+            "sign-with-keyring" => {
+                use base64ct::{Base64UrlUnpadded, Encoding};
+                let scalar = Base64UrlUnpadded::decode_vec(v["seaPriv"].as_str().unwrap())
+                    .map_err(|_| Reason::BadKey)?;
+                let expected = parse_principal_id(v["expectedKey"].as_str().unwrap())?;
+                plain(
+                    sign_with_keyring(&scalar, &unhex_vec(v["bytes"].as_str().unwrap()), &expected)
+                        .map(Value::String),
+                )
+            }
+            _ => panic!("unknown operation"),
+        };
+    }
     if f.family == "signing-bytes" {
+        if c.extra.get("operation").and_then(Value::as_str) == Some("length-prefixed") {
+            let items = v.as_array().ok_or(Reason::BadRecord)?;
+            let mut fields = Vec::new();
+            for item in items {
+                fields.push(item.as_str().ok_or(Reason::NotString)?.to_owned());
+            }
+            let refs: Vec<&str> = fields.iter().map(String::as_str).collect();
+            return length_prefixed(&refs).map(|b| Value::String(hex(&b)));
+        }
         let b = parse_signing_bytes(v)?;
         if let Some(id) = &c.link_id {
             use sha2::{Digest, Sha256};
             assert_eq!(&hex(&Sha256::digest(&b)), id);
         }
         return Ok(Value::String(hex(&b)));
+    }
+    if f.family == "soul" {
+        if let Some(op) = c.extra.get("operation").and_then(Value::as_str) {
+            let items = v.as_array().ok_or(Reason::BadRecord)?;
+            return match op {
+                "build-membership" => {
+                    let owner = parse_principal_id(items[0].as_str().ok_or(Reason::NotString)?)?;
+                    let predicate: MembershipPredicate =
+                        items[1].as_str().ok_or(Reason::NotString)?.parse()?;
+                    let set = parse_object_id(items[2].as_str().ok_or(Reason::NotString)?)?;
+                    let member = parse_principal_id(items[3].as_str().ok_or(Reason::NotString)?)?;
+                    Ok(Value::String(
+                        membership_soul(&owner, predicate, &set, &member).to_string(),
+                    ))
+                }
+                "build-objset" => {
+                    let owner = parse_principal_id(items[0].as_str().ok_or(Reason::NotString)?)?;
+                    let object = parse_object_id(items[1].as_str().ok_or(Reason::NotString)?)?;
+                    Ok(Value::String(object_set_soul(&owner, &object).to_string()))
+                }
+                _ => panic!("unknown soul operation"),
+            };
+        }
     }
     let operation = c.extra.get("operation").and_then(Value::as_str);
     if let ("object", Some(operation)) = (f.family.as_str(), operation) {
@@ -399,7 +552,7 @@ fn every_shared_vector() {
         .filter(|p| p.extension().is_some_and(|s| s == "json"))
         .collect();
     paths.sort();
-    assert_eq!(paths.len(), 11);
+    assert_eq!(paths.len(), 12);
     let mut names = BTreeSet::new();
     for path in paths {
         let f: Family = serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap();

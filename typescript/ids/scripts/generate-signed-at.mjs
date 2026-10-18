@@ -1,0 +1,184 @@
+// Author vectors/ids/signed-at.json. Public test scalars only. Not part of CI.
+import { writeFileSync } from 'node:fs';
+import { p256 } from '@noble/curves/nist.js';
+import { secp256k1 } from '@noble/curves/secp256k1.js';
+import { sha256 } from '@noble/hashes/sha2.js';
+import { keccak_256 } from '@noble/hashes/sha3.js';
+import * as ids from '../src/index.js';
+import { b64, hex, utf8 } from './vector-util.mjs';
+const val = r => { if (!r.ok) throw Error(r.reason + ' ' + JSON.stringify(r.diagnostics ?? [])); return r.value; };
+const secret = n => { const b = new Uint8Array(32); b[31] = n; return b; };
+const principal = n => { const b = p256.getPublicKey(secret(n), false); return val(ids.parsePrincipalId(b64(b.slice(1, 33)) + '.' + b64(b.slice(33)))); };
+const p = principal(1), p2 = principal(2), p3 = principal(3);
+const wallet = val(ids.parseWalletInput('0x' + hex(keccak_256(secp256k1.getPublicKey(secret(4), false).slice(1))).slice(-40)));
+const at = 1700000000, now = at + 60;
+const date = n => new Date(n * 1000).toISOString().replace('.000Z', 'Z');
+const bytesOf = r => val(ids.signingBytes(r));
+const keySig = (r, n = 1) => b64(p256.sign(bytesOf(r), secret(n), { lowS: false }));
+const jwkPrincipal = principal(5);
+const jwks = { keys: [{ kty: 'EC', crv: 'P-256', kid: 'fixture-1', x: jwkPrincipal.slice(0, 43), y: jwkPrincipal.slice(44), alg: 'ES256', use: 'sig', key_ops: ['verify'] }] };
+const jwsRaw = (header, claims) => {
+  const body = b64(utf8.encode(header)) + '.' + b64(utf8.encode(claims));
+  return body + '.' + b64(p256.sign(utf8.encode(body), secret(5), { lowS: false }));
+};
+const jws = c => jwsRaw(JSON.stringify({ alg: 'ES256', kid: 'fixture-1', typ: 'JWT' }), JSON.stringify(c));
+const signMessage = message => {
+  const raw = utf8.encode(message);
+  const digest = keccak_256(new Uint8Array([...utf8.encode('\x19Ethereum Signed Message:\n' + raw.length), ...raw]));
+  const sig = secp256k1.sign(digest, secret(4), { prehash: false, format: 'recovered' });
+  return { message, signature: '0x' + hex(new Uint8Array([...sig.slice(1), sig[0] + 27])) };
+};
+const siwe = (r, options = '') => signMessage(`s3r.ch wants you to sign in with your Ethereum account:\n${wallet}\n\nSociACL link: ${hex(sha256(bytesOf(r)))}\n\nURI: https://s3r.ch/identity/link\nVersion: 1\nChain ID: 1\nNonce: ${r.nonce ?? 'rotation1234'}\nIssued At: ${date(r.issuedAt)}${options}`);
+function walletLink(principalId = p, issuedAt = at, n = 1) {
+  const r = { v: 1, kind: 'wallet', principal: principalId, address: wallet, issuedAt, nonce: 'fixtureNonce123' };
+  return { ...r, keySig: keySig(r, n), siwe: siwe(r), attest: jws({ typ: 'sociacl-wallet-attest-v1', principal: principalId, linkId: val(ids.linkId(r)), iat: issuedAt, exp: issuedAt + 600 }) };
+}
+const w = walletLink(), wid = val(ids.linkId(w));
+const rotation = (next = p2, n = 2, seq = 1, prev = p, issuedAt = at + 30) => {
+  const r = { v: 1, kind: 'rotate', principal: p, seq, prevKey: prev, nextKey: next, issuedAt, retainedLinks: [wid], authorizer: { kind: 'wallet', link: wid } };
+  return { ...r, nextSig: keySig(r, n), authorizer: { ...r.authorizer, siwe: siwe(r) }, attest: jws({ typ: 'sociacl-rotate-attest-v2', principal: p, nextKey: next, seq, iat: issuedAt, exp: issuedAt + 600, auth: 'wallet', linkId: wid, retainedLinks: [wid] }) };
+};
+const rot = rotation(), fork = rotation(p3, 3);
+const policy = { allowedDomains: ['s3r.ch'], allowedUris: ['https://s3r.ch/identity/link'], allowedChainIds: ['1'] };
+const context = { jwks, pinnedIss: ['https://id.fyberlabs.com/realms/test'], now, genesis: p, links: [[wid, w]], policy, authenticatedAccounts: [p, p2, p3], genesisEpubBindings: [], rotations: [rot] };
+const pOrder = 0xffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551n;
+const flipS = encoded => {
+  const raw = Uint8Array.from(Buffer.from(encoded, 'base64url'));
+  const scalar = BigInt('0x' + hex(raw.slice(32)));
+  raw.set(Buffer.from((pOrder - scalar).toString(16).padStart(64, '0'), 'hex'), 32);
+  return b64(raw);
+};
+const sign = (message, n) => b64(p256.sign(utf8.encode(message), secret(n), { prehash: true, lowS: false, format: 'compact' }));
+function row(_kind, issuedAt, signer, message, attest) {
+  const raw = utf8.encode(message);
+  const out = { principal: p, sig: sign(message, signer), bytes: hex(raw), issuedAt, raw };
+  if (attest !== undefined) out.attest = attest;
+  return out;
+}
+const attest = (issuedAt, raw, principalId = p, expDelta = 600, recordId = hex(sha256(raw))) => jws({ typ: 'sociacl-acl-attest-v1', principal: principalId, recordId, iat: issuedAt, exp: issuedAt + expDelta });
+function rc(extra = {}) {
+  const merged = { ...context, ...extra };
+  const history = (principalId, issued, until) => merged.authenticatedAccounts.includes(principalId) ? { ok: true, value: ids.historyState(principalId, [], issued, until) } : { ok: false, reason: 'missing-history' };
+  return { jwks: merged.jwks, links: new Map(merged.links), revocations: [], now: merged.now, policy: merged.policy, pinnedIss: new Set(merged.pinnedIss), history, genesisEpubBindings: [] };
+}
+const genesis = val(ids.resolveCurrentKey(p, [], rc()));
+if (genesis.currentKey !== p) throw Error('empty history');
+const rotated = val(ids.resolveCurrentKey(p, [rot], rc()));
+if (rotated.currentKey !== p2) throw Error('rotated current ' + rotated.currentKey);
+const forked = ids.resolveCurrentKey(p, [rot, fork], rc());
+if (forked.ok || forked.reason !== 'rotation-fork') throw Error('fork ' + JSON.stringify(forked));
+const accept = [], reject = [];
+function add(name, operation, input, expected, extra = {}) {
+  const rotations = extra.rotations ?? context.rotations;
+  const proof = rc(extra);
+  let r;
+  if (operation === 'verify-signed-at') r = ids.verifySignedAt(input.principal, rotations, proof, input.raw, input.sig, input.issuedAt);
+  else if (operation === 'verify-acl-attest') r = ids.verifyAclAttestation(input.jws, jwks, input.issuedAt, input.raw);
+  else if (operation === 'verify-key-signature') r = ids.verifyKeySignature(input.key, input.sig, input.raw);
+  else if (operation === 'sign-with-keyring') {
+    const scalar = Uint8Array.from(Buffer.from(input.seaPriv, 'base64url'));
+    try { r = ids.signWithKeyring(scalar, input.raw, input.expectedKey); }
+    finally { scalar.fill(0); }
+  }
+  else throw Error(operation);
+  const actual = r.ok ? { ok: true, value: r.value } : { ok: false, reason: r.reason };
+  if (JSON.stringify(actual) !== JSON.stringify(expected)) throw Error(name + ' got ' + JSON.stringify(actual) + ' want ' + JSON.stringify(expected));
+  const stored = input && typeof input === 'object' ? { ...input } : input;
+  if (stored && typeof stored === 'object') delete stored.raw;
+  const item = { name, operation, input: stored, ...extra };
+  if (r.diagnostics?.length) item.diagnosticReasons = r.diagnostics.map(d => d.reason);
+  if (expected.ok) accept.push({ ...item, canonical: expected.value });
+  else reject.push({ ...item, reason: expected.reason });
+}
+const present = row('grant', at, 1, 'present-current-key');
+const seen = (signedAt, key, mode) => ({ ok: true, value: { key, mode } });
+add('present-current-key', 'verify-signed-at', present, seen(at, p, 'present'), { rotations: [] });
+add('present-request', 'verify-signed-at', row('request', at, 1, 'present-request'), seen(at, p, 'present'), { rotations: [] });
+add('present-cancel', 'verify-signed-at', row('cancel', at, 1, 'present-cancel'), seen(at, p, 'present'), { rotations: [] });
+add('present-grant-ignores-attest', 'verify-signed-at', row('grant', at, 1, 'present-grant-ignores-attest', 'not-a-jws'), seen(at, p, 'present'), { rotations: [] });
+const opposite = row('grant', at, 1, 'present-grant-opposite-s');
+opposite.sig = flipS(opposite.sig);
+add('present-grant-opposite-s', 'verify-signed-at', opposite, seen(at, p, 'present'), { rotations: [] });
+const nextAt = at + 40;
+add('present-grant-next-key', 'verify-signed-at', row('grant', nextAt, 2, 'present-grant-next-key'), seen(nextAt, p2, 'present'));
+const retiredAt = at + 10;
+add('present-after-rotation-old-key', 'verify-signed-at', row('grant', retiredAt, 1, 'present-after-rotation-old-key'), { ok: false, reason: 'unwitnessed-retired-key' });
+const retiredGrant = row('grant', retiredAt, 1, 'retired-grant');
+retiredGrant.attest = attest(retiredAt, retiredGrant.raw);
+add('retired-grant-witnessed', 'verify-signed-at', retiredGrant, { ok: false, reason: 'unwitnessed-retired-key' });
+const retiredRequest = row('request', retiredAt, 1, 'retired-request');
+retiredRequest.attest = attest(retiredAt, retiredRequest.raw);
+add('retired-request-witnessed', 'verify-signed-at', retiredRequest, { ok: false, reason: 'unwitnessed-retired-key' });
+add('retired-cancel-unwitnessed', 'verify-signed-at', row('cancel', retiredAt, 1, 'retired-cancel'), { ok: false, reason: 'unwitnessed-retired-key' });
+const relabel = { ...retiredGrant };
+add('kind-relabel', 'verify-signed-at', relabel, { ok: false, reason: 'unwitnessed-retired-key' });
+const witnessed = row('cancel', retiredAt, 1, 'retired-cancel-witnessed');
+witnessed.attest = attest(retiredAt, witnessed.raw);
+add('retired-cancel-witnessed', 'verify-signed-at', witnessed, { ok: false, reason: 'unwitnessed-retired-key' });
+const wide = row('cancel', retiredAt, 1, 'retired-cancel-exp-900');
+wide.attest = attest(retiredAt, wide.raw, p, 900);
+add('retired-cancel-exp-900', 'verify-signed-at', wide, { ok: false, reason: 'unwitnessed-retired-key' });
+const same = row('cancel', rot.issuedAt, 1, 'issuedAt-equals-rotation-time');
+same.attest = attest(rot.issuedAt, same.raw);
+add('issuedAt-equals-rotation-time', 'verify-signed-at', same, { ok: false, reason: 'unwitnessed-retired-key' });
+const directRaw = utf8.encode('acl-attest');
+const direct = { jws: attest(at, directRaw), issuedAt: at, bytes: hex(directRaw), raw: directRaw };
+add('acl-attest', 'verify-acl-attest', direct, { ok: true, value: { typ: 'sociacl-acl-attest-v1', principal: p, recordId: hex(sha256(directRaw)), iat: at, exp: at + 600 } });
+const expiredClaims = { typ: 'sociacl-acl-attest-v1', principal: p, recordId: hex(sha256(directRaw)), iat: at - 10, exp: at };
+add('acl-attest-expired', 'verify-acl-attest', { jws: jws(expiredClaims), issuedAt: at, bytes: hex(directRaw), raw: directRaw }, { ok: false, reason: 'expired' });
+add('key-signature', 'verify-key-signature', { key: p, sig: present.sig, bytes: present.bytes, raw: present.raw }, { ok: true, value: true });
+const seaPriv = b64(secret(1));
+const signingScalar = secret(1);
+const signed = val(ids.signWithKeyring(signingScalar, present.raw, p));
+signingScalar.fill(0);
+if (signed !== present.sig) throw Error('signWithKeyring diverges from noble');
+add('sign-with-keyring', 'sign-with-keyring', { seaPriv, expectedKey: p, bytes: present.bytes, raw: present.raw }, { ok: true, value: signed });
+add('future-issuedAt', 'verify-signed-at', row('grant', now + 1, 1, 'future'), { ok: false, reason: 'future-record' }, { rotations: [] });
+add('issuedAt-negative', 'verify-signed-at', row('grant', -1, 1, 'negative'), { ok: false, reason: 'bad-record' }, { rotations: [] });
+add('issuedAt-fractional', 'verify-signed-at', row('grant', at + 0.5, 1, 'fractional'), { ok: false, reason: 'bad-record' }, { rotations: [] });
+const skewPolicy = (clockSkewSeconds) => ({ policy: { ...policy, clockSkewSeconds } });
+add('skew-301', 'verify-signed-at', row('grant', now + 301, 1, 'skew-301'), { ok: false, reason: 'bad-record' }, { rotations: [], ...skewPolicy(301) });
+add('skew-nan', 'verify-signed-at', row('grant', now + 1, 1, 'skew-nan'), { ok: false, reason: 'bad-record' }, { rotations: [], ...skewPolicy('NaN') });
+add('skew-infinity', 'verify-signed-at', row('grant', now + 1, 1, 'skew-infinity'), { ok: false, reason: 'bad-record' }, { rotations: [], ...skewPolicy('Infinity') });
+add('skew-string', 'verify-signed-at', row('grant', now + 1, 1, 'skew-string'), { ok: false, reason: 'bad-record' }, { rotations: [], ...skewPolicy('x') });
+add('skew-300', 'verify-signed-at', row('grant', now + 300, 1, 'skew-300'), seen(now + 300, p, 'present'), { rotations: [], ...skewPolicy(300) });
+add('retired-cancel-bad-jws', 'verify-signed-at', row('cancel', retiredAt, 1, 'bad-jws', 'a.b.c'), { ok: false, reason: 'unwitnessed-retired-key' });
+const wrongId = row('cancel', retiredAt, 1, 'wrong-record');
+wrongId.attest = attest(retiredAt, wrongId.raw, p, 600, '00'.repeat(32));
+add('retired-cancel-witness-wrong-recordId', 'verify-signed-at', wrongId, { ok: false, reason: 'unwitnessed-retired-key' });
+const mismatch = row('cancel', retiredAt, 1, 'iat-mismatch');
+mismatch.attest = jws({ typ: 'sociacl-acl-attest-v1', principal: p, recordId: hex(sha256(mismatch.raw)), iat: retiredAt - 1, exp: retiredAt + 600 });
+add('retired-cancel-witness-iat-mismatch', 'verify-signed-at', mismatch, { ok: false, reason: 'unwitnessed-retired-key' });
+const expired = row('cancel', retiredAt, 1, 'retired-cancel-witness-expired');
+expired.attest = jws({ typ: 'sociacl-acl-attest-v1', principal: p, recordId: hex(sha256(expired.raw)), iat: retiredAt - 10, exp: retiredAt });
+add('retired-cancel-witness-expired', 'verify-signed-at', expired, { ok: false, reason: 'unwitnessed-retired-key' });
+const over = row('cancel', retiredAt, 1, 'window-901');
+over.attest = attest(retiredAt, over.raw, p, 901);
+add('retired-cancel-window-901', 'verify-signed-at', over, { ok: false, reason: 'unwitnessed-retired-key' });
+const other = row('cancel', retiredAt, 1, 'wrong-principal');
+other.attest = attest(retiredAt, other.raw, p2);
+add('retired-cancel-wrong-principal', 'verify-signed-at', other, { ok: false, reason: 'unwitnessed-retired-key' });
+const badSig = row('grant', at, 1, 'bad-signature');
+badSig.sig = b64(new Uint8Array(64));
+add('bad-signature', 'verify-signed-at', badSig, { ok: false, reason: 'bad-signature' }, { rotations: [] });
+add('backdated-next-key', 'verify-signed-at', row('grant', retiredAt, 2, 'backdated-next-key'), { ok: false, reason: 'unwitnessed-retired-key' });
+add('same-second-retired-grant', 'verify-signed-at', row('grant', rot.issuedAt, 1, 'same-second-grant'), { ok: false, reason: 'unwitnessed-retired-key' });
+add('missing-history', 'verify-signed-at', present, { ok: false, reason: 'missing-history' }, { now: 9007199254740992 });
+add('fork-history', 'verify-signed-at', present, { ok: false, reason: 'rotation-fork' }, { rotations: [rot, fork] });
+for (const kind of ['hop', 'hint', 'wrap', 'inbox']) add('present-label-' + kind, 'verify-signed-at', row(kind, at, 1, 'present-label-' + kind), seen(at, p, 'present'), { rotations: [] });
+add('key-signature-bad', 'verify-key-signature', { key: p, sig: b64(new Uint8Array(64)), bytes: present.bytes, raw: present.raw }, { ok: false, reason: 'bad-signature' });
+add('acl-attest-bad', 'verify-acl-attest', { jws: 'a.b.c', issuedAt: at, bytes: hex(directRaw), raw: directRaw }, { ok: false, reason: 'bad-attestation' });
+add('acl-attest-oversized', 'verify-acl-attest', { jws: 'a'.repeat(16385), issuedAt: at, bytes: hex(directRaw), raw: directRaw }, { ok: false, reason: 'too-long' });
+const claim = (extra) => ({ jws: jws({ ...extra }), issuedAt: at, bytes: hex(directRaw), raw: directRaw });
+const baseClaim = { principal: p, recordId: hex(sha256(directRaw)), iat: at, exp: at + 600 };
+for (const [name, typ] of [['revoke', 'sociacl-revoke-attest-v1'], ['wallet', 'sociacl-wallet-attest-v1'], ['rotate-v3', 'sociacl-rotate-attest-v3'], ['genesis-epub', 'sociacl-genesis-epub-attest-v1'], ['oidc', 'sociacl-oidc-attest-v1'], ['upper', 'SOCIACL-ACL-ATTEST-V1'], ['v2', 'sociacl-acl-attest-v2']]) {
+  add('acl-attest-typ-' + name, 'verify-acl-attest', claim({ typ, ...baseClaim }), { ok: false, reason: 'bad-attestation' });
+}
+add('acl-attest-extra-kind', 'verify-acl-attest', claim({ typ: 'sociacl-acl-attest-v1', ...baseClaim, kind: 'cancel' }), { ok: false, reason: 'bad-attestation' });
+add('acl-attest-missing-exp', 'verify-acl-attest', claim({ typ: 'sociacl-acl-attest-v1', principal: p, recordId: baseClaim.recordId, iat: at }), { ok: false, reason: 'bad-attestation' });
+add('acl-attest-linkId', 'verify-acl-attest', claim({ typ: 'sociacl-acl-attest-v1', principal: p, linkId: baseClaim.recordId, iat: at, exp: at + 600 }), { ok: false, reason: 'bad-attestation' });
+add('acl-attest-recordId-upper', 'verify-acl-attest', claim({ typ: 'sociacl-acl-attest-v1', ...baseClaim, recordId: baseClaim.recordId.toUpperCase() }), { ok: false, reason: 'bad-attestation' });
+add('sign-with-keyring-bad', 'sign-with-keyring', { seaPriv: b64(new Uint8Array(32)), expectedKey: p, bytes: present.bytes, raw: present.raw }, { ok: false, reason: 'bad-key' });
+add('sign-with-keyring-wrong-key', 'sign-with-keyring', { seaPriv, expectedKey: p2, bytes: present.bytes, raw: present.raw }, { ok: false, reason: 'bad-key' });
+writeFileSync(new URL('../../../vectors/ids/signed-at.json', import.meta.url), JSON.stringify({ v: 1, family: 'signed-at', context, accept, reject }, null, 2) + '\n');
+console.log(`signed-at accept ${accept.length} reject ${reject.length}`);

@@ -1,10 +1,12 @@
 use crate::ids::{checksum, principal_bytes};
 use crate::*;
-use p256::ecdsa::{signature::Verifier, Signature, VerifyingKey};
+use p256::ecdsa::signature::Signer;
+use p256::ecdsa::{signature::Verifier, Signature, SigningKey, VerifyingKey};
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 use sha3::Keccak256;
 use std::collections::{BTreeMap, BTreeSet};
+use zeroize::Zeroizing;
 
 const MAX_SAFE: u64 = 9_007_199_254_740_991;
 macro_rules! rx {
@@ -2133,6 +2135,135 @@ fn resolve_wallet(
     note = "Use resolve_wallet_link; this alias retains historical verification semantics"
 )]
 pub use resolve_wallet_link as resolve_wallet_link_at_key;
+
+/// SEA P-256 ECDSA over SHA-256. Raw r||s, base64url. High-S and low-S both verify.
+pub fn verify_key_signature(key: &PrincipalId, sig: &str, message: &[u8]) -> Result<(), Reason> {
+    let sig = text(sig, 128)?;
+    if key_verify(key, sig, message) {
+        Ok(())
+    } else {
+        Err(Reason::BadSignature)
+    }
+}
+/// Sign ids bytes with a 32-byte SEA scalar. `expected_key` is the resolver's current key.
+/// The working copy of the scalar is [`Zeroizing`]. A bad scalar or a different public key is [`Reason::BadKey`].
+/// The result is raw r||s, base64url, the encoding [`verify_key_signature`] accepts.
+pub fn sign_with_keyring(
+    scalar: &[u8],
+    message: &[u8],
+    expected_key: &PrincipalId,
+) -> Result<String, Reason> {
+    if scalar.len() != 32 {
+        return Err(Reason::BadKey);
+    }
+    let mut held = Zeroizing::new([0u8; 32]);
+    held.copy_from_slice(scalar);
+    let signing = SigningKey::from_slice(held.as_ref()).map_err(|_| Reason::BadKey)?;
+    let point = signing.verifying_key().to_encoded_point(false);
+    let derived = principal_from_sec1(point.as_bytes()).map_err(|_| Reason::BadKey)?;
+    if derived != *expected_key {
+        return Err(Reason::BadKey);
+    }
+    let sig: Signature = signing.sign(message);
+    Ok(b64(&sig.to_bytes()))
+}
+fn record_id_of(message: &[u8]) -> String {
+    hex(&Sha256::digest(message))
+}
+/// `sociacl-acl-attest-v1`. Checked like [`attest_verify`] with `now = issued_at`.
+/// Nothing in this package issues the claim.
+pub fn verify_acl_attestation(
+    jws: &str,
+    jwks: &Jwks,
+    issued_at: u64,
+    message: &[u8],
+) -> Result<AclAttestation, Reason> {
+    if jws.len() > 16384 * 3 || jws.encode_utf16().count() > 16384 {
+        return Err(Reason::TooLong);
+    }
+    let jws = text(jws, 16384)?;
+    if issued_at > MAX_SAFE {
+        return Err(Reason::BadAttestation);
+    }
+    let c = attest_verify(jws, jwks, issued_at, 0)?;
+    if !only(&c, &["typ", "principal", "recordId", "iat", "exp"])
+        || c["typ"] != "sociacl-acl-attest-v1"
+        || number(&c["iat"]).ok() != Some(issued_at)
+        || c["recordId"] != record_id_of(message)
+    {
+        return Err(Reason::BadAttestation);
+    }
+    let principal = parse_principal_id(c["principal"].as_str().ok_or(Reason::BadAttestation)?)
+        .map_err(|_| Reason::BadAttestation)?;
+    let exp = number(&c["exp"]).map_err(|_| Reason::BadAttestation)?;
+    Ok(AclAttestation {
+        typ: "sociacl-acl-attest-v1".to_owned(),
+        principal,
+        record_id: c["recordId"]
+            .as_str()
+            .ok_or(Reason::BadAttestation)?
+            .to_owned(),
+        iat: issued_at,
+        exp,
+    })
+}
+/// Present authority under the resolved current key.
+/// A retired key is [`Reason::UnwitnessedRetiredKey`] until PR 2 of the #55 rebuild
+/// reads the `sociacl-cancel-v2` domain from the signed bytes.
+/// Kind is not a parameter, and there is no attestation argument until that PR.
+/// [`SignedAtMode::Witnessed`] is reserved for that check.
+/// A resolver failure is returned unchanged.
+pub fn verify_signed_at(
+    principal: &PrincipalId,
+    rotations: &[Value],
+    ctx: &ResolutionContext<'_>,
+    message: &[u8],
+    sig: &str,
+    issued_at: u64,
+) -> Result<SignedAt, Reason> {
+    let account = resolve_current_key(principal, rotations, ctx).result?;
+    if issued_at > MAX_SAFE {
+        return Err(Reason::BadRecord);
+    }
+    proof_time(issued_at, ctx.now, ctx.policy.clock_skew_seconds)?;
+    let state = history_state(principal, &account.rotations, issued_at, ctx.now);
+    if state.key != account.current_key {
+        return Err(Reason::UnwitnessedRetiredKey);
+    }
+    let Ok(sig) = text(sig, 128) else {
+        return Err(Reason::BadSignature);
+    };
+    if !key_verify(&account.current_key, sig, message) {
+        return Err(Reason::BadSignature);
+    }
+    Ok(SignedAt {
+        key: account.current_key,
+        mode: SignedAtMode::Present,
+    })
+}
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum SignedAtMode {
+    Present,
+    /// Reserved for PR 2 of the #55 rebuild. Nothing returns this until the
+    /// signed bytes name `sociacl-cancel-v2`.
+    Witnessed,
+}
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SignedAt {
+    pub key: PrincipalId,
+    pub mode: SignedAtMode,
+}
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AclAttestation {
+    pub typ: String,
+    pub principal: PrincipalId,
+    pub record_id: String,
+    pub iat: u64,
+    pub exp: u64,
+}
 
 /// JSON wire boundary. Rust `str` cannot carry unpaired UTF-16 surrogates.
 /// Duplicate object members are rejected before deserialization can fold them.

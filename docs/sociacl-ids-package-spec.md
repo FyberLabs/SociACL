@@ -33,7 +33,7 @@ Rules. Each rule is normative.
 | OIDC credential | `(iss, tenant, sub)` | Panopticon Keycloak | A linked credential. A Panopticon attestation is required (§4.6). Linked per tenant. |
 | `TenantId` | Panopticon tenant UUID (lowercase, hyphenated) | Panopticon | Panopticon uses `uuid.UUID` (`core/auth-service/src/auth_service/enrollment.py:231`). |
 | `ObjectId` (native object) | Random 128-bit id fixed at creation | The creating client | Stored on the object. Gun souls are derived from it one way (§3.6). |
-| `LegacyObjectId` | Existing s3r.ch ids (`s3rch:room:<wallet>:<ts>:<hex>` and so on) | Already minted | Accepted read-only and never minted again. Opaque: the owner or ts is **never** read out of the id. |
+| `LegacyObjectId` | Existing s3r.ch ids (`s3rch:room:<wallet>:<ts>:<hex>`, `s3rch:post:<wallet>:<ts>:<hex>`, and the other forms in §3.4) | Already minted | Accepted read-only and never minted again. Opaque: the wallet or timestamp is **never** read out of the id. |
 | `DerivedObjectId` | `sha256` of a canonical external id (held claim, external feed item) | Deterministic | Used for ids whose source alphabet isn't path-safe (`ens:alice.eth`, `rss3:act/1#x`). |
 | `NetworkId` | `s3rch:https://<host>:<port>;key=<64hex>` or one of `atproto`, `farcaster`, `nostr`, `activitypub`, `rss` | The deployment's permitted key / the protocol | Same grammar as s3r.ch `lib/views-source-ref.ts:94-116`. |
 | `SourceKey` | `formatCanonical(SourceRef)` from s3r.ch `lib/views-source-ref.ts:225-227` (`sr1:` + pct(network) `/` pct(owner) `/` pct(source) `/` kind) | Deterministic | For s3r.ch networks, `owner` becomes a `PrincipalId` (follow-up call site, Appendix B). |
@@ -68,12 +68,12 @@ oidc-sub      = 1*255( %x21-7E )                                ; OIDC Core §2:
 oidc-key      = "k_" 64HEXL                                     ; sha256(LP("sociacl-oidc-v1") LP(iss) LP(tenant) LP(sub))
 
 ; 3.4 Objects
-kind          = %x61-7A 1*15( %x61-7A / DIGIT )                 ; 2..16 chars, NOT one of: "claim" "ext"
+kind          = %x61-7A 1*15( %x61-7A / DIGIT )                 ; 2..16 chars, NOT one of: "claim" "ext" "post" "member" "objset"
 object-id     = kind "_" 32HEXL                                 ; ≤ 49 chars
 derived-id    = ( "claim" / "ext" ) "_" 64HEXL
                 ; claim_ = sha256(LP("sociacl-claim-v1") LP(claimText)); claimText is the existing held-claim id, e.g. "ens:alice.eth"
                 ; ext_   = sha256(LP("sociacl-ext-v1") LP(sourceKey) LP(providerItemId))
-legacy-id     = "s3rch:" ( ( "room" / "chat" / "forum-msg" ) ":" eip55 ":" 1*12DIGIT ":" 1*64( %x61-7A / DIGIT )
+legacy-id     = "s3rch:" ( ( "room" / "chat" / "forum-msg" / "post" ) ":" eip55 ":" 1*12DIGIT ":" 1*64( %x61-7A / DIGIT )
                          / ( "forum-group" / "bot" ) ":" eip55 ":" 1*64( %x61-7A / DIGIT )
                          / "forum" ":" eip55 )
 any-object    = object-id / derived-id / legacy-id
@@ -101,6 +101,11 @@ userSoul(p)                 = "~" p                                         ; Gu
 aclSoul(owner)              = "s3rch/acl/" principalKey(owner)              ; 3 segments
 grantSoul(owner, o, acc)    = "s3rch/acl/" pk(owner) "/" objectKey(o) "/" pk(acc)              ; exactly 5 segments
 postSoul(owner, o, acc)     = "s3rch/acl/" pk(owner) "/post/" objectKey(o) "/" pk(acc)         ; exactly 6 segments
+membershipSoul(setOwner, predicate, set, member)
+                        = "s3rch/acl/" pk(setOwner) "/member/" predicate "/" objectKey(set) "/" pk(member)
+                        ; predicate ∈ {"same-group","named-circle"}; exactly 7 segments
+objectSetSoul(owner, object)
+                        = "s3rch/acl/" pk(owner) "/objset/" objectKey(object)                 ; exactly 5 segments
 ```
 Debug builds must assert the segment count. **No function parses a soul back** into ids, except `parseSoul(text)`, which accepts exactly these templates and returns `{template, ids}`, or rejects.
 
@@ -143,7 +148,7 @@ parseOidcCredential(x: unknown): Result<OidcCredential>   // {iss, tenant, sub};
 parseObjectId(x: unknown): Result<ObjectId>           // object-id | derived-id | legacy-id
 parseNetworkId(x: unknown): Result<NetworkId>
 parseSourceKey(x: unknown): Result<SourceKey>         // port of s3r.ch parseCanonical + validateSourceRef; s3rch owner must be a PrincipalId
-parseSoul(x: unknown): Result<{ template: "object"|"user"|"acl"|"grant"|"post"; ids: readonly string[] }>
+parseSoul(x: unknown): Result<{ template: "object"|"user"|"acl"|"grant"|"post"|"membership"|"objset"; ids: readonly string[] }>
 ```
 Any string that contains `.get(`, `get(`, `['get']`, `["get"]`, or a backslash is rejected with reason `"gun-chain"` before any other parsing. A defensive tag only; the alphabets already exclude these.
 
@@ -155,7 +160,11 @@ formatOidcKey(c: OidcCredential): PathKey
 formatNetworkKey(n: NetworkId): PathKey
 formatSourcePathKey(s: SourceKey): PathKey
 objectKey(o: ObjectId): PathKey                       // identity
-objectSoul / userSoul / aclSoul / grantSoul / postSoul   // §3.6, branded args only, return Soul
+objectSoul / userSoul / aclSoul / grantSoul / postSoul / membershipSoul / objectSetSoul   // §3.6, branded args only, return Soul
+lengthPrefixed(fields: unknown): Result<Uint8Array>   // u32-le UTF-8 lengths; non-strings and lone surrogates are rejected
+verifyKeySignature(key: PrincipalId, sig: string, bytes: Uint8Array): Result<true>
+signWithKeyring(scalar: Uint8Array, bytes: Uint8Array, expectedKey: PrincipalId): Result<string>
+  // expectedKey is the resolver's current key. The scalar copy is wiped. Bad material or a different pub is "bad-key".
 mintObjectId(kind: string, rng?: (n: number) => Uint8Array): Result<MintedObjectId>   // default rng = crypto.getRandomValues
 deriveClaimId(claimText: string): Result<ObjectId>    // claimText validated as non-empty, ≤2048, no controls
 deriveExternalId(source: SourceKey, providerItemId: string): Result<ObjectId>
@@ -184,6 +193,7 @@ All signatures cover `LP(domain) LP(field1) … LP(fieldN)` (§3).
   - Rotation v2: `{typ:"sociacl-rotate-attest-v2", principal, nextKey, seq, iat, exp, auth:"wallet"|"oidc-fresh-login", linkId, retainedLinks}`. `linkId` equals `authorizer.link` and `retainedLinks` equals the signed array. Required when the record has no `nextEpub`.
   - Rotation v3: `{typ:"sociacl-rotate-attest-v3", principal, nextKey, nextEpub, seq, iat, exp, auth:"wallet"|"oidc-fresh-login", linkId, retainedLinks}`. Same claims as v2, plus `nextEpub` equal to the signed field. Required when the record has `nextEpub`.
   - Revoke: `{typ:"sociacl-revoke-attest-v1", principal, recordId, iat, exp}`. `recordId` hashes the revoke signing bytes, including its target link and timestamp.
+  - ACL witness: `{typ:"sociacl-acl-attest-v1", principal, recordId, iat, exp}`. `recordId` is hex(sha256(bytes)) and `iat` equals the row `issuedAt`. Defined and verified by `verifyAclAttestation`. Not issued. A compact JWS is capped at 16384 characters before it is parsed.
 - Panopticon assigns wallet/revoke timestamps after verifying the proofs and current account state. A client-supplied date is not a timestamp witness. OIDC rotation additionally requires a fresh login to the exact credential named by the enrolled link.
 
 ### 4.6 Records
@@ -217,7 +227,11 @@ checkRotationPublish(candidate: unknown, siblings: readonly unknown[], genesis: 
 checkRotationDraft(candidate: unknown, siblings: readonly unknown[], genesis: PrincipalId, acceptedPrior: readonly unknown[], context: ResolutionContext): Result<Rotate>
 resolveWalletLink(address: Eip55, links: readonly unknown[], revocations: readonly unknown[], context: ResolutionContext): Resolution<WalletLink>
 resolveWalletLinkNow(address: Eip55, links: readonly unknown[], revocations: readonly unknown[], context: ResolutionContext): Resolution<WalletLink>
+verifySignedAt(principal: PrincipalId, rotations: readonly unknown[], ctx: ResolutionContext, bytes: Uint8Array, sig: string, issuedAt: number): Result<{ key: PrincipalId, mode: "present" | "witnessed" }>
+verifyAclAttestation(jws: string, jwks: Jwks, issuedAt: number, bytes: Uint8Array): Result<{ typ: "sociacl-acl-attest-v1", principal: PrincipalId, recordId: string, iat: number, exp: number }>
 ```
+
+`verifySignedAt` resolves the current key first and returns that failure unchanged. `issuedAt` must be a nonnegative safe integer; a negative or fractional value is `bad-record`. `issuedAt` past `now + clockSkewSeconds` is `future-record`. `clockSkewSeconds` must be an integer from 0 through 300; anything else, including NaN, Infinity, a string, or 301, is `bad-record`. A signature under the current key returns `{key, mode: "present"}`, or `bad-signature` when it fails. Kind is not an argument, and there is no attestation argument until PR 2. A retired key, including a witnessed cancel, is `unwitnessed-retired-key` until PR 2 of the #55 rebuild can read the cancel domain (`sociacl-cancel-v2`) from the signed bytes. `mode: "witnessed"` is reserved for that check.
 
 `Resolution<T>` adds `{source,index,reason}` diagnostics to the success/failure
 result. `ResolutionContext` requires pinned `jwks`, `pinnedIss`, `policy`, `now`,

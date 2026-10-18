@@ -104,13 +104,21 @@ reject('oidc','extra-field',{...cred,alias:'wrong'},'bad-record');
 accept('object','native',obj,obj,{pathKey:obj});
 accept('object','claim', 'ens:alice.eth', val(ids.deriveClaimId('ens:alice.eth')), { operation:'claim', pathKey:val(ids.deriveClaimId('ens:alice.eth')) });
 accept('object','external', {source,providerItemId:'rss3:act/1#x'}, val(ids.deriveExternalId(source,'rss3:act/1#x')), {operation:'external'});
-for (const kind of ['room','chat','forum-msg','forum-group','bot','forum']) {
-  const suffix = ['room','chat','forum-msg'].includes(kind) ? ':123456789012:abcd' : ['forum-group','bot'].includes(kind) ? ':abcd' : '';
+for (const kind of ['room','chat','forum-msg','post','forum-group','bot','forum']) {
+  const suffix = ['room','chat','forum-msg','post'].includes(kind) ? ':123456789012:abcd' : ['forum-group','bot'].includes(kind) ? ':abcd' : '';
   const legacy = `s3rch:${kind}:${wallet}${suffix}`; accept('object', 'legacy-'+kind,legacy,legacy,{pathKey:legacy});
 }
 reject('object','legacy-13-digit',`s3rch:room:${wallet}:1700000000000:abcd`,'bad-alphabet');
+reject('object','legacy-post-13-digit',`s3rch:post:${wallet}:1700000000000:abcd`,'bad-alphabet');
+reject('object','legacy-post-missing-tail',`s3rch:post:${wallet}:123456789012`,'bad-alphabet');
+reject('object','legacy-post-uppercase-tail',`s3rch:post:${wallet}:123456789012:ABCD`,'bad-alphabet');
+reject('object','legacy-post-extra',`s3rch:post:${wallet}:123456789012:abcd:extra`,'bad-alphabet');
+reject('object','legacy-post-bad-checksum',`s3rch:post:${wallet.replace(/[a-f]/, c => c.toUpperCase())}:123456789012:abcd`,'bad-checksum');
+reject('object','legacy-post-empty-ts',`s3rch:post:${wallet}::abcd`,'bad-alphabet');
 reject('object','uppercase-hex','room_'+'AB'.repeat(16),'non-canonical');
 reject('object','reserved-kind','claim_'+'01'.repeat(16),'reserved-kind');
+for (const kind of ['post', 'member', 'objset']) reject('object', 'reserved-kind-' + kind, kind + '_' + '01'.repeat(16), 'reserved-kind');
+reject('object','mint-kind-post',{kind:'post',bytes:Array(16).fill(1)},'reserved-kind',{operation:'mint'});
 accept('object','deterministic-mint',{kind:'room',bytes:Array(16).fill(7)},'room_'+'07'.repeat(16),{operation:'mint'});
 for (const n of ['atproto','farcaster','nostr','activitypub','rss',network]) accept('network',n,n,n,{pathKey:ids.formatNetworkKey(val(ids.parseNetworkId(n)))});
 for (const [label,host] of [['ip','127.0.0.1'],['hex-ip','0x7f.0.0.1'],['private','box.local'],['uppercase','S3R.CH'],['trailing-dot','s3r.ch.']]) reject('network',label,`s3rch:https://${host}:443;key=${'12'.repeat(32)}`,'bad-host');
@@ -124,8 +132,16 @@ reject('source-key','lowercase-escape',source.replace('%3A','%3a'),'non-canonica
 reject('source-key','encoded-control','sr1:rss/https%3A%2F%2Fs3r.ch/a%00b/feed','control-char');
 reject('source-key','too-long','x'.repeat(8193),'too-long');
 for (const [name,s] of [['object',ids.objectSoul('items',obj)],['room',ids.objectSoul('rooms',obj)],['legacy-user',ids.objectSoul('users-legacy',obj)],['user',ids.userSoul(p)],['acl',ids.aclSoul(p)],['grant',ids.grantSoul(p,obj,p2)],['distinct-grant',ids.grantSoul(p2,obj,p)],['post',ids.postSoul(p,obj,p2)]]) accept('soul',name,s,val(ids.parseSoul(s)));
+accept('soul','membership-7-segments',ids.membershipSoul(p,'same-group',obj,p2),val(ids.parseSoul(ids.membershipSoul(p,'same-group',obj,p2))));
+accept('soul','objset-5-segments',ids.objectSetSoul(p,obj),val(ids.parseSoul(ids.objectSetSoul(p,obj))));
+accept('soul','build-membership',[p,'same-group',obj,p2],ids.membershipSoul(p,'same-group',obj,p2),{operation:'build-membership'});
+accept('soul','build-membership-named-circle',[p,'named-circle',obj,p2],ids.membershipSoul(p,'named-circle',obj,p2),{operation:'build-membership'});
+accept('soul','build-objset',[p,obj],ids.objectSetSoul(p,obj),{operation:'build-objset'});
 reject('soul','extra-segment',ids.grantSoul(p,obj,p2)+'/x','bad-template');
 reject('soul','unknown-collection','s3rch/users/'+obj,'bad-template');
+reject('soul','kind-post-reserved',`s3rch/acl/${ids.formatPrincipalKey(p)}/post_${'01'.repeat(16)}/${ids.formatPrincipalKey(p2)}`,'reserved-kind');
+reject('soul','membership-bad-predicate',`s3rch/acl/${ids.formatPrincipalKey(p)}/member/nope/${obj}/${ids.formatPrincipalKey(p2)}`,'bad-template');
+reject('soul','build-membership-bad-predicate',[p,'nope',obj,p2],'bad-template',{operation:'build-membership'});
 const signing = [w,oidc,rot,rev];
 for (const r of signing) accept('signing-bytes',r.kind,r,hex(bytes(r)),{linkId:val(ids.linkId(r))});
 const context = { jwks, pinnedIss:[cred.iss], now, genesis:p, currentKey:p, links:[[wid,w],[oid,oidc]], policy:{allowedDomains:['s3r.ch'],allowedUris:['https://s3r.ch/identity/link'],allowedChainIds:['1']}, authenticatedAccounts:[p,p2,p3] };
@@ -589,6 +605,12 @@ bad('r5-request-oidc-wallet-within-skew',oidcBackdated,'wallet-required','rotati
 bad('r5-publish-oidc-wallet-within-skew',{candidate:oidcBackdated,siblings:[],prior:[]},'wallet-required','publish-check',{now:at+60,policy:skew60,links:withinLinks});
 accept('records','r5-request-oidc-wallet-beyond-horizon',oidcBackdated,p,{operation:'rotation-request',now:at+60,policy:skew60,links:beyondLinks});
 
+accept('signing-bytes','length-prefixed-decimals',['1','900','0'],hex(val(ids.lengthPrefixed(['1','900','0']))),{operation:'length-prefixed'});
+accept('signing-bytes','length-prefixed-utf8',['é'],hex(val(ids.lengthPrefixed(['é']))),{operation:'length-prefixed'});
+reject('signing-bytes','length-prefixed-null',[null],'not-string',{operation:'length-prefixed'});
+reject('signing-bytes','length-prefixed-number',[1],'not-string',{operation:'length-prefixed'});
+reject('signing-bytes','length-prefixed-object',[{toString:'no coercion'}],'not-string',{operation:'length-prefixed'});
+reject('signing-bytes','length-prefixed-surrogate',['\ud800'],'unpaired-surrogate',{operation:'length-prefixed'});
 const root = new URL('../../../vectors/ids/',import.meta.url); mkdirSync(root,{recursive:true});
 for(const [name,value] of families) writeFileSync(new URL(name+'.json',root),JSON.stringify(value,null,2).replace(/"issuedAt": 1700000000,/g, name==='edges'?'"issuedAt": 1700000000,':'"issuedAt": 1700000000.0,')+'\n');
 writeFileSync(new URL('test-keys.json',new URL('../test/',import.meta.url)),JSON.stringify({p,p2,p3,wallet,tenant,obj,network,source,secretScalars:[1,2,3,4,5]},null,2)+'\n');

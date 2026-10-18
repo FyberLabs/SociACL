@@ -60,7 +60,7 @@ proptest! {
         let other=parse_object_id(&format!("chat_{}",hex(&object))).unwrap();
         prop_assert_ne!(object_key(o),object_key(&other));
         prop_assert_ne!(grant_soul(&p,o,&p),grant_soul(&p,&other,&p));
-        for(s,count)in[(object_soul(Collection::Items,o),3),(acl_soul(&p),3),(grant_soul(&p,o,&p),5),(post_soul(&p,o,&p),6)]{
+        for(s,count)in[(object_soul(Collection::Items,o),3),(acl_soul(&p),3),(grant_soul(&p,o,&p),5),(post_soul(&p,o,&p),6),(membership_soul(&p,MembershipPredicate::SameGroup,o,&p),7),(object_set_soul(&p,o),5)]{
             prop_assert_eq!(s.as_ref().split('/').count(),count);
             for seg in s.as_ref().split('/'){prop_assert!(seg.bytes().all(|c|c.is_ascii_alphanumeric()||b"_:-".contains(&c)));}
             prop_assert_eq!(s.as_ref().parse::<Soul>().unwrap(),s);

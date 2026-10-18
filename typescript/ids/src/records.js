@@ -3,10 +3,10 @@ import { p256 } from '@noble/curves/nist.js';
 import { secp256k1 } from '@noble/curves/secp256k1.js';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { keccak_256 } from '@noble/hashes/sha3.js';
-import { ok, fail, text, data, integer, unb64, hex, unhex, utf8, lengthPrefixed } from './util.js';
+import { ok, fail, text, data, integer, b64, unb64, hex, unhex, utf8, lp } from './util.js';
 import { parsePrincipalId, parseEip55, parseOidcCredential, checksum } from './ids.js';
 import { uniqueJson } from './json.js';
-/** @import {PrincipalId, Eip55, Result, WalletLink, OidcLink, Rotate, Revoke, GenesisEpub, IdentityRecord, UnsignedRecord, Jwks, Siwe, ResolutionContext, SiwePolicy, HistoryResolver, KeyState, Diagnostic, Resolution, ResolvedAccount} from './types.js' */
+/** @import {PrincipalId, Eip55, Result, WalletLink, OidcLink, Rotate, Revoke, GenesisEpub, IdentityRecord, UnsignedRecord, Jwks, Siwe, ResolutionContext, SiwePolicy, HistoryResolver, KeyState, Diagnostic, Resolution, ResolvedAccount, SignedAt, AclAttestation} from './types.js' */
 
 /** @param {Record<string, unknown>} r @param {string[]} keys */
 const only = (r, keys) => Object.keys(r).every(k => keys.includes(k));
@@ -125,11 +125,11 @@ export function signingBytes(r) {
 function bytes(r) {
   const t = String(r.issuedAt);
   switch (r.kind) {
-    case 'wallet': return lengthPrefixed(['sociacl-link-wallet-v1', r.principal, r.address, t, r.nonce]);
-    case 'oidc': return lengthPrefixed(['sociacl-link-oidc-v1', r.principal, r.cred.iss, r.cred.tenant, r.cred.sub, t, r.nonce]);
-    case 'rotate': return lengthPrefixed([hasNextEpub(r) ? 'sociacl-rotate-v3' : 'sociacl-rotate-v2', r.principal, String(r.seq), r.prevKey, r.nextKey, ...(hasNextEpub(r) ? [r.nextEpub] : []), t, r.authorizer.kind, r.authorizer.link, String(r.retainedLinks.length), ...r.retainedLinks]);
-    case 'revoke': return lengthPrefixed(['sociacl-revoke-v1', r.principal, r.linkId, t]);
-    case 'genesis-epub': return lengthPrefixed(['sociacl-genesis-epub-v1', r.principal, r.epub, t]);
+    case 'wallet': return lp(['sociacl-link-wallet-v1', r.principal, r.address, t, r.nonce]);
+    case 'oidc': return lp(['sociacl-link-oidc-v1', r.principal, r.cred.iss, r.cred.tenant, r.cred.sub, t, r.nonce]);
+    case 'rotate': return lp([hasNextEpub(r) ? 'sociacl-rotate-v3' : 'sociacl-rotate-v2', r.principal, String(r.seq), r.prevKey, r.nextKey, ...(hasNextEpub(r) ? [r.nextEpub] : []), t, r.authorizer.kind, r.authorizer.link, String(r.retainedLinks.length), ...r.retainedLinks]);
+    case 'revoke': return lp(['sociacl-revoke-v1', r.principal, r.linkId, t]);
+    case 'genesis-epub': return lp(['sociacl-genesis-epub-v1', r.principal, r.epub, t]);
   }
 }
 /** @param {UnsignedRecord} r @returns {Result<string>} */
@@ -736,6 +736,68 @@ function resolveWallet(address, links, revocations, ctx, present) {
   if (!h.ok) return {...h,diagnostics};
   const revoked=revokedAt(newest,revocations,h.value.currentKey,ctx.now,ctx.jwks,diagnostics,present);
   return { ...(revoked ? fail('revoked-link') : ok(newest)), diagnostics };
+}
+/** SEA P-256 ECDSA over SHA-256. Raw r||s, base64url. High-S and low-S both verify.
+ * @param {PrincipalId} key @param {string} sig @param {Uint8Array} bytes @returns {Result<true>} */
+export function verifyKeySignature(key, sig, bytes) {
+  const p = parsePrincipalId(key); if (!p.ok) return p;
+  const s = text(sig, 128); if (!s.ok) return s;
+  if (!(bytes instanceof Uint8Array)) return fail('bad-signature');
+  return keyVerify(p.value, s.value, bytes) ? ok(true) : fail('bad-signature');
+}
+/** Sign ids bytes with a 32-byte SEA scalar. `expectedKey` is the resolver's current key.
+ * The working copy of the scalar is wiped. A bad scalar or a different public key is `bad-key`.
+ * The result is raw r||s, base64url, the encoding verifyKeySignature accepts.
+ * @param {Uint8Array} scalar @param {Uint8Array} bytes @param {PrincipalId} expectedKey @returns {Result<string>} */
+export function signWithKeyring(scalar, bytes, expectedKey) {
+  const key = parsePrincipalId(expectedKey);
+  if (!key.ok || !(scalar instanceof Uint8Array) || scalar.length !== 32 || !(bytes instanceof Uint8Array)) return fail('bad-key');
+  const held = new Uint8Array(scalar);
+  try {
+    const pub = p256.getPublicKey(held, false);
+    const derived = parsePrincipalId(b64(pub.subarray(1, 33)) + '.' + b64(pub.subarray(33)));
+    if (!derived.ok || derived.value !== key.value) return fail('bad-key');
+    return ok(b64(p256.sign(bytes, held, { prehash: true, lowS: false, format: 'compact' })));
+  } catch { return fail('bad-key'); }
+  finally { held.fill(0); }
+}
+/** @param {Uint8Array} bytes */
+function recordIdOf(bytes) { return hex(sha256(bytes)); }
+/** sociacl-acl-attest-v1. Checked like attestVerify with now = issuedAt.
+ * Nothing in this package issues the claim.
+ * @param {string} jws @param {Jwks} jwks @param {number} issuedAt @param {Uint8Array} bytes @returns {Result<AclAttestation>} */
+export function verifyAclAttestation(jws, jwks, issuedAt, bytes) {
+  if (typeof jws !== 'string') return fail('not-string');
+  if (jws.length > 16384) return fail('too-long');
+  const token = text(jws, 16384); if (!token.ok) return token;
+  if (!integer(issuedAt) || !(bytes instanceof Uint8Array)) return fail('bad-attestation');
+  const a = attestVerify(token.value, jwks, issuedAt); if (!a.ok) return a;
+  const c = a.value;
+  if (!only(c, ['typ', 'principal', 'recordId', 'iat', 'exp']) || c.typ !== 'sociacl-acl-attest-v1' || c.iat !== issuedAt || c.recordId !== recordIdOf(bytes)) return fail('bad-attestation');
+  const principal = parsePrincipalId(c.principal); if (!principal.ok) return fail('bad-attestation');
+  return ok(Object.freeze({ typ: 'sociacl-acl-attest-v1', principal: principal.value, recordId: /** @type {string} */ (c.recordId), iat: issuedAt, exp: /** @type {number} */ (c.exp) }));
+}
+/** Present authority under the resolved current key.
+ * A retired key is `unwitnessed-retired-key` until PR 2 of the #55 rebuild
+ * reads the `sociacl-cancel-v2` domain from the signed bytes.
+ * Kind is not a parameter, and there is no attestation argument until that PR.
+ * `mode: "witnessed"` is reserved for that check. Nothing here returns it.
+ * @param {PrincipalId} principal @param {readonly unknown[]} rotations @param {ResolutionContext} ctx
+ * @param {Uint8Array} bytes @param {string} sig @param {number} issuedAt
+ * @returns {Result<SignedAt>} */
+export function verifySignedAt(principal, rotations, ctx, bytes, sig, issuedAt) {
+  const p = parsePrincipalId(principal); if (!p.ok) return p;
+  if (!ctx || !Array.isArray(rotations)) return fail('missing-history');
+  const account = resolveCurrentKey(p.value, rotations, ctx);
+  if (!account.ok) return fail(account.reason);
+  if (!integer(issuedAt)) return fail('bad-record');
+  const skew = ctx.policy?.clockSkewSeconds ?? 0;
+  const when = time(issuedAt, ctx.now, skew); if (!when.ok) return when;
+  const state = historyState(p.value, account.value.rotations, issuedAt, ctx.now);
+  if (state.key !== account.value.currentKey) return fail('unwitnessed-retired-key');
+  const s = text(sig, 128);
+  if (!(bytes instanceof Uint8Array) || !s.ok || !keyVerify(account.value.currentKey, s.value, bytes)) return fail('bad-signature');
+  return ok(Object.freeze({ key: account.value.currentKey, mode: 'present' }));
 }
 /** @deprecated Use verifyWalletLink; this alias retains historical verification semantics. */
 export const verifyWalletLinkAtKey = verifyWalletLink;

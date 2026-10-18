@@ -95,10 +95,48 @@
 - The recovery plaintext cap does not grow with the salt. `RECOVERY_ENVELOPE_MAX`
   is 262205. The pre-parse ceiling `RECOVERY_ABSOLUTE_MAX` is 262269.
 
+## sociacl-ids 0.9.0 — unreleased
+
+0.9.0 is the next minor after the still-untagged 0.8.0. New ids work is
+recorded here. The release tag is `ids-v0.9.0`.
+
+- Export the shared length-prefix encoder `lengthPrefixed` / `length_prefixed`.
+  Integer fields are decimal strings. The public encoder accepts only real
+  strings, rejects lone surrogates, and rejects a field of 4 GiB or more
+  instead of truncating its length. It copies the input once and validates
+  only that copy. A throwing getter or iterator is `bad-record`. Valid strings
+  stay byte-identical to the post and request copies.
+- `verifyKeySignature` / `verify_key_signature` checks a SEA P-256 signature
+  over SHA-256. The signature is raw r||s, base64url. High-S and low-S both
+  verify. `signWithKeyring` / `sign_with_keyring` signs a 32-byte SEA scalar
+  only when its public key equals the expected current key. The working copy
+  of the scalar is wiped. Bad key material is `bad-key`.
+- `verifySignedAt` / `verify_signed_at` takes the principal, rotations,
+  resolution context, bytes, signature, and `issuedAt`. It does not take a
+  kind or an attestation. It resolves the current key first and returns that
+  failure unchanged. A negative or fractional `issuedAt` is `bad-record`.
+  Clock skew must be an integer from 0 through 300. `issuedAt` past `now`
+  plus that skew is `future-record`. A present key returns
+  `{key, mode: "present"}`, or `bad-signature` when the signature fails.
+  Every retired-key row is `unwitnessed-retired-key`, including a witnessed
+  cancel. PR 2 of the #55 rebuild is what reads `sociacl-cancel-v2` from the
+  signed bytes. `mode: "witnessed"` is reserved for that check.
+- `verifyAclAttestation` / `verify_acl_attestation` checks claim type
+  `sociacl-acl-attest-v1`. The token is capped at 16384 characters before it
+  is parsed. The claim is exactly `{typ, principal, recordId, iat, exp}`,
+  `iat` equals `issuedAt`, and `exp - iat` is at most 900. It is verified
+  like the other attestations against `ctx.jwks` with `now` set to
+  `issuedAt`. Nothing in this package issues the claim.
+- Add `membershipSoul` (seven segments) and `objectSetSoul` (five segments),
+  and the matching `parseSoul` templates. The Rust predicate is an enum.
+  `post`, `member`, and `objset` are reserved native kinds and mint or parse
+  as `reserved-kind`. The legacy form `s3rch:post:<eip55>:<ts>:<hex>` is
+  accepted read-only. Its wallet and timestamp are not read out.
+
 ## sociacl-ids 0.8.0 — unreleased
 
-This version is still untagged, so the witnessed genesis-epub binding lands
-here rather than in a later version. It replaces the unwitnessed
+0.8.0 is still untagged. The witnessed genesis-epub binding is recorded in
+this version. Later ids changes are 0.9.0. It replaces the unwitnessed
 `ResolutionContext.genesisEpub` input. Gun `user.epub` is never read.
 
 - Add a `genesis-epub` record. The genesis key signs domain

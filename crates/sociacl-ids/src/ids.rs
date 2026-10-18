@@ -220,7 +220,7 @@ pub fn parse_object_id(s: &str) -> Result<ObjectId, Reason> {
             return Ok(ObjectId(s.into()));
         }
         if valid_kind(kind) && is_hex(raw, 32) {
-            if ["claim", "ext"].contains(&kind) {
+            if ["claim", "ext", "post", "member", "objset"].contains(&kind) {
                 return Err(Reason::ReservedKind);
             }
             return Ok(ObjectId(s.into()));
@@ -240,7 +240,8 @@ pub fn parse_object_id(s: &str) -> Result<ObjectId, Reason> {
                 .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
     };
     let valid = match p.as_slice() {
-        ["s3rch", "room" | "chat" | "forum-msg", _, ts, tail] => {
+        // `post` is the s3r.ch native-post legacy form. The wallet and timestamp stay opaque.
+        ["s3rch", "room" | "chat" | "forum-msg" | "post", _, ts, tail] => {
             (1..=12).contains(&ts.len()) && ts.bytes().all(|c| c.is_ascii_digit()) && suffix(tail)
         }
         ["s3rch", "forum-group" | "bot", _, tail] => suffix(tail),
@@ -495,6 +496,60 @@ pub fn post_soul(p: &PrincipalId, o: &ObjectId, a: &PrincipalId) -> Soul {
         6,
     )
 }
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MembershipPredicate {
+    SameGroup,
+    NamedCircle,
+}
+impl MembershipPredicate {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::SameGroup => "same-group",
+            Self::NamedCircle => "named-circle",
+        }
+    }
+}
+impl std::str::FromStr for MembershipPredicate {
+    type Err = Reason;
+    fn from_str(s: &str) -> Result<Self, Reason> {
+        match s {
+            "same-group" => Ok(Self::SameGroup),
+            "named-circle" => Ok(Self::NamedCircle),
+            _ => Err(Reason::BadTemplate),
+        }
+    }
+}
+pub fn membership_soul(
+    owner: &PrincipalId,
+    predicate: MembershipPredicate,
+    set: &ObjectId,
+    accessor: &PrincipalId,
+) -> Soul {
+    soul(
+        &[
+            "s3rch",
+            "acl",
+            format_principal_key(owner).as_ref(),
+            "member",
+            predicate.as_str(),
+            set.as_ref(),
+            format_principal_key(accessor).as_ref(),
+        ],
+        7,
+    )
+}
+pub fn object_set_soul(owner: &PrincipalId, object: &ObjectId) -> Soul {
+    soul(
+        &[
+            "s3rch",
+            "acl",
+            format_principal_key(owner).as_ref(),
+            "objset",
+            object.as_ref(),
+        ],
+        5,
+    )
+}
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct ParsedSoul {
     pub template: &'static str,
@@ -518,14 +573,42 @@ pub fn parse_soul(s: &str) -> Result<ParsedSoul, Reason> {
             template: "acl",
             ids: vec![key_principal(a)?.to_string()],
         }),
-        ["s3rch", "acl", a, o, b] | ["s3rch", "acl", a, "post", o, b] => Ok(ParsedSoul {
-            template: if p.len() == 5 { "grant" } else { "post" },
+        ["s3rch", "acl", a, "objset", o] => Ok(ParsedSoul {
+            template: "objset",
+            ids: vec![
+                key_principal(a)?.to_string(),
+                parse_object_id(o)?.to_string(),
+            ],
+        }),
+        ["s3rch", "acl", a, o, b] => Ok(ParsedSoul {
+            template: "grant",
             ids: vec![
                 key_principal(a)?.to_string(),
                 parse_object_id(o)?.to_string(),
                 key_principal(b)?.to_string(),
             ],
         }),
+        ["s3rch", "acl", a, "post", o, b] => Ok(ParsedSoul {
+            template: "post",
+            ids: vec![
+                key_principal(a)?.to_string(),
+                parse_object_id(o)?.to_string(),
+                key_principal(b)?.to_string(),
+            ],
+        }),
+        ["s3rch", "acl", a, "member", predicate, set_id, b]
+            if matches!(*predicate, "same-group" | "named-circle") =>
+        {
+            Ok(ParsedSoul {
+                template: "membership",
+                ids: vec![
+                    key_principal(a)?.to_string(),
+                    (*predicate).to_string(),
+                    parse_object_id(set_id)?.to_string(),
+                    key_principal(b)?.to_string(),
+                ],
+            })
+        }
         _ => Err(Reason::BadTemplate),
     }
 }
@@ -546,7 +629,7 @@ pub fn mint_object_id_with(
     if !valid_kind(kind) {
         return Err(Reason::BadAlphabet);
     }
-    if ["claim", "ext"].contains(&kind) {
+    if ["claim", "ext", "post", "member", "objset"].contains(&kind) {
         return Err(Reason::ReservedKind);
     }
     let mut bytes = [0; 16];

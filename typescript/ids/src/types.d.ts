@@ -19,10 +19,16 @@ export type Reason = 'not-string' | 'empty' | 'too-long' | 'control-char' | 'inv
   | 'bad-port' | 'gun-chain' | 'bad-template' | 'bad-record' | 'bad-signature'
   | 'bad-attestation' | 'untrusted-issuer' | 'expired' | 'future-record' | 'bad-sequence'
   | 'rotation-fork' | 'rotation-conflict' | 'unknown-link' | 'revoked-link' | 'ambiguous-link' | 'unsupported-wallet'
-  | 'rng-failure' | 'missing-history' | 'unretained-link' | 'wallet-required';
+  | 'rng-failure' | 'missing-history' | 'unretained-link' | 'wallet-required'
+  | 'unwitnessed-retired-key' | 'bad-key';
 export type Result<T> = { ok: true; value: T } | { ok: false; reason: Reason };
 export type Collection = 'items' | 'rooms' | 'users-legacy';
-export type ParsedSoul = { template: 'object' | 'user' | 'acl' | 'grant' | 'post'; ids: readonly string[] };
+export type ParsedSoul = { template: 'object' | 'user' | 'acl' | 'grant' | 'post' | 'membership' | 'objset'; ids: readonly string[] };
+export type MembershipPredicate = 'same-group' | 'named-circle';
+/** `witnessed` is reserved for PR 2 of the #55 rebuild. Nothing returns it until the signed bytes name `sociacl-cancel-v2`. */
+export type SignedAtMode = 'present' | 'witnessed';
+export type SignedAt = Readonly<{ key: PrincipalId; mode: SignedAtMode }>;
+export type AclAttestation = Readonly<{ typ: 'sociacl-acl-attest-v1'; principal: PrincipalId; recordId: string; iat: number; exp: number }>;
 export type Siwe = Readonly<{ message: string; signature: `0x${string}` }>;
 export type WalletLink = Readonly<{ v: 1; kind: 'wallet'; principal: PrincipalId; address: Eip55;
   issuedAt: number; nonce: string; keySig: string; siwe: Siwe; attest: string }>;

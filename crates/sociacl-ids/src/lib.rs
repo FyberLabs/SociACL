@@ -46,6 +46,8 @@ pub enum Reason {
     MissingHistory,
     UnretainedLink,
     WalletRequired,
+    UnwitnessedRetiredKey,
+    BadKey,
 }
 impl fmt::Display for Reason {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -136,13 +138,19 @@ pub(crate) fn unb64(s: &str) -> Result<Vec<u8>, Reason> {
     }
     Ok(b)
 }
-pub(crate) fn lp(fields: &[&str]) -> Vec<u8> {
+/// Little-endian UTF-8 length prefix. Integer fields are decimal strings.
+/// A field of 4 GiB or more is [`Reason::TooLong`] instead of a truncated length.
+pub fn length_prefixed(fields: &[&str]) -> Result<Vec<u8>, Reason> {
     let mut out = Vec::new();
     for s in fields {
-        out.extend_from_slice(&(s.len() as u32).to_le_bytes());
+        let len = u32::try_from(s.len()).map_err(|_| Reason::TooLong)?;
+        out.extend_from_slice(&len.to_le_bytes());
         out.extend_from_slice(s.as_bytes());
     }
-    out
+    Ok(out)
+}
+pub(crate) fn lp(fields: &[&str]) -> Vec<u8> {
+    length_prefixed(fields).expect("ids field lengths fit in u32")
 }
 
 // Every textual newtype validates deserialization too; serde cannot bypass FromStr.
