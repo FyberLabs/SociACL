@@ -7,7 +7,11 @@ membershipSoul('a', 'same-group', 'b', 'c');
 objectSetSoul('a', 'b');
 const p = parsePrincipalId('untrusted');
 const o = parseObjectId('untrusted');
-if (p.ok && o.ok) grantSoul(p.value, o.value, p.value);
+if (p.ok && o.ok) {
+  grantSoul(p.value, o.value, p.value);
+  // @ts-expect-error Membership predicates are only same-group and named-circle.
+  membershipSoul(p.value, 'nope', o.value, p.value);
+}
 const minted = mintObjectId('room');
 if (p.ok && minted.ok) grantSoul(p.value, minted.value, p.value);
 import { verifyWalletLink, verifyRotate, resolveWalletLink, type ResolutionContext } from '../src/index.js';

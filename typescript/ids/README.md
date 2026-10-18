@@ -83,12 +83,16 @@ Signing bytes are `LP(domain) LP(field1) …`, with a 32-bit little-endian UTF-8
 byte length on each field. `linkId` is SHA-256 of these bytes and does not depend
 on an ECDSA signature. SEA proofs are raw P-256 `r||s` in canonical unpadded
 base64url; both high-S and low-S verify. SEA envelopes are not accepted.
-`verifySignedAt(principal, rotations, ctx, bytes, sig, issuedAt, kind, attest?)`
-resolves the current key first. A present key returns `{key, mode: "present"}`
-or `bad-signature`. A retired key returns `{key, mode: "witnessed"}` only for
-a cancel whose `sociacl-acl-attest-v1` witness checks at `issuedAt`. Every
-other retired-key failure is `unwitnessed-retired-key`. `issuedAt` past `now`
-plus `clockSkewSeconds` is `future-record`.
+`verifySignedAt(principal, rotations, ctx, bytes, sig, issuedAt, attest?)`
+does not take a kind. It resolves the current key first. A present key returns
+`{key, mode: "present"}` or `bad-signature`. Every retired-key row is
+`unwitnessed-retired-key`, including a witnessed cancel, until the signed
+bytes can name a cancel. A negative or fractional `issuedAt` is `bad-record`.
+`clockSkewSeconds` must be an integer from 0 through 300; a larger, non-finite,
+or non-numeric skew is `bad-record`. `issuedAt` past `now` plus that skew is
+`future-record`. `signWithKeyring(scalar, bytes, expectedKey)` signs only when
+the scalar's public key is `expectedKey`, and it wipes its copy of the scalar.
+Bad key material is `bad-key`. `lengthPrefixed` accepts only well-formed strings.
 
 Wallet proofs are EIP-4361 messages signed with EIP-191 `personal_sign`. The
 statement is exactly `SociACL link: <signing-byte sha256>`, the address must

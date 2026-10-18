@@ -314,7 +314,24 @@
       "name": "mint-kind-post",
       "input": {
         "kind": "post",
-        "bytes": [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+        "bytes": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
       },
       "reason": "reserved-kind",
       "operation": "mint"

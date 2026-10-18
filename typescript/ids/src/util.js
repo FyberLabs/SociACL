@@ -46,8 +46,9 @@ export function data(x) {
 }
 /** @param {unknown} n */
 export const integer = (n) => typeof n === 'number' && Number.isSafeInteger(n) && n >= 0 && !Object.is(n, -0);
-/** @param {readonly string[]} fields */
-export function lengthPrefixed(fields) {
+/** Little-endian UTF-8 length prefix. Callers pass strings this function already trusts.
+ * @param {readonly string[]} fields */
+export function lp(fields) {
   const parts = fields.map(s => utf8.encode(s));
   const bytes = new Uint8Array(parts.reduce((n, p) => n + 4 + p.length, 0));
   const view = new DataView(bytes.buffer);
@@ -57,4 +58,14 @@ export function lengthPrefixed(fields) {
     bytes.set(part, at); at += part.length;
   }
   return bytes;
+}
+/** Public encoder. Only real, well-formed strings. No coercion.
+ * @param {unknown} fields @returns {Result<Uint8Array>} */
+export function lengthPrefixed(fields) {
+  if (!Array.isArray(fields)) return fail('bad-record');
+  for (const field of fields) {
+    if (typeof field !== 'string') return fail('not-string');
+    if (/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/.test(field)) return fail('unpaired-surrogate');
+  }
+  return ok(lp(/** @type {readonly string[]} */ (fields)));
 }

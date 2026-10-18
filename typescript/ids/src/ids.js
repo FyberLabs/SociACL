@@ -2,7 +2,7 @@ import { publicHost, webUri } from './uri.js';
 import { p256 } from '@noble/curves/nist.js';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { keccak_256 } from '@noble/hashes/sha3.js';
-import { ok, fail, text, data, b64, unb64, hex, unhex, utf8, lengthPrefixed } from './util.js';
+import { ok, fail, text, data, b64, unb64, hex, unhex, utf8, lp } from './util.js';
 /** @import {PrincipalId, PrincipalKey, Eip55, TenantId, OidcCredential, ObjectId, MintedObjectId, NetworkId, SourceKey, PathKey, Soul, Result, Collection, ParsedSoul, MembershipPredicate} from './types.js' */
 
 /** @param {unknown} x @returns {Result<PrincipalId>} */
@@ -118,7 +118,7 @@ export const formatPrincipalKey = p => /** @type {PrincipalKey} */ ('p_' + hex(n
 /** @param {Eip55} w @returns {PathKey} */
 export const formatWalletKey = w => /** @type {PathKey} */ ('w_' + w.slice(2).toLowerCase());
 /** @param {string} tag @param {string} domain @param {string[]} fields @returns {PathKey} */
-const hashKey = (tag, domain, fields) => /** @type {PathKey} */ (tag + hex(sha256(lengthPrefixed([domain, ...fields]))));
+const hashKey = (tag, domain, fields) => /** @type {PathKey} */ (tag + hex(sha256(lp([domain, ...fields]))));
 /** @param {OidcCredential} c */
 export const formatOidcKey = c => hashKey('k_', 'sociacl-oidc-v1', [c.iss, c.tenant, c.sub]);
 /** @param {NetworkId} n */

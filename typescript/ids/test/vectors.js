@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import * as ids from '../src/index.js';
-import { hex, unhex } from '../src/util.js';
+import { hex, unb64, unhex } from '../src/util.js';
 const root = new URL('../../../vectors/ids/', import.meta.url);
 const files = readdirSync(root).filter(f => f.endsWith('.json')).sort();
 const parsers = { principal:ids.parsePrincipalId, wallet:ids.parseEip55, tenant:ids.parseTenantId,
@@ -17,7 +17,10 @@ function run(f, c) {
     return parsers[c.operation](c.input);
   }
   if (f.family === 'signing-bytes') {
-    if (c.operation === 'length-prefixed') return {ok:true,value:hex(ids.lengthPrefixed(c.input))};
+    if (c.operation === 'length-prefixed') {
+      const encoded = ids.lengthPrefixed(c.input);
+      return encoded.ok ? {ok:true,value:hex(encoded.value)} : encoded;
+    }
     const b = ids.signingBytes(c.input);
     return b.ok ? {ok:true,value:hex(b.value)} : b;
   }
@@ -25,14 +28,22 @@ function run(f, c) {
     const ctx = {...f.context,...c};
     const links = new Map(ctx.links ?? []);
     const history = (p,at,until) => new Map(ctx.historyErrors??[]).has(p) ? {ok:false,reason:new Map(ctx.historyErrors).get(p)} : (ctx.authenticatedAccounts??[]).includes(p) ? {ok:true,value:ids.historyState(p,new Map(ctx.histories??[]).get(p)??[],at,until)} : {ok:false,reason:'missing-history'};
-    const rc={jwks:ctx.jwks,links,revocations:ctx.revocations??[],now:ctx.now,policy:ctx.policy,pinnedIss:new Set(ctx.pinnedIss??[]),history,genesisEpubBindings:ctx.genesisEpubBindings??[]};
+    const policy = ctx.policy ? {...ctx.policy} : ctx.policy;
+    if (policy && policy.clockSkewSeconds === 'NaN') policy.clockSkewSeconds = NaN;
+    else if (policy && policy.clockSkewSeconds === 'Infinity') policy.clockSkewSeconds = Infinity;
+    const rc={jwks:ctx.jwks,links,revocations:ctx.revocations??[],now:ctx.now,policy,pinnedIss:new Set(ctx.pinnedIss??[]),history,genesisEpubBindings:ctx.genesisEpubBindings??[]};
     const rotations = c.rotations ?? ctx.rotations ?? [];
     let r;
     switch (c.operation) {
-      case 'verify-signed-at': r = ids.verifySignedAt(c.input.principal, rotations, rc, unhex(c.input.bytes), c.input.sig, c.input.issuedAt, c.input.kind, c.input.attest); break;
+      case 'verify-signed-at': r = ids.verifySignedAt(c.input.principal, rotations, rc, unhex(c.input.bytes), c.input.sig, c.input.issuedAt, c.input.attest); break;
       case 'verify-acl-attest': r = ids.verifyAclAttestation(c.input.jws, ctx.jwks, c.input.issuedAt, unhex(c.input.bytes)); break;
       case 'verify-key-signature': r = ids.verifyKeySignature(c.input.key, c.input.sig, unhex(c.input.bytes)); break;
-      case 'sign-with-keyring': r = ids.signWithKeyring(c.input.seaPriv, unhex(c.input.bytes)); break;
+      case 'sign-with-keyring': {
+        const scalar = unb64(c.input.seaPriv);
+        try { r = ids.signWithKeyring(scalar, unhex(c.input.bytes), c.input.expectedKey); }
+        finally { scalar.fill(0); }
+        break;
+      }
       default: throw Error('unknown operation: '+c.operation);
     }
     if (c.diagnosticReasons) assert.deepEqual((r.diagnostics??[]).map(d=>d.reason), c.diagnosticReasons, c.name+' diagnostics');
@@ -93,11 +104,29 @@ function run(f, c) {
     if (r.ok && c.operation === 'rotate' && Object.hasOwn(c, 'nextEpub')) assert.equal(r.value.nextEpub, c.nextEpub, c.name+' nextEpub');
     return r.ok ? {ok:true,value:r.value.currentKey??r.value.principal} : {ok:false,reason:r.reason};
   }
+  if (c.operation === 'build-membership' || c.operation === 'build-objset') {
+    const owner = ids.parsePrincipalId(c.input[0]);
+    if (!owner.ok) return owner;
+    if (c.operation === 'build-objset') {
+      const object = ids.parseObjectId(c.input[1]);
+      if (!object.ok) return object;
+      return {ok:true, value: ids.objectSetSoul(owner.value, object.value)};
+    }
+    if (c.input[1] !== 'same-group' && c.input[1] !== 'named-circle') return {ok:false, reason:'bad-template'};
+    const set = ids.parseObjectId(c.input[2]);
+    const member = ids.parsePrincipalId(c.input[3]);
+    if (!set.ok) return set;
+    if (!member.ok) return member;
+    return {ok:true, value: ids.membershipSoul(owner.value, c.input[1], set.value, member.value)};
+  }
   if(c.operation === 'claim') return ids.deriveClaimId(c.input);
   if(c.operation === 'external') return ids.deriveExternalId(c.input.source,c.input.providerItemId);
   if(c.operation === 'mint') return ids.mintObjectId(c.input.kind,()=>new Uint8Array(c.input.bytes));
   return (c.parser === 'wallet-input' ? ids.parseWalletInput : parsers[f.family])(c.input);
 }
+test('verifySignedAt does not take a caller-supplied kind', () => {
+  assert.equal(ids.verifySignedAt.length, 7);
+});
 test('every shared vector and exact rejection reason', () => {
   assert.equal(files.length,12);
   for(const file of files) {

@@ -20,12 +20,11 @@ export type Reason = 'not-string' | 'empty' | 'too-long' | 'control-char' | 'inv
   | 'bad-attestation' | 'untrusted-issuer' | 'expired' | 'future-record' | 'bad-sequence'
   | 'rotation-fork' | 'rotation-conflict' | 'unknown-link' | 'revoked-link' | 'ambiguous-link' | 'unsupported-wallet'
   | 'rng-failure' | 'missing-history' | 'unretained-link' | 'wallet-required'
-  | 'unwitnessed-retired-key';
+  | 'unwitnessed-retired-key' | 'bad-key';
 export type Result<T> = { ok: true; value: T } | { ok: false; reason: Reason };
 export type Collection = 'items' | 'rooms' | 'users-legacy';
 export type ParsedSoul = { template: 'object' | 'user' | 'acl' | 'grant' | 'post' | 'membership' | 'objset'; ids: readonly string[] };
 export type MembershipPredicate = 'same-group' | 'named-circle';
-export type AclKind = 'grant' | 'cancel' | 'request';
 export type SignedAtMode = 'present' | 'witnessed';
 export type SignedAt = Readonly<{ key: PrincipalId; mode: SignedAtMode }>;
 export type AclAttestation = Readonly<{ typ: 'sociacl-acl-attest-v1'; principal: PrincipalId; recordId: string; iat: number; exp: number }>;

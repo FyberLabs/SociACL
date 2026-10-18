@@ -495,26 +495,42 @@ pub fn post_soul(p: &PrincipalId, o: &ObjectId, a: &PrincipalId) -> Soul {
         6,
     )
 }
-fn membership_predicate(predicate: &str) -> bool {
-    matches!(predicate, "same-group" | "named-circle")
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MembershipPredicate {
+    SameGroup,
+    NamedCircle,
+}
+impl MembershipPredicate {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::SameGroup => "same-group",
+            Self::NamedCircle => "named-circle",
+        }
+    }
+}
+impl std::str::FromStr for MembershipPredicate {
+    type Err = Reason;
+    fn from_str(s: &str) -> Result<Self, Reason> {
+        match s {
+            "same-group" => Ok(Self::SameGroup),
+            "named-circle" => Ok(Self::NamedCircle),
+            _ => Err(Reason::BadTemplate),
+        }
+    }
 }
 pub fn membership_soul(
     owner: &PrincipalId,
-    predicate: &str,
+    predicate: MembershipPredicate,
     set: &ObjectId,
     accessor: &PrincipalId,
 ) -> Soul {
-    assert!(
-        membership_predicate(predicate),
-        "invalid membership predicate"
-    );
     soul(
         &[
             "s3rch",
             "acl",
             format_principal_key(owner).as_ref(),
             "member",
-            predicate,
+            predicate.as_str(),
             set.as_ref(),
             format_principal_key(accessor).as_ref(),
         ],

@@ -97,34 +97,44 @@
 
 ## sociacl-ids 0.9.0 — unreleased
 
+0.9.0 is the next minor after the still-untagged 0.8.0. New ids work is
+recorded here. The release tag is `ids-v0.9.0`.
+
 - Export the shared length-prefix encoder `lengthPrefixed` / `length_prefixed`.
-  Integer fields are decimal strings.
+  Integer fields are decimal strings. The public encoder accepts only real
+  strings, rejects lone surrogates, and rejects a field of 4 GiB or more
+  instead of truncating its length. Valid strings stay byte-identical to the
+  post and request copies.
 - `verifyKeySignature` / `verify_key_signature` checks a SEA P-256 signature
   over SHA-256. The signature is raw r||s, base64url. High-S and low-S both
-  verify. `signWithKeyring` / `sign_with_keyring` signs with a keyring SEA
-  scalar and returns that encoding.
+  verify. `signWithKeyring` / `sign_with_keyring` signs a 32-byte SEA scalar
+  only when its public key equals the expected current key. The working copy
+  of the scalar is wiped. Bad key material is `bad-key`.
 - `verifySignedAt` / `verify_signed_at` takes the principal, rotations,
-  resolution context, bytes, signature, `issuedAt`, kind (`grant`, `cancel`,
-  or `request`), and an optional attestation. It resolves the current key
-  first and returns that failure unchanged. `issuedAt` past `now` plus clock
-  skew is `future-record`. A present key returns `{key, mode: "present"}`, or
-  `bad-signature` when the signature fails. A retired key returns
-  `{key, mode: "witnessed"}` only for a cancel with a valid
-  `sociacl-acl-attest-v1` witness. Every other retired-key failure, including
-  a witnessed grant or request, is `unwitnessed-retired-key`.
+  resolution context, bytes, signature, `issuedAt`, and an optional
+  attestation. It does not take a kind. It resolves the current key first and
+  returns that failure unchanged. A negative or fractional `issuedAt` is
+  `bad-record`. Clock skew must be an integer from 0 through 300. `issuedAt`
+  past `now` plus that skew is `future-record`. A present key returns
+  `{key, mode: "present"}`, or `bad-signature` when the signature fails.
+  Every retired-key row is `unwitnessed-retired-key`, including a witnessed
+  cancel. The cancel domain is not in this package yet, so a caller cannot
+  relabel a grant or request into a cancel.
 - `verifyAclAttestation` / `verify_acl_attestation` checks claim type
-  `sociacl-acl-attest-v1`. The claim is exactly `{typ, principal, recordId,
-  iat, exp}`, `iat` equals `issuedAt`, and `exp - iat` is at most 900. It is
-  verified like the other attestations against `ctx.jwks` with `now` set to
+  `sociacl-acl-attest-v1`. The token is capped at 16384 characters before it
+  is parsed. The claim is exactly `{typ, principal, recordId, iat, exp}`,
+  `iat` equals `issuedAt`, and `exp - iat` is at most 900. It is verified
+  like the other attestations against `ctx.jwks` with `now` set to
   `issuedAt`. Nothing in this package issues the claim.
 - Add `membershipSoul` (seven segments) and `objectSetSoul` (five segments),
-  and the matching `parseSoul` templates. `post`, `member`, and `objset` are
-  reserved native kinds and mint or parse as `reserved-kind`.
+  and the matching `parseSoul` templates. The Rust predicate is an enum.
+  `post`, `member`, and `objset` are reserved native kinds and mint or parse
+  as `reserved-kind`.
 
 ## sociacl-ids 0.8.0 — unreleased
 
-This version is still untagged, so the witnessed genesis-epub binding lands
-here rather than in a later version. It replaces the unwitnessed
+0.8.0 is still untagged. The witnessed genesis-epub binding is recorded in
+this version. Later ids changes are 0.9.0. It replaces the unwitnessed
 `ResolutionContext.genesisEpub` input. Gun `user.epub` is never read.
 
 - Add a `genesis-epub` record. The genesis key signs domain

@@ -6,6 +6,7 @@ use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 use sha3::Keccak256;
 use std::collections::{BTreeMap, BTreeSet};
+use zeroize::Zeroizing;
 
 const MAX_SAFE: u64 = 9_007_199_254_740_991;
 macro_rules! rx {
@@ -2136,24 +2137,34 @@ fn resolve_wallet(
 pub use resolve_wallet_link as resolve_wallet_link_at_key;
 
 /// SEA P-256 ECDSA over SHA-256. Raw r||s, base64url. High-S and low-S both verify.
-pub fn verify_key_signature(key: &str, sig: &str, message: &[u8]) -> Result<(), Reason> {
-    let key = parse_principal_id(key)?;
+pub fn verify_key_signature(key: &PrincipalId, sig: &str, message: &[u8]) -> Result<(), Reason> {
     let sig = text(sig, 128)?;
-    if key_verify(&key, sig, message) {
+    if key_verify(key, sig, message) {
         Ok(())
     } else {
         Err(Reason::BadSignature)
     }
 }
-/// Sign ids bytes with a keyring SEA scalar (base64url of the 32-byte private key).
+/// Sign ids bytes with a 32-byte SEA scalar. `expected_key` is the resolver's current key.
+/// The working copy of the scalar is [`Zeroizing`]. A bad scalar or a different public key is [`Reason::BadKey`].
 /// The result is raw r||s, base64url, the encoding [`verify_key_signature`] accepts.
-pub fn sign_with_keyring(sea_priv: &str, message: &[u8]) -> Result<String, Reason> {
-    let scalar = unb64(text(sea_priv, 128)?).map_err(|_| Reason::BadSignature)?;
+pub fn sign_with_keyring(
+    scalar: &[u8],
+    message: &[u8],
+    expected_key: &PrincipalId,
+) -> Result<String, Reason> {
     if scalar.len() != 32 {
-        return Err(Reason::BadSignature);
+        return Err(Reason::BadKey);
     }
-    let key = SigningKey::from_slice(&scalar).map_err(|_| Reason::BadSignature)?;
-    let sig: Signature = key.sign(message);
+    let mut held = Zeroizing::new([0u8; 32]);
+    held.copy_from_slice(scalar);
+    let signing = SigningKey::from_slice(held.as_ref()).map_err(|_| Reason::BadKey)?;
+    let point = signing.verifying_key().to_encoded_point(false);
+    let derived = principal_from_sec1(point.as_bytes()).map_err(|_| Reason::BadKey)?;
+    if derived != *expected_key {
+        return Err(Reason::BadKey);
+    }
+    let sig: Signature = signing.sign(message);
     Ok(b64(&sig.to_bytes()))
 }
 fn record_id_of(message: &[u8]) -> String {
@@ -2167,6 +2178,10 @@ pub fn verify_acl_attestation(
     issued_at: u64,
     message: &[u8],
 ) -> Result<AclAttestation, Reason> {
+    if jws.len() > 16384 * 3 || jws.encode_utf16().count() > 16384 {
+        return Err(Reason::TooLong);
+    }
+    let jws = text(jws, 16384)?;
     if issued_at > MAX_SAFE {
         return Err(Reason::BadAttestation);
     }
@@ -2192,8 +2207,9 @@ pub fn verify_acl_attestation(
         exp,
     })
 }
-/// Present authority, or a retired key only for a witnessed cancel.
-/// Every retired-key failure is [`Reason::UnwitnessedRetiredKey`].
+/// Present authority under the resolved current key.
+/// A retired key is [`Reason::UnwitnessedRetiredKey`] until the signed bytes name a cancel domain.
+/// Kind is not a parameter. `attest` is accepted and ignored.
 /// A resolver failure is returned unchanged.
 pub fn verify_signed_at(
     principal: &PrincipalId,
@@ -2202,43 +2218,27 @@ pub fn verify_signed_at(
     message: &[u8],
     sig: &str,
     issued_at: u64,
-    kind: &str,
     attest: Option<&str>,
 ) -> Result<SignedAt, Reason> {
+    let _ = attest;
     let account = resolve_current_key(principal, rotations, ctx).result?;
-    if issued_at > MAX_SAFE || issued_at > ctx.now.saturating_add(ctx.policy.clock_skew_seconds) {
-        return Err(Reason::FutureRecord);
+    if issued_at > MAX_SAFE {
+        return Err(Reason::BadRecord);
     }
+    proof_time(issued_at, ctx.now, ctx.policy.clock_skew_seconds)?;
     let state = history_state(principal, &account.rotations, issued_at, ctx.now);
-    if state.key == account.current_key {
-        if kind != "grant" && kind != "cancel" && kind != "request" {
-            return Err(Reason::BadRecord);
-        }
-        let Ok(sig) = text(sig, 128) else {
-            return Err(Reason::BadSignature);
-        };
-        if !key_verify(&account.current_key, sig, message) {
-            return Err(Reason::BadSignature);
-        }
-        return Ok(SignedAt {
-            key: account.current_key,
-            mode: SignedAtMode::Present,
-        });
+    if state.key != account.current_key {
+        return Err(Reason::UnwitnessedRetiredKey);
     }
-    let Some(attest) = attest else {
-        return Err(Reason::UnwitnessedRetiredKey);
-    };
     let Ok(sig) = text(sig, 128) else {
-        return Err(Reason::UnwitnessedRetiredKey);
+        return Err(Reason::BadSignature);
     };
-    let claim = verify_acl_attestation(attest, ctx.jwks, issued_at, message)
-        .map_err(|_| Reason::UnwitnessedRetiredKey)?;
-    if kind != "cancel" || claim.principal != *principal || !key_verify(&state.key, sig, message) {
-        return Err(Reason::UnwitnessedRetiredKey);
+    if !key_verify(&account.current_key, sig, message) {
+        return Err(Reason::BadSignature);
     }
     Ok(SignedAt {
-        key: state.key,
-        mode: SignedAtMode::Witnessed,
+        key: account.current_key,
+        mode: SignedAtMode::Present,
     })
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]

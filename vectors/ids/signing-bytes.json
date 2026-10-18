@@ -184,16 +184,57 @@
     },
     {
       "name": "length-prefixed-decimals",
-      "operation": "length-prefixed",
-      "input": ["1", "900", "0"],
-      "canonical": "0100000031030000003930300100000030"
+      "input": [
+        "1",
+        "900",
+        "0"
+      ],
+      "canonical": "0100000031030000003930300100000030",
+      "operation": "length-prefixed"
     },
     {
       "name": "length-prefixed-utf8",
-      "operation": "length-prefixed",
-      "input": ["é"],
-      "canonical": "02000000c3a9"
+      "input": [
+        "é"
+      ],
+      "canonical": "02000000c3a9",
+      "operation": "length-prefixed"
     }
   ],
-  "reject": []
+  "reject": [
+    {
+      "name": "length-prefixed-null",
+      "input": [
+        null
+      ],
+      "reason": "not-string",
+      "operation": "length-prefixed"
+    },
+    {
+      "name": "length-prefixed-number",
+      "input": [
+        1
+      ],
+      "reason": "not-string",
+      "operation": "length-prefixed"
+    },
+    {
+      "name": "length-prefixed-object",
+      "input": [
+        {
+          "toString": "no coercion"
+        }
+      ],
+      "reason": "not-string",
+      "operation": "length-prefixed"
+    },
+    {
+      "name": "length-prefixed-surrogate",
+      "input": [
+        "\ud800"
+      ],
+      "reason": "unpaired-surrogate",
+      "operation": "length-prefixed"
+    }
+  ]
 }

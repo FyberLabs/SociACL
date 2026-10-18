@@ -339,7 +339,14 @@ fn run(f: &Family, c: &Case, v: &Value) -> Result<Value, Reason> {
         let ls = links(&ctx);
         let empty = vec![];
         let revs = ctx["revocations"].as_array().unwrap_or(&empty);
-        let policy: SiwePolicy = serde_json::from_value(ctx["policy"].clone()).unwrap();
+        if let Some(raw) = ctx["policy"].get("clockSkewSeconds") {
+            match raw {
+                Value::Number(n) if n.as_u64().is_some() => {}
+                _ => return Err(Reason::BadRecord),
+            }
+        }
+        let policy: SiwePolicy =
+            serde_json::from_value(ctx["policy"].clone()).map_err(|_| Reason::BadRecord)?;
         let history = |p: &PrincipalId, at, until| {
             if let Some(e) = ctx["historyErrors"]
                 .as_array()
@@ -389,6 +396,9 @@ fn run(f: &Family, c: &Case, v: &Value) -> Result<Value, Reason> {
             "verify-signed-at" => {
                 let principal = parse_principal_id(v["principal"].as_str().unwrap())?;
                 let bytes = unhex_vec(v["bytes"].as_str().unwrap());
+                let Some(issued_at) = v["issuedAt"].as_u64() else {
+                    return Err(Reason::BadRecord);
+                };
                 plain(
                     verify_signed_at(
                         &principal,
@@ -396,8 +406,7 @@ fn run(f: &Family, c: &Case, v: &Value) -> Result<Value, Reason> {
                         &rc,
                         &bytes,
                         v["sig"].as_str().unwrap(),
-                        v["issuedAt"].as_u64().unwrap(),
-                        v["kind"].as_str().unwrap(),
+                        issued_at,
                         v.get("attest").and_then(Value::as_str),
                     )
                     .map(|signed| serde_json::to_value(signed).unwrap()),
@@ -415,34 +424,39 @@ fn run(f: &Family, c: &Case, v: &Value) -> Result<Value, Reason> {
                     .map(|a| serde_json::to_value(a).unwrap()),
                 )
             }
-            "verify-key-signature" => plain(
-                verify_key_signature(
-                    v["key"].as_str().unwrap(),
-                    v["sig"].as_str().unwrap(),
-                    &unhex_vec(v["bytes"].as_str().unwrap()),
+            "verify-key-signature" => {
+                let key = parse_principal_id(v["key"].as_str().unwrap())?;
+                plain(
+                    verify_key_signature(
+                        &key,
+                        v["sig"].as_str().unwrap(),
+                        &unhex_vec(v["bytes"].as_str().unwrap()),
+                    )
+                    .map(|_| Value::Bool(true)),
                 )
-                .map(|_| Value::Bool(true)),
-            ),
-            "sign-with-keyring" => plain(
-                sign_with_keyring(
-                    v["seaPriv"].as_str().unwrap(),
-                    &unhex_vec(v["bytes"].as_str().unwrap()),
+            }
+            "sign-with-keyring" => {
+                use base64ct::{Base64UrlUnpadded, Encoding};
+                let scalar = Base64UrlUnpadded::decode_vec(v["seaPriv"].as_str().unwrap())
+                    .map_err(|_| Reason::BadKey)?;
+                let expected = parse_principal_id(v["expectedKey"].as_str().unwrap())?;
+                plain(
+                    sign_with_keyring(&scalar, &unhex_vec(v["bytes"].as_str().unwrap()), &expected)
+                        .map(Value::String),
                 )
-                .map(Value::String),
-            ),
+            }
             _ => panic!("unknown operation"),
         };
     }
     if f.family == "signing-bytes" {
         if c.extra.get("operation").and_then(Value::as_str) == Some("length-prefixed") {
-            let fields: Vec<String> = v
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|s| s.as_str().unwrap().to_owned())
-                .collect();
+            let items = v.as_array().ok_or(Reason::BadRecord)?;
+            let mut fields = Vec::new();
+            for item in items {
+                fields.push(item.as_str().ok_or(Reason::NotString)?.to_owned());
+            }
             let refs: Vec<&str> = fields.iter().map(String::as_str).collect();
-            return Ok(Value::String(hex(&length_prefixed(&refs))));
+            return length_prefixed(&refs).map(|b| Value::String(hex(&b)));
         }
         let b = parse_signing_bytes(v)?;
         if let Some(id) = &c.link_id {
@@ -450,6 +464,29 @@ fn run(f: &Family, c: &Case, v: &Value) -> Result<Value, Reason> {
             assert_eq!(&hex(&Sha256::digest(&b)), id);
         }
         return Ok(Value::String(hex(&b)));
+    }
+    if f.family == "soul" {
+        if let Some(op) = c.extra.get("operation").and_then(Value::as_str) {
+            let items = v.as_array().ok_or(Reason::BadRecord)?;
+            return match op {
+                "build-membership" => {
+                    let owner = parse_principal_id(items[0].as_str().ok_or(Reason::NotString)?)?;
+                    let predicate: MembershipPredicate =
+                        items[1].as_str().ok_or(Reason::NotString)?.parse()?;
+                    let set = parse_object_id(items[2].as_str().ok_or(Reason::NotString)?)?;
+                    let member = parse_principal_id(items[3].as_str().ok_or(Reason::NotString)?)?;
+                    Ok(Value::String(
+                        membership_soul(&owner, predicate, &set, &member).to_string(),
+                    ))
+                }
+                "build-objset" => {
+                    let owner = parse_principal_id(items[0].as_str().ok_or(Reason::NotString)?)?;
+                    let object = parse_object_id(items[1].as_str().ok_or(Reason::NotString)?)?;
+                    Ok(Value::String(object_set_soul(&owner, &object).to_string()))
+                }
+                _ => panic!("unknown soul operation"),
+            };
+        }
     }
     let operation = c.extra.get("operation").and_then(Value::as_str);
     if let ("object", Some(operation)) = (f.family.as_str(), operation) {
