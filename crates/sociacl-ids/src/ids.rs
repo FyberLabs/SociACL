@@ -240,7 +240,8 @@ pub fn parse_object_id(s: &str) -> Result<ObjectId, Reason> {
                 .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
     };
     let valid = match p.as_slice() {
-        ["s3rch", "room" | "chat" | "forum-msg", _, ts, tail] => {
+        // `post` is the s3r.ch native-post legacy form. The wallet and timestamp stay opaque.
+        ["s3rch", "room" | "chat" | "forum-msg" | "post", _, ts, tail] => {
             (1..=12).contains(&ts.len()) && ts.bytes().all(|c| c.is_ascii_digit()) && suffix(tail)
         }
         ["s3rch", "forum-group" | "bot", _, tail] => suffix(tail),

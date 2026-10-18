@@ -2208,8 +2208,10 @@ pub fn verify_acl_attestation(
     })
 }
 /// Present authority under the resolved current key.
-/// A retired key is [`Reason::UnwitnessedRetiredKey`] until the signed bytes name a cancel domain.
-/// Kind is not a parameter. `attest` is accepted and ignored.
+/// A retired key is [`Reason::UnwitnessedRetiredKey`] until PR 2 of the #55 rebuild
+/// reads the `sociacl-cancel-v2` domain from the signed bytes.
+/// Kind is not a parameter, and there is no attestation argument until that PR.
+/// [`SignedAtMode::Witnessed`] is reserved for that check.
 /// A resolver failure is returned unchanged.
 pub fn verify_signed_at(
     principal: &PrincipalId,
@@ -2218,9 +2220,7 @@ pub fn verify_signed_at(
     message: &[u8],
     sig: &str,
     issued_at: u64,
-    attest: Option<&str>,
 ) -> Result<SignedAt, Reason> {
-    let _ = attest;
     let account = resolve_current_key(principal, rotations, ctx).result?;
     if issued_at > MAX_SAFE {
         return Err(Reason::BadRecord);
@@ -2245,6 +2245,8 @@ pub fn verify_signed_at(
 #[serde(rename_all = "kebab-case")]
 pub enum SignedAtMode {
     Present,
+    /// Reserved for PR 2 of the #55 rebuild. Nothing returns this until the
+    /// signed bytes name `sociacl-cancel-v2`.
     Witnessed,
 }
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]

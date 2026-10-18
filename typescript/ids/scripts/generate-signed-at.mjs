@@ -49,9 +49,9 @@ const flipS = encoded => {
   return b64(raw);
 };
 const sign = (message, n) => b64(p256.sign(utf8.encode(message), secret(n), { prehash: true, lowS: false, format: 'compact' }));
-function row(kind, issuedAt, signer, message, attest) {
+function row(_kind, issuedAt, signer, message, attest) {
   const raw = utf8.encode(message);
-  const out = { principal: p, sig: sign(message, signer), bytes: hex(raw), issuedAt, kind, raw };
+  const out = { principal: p, sig: sign(message, signer), bytes: hex(raw), issuedAt, raw };
   if (attest !== undefined) out.attest = attest;
   return out;
 }
@@ -72,7 +72,7 @@ function add(name, operation, input, expected, extra = {}) {
   const rotations = extra.rotations ?? context.rotations;
   const proof = rc(extra);
   let r;
-  if (operation === 'verify-signed-at') r = ids.verifySignedAt(input.principal, rotations, proof, input.raw, input.sig, input.issuedAt, input.attest);
+  if (operation === 'verify-signed-at') r = ids.verifySignedAt(input.principal, rotations, proof, input.raw, input.sig, input.issuedAt);
   else if (operation === 'verify-acl-attest') r = ids.verifyAclAttestation(input.jws, jwks, input.issuedAt, input.raw);
   else if (operation === 'verify-key-signature') r = ids.verifyKeySignature(input.key, input.sig, input.raw);
   else if (operation === 'sign-with-keyring') {
@@ -110,7 +110,7 @@ const retiredRequest = row('request', retiredAt, 1, 'retired-request');
 retiredRequest.attest = attest(retiredAt, retiredRequest.raw);
 add('retired-request-witnessed', 'verify-signed-at', retiredRequest, { ok: false, reason: 'unwitnessed-retired-key' });
 add('retired-cancel-unwitnessed', 'verify-signed-at', row('cancel', retiredAt, 1, 'retired-cancel'), { ok: false, reason: 'unwitnessed-retired-key' });
-const relabel = { ...retiredGrant, kind: 'cancel' };
+const relabel = { ...retiredGrant };
 add('kind-relabel', 'verify-signed-at', relabel, { ok: false, reason: 'unwitnessed-retired-key' });
 const witnessed = row('cancel', retiredAt, 1, 'retired-cancel-witnessed');
 witnessed.attest = attest(retiredAt, witnessed.raw);

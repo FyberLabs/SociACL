@@ -35,7 +35,7 @@ function run(f, c) {
     const rotations = c.rotations ?? ctx.rotations ?? [];
     let r;
     switch (c.operation) {
-      case 'verify-signed-at': r = ids.verifySignedAt(c.input.principal, rotations, rc, unhex(c.input.bytes), c.input.sig, c.input.issuedAt, c.input.attest); break;
+      case 'verify-signed-at': r = ids.verifySignedAt(c.input.principal, rotations, rc, unhex(c.input.bytes), c.input.sig, c.input.issuedAt); break;
       case 'verify-acl-attest': r = ids.verifyAclAttestation(c.input.jws, ctx.jwks, c.input.issuedAt, unhex(c.input.bytes)); break;
       case 'verify-key-signature': r = ids.verifyKeySignature(c.input.key, c.input.sig, unhex(c.input.bytes)); break;
       case 'sign-with-keyring': {
@@ -124,8 +124,45 @@ function run(f, c) {
   if(c.operation === 'mint') return ids.mintObjectId(c.input.kind,()=>new Uint8Array(c.input.bytes));
   return (c.parser === 'wallet-input' ? ids.parseWalletInput : parsers[f.family])(c.input);
 }
-test('verifySignedAt does not take a caller-supplied kind', () => {
-  assert.equal(ids.verifySignedAt.length, 7);
+test('verifySignedAt does not take a kind or an attestation', () => {
+  assert.equal(ids.verifySignedAt.length, 6);
+});
+test('lengthPrefixed reads each field once', () => {
+  const good = ids.lengthPrefixed(['ok']);
+  assert.equal(good.ok, true);
+  const stateful = (second) => {
+    let n = 0;
+    const fields = new Array(1);
+    Object.defineProperty(fields, '0', { enumerable: true, get() { return n++ === 0 ? 'ok' : second; } });
+    return fields;
+  };
+  assert.deepEqual(ids.lengthPrefixed(stateful('\uD800')), good);
+  assert.deepEqual(ids.lengthPrefixed(stateful({ toString() { return 'evil'; } })), good);
+  const surrogateFirst = new Array(1);
+  let reads = 0;
+  Object.defineProperty(surrogateFirst, '0', { enumerable: true, get() { return reads++ === 0 ? '\uD800' : 'ok'; } });
+  assert.deepEqual(ids.lengthPrefixed(surrogateFirst), { ok: false, reason: 'unpaired-surrogate' });
+  const throwing = new Array(1);
+  Object.defineProperty(throwing, '0', { enumerable: true, get() { throw new Error('getter'); } });
+  assert.deepEqual(ids.lengthPrefixed(throwing), { ok: false, reason: 'bad-record' });
+  const iterating = ['ok'];
+  iterating[Symbol.iterator] = () => { throw new Error('iterator'); };
+  assert.deepEqual(ids.lengthPrefixed(iterating), { ok: false, reason: 'bad-record' });
+  let proxyReads = 0;
+  const proxy = new Proxy(['ok'], {
+    get(target, prop, receiver) {
+      if (prop === '0') return proxyReads++ === 0 ? 'ok' : '\uD800';
+      return Reflect.get(target, prop, receiver);
+    },
+  });
+  assert.deepEqual(ids.lengthPrefixed(proxy), good);
+  const throwingProxy = new Proxy(['ok'], {
+    get(target, prop, receiver) {
+      if (prop === '0') throw new Error('proxy');
+      return Reflect.get(target, prop, receiver);
+    },
+  });
+  assert.deepEqual(ids.lengthPrefixed(throwingProxy), { ok: false, reason: 'bad-record' });
 });
 test('every shared vector and exact rejection reason', () => {
   assert.equal(files.length,12);

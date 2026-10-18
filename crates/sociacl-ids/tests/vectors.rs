@@ -407,7 +407,6 @@ fn run(f: &Family, c: &Case, v: &Value) -> Result<Value, Reason> {
                         &bytes,
                         v["sig"].as_str().unwrap(),
                         issued_at,
-                        v.get("attest").and_then(Value::as_str),
                     )
                     .map(|signed| serde_json::to_value(signed).unwrap()),
                 )

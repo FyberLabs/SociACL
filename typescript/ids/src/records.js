@@ -778,14 +778,14 @@ export function verifyAclAttestation(jws, jwks, issuedAt, bytes) {
   return ok(Object.freeze({ typ: 'sociacl-acl-attest-v1', principal: principal.value, recordId: /** @type {string} */ (c.recordId), iat: issuedAt, exp: /** @type {number} */ (c.exp) }));
 }
 /** Present authority under the resolved current key.
- * A retired key is `unwitnessed-retired-key` until the signed bytes name a cancel domain.
- * Kind is not a parameter: the caller cannot relabel a grant or request as a cancel.
- * `attest` is accepted and ignored. Nothing in this package issues a witness.
+ * A retired key is `unwitnessed-retired-key` until PR 2 of the #55 rebuild
+ * reads the `sociacl-cancel-v2` domain from the signed bytes.
+ * Kind is not a parameter, and there is no attestation argument until that PR.
+ * `mode: "witnessed"` is reserved for that check. Nothing here returns it.
  * @param {PrincipalId} principal @param {readonly unknown[]} rotations @param {ResolutionContext} ctx
  * @param {Uint8Array} bytes @param {string} sig @param {number} issuedAt
- * @param {string} [attest] @returns {Result<SignedAt>} */
-export function verifySignedAt(principal, rotations, ctx, bytes, sig, issuedAt, attest) {
-  void attest;
+ * @returns {Result<SignedAt>} */
+export function verifySignedAt(principal, rotations, ctx, bytes, sig, issuedAt) {
   const p = parsePrincipalId(principal); if (!p.ok) return p;
   if (!ctx || !Array.isArray(rotations)) return fail('missing-history');
   const account = resolveCurrentKey(p.value, rotations, ctx);

@@ -43,6 +43,12 @@
       "pathKey": "s3rch:forum-msg:0x1efF47bc3a10a45D4B230B5d10E37751FE6AA718:123456789012:abcd"
     },
     {
+      "name": "legacy-post",
+      "input": "s3rch:post:0x1efF47bc3a10a45D4B230B5d10E37751FE6AA718:123456789012:abcd",
+      "canonical": "s3rch:post:0x1efF47bc3a10a45D4B230B5d10E37751FE6AA718:123456789012:abcd",
+      "pathKey": "s3rch:post:0x1efF47bc3a10a45D4B230B5d10E37751FE6AA718:123456789012:abcd"
+    },
+    {
       "name": "legacy-forum-group",
       "input": "s3rch:forum-group:0x1efF47bc3a10a45D4B230B5d10E37751FE6AA718:abcd",
       "canonical": "s3rch:forum-group:0x1efF47bc3a10a45D4B230B5d10E37751FE6AA718:abcd",
@@ -283,6 +289,36 @@
     {
       "name": "legacy-13-digit",
       "input": "s3rch:room:0x1efF47bc3a10a45D4B230B5d10E37751FE6AA718:1700000000000:abcd",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "legacy-post-13-digit",
+      "input": "s3rch:post:0x1efF47bc3a10a45D4B230B5d10E37751FE6AA718:1700000000000:abcd",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "legacy-post-missing-tail",
+      "input": "s3rch:post:0x1efF47bc3a10a45D4B230B5d10E37751FE6AA718:123456789012",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "legacy-post-uppercase-tail",
+      "input": "s3rch:post:0x1efF47bc3a10a45D4B230B5d10E37751FE6AA718:123456789012:ABCD",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "legacy-post-extra",
+      "input": "s3rch:post:0x1efF47bc3a10a45D4B230B5d10E37751FE6AA718:123456789012:abcd:extra",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "legacy-post-bad-checksum",
+      "input": "s3rch:post:0x1EfF47bc3a10a45D4B230B5d10E37751FE6AA718:123456789012:abcd",
+      "reason": "bad-checksum"
+    },
+    {
+      "name": "legacy-post-empty-ts",
+      "input": "s3rch:post:0x1efF47bc3a10a45D4B230B5d10E37751FE6AA718::abcd",
       "reason": "bad-alphabet"
     },
     {

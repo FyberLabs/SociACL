@@ -33,7 +33,7 @@ Rules. Each rule is normative.
 | OIDC credential | `(iss, tenant, sub)` | Panopticon Keycloak | A linked credential. A Panopticon attestation is required (§4.6). Linked per tenant. |
 | `TenantId` | Panopticon tenant UUID (lowercase, hyphenated) | Panopticon | Panopticon uses `uuid.UUID` (`core/auth-service/src/auth_service/enrollment.py:231`). |
 | `ObjectId` (native object) | Random 128-bit id fixed at creation | The creating client | Stored on the object. Gun souls are derived from it one way (§3.6). |
-| `LegacyObjectId` | Existing s3r.ch ids (`s3rch:room:<wallet>:<ts>:<hex>` and so on) | Already minted | Accepted read-only and never minted again. Opaque: the owner or ts is **never** read out of the id. |
+| `LegacyObjectId` | Existing s3r.ch ids (`s3rch:room:<wallet>:<ts>:<hex>`, `s3rch:post:<wallet>:<ts>:<hex>`, and the other forms in §3.4) | Already minted | Accepted read-only and never minted again. Opaque: the wallet or timestamp is **never** read out of the id. |
 | `DerivedObjectId` | `sha256` of a canonical external id (held claim, external feed item) | Deterministic | Used for ids whose source alphabet isn't path-safe (`ens:alice.eth`, `rss3:act/1#x`). |
 | `NetworkId` | `s3rch:https://<host>:<port>;key=<64hex>` or one of `atproto`, `farcaster`, `nostr`, `activitypub`, `rss` | The deployment's permitted key / the protocol | Same grammar as s3r.ch `lib/views-source-ref.ts:94-116`. |
 | `SourceKey` | `formatCanonical(SourceRef)` from s3r.ch `lib/views-source-ref.ts:225-227` (`sr1:` + pct(network) `/` pct(owner) `/` pct(source) `/` kind) | Deterministic | For s3r.ch networks, `owner` becomes a `PrincipalId` (follow-up call site, Appendix B). |
@@ -73,7 +73,7 @@ object-id     = kind "_" 32HEXL                                 ; ≤ 49 chars
 derived-id    = ( "claim" / "ext" ) "_" 64HEXL
                 ; claim_ = sha256(LP("sociacl-claim-v1") LP(claimText)); claimText is the existing held-claim id, e.g. "ens:alice.eth"
                 ; ext_   = sha256(LP("sociacl-ext-v1") LP(sourceKey) LP(providerItemId))
-legacy-id     = "s3rch:" ( ( "room" / "chat" / "forum-msg" ) ":" eip55 ":" 1*12DIGIT ":" 1*64( %x61-7A / DIGIT )
+legacy-id     = "s3rch:" ( ( "room" / "chat" / "forum-msg" / "post" ) ":" eip55 ":" 1*12DIGIT ":" 1*64( %x61-7A / DIGIT )
                          / ( "forum-group" / "bot" ) ":" eip55 ":" 1*64( %x61-7A / DIGIT )
                          / "forum" ":" eip55 )
 any-object    = object-id / derived-id / legacy-id
@@ -227,11 +227,11 @@ checkRotationPublish(candidate: unknown, siblings: readonly unknown[], genesis: 
 checkRotationDraft(candidate: unknown, siblings: readonly unknown[], genesis: PrincipalId, acceptedPrior: readonly unknown[], context: ResolutionContext): Result<Rotate>
 resolveWalletLink(address: Eip55, links: readonly unknown[], revocations: readonly unknown[], context: ResolutionContext): Resolution<WalletLink>
 resolveWalletLinkNow(address: Eip55, links: readonly unknown[], revocations: readonly unknown[], context: ResolutionContext): Resolution<WalletLink>
-verifySignedAt(principal: PrincipalId, rotations: readonly unknown[], ctx: ResolutionContext, bytes: Uint8Array, sig: string, issuedAt: number, attest?: string): Result<{ key: PrincipalId, mode: "present" | "witnessed" }>
+verifySignedAt(principal: PrincipalId, rotations: readonly unknown[], ctx: ResolutionContext, bytes: Uint8Array, sig: string, issuedAt: number): Result<{ key: PrincipalId, mode: "present" | "witnessed" }>
 verifyAclAttestation(jws: string, jwks: Jwks, issuedAt: number, bytes: Uint8Array): Result<{ typ: "sociacl-acl-attest-v1", principal: PrincipalId, recordId: string, iat: number, exp: number }>
 ```
 
-`verifySignedAt` resolves the current key first and returns that failure unchanged. `issuedAt` must be a nonnegative safe integer; a negative or fractional value is `bad-record`. `issuedAt` past `now + clockSkewSeconds` is `future-record`. `clockSkewSeconds` must be an integer from 0 through 300; anything else, including NaN, Infinity, a string, or 301, is `bad-record`. A signature under the current key returns `{key, mode: "present"}`, or `bad-signature` when it fails. Kind is not an argument. A retired key, including a witnessed cancel, is `unwitnessed-retired-key` until a later change can read the cancel domain from the signed bytes. The optional `attest` is ignored. `mode: "witnessed"` is reserved for that later check.
+`verifySignedAt` resolves the current key first and returns that failure unchanged. `issuedAt` must be a nonnegative safe integer; a negative or fractional value is `bad-record`. `issuedAt` past `now + clockSkewSeconds` is `future-record`. `clockSkewSeconds` must be an integer from 0 through 300; anything else, including NaN, Infinity, a string, or 301, is `bad-record`. A signature under the current key returns `{key, mode: "present"}`, or `bad-signature` when it fails. Kind is not an argument, and there is no attestation argument until PR 2. A retired key, including a witnessed cancel, is `unwitnessed-retired-key` until PR 2 of the #55 rebuild can read the cancel domain (`sociacl-cancel-v2`) from the signed bytes. `mode: "witnessed"` is reserved for that check.
 
 `Resolution<T>` adds `{source,index,reason}` diagnostics to the success/failure
 result. `ResolutionContext` requires pinned `jwks`, `pinnedIss`, `policy`, `now`,

@@ -60,12 +60,19 @@ export function lp(fields) {
   return bytes;
 }
 /** Public encoder. Only real, well-formed strings. No coercion.
+ * The input is copied once; validation and encoding read only that copy.
  * @param {unknown} fields @returns {Result<Uint8Array>} */
 export function lengthPrefixed(fields) {
-  if (!Array.isArray(fields)) return fail('bad-record');
-  for (const field of fields) {
+  /** @type {unknown[] | undefined} */
+  let copy;
+  try {
+    if (!Array.isArray(fields)) return fail('bad-record');
+    copy = Array.from(fields);
+  } catch { return fail('bad-record'); }
+  if (!Array.isArray(copy)) return fail('bad-record');
+  for (const field of copy) {
     if (typeof field !== 'string') return fail('not-string');
     if (/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/.test(field)) return fail('unpaired-surrogate');
   }
-  return ok(lp(/** @type {readonly string[]} */ (fields)));
+  return ok(lp(/** @type {readonly string[]} */ (copy)));
 }

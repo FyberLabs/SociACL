@@ -92,8 +92,7 @@
         "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
         "sig": "w2t_zCveq2euDhuFzReIFLQvQNXItZImrhjLTSP-arTcRD9BSQ_6SnkDBrXXYHH9QopjmqoN0YTbuf-mBi2R3A",
         "bytes": "70726573656e742d63757272656e742d6b6579",
-        "issuedAt": 1700000000,
-        "kind": "grant"
+        "issuedAt": 1700000000
       },
       "rotations": [],
       "canonical": {
@@ -108,8 +107,7 @@
         "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
         "sig": "jsL4gQkwbWOwXPxjdzL7JQwvx9mDboTL1_9BZhI2sFBS_Cx8sLSixbhr80h_Bt2u6m5P7UVCgm-uFWVgbaPUoQ",
         "bytes": "70726573656e742d72657175657374",
-        "issuedAt": 1700000000,
-        "kind": "request"
+        "issuedAt": 1700000000
       },
       "rotations": [],
       "canonical": {
@@ -124,8 +122,7 @@
         "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
         "sig": "4ZflWDSMuebGcnb8feMB8mJOYlRwDkU1ueYU1O63Qil6YtOzyGVA3hAFqe55Tol6MNwhhtgsykHyFL4VtqMuLQ",
         "bytes": "70726573656e742d63616e63656c",
-        "issuedAt": 1700000000,
-        "kind": "cancel"
+        "issuedAt": 1700000000
       },
       "rotations": [],
       "canonical": {
@@ -141,7 +138,6 @@
         "sig": "Nxf9SDBlCVYfYWP6u315qUJlzODSJ61vdDR4DntErIlXog4NqARJpcnCXBkM4WqgNqKSvmSWD36VPVW10ujssQ",
         "bytes": "70726573656e742d6772616e742d69676e6f7265732d617474657374",
         "issuedAt": 1700000000,
-        "kind": "grant",
         "attest": "not-a-jws"
       },
       "rotations": [],
@@ -157,8 +153,7 @@
         "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
         "sig": "TEOsOULC_jeUzBja1R-Sn6CNbiWu1nia_H2i7PbLrfkBZ8LboccELmEx5ObD0uL6GRvREqYOYppU7iZknIRCOQ",
         "bytes": "70726573656e742d6772616e742d6f70706f736974652d73",
-        "issuedAt": 1700000000,
-        "kind": "grant"
+        "issuedAt": 1700000000
       },
       "rotations": [],
       "canonical": {
@@ -173,8 +168,7 @@
         "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
         "sig": "xIzH27nrzHVtwWfwVNqsPQTcpFW34oViYRAS3pgOFUgE-6aDADpnvbmnDbPlGkQBXFuXXvWyhaXtrgeYpH0X2Q",
         "bytes": "70726573656e742d6772616e742d6e6578742d6b6579",
-        "issuedAt": 1700000040,
-        "kind": "grant"
+        "issuedAt": 1700000040
       },
       "canonical": {
         "key": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
@@ -224,8 +218,7 @@
         "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
         "sig": "vCm1dAC2PVjEPL7rFbZPRdmuaznqD5ZTMyUHdZoAhHIou6DscQYMyvu5j4K0eQJ6bJzc80G4YpHIBdDuh_xxhg",
         "bytes": "736b65772d333030",
-        "issuedAt": 1700000360,
-        "kind": "grant"
+        "issuedAt": 1700000360
       },
       "rotations": [],
       "policy": {
@@ -252,8 +245,7 @@
         "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
         "sig": "WjwHFrZSABmj-neoYmSVIQ0cHsBeimejo5tgCt5hw2eHQ6KhpqaU4ofWkyXl7BrHsUUjeD82SPvL5_EHq6_67w",
         "bytes": "70726573656e742d6c6162656c2d686f70",
-        "issuedAt": 1700000000,
-        "kind": "hop"
+        "issuedAt": 1700000000
       },
       "rotations": [],
       "canonical": {
@@ -268,8 +260,7 @@
         "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
         "sig": "QYdNT0Yn8FnKL_myQU4d7HFmFwqwXI3o81M2B-_oFqj57YdLxYtoB0vwuJ__5NYMIesftfHe_T5Xp1G-6QaYMw",
         "bytes": "70726573656e742d6c6162656c2d68696e74",
-        "issuedAt": 1700000000,
-        "kind": "hint"
+        "issuedAt": 1700000000
       },
       "rotations": [],
       "canonical": {
@@ -284,8 +275,7 @@
         "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
         "sig": "GkTlv7_KK4pkf7Isy_5YVwq4QLNJyeblJ4Jg5_O5ftXai84rgO_bXGOfqA7vE7gvrLjKbPZVcuSM7Zoz8n9C-A",
         "bytes": "70726573656e742d6c6162656c2d77726170",
-        "issuedAt": 1700000000,
-        "kind": "wrap"
+        "issuedAt": 1700000000
       },
       "rotations": [],
       "canonical": {
@@ -300,8 +290,7 @@
         "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
         "sig": "wFyZpIykxKPqhLNCn0bu_YVsfp1yRRLTK2CPl0uqW0uB8LcdSrj_kgRSs0asYtUAOxzF63bU4LvMrWMZL1q_iQ",
         "bytes": "70726573656e742d6c6162656c2d696e626f78",
-        "issuedAt": 1700000000,
-        "kind": "inbox"
+        "issuedAt": 1700000000
       },
       "rotations": [],
       "canonical": {
@@ -318,8 +307,7 @@
         "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
         "sig": "7q5Wya3lZdgJQR72Wn20gZuRofScqWAc0vOEfMxh-P5Wi0AS2AXxAs-kyTA4ynKbtaVlkEJiKv8B0n6Iu802lw",
         "bytes": "70726573656e742d61667465722d726f746174696f6e2d6f6c642d6b6579",
-        "issuedAt": 1700000010,
-        "kind": "grant"
+        "issuedAt": 1700000010
       },
       "reason": "unwitnessed-retired-key"
     },
@@ -331,7 +319,6 @@
         "sig": "TqqNk_fdayqUpJrJygoLTQIjvkwQ5szmGiQhzNlECdJPXeGg27_FTz1hoQecquaVb7uAS63nVZuiiTvdBJLuFg",
         "bytes": "726574697265642d6772616e74",
         "issuedAt": 1700000010,
-        "kind": "grant",
         "attest": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImZpeHR1cmUtMSIsInR5cCI6IkpXVCJ9.eyJ0eXAiOiJzb2NpYWNsLWFjbC1hdHRlc3QtdjEiLCJwcmluY2lwYWwiOiJheGZSOHVFc1FrZjR2T2JsWTZSQThuY0RmWUV0NnpPZzlLRTVSZGlZd3BZLlQtTkM0djRhZjV1TzUtdEtmQS1lRml2T00xZHJNVjdPeTdaQWFEZV9VZlUiLCJyZWNvcmRJZCI6IjVmZGI3YmU0MDU0ODBkMmMwODZjZDY3NDU3M2I5YmRmM2Y5ZjFkZmFlMjljMmRjYTM4YWE5NGQwMTU1OTI5MDkiLCJpYXQiOjE3MDAwMDAwMTAsImV4cCI6MTcwMDAwMDYxMH0.Qbm4rVlu7RkGxp8NRgBx_PyLv4apzXtGlirjQpmW3I_iq8jqFUWZ6APWT7mp3G3-Ecjts1EBecL6MdScFvLSBA"
       },
       "reason": "unwitnessed-retired-key"
@@ -344,7 +331,6 @@
         "sig": "1_VjMjeQqmgLQh7QxxSfaV0ApAhdisAPonGljoAMbE0xh-eWA1kZRgRXMsnaXVSPhMnio2OPwImsDohyoPJInQ",
         "bytes": "726574697265642d72657175657374",
         "issuedAt": 1700000010,
-        "kind": "request",
         "attest": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImZpeHR1cmUtMSIsInR5cCI6IkpXVCJ9.eyJ0eXAiOiJzb2NpYWNsLWFjbC1hdHRlc3QtdjEiLCJwcmluY2lwYWwiOiJheGZSOHVFc1FrZjR2T2JsWTZSQThuY0RmWUV0NnpPZzlLRTVSZGlZd3BZLlQtTkM0djRhZjV1TzUtdEtmQS1lRml2T00xZHJNVjdPeTdaQWFEZV9VZlUiLCJyZWNvcmRJZCI6ImI5NDg2OGVlNTA4OTIwN2RkYjE0NWUzOTc5ODllMmVkZjgzMDM4MDkyNjMyZTUzMTc3MTAwZTZiMmUzMjM1ZjUiLCJpYXQiOjE3MDAwMDAwMTAsImV4cCI6MTcwMDAwMDYxMH0.VFBAw5qyFaDS4W8BAMWrTze4gi7LnJRDgoNoE4fvfYZS_fC21TO7JQI74YIkAse5azTN6kRmN8dbIVgF2nhSnA"
       },
       "reason": "unwitnessed-retired-key"
@@ -356,8 +342,7 @@
         "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
         "sig": "4bjLnDLPSwx5YRb8fcqeaD5YEfacaryGm1tEl5_-ywonzg9naqvlGcyVqp6hw6BVmJUEn_xIoP0DSSEyRRBdcw",
         "bytes": "726574697265642d63616e63656c",
-        "issuedAt": 1700000010,
-        "kind": "cancel"
+        "issuedAt": 1700000010
       },
       "reason": "unwitnessed-retired-key"
     },
@@ -369,7 +354,6 @@
         "sig": "TqqNk_fdayqUpJrJygoLTQIjvkwQ5szmGiQhzNlECdJPXeGg27_FTz1hoQecquaVb7uAS63nVZuiiTvdBJLuFg",
         "bytes": "726574697265642d6772616e74",
         "issuedAt": 1700000010,
-        "kind": "cancel",
         "attest": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImZpeHR1cmUtMSIsInR5cCI6IkpXVCJ9.eyJ0eXAiOiJzb2NpYWNsLWFjbC1hdHRlc3QtdjEiLCJwcmluY2lwYWwiOiJheGZSOHVFc1FrZjR2T2JsWTZSQThuY0RmWUV0NnpPZzlLRTVSZGlZd3BZLlQtTkM0djRhZjV1TzUtdEtmQS1lRml2T00xZHJNVjdPeTdaQWFEZV9VZlUiLCJyZWNvcmRJZCI6IjVmZGI3YmU0MDU0ODBkMmMwODZjZDY3NDU3M2I5YmRmM2Y5ZjFkZmFlMjljMmRjYTM4YWE5NGQwMTU1OTI5MDkiLCJpYXQiOjE3MDAwMDAwMTAsImV4cCI6MTcwMDAwMDYxMH0.Qbm4rVlu7RkGxp8NRgBx_PyLv4apzXtGlirjQpmW3I_iq8jqFUWZ6APWT7mp3G3-Ecjts1EBecL6MdScFvLSBA"
       },
       "reason": "unwitnessed-retired-key"
@@ -382,7 +366,6 @@
         "sig": "ETyLYHsK9emIJ2eM-xYDe-LIH73HRMJYA2yJVVGrggnCe1gfYiQ-AIDzQA3sWwqI6X5hZSwa0J0dBntjeAaZyA",
         "bytes": "726574697265642d63616e63656c2d7769746e6573736564",
         "issuedAt": 1700000010,
-        "kind": "cancel",
         "attest": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImZpeHR1cmUtMSIsInR5cCI6IkpXVCJ9.eyJ0eXAiOiJzb2NpYWNsLWFjbC1hdHRlc3QtdjEiLCJwcmluY2lwYWwiOiJheGZSOHVFc1FrZjR2T2JsWTZSQThuY0RmWUV0NnpPZzlLRTVSZGlZd3BZLlQtTkM0djRhZjV1TzUtdEtmQS1lRml2T00xZHJNVjdPeTdaQWFEZV9VZlUiLCJyZWNvcmRJZCI6IjFmNzg4ODY2NDdlZjE0NDlhNGUwNjU4YjlmMmNkMTY3MDMxZWJkMDFmYTU4ZjAwNmNjNDZhMTYwZGMxYzUxYzMiLCJpYXQiOjE3MDAwMDAwMTAsImV4cCI6MTcwMDAwMDYxMH0.Kkzbvq6pfZvk1CtQk9KCfWJJwh1Zn0PLu-39BGSgRaLlRSodX2Z3s6esa97H_vECfVJSlWrsCngatc8waA2UIg"
       },
       "reason": "unwitnessed-retired-key"
@@ -395,7 +378,6 @@
         "sig": "bcVfxrL0T0HTzDykWMRd2iuCE2O8VCWTuP3SHlBlZskT9sKrouGdbdOZ7b726jK3KWg1fKXOYguJhmufP_9mvA",
         "bytes": "726574697265642d63616e63656c2d6578702d393030",
         "issuedAt": 1700000010,
-        "kind": "cancel",
         "attest": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImZpeHR1cmUtMSIsInR5cCI6IkpXVCJ9.eyJ0eXAiOiJzb2NpYWNsLWFjbC1hdHRlc3QtdjEiLCJwcmluY2lwYWwiOiJheGZSOHVFc1FrZjR2T2JsWTZSQThuY0RmWUV0NnpPZzlLRTVSZGlZd3BZLlQtTkM0djRhZjV1TzUtdEtmQS1lRml2T00xZHJNVjdPeTdaQWFEZV9VZlUiLCJyZWNvcmRJZCI6IjY1ZjlkOTZmYmUyMzU4MWMwOWZhZGRkNTdmMWYwNGM3NTNjNmMyMzQ4ODA5YTRjNDFiNWU0MzNhY2ZhZDUwMjciLCJpYXQiOjE3MDAwMDAwMTAsImV4cCI6MTcwMDAwMDkxMH0.qtBhqGEA7xVabAglJVuP9JtkU1SCm95hUa5eGf5RBnUFqZaYUIjexwvy4aIyqZeCwiaD-sliNYlcL-DxGWvd_w"
       },
       "reason": "unwitnessed-retired-key"
@@ -408,7 +390,6 @@
         "sig": "Zl_9hxq4t8LrtXbLpE_pyz9HeWJ-KM8sdT-YgJCcjIo7zyDXfJSpM10xHi78FCfywUt5YFWRqqbi_jJDVgUiMA",
         "bytes": "69737375656441742d657175616c732d726f746174696f6e2d74696d65",
         "issuedAt": 1700000030,
-        "kind": "cancel",
         "attest": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImZpeHR1cmUtMSIsInR5cCI6IkpXVCJ9.eyJ0eXAiOiJzb2NpYWNsLWFjbC1hdHRlc3QtdjEiLCJwcmluY2lwYWwiOiJheGZSOHVFc1FrZjR2T2JsWTZSQThuY0RmWUV0NnpPZzlLRTVSZGlZd3BZLlQtTkM0djRhZjV1TzUtdEtmQS1lRml2T00xZHJNVjdPeTdaQWFEZV9VZlUiLCJyZWNvcmRJZCI6ImM0MDEyNzU1Y2ZjNDY0MTYxOTQwYTJjODVmMDA1MjAzNjQyNGY4NTVlNDJkNzBkYWRlMDNlZDI5YmQzMWE1ZjUiLCJpYXQiOjE3MDAwMDAwMzAsImV4cCI6MTcwMDAwMDYzMH0.p1VgQeLtAIaDX7GQNT_lF4tOfswFgdFe9FTpmunfTg-0XjCPH9PJ6u_YLZwjytISix4PD5OZ-IcJJs-dDEFuvQ"
       },
       "reason": "unwitnessed-retired-key"
@@ -430,8 +411,7 @@
         "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
         "sig": "uEAAqcDMXFv6682eGuXc8fr7vQlfEWF9KvUMLxqTRk16vTKpcKQVySmEE89pPEd2OREo6k7GYMycT0rviaoYrA",
         "bytes": "667574757265",
-        "issuedAt": 1700000061,
-        "kind": "grant"
+        "issuedAt": 1700000061
       },
       "rotations": [],
       "reason": "future-record"
@@ -443,8 +423,7 @@
         "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
         "sig": "sJnvA6PgTki7YhbQZgvK3wLJI6NC2PHs_SymbRVmijGT7PlMbV6IuQ342LLq1_tUWsXXUpEZ0BxPPSPxOrinQg",
         "bytes": "6e65676174697665",
-        "issuedAt": -1,
-        "kind": "grant"
+        "issuedAt": -1
       },
       "rotations": [],
       "reason": "bad-record"
@@ -456,8 +435,7 @@
         "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
         "sig": "yS4CM-Ju-OW1lJYMnHWnGFVtpiIw9q-ATonchIoK_Fz5adgsnXuXTOZuJ8XaOWqhsdlOTMFgvXjeZD2ButlamQ",
         "bytes": "6672616374696f6e616c",
-        "issuedAt": 1700000000.5,
-        "kind": "grant"
+        "issuedAt": 1700000000.5
       },
       "rotations": [],
       "reason": "bad-record"
@@ -469,8 +447,7 @@
         "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
         "sig": "nICH2Tz2nhEZRe0uMKLS-chztPGkF23vXqpi2bKQcFjpT2NOSONAo9126cmeWa8fCMy1hit1jXfcdrevUfXTCw",
         "bytes": "736b65772d333031",
-        "issuedAt": 1700000361,
-        "kind": "grant"
+        "issuedAt": 1700000361
       },
       "rotations": [],
       "policy": {
@@ -494,8 +471,7 @@
         "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
         "sig": "rHeUwNh-pwb2Kzemlab15Eg2wDUFPKRpcOf-VyXHsjLa7WbJ50UNmNVMCk3rj6_BEJ-ruKDdo50QmUv0TNpP0Q",
         "bytes": "736b65772d6e616e",
-        "issuedAt": 1700000061,
-        "kind": "grant"
+        "issuedAt": 1700000061
       },
       "rotations": [],
       "policy": {
@@ -519,8 +495,7 @@
         "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
         "sig": "MekkdMH1ZfVVtBgpvUzNoqCMBMsfIWjLCYHUR4KC8Ko_YSMqSJfpPSWJfwlN7ak0PCOUGsfqhZsTUEwTsoo-FQ",
         "bytes": "736b65772d696e66696e697479",
-        "issuedAt": 1700000061,
-        "kind": "grant"
+        "issuedAt": 1700000061
       },
       "rotations": [],
       "policy": {
@@ -544,8 +519,7 @@
         "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
         "sig": "dB9vf8yGCjLeGJ9GH_nxPToSA39eYTmV2snEXo8e-ygTY9pvFycdbockLJmw7eCEN7MMyCqttQ2Tf7cqO3XWqw",
         "bytes": "736b65772d737472696e67",
-        "issuedAt": 1700000061,
-        "kind": "grant"
+        "issuedAt": 1700000061
       },
       "rotations": [],
       "policy": {
@@ -570,7 +544,6 @@
         "sig": "23WwndLbGGkVyW6CJpoaMiIrUrrUCZQb4gzO0n6lwxvT1RYIGMw4lMiGrRzIbyO_WfslR69yUZhegdynI3TTEg",
         "bytes": "6261642d6a7773",
         "issuedAt": 1700000010,
-        "kind": "cancel",
         "attest": "a.b.c"
       },
       "reason": "unwitnessed-retired-key"
@@ -583,7 +556,6 @@
         "sig": "b5pEXAmh9CR0rp_i7BA_5FmsaGx98DmS4yei9fR2aQhvmjUF4gr8r429FlDFAn9GiWdkdXzCQ2_V48sn3o15QA",
         "bytes": "77726f6e672d7265636f7264",
         "issuedAt": 1700000010,
-        "kind": "cancel",
         "attest": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImZpeHR1cmUtMSIsInR5cCI6IkpXVCJ9.eyJ0eXAiOiJzb2NpYWNsLWFjbC1hdHRlc3QtdjEiLCJwcmluY2lwYWwiOiJheGZSOHVFc1FrZjR2T2JsWTZSQThuY0RmWUV0NnpPZzlLRTVSZGlZd3BZLlQtTkM0djRhZjV1TzUtdEtmQS1lRml2T00xZHJNVjdPeTdaQWFEZV9VZlUiLCJyZWNvcmRJZCI6IjAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAiLCJpYXQiOjE3MDAwMDAwMTAsImV4cCI6MTcwMDAwMDYxMH0.-uojD5C2OjdHK7WwR2lbhtNIWZqqS81ij3i1sUkqM7v0OHljuxyeaKs6KKmEO3QaW_uFbrvZ2Rt9slMgDn45hA"
       },
       "reason": "unwitnessed-retired-key"
@@ -596,7 +568,6 @@
         "sig": "V2ZIp1DT2Yt4zEo9MS9p8X3OykdTS0DuQy766URaHFvvsR77XEGaakY9zglYoxhOdCk-r2xd44cB5M4B_9QyVQ",
         "bytes": "6961742d6d69736d61746368",
         "issuedAt": 1700000010,
-        "kind": "cancel",
         "attest": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImZpeHR1cmUtMSIsInR5cCI6IkpXVCJ9.eyJ0eXAiOiJzb2NpYWNsLWFjbC1hdHRlc3QtdjEiLCJwcmluY2lwYWwiOiJheGZSOHVFc1FrZjR2T2JsWTZSQThuY0RmWUV0NnpPZzlLRTVSZGlZd3BZLlQtTkM0djRhZjV1TzUtdEtmQS1lRml2T00xZHJNVjdPeTdaQWFEZV9VZlUiLCJyZWNvcmRJZCI6IjEwMmRmMjk0NjNmNjc1YTZkNzFmNzgwZmEyZGJiMWRiN2IwZDkyZjI1NWIxZTNjMzAyM2IyYWExNTJlNDg5NTMiLCJpYXQiOjE3MDAwMDAwMDksImV4cCI6MTcwMDAwMDYxMH0.c6fXAg0R-eiD1SqRzBMmyNOdbodw_QHuNq-koqVLFyTVrob-HPzclZj1OInPNcHJ99MagoKwzky8cp7kJW8x7g"
       },
       "reason": "unwitnessed-retired-key"
@@ -609,7 +580,6 @@
         "sig": "03yYql7nbfjpLSFOQfhxyBlCVdCFe9TyeeccQFyGGUM6YmWfF8_zPE5L2kebi14lvkaENhcxv76591D1HZaq8w",
         "bytes": "726574697265642d63616e63656c2d7769746e6573732d65787069726564",
         "issuedAt": 1700000010,
-        "kind": "cancel",
         "attest": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImZpeHR1cmUtMSIsInR5cCI6IkpXVCJ9.eyJ0eXAiOiJzb2NpYWNsLWFjbC1hdHRlc3QtdjEiLCJwcmluY2lwYWwiOiJheGZSOHVFc1FrZjR2T2JsWTZSQThuY0RmWUV0NnpPZzlLRTVSZGlZd3BZLlQtTkM0djRhZjV1TzUtdEtmQS1lRml2T00xZHJNVjdPeTdaQWFEZV9VZlUiLCJyZWNvcmRJZCI6ImRlZDA3ZGZjZjIzNzZmM2VhMDAxOTUyODgxZmU3MjllNDI0NWQ0ZjBlZGNlNzc2Yzc2YmI0ZDY5MGQzNzk1MzUiLCJpYXQiOjE3MDAwMDAwMDAsImV4cCI6MTcwMDAwMDAxMH0.JQUE80ewRMZo7Qu-Wf9cddNTNmawEqHFPyTv_uXr1f7rrqdYU3rNgINEyKJollChEg_ew889YcmCS7qm8M-pMQ"
       },
       "reason": "unwitnessed-retired-key"
@@ -622,7 +592,6 @@
         "sig": "rPA5na-ij1UQGeASY-mKfCi62X65t3rawP1Ha-i_VK-_3EdwUEQv6cPEU5YWM6HsM0gp3jpmbp8xP51BvEcxRg",
         "bytes": "77696e646f772d393031",
         "issuedAt": 1700000010,
-        "kind": "cancel",
         "attest": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImZpeHR1cmUtMSIsInR5cCI6IkpXVCJ9.eyJ0eXAiOiJzb2NpYWNsLWFjbC1hdHRlc3QtdjEiLCJwcmluY2lwYWwiOiJheGZSOHVFc1FrZjR2T2JsWTZSQThuY0RmWUV0NnpPZzlLRTVSZGlZd3BZLlQtTkM0djRhZjV1TzUtdEtmQS1lRml2T00xZHJNVjdPeTdaQWFEZV9VZlUiLCJyZWNvcmRJZCI6IjI5ZjZiMDc4MTU4NmU1YWFhYjc3MTU3N2MwZThiNTlmNzQyNWI0MWY5MjA3MWIwYmUwYTYyNzliZjFhNTVmMzEiLCJpYXQiOjE3MDAwMDAwMTAsImV4cCI6MTcwMDAwMDkxMX0.YMLUlUuHmrtUg3ocdCkQG2JUz1jVACCdnqtUK3rMBIVgXzgLL8pxT_bcId6V6YDHlP242zy1kW_aX1A-56CG5Q"
       },
       "reason": "unwitnessed-retired-key"
@@ -635,7 +604,6 @@
         "sig": "LuOvo-n5SH6LQCbJfQaKY8uMi4EFDjboUKRDVlZy-0oiaGOwwWcsfjiOVVz4asBpKptN6R85oigeSjzpeM-cWw",
         "bytes": "77726f6e672d7072696e636970616c",
         "issuedAt": 1700000010,
-        "kind": "cancel",
         "attest": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImZpeHR1cmUtMSIsInR5cCI6IkpXVCJ9.eyJ0eXAiOiJzb2NpYWNsLWFjbC1hdHRlc3QtdjEiLCJwcmluY2lwYWwiOiJmUEo3R0kwRFQzNktVamdEQkxVYXc4Q0phZUozOGhzMXBndElfRWRtbVhnLkIzZFZFTnVPMEVBcFBackduM1F3MjdwOXJlWTg2WUlwbmdTM25TSjRjOUUiLCJyZWNvcmRJZCI6IjYzMTlmOGJlNjg3MmNlNGUwMzQyMzg4NjRhZmYyYzMyZGJmZTg3MzdhMjI5NWU5OGEyNWE1ZTg5NzljYzA3NGYiLCJpYXQiOjE3MDAwMDAwMTAsImV4cCI6MTcwMDAwMDYxMH0.Ws0nJUJ_tPEYRUzN1IUU7gkoqh_qnCqlNzSEpFMygN-rtwueNqsJM9z5FfCSKqVUMVe2IKgb1rKwLYrmX9RpdA"
       },
       "reason": "unwitnessed-retired-key"
@@ -647,8 +615,7 @@
         "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
         "sig": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
         "bytes": "6261642d7369676e6174757265",
-        "issuedAt": 1700000000,
-        "kind": "grant"
+        "issuedAt": 1700000000
       },
       "rotations": [],
       "reason": "bad-signature"
@@ -660,8 +627,7 @@
         "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
         "sig": "4OjbhQ491S65pqvMT019woIk20KWQW5mpTKYvYZok_z8zEa_Sm0BBXVGeXphjHNCzoQV_XkKkQ6wdCdxbDQmgg",
         "bytes": "6261636b64617465642d6e6578742d6b6579",
-        "issuedAt": 1700000010,
-        "kind": "grant"
+        "issuedAt": 1700000010
       },
       "reason": "unwitnessed-retired-key"
     },
@@ -672,8 +638,7 @@
         "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
         "sig": "r8EvfgjJTjgYbV320teLvnRuYv1EOk4OO0N9uVh6-ca1uvlVBJe3Nz5vevJrzw6-TJP_ZkdBBFMQ2acA9Cg0ew",
         "bytes": "73616d652d7365636f6e642d6772616e74",
-        "issuedAt": 1700000030,
-        "kind": "grant"
+        "issuedAt": 1700000030
       },
       "reason": "unwitnessed-retired-key"
     },
@@ -684,8 +649,7 @@
         "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
         "sig": "w2t_zCveq2euDhuFzReIFLQvQNXItZImrhjLTSP-arTcRD9BSQ_6SnkDBrXXYHH9QopjmqoN0YTbuf-mBi2R3A",
         "bytes": "70726573656e742d63757272656e742d6b6579",
-        "issuedAt": 1700000000,
-        "kind": "grant"
+        "issuedAt": 1700000000
       },
       "now": 9007199254740992,
       "reason": "missing-history"
@@ -697,8 +661,7 @@
         "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
         "sig": "w2t_zCveq2euDhuFzReIFLQvQNXItZImrhjLTSP-arTcRD9BSQ_6SnkDBrXXYHH9QopjmqoN0YTbuf-mBi2R3A",
         "bytes": "70726573656e742d63757272656e742d6b6579",
-        "issuedAt": 1700000000,
-        "kind": "grant"
+        "issuedAt": 1700000000
       },
       "rotations": [
         {

@@ -67,9 +67,11 @@ UTF-8 fields. Hash collision resistance is computational, not a mathematical
 claim of injectivity.
 
 Object ids are `<kind>_<32 lowercase hex>`, `claim_<64hex>`, `ext_<64hex>`, or the
-specified read-only `s3rch:` legacy formats. `claim`, `ext`, `post`, `member`,
+specified read-only `s3rch:` legacy formats. That includes
+`s3rch:post:<wallet>:<ts>:<hex>`. `claim`, `ext`, `post`, `member`,
 and `objset` cannot be minted as native kinds. Legacy timestamps retain the specified 1–12 decimal digit limit;
-legacy identifiers are opaque and confer no ownership authority. Native mints
+legacy identifiers are opaque and confer no ownership authority. The wallet and
+timestamp inside a legacy post id are not read out. Native mints
 use `crypto.getRandomValues` (Rust: `getrandom`) for 128 bits.
 
 `SourceKey` ports the canonical SourceRef format from s3r.ch Views. s3r.ch owners
@@ -83,16 +85,16 @@ Signing bytes are `LP(domain) LP(field1) …`, with a 32-bit little-endian UTF-8
 byte length on each field. `linkId` is SHA-256 of these bytes and does not depend
 on an ECDSA signature. SEA proofs are raw P-256 `r||s` in canonical unpadded
 base64url; both high-S and low-S verify. SEA envelopes are not accepted.
-`verifySignedAt(principal, rotations, ctx, bytes, sig, issuedAt, attest?)`
-does not take a kind. It resolves the current key first. A present key returns
+`verifySignedAt(principal, rotations, ctx, bytes, sig, issuedAt)`
+does not take a kind or an attestation. It resolves the current key first. A present key returns
 `{key, mode: "present"}` or `bad-signature`. Every retired-key row is
-`unwitnessed-retired-key`, including a witnessed cancel, until the signed
-bytes can name a cancel. A negative or fractional `issuedAt` is `bad-record`.
+`unwitnessed-retired-key`, including a witnessed cancel, until PR 2 of the #55 rebuild
+reads the `sociacl-cancel-v2` domain from the signed bytes. `mode: "witnessed"` is reserved for that check. A negative or fractional `issuedAt` is `bad-record`.
 `clockSkewSeconds` must be an integer from 0 through 300; a larger, non-finite,
 or non-numeric skew is `bad-record`. `issuedAt` past `now` plus that skew is
 `future-record`. `signWithKeyring(scalar, bytes, expectedKey)` signs only when
 the scalar's public key is `expectedKey`, and it wipes its copy of the scalar.
-Bad key material is `bad-key`. `lengthPrefixed` accepts only well-formed strings.
+Bad key material is `bad-key`. `lengthPrefixed` copies its input once and accepts only well-formed strings from that copy. A throwing getter or iterator is `bad-record`.
 
 Wallet proofs are EIP-4361 messages signed with EIP-191 `personal_sign`. The
 statement is exactly `SociACL link: <signing-byte sha256>`, the address must

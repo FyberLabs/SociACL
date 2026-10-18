@@ -62,7 +62,8 @@ export function parseObjectId(x) {
   const m = /^([a-z][a-z0-9]{1,15})_([0-9a-f]{32})$/.exec(s);
   if (m) return ['claim', 'ext', 'post', 'member', 'objset'].includes(m[1]) ? fail('reserved-kind') : ok(/** @type {ObjectId} */ (s));
   if (/^[a-z][a-z0-9]{1,15}_[0-9a-f]{32,64}$/i.test(s) && s !== s.toLowerCase()) return fail('non-canonical');
-  const legacy = /^s3rch:(?:(?:room|chat|forum-msg):(0x[0-9a-fA-F]{40}):[0-9]{1,12}:[a-z0-9]{1,64}|(?:forum-group|bot):(0x[0-9a-fA-F]{40}):[a-z0-9]{1,64}|forum:(0x[0-9a-fA-F]{40}))$/.exec(s);
+  // Legacy ids, including s3rch:post:<eip55>:<ts>:<hex>, are opaque. The wallet and timestamp are not read out.
+  const legacy = /^s3rch:(?:(?:room|chat|forum-msg|post):(0x[0-9a-fA-F]{40}):[0-9]{1,12}:[a-z0-9]{1,64}|(?:forum-group|bot):(0x[0-9a-fA-F]{40}):[a-z0-9]{1,64}|forum:(0x[0-9a-fA-F]{40}))$/.exec(s);
   if (!legacy) return fail('bad-alphabet');
   const w = parseEip55(legacy[1] ?? legacy[2] ?? legacy[3]); if (!w.ok) return w;
   return ok(/** @type {ObjectId} */ (s));

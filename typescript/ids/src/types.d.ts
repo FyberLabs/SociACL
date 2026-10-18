@@ -25,6 +25,7 @@ export type Result<T> = { ok: true; value: T } | { ok: false; reason: Reason };
 export type Collection = 'items' | 'rooms' | 'users-legacy';
 export type ParsedSoul = { template: 'object' | 'user' | 'acl' | 'grant' | 'post' | 'membership' | 'objset'; ids: readonly string[] };
 export type MembershipPredicate = 'same-group' | 'named-circle';
+/** `witnessed` is reserved for PR 2 of the #55 rebuild. Nothing returns it until the signed bytes name `sociacl-cancel-v2`. */
 export type SignedAtMode = 'present' | 'witnessed';
 export type SignedAt = Readonly<{ key: PrincipalId; mode: SignedAtMode }>;
 export type AclAttestation = Readonly<{ typ: 'sociacl-acl-attest-v1'; principal: PrincipalId; recordId: string; iat: number; exp: number }>;
