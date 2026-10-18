@@ -24,7 +24,7 @@ function siweData(x) {
 /** Sorted unique 64-hex link ids, at most 1024. The same rule as a signed rotation.
  * @param {unknown} list @returns {Result<string[]>} */
 function retainedIds(list) {
-  /** @type {unknown[]} */ let retainedLinks;
+  /** @type {any[]} */ let retainedLinks;
   try {
     if (!Array.isArray(list)) return fail('bad-record');
     const d = /** @type {Record<string, PropertyDescriptor>} */ (/** @type {unknown} */ (Object.getOwnPropertyDescriptors(list))), length=d.length.value;
