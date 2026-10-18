@@ -1,6 +1,6 @@
 # Spec: `sociacl-ids`, the shared identity package (TypeScript + Rust)
 
-Status: initial design dated 2026-10-16, amended for sociacl-ids 0.6 during review of #57. Sections 4.4–4.6 below reflect the current record contract. The [normative review amendment](identity-review-amendment.md) supersedes the original grammar and history rules where stated; the [package README](../typescript/ids/README.md) documents the implemented API.
+Status: initial design dated 2026-10-16, amended for sociacl-ids 0.6 during review of #57 and for sociacl-ids 0.7 Rotate v3 (#64). Sections 4.4–4.6 below reflect the current record contract. The [normative review amendment](identity-review-amendment.md) supersedes the original grammar and history rules where stated; the [package README](../typescript/ids/README.md) documents the implemented API.
 
 Repos referenced:
 - `FyberLabs/SociACL`: Rust workspace `crates/*`, JS package `typescript/` (ESM, JSDoc, `tsc --strict`), vectors in `vectors/`.
@@ -169,7 +169,8 @@ All signatures cover `LP(domain) LP(field1) … LP(fieldN)` (§3).
 |---|---|---|
 | Key → wallet link | `sociacl-link-wallet-v1` | principal, eip55, issuedAt (decimal seconds), nonce |
 | Key → OIDC link | `sociacl-link-oidc-v1` | principal, iss, tenant, sub, issuedAt, nonce |
-| Rotation | `sociacl-rotate-v2` | principal, seq (decimal), prevKey, nextKey, issuedAt, authorizer.kind, authorizer.link, retainedLinks.length (decimal), each retained ID in order |
+| Rotation v2 | `sociacl-rotate-v2` | principal, seq (decimal), prevKey, nextKey, issuedAt, authorizer.kind, authorizer.link, retainedLinks.length (decimal), each retained ID in order. Used when `nextEpub` is absent |
+| Rotation v3 | `sociacl-rotate-v3` | the v2 fields, with `nextEpub` immediately after `nextKey`. Used when `nextEpub` is present |
 | Revocation | `sociacl-revoke-v1` | principal, linkId, issuedAt |
 
 `linkId` = lowercase hex sha256 of the record's signing bytes. Record identity never depends on signature bytes (ECDSA malleability).
@@ -180,7 +181,8 @@ All signatures cover `LP(domain) LP(field1) … LP(fieldN)` (§3).
 - **Panopticon attestation:** compact JWS, `alg` = `ES256`, unique `kid` required in the caller-pinned JWKS. `iat` must equal the record's `issuedAt`; `exp` must be later and no more than 900 seconds after `iat`. Exact claims:
   - Wallet: `{typ:"sociacl-wallet-attest-v1", principal, linkId, iat, exp}`.
   - OIDC: `{typ:"sociacl-oidc-attest-v1", iss, tenant, sub, principal, iat, exp, nonce}`.
-  - Rotation: `{typ:"sociacl-rotate-attest-v2", principal, nextKey, seq, iat, exp, auth:"wallet"|"oidc-fresh-login", linkId, retainedLinks}`. `linkId` equals `authorizer.link` and `retainedLinks` equals the signed array.
+  - Rotation v2: `{typ:"sociacl-rotate-attest-v2", principal, nextKey, seq, iat, exp, auth:"wallet"|"oidc-fresh-login", linkId, retainedLinks}`. `linkId` equals `authorizer.link` and `retainedLinks` equals the signed array. Required when the record has no `nextEpub`.
+  - Rotation v3: `{typ:"sociacl-rotate-attest-v3", principal, nextKey, nextEpub, seq, iat, exp, auth:"wallet"|"oidc-fresh-login", linkId, retainedLinks}`. Same claims as v2, plus `nextEpub` equal to the signed field. Required when the record has `nextEpub`.
   - Revoke: `{typ:"sociacl-revoke-attest-v1", principal, recordId, iat, exp}`. `recordId` hashes the revoke signing bytes, including its target link and timestamp.
 - Panopticon assigns wallet/revoke timestamps after verifying the proofs and current account state. A client-supplied date is not a timestamp witness. OIDC rotation additionally requires a fresh login to the exact credential named by the enrolled link.
 
@@ -192,8 +194,9 @@ export type WalletLink = { v: 1; kind: "wallet"; principal: PrincipalId; address
 export type OidcLink = { v: 1; kind: "oidc"; principal: PrincipalId; cred: OidcCredential; issuedAt: number; nonce: string;
   keySig: string; attest: string /* Panopticon JWS */ };
 export type Rotate = { v: 1; kind: "rotate"; principal: PrincipalId; seq: number /* 1.. */; prevKey: PrincipalId; nextKey: PrincipalId;
+  nextEpub?: PrincipalId /* SEA point; present only for rotation v3 */;
   issuedAt: number; retainedLinks: readonly string[] /* sorted unique link IDs, at most 1024 */;
-  nextSig: string /* new key over rotation v2 bytes */;
+  nextSig: string /* new key over rotation v2 bytes, or v3 bytes when nextEpub is present */;
   authorizer: { kind: "wallet"; link: string /* linkId */; siwe: {message:string; signature:`0x${string}`} }
             | { kind: "oidc-fresh-login"; link: string /* enrolled OIDC linkId */ };
   attest: string /* Panopticon JWS, required in both cases */ };
@@ -205,7 +208,7 @@ verifyOidcLink(r: unknown, jwks: Jwks, pinnedIss: ReadonlySet<string>, now: numb
 verifyRevoke(r: unknown, currentKey: PrincipalId, jwks: Jwks, now: number): Result<Revoke>
 verifyRevokeNow(r: unknown, currentKey: PrincipalId, now: number): Result<Revoke>
 verifyRotate(r: unknown, currentKey: PrincipalId, context: ResolutionContext): Result<Rotate>
-resolveCurrentKey(genesis: PrincipalId, rotations: readonly unknown[], context: ResolutionContext): Resolution<{currentKey: PrincipalId; rotations: readonly Rotate[]}>
+resolveCurrentKey(genesis: PrincipalId, rotations: readonly unknown[], context: ResolutionContext): Resolution<{currentKey: PrincipalId; currentEpub: PrincipalId | null; rotations: readonly Rotate[]}>
 resolveWalletLink(address: Eip55, links: readonly unknown[], revocations: readonly unknown[], context: ResolutionContext): Resolution<WalletLink>
 resolveWalletLinkNow(address: Eip55, links: readonly unknown[], revocations: readonly unknown[], context: ResolutionContext): Resolution<WalletLink>
 ```
@@ -220,6 +223,7 @@ at the horizon, and the intersection of retained IDs from subsequent rotations
 
 Rules:
 - A link's SEA signature uses its key at issuance. Every subsequent rotation must retain the link ID for it to remain usable. A retired key cannot enroll a new backdated credential through an earlier retained set.
+- The rotation version is inferred from whether `nextEpub` is present, not from record `v` (which stays 1). A rotation without `nextEpub` is v2: signing domain `sociacl-rotate-v2` and attestation typ `sociacl-rotate-attest-v2`. A rotation with `nextEpub` is v3. `nextEpub` is a SEA P-256 point in the same 87-character form as `nextKey`, parsed by `parsePrincipalId`. It is the encryption public key after that rotation. It is not an account id. New rotations MUST be v3. From package 0.7, Panopticon attests only v3. The library still verifies historical v2 records. Panopticon never attests both versions for the same principal and sequence. Publishing both versions of one transition yields two signing-byte IDs at that sequence and freezes the account with `rotation-fork`. `resolveCurrentKey` sets `currentEpub` from each accepted rotation after the signature, attestation, authorizer, retained-link, and revocation checks below: a v3 rotation sets it to that `nextEpub`, and a v2 rotation sets it to null. Null means unknown. Consumers must not seal, and they must never fall back to Gun's `user.epub`. With no accepted v3 rotation, `currentEpub` stays null; the genesis epub is outside this package. `nextEpub` must not equal `nextKey`, genesis, any prior signing key, or any prior epub, and a later `nextKey` must not equal any prior epub. Those collisions are `bad-sequence`. `historyState` stays signing-key state and carries no epub.
 - Rotations use contiguous sequences starting at one, strictly increasing timestamps, matching previous keys and no signing-key reuse. Two distinct valid records at the same sequence freeze the account with `rotation-fork`. Unauthenticated malformed/forged candidates are skipped with diagnostics. Copies are compared by signing-bytes hash; any fully verified copy satisfies that rotation ID, regardless of damaged-copy input order. After the new-key signature and attestation authenticate an ID, missing/unverifiable authorizer or retained-link evidence (including missing/malformed rotation SIWE) is fatal `missing-history` only if no copy of that ID fully verifies. A valid different ID cannot substitute. Failed copies remain diagnostics; no proof is repaired into an accepted transition.
 - The rotation's authorizer and every retained ID must be valid links of that principal in the pre-rotation state. Any revoke witnessed at or before the rotation and signed by its preceding current key conflicts with retaining or authorizing with that link. After the rotation signature and attestation verify, this is fatal `rotation-conflict`; no current key is returned. An omitted ID cannot be restored by a later rotation.
 - OIDC recovery requires a retained, unrevoked enrolled OIDC link, a pinned issuer and a rotation attestation bound to that link. Any active wallet of that principal blocks OIDC recovery, even if the candidate drops that wallet from `retainedLinks`. Direct verification returns `wallet-required`; resolution freezes with `rotation-conflict`. Conflicting wallet ownership likewise freezes an authenticated rotation instead of discarding it.

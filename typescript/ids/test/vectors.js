@@ -66,6 +66,8 @@ function run(f, c) {
       default: throw Error('unknown operation: '+c.operation);
     }
     if(c.diagnosticReasons) assert.deepEqual(r.diagnostics.map(d=>d.reason),c.diagnosticReasons,c.name+' diagnostics');
+    if (r.ok && c.operation === 'resolve') assert.equal(r.value.currentEpub ?? null, c.currentEpub ?? null, c.name+' currentEpub');
+    if (r.ok && c.operation === 'rotate' && Object.hasOwn(c, 'nextEpub')) assert.equal(r.value.nextEpub, c.nextEpub, c.name+' nextEpub');
     return r.ok ? {ok:true,value:r.value.currentKey??r.value.principal} : {ok:false,reason:r.reason};
   }
   if(c.operation === 'claim') return ids.deriveClaimId(c.input);

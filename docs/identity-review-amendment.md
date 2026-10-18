@@ -2,6 +2,7 @@
 
 This amendment and the updated record sections of the
 [package specification](sociacl-ids-package-spec.md) define the 0.6 contract.
+sociacl-ids 0.7 adds the Rotate v3 section below and does not change the v2 record.
 Versions 0.1 through 0.5 were never released. The review changes require a minor
 version bump because they change signing bytes, record shapes and URL grammar.
 Wallet and revoke timestamp attestations, rotation retention commitments, and
@@ -118,8 +119,58 @@ The exact rotation attestation claims are:
 
 `auth` equals the authorizer kind, `linkId` equals `authorizer.link`, and
 `retainedLinks` exactly equals the signed array. The new key signature and the
-wallet SIWE proof, when present, cover the v2 bytes. Old rotation encodings and
-attestations are rejected; consumers must pin package version and integrity.
+wallet SIWE proof, when present, cover the v2 bytes. Encodings older than v2
+are rejected. A record with no `nextEpub` remains this v2 record. Consumers
+must pin package version and integrity.
+
+## Rotate v3 (`nextEpub`)
+
+sociacl-ids 0.7 adds an encryption public key to a rotation without changing
+the v2 record. `nextEpub` is optional. When it is absent, the v2 domain and
+attestation above are unchanged. When it is present, the record version stays
+`v: 1` and the signing bytes are:
+
+```text
+LP("sociacl-rotate-v3") LP(principal) LP(decimal(seq)) LP(prevKey)
+LP(nextKey) LP(nextEpub) LP(decimal(issuedAt)) LP(authorizer.kind) LP(authorizer.link)
+LP(decimal(retainedLinks.length)) LP(retainedLinks[0]) ... LP(retainedLinks[n-1])
+```
+
+`nextEpub` is a SEA P-256 point in the same 87-character form as `nextKey`,
+parsed by `parsePrincipalId` / `parse_principal_id`. It names the encryption
+public key after the rotation. It is not an account id and it is not a second
+account keypair.
+
+The v3 attestation uses typ `sociacl-rotate-attest-v3` and the v2 claims plus
+`nextEpub`. That claim equals the signed field. A v3 attestation on a v2
+record, a v2 attestation on a v3 record, a missing `nextEpub` claim, a
+malformed point, or a signature over a different byte string does not verify.
+
+The version is inferred from whether `nextEpub` is present. Record `v` stays
+1. New rotations MUST be v3. From sociacl-ids 0.7, Panopticon attests only v3
+(`sociacl-rotate-attest-v3`). The library still verifies historical v2
+records. Panopticon never attests both versions for the same principal and
+sequence. Publishing both versions of one transition produces two signing-byte
+IDs at that sequence and freezes the account with `rotation-fork`. Clients
+must not publish a v2 retry of a v3 rotation.
+
+`resolveCurrentKey` / `resolve_current_key` returns `currentEpub` from the
+accepted chain. Each accepted rotation replaces it after the witnessed checks
+already in this package: a v3 rotation sets `currentEpub` to that record's
+`nextEpub`, and a v2 rotation sets `currentEpub` to null. Null means the
+encryption public key for the current signing key is unknown. Consumers must
+not seal, and they must never fall back to Gun's `user.epub` or any other
+unwitnessed point. With no accepted v3 rotation, including a v2-only history
+and an empty history, `currentEpub` stays null. The genesis encryption public
+key is not bound here; the part 2 keyring covers that case. `historyState`
+stays signing-key state and carries no epub.
+
+`nextEpub` must be a fresh point. It must not equal `nextKey`, the genesis
+signing key, any prior signing key, or any prior `nextEpub`. A later `nextKey`
+must not equal any prior `nextEpub`. Those collisions are `bad-sequence`, the
+same reason as signing-key reuse. Direct `verifyRotate` rejects `nextEpub`
+equal to `nextKey` or `prevKey`. During resolution the colliding candidate is
+skipped and the prior key and epub stay in place.
 
 The verifier authenticates the authorizing credential and **every retained ID**
 against the pre-rotation state. Each must belong to the principal and remain

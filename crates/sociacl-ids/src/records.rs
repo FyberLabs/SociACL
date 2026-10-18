@@ -62,6 +62,8 @@ pub struct Rotate {
     pub seq: u64,
     pub prev_key: PrincipalId,
     pub next_key: PrincipalId,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_epub: Option<PrincipalId>,
     pub retained_links: Vec<String>,
     #[serde(deserialize_with = "deserialize_integer")]
     pub issued_at: u64,
@@ -164,6 +166,7 @@ pub struct Resolution<T> {
 #[derive(Clone, Debug)]
 pub struct ResolvedAccount {
     pub current_key: PrincipalId,
+    pub current_epub: Option<PrincipalId>,
     pub rotations: Vec<Rotate>,
 }
 fn diagnostic(ds: &mut Vec<Diagnostic>, source: &str, index: usize, reason: Reason) {
@@ -344,22 +347,23 @@ fn record(v: &Value, unsigned: bool) -> Result<IdentityRecord, Reason> {
             }))
         }
         "rotate" => {
-            if !only(
-                v,
-                &[
-                    "v",
-                    "kind",
-                    "principal",
-                    "issuedAt",
-                    "seq",
-                    "prevKey",
-                    "nextKey",
-                    "retainedLinks",
-                    "nextSig",
-                    "authorizer",
-                    "attest",
-                ],
-            ) {
+            let mut keys = vec![
+                "v",
+                "kind",
+                "principal",
+                "issuedAt",
+                "seq",
+                "prevKey",
+                "nextKey",
+                "retainedLinks",
+                "nextSig",
+                "authorizer",
+                "attest",
+            ];
+            if v.get("nextEpub").is_some() {
+                keys.push("nextEpub");
+            }
+            if !only(v, &keys) {
                 return Err(Reason::BadRecord);
             }
             let seq = number(&v["seq"]).map_err(|_| Reason::BadSequence)?;
@@ -382,6 +386,13 @@ fn record(v: &Value, unsigned: bool) -> Result<IdentityRecord, Reason> {
             }
             let prev_key = parse_principal_id(v["prevKey"].as_str().ok_or(Reason::NotString)?)?;
             let next_key = parse_principal_id(v["nextKey"].as_str().ok_or(Reason::NotString)?)?;
+            let next_epub = if v.get("nextEpub").is_some() {
+                Some(parse_principal_id(
+                    v["nextEpub"].as_str().ok_or(Reason::NotString)?,
+                )?)
+            } else {
+                None
+            };
             let next_sig = sig("nextSig")?;
             let att = attest()?;
             let a = &v["authorizer"];
@@ -415,6 +426,7 @@ fn record(v: &Value, unsigned: bool) -> Result<IdentityRecord, Reason> {
                 seq,
                 prev_key,
                 next_key,
+                next_epub,
                 retained_links,
                 issued_at,
                 next_sig,
@@ -451,17 +463,25 @@ fn bytes(r: &IdentityRecord) -> Vec<u8> {
                 Authorizer::Wallet { link, .. } => ("wallet", link),
                 Authorizer::OidcFreshLogin { link } => ("oidc-fresh-login", link),
             };
+            let domain = if r.next_epub.is_some() {
+                "sociacl-rotate-v3"
+            } else {
+                "sociacl-rotate-v2"
+            };
             let mut fields = vec![
-                "sociacl-rotate-v2",
+                domain,
                 r.principal.as_ref(),
                 &seq,
                 r.prev_key.as_ref(),
                 r.next_key.as_ref(),
-                &t,
-                auth,
-                link,
-                &count,
             ];
+            if let Some(epub) = &r.next_epub {
+                fields.push(epub.as_ref());
+            }
+            fields.push(&t);
+            fields.push(auth);
+            fields.push(link);
+            fields.push(&count);
             fields.extend(r.retained_links.iter().map(String::as_str));
             lp(&fields)
         }
@@ -1096,6 +1116,22 @@ fn rotation_candidate(v: &Value) -> Result<IdentityRecord, Reason> {
         serde_json::json!({"message":"", "signature":format!("0x{}", "00".repeat(65))});
     record(&candidate, false).or(parsed)
 }
+fn reuses_epub(raw: &Rotate, genesis: &PrincipalId, history: &[Rotate]) -> bool {
+    if history
+        .iter()
+        .any(|h| h.next_epub.as_ref() == Some(&raw.next_key))
+    {
+        return true;
+    }
+    let Some(epub) = &raw.next_epub else {
+        return false;
+    };
+    epub == &raw.next_key
+        || epub == genesis
+        || history.iter().any(|h| {
+            &h.next_key == epub || &h.prev_key == epub || h.next_epub.as_ref() == Some(epub)
+        })
+}
 fn check_rotate(
     v: &Value,
     current_key: &PrincipalId,
@@ -1108,6 +1144,13 @@ fn check_rotate(
     };
     proof_time(rot.issued_at, ctx.now, ctx.policy.clock_skew_seconds)?;
     if &rot.prev_key != current_key || &rot.next_key == current_key {
+        return Err(Reason::BadSequence);
+    }
+    if rot
+        .next_epub
+        .as_ref()
+        .is_some_and(|epub| epub == &rot.next_key || epub == &rot.prev_key)
+    {
         return Err(Reason::BadSequence);
     }
     if !key_verify(&rot.next_key, &rot.next_sig, &bytes(&r)) {
@@ -1123,22 +1166,30 @@ fn check_rotate(
         Authorizer::Wallet { link, .. } => ("wallet", link),
         Authorizer::OidcFreshLogin { link } => ("oidc-fresh-login", link),
     };
-    if !only(
-        &c,
-        &[
-            "typ",
-            "principal",
-            "nextKey",
-            "seq",
-            "iat",
-            "exp",
-            "auth",
-            "linkId",
-            "retainedLinks",
-        ],
-    ) || c["typ"] != "sociacl-rotate-attest-v2"
+    let v3 = rot.next_epub.is_some();
+    let mut attest_keys = vec![
+        "typ",
+        "principal",
+        "nextKey",
+        "seq",
+        "iat",
+        "exp",
+        "auth",
+        "linkId",
+        "retainedLinks",
+    ];
+    if v3 {
+        attest_keys.push("nextEpub");
+    }
+    let epub_matches = match &rot.next_epub {
+        Some(epub) => c["nextEpub"] == epub.as_ref(),
+        None => true,
+    };
+    if !only(&c, &attest_keys)
+        || c["typ"] != if v3 { "sociacl-rotate-attest-v3" } else { "sociacl-rotate-attest-v2" }
         || c["principal"] != rot.principal.as_ref()
         || c["nextKey"] != rot.next_key.as_ref()
+        || !epub_matches
         || number(&c["seq"]).ok() != Some(rot.seq)
         || number(&c["iat"]).ok() != Some(rot.issued_at)
         || c["auth"] != auth
@@ -1276,6 +1327,7 @@ pub fn resolve_current_key(
         }
         let mut history: Vec<Rotate> = Vec::new();
         let mut current = genesis.clone();
+        let mut current_epub = None;
         let mut seq = 1;
         for (n, group) in groups {
             let mut valid = BTreeMap::new();
@@ -1299,6 +1351,7 @@ pub fn resolve_current_key(
                         || history.last().is_some_and(|r| raw.issued_at <= r.issued_at)
                         || &raw.next_key == genesis
                         || history.iter().any(|r| r.next_key == raw.next_key)
+                        || reuses_epub(&raw, genesis, &history)
                     {
                         return Err(Reason::BadSequence);
                     }
@@ -1372,12 +1425,14 @@ pub fn resolve_current_key(
             }
             if let Some(r) = valid.into_values().next() {
                 current = r.next_key.clone();
+                current_epub = r.next_epub.clone();
                 history.push(r);
                 seq += 1;
             }
         }
         Ok(ResolvedAccount {
             current_key: current,
+            current_epub,
             rotations: history,
         })
     })();
