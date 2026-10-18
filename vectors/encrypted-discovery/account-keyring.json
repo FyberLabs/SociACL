@@ -3,6 +3,7 @@
   "family": "account-keyring",
   "genesis": {
     "laneId": "05e57cbbd329896b1f6a2b13ce15cda256ed2fc854b3fb2edadd08933448e385",
+    "contactLaneSecret": "c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0",
     "signingPub": "YP7UuiVanTHJYet0xjVtaMBJuJI7Yfps5mliLmDyn7Y.eQP-EAi4vJmkGunpVii8ZPLxsgwtfp9Rd6PClNRGIpk",
     "signingPriv": "ya-p2EW6dRZrXCFXZ7HWk05Qw9s26JsSe4piKxIPZyE",
     "signingScalarHex": "C9AFA9D845BA75166B5C215767B1D6934E50C3DB36E89B127B8A622B120F6721",
@@ -15,7 +16,8 @@
     "signingPriv": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAU",
     "epub": "sBoXKnakYCyS0yQsuJfd4wJMdA3rshW0xrCq6Twikak.6FwQdDI32tVv7A4t-6cDeRwA93Acfha9_XxIU4_Hf-I",
     "epriv": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY",
-    "laneId": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    "laneId": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "contactLaneSecret": "d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1"
   },
   "trusted": [
     "phone",
@@ -51,6 +53,10 @@
     "priorLane": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "missingError": "bad-lane"
   },
+  "witnessContact": {
+    "secret": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "prior": ["b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1"]
+  },
   "errors": {
     "epubUnknown": "epub-unknown",
     "epubReuse": "epub-reuse",
@@ -64,7 +70,8 @@
     "emptyDevice": "empty-device",
     "contentEpoch": "content-epoch",
     "tooManyKeys": "too-many-keys",
-    "badConstruction": "bad-construction"
+    "badConstruction": "bad-construction",
+    "keyringRejected": "keyring-rejected"
   },
   "unsafeContentEpoch": 9007199254740992,
   "maxContentEpoch": 9007199254740991,

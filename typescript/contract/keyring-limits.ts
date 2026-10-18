@@ -5,11 +5,11 @@
  * pinned to that option, so a sealed copy cannot ask for less memory or
  * more. Salt length is the only range: 16 through 64 bytes.
  *
- * `KEYRING_SERIAL_MAX` is 256 KiB. It is not computed from `priorLanes`.
- * 1024 retired encryption keys, the #67 cap, encode to 1024 × 138 bytes
- * plus a fixed header under 1 KiB. 256 KiB is the power of two above that.
- * A prior-lane list that pushes the encoding over this constant is rejected.
- * Counting prior lanes is #68 F1 and is not this cap.
+ * `KEYRING_SERIAL_MAX` is 256 KiB. The constant is unchanged. A retired
+ * pair is 138 bytes. A prior base lane and a prior contact-lane secret
+ * are 68 bytes each. 1024 of each list plus 1024 retired keys is about
+ * 281237 bytes and does not fit. This cap rejects that encoding. Counting
+ * prior lanes and prior contact-lane secrets is #68 and is not this cap.
  */
 export const ARGON2ID_LIMITS = {
   version: { floor: 0x13, ceiling: 0x13 },
@@ -20,7 +20,7 @@ export const ARGON2ID_LIMITS = {
   saltLength: { floor: 16, ceiling: 64 },
 } as const;
 
-/** Fixed cap on the serialized keyring plaintext. Not a function of priorLanes. */
+/** Fixed cap on the serialized keyring plaintext. 256 KiB. Unchanged by the contact-lane secret. */
 export const KEYRING_SERIAL_MAX = 262144;
 
 /** Version byte, uncompressed P-256 point, 12-byte nonce, and the GCM tag. */

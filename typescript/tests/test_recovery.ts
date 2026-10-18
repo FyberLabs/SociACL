@@ -27,7 +27,9 @@ import {
   RECOVERY_ENVELOPE_MAX,
 } from "../contract/keyring-limits.ts";
 import * as recovery from "../contract/recovery.ts";
-import { canonicalDecimal } from "../contract/canonical.ts";
+import { canonicalDecimal, lengthPrefixed } from "../contract/canonical.ts";
+import { deriveContactLane } from "../contract/contact-lane.ts";
+import { decodeKeyring, DOMAIN_KEYRING_PLAIN } from "../contract/keyring-codec.ts";
 import { checkRecoveryPassphrase, RecoveryWeakPassphraseError } from "../contract/passphrase-strength.ts";
 import { encodePassphrase, MemoryRecoveryStore, openRecoveryCopy, signRecoveryOp, type RecoveryEnvelope } from "../contract/recovery-seal.ts";
 import { DOMAIN_STORE_WRITE, HeadFloor, recoveryEnvelopeHash, REPLACED_NONE, signStoreWrite, storeWriteMessage, STORE_CLASS_DELIVERY, STORE_CLASS_GENESIS, verifyStoreWrite, wrapCiphertextHash } from "../contract/store-write.ts";
@@ -149,13 +151,14 @@ type RejectRow = {
 const ring = JSON.parse(readFileSync(new URL("../../vectors/encrypted-discovery/account-keyring.json", import.meta.url), "utf8")) as {
   genesis: {
     laneId: string;
+    contactLaneSecret: string;
     signingPub: string;
     signingPriv: string;
     epub: string;
     epriv: string;
     principal: string;
   };
-  mint: { signingPub: string; signingPriv: string; epub: string; epriv: string; laneId: string };
+  mint: { signingPub: string; signingPriv: string; epub: string; epriv: string; laneId: string; contactLaneSecret: string };
   trusted: string[];
   lost: string;
   genesisBinding: unknown;
@@ -170,6 +173,7 @@ const ring = JSON.parse(readFileSync(new URL("../../vectors/encrypted-discovery/
     rotationSeq: number;
   };
   importPriorLanes: { rule: string; rotationSeq: number; priorLane: string; missingError: string };
+  witnessContact: { secret: string; prior: string[] };
 };
 
 const records = JSON.parse(readFileSync(new URL("../../vectors/ids/records.json", import.meta.url), "utf8")) as {
@@ -196,6 +200,7 @@ function principalOf(): PrincipalId {
 function genesisKeyring(): AccountKeyring {
   return AccountKeyring.fromGenesis(
     importGenesis(ring.genesis.laneId, ring.genesis.signingPub, ring.genesis.signingPriv, ring.genesis.epub, ring.genesis.epriv),
+    ring.genesis.contactLaneSecret,
   );
 }
 
@@ -224,6 +229,7 @@ function vectorMint() {
     epub: ring.mint.epub,
     epriv: ring.mint.epriv,
     laneId: ring.mint.laneId,
+    contactLaneSecret: ring.mint.contactLaneSecret,
   };
 }
 
@@ -291,10 +297,18 @@ test("limits match the shared vector", () => {
   assert.equal(recoveryVector.unicodeRuntime.error, "unicode-version");
   assert.equal("\u{11382}\u{113C9}".normalize("NFC"), "\u{11383}");
   assert.equal(recoveryVector.domain, "sociacl-recovery-copy-v1");
-  assert.equal(recoveryVector.keyringDomain, "sociacl-keyring-plain-v1");
+  assert.equal(recoveryVector.keyringDomain, "sociacl-keyring-plain-v2");
+  assert.equal(DOMAIN_KEYRING_PLAIN, "sociacl-keyring-plain-v2");
   assert.equal(recoveryVector.bindDomain, "sociacl-keyring-delivery-v1");
   assert.equal(recoveryVector.sigDomain, "sociacl-keyring-delivery-sig-v1");
   assert.equal(ARGON2ID_LIMITS.parallelism.floor, 4);
+});
+
+test("keyring plaintext v1 is refused", () => {
+  assert.throws(
+    () => decodeKeyring(lengthPrefixed(["sociacl-keyring-plain-v1"])),
+    (error: unknown) => error instanceof Error && error.message === "recovery-rejected",
+  );
 });
 
 test("passphrase strength matches the shared vector and stays off open", async () => {
@@ -469,12 +483,15 @@ test("recovery copy matches the shared vector and stays off gun", { timeout: 180
   assert.equal(opened.currentPriv(), keyring.currentPriv());
   assert.equal(opened.currentEpriv(), keyring.currentEpriv());
   assert.equal(opened.laneId(), keyring.laneId());
+  assert.equal(opened.contactLaneSecret(), keyring.contactLaneSecret());
   const gun = opened.gunDocument();
   assert.equal(gun.includes(keyring.currentPriv()), false);
   assert.equal(gun.includes(keyring.currentEpriv()), false);
   assert.equal(gun.includes(keyring.laneId()), false);
   assert.equal(hex.includes(keyring.currentPriv()), false);
   assert.equal(hex.includes(keyring.laneId()), false);
+  assert.equal(hex.includes(keyring.contactLaneSecret()), false);
+  assert.equal(gun.includes(keyring.contactLaneSecret()), false);
   const wrong = await errorMessage(() =>
     openRecoveryCopy(new TextEncoder().encode(recoveryVector.wrongPassphraseUtf8), envelope, keyring.principal, 0, [], context),
   );
@@ -574,11 +591,18 @@ test("delivered keyring matches the shared vector and does not mint", async () =
   assert.equal(wrap.ciphertextHex.includes(keyring.currentPriv()), false);
   assert.equal(wrap.ciphertextHex.includes(keyring.currentEpriv()), false);
   assert.equal(wrap.ciphertextHex.includes(keyring.laneId()), false);
+  assert.equal(wrap.ciphertextHex.includes(keyring.contactLaneSecret()), false);
   const opened = delivery.openDeliveredKeyring(recoveryVector.delivery.transportScalarHex, wrap, keyring.principal, 0, [], context);
   assert.equal(opened.principal, keyring.principal);
   assert.equal(opened.pub, keyring.pub);
   assert.equal(opened.currentPriv(), keyring.currentPriv());
   assert.equal(opened.currentEpriv(), keyring.currentEpriv());
+  assert.equal(opened.contactLaneSecret(), keyring.contactLaneSecret());
+  assert.equal(opened.laneId(), keyring.laneId());
+  assert.equal(
+    deriveContactLane(opened.contactLaneSecret(), opened.principal, ring.mint.signingPub),
+    deriveContactLane(keyring.contactLaneSecret(), keyring.principal, ring.mint.signingPub),
+  );
   const stale = await errorMessage(() =>
     delivery.openDeliveredKeyring(recoveryVector.delivery.transportScalarHex, wrap, keyring.principal, 1, [], context),
   );
@@ -936,6 +960,8 @@ test("a recovery copy opens after rotation against its chain", { timeout: 180_00
     [rotation.input],
     context,
     priorLanes(ring.witnessed.rotationSeq),
+    ring.witnessContact.secret,
+    ring.witnessContact.prior,
   );
   const store = new MemoryRecoveryStore(watch([rotation.input], context));
   const envelope = await recovery.sealRecoveryCopyFromString(
@@ -1157,6 +1183,8 @@ test("a rotated delivery needs its chain and a stale seq wins", () => {
     [rotation.input],
     context,
     priorLanes(ring.witnessed.rotationSeq),
+    ring.witnessContact.secret,
+    ring.witnessContact.prior,
   );
   const store = new MemoryKeyWrapStore(watch([rotation.input], context));
   const transport = scalarSea(4);

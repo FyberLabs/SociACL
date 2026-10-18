@@ -2,6 +2,22 @@
 
 ## Encrypted discovery — unreleased
 
+- Derive a per-contact inbox lane with HKDF-SHA256 from a contact-lane
+  secret that is not the disclosed base `laneId`. Info is length-prefixed
+  `sociacl-contact-lane-v1`, version `1`, the recipient, then the sender.
+  Salt is 32 zero bytes. Output is 32 bytes. The secret rotates with the
+  keyring and keeps its own prior list. Recovery and delivery carry it
+  inside the existing keyring plaintext. The recipient signs the lane id
+  and encrypts that signature under `sociacl-contact-lane-grant-v1`. The
+  outer envelope is the ciphertext. A null `currentEpub` is `epub-unknown`.
+  Open failures are `lane-grant-rejected`. Storage indexes the lane id hex
+  alone. Refs #64. Follow-ups #70 and #71. #70 inherits this confidential
+  channel. Account creation is the only mint of that secret. Import
+  refuses a missing contact-lane history with `keyring-rejected`. A second
+  device receives the secret through keyring delivery, including at
+  sequence 0. The genesis backup does not carry it. The keyring plaintext
+  domain is `sociacl-keyring-plain-v2`, and `sociacl-keyring-plain-v1` is
+  refused.
 - Add a passphrase recovery copy of the account keyring
   (`sociacl-recovery-copy-v1`). Argon2id is pinned to RFC 9106's second
   recommended option (`m=64` MiB, `t=3`, `p=4`, version `0x13`, 32-byte

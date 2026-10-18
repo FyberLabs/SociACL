@@ -980,6 +980,7 @@ dependencies = [
  "aes-gcm",
  "argon2",
  "base64ct",
+ "hmac",
  "p256",
  "rand",
  "serde",

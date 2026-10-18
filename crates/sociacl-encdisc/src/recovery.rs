@@ -30,7 +30,8 @@ use crate::limits::{
 use crate::store_write::{sign_store_write, verify_store_write};
 use unicode_normalization::UnicodeNormalization;
 pub(crate) const DOMAIN_RECOVERY: &str = "sociacl-recovery-copy-v1";
-pub(crate) const DOMAIN_KEYRING_PLAIN: &str = "sociacl-keyring-plain-v1";
+pub(crate) const DOMAIN_KEYRING_PLAIN_V1: &str = "sociacl-keyring-plain-v1";
+pub(crate) const DOMAIN_KEYRING_PLAIN: &str = "sociacl-keyring-plain-v2";
 
 /// Ciphertext of one keyring version. The store does not see the passphrase.
 ///
@@ -737,7 +738,12 @@ pub fn open_recovery_copy(
         .iter()
         .map(|lane| lane.as_str())
         .collect();
-    AccountKeyring::import_with_prior_lanes(
+    let prior_contact: Vec<&str> = fields
+        .prior_contact_secrets
+        .iter()
+        .map(|secret| secret.as_str())
+        .collect();
+    AccountKeyring::import_with_contact_secrets(
         fields.principal.as_str(),
         fields.genesis_epub.as_str(),
         fields.current_pub.as_str(),
@@ -751,6 +757,8 @@ pub fn open_recovery_copy(
         rotations,
         context,
         &prior,
+        fields.contact_lane_secret.as_str(),
+        &prior_contact,
     )
 }
 
@@ -905,6 +913,8 @@ pub(crate) struct KeyringFields {
     pub retired: Vec<(Zeroizing<String>, Zeroizing<String>)>,
     pub lane_id: Zeroizing<String>,
     pub prior_lanes: Vec<Zeroizing<String>>,
+    pub contact_lane_secret: Zeroizing<String>,
+    pub prior_contact_secrets: Vec<Zeroizing<String>>,
     pub content_epoch: u64,
     pub rotation_seq: u64,
 }
@@ -912,6 +922,8 @@ pub(crate) struct KeyringFields {
 pub(crate) fn encode_keyring(keyring: &AccountKeyring) -> Result<Zeroizing<Vec<u8>>, EncDiscError> {
     let retired_count = canonical::canonical_decimal(keyring.retired().len() as u64)?;
     let prior_count = canonical::canonical_decimal(keyring.prior_lanes().len() as u64)?;
+    let contact_prior_count =
+        canonical::canonical_decimal(keyring.prior_contact_secrets().len() as u64)?;
     let epoch = canonical::canonical_decimal(keyring.content_epoch())?;
     let seq = canonical::canonical_decimal(keyring.rotation_seq())?;
     let mut total = 0usize;
@@ -938,6 +950,11 @@ pub(crate) fn encode_keyring(keyring: &AccountKeyring) -> Result<Zeroizing<Vec<u
     for lane in keyring.prior_lanes() {
         add(lane.len())?;
     }
+    add(keyring.contact_lane_secret().len())?;
+    add(contact_prior_count.len())?;
+    for secret in keyring.prior_contact_secrets() {
+        add(secret.len())?;
+    }
     add(epoch.len())?;
     add(seq.len())?;
     if total > KEYRING_SERIAL_MAX {
@@ -961,6 +978,11 @@ pub(crate) fn encode_keyring(keyring: &AccountKeyring) -> Result<Zeroizing<Vec<u
     for lane in keyring.prior_lanes() {
         write_field(&mut out, lane);
     }
+    write_field(&mut out, keyring.contact_lane_secret());
+    write_field(&mut out, &contact_prior_count);
+    for secret in keyring.prior_contact_secrets() {
+        write_field(&mut out, secret.as_str());
+    }
     write_field(&mut out, &epoch);
     write_field(&mut out, &seq);
     if out.len() != total {
@@ -975,7 +997,7 @@ pub(crate) fn decode_keyring(bytes: &[u8]) -> Result<KeyringFields, EncDiscError
     }
     let mut cursor = Cursor { bytes, offset: 0 };
     let domain = cursor.next_string()?;
-    if domain.as_str() != DOMAIN_KEYRING_PLAIN {
+    if domain.as_str() == DOMAIN_KEYRING_PLAIN_V1 || domain.as_str() != DOMAIN_KEYRING_PLAIN {
         return Err(EncDiscError::RecoveryRejected);
     }
     let principal = cursor.next_string()?;
@@ -1008,6 +1030,16 @@ pub(crate) fn decode_keyring(bytes: &[u8]) -> Result<KeyringFields, EncDiscError
     for _ in 0..prior_count {
         prior_lanes.push(cursor.next_string()?);
     }
+    let contact_lane_secret = cursor.next_string()?;
+    let contact_prior_count = canonical::parse_canonical_decimal(cursor.next_string()?.as_str())
+        .map_err(|_| EncDiscError::RecoveryRejected)?;
+    if contact_prior_count.saturating_mul(4) > cursor.remaining() as u64 {
+        return Err(EncDiscError::RecoveryRejected);
+    }
+    let mut prior_contact_secrets = Vec::with_capacity(contact_prior_count as usize);
+    for _ in 0..contact_prior_count {
+        prior_contact_secrets.push(cursor.next_string()?);
+    }
     let content_epoch = canonical::parse_canonical_decimal(cursor.next_string()?.as_str())
         .map_err(|_| EncDiscError::RecoveryRejected)?;
     let rotation_seq = canonical::parse_canonical_decimal(cursor.next_string()?.as_str())
@@ -1025,6 +1057,8 @@ pub(crate) fn decode_keyring(bytes: &[u8]) -> Result<KeyringFields, EncDiscError
         retired,
         lane_id,
         prior_lanes,
+        contact_lane_secret,
+        prior_contact_secrets,
         content_epoch,
         rotation_seq,
     })
@@ -1427,6 +1461,7 @@ mod tests {
         );
         assert_eq!(v["domain"].as_str().unwrap(), DOMAIN_RECOVERY);
         assert_eq!(v["keyringDomain"].as_str().unwrap(), DOMAIN_KEYRING_PLAIN);
+        assert_eq!(DOMAIN_KEYRING_PLAIN, "sociacl-keyring-plain-v2");
         assert_eq!(
             v["bindDomain"].as_str().unwrap(),
             crate::delivery::DOMAIN_DELIVERY_BIND
@@ -1435,6 +1470,16 @@ mod tests {
             v["sigDomain"].as_str().unwrap(),
             crate::delivery::DOMAIN_DELIVERY_SIG
         );
+    }
+
+    #[test]
+    fn keyring_plaintext_v1_is_refused() {
+        let mut bytes = Vec::new();
+        write_field(&mut bytes, DOMAIN_KEYRING_PLAIN_V1);
+        assert!(matches!(
+            decode_keyring(&bytes),
+            Err(EncDiscError::RecoveryRejected)
+        ));
     }
 
     #[test]
@@ -1669,7 +1714,11 @@ mod tests {
             g["epriv"].as_str().unwrap(),
         )
         .unwrap();
-        AccountKeyring::from_genesis(&account).unwrap()
+        AccountKeyring::from_genesis_with_contact_secret(
+            &account,
+            g["contactLaneSecret"].as_str().unwrap(),
+        )
+        .unwrap()
     }
 
     struct Hold {
@@ -1777,12 +1826,15 @@ mod tests {
         assert_eq!(opened.current_priv(), keyring.current_priv());
         assert_eq!(opened.current_epriv(), keyring.current_epriv());
         assert_eq!(opened.lane_id(), keyring.lane_id());
+        assert_eq!(opened.contact_lane_secret(), keyring.contact_lane_secret());
         let gun = opened.gun_document();
         assert!(!gun.contains(keyring.current_priv()));
         assert!(!gun.contains(keyring.current_epriv()));
         assert!(!gun.contains(keyring.lane_id()));
         assert!(!hex.contains(keyring.current_priv()));
         assert!(!hex.contains(keyring.lane_id()));
+        assert!(!hex.contains(keyring.contact_lane_secret()));
+        assert!(!gun.contains(keyring.contact_lane_secret()));
         let wrong = open_recovery_copy(
             v["wrongPassphraseUtf8"].as_str().unwrap().as_bytes(),
             &envelope,
@@ -1861,6 +1913,10 @@ mod tests {
                     epub: ring["mint"]["epub"].as_str().unwrap().to_string(),
                     epriv: Zeroizing::new(ring["mint"]["epriv"].as_str().unwrap().to_string()),
                     lane_id: ring["mint"]["laneId"].as_str().unwrap().to_string(),
+                    contact_lane_secret: ring["mint"]["contactLaneSecret"]
+                        .as_str()
+                        .unwrap()
+                        .to_string(),
                 })
             },
             v["passphraseUtf8"].as_str().unwrap().as_bytes(),
@@ -2172,7 +2228,9 @@ mod tests {
         let retired = [(genesis_epub.as_str(), genesis_epriv.as_str())];
         let rotations = [rotation];
         let prior = ring["importPriorLanes"]["priorLane"].as_str().unwrap();
-        let keyring = AccountKeyring::import_with_prior_lanes(
+        let contact = ring["witnessContact"]["secret"].as_str().unwrap();
+        let prior_contact = ring["witnessContact"]["prior"][0].as_str().unwrap();
+        let keyring = AccountKeyring::import_with_contact_secrets(
             &genesis_pub,
             &genesis_epub,
             &current_pub,
@@ -2186,6 +2244,8 @@ mod tests {
             &rotations,
             &base,
             &[prior],
+            contact,
+            &[prior_contact],
         )
         .unwrap();
         let mut store = MemoryRecoveryStore::new(watch(&rotations, &base));

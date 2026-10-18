@@ -6,7 +6,8 @@ import type { AccountKeyring } from "./account-keyring.ts";
 import { canonicalDecimal, lengthPrefixed } from "./canonical.ts";
 import { KEYRING_SERIAL_MAX } from "./keyring-limits.ts";
 
-export const DOMAIN_KEYRING_PLAIN = "sociacl-keyring-plain-v1";
+const DOMAIN_KEYRING_PLAIN_V1 = "sociacl-keyring-plain-v1";
+export const DOMAIN_KEYRING_PLAIN = "sociacl-keyring-plain-v2";
 
 export type KeyringFields = {
   principal: string;
@@ -18,6 +19,8 @@ export type KeyringFields = {
   retired: { epub: string; epriv: string }[];
   laneId: string;
   priorLanes: string[];
+  contactLaneSecret: string;
+  priorContactSecrets: string[];
   contentEpoch: number;
   rotationSeq: number;
 };
@@ -25,6 +28,7 @@ export type KeyringFields = {
 export function encodeKeyring(keyring: AccountKeyring): Uint8Array {
   const retired = keyring.retired();
   const prior = keyring.priorLanes();
+  const priorContact = keyring.priorContactSecrets();
   const fields = [
     DOMAIN_KEYRING_PLAIN,
     keyring.principal,
@@ -38,6 +42,8 @@ export function encodeKeyring(keyring: AccountKeyring): Uint8Array {
   for (const row of retired) fields.push(row.epub, row.epriv);
   fields.push(keyring.laneId(), canonicalDecimal(prior.length));
   for (const lane of prior) fields.push(lane);
+  fields.push(keyring.contactLaneSecret(), canonicalDecimal(priorContact.length));
+  for (const secret of priorContact) fields.push(secret);
   fields.push(canonicalDecimal(keyring.contentEpoch), canonicalDecimal(keyring.rotationSeq));
   let total = 0;
   for (const field of fields) {
@@ -50,7 +56,8 @@ export function encodeKeyring(keyring: AccountKeyring): Uint8Array {
 export function decodeKeyring(bytes: Uint8Array): KeyringFields {
   if (bytes.length > KEYRING_SERIAL_MAX) throw new Error("keyring-too-large");
   const cursor = new Cursor(bytes);
-  if (cursor.nextString() !== DOMAIN_KEYRING_PLAIN) throw new Error("recovery-rejected");
+  const domain = cursor.nextString();
+  if (domain === DOMAIN_KEYRING_PLAIN_V1 || domain !== DOMAIN_KEYRING_PLAIN) throw new Error("recovery-rejected");
   const principal = cursor.nextString();
   const genesisEpub = cursor.nextString();
   const pub = cursor.nextString();
@@ -69,10 +76,29 @@ export function decodeKeyring(bytes: Uint8Array): KeyringFields {
   if (priorCount * 4 > cursor.remaining()) throw new Error("recovery-rejected");
   const priorLanes: string[] = [];
   for (let i = 0; i < priorCount; i += 1) priorLanes.push(cursor.nextString());
+  const contactLaneSecret = cursor.nextString();
+  const contactPriorCount = decimal(cursor.nextString());
+  if (contactPriorCount * 4 > cursor.remaining()) throw new Error("recovery-rejected");
+  const priorContactSecrets: string[] = [];
+  for (let i = 0; i < contactPriorCount; i += 1) priorContactSecrets.push(cursor.nextString());
   const contentEpoch = decimal(cursor.nextString());
   const rotationSeq = decimal(cursor.nextString());
   if (cursor.remaining() !== 0) throw new Error("recovery-rejected");
-  return { principal, genesisEpub, pub, priv, epub, epriv, retired, laneId, priorLanes, contentEpoch, rotationSeq };
+  return {
+    principal,
+    genesisEpub,
+    pub,
+    priv,
+    epub,
+    epriv,
+    retired,
+    laneId,
+    priorLanes,
+    contactLaneSecret,
+    priorContactSecrets,
+    contentEpoch,
+    rotationSeq,
+  };
 }
 
 function decimal(text: string): number {

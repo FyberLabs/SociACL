@@ -18,6 +18,7 @@ import {
 import { bytesToHex, seaPoint, sharedX, uncompressedFromSea } from "../contract/account-key-seal.ts";
 import { lengthPrefixed } from "../contract/canonical.ts";
 import { openReaderWrap } from "../contract/content-wrap.ts";
+import { deriveContactLane } from "../contract/contact-lane.ts";
 import { sealContentWith } from "./support/account-key-deterministic.ts";
 import {
   formatPrincipalKey,
@@ -32,6 +33,7 @@ import {
 const vector = JSON.parse(readFileSync(new URL("../../vectors/encrypted-discovery/account-keyring.json", import.meta.url), "utf8")) as {
   genesis: {
     laneId: string;
+    contactLaneSecret: string;
     signingPub: string;
     signingPriv: string;
     signingScalarHex: string;
@@ -78,11 +80,30 @@ const vector = JSON.parse(readFileSync(new URL("../../vectors/encrypted-discover
   };
   crossWrap: { ephemeralScalar: number; nonceByte: number; epoch: number; wrappedKey: string };
   importPriorLanes: { rule: string; rotationSeq: number; priorLane: string; missingError: string };
+  witnessContact: { secret: string; prior: string[] };
 };
 
 function priorLanes(count: number): string[] {
   const extras = ["11", "22", "33", "44"].map((byte) => byte.repeat(32));
   return [vector.importPriorLanes.priorLane, ...extras].slice(0, count);
+}
+
+function contactPair(seq: number, banned: readonly string[]): [string, string[]] {
+  const prior: string[] = [];
+  const taken = new Set(banned);
+  let n = 0xc1;
+  const take = (): string => {
+    let hex = n.toString(16).padStart(2, "0").repeat(32);
+    while (taken.has(hex)) {
+      n += 1;
+      hex = n.toString(16).padStart(2, "0").repeat(32);
+    }
+    taken.add(hex);
+    n += 1;
+    return hex;
+  };
+  for (let i = 0; i < seq; i += 1) prior.push(take());
+  return [take(), prior];
 }
 
 const accountKey = JSON.parse(readFileSync(new URL("../../vectors/encrypted-discovery/account-key.json", import.meta.url), "utf8")) as {
@@ -200,7 +221,7 @@ function recordsContext(bindings: readonly unknown[] = []): ResolutionContext {
 }
 
 test("rotation matches the shared vector and keeps secrets off gun", () => {
-  const keyring = AccountKeyring.fromGenesis(genesis());
+  const keyring = AccountKeyring.createAccount(genesis());
   const outcome = rotateKeyring(keyring, vector.trusted, vector.lost, [], witnessedContext(), vectorMint);
   const expected = vector.expected;
   assert.equal(outcome.keyring.principal, expected.principal);
@@ -254,7 +275,7 @@ test("rotation matches the shared vector and keeps secrets off gun", () => {
 });
 
 test("builder refuses a held epub and a bad device", () => {
-  const keyring = AccountKeyring.fromGenesis(genesis());
+  const keyring = AccountKeyring.createAccount(genesis());
   const genesisEpubMint = () => ({
     signingPub: vector.mint.signingPub,
     signingPriv: vector.mint.signingPriv,
@@ -317,7 +338,7 @@ test("builder refuses a held epub and a bad device", () => {
 });
 
 test("null currentEpub refuses the seal and ignores gun", () => {
-  const keyring = AccountKeyring.fromGenesis(genesis());
+  const keyring = AccountKeyring.createAccount(genesis());
   const context = emptyContext();
   assert.equal(
     message(() => keyring.sealContent(
@@ -358,6 +379,9 @@ test("null currentEpub refuses the seal and ignores gun", () => {
       1,
       [],
       context,
+      [],
+      vector.witnessContact.secret,
+      vector.witnessContact.prior,
     )),
     vector.importPriorLanes.missingError,
   );
@@ -375,7 +399,7 @@ test("null currentEpub refuses the seal and ignores gun", () => {
       vector.importPriorLanes.rotationSeq,
       [],
       context,
-      priorLanes(vector.importPriorLanes.rotationSeq),
+      priorLanes(vector.importPriorLanes.rotationSeq), vector.witnessContact.secret, vector.witnessContact.prior,
     )),
     vector.errors.pubMismatch,
   );
@@ -408,7 +432,7 @@ test("witnessed import seals only the resolved epub", () => {
     vector.witnessed.rotationSeq,
     [rotation.input],
     context,
-    priorLanes(vector.witnessed.rotationSeq),
+    priorLanes(vector.witnessed.rotationSeq), vector.witnessContact.secret, vector.witnessContact.prior,
   );
   assert.equal(imported.principal, genesisPair.pub);
   assert.equal(imported.genesisEpub, genesisEpub.pub);
@@ -455,7 +479,7 @@ test("witnessed import seals only the resolved epub", () => {
       vector.witnessed.rotationSeq,
       [],
       context,
-      priorLanes(vector.witnessed.rotationSeq),
+      priorLanes(vector.witnessed.rotationSeq), vector.witnessContact.secret, vector.witnessContact.prior,
     )),
     vector.errors.pubMismatch,
   );
@@ -473,7 +497,7 @@ test("witnessed import seals only the resolved epub", () => {
       vector.witnessed.rotationSeq,
       [rotation.input],
       context,
-      priorLanes(vector.witnessed.rotationSeq),
+      priorLanes(vector.witnessed.rotationSeq), vector.witnessContact.secret, vector.witnessContact.prior,
     )),
     vector.errors.epubMismatch,
   );
@@ -491,6 +515,9 @@ test("witnessed import seals only the resolved epub", () => {
       0,
       [rotation.input],
       context,
+      [],
+      vector.genesis.contactLaneSecret,
+      [],
     )),
     vector.errors.rotationRejected,
   );
@@ -507,7 +534,7 @@ test("witnessed import seals only the resolved epub", () => {
     vector.witnessed.rotationSeq,
     [rotation.input],
     recordsContext([{ kind: "nope" }]),
-    priorLanes(vector.witnessed.rotationSeq),
+    priorLanes(vector.witnessed.rotationSeq), vector.witnessContact.secret, vector.witnessContact.prior,
   );
   assert.equal(ignored.epub, epub.pub);
   assert.equal(
@@ -524,7 +551,7 @@ test("witnessed import seals only the resolved epub", () => {
       vector.witnessed.rotationSeq,
       [rotation.input],
       context,
-      priorLanes(vector.witnessed.rotationSeq),
+      priorLanes(vector.witnessed.rotationSeq), vector.witnessContact.secret, vector.witnessContact.prior,
     )),
     vector.errors.contentEpoch,
   );
@@ -532,7 +559,7 @@ test("witnessed import seals only the resolved epub", () => {
 
 test("a fresh mint is v3 and leaves the principal in place", () => {
   const account = genesis();
-  const keyring = AccountKeyring.fromGenesis(account);
+  const keyring = AccountKeyring.createAccount(account);
   const outcome = rotateKeyring(keyring, vector.trusted, vector.lost, [], witnessedContext(), mintRotation);
   assert.equal(outcome.keyring.principal, account.principal);
   assert.equal(outcome.draft.version, 3);
@@ -566,6 +593,9 @@ test("genesis-only import accepts the witnessed binding", () => {
     0,
     [],
     context,
+    [],
+    vector.genesis.contactLaneSecret,
+    [],
   );
   assert.equal(imported.epub, enc.pub);
   const sealed = imported.sealContent(
@@ -597,13 +627,16 @@ test("genesis-only import accepts the witnessed binding", () => {
       0,
       [],
       context,
+      [],
+      vector.genesis.contactLaneSecret,
+      [],
     )),
     vector.errors.epubMismatch,
   );
 });
 
 test("builder confirms the witnessed epub before rotating", () => {
-  const keyring = AccountKeyring.fromGenesis({
+  const keyring = AccountKeyring.createAccount({
     ...genesis(),
     epub: vector.mint.epub,
     epriv: vector.mint.epriv,
@@ -650,6 +683,7 @@ test("builder refuses an older signing key", () => {
     chain.input,
     context,
     priorLanes(2),
+    ...contactPair(2, [vector.witnessed.laneId, ...priorLanes(2)]),
   );
   assert.equal(
     message(() => rotateKeyring(imported, vector.trusted, vector.lost, chain.input, context, () => ({
@@ -679,6 +713,9 @@ test("too many retired keys are refused", () => {
       0,
       [],
       emptyContext(),
+      [],
+      vector.genesis.contactLaneSecret,
+      [],
     )),
     vector.errors.tooManyKeys,
   );
@@ -708,6 +745,9 @@ test("the builder refuses a retired set that is already full", () => {
     0,
     [],
     context,
+    [],
+    vector.genesis.contactLaneSecret,
+    [],
   );
   assert.equal(imported.retired().length, 1024);
   const next = scalarSeaN(2000);
@@ -741,6 +781,9 @@ test("an unsafe content epoch is refused", () => {
       0,
       [],
       witnessedContext(),
+      [],
+      vector.genesis.contactLaneSecret,
+      [],
     )),
     vector.errors.contentEpoch,
   );
@@ -786,7 +829,7 @@ test("typescript seal opens and matches the shared rust wrap", () => {
     vector.witnessed.rotationSeq,
     [row.input],
     context,
-    priorLanes(vector.witnessed.rotationSeq),
+    priorLanes(vector.witnessed.rotationSeq), vector.witnessContact.secret, vector.witnessContact.prior,
   );
   const ephemeral = new Uint8Array(32);
   ephemeral[31] = vector.crossWrap.ephemeralScalar;
@@ -867,6 +910,9 @@ test("a content epoch cannot increment past the safe integer cap", () => {
     0,
     [],
     context,
+    [],
+    vector.genesis.contactLaneSecret,
+    [],
   );
   const next = scalarSeaN(20);
   const nextEnc = scalarSeaN(21);
@@ -973,6 +1019,9 @@ test("a lane id cannot be reused across later rotations", () => {
     0,
     [],
     context,
+    [],
+    vector.genesis.contactLaneSecret,
+    [],
   );
   const chain: Record<string, unknown>[] = [];
   for (let step = 0; step < 3; step++) {
@@ -1031,7 +1080,13 @@ test("a lane id cannot be reused across later rotations", () => {
     chain,
     context,
     current.priorLanes(),
+    current.contactLaneSecret(),
+    current.priorContactSecrets(),
   );
+  assert.equal(restored.laneId(), current.laneId());
+  assert.equal(restored.contactLaneSecret(), current.contactLaneSecret());
+  assert.deepEqual([...restored.priorLanes()], [...current.priorLanes()]);
+  assert.deepEqual([...restored.priorContactSecrets()], [...current.priorContactSecrets()]);
   assert.equal(
     message(() => rotateKeyring(restored, vector.trusted, vector.lost, chain, context, () => ({
       signingPub: reuse.pub,
@@ -1057,7 +1112,84 @@ test("a lane id cannot be reused across later rotations", () => {
       chain,
       context,
       [current.laneId()],
+      current.contactLaneSecret(),
+      current.priorContactSecrets(),
     )),
     vector.errors.badLane,
   );
+});
+
+test("create then restore keeps lanes and a missing history is refused", () => {
+  const account = genesis();
+  const created = AccountKeyring.createAccount(account);
+  assert.equal(created.rotationSeq, 0);
+  assert.equal(message(() => AccountKeyring.fromGenesis(account)), vector.errors.keyringRejected);
+  const restored = AccountKeyring.fromGenesis(account, created.contactLaneSecret());
+  const sender = vector.mint.signingPub;
+  assert.equal(
+    deriveContactLane(restored.contactLaneSecret(), restored.principal, sender),
+    deriveContactLane(created.contactLaneSecret(), created.principal, sender),
+  );
+  assert.equal(restored.laneId(), created.laneId());
+  assert.notEqual(deriveContactLane(created.contactLaneSecret(), created.principal, sender), created.laneId());
+  const context = emptyContext();
+  assert.equal(
+    message(() => AccountKeyring.import(
+      account.principal,
+      account.epub,
+      account.pub,
+      account.priv,
+      account.epub,
+      account.epriv,
+      [],
+      account.laneId,
+      0,
+      0,
+      [],
+      context,
+    )),
+    vector.errors.keyringRejected,
+  );
+  assert.equal(
+    message(() => AccountKeyring.import(
+      account.principal,
+      account.epub,
+      account.pub,
+      account.priv,
+      account.epub,
+      account.epriv,
+      [],
+      account.laneId,
+      0,
+      1,
+      [],
+      context,
+      [],
+      vector.genesis.contactLaneSecret,
+      [],
+    )),
+    vector.errors.keyringRejected,
+  );
+  for (const seq of [Infinity, Number.MAX_VALUE, vector.unsafeContentEpoch]) {
+    assert.equal(
+      message(() => AccountKeyring.import(
+        account.principal,
+        account.epub,
+        account.pub,
+        account.priv,
+        account.epub,
+        account.epriv,
+        [],
+        account.laneId,
+        0,
+        seq,
+        [],
+        context,
+        [],
+        vector.genesis.contactLaneSecret,
+        [],
+      )),
+      vector.errors.keyringRejected,
+    );
+  }
 });
