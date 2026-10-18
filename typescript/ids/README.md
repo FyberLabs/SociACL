@@ -83,6 +83,12 @@ Signing bytes are `LP(domain) LP(field1) …`, with a 32-bit little-endian UTF-8
 byte length on each field. `linkId` is SHA-256 of these bytes and does not depend
 on an ECDSA signature. SEA proofs are raw P-256 `r||s` in canonical unpadded
 base64url; both high-S and low-S verify. SEA envelopes are not accepted.
+`verifySignedAt(principal, rotations, ctx, bytes, sig, issuedAt, kind, attest?)`
+resolves the current key first. A present key returns `{key, mode: "present"}`
+or `bad-signature`. A retired key returns `{key, mode: "witnessed"}` only for
+a cancel whose `sociacl-acl-attest-v1` witness checks at `issuedAt`. Every
+other retired-key failure is `unwitnessed-retired-key`. `issuedAt` past `now`
+plus `clockSkewSeconds` is `future-record`.
 
 Wallet proofs are EIP-4361 messages signed with EIP-191 `personal_sign`. The
 statement is exactly `SociACL link: <signing-byte sha256>`, the address must

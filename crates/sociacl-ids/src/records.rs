@@ -2159,17 +2159,6 @@ pub fn sign_with_keyring(sea_priv: &str, message: &[u8]) -> Result<String, Reaso
 fn record_id_of(message: &[u8]) -> String {
     hex(&Sha256::digest(message))
 }
-fn row_bytes(raw: &Value) -> Result<Vec<u8>, Reason> {
-    let s = raw.as_str().ok_or(Reason::BadRecord)?;
-    if s.len() % 2 != 0
-        || !s
-            .bytes()
-            .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
-    {
-        return Err(Reason::BadRecord);
-    }
-    unhex(s).map_err(|_| Reason::BadRecord)
-}
 /// `sociacl-acl-attest-v1`. Checked like [`attest_verify`] with `now = issued_at`.
 /// Nothing in this package issues the claim.
 pub fn verify_acl_attestation(
@@ -2204,127 +2193,65 @@ pub fn verify_acl_attestation(
     })
 }
 /// Present authority, or a retired key only for a witnessed cancel.
-/// Retired-key grants and requests are refused even when witnessed.
-/// A resolver failure is returned unchanged, diagnostics included.
+/// Every retired-key failure is [`Reason::UnwitnessedRetiredKey`].
+/// A resolver failure is returned unchanged.
 pub fn verify_signed_at(
-    row: &Value,
+    principal: &PrincipalId,
     rotations: &[Value],
     ctx: &ResolutionContext<'_>,
-) -> Resolution<SignedAt> {
-    let fail = |reason| Resolution {
-        result: Err(reason),
-        diagnostics: Vec::new(),
-    };
-    let Some(r) = row.as_object() else {
-        return fail(Reason::BadRecord);
-    };
-    if !only(
-        row,
-        &["principal", "sig", "bytes", "issuedAt", "role", "attest"],
-    ) {
-        return fail(Reason::BadRecord);
+    message: &[u8],
+    sig: &str,
+    issued_at: u64,
+    kind: &str,
+    attest: Option<&str>,
+) -> Result<SignedAt, Reason> {
+    let account = resolve_current_key(principal, rotations, ctx).result?;
+    if issued_at > MAX_SAFE || issued_at > ctx.now.saturating_add(ctx.policy.clock_skew_seconds) {
+        return Err(Reason::FutureRecord);
     }
-    let principal = match r.get("principal").and_then(Value::as_str) {
-        Some(s) => match parse_principal_id(s) {
-            Ok(p) => p,
-            Err(e) => return fail(e),
-        },
-        None => return fail(Reason::NotString),
-    };
-    let issued_at = match r
-        .get("issuedAt")
-        .map(number)
-        .unwrap_or(Err(Reason::BadRecord))
-    {
-        Ok(n) => n,
-        Err(e) => return fail(e),
-    };
-    let role = match r.get("role").and_then(Value::as_str) {
-        Some("grant") => AclRole::Grant,
-        Some("request") => AclRole::Request,
-        Some("cancel") => AclRole::Cancel,
-        _ => return fail(Reason::BadRecord),
-    };
-    let sig = match r.get("sig").and_then(Value::as_str) {
-        Some(s) => match text(s, 128) {
-            Ok(s) => s,
-            Err(e) => return fail(e),
-        },
-        None => return fail(Reason::NotString),
-    };
-    let message = match r
-        .get("bytes")
-        .map(row_bytes)
-        .unwrap_or(Err(Reason::BadRecord))
-    {
-        Ok(b) => b,
-        Err(e) => return fail(e),
-    };
-    if let Some(attest) = r.get("attest") {
-        if !attest.is_string() {
-            return fail(Reason::BadRecord);
+    let state = history_state(principal, &account.rotations, issued_at, ctx.now);
+    if state.key == account.current_key {
+        if kind != "grant" && kind != "cancel" && kind != "request" {
+            return Err(Reason::BadRecord);
         }
-    }
-    if ctx.now > MAX_SAFE {
-        return fail(Reason::MissingHistory);
-    }
-    if issued_at > ctx.now {
-        return fail(Reason::FutureRecord);
-    }
-    let account = resolve_current_key(&principal, rotations, ctx);
-    let account = match account.result {
-        Ok(account) => account,
-        Err(reason) => {
-            return Resolution {
-                result: Err(reason),
-                diagnostics: account.diagnostics,
-            }
-        }
-    };
-    let state = history_state(&principal, &account.rotations, issued_at, ctx.now);
-    if !key_verify(&state.key, sig, &message) {
-        return fail(Reason::BadSignature);
-    }
-    let retired = state.key != account.current_key;
-    if retired && role != AclRole::Cancel {
-        return fail(Reason::BadSignature);
-    }
-    if retired {
-        let Some(attest) = r.get("attest").and_then(Value::as_str) else {
-            return fail(Reason::BadAttestation);
+        let Ok(sig) = text(sig, 128) else {
+            return Err(Reason::BadSignature);
         };
-        let attest = match verify_acl_attestation(attest, ctx.jwks, issued_at, &message) {
-            Ok(a) => a,
-            Err(e) => return fail(e),
-        };
-        if attest.principal != principal {
-            return fail(Reason::BadAttestation);
+        if !key_verify(&account.current_key, sig, message) {
+            return Err(Reason::BadSignature);
         }
+        return Ok(SignedAt {
+            key: account.current_key,
+            mode: SignedAtMode::Present,
+        });
     }
-    Resolution {
-        result: Ok(SignedAt {
-            principal,
-            key: state.key,
-            role,
-            issued_at,
-        }),
-        diagnostics: Vec::new(),
+    let Some(attest) = attest else {
+        return Err(Reason::UnwitnessedRetiredKey);
+    };
+    let Ok(sig) = text(sig, 128) else {
+        return Err(Reason::UnwitnessedRetiredKey);
+    };
+    let claim = verify_acl_attestation(attest, ctx.jwks, issued_at, message)
+        .map_err(|_| Reason::UnwitnessedRetiredKey)?;
+    if kind != "cancel" || claim.principal != *principal || !key_verify(&state.key, sig, message) {
+        return Err(Reason::UnwitnessedRetiredKey);
     }
+    Ok(SignedAt {
+        key: state.key,
+        mode: SignedAtMode::Witnessed,
+    })
 }
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
-pub enum AclRole {
-    Grant,
-    Request,
-    Cancel,
+pub enum SignedAtMode {
+    Present,
+    Witnessed,
 }
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SignedAt {
-    pub principal: PrincipalId,
     pub key: PrincipalId,
-    pub role: AclRole,
-    pub issued_at: u64,
+    pub mode: SignedAtMode,
 }
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

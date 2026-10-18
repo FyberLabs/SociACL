@@ -98,17 +98,20 @@
 ## sociacl-ids 0.9.0 — unreleased
 
 - Export the shared length-prefix encoder `lengthPrefixed` / `length_prefixed`.
-  Integer fields are decimal strings. Copies in the post and request modules
-  stay where they are.
+  Integer fields are decimal strings.
 - `verifyKeySignature` / `verify_key_signature` checks a SEA P-256 signature
   over SHA-256. The signature is raw r||s, base64url. High-S and low-S both
   verify. `signWithKeyring` / `sign_with_keyring` signs with a keyring SEA
   scalar and returns that encoding.
-- `verifySignedAt` / `verify_signed_at` accepts a present key for a grant,
-  request, or cancel. A retired key is accepted only for a witnessed cancel.
-  A retired grant or request is `bad-signature` even when an attestation is
-  attached. `issuedAt` past `now` is `future-record`. A resolver failure is
-  returned unchanged.
+- `verifySignedAt` / `verify_signed_at` takes the principal, rotations,
+  resolution context, bytes, signature, `issuedAt`, kind (`grant`, `cancel`,
+  or `request`), and an optional attestation. It resolves the current key
+  first and returns that failure unchanged. `issuedAt` past `now` plus clock
+  skew is `future-record`. A present key returns `{key, mode: "present"}`, or
+  `bad-signature` when the signature fails. A retired key returns
+  `{key, mode: "witnessed"}` only for a cancel with a valid
+  `sociacl-acl-attest-v1` witness. Every other retired-key failure, including
+  a witnessed grant or request, is `unwitnessed-retired-key`.
 - `verifyAclAttestation` / `verify_acl_attestation` checks claim type
   `sociacl-acl-attest-v1`. The claim is exactly `{typ, principal, recordId,
   iat, exp}`, `iat` equals `issuedAt`, and `exp - iat` is at most 900. It is

@@ -146,10 +146,10 @@ export const aclSoul = p => soul(['s3rch', 'acl', formatPrincipalKey(p)], 3);
 export const grantSoul = (owner, object, accessor) => soul(['s3rch', 'acl', formatPrincipalKey(owner), objectKey(object), formatPrincipalKey(accessor)], 5);
 /** @param {PrincipalId} owner @param {ObjectId} object @param {PrincipalId} accessor */
 export const postSoul = (owner, object, accessor) => soul(['s3rch', 'acl', formatPrincipalKey(owner), 'post', objectKey(object), formatPrincipalKey(accessor)], 6);
-/** @param {PrincipalId} owner @param {MembershipPredicate} predicate @param {ObjectId} set @param {PrincipalId} accessor */
-export function membershipSoul(owner, predicate, set, accessor) {
+/** @param {PrincipalId} setOwner @param {MembershipPredicate} predicate @param {ObjectId} set @param {PrincipalId} member */
+export function membershipSoul(setOwner, predicate, set, member) {
   if (predicate !== 'same-group' && predicate !== 'named-circle') throw Error('invalid membership predicate');
-  return soul(['s3rch', 'acl', formatPrincipalKey(owner), 'member', predicate, objectKey(set), formatPrincipalKey(accessor)], 7);
+  return soul(['s3rch', 'acl', formatPrincipalKey(setOwner), 'member', predicate, objectKey(set), formatPrincipalKey(member)], 7);
 }
 /** @param {PrincipalId} owner @param {ObjectId} object */
 export const objectSetSoul = (owner, object) => soul(['s3rch', 'acl', formatPrincipalKey(owner), 'objset', objectKey(object)], 5);

@@ -46,6 +46,7 @@ pub enum Reason {
     MissingHistory,
     UnretainedLink,
     WalletRequired,
+    UnwitnessedRetiredKey,
 }
 impl fmt::Display for Reason {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

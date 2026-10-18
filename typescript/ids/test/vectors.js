@@ -29,7 +29,7 @@ function run(f, c) {
     const rotations = c.rotations ?? ctx.rotations ?? [];
     let r;
     switch (c.operation) {
-      case 'verify-signed-at': r = ids.verifySignedAt(c.input, rotations, rc); break;
+      case 'verify-signed-at': r = ids.verifySignedAt(c.input.principal, rotations, rc, unhex(c.input.bytes), c.input.sig, c.input.issuedAt, c.input.kind, c.input.attest); break;
       case 'verify-acl-attest': r = ids.verifyAclAttestation(c.input.jws, ctx.jwks, c.input.issuedAt, unhex(c.input.bytes)); break;
       case 'verify-key-signature': r = ids.verifyKeySignature(c.input.key, c.input.sig, unhex(c.input.bytes)); break;
       case 'sign-with-keyring': r = ids.signWithKeyring(c.input.seaPriv, unhex(c.input.bytes)); break;

@@ -387,23 +387,21 @@ fn run(f: &Family, c: &Case, v: &Value) -> Result<Value, Reason> {
         let plain = |r: Result<Value, Reason>| r;
         return match c.extra["operation"].as_str().unwrap() {
             "verify-signed-at" => {
-                let resolution = verify_signed_at(v, &rotations, &rc);
-                if let Some(reasons) = c.extra.get("diagnosticReasons") {
-                    assert_eq!(
-                        serde_json::to_value(
-                            resolution
-                                .diagnostics
-                                .iter()
-                                .map(|d| d.reason)
-                                .collect::<Vec<_>>()
-                        )
-                        .unwrap(),
-                        *reasons,
-                        "{} diagnostics",
-                        c.name
-                    );
-                }
-                plain(resolution.result.map(|s| serde_json::to_value(s).unwrap()))
+                let principal = parse_principal_id(v["principal"].as_str().unwrap())?;
+                let bytes = unhex_vec(v["bytes"].as_str().unwrap());
+                plain(
+                    verify_signed_at(
+                        &principal,
+                        &rotations,
+                        &rc,
+                        &bytes,
+                        v["sig"].as_str().unwrap(),
+                        v["issuedAt"].as_u64().unwrap(),
+                        v["kind"].as_str().unwrap(),
+                        v.get("attest").and_then(Value::as_str),
+                    )
+                    .map(|signed| serde_json::to_value(signed).unwrap()),
+                )
             }
             "verify-acl-attest" => {
                 let bytes = unhex_vec(v["bytes"].as_str().unwrap());
