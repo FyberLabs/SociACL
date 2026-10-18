@@ -293,7 +293,12 @@ fn open_authenticated_delivery(
         .iter()
         .map(|lane| lane.as_str())
         .collect();
-    let keyring = AccountKeyring::import_with_prior_lanes(
+    let prior_contact: Vec<&str> = fields
+        .prior_contact_secrets
+        .iter()
+        .map(|secret| secret.as_str())
+        .collect();
+    let keyring = AccountKeyring::import_with_contact_secrets(
         fields.principal.as_str(),
         fields.genesis_epub.as_str(),
         fields.current_pub.as_str(),
@@ -307,6 +312,8 @@ fn open_authenticated_delivery(
         rotations,
         context,
         &prior,
+        fields.contact_lane_secret.as_str(),
+        &prior_contact,
     )?;
     if keyring.current_epub().as_ref() != wrap.epub {
         return Err(EncDiscError::WrapRejected);
@@ -1286,7 +1293,11 @@ mod tests {
             g["epriv"].as_str().unwrap(),
         )
         .unwrap();
-        AccountKeyring::from_genesis(&account).unwrap()
+        AccountKeyring::from_genesis_with_contact_secret(
+            &account,
+            g["contactLaneSecret"].as_str().unwrap(),
+        )
+        .unwrap()
     }
 
     fn scalar_sea(n: u16) -> (String, Zeroizing<String>) {

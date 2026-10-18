@@ -149,13 +149,14 @@ type RejectRow = {
 const ring = JSON.parse(readFileSync(new URL("../../vectors/encrypted-discovery/account-keyring.json", import.meta.url), "utf8")) as {
   genesis: {
     laneId: string;
+    contactLaneSecret: string;
     signingPub: string;
     signingPriv: string;
     epub: string;
     epriv: string;
     principal: string;
   };
-  mint: { signingPub: string; signingPriv: string; epub: string; epriv: string; laneId: string };
+  mint: { signingPub: string; signingPriv: string; epub: string; epriv: string; laneId: string; contactLaneSecret: string };
   trusted: string[];
   lost: string;
   genesisBinding: unknown;
@@ -196,6 +197,7 @@ function principalOf(): PrincipalId {
 function genesisKeyring(): AccountKeyring {
   return AccountKeyring.fromGenesis(
     importGenesis(ring.genesis.laneId, ring.genesis.signingPub, ring.genesis.signingPriv, ring.genesis.epub, ring.genesis.epriv),
+    ring.genesis.contactLaneSecret,
   );
 }
 
@@ -224,6 +226,7 @@ function vectorMint() {
     epub: ring.mint.epub,
     epriv: ring.mint.epriv,
     laneId: ring.mint.laneId,
+    contactLaneSecret: ring.mint.contactLaneSecret,
   };
 }
 
@@ -469,12 +472,15 @@ test("recovery copy matches the shared vector and stays off gun", { timeout: 180
   assert.equal(opened.currentPriv(), keyring.currentPriv());
   assert.equal(opened.currentEpriv(), keyring.currentEpriv());
   assert.equal(opened.laneId(), keyring.laneId());
+  assert.equal(opened.contactLaneSecret(), keyring.contactLaneSecret());
   const gun = opened.gunDocument();
   assert.equal(gun.includes(keyring.currentPriv()), false);
   assert.equal(gun.includes(keyring.currentEpriv()), false);
   assert.equal(gun.includes(keyring.laneId()), false);
   assert.equal(hex.includes(keyring.currentPriv()), false);
   assert.equal(hex.includes(keyring.laneId()), false);
+  assert.equal(hex.includes(keyring.contactLaneSecret()), false);
+  assert.equal(gun.includes(keyring.contactLaneSecret()), false);
   const wrong = await errorMessage(() =>
     openRecoveryCopy(new TextEncoder().encode(recoveryVector.wrongPassphraseUtf8), envelope, keyring.principal, 0, [], context),
   );
@@ -574,6 +580,7 @@ test("delivered keyring matches the shared vector and does not mint", async () =
   assert.equal(wrap.ciphertextHex.includes(keyring.currentPriv()), false);
   assert.equal(wrap.ciphertextHex.includes(keyring.currentEpriv()), false);
   assert.equal(wrap.ciphertextHex.includes(keyring.laneId()), false);
+  assert.equal(wrap.ciphertextHex.includes(keyring.contactLaneSecret()), false);
   const opened = delivery.openDeliveredKeyring(recoveryVector.delivery.transportScalarHex, wrap, keyring.principal, 0, [], context);
   assert.equal(opened.principal, keyring.principal);
   assert.equal(opened.pub, keyring.pub);

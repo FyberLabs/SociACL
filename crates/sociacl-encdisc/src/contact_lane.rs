@@ -1,12 +1,14 @@
 //! Per-contact inbox lanes.
 //!
-//! The account lane secret is the keyring `laneId` (32 bytes). A contact
-//! lane id is HKDF-SHA256 of that secret. The recipient seals the id to
-//! the sender's resolved `current_epub`. Storage indexes the lane id hex
-//! and nothing else. A lane is delivery only. It does not grant.
+//! The HKDF input is the keyring contact-lane secret, 32 random bytes.
+//! It is not the disclosed base `lane_id`. The recipient signs the lane id
+//! and then encrypts that signature. The outer envelope is the ciphertext.
+//! Recipient and sender ids that the opener already knows are associated
+//! data. They are not a public signature. A lane is delivery only.
 //!
-//! This module does not wire Panopticon or Gun, and it does not open a
-//! first-contact channel. Those are SociACL#71 and SociACL#70.
+//! There is no Gun user-encryption fallback. This module does not wire
+//! Panopticon or Gun, and it does not open a first-contact channel. Those
+//! are SociACL#71 and SociACL#70.
 
 use aes_gcm::aead::{Aead, KeyInit, Payload};
 use aes_gcm::{Aes256Gcm, Nonce};
@@ -16,7 +18,7 @@ use rand::rngs::OsRng;
 use rand::RngCore;
 use sha2::Sha256;
 use sociacl_ids::{parse_principal_id, PrincipalId};
-use zeroize::{Zeroize, Zeroizing};
+use zeroize::Zeroize;
 
 use crate::account::require_lane;
 use crate::canonical::{self, canonical_decimal};
@@ -26,27 +28,22 @@ use crate::keyring::AccountKeyring;
 use crate::sea::{self, ecdh_x, uncompressed_point};
 
 /// HKDF info label. Version is a separate length-prefixed field.
-pub const CONTACT_LANE_DOMAIN: &str = "sociacl-contact-lane-v1";
+const CONTACT_LANE_DOMAIN: &str = "sociacl-contact-lane-v1";
 /// Canonical decimal version inside the HKDF info.
-pub const CONTACT_LANE_VERSION: &str = "1";
+const CONTACT_LANE_VERSION: &str = "1";
 /// KDF, associated data, and plaintext domain for a contact-lane grant.
-pub const CONTACT_LANE_GRANT_DOMAIN: &str = "sociacl-contact-lane-grant-v1";
-/// Signature domain. Separate from the wrap domain, in the style of keyring delivery.
-pub const CONTACT_LANE_GRANT_SIG_DOMAIN: &str = "sociacl-contact-lane-grant-sig-v1";
+const CONTACT_LANE_GRANT_DOMAIN: &str = "sociacl-contact-lane-grant-v1";
+/// Signature domain. The signature is inside the ciphertext.
+const CONTACT_LANE_GRANT_SIG_DOMAIN: &str = "sociacl-contact-lane-grant-sig-v1";
 
 const VER_GRANT: u8 = 1;
 const GRANT_BLOB_MAX: usize = 4096;
 
-/// A sealed contact lane. The lane id is inside the ciphertext.
-/// `priv`, `epriv`, and the lane secret are not fields.
+/// Outer envelope. The lane id and the recipient signature are inside.
+/// `priv`, `epriv`, and the contact-lane secret are not fields.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ContactLaneGrant {
-    pub recipient: PrincipalId,
-    pub sender: PrincipalId,
-    pub sender_epub: PrincipalId,
-    pub rotation_seq: u64,
     pub ciphertext_hex: String,
-    pub signature: String,
 }
 
 /// What the sender learns. `lookup_key` is the lane id hex.
@@ -59,22 +56,17 @@ pub struct OpenedContactLane {
     pub rotation_seq: u64,
 }
 
-/// One contact to re-grant after a lane-secret rotation.
+/// One contact to re-grant after the contact-lane secret rotates.
 pub struct ContactTarget<'a> {
     pub principal: &'a str,
     pub rotations: &'a [serde_json::Value],
     pub context: &'a sociacl_ids::ResolutionContext<'a>,
 }
 
-/// A contact lane is not a grant. Hopcap is unchanged.
-pub fn contact_lane_mints_grant() -> bool {
-    false
-}
-
 /// HKDF info. Length-prefixed UTF-8, little-endian uint32 lengths, in this
 /// order: domain, version, recipient PrincipalId, sender PrincipalId.
 /// The ids are not sorted. Direction is the order of the arguments.
-pub fn contact_lane_info(recipient: &str, sender: &str) -> Result<Vec<u8>, EncDiscError> {
+fn contact_lane_info(recipient: &str, sender: &str) -> Result<Vec<u8>, EncDiscError> {
     let owner = require_principal(recipient)?;
     let from = require_principal(sender)?;
     canonical::length_prefixed(&[
@@ -85,51 +77,49 @@ pub fn contact_lane_info(recipient: &str, sender: &str) -> Result<Vec<u8>, EncDi
     ])
 }
 
-/// HKDF-SHA256. IKM is the 32-byte lane secret. Salt is 32 zero bytes.
-/// Info is [`contact_lane_info`]. Output is 32 bytes, lowercase hex.
+/// HKDF-SHA256. IKM is the 32-byte contact-lane secret. Salt is 32 zero
+/// bytes. Info is [`contact_lane_info`]. Output is 32 bytes, lowercase hex.
+/// HKDF of the disclosed base lane id is a different value.
 pub fn derive_contact_lane(
-    lane_secret_hex: &str,
+    contact_secret_hex: &str,
     recipient: &str,
     sender: &str,
 ) -> Result<String, EncDiscError> {
-    let ikm = lane_secret_bytes(lane_secret_hex)?;
-    let mut info = contact_lane_info(recipient, sender)?;
+    let mut ikm = lane_secret_bytes(contact_secret_hex)?;
+    let info = contact_lane_info(recipient, sender)?;
     let okm = hkdf_sha256(&ikm, &info)?;
-    info.zeroize();
+    ikm.zeroize();
     Ok(encode_hex(&okm[..]))
 }
 
-/// Contact lane at `seq`. `prior_lanes[seq]` is the secret that was current
-/// at that sequence, and `prior_lanes.len()` is `rotation_seq`. The current
-/// secret is `lane_id`. A derived id that equals the current or a prior
-/// base lane is [`EncDiscError::BadLane`].
+/// Contact lane at `seq`. `prior_contact_secrets[seq]` is the secret that
+/// was current at that sequence, and `prior_contact_secrets.len()` is
+/// `rotation_seq`. The current secret is `contact_lane_secret`. A sequence
+/// above `rotation_seq` is [`EncDiscError::BadLane`]. A derived id that
+/// equals a disclosed base lane or a contact-lane secret is
+/// [`EncDiscError::BadLane`].
 pub fn resolve_contact_lane(
     keyring: &AccountKeyring,
     sender: &str,
     seq: u64,
 ) -> Result<String, EncDiscError> {
-    let prior = keyring.prior_lanes();
+    let prior = keyring.prior_contact_secrets();
     if prior.len() as u64 != keyring.rotation_seq() || seq > keyring.rotation_seq() {
         return Err(EncDiscError::BadLane);
     }
     let secret = if seq == keyring.rotation_seq() {
-        keyring.lane_id()
+        keyring.contact_lane_secret()
     } else {
         prior
             .get(seq as usize)
-            .map(String::as_str)
+            .map(|held| held.as_str())
             .ok_or(EncDiscError::BadLane)?
     };
     let lane = derive_contact_lane(secret, keyring.principal().as_ref(), sender)?;
-    if contact_lane_reuses_base(&lane, keyring.lane_id(), prior) {
+    if contact_lane_collides(&lane, keyring) {
         return Err(EncDiscError::BadLane);
     }
     Ok(lane)
-}
-
-/// Same rule as a keyring mint: the current base lane and every prior base lane are taken.
-pub fn contact_lane_reuses_base(lane_id: &str, current: &str, prior: &[String]) -> bool {
-    require_lane(lane_id).is_err() || lane_id == current || prior.iter().any(|held| held == lane_id)
 }
 
 /// Opaque storage key. It is the lane id hex. It is not a PrincipalId and
@@ -139,13 +129,22 @@ pub fn lane_lookup_key(lane_id: &str) -> Result<String, EncDiscError> {
     Ok(lane_id.to_string())
 }
 
-/// Length-prefixed grant plaintext: domain, lane id, recipient, decimal sequence.
-pub fn contact_lane_grant_plaintext(
+/// Length-prefixed grant plaintext: domain, lane id, recipient, decimal
+/// sequence, and the signature that was made before encryption.
+fn contact_lane_grant_plaintext(
     lane_id: &str,
     recipient: &str,
     rotation_seq: u64,
+    signature: &str,
 ) -> Result<Vec<u8>, EncDiscError> {
     require_lane(lane_id)?;
+    if signature.len() != 128
+        || !signature
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+    {
+        return Err(EncDiscError::BadKey);
+    }
     let owner = require_principal(recipient)?;
     let seq = canonical_decimal(rotation_seq)?;
     canonical::length_prefixed(&[
@@ -153,11 +152,12 @@ pub fn contact_lane_grant_plaintext(
         lane_id,
         owner.as_ref(),
         seq.as_str(),
+        signature,
     ])
 }
 
 /// Associated data for the grant wrap. The shared secret is not a field.
-pub fn contact_lane_grant_aad(
+fn contact_lane_grant_aad(
     recipient: &str,
     sender: &str,
     sender_epub: &str,
@@ -179,22 +179,22 @@ pub fn contact_lane_grant_aad(
     ])
 }
 
-/// Signature message. Domain is [`CONTACT_LANE_GRANT_SIG_DOMAIN`].
-pub fn contact_lane_signature_message(
-    blob: &[u8],
+/// Signature message. Signed before encryption. It does not cover the blob.
+fn contact_lane_signature_message(
+    lane_id: &str,
     recipient: &str,
     sender: &str,
     sender_epub: &str,
     rotation_seq: u64,
 ) -> Result<Vec<u8>, EncDiscError> {
+    require_lane(lane_id)?;
     let owner = require_principal(recipient)?;
     let from = require_principal(sender)?;
     let epub = require_principal(sender_epub)?;
     let seq = canonical_decimal(rotation_seq)?;
-    let digest = canonical::sha256_hex(blob);
     canonical::length_prefixed(&[
         CONTACT_LANE_GRANT_SIG_DOMAIN,
-        digest.as_str(),
+        lane_id,
         owner.as_ref(),
         from.as_ref(),
         epub.as_ref(),
@@ -220,7 +220,7 @@ pub fn seal_contact_lane_grant(
     let ephemeral = p256::SecretKey::random(&mut OsRng);
     let mut nonce = [0u8; 12];
     OsRng.fill_bytes(&mut nonce);
-    let grant = seal_contact_lane_grant_with(
+    let grant = seal_grant(
         keyring,
         sender.as_ref(),
         sender_epub.as_ref(),
@@ -233,10 +233,30 @@ pub fn seal_contact_lane_grant(
     grant
 }
 
-/// Caller-chosen ephemeral and nonce. `sender_epub` is that sender's
-/// resolved `current_epub`. This function does not read Gun and does not
-/// take a second epub to fall back to. The shared vectors call this.
-pub fn seal_contact_lane_grant_with(
+/// Caller-chosen ephemeral and nonce. Tests and the `deterministic-wrap`
+/// feature call this. It is not a public export.
+#[cfg(any(test, feature = "deterministic-wrap"))]
+pub(crate) fn seal_contact_lane_grant_with(
+    keyring: &AccountKeyring,
+    sender_principal: &str,
+    sender_epub: &str,
+    ephemeral: &p256::SecretKey,
+    nonce: &[u8; 12],
+    recipient_rotations: &[serde_json::Value],
+    recipient_context: &sociacl_ids::ResolutionContext<'_>,
+) -> Result<ContactLaneGrant, EncDiscError> {
+    seal_grant(
+        keyring,
+        sender_principal,
+        sender_epub,
+        ephemeral,
+        nonce,
+        recipient_rotations,
+        recipient_context,
+    )
+}
+
+fn seal_grant(
     keyring: &AccountKeyring,
     sender_principal: &str,
     sender_epub: &str,
@@ -249,10 +269,19 @@ pub fn seal_contact_lane_grant_with(
     let epub = require_principal(sender_epub)?;
     keyring.confirm(recipient_rotations, recipient_context)?;
     let lane_id = resolve_contact_lane(keyring, sender.as_ref(), keyring.rotation_seq())?;
+    let message = contact_lane_signature_message(
+        &lane_id,
+        keyring.principal().as_ref(),
+        sender.as_ref(),
+        epub.as_ref(),
+        keyring.rotation_seq(),
+    )?;
+    let signature = sea::sign_sea(keyring.current_priv(), &message)?;
     let mut plain = contact_lane_grant_plaintext(
         &lane_id,
         keyring.principal().as_ref(),
         keyring.rotation_seq(),
+        &signature,
     )?;
     let peer = sea::parse_sea_point(epub.as_ref())?;
     let ephemeral_pub = sea::sea_pub_from_secret(ephemeral)?;
@@ -283,31 +312,14 @@ pub fn seal_contact_lane_grant_with(
     if blob.len() > GRANT_BLOB_MAX {
         return Err(EncDiscError::LaneGrantRejected);
     }
-    let ciphertext_hex = encode_hex(&blob);
-    if ciphertext_hex.contains(keyring.lane_id()) {
-        return Err(EncDiscError::LaneGrantRejected);
-    }
-    let message = contact_lane_signature_message(
-        &blob,
-        keyring.principal().as_ref(),
-        sender.as_ref(),
-        epub.as_ref(),
-        keyring.rotation_seq(),
-    )?;
-    let signature = sea::sign_sea(keyring.current_priv(), &message)?;
     Ok(ContactLaneGrant {
-        recipient: keyring.principal().clone(),
-        sender,
-        sender_epub: epub,
-        rotation_seq: keyring.rotation_seq(),
-        ciphertext_hex,
-        signature,
+        ciphertext_hex: encode_hex(&blob),
     })
 }
 
-/// After the lane secret rotates, seal a fresh grant for each contact.
-/// A contact whose `current_epub` is null fails the whole call with
-/// [`EncDiscError::EpubUnknown`] before any grant is returned.
+/// After the contact-lane secret rotates, seal a fresh grant for each
+/// contact. A contact whose `current_epub` is null fails the whole call
+/// with [`EncDiscError::EpubUnknown`] before any grant is returned.
 pub fn regrant_contact_lanes(
     keyring: &AccountKeyring,
     contacts: &[ContactTarget<'_>],
@@ -328,7 +340,7 @@ pub fn regrant_contact_lanes(
         let ephemeral = p256::SecretKey::random(&mut OsRng);
         let mut nonce = [0u8; 12];
         OsRng.fill_bytes(&mut nonce);
-        let grant = seal_contact_lane_grant_with(
+        let grant = seal_grant(
             keyring,
             sender.as_ref(),
             epub.as_ref(),
@@ -343,9 +355,11 @@ pub fn regrant_contact_lanes(
     Ok(grants)
 }
 
-/// Open a grant. A stale grant, a forged grant, a tampered blob, the wrong
-/// sender, and the wrong recipient are all [`EncDiscError::LaneGrantRejected`].
-/// This function has no error-code argument.
+/// Open a grant. The caller supplies the sender, the sender's `epriv`, and
+/// the recipient chain. The sequence is that chain's length, so a stale
+/// grant fails authenticated decryption. A forged grant, a tampered blob,
+/// the wrong sender, and the wrong recipient are all
+/// [`EncDiscError::LaneGrantRejected`].
 pub fn open_contact_lane_grant(
     sender_principal: &str,
     sender_epriv: &str,
@@ -377,17 +391,17 @@ fn open_inner(
 ) -> Result<OpenedContactLane, EncDiscError> {
     let sender = require_principal(sender_principal)?;
     let expected = require_principal(expected_recipient)?;
-    if grant.sender != sender || grant.recipient != expected {
-        return Err(EncDiscError::LaneGrantRejected);
-    }
-    if grant.ciphertext_hex.len() > GRANT_BLOB_MAX * 2 || grant.signature.len() != 128 {
+    if grant.ciphertext_hex.len() > GRANT_BLOB_MAX * 2 {
         return Err(EncDiscError::LaneGrantRejected);
     }
     let secret = sea::ecdh_secret(sender_epriv).map_err(|_| EncDiscError::LaneGrantRejected)?;
-    let derived = sea::sea_pub_from_secret(&secret)?;
-    if derived != grant.sender_epub.as_ref() {
-        return Err(EncDiscError::LaneGrantRejected);
-    }
+    let sender_epub = sea::sea_pub_from_secret(&secret)?;
+    let resolved =
+        sociacl_ids::resolve_current_key(&expected, recipient_rotations, recipient_context);
+    let account = resolved
+        .result
+        .map_err(|_| EncDiscError::LaneGrantRejected)?;
+    let seq = account.rotations.len() as u64;
     let blob =
         hexutil::decode_hex(&grant.ciphertext_hex).map_err(|_| EncDiscError::LaneGrantRejected)?;
     if blob.len() > GRANT_BLOB_MAX
@@ -407,99 +421,57 @@ fn open_inner(
         &shared[..],
         expected.as_ref(),
         sender.as_ref(),
-        grant.sender_epub.as_ref(),
+        &sender_epub,
         &ephemeral_pub,
-        grant.rotation_seq,
+        seq,
     )?;
     let aad = contact_lane_grant_aad(
         expected.as_ref(),
         sender.as_ref(),
-        grant.sender_epub.as_ref(),
+        &sender_epub,
         &ephemeral_pub,
-        grant.rotation_seq,
+        seq,
     )?;
-    let mut plain = decrypt(&aes_key[..], &nonce, &aad, &blob[78..])?;
+    let plain = decrypt(&aes_key[..], &nonce, &aad, &blob[78..])?;
     let fields = canonical::decode_length_prefixed(&plain)?;
-    let seq_text = canonical_decimal(grant.rotation_seq)?;
-    if fields.len() != 4
+    let seq_text = canonical_decimal(seq)?;
+    if fields.len() != 5
         || fields[0] != CONTACT_LANE_GRANT_DOMAIN
         || require_lane(&fields[1]).is_err()
         || fields[2] != expected.as_ref()
         || fields[3] != seq_text
+        || fields[4].len() != 128
     {
-        plain.zeroize();
         return Err(EncDiscError::LaneGrantRejected);
     }
     let lane_id = fields[1].clone();
-    plain.zeroize();
-    let resolved =
-        sociacl_ids::resolve_current_key(&expected, recipient_rotations, recipient_context);
-    let account = resolved
-        .result
-        .map_err(|_| EncDiscError::LaneGrantRejected)?;
-    if account.rotations.len() as u64 != grant.rotation_seq {
-        return Err(EncDiscError::LaneGrantRejected);
-    }
+    let signature = fields[4].clone();
     let message = contact_lane_signature_message(
-        &blob,
+        &lane_id,
         expected.as_ref(),
         sender.as_ref(),
-        grant.sender_epub.as_ref(),
-        grant.rotation_seq,
+        &sender_epub,
+        seq,
     )?;
-    let key_at_seq = signing_key_at(
-        &expected,
-        recipient_rotations,
-        recipient_context,
-        grant.rotation_seq,
-    )?;
-    if key_at_seq != account.current_key {
-        return Err(EncDiscError::LaneGrantRejected);
-    }
-    sea::verify_sea(key_at_seq.as_ref(), &message, &grant.signature)?;
+    sea::verify_sea(account.current_key.as_ref(), &message, &signature)?;
     Ok(OpenedContactLane {
         lookup_key: lane_lookup_key(&lane_id)?,
         lane_id,
         recipient: expected,
         sender,
-        rotation_seq: grant.rotation_seq,
+        rotation_seq: seq,
     })
 }
 
-fn signing_key_at(
-    principal: &PrincipalId,
-    rotations: &[serde_json::Value],
-    context: &sociacl_ids::ResolutionContext<'_>,
-    seq: u64,
-) -> Result<PrincipalId, EncDiscError> {
-    let through = rotations_through(rotations, seq);
-    let resolved = sociacl_ids::resolve_current_key(principal, &through, context);
-    let account = resolved
-        .result
-        .map_err(|_| EncDiscError::LaneGrantRejected)?;
-    if account.rotations.len() as u64 != seq {
-        return Err(EncDiscError::LaneGrantRejected);
-    }
-    Ok(account.current_key)
-}
-
-fn rotations_through(rotations: &[serde_json::Value], seq: u64) -> Vec<serde_json::Value> {
-    rotations
-        .iter()
-        .filter(|row| {
-            let Some(object) = row.as_object() else {
-                return false;
-            };
-            if object.get("kind").and_then(|kind| kind.as_str()) != Some("rotate") {
-                return false;
-            }
-            object
-                .get("seq")
-                .and_then(|value| value.as_u64())
-                .is_some_and(|record_seq| record_seq <= seq)
-        })
-        .cloned()
-        .collect()
+fn contact_lane_collides(lane: &str, keyring: &AccountKeyring) -> bool {
+    require_lane(lane).is_err()
+        || lane == keyring.lane_id()
+        || keyring.prior_lanes().iter().any(|held| held == lane)
+        || lane == keyring.contact_lane_secret()
+        || keyring
+            .prior_contact_secrets()
+            .iter()
+            .any(|held| held.as_str() == lane)
 }
 
 fn require_principal(value: &str) -> Result<PrincipalId, EncDiscError> {
@@ -514,22 +486,22 @@ fn reject(reason: sociacl_ids::Reason) -> EncDiscError {
     EncDiscError::IdentityRejected(reason.to_string())
 }
 
-fn lane_secret_bytes(hex_text: &str) -> Result<Zeroizing<Vec<u8>>, EncDiscError> {
+fn lane_secret_bytes(hex_text: &str) -> Result<zeroize::Zeroizing<Vec<u8>>, EncDiscError> {
     require_lane(hex_text)?;
     hexutil::decode_secret_vec(hex_text).map_err(|_| EncDiscError::BadLane)
 }
 
 /// RFC 5869 HKDF-SHA256, L = 32. Salt is HashLen zero bytes. One expand block.
-fn hkdf_sha256(ikm: &[u8], info: &[u8]) -> Result<Zeroizing<[u8; 32]>, EncDiscError> {
+fn hkdf_sha256(ikm: &[u8], info: &[u8]) -> Result<zeroize::Zeroizing<[u8; 32]>, EncDiscError> {
     let salt = [0u8; 32];
-    let mut prk = Zeroizing::new([0u8; 32]);
+    let mut prk = zeroize::Zeroizing::new([0u8; 32]);
     {
         let mut mac =
             <Hmac<Sha256> as KeyInit>::new_from_slice(&salt).map_err(|_| EncDiscError::BadKey)?;
         mac.update(ikm);
         prk.copy_from_slice(&mac.finalize().into_bytes());
     }
-    let mut okm = Zeroizing::new([0u8; 32]);
+    let mut okm = zeroize::Zeroizing::new([0u8; 32]);
     {
         let mut mac = <Hmac<Sha256> as KeyInit>::new_from_slice(&prk[..])
             .map_err(|_| EncDiscError::BadKey)?;
@@ -547,7 +519,7 @@ fn grant_kdf(
     sender_epub: &str,
     ephemeral_pub: &str,
     rotation_seq: u64,
-) -> Result<Zeroizing<[u8; 32]>, EncDiscError> {
+) -> Result<zeroize::Zeroizing<[u8; 32]>, EncDiscError> {
     let hex = hexutil::encode_secret_hex(shared_x);
     let seq = canonical_decimal(rotation_seq)?;
     let mut material = canonical::length_prefixed(&[
@@ -559,7 +531,7 @@ fn grant_kdf(
         ephemeral_pub,
         seq.as_str(),
     ])?;
-    let key = Zeroizing::new(canonical::sha256(&material));
+    let key = zeroize::Zeroizing::new(canonical::sha256(&material));
     material.zeroize();
     Ok(key)
 }
@@ -581,12 +553,12 @@ fn decrypt(
     nonce: &[u8; 12],
     aad: &[u8],
     body: &[u8],
-) -> Result<Zeroizing<Vec<u8>>, EncDiscError> {
+) -> Result<zeroize::Zeroizing<Vec<u8>>, EncDiscError> {
     let cipher = Aes256Gcm::new_from_slice(key).map_err(|_| EncDiscError::BadKey)?;
     let plain = cipher
         .decrypt(Nonce::from_slice(nonce), Payload { msg: body, aad })
         .map_err(|_| EncDiscError::LaneGrantRejected)?;
-    Ok(Zeroizing::new(plain))
+    Ok(zeroize::Zeroizing::new(plain))
 }
 
 #[cfg(test)]
@@ -656,7 +628,11 @@ mod tests {
             g["epriv"].as_str().unwrap(),
         )
         .unwrap();
-        AccountKeyring::from_genesis(&account).unwrap()
+        AccountKeyring::from_genesis_with_contact_secret(
+            &account,
+            g["contactLaneSecret"].as_str().unwrap(),
+        )
+        .unwrap()
     }
 
     struct Owned {
@@ -870,20 +846,33 @@ mod tests {
                 v["sender"].as_str().unwrap().to_string(),
             ]
         );
+        let secret = v["contactLaneSecretHex"].as_str().unwrap();
+        let base = v["baseLaneId"].as_str().unwrap();
+        assert_ne!(secret, base);
         assert_eq!(
             derive_contact_lane(
-                v["laneSecretHex"].as_str().unwrap(),
+                secret,
                 v["recipient"].as_str().unwrap(),
-                v["sender"].as_str().unwrap(),
+                v["sender"].as_str().unwrap()
             )
             .unwrap(),
             v["laneId"].as_str().unwrap()
         );
         assert_eq!(
             derive_contact_lane(
-                v["laneSecretHex"].as_str().unwrap(),
-                v["sender"].as_str().unwrap(),
+                base,
                 v["recipient"].as_str().unwrap(),
+                v["sender"].as_str().unwrap()
+            )
+            .unwrap(),
+            v["baseLaneHkdf"].as_str().unwrap()
+        );
+        assert_ne!(v["laneId"], v["baseLaneHkdf"]);
+        assert_eq!(
+            derive_contact_lane(
+                secret,
+                v["sender"].as_str().unwrap(),
+                v["recipient"].as_str().unwrap()
             )
             .unwrap(),
             v["swappedLaneId"].as_str().unwrap()
@@ -891,7 +880,7 @@ mod tests {
         assert_ne!(v["laneId"], v["swappedLaneId"]);
         assert_eq!(
             derive_contact_lane(
-                v["laneSecretHex"].as_str().unwrap(),
+                secret,
                 v["recipient"].as_str().unwrap(),
                 v["otherSender"].as_str().unwrap(),
             )
@@ -941,12 +930,14 @@ mod tests {
             grant.ciphertext_hex,
             v["grant"]["ciphertextHex"].as_str().unwrap()
         );
-        assert_eq!(grant.signature, v["grant"]["signature"].as_str().unwrap());
         assert!(!grant.ciphertext_hex.contains(keyring.lane_id()));
+        assert!(!grant.ciphertext_hex.contains(keyring.contact_lane_secret()));
+        assert!(!format!("{grant:?}").contains("signature"));
         let plain = contact_lane_grant_plaintext(
             v["laneId"].as_str().unwrap(),
             v["recipient"].as_str().unwrap(),
             0,
+            v["grant"]["signatureHex"].as_str().unwrap(),
         )
         .unwrap();
         assert_eq!(
@@ -974,7 +965,15 @@ mod tests {
         .unwrap();
         assert_eq!(opened.lane_id, v["laneId"].as_str().unwrap());
         assert_eq!(opened.lookup_key, opened.lane_id);
-        assert!(!contact_lane_mints_grant());
+        assert_ne!(
+            derive_contact_lane(
+                keyring.lane_id(),
+                keyring.principal().as_ref(),
+                v["sender"].as_str().unwrap()
+            )
+            .unwrap(),
+            opened.lane_id
+        );
     }
 
     #[test]
@@ -988,7 +987,9 @@ mod tests {
         assert!(!lane.contains('.'));
         assert!(!lane.contains(v["recipient"].as_str().unwrap()));
         assert!(!lane.contains(v["sender"].as_str().unwrap()));
-        assert_ne!(lane, v["laneSecretHex"].as_str().unwrap());
+        assert_ne!(lane, v["contactLaneSecretHex"].as_str().unwrap());
+        assert_ne!(lane, v["baseLaneId"].as_str().unwrap());
+        assert_ne!(lane, v["baseLaneHkdf"].as_str().unwrap());
         assert_ne!(lane, v["otherLaneId"].as_str().unwrap());
         assert_ne!(lane, v["swappedLaneId"].as_str().unwrap());
         let source = include_str!("contact_lane.rs");
@@ -1030,7 +1031,7 @@ mod tests {
             EncDiscError::BadLane
         );
         match derive_contact_lane(
-            v["laneSecretHex"].as_str().unwrap(),
+            v["contactLaneSecretHex"].as_str().unwrap(),
             "not-a-principal",
             v["sender"].as_str().unwrap(),
         )
@@ -1054,12 +1055,11 @@ mod tests {
         let ctx = context(&owned, resolver);
         let (signing_pub, signing_priv) = scalar_sea(1);
         let (epub, epriv) = scalar_sea(9);
-        let lanes = [
-            v["laneSecretHex"].as_str().unwrap().to_string(),
-            v["priorSecretHex"].as_str().unwrap().to_string(),
-            "33".repeat(32),
-        ];
-        let current = AccountKeyring::import(
+        let base0 = "ab".repeat(32);
+        let base1 = v["priorSecretHex"].as_str().unwrap().to_string();
+        let secret0 = "c0".repeat(32);
+        let secret1 = "d1".repeat(32);
+        let current = AccountKeyring::import_with_contact_secrets(
             &signing_pub,
             &epub,
             &signing_pub,
@@ -1067,23 +1067,31 @@ mod tests {
             &epub,
             epriv.as_str(),
             &[],
-            &lanes[0],
+            &base0,
             0,
             0,
             &[],
             &ctx,
+            &[],
+            &secret0,
+            &[],
         )
         .unwrap();
         let sender = v["sender"].as_str().unwrap();
         let at_zero = resolve_contact_lane(&current, sender, 0).unwrap();
         assert_eq!(
             at_zero,
-            derive_contact_lane(&lanes[0], current.principal().as_ref(), sender).unwrap()
+            derive_contact_lane(&secret0, current.principal().as_ref(), sender).unwrap()
+        );
+        assert_ne!(
+            at_zero,
+            derive_contact_lane(&base0, current.principal().as_ref(), sender).unwrap()
         );
         let names = trusted(&ring);
         let (next_pub, next_priv) = scalar_sea(20);
         let (next_epub, next_epriv) = scalar_sea(21);
-        let lane_one = lanes[1].clone();
+        let lane_one = base1.clone();
+        let next_secret = secret1.clone();
         let rotated = rotate_keyring(
             &current,
             &names,
@@ -1097,33 +1105,32 @@ mod tests {
                     epub: next_epub.clone(),
                     epriv: next_epriv.clone(),
                     lane_id: lane_one.clone(),
+                    contact_lane_secret: next_secret,
                 })
             },
         )
         .unwrap();
         let current = rotated.keyring;
         assert_eq!(current.prior_lanes().len() as u64, current.rotation_seq());
+        assert_eq!(
+            current.prior_contact_secrets().len() as u64,
+            current.rotation_seq()
+        );
         assert_eq!(resolve_contact_lane(&current, sender, 0).unwrap(), at_zero);
         assert_eq!(
+            resolve_contact_lane(&current, sender, 1).unwrap(),
+            derive_contact_lane(
+                current.contact_lane_secret(),
+                current.principal().as_ref(),
+                sender
+            )
+            .unwrap()
+        );
+        assert_ne!(
             resolve_contact_lane(&current, sender, 1).unwrap(),
             derive_contact_lane(current.lane_id(), current.principal().as_ref(), sender).unwrap()
         );
         assert_ne!(resolve_contact_lane(&current, sender, 1).unwrap(), at_zero);
-        assert!(contact_lane_reuses_base(
-            current.lane_id(),
-            current.lane_id(),
-            current.prior_lanes()
-        ));
-        assert!(contact_lane_reuses_base(
-            &current.prior_lanes()[0],
-            current.lane_id(),
-            current.prior_lanes()
-        ));
-        assert!(!contact_lane_reuses_base(
-            &at_zero,
-            current.lane_id(),
-            current.prior_lanes()
-        ));
         let (bad_pub, bad_priv) = scalar_sea(30);
         let (bad_epub, bad_epriv) = scalar_sea(31);
         let reused = current.lane_id().to_string();
@@ -1141,6 +1148,9 @@ mod tests {
                         epub: bad_epub,
                         epriv: bad_epriv,
                         lane_id: reused,
+                        contact_lane_secret:
+                            "0202020202020202020202020202020202020202020202020202020202020202"
+                                .to_string(),
                     })
                 }
             )
@@ -1164,6 +1174,57 @@ mod tests {
                         epub: bad_epub,
                         epriv: bad_epriv,
                         lane_id: prior,
+                        contact_lane_secret:
+                            "0303030303030303030303030303030303030303030303030303030303030303"
+                                .to_string(),
+                    })
+                }
+            )
+            .unwrap_err(),
+            EncDiscError::BadLane
+        );
+        let (bad_pub, bad_priv) = scalar_sea(34);
+        let (bad_epub, bad_epriv) = scalar_sea(35);
+        let secret_as_lane = current.contact_lane_secret().to_string();
+        assert_eq!(
+            rotate_keyring(
+                &current,
+                &names,
+                ring["lost"].as_str().unwrap(),
+                &[],
+                &ctx,
+                || {
+                    Ok(RotationMint {
+                        signing_pub: bad_pub,
+                        signing_priv: bad_priv,
+                        epub: bad_epub,
+                        epriv: bad_epriv,
+                        lane_id: secret_as_lane,
+                        contact_lane_secret: "44".repeat(32),
+                    })
+                }
+            )
+            .unwrap_err(),
+            EncDiscError::BadLane
+        );
+        let (bad_pub, bad_priv) = scalar_sea(36);
+        let (bad_epub, bad_epriv) = scalar_sea(37);
+        let lane_as_secret = current.lane_id().to_string();
+        assert_eq!(
+            rotate_keyring(
+                &current,
+                &names,
+                ring["lost"].as_str().unwrap(),
+                &[],
+                &ctx,
+                || {
+                    Ok(RotationMint {
+                        signing_pub: bad_pub,
+                        signing_priv: bad_priv,
+                        epub: bad_epub,
+                        epriv: bad_epriv,
+                        lane_id: "55".repeat(32),
+                        contact_lane_secret: lane_as_secret,
                     })
                 }
             )
@@ -1206,7 +1267,7 @@ mod tests {
             &epub,
             epriv.as_str(),
             &[],
-            v["laneSecretHex"].as_str().unwrap(),
+            "ab".repeat(32).as_str(),
             0,
             0,
             &[],
@@ -1253,8 +1314,19 @@ mod tests {
         assert_eq!(opened.lookup_key, lane_lookup_key(&opened.lane_id).unwrap());
         let dumped = format!("{grant:?}");
         assert!(!dumped.contains(recipient.lane_id()));
+        assert!(!dumped.contains(recipient.contact_lane_secret()));
+        assert!(!dumped.contains(recipient.principal().as_ref()));
         assert!(!dumped.contains(recipient.current_priv()));
         assert!(!dumped.contains(sender.current_epriv()));
+        assert_ne!(
+            derive_contact_lane(
+                recipient.lane_id(),
+                recipient.principal().as_ref(),
+                &sender_pub
+            )
+            .unwrap(),
+            opened.lane_id
+        );
         let wrong_sender = open_contact_lane_grant(
             &sender_pub,
             scalar_sea(6).1.as_str(),
@@ -1307,6 +1379,9 @@ mod tests {
                     epub: next_epub.clone(),
                     epriv: next_epriv.clone(),
                     lane_id: lane.clone(),
+                    contact_lane_secret:
+                        "0404040404040404040404040404040404040404040404040404040404040404"
+                            .to_string(),
                 })
             },
         )
@@ -1355,5 +1430,29 @@ mod tests {
         assert_eq!(reopened.rotation_seq, 1);
         assert_ne!(reopened.lane_id, opened.lane_id);
         assert!(!reopened.lookup_key.contains('~'));
+    }
+
+    #[test]
+    fn builders_and_the_deterministic_seal_are_not_exported() {
+        let lib = include_str!("lib.rs");
+        for name in [
+            "seal_contact_lane_grant_with",
+            "contact_lane_info",
+            "contact_lane_grant_plaintext",
+            "contact_lane_grant_aad",
+            "contact_lane_signature_message",
+            "contact_lane_reuses_base",
+            "contact_lane_mints_grant",
+            "CONTACT_LANE_DOMAIN",
+            "CONTACT_LANE_GRANT_DOMAIN",
+            "CONTACT_LANE_GRANT_SIG_DOMAIN",
+            "CONTACT_LANE_VERSION",
+        ] {
+            assert!(!lib.contains(name), "{name}");
+        }
+        let source = include_str!("contact_lane.rs");
+        let library = source.split("#[cfg(test)]").next().unwrap();
+        assert!(library.contains("pub(crate) fn seal_contact_lane_grant_with"));
+        assert!(library.contains("feature = \"deterministic-wrap\""));
     }
 }

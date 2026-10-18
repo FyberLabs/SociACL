@@ -1,9 +1,10 @@
 //! Account keyring.
 //!
 //! Holds the current signing key, the current encryption key, the retired
-//! encryption keys, the current lane secret, and every lane secret already issued.
-//! Contact lanes are derived from that secret in `contact_lane`.
-//! A later mint cannot reuse one. The account id
+//! encryption keys, and the disclosed base lane id. The contact-lane secret
+//! is a separate 32-byte value. Contact lanes are derived from that secret
+//! in `contact_lane`. The disclosed base lane is not that secret.
+//! A later mint cannot reuse a base lane or a contact-lane secret. The account id
 //! stays the genesis signing pub. Import checks that pair against
 //! `resolve_current_key`. A null `current_epub` is not a match and is not
 //! Gun's `user.epub`. New rotations are v3 and mint a fresh epub.
@@ -58,6 +59,8 @@ pub struct AccountKeyring {
     retired: Vec<RetiredEpriv>,
     lane_id: String,
     prior_lanes: Vec<String>,
+    contact_lane_secret: Zeroizing<String>,
+    prior_contact_secrets: Vec<Zeroizing<String>>,
     content_epoch: u64,
     rotation_seq: u64,
 }
@@ -69,6 +72,7 @@ pub struct RotationMint {
     pub epub: String,
     pub epriv: Zeroizing<String>,
     pub lane_id: String,
+    pub contact_lane_secret: String,
 }
 
 /// Unsigned v3 rotation fields. `next_epub` is always present.
@@ -149,6 +153,16 @@ impl AccountKeyring {
     /// Local constructor for a new account. Does not ask the witness.
     /// Import is the path that checks `resolve_current_key`.
     pub fn from_genesis(account: &crate::GenesisAccount) -> Result<Self, EncDiscError> {
+        let secret = random_disjoint(&[account.lane_id()])?;
+        Self::from_genesis_with_contact_secret(account, &secret)
+    }
+
+    /// Same as [`Self::from_genesis`] with a caller-chosen contact-lane secret.
+    /// The secret is not the disclosed base lane.
+    pub fn from_genesis_with_contact_secret(
+        account: &crate::GenesisAccount,
+        contact_lane_secret: &str,
+    ) -> Result<Self, EncDiscError> {
         Self::hold(
             account.principal().clone(),
             account.epub(),
@@ -158,6 +172,8 @@ impl AccountKeyring {
             account.local_epriv(),
             &[],
             account.lane_id(),
+            &[],
+            contact_lane_secret,
             &[],
             0,
             0,
@@ -215,6 +231,46 @@ impl AccountKeyring {
         context: &sociacl_ids::ResolutionContext<'_>,
         prior_lanes: &[&str],
     ) -> Result<Self, EncDiscError> {
+        let (secret, prior_contact) = mint_contact_history(rotation_seq, lane_id, prior_lanes)?;
+        let prior_contact_refs: Vec<&str> = prior_contact.iter().map(String::as_str).collect();
+        Self::import_with_contact_secrets(
+            principal,
+            genesis_epub,
+            current_pub,
+            current_priv,
+            current_epub,
+            current_epriv,
+            retired,
+            lane_id,
+            content_epoch,
+            rotation_seq,
+            rotations,
+            context,
+            prior_lanes,
+            &secret,
+            &prior_contact_refs,
+        )
+    }
+
+    /// Restore a keyring including the contact-lane secret and its prior list.
+    /// `prior_contact_secrets.len()` must equal `rotation_seq`.
+    pub fn import_with_contact_secrets(
+        principal: &str,
+        genesis_epub: &str,
+        current_pub: &str,
+        current_priv: &str,
+        current_epub: &str,
+        current_epriv: &str,
+        retired: &[(&str, &str)],
+        lane_id: &str,
+        content_epoch: u64,
+        rotation_seq: u64,
+        rotations: &[serde_json::Value],
+        context: &sociacl_ids::ResolutionContext<'_>,
+        prior_lanes: &[&str],
+        contact_lane_secret: &str,
+        prior_contact_secrets: &[&str],
+    ) -> Result<Self, EncDiscError> {
         let principal = parse_principal_id(principal).map_err(reject)?;
         let keyring = Self::hold(
             principal,
@@ -226,6 +282,8 @@ impl AccountKeyring {
             retired,
             lane_id,
             prior_lanes,
+            contact_lane_secret,
+            prior_contact_secrets,
             content_epoch,
             rotation_seq,
         )?;
@@ -270,6 +328,16 @@ impl AccountKeyring {
     /// Lane ids this keyring has already issued. A later mint cannot reuse one.
     pub fn prior_lanes(&self) -> &[String] {
         &self.prior_lanes
+    }
+
+    /// HKDF input for contact lanes. Never write this to Gun. It is not [`Self::lane_id`].
+    pub fn contact_lane_secret(&self) -> &str {
+        self.contact_lane_secret.as_str()
+    }
+
+    /// Contact-lane secrets already issued. Length equals `rotation_seq`.
+    pub fn prior_contact_secrets(&self) -> &[Zeroizing<String>] {
+        &self.prior_contact_secrets
     }
 
     pub fn content_epoch(&self) -> u64 {
@@ -410,11 +478,22 @@ impl AccountKeyring {
         retired: &[(&str, &str)],
         lane_id: &str,
         prior_lanes: &[&str],
+        contact_lane_secret: &str,
+        prior_contact_secrets: &[&str],
         content_epoch: u64,
         rotation_seq: u64,
     ) -> Result<Self, EncDiscError> {
         require_lane_set(lane_id, prior_lanes)?;
         if prior_lanes.len() as u64 != rotation_seq {
+            return Err(EncDiscError::BadLane);
+        }
+        require_contact_set(
+            contact_lane_secret,
+            prior_contact_secrets,
+            lane_id,
+            prior_lanes,
+        )?;
+        if prior_contact_secrets.len() as u64 != rotation_seq {
             return Err(EncDiscError::BadLane);
         }
         if retired.len() > 1024 {
@@ -470,6 +549,11 @@ impl AccountKeyring {
             retired: retired_keys,
             lane_id: lane_id.to_string(),
             prior_lanes: prior_lanes.iter().map(|lane| (*lane).to_string()).collect(),
+            contact_lane_secret: Zeroizing::new(contact_lane_secret.to_string()),
+            prior_contact_secrets: prior_contact_secrets
+                .iter()
+                .map(|secret| Zeroizing::new((*secret).to_string()))
+                .collect(),
             content_epoch,
             rotation_seq,
         })
@@ -489,6 +573,8 @@ impl std::fmt::Debug for AccountKeyring {
             .field("retired", &self.retired.len())
             .field("lane_id", &"<redacted>")
             .field("prior_lanes", &self.prior_lanes.len())
+            .field("contact_lane_secret", &"<redacted>")
+            .field("prior_contact_secrets", &self.prior_contact_secrets.len())
             .field("content_epoch", &self.content_epoch)
             .field("rotation_seq", &self.rotation_seq)
             .finish()
@@ -518,14 +604,24 @@ pub fn mint_rotation() -> Result<RotationMint, EncDiscError> {
     let encryption = p256::SecretKey::random(&mut rng);
     let mut lane = [0u8; 32];
     rng.fill_bytes(&mut lane);
+    let mut contact = [0u8; 32];
+    loop {
+        rng.fill_bytes(&mut contact);
+        if contact != lane {
+            break;
+        }
+    }
     let lane_id = crate::hexutil::encode_secret_hex(&lane).to_string();
+    let contact_lane_secret = crate::hexutil::encode_secret_hex(&contact).to_string();
     lane.zeroize();
+    contact.zeroize();
     Ok(RotationMint {
         signing_pub: sea::sea_pub_from_signing(&signing)?,
         signing_priv: sea::sea_priv_from_signing(&signing)?,
         epub: sea::sea_pub_from_secret(&encryption)?,
         epriv: sea::sea_priv_from_secret(&encryption)?,
         lane_id,
+        contact_lane_secret,
     })
 }
 
@@ -567,7 +663,11 @@ where
     {
         return Err(EncDiscError::EpubReuse);
     }
-    if reuses_lane(keyring, &minted.lane_id) {
+    if reuses_lane(keyring, &minted.lane_id)
+        || reuses_contact_secret(keyring, &minted.contact_lane_secret)
+        || reuses_contact_secret(keyring, &minted.lane_id)
+        || disclosed_lane(&minted.contact_lane_secret, &minted.lane_id, keyring)
+    {
         return Err(EncDiscError::BadLane);
     }
     let account = keyring.confirm(rotations, context)?;
@@ -607,6 +707,11 @@ where
     if prior_lanes.len() as u64 != keyring.rotation_seq.saturating_add(1) {
         return Err(EncDiscError::BadLane);
     }
+    let mut prior_contact = keyring.prior_contact_secrets.clone();
+    prior_contact.push(keyring.contact_lane_secret.clone());
+    if prior_contact.len() as u64 != keyring.rotation_seq.saturating_add(1) {
+        return Err(EncDiscError::BadLane);
+    }
     let rotated = AccountKeyring {
         principal: keyring.principal.clone(),
         genesis_epub: keyring.genesis_epub.clone(),
@@ -617,6 +722,8 @@ where
         retired,
         lane_id: minted.lane_id,
         prior_lanes,
+        contact_lane_secret: Zeroizing::new(minted.contact_lane_secret),
+        prior_contact_secrets: prior_contact,
         content_epoch: epoch,
         rotation_seq: seq,
     };
@@ -675,6 +782,83 @@ fn reuses_lane(keyring: &AccountKeyring, lane_id: &str) -> bool {
     require_lane(lane_id).is_err()
         || lane_id == keyring.lane_id
         || keyring.prior_lanes.iter().any(|prior| prior == lane_id)
+}
+
+fn reuses_contact_secret(keyring: &AccountKeyring, secret: &str) -> bool {
+    require_lane(secret).is_err()
+        || secret == keyring.contact_lane_secret.as_str()
+        || keyring
+            .prior_contact_secrets
+            .iter()
+            .any(|prior| prior.as_str() == secret)
+}
+
+fn disclosed_lane(secret: &str, lane_id: &str, keyring: &AccountKeyring) -> bool {
+    secret == lane_id
+        || secret == keyring.lane_id
+        || keyring.prior_lanes.iter().any(|prior| prior == secret)
+}
+
+fn require_contact_set(
+    secret: &str,
+    prior: &[&str],
+    lane_id: &str,
+    prior_lanes: &[&str],
+) -> Result<(), EncDiscError> {
+    require_lane(secret)?;
+    if secret == lane_id || prior_lanes.iter().any(|lane| *lane == secret) {
+        return Err(EncDiscError::BadLane);
+    }
+    let mut seen = vec![secret.to_string()];
+    for held in prior {
+        require_lane(held)?;
+        if seen.iter().any(|item| item == held)
+            || *held == lane_id
+            || prior_lanes.iter().any(|lane| lane == held)
+        {
+            return Err(EncDiscError::BadLane);
+        }
+        seen.push((*held).to_string());
+    }
+    Ok(())
+}
+
+fn random_disjoint(banned: &[&str]) -> Result<String, EncDiscError> {
+    use rand::rngs::OsRng;
+    use rand::RngCore;
+    let mut bytes = [0u8; 32];
+    for _ in 0..64 {
+        OsRng.fill_bytes(&mut bytes);
+        let lane = crate::hexutil::encode_secret_hex(&bytes).to_string();
+        if banned.iter().all(|held| *held != lane) {
+            bytes.zeroize();
+            return Ok(lane);
+        }
+    }
+    bytes.zeroize();
+    Err(EncDiscError::BadLane)
+}
+
+fn mint_contact_history(
+    rotation_seq: u64,
+    lane_id: &str,
+    prior_lanes: &[&str],
+) -> Result<(String, Vec<String>), EncDiscError> {
+    let mut banned: Vec<String> = Vec::with_capacity(prior_lanes.len() + 1);
+    banned.push(lane_id.to_string());
+    banned.extend(prior_lanes.iter().map(|lane| (*lane).to_string()));
+    let banned_refs: Vec<&str> = banned.iter().map(String::as_str).collect();
+    let secret = random_disjoint(&banned_refs)?;
+    let mut owned = banned;
+    owned.push(secret.clone());
+    let mut prior = Vec::with_capacity(rotation_seq as usize);
+    for _ in 0..rotation_seq {
+        let refs: Vec<&str> = owned.iter().map(String::as_str).collect();
+        let next = random_disjoint(&refs)?;
+        owned.push(next.clone());
+        prior.push(next);
+    }
+    Ok((secret, prior))
 }
 
 fn holds_point(keyring: &AccountKeyring, point: &PrincipalId) -> bool {
@@ -819,6 +1003,7 @@ mod tests {
             epub: mint["epub"].as_str().unwrap().to_string(),
             epriv: Zeroizing::new(mint["epriv"].as_str().unwrap().to_string()),
             lane_id: mint["laneId"].as_str().unwrap().to_string(),
+            contact_lane_secret: mint["contactLaneSecret"].as_str().unwrap().to_string(),
         }
     }
 
@@ -1105,6 +1290,8 @@ mod tests {
             epub: v["genesis"]["epub"].as_str().unwrap().to_string(),
             epriv: Zeroizing::new(v["genesis"]["epriv"].as_str().unwrap().to_string()),
             lane_id: v["mint"]["laneId"].as_str().unwrap().to_string(),
+            contact_lane_secret: "0202020202020202020202020202020202020202020202020202020202020202"
+                .to_string(),
         };
         expect_err(
             &v,
@@ -1117,6 +1304,8 @@ mod tests {
             epub: v["mint"]["signingPub"].as_str().unwrap().to_string(),
             epriv: Zeroizing::new(v["mint"]["signingPriv"].as_str().unwrap().to_string()),
             lane_id: v["mint"]["laneId"].as_str().unwrap().to_string(),
+            contact_lane_secret: "0303030303030303030303030303030303030303030303030303030303030303"
+                .to_string(),
         };
         expect_err(
             &v,
@@ -1129,6 +1318,8 @@ mod tests {
             epub: v["mint"]["epub"].as_str().unwrap().to_string(),
             epriv: Zeroizing::new(v["mint"]["epriv"].as_str().unwrap().to_string()),
             lane_id: v["mint"]["laneId"].as_str().unwrap().to_string(),
+            contact_lane_secret: "0404040404040404040404040404040404040404040404040404040404040404"
+                .to_string(),
         };
         expect_err(
             &v,
@@ -1141,6 +1332,8 @@ mod tests {
             epub: v["mint"]["epub"].as_str().unwrap().to_string(),
             epriv: Zeroizing::new(v["mint"]["epriv"].as_str().unwrap().to_string()),
             lane_id: v["genesis"]["laneId"].as_str().unwrap().to_string(),
+            contact_lane_secret: "0505050505050505050505050505050505050505050505050505050505050505"
+                .to_string(),
         };
         expect_err(
             &v,
@@ -1622,6 +1815,9 @@ mod tests {
                         epub,
                         epriv,
                         lane_id: "ee".repeat(32),
+                        contact_lane_secret:
+                            "0606060606060606060606060606060606060606060606060606060606060606"
+                                .to_string(),
                     })
                 },
             )
@@ -1842,6 +2038,9 @@ mod tests {
                         epub: next_epub.clone(),
                         epriv: next_epriv.clone(),
                         lane_id: "ee".repeat(32),
+                        contact_lane_secret:
+                            "0707070707070707070707070707070707070707070707070707070707070707"
+                                .to_string(),
                     })
                 },
             )
@@ -1928,6 +2127,9 @@ mod tests {
                         epub: next_epub,
                         epriv: next_epriv,
                         lane_id: "ee".repeat(32),
+                        contact_lane_secret:
+                            "0808080808080808080808080808080808080808080808080808080808080808"
+                                .to_string(),
                     })
                 },
             )
@@ -2084,6 +2286,7 @@ mod tests {
             let (next_pub, next_priv) = scalar_sea_n(sign_n);
             let (next_epub, next_epriv) = scalar_sea_n(epub_n);
             let lane = lanes[step + 1].clone();
+            let contact = format!("{:02x}", 0x91 + step).repeat(32);
             let outcome = rotate_keyring(
                 &current,
                 &names,
@@ -2097,6 +2300,7 @@ mod tests {
                         epub: next_epub.clone(),
                         epriv: next_epriv.clone(),
                         lane_id: lane.clone(),
+                        contact_lane_secret: contact,
                     })
                 },
             )
@@ -2153,6 +2357,9 @@ mod tests {
                             epub: reuse_epub.clone(),
                             epriv: reuse_epriv.clone(),
                             lane_id: lane.clone(),
+                            contact_lane_secret:
+                                "0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a"
+                                    .to_string(),
                         })
                     },
                 )
@@ -2197,6 +2404,9 @@ mod tests {
                         epub: reuse_epub.clone(),
                         epriv: reuse_epriv.clone(),
                         lane_id: lanes[0].clone(),
+                        contact_lane_secret:
+                            "0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b"
+                                .to_string(),
                     })
                 },
             )

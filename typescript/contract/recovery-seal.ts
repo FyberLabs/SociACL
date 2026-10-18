@@ -454,6 +454,8 @@ export async function openRecoveryCopy(
       rotations,
       context,
       fields.priorLanes,
+      fields.contactLaneSecret,
+      fields.priorContactSecrets,
     );
   } finally {
     key.fill(0);

@@ -41,16 +41,18 @@
 //! * `keyCommitment` stays an opaque string. This slice does not define it.
 //! * `laneId` is 32 random bytes chosen when the account key is minted.
 //!   Enrollment copies it. It is not derived from the account id. That
-//!   value is the account lane secret. A per-contact lane id is
-//!   HKDF-SHA256 of it. Salt is 32 zero bytes. Info is the
-//!   length-prefixed fields `sociacl-contact-lane-v1`, version `1`, the
-//!   recipient PrincipalId, then the sender PrincipalId. Output is 32
-//!   bytes, lowercase hex. Swapping the two ids is a different lane.
-//!   The recipient seals that lane id to the sender's resolved
-//!   `current_epub` under `sociacl-contact-lane-grant-v1` and signs it
-//!   under `sociacl-contact-lane-grant-sig-v1`. A null `current_epub` is
-//!   refused. The lane secret is not written to Gun. Callers index the
-//!   lane id hex alone.
+//!   value is the disclosed base lane. A per-contact lane id is
+//!   HKDF-SHA256 of a separate 32-byte contact-lane secret. Salt is 32
+//!   zero bytes. Info is the length-prefixed fields
+//!   `sociacl-contact-lane-v1`, version `1`, the recipient PrincipalId,
+//!   then the sender PrincipalId. Output is 32 bytes, lowercase hex.
+//!   Swapping the two ids is a different lane. HKDF of the disclosed
+//!   base lane is a different value. The recipient signs the lane id and
+//!   seals that signature to the sender's resolved `current_epub` under
+//!   `sociacl-contact-lane-grant-v1`. The signature domain is
+//!   `sociacl-contact-lane-grant-sig-v1`. The outer envelope is the
+//!   ciphertext. A null `current_epub` is refused. The contact-lane
+//!   secret is not written to Gun. Callers index the lane id hex alone.
 //! * A grant commitment is SHA-256 of the length-prefixed blinding and
 //!   the canonical grant. The blinding is not on the visible row.
 //! * A presenter binding is a P-256 signature over the length-prefixed
@@ -131,12 +133,9 @@ pub use canonical::{
     DOMAIN_WRITER_APPEND, DOMAIN_WRITER_CHANNEL, JS_SAFE_INTEGER_MAX,
 };
 pub use contact_lane::{
-    contact_lane_grant_aad, contact_lane_grant_plaintext, contact_lane_info,
-    contact_lane_mints_grant, contact_lane_reuses_base, contact_lane_signature_message,
     derive_contact_lane, lane_lookup_key, open_contact_lane_grant, regrant_contact_lanes,
-    resolve_contact_lane, seal_contact_lane_grant, seal_contact_lane_grant_with, ContactLaneGrant,
-    ContactTarget, OpenedContactLane, CONTACT_LANE_DOMAIN, CONTACT_LANE_GRANT_DOMAIN,
-    CONTACT_LANE_GRANT_SIG_DOMAIN, CONTACT_LANE_VERSION,
+    resolve_contact_lane, seal_contact_lane_grant, ContactLaneGrant, ContactTarget,
+    OpenedContactLane,
 };
 pub use delivery::{deliver_keyring, open_delivered_keyring};
 pub use epoch::{

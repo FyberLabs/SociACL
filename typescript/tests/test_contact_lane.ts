@@ -7,6 +7,15 @@ import { bytesToHex, decodeLengthPrefixed, hexToBytes, seaPoint } from "../contr
 import { importGenesis } from "../contract/account-key.ts";
 import { AccountKeyring, rotateKeyring } from "../contract/account-keyring.ts";
 import {
+  deriveContactLane,
+  laneLookupKey,
+  openContactLaneGrant,
+  regrantContactLanes,
+  resolveContactLane,
+  sealContactLaneGrant,
+} from "../contract/contact-lane.ts";
+import * as contactLane from "../contract/contact-lane.ts";
+import {
   CONTACT_LANE_DOMAIN,
   CONTACT_LANE_GRANT_DOMAIN,
   CONTACT_LANE_GRANT_SIG_DOMAIN,
@@ -14,16 +23,8 @@ import {
   contactLaneGrantAad,
   contactLaneGrantPlaintext,
   contactLaneInfo,
-  contactLaneMintsGrant,
-  contactLaneReusesBase,
-  deriveContactLane,
-  laneLookupKey,
-  openContactLaneGrant,
-  regrantContactLanes,
-  resolveContactLane,
-  sealContactLaneGrant,
   sealContactLaneGrantWith,
-} from "../contract/contact-lane.ts";
+} from "./support/contact-lane-deterministic.ts";
 import {
   historyState,
   signingBytes,
@@ -41,7 +42,9 @@ const vector = JSON.parse(
   recipient: string;
   sender: string;
   otherSender: string;
-  laneSecretHex: string;
+  baseLaneId: string;
+  contactLaneSecretHex: string;
+  baseLaneHkdf: string;
   infoHex: string;
   infoLength: number;
   laneId: string;
@@ -61,17 +64,25 @@ const vector = JSON.parse(
     nonceHex: string;
     senderEpub: string;
     rotationSeq: number;
+    signatureHex: string;
     plaintextHex: string;
     aadHex: string;
     ciphertextHex: string;
-    signature: string;
   };
 };
 
 const ring = JSON.parse(
   readFileSync(new URL("../../vectors/encrypted-discovery/account-keyring.json", import.meta.url), "utf8"),
 ) as {
-  genesis: { laneId: string; signingPub: string; signingPriv: string; epub: string; epriv: string; principal: string };
+  genesis: {
+    laneId: string;
+    signingPub: string;
+    signingPriv: string;
+    epub: string;
+    epriv: string;
+    principal: string;
+    contactLaneSecret: string;
+  };
   mint: { signingPub: string; signingPriv: string; epub: string; epriv: string; laneId: string };
   trusted: string[];
   lost: string;
@@ -159,6 +170,7 @@ function genesisKeyring(): AccountKeyring {
       ring.genesis.epub,
       ring.genesis.epriv,
     ),
+    ring.genesis.contactLaneSecret,
   );
 }
 
@@ -250,17 +262,22 @@ test("shared vectors pin the HKDF info layout and the grant bytes", () => {
   const swapped = contactLaneInfo(vector.sender, vector.recipient);
   assert.equal(bytesToHex(swapped), vector.swappedInfoHex);
   assert.notEqual(vector.infoHex, vector.swappedInfoHex);
-  assert.equal(deriveContactLane(vector.laneSecretHex, vector.recipient, vector.sender), vector.laneId);
-  assert.equal(deriveContactLane(vector.laneSecretHex, vector.sender, vector.recipient), vector.swappedLaneId);
+  assert.equal(vector.baseLaneId, ring.genesis.laneId);
+  assert.equal(vector.contactLaneSecretHex, ring.genesis.contactLaneSecret);
+  assert.notEqual(vector.contactLaneSecretHex, vector.baseLaneId);
+  assert.equal(deriveContactLane(vector.contactLaneSecretHex, vector.recipient, vector.sender), vector.laneId);
+  assert.equal(deriveContactLane(vector.baseLaneId, vector.recipient, vector.sender), vector.baseLaneHkdf);
+  assert.notEqual(vector.laneId, vector.baseLaneHkdf);
+  assert.equal(deriveContactLane(vector.contactLaneSecretHex, vector.sender, vector.recipient), vector.swappedLaneId);
   assert.notEqual(vector.laneId, vector.swappedLaneId);
-  assert.equal(deriveContactLane(vector.laneSecretHex, vector.recipient, vector.otherSender), vector.otherLaneId);
+  assert.equal(deriveContactLane(vector.contactLaneSecretHex, vector.recipient, vector.otherSender), vector.otherLaneId);
   assert.equal(deriveContactLane(vector.priorSecretHex, vector.recipient, vector.sender), vector.priorLaneId);
   assert.equal(deriveContactLane(vector.wrongSecretHex, vector.recipient, vector.sender), vector.wrongSecretLaneId);
   assert.notEqual(vector.laneId, vector.otherLaneId);
   assert.notEqual(vector.laneId, vector.priorLaneId);
   assert.notEqual(vector.laneId, vector.wrongSecretLaneId);
   const oracle = Buffer.from(
-    hkdfSync("sha256", hexToBytes(vector.laneSecretHex), hexToBytes(vector.saltHex), info, 32),
+    hkdfSync("sha256", hexToBytes(vector.contactLaneSecretHex), hexToBytes(vector.saltHex), info, 32),
   ).toString("hex");
   assert.equal(vector.laneId, oracle);
   const keyring = genesisKeyring();
@@ -273,18 +290,23 @@ test("shared vectors pin the HKDF info layout and the grant bytes", () => {
     [],
     witnessed(),
   );
-  assert.equal(bytesToHex(contactLaneGrantPlaintext(vector.laneId, vector.recipient, 0)), vector.grant.plaintextHex);
+  assert.equal(
+    bytesToHex(contactLaneGrantPlaintext(vector.laneId, vector.recipient, 0, vector.grant.signatureHex)),
+    vector.grant.plaintextHex,
+  );
   const ephemeralPub = seaPoint(hexToBytes(vector.grant.ephemeralScalarHex));
   assert.equal(
     bytesToHex(contactLaneGrantAad(vector.recipient, vector.sender, vector.grant.senderEpub, ephemeralPub, 0)),
     vector.grant.aadHex,
   );
+  assert.deepEqual(Object.keys(grant), ["ciphertextHex"]);
   assert.equal(grant.ciphertextHex, vector.grant.ciphertextHex);
-  assert.equal(grant.signature, vector.grant.signature);
-  assert.equal(grant.rotationSeq, 0);
-  assert.equal(grant.ciphertextHex.includes(vector.laneSecretHex), false);
+  assert.equal(grant.ciphertextHex.includes(vector.contactLaneSecretHex), false);
+  assert.equal(grant.ciphertextHex.includes(vector.baseLaneId), false);
   assert.equal(grant.ciphertextHex.includes(ring.genesis.signingPriv), false);
   assert.equal(grant.ciphertextHex.includes(ring.genesis.epriv), false);
+  assert.equal(JSON.stringify(grant).includes(vector.recipient), false);
+  assert.equal(JSON.stringify(grant).includes(vector.sender), false);
   const opened = openContactLaneGrant(
     vector.sender,
     ring.mint.epriv,
@@ -297,7 +319,8 @@ test("shared vectors pin the HKDF info layout and the grant bytes", () => {
   assert.equal(opened.lookupKey, vector.laneId);
   assert.equal(opened.rotationSeq, 0);
   assert.equal(laneLookupKey(opened.laneId), opened.laneId);
-  assert.equal(contactLaneMintsGrant(), false);
+  assert.notEqual(deriveContactLane(keyring.laneId(), keyring.principal, vector.sender), opened.laneId);
+  assert.equal(deriveContactLane(keyring.contactLaneSecret(), keyring.principal, vector.sender), opened.laneId);
 });
 
 test("an outsider cannot read a principal or the base lane out of a lane id", () => {
@@ -305,14 +328,19 @@ test("an outsider cannot read a principal or the base lane out of a lane id", ()
   assert.equal(vector.laneId.includes("."), false);
   assert.equal(vector.laneId.includes(vector.recipient), false);
   assert.equal(vector.laneId.includes(vector.sender), false);
-  assert.notEqual(vector.laneId, vector.laneSecretHex);
+  assert.notEqual(vector.laneId, vector.contactLaneSecretHex);
+  assert.notEqual(vector.laneId, vector.baseLaneId);
+  assert.notEqual(vector.laneId, vector.baseLaneHkdf);
   assert.notEqual(vector.otherLaneId, vector.laneId);
   assert.notEqual(vector.laneId, createHash("sha256").update(vector.recipient).digest("hex"));
   assert.notEqual(vector.laneId, createHash("sha256").update(vector.sender).digest("hex"));
   assert.notEqual(vector.laneId, createHash("sha256").update(vector.infoHex).digest("hex"));
-  const source = readFileSync(new URL("../contract/contact-lane.ts", import.meta.url), "utf8");
-  assert.equal(source.includes("user.epub"), false);
-  assert.equal(source.includes("gunUserEpub"), false);
+  const barrel = readFileSync(new URL("../contract/contact-lane.ts", import.meta.url), "utf8");
+  const seal = readFileSync(new URL("../contract/contact-lane-seal.ts", import.meta.url), "utf8");
+  assert.equal(barrel.includes("user.epub"), false);
+  assert.equal(barrel.includes("gunUserEpub"), false);
+  assert.equal(seal.includes("user.epub"), false);
+  assert.equal(seal.includes("gunUserEpub"), false);
 });
 
 test("a null currentEpub is refused and a bad id does not derive", () => {
@@ -322,7 +350,7 @@ test("a null currentEpub is refused and a bad id does not derive", () => {
     ring.errors.epubUnknown,
   );
   assert.equal(message(() => deriveContactLane("ab", vector.recipient, vector.sender)), ring.errors.badLane);
-  assert.equal(message(() => deriveContactLane(vector.laneSecretHex, "not-a-principal", vector.sender)), "bad-length");
+  assert.equal(message(() => deriveContactLane(vector.contactLaneSecretHex, "not-a-principal", vector.sender)), "bad-length");
   assert.equal(message(() => laneLookupKey("zz")), ring.errors.badLane);
 });
 
@@ -334,7 +362,10 @@ test("resolving a prior sequence and the reuse guard", () => {
   if (!link) throw new Error("missing oidc link");
   const signing = scalarSea(1);
   const enc = scalarSea(9);
-  const lanes = [vector.laneSecretHex, vector.priorSecretHex, "33".repeat(32)];
+  const base0 = "ab".repeat(32);
+  const base1 = vector.priorSecretHex;
+  const secret0 = "c0".repeat(32);
+  const secret1 = "d1".repeat(32);
   let current = AccountKeyring.import(
     signing.pub,
     enc.pub,
@@ -343,15 +374,19 @@ test("resolving a prior sequence and the reuse guard", () => {
     enc.pub,
     enc.priv,
     [],
-    lanes[0]!,
+    base0,
     0,
     0,
     [],
     context,
+    [],
+    secret0,
+    [],
   );
   const sender = vector.sender;
   const atZero = resolveContactLane(current, sender, 0);
-  assert.equal(atZero, deriveContactLane(lanes[0]!, current.principal, sender));
+  assert.equal(atZero, deriveContactLane(secret0, current.principal, sender));
+  assert.notEqual(atZero, deriveContactLane(base0, current.principal, sender));
   const chain: Record<string, unknown>[] = [];
   const next = scalarSea(20);
   const nextEnc = scalarSea(21);
@@ -360,16 +395,17 @@ test("resolving a prior sequence and the reuse guard", () => {
     signingPriv: next.priv,
     epub: nextEnc.pub,
     epriv: nextEnc.priv,
-    laneId: lanes[1]!,
+    laneId: base1,
+    contactLaneSecret: secret1,
   }));
   current = rotated.keyring;
   assert.equal(current.priorLanes().length, current.rotationSeq);
+  assert.equal(current.priorContactSecrets().length, current.rotationSeq);
+  assert.equal(current.priorContactSecrets()[0], secret0);
   assert.equal(resolveContactLane(current, sender, 0), atZero);
-  assert.equal(resolveContactLane(current, sender, 1), deriveContactLane(lanes[1]!, current.principal, sender));
+  assert.equal(resolveContactLane(current, sender, 1), deriveContactLane(secret1, current.principal, sender));
+  assert.notEqual(resolveContactLane(current, sender, 1), deriveContactLane(current.laneId(), current.principal, sender));
   assert.notEqual(resolveContactLane(current, sender, 1), atZero);
-  assert.equal(contactLaneReusesBase(current.laneId(), current.laneId(), current.priorLanes()), true);
-  assert.equal(contactLaneReusesBase(current.priorLanes()[0]!, current.laneId(), current.priorLanes()), true);
-  assert.equal(contactLaneReusesBase(atZero, current.laneId(), current.priorLanes()), false);
   assert.equal(
     message(() =>
       rotateKeyring(current, ring.trusted, ring.lost, chain, context, () => ({
@@ -390,6 +426,32 @@ test("resolving a prior sequence and the reuse guard", () => {
         epub: scalarSea(33).pub,
         epriv: scalarSea(33).priv,
         laneId: current.priorLanes()[0]!,
+      })),
+    ),
+    ring.errors.badLane,
+  );
+  assert.equal(
+    message(() =>
+      rotateKeyring(current, ring.trusted, ring.lost, chain, context, () => ({
+        signingPub: scalarSea(34).pub,
+        signingPriv: scalarSea(34).priv,
+        epub: scalarSea(35).pub,
+        epriv: scalarSea(35).priv,
+        laneId: current.contactLaneSecret(),
+        contactLaneSecret: "44".repeat(32),
+      })),
+    ),
+    ring.errors.badLane,
+  );
+  assert.equal(
+    message(() =>
+      rotateKeyring(current, ring.trusted, ring.lost, chain, context, () => ({
+        signingPub: scalarSea(36).pub,
+        signingPriv: scalarSea(36).priv,
+        epub: scalarSea(37).pub,
+        epriv: scalarSea(37).priv,
+        laneId: "55".repeat(32),
+        contactLaneSecret: current.laneId(),
       })),
     ),
     ring.errors.badLane,
@@ -419,7 +481,7 @@ test("grant open, the wrong party, tamper, a stale grant, and a re-grant", () =>
     enc.pub,
     enc.priv,
     [],
-    vector.laneSecretHex,
+    "ab".repeat(32),
     0,
     0,
     [],
@@ -447,9 +509,7 @@ test("grant open, the wrong party, tamper, a stale grant, and a re-grant", () =>
     [],
     recipientContext,
   );
-  assert.equal(grant.sender, senderSign.pub);
-  assert.equal(grant.senderEpub, senderEnc.pub);
-  assert.equal(grant.rotationSeq, 0);
+  assert.deepEqual(Object.keys(grant), ["ciphertextHex"]);
   const opened = openContactLaneGrant(
     senderSign.pub,
     senderKeyring.currentEpriv(),
@@ -461,6 +521,9 @@ test("grant open, the wrong party, tamper, a stale grant, and a re-grant", () =>
   assert.equal(opened.laneId, resolveContactLane(recipient, senderSign.pub, 0));
   assert.equal(opened.lookupKey, laneLookupKey(opened.laneId));
   assert.equal(JSON.stringify(grant).includes(recipient.laneId()), false);
+  assert.equal(JSON.stringify(grant).includes(recipient.contactLaneSecret()), false);
+  assert.equal(JSON.stringify(grant).includes(recipient.principal), false);
+  assert.notEqual(deriveContactLane(recipient.laneId(), recipient.principal, senderSign.pub), opened.laneId);
   assert.equal(JSON.stringify(grant).includes(recipient.currentPriv()), false);
   assert.equal(JSON.stringify(grant).includes(senderKeyring.currentEpriv()), false);
   const wrongSender = message(() =>
@@ -532,4 +595,22 @@ test("grant open, the wrong party, tamper, a stale grant, and a re-grant", () =>
   assert.notEqual(reopened.laneId, opened.laneId);
   assert.equal(reopened.lookupKey, reopened.laneId);
   assert.equal(laneLookupKey(reopened.laneId).includes("~"), false);
+});
+
+test("builders and the deterministic seal are not production exports", () => {
+  assert.deepEqual(Object.keys(contactLane).sort(), [
+    "deriveContactLane",
+    "laneLookupKey",
+    "openContactLaneGrant",
+    "regrantContactLanes",
+    "resolveContactLane",
+    "sealContactLaneGrant",
+  ]);
+  const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as {
+    exports: Record<string, string>;
+  };
+  const exported = JSON.stringify(pkg.exports);
+  assert.equal(exported.includes("sealContactLaneGrantWith"), false);
+  assert.equal(exported.includes("contact-lane-deterministic"), false);
+  assert.equal(exported.includes("contactLaneInfo"), false);
 });

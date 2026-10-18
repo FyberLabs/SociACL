@@ -179,6 +179,8 @@ export function openDeliveredKeyring(
         rotations,
         context,
         fields.priorLanes,
+        fields.contactLaneSecret,
+        fields.priorContactSecrets,
       );
       if (keyring.epub !== wrap.epub) throw new Error("wrap-rejected");
       return keyring;
