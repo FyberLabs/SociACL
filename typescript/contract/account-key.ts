@@ -82,18 +82,21 @@ export type EncryptedAccountWrap = WrapIndex & {
   readonly signature: string;
 };
 
-/** Index plus ciphertext. Not an authority and not a grant minter. */
+/** Index plus ciphertext. Not an authority and not a grant minter.
+ * Rows are keyed by `(principal, wrapId)`. The genesis backup and device
+ * deliveries share the store. */
 export interface KeyWrapStore {
   readonly isAuthority: false;
   readonly mintsGrant: false;
   put(index: WrapIndex, wrap: EncryptedAccountWrap): void;
-  get(principal: PrincipalId): EncryptedAccountWrap | undefined;
+  get(principal: PrincipalId, wrapId: ObjectId): EncryptedAccountWrap | undefined;
+  list(principal: PrincipalId): EncryptedAccountWrap[];
 }
 
 export class MemoryKeyWrapStore implements KeyWrapStore {
   readonly isAuthority = false as const;
   readonly mintsGrant = false as const;
-  readonly #wraps = new Map<string, EncryptedAccountWrap>();
+  readonly #wraps = new Map<string, Map<string, EncryptedAccountWrap>>();
 
   put(index: WrapIndex, wrap: EncryptedAccountWrap): void {
     // Genesis seal and open stay at MAX_BACKUP_HEX. A delivered keyring may
@@ -112,13 +115,17 @@ export class MemoryKeyWrapStore implements KeyWrapStore {
     ) {
       throw new Error("store-rejected");
     }
-    const existing = this.#wraps.get(index.principal);
-    if (existing && existing.wrapId !== wrap.wrapId) throw new Error("store-rejected");
-    this.#wraps.set(index.principal, wrap);
+    const rows = this.#wraps.get(index.principal) ?? new Map<string, EncryptedAccountWrap>();
+    rows.set(index.wrapId, wrap);
+    this.#wraps.set(index.principal, rows);
   }
 
-  get(principal: PrincipalId): EncryptedAccountWrap | undefined {
-    return this.#wraps.get(principal);
+  get(principal: PrincipalId, wrapId: ObjectId): EncryptedAccountWrap | undefined {
+    return this.#wraps.get(principal)?.get(wrapId);
+  }
+
+  list(principal: PrincipalId): EncryptedAccountWrap[] {
+    return [...(this.#wraps.get(principal)?.values() ?? [])];
   }
 }
 

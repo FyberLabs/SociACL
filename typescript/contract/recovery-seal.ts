@@ -12,11 +12,11 @@ import { parsePrincipalId, type PrincipalId, type ResolutionContext } from "../i
 import { AccountKeyring } from "./account-keyring.ts";
 import { bytesToHex } from "./account-key-seal.ts";
 import { canonicalDecimal, lengthPrefixed } from "./canonical.ts";
-import { assertKeyringHidden, decodeKeyring, encodeKeyring } from "./keyring-codec.ts";
+import { decodeKeyring, encodeKeyring } from "./keyring-codec.ts";
 import {
   ARGON2ID_LIMITS,
   KEYRING_SERIAL_MAX,
-  RECOVERY_ENVELOPE_MAX,
+  RECOVERY_ABSOLUTE_MAX,
   RECOVERY_HEADER_LEN,
   RECOVERY_NONCE_LEN,
   RECOVERY_TAG_LEN,
@@ -43,16 +43,43 @@ export class MemoryRecoveryStore implements RecoveryCopyStore {
   readonly isAuthority = false as const;
   readonly seesPlaintext = false as const;
   readonly seesPassphrase = false as const;
-  readonly #rows = new Map<string, RecoveryEnvelope>();
+  /** Latest envelope per principal. A new put deletes the previous one. */
+  readonly #latest = new Map<string, RecoveryEnvelope>();
 
   put(envelope: RecoveryEnvelope): void {
-    if (envelope.bytes.length === 0 || envelope.bytes.length > RECOVERY_ENVELOPE_MAX) throw new Error("store-rejected");
+    if (envelope.bytes.length === 0 || envelope.bytes.length > RECOVERY_ABSOLUTE_MAX) throw new Error("store-rejected");
     if (headerRotationSeq(envelope.bytes) !== envelope.rotationSeq) throw new Error("store-rejected");
-    this.#rows.set(`${envelope.principal}\u0000${envelope.rotationSeq}`, envelope);
+    this.#latest.set(envelope.principal, copyEnvelope(envelope));
   }
 
   get(principal: PrincipalId, rotationSeq: number): RecoveryEnvelope | undefined {
-    return this.#rows.get(`${principal}\u0000${rotationSeq}`);
+    const row = this.#latest.get(principal);
+    if (!row || row.rotationSeq !== rotationSeq) return undefined;
+    return copyEnvelope(row);
+  }
+}
+
+function copyEnvelope(envelope: RecoveryEnvelope): RecoveryEnvelope {
+  return { principal: envelope.principal, rotationSeq: envelope.rotationSeq, bytes: new Uint8Array(envelope.bytes) };
+}
+
+/** NFC, then UTF-8. Empty and whitespace-only passphrases are recovery-params.
+ * Leading and trailing whitespace around other characters is preserved. */
+export function encodePassphrase(passphrase: string): Uint8Array {
+  const nfc = passphrase.normalize("NFC");
+  if (nfc.length === 0 || [...nfc].every((ch) => ch !== "\uFEFF" && ch.trim() === "")) {
+    throw new Error("recovery-params");
+  }
+  return new TextEncoder().encode(nfc);
+}
+
+function passphraseRejected(bytes: Uint8Array): boolean {
+  if (bytes.length === 0) return true;
+  try {
+    const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    return [...text].every((ch) => ch !== "\uFEFF" && ch.trim() === "");
+  } catch {
+    return false;
   }
 }
 
@@ -64,7 +91,7 @@ export async function sealRecoveryCopyWith(
   nonce: Uint8Array,
   store: RecoveryCopyStore,
 ): Promise<RecoveryEnvelope> {
-  if (passphrase.length === 0) throw new Error("recovery-params");
+  if (passphraseRejected(passphrase)) throw new Error("recovery-params");
   if (
     salt.length < ARGON2ID_LIMITS.saltLength.floor ||
     salt.length > ARGON2ID_LIMITS.saltLength.ceiling ||
@@ -72,16 +99,18 @@ export async function sealRecoveryCopyWith(
   ) {
     throw new Error("recovery-params");
   }
-  const plain = encodeKeyring(keyring);
-  const key = await deriveKey(
-    passphrase,
-    salt,
-    ARGON2ID_LIMITS.memoryKiB.floor,
-    ARGON2ID_LIMITS.iterations.floor,
-    ARGON2ID_LIMITS.parallelism.floor,
-    ARGON2ID_LIMITS.hashLength.floor,
-  );
+  let plain: Uint8Array | undefined;
+  let key: Uint8Array | undefined;
   try {
+    plain = encodeKeyring(keyring);
+    key = await deriveKey(
+      passphrase,
+      salt,
+      ARGON2ID_LIMITS.memoryKiB.floor,
+      ARGON2ID_LIMITS.iterations.floor,
+      ARGON2ID_LIMITS.parallelism.floor,
+      ARGON2ID_LIMITS.hashLength.floor,
+    );
     const aad = recoveryAad(
       keyring.principal,
       keyring.rotationSeq,
@@ -106,14 +135,13 @@ export async function sealRecoveryCopyWith(
     bytes.set(header, 0);
     bytes.set(nonce, header.length);
     bytes.set(ciphertext, header.length + nonce.length);
-    if (bytes.length > RECOVERY_ENVELOPE_MAX) throw new Error("keyring-too-large");
-    assertKeyringHidden(bytes, keyring);
+    if (bytes.length > RECOVERY_ABSOLUTE_MAX) throw new Error("keyring-too-large");
     const envelope: RecoveryEnvelope = { principal: keyring.principal, rotationSeq: keyring.rotationSeq, bytes };
     store.put(envelope);
     return envelope;
   } finally {
-    plain.fill(0);
-    key.fill(0);
+    plain?.fill(0);
+    key?.fill(0);
   }
 }
 
@@ -125,9 +153,9 @@ export async function openRecoveryCopy(
   rotations: readonly unknown[],
   context: ResolutionContext,
 ): Promise<AccountKeyring> {
-  if (envelope.bytes.length > RECOVERY_ENVELOPE_MAX) throw new Error("keyring-too-large");
+  if (envelope.bytes.length > RECOVERY_ABSOLUTE_MAX) throw new Error("keyring-too-large");
   const header = parseHeader(envelope.bytes);
-  if (passphrase.length === 0) throw new Error("recovery-params");
+  if (passphraseRejected(passphrase)) throw new Error("recovery-params");
   if (envelope.principal !== expected || header.rotationSeq !== envelope.rotationSeq) throw new Error("recovery-rejected");
   if (!Number.isSafeInteger(header.rotationSeq)) throw new Error("recovery-rejected");
   const key = await deriveKey(passphrase, header.salt, header.memoryKiB, header.iterations, header.parallelism, header.hashLength);

@@ -12,16 +12,17 @@
 import { rotateKeyring, type AccountKeyring, type KeyringRotation, type RotationMint } from "./account-keyring.ts";
 import { ARGON2ID_LIMITS } from "./keyring-limits.ts";
 import {
+  encodePassphrase,
   MemoryRecoveryStore,
   openRecoveryCopy,
   sealRecoveryCopyWith,
   type RecoveryCopyStore,
   type RecoveryEnvelope,
 } from "./recovery-seal.ts";
-import type { ResolutionContext } from "../ids/src/index.js";
+import type { PrincipalId, ResolutionContext } from "../ids/src/index.js";
 
-export { ARGON2ID_LIMITS, KEYRING_SERIAL_MAX, DELIVERY_BLOB_MAX, RECOVERY_ENVELOPE_MAX } from "./keyring-limits.ts";
-export { MemoryRecoveryStore, openRecoveryCopy };
+export { ARGON2ID_LIMITS, KEYRING_SERIAL_MAX, DELIVERY_BLOB_MAX, RECOVERY_ABSOLUTE_MAX, RECOVERY_ENVELOPE_MAX } from "./keyring-limits.ts";
+export { encodePassphrase, MemoryRecoveryStore, openRecoveryCopy };
 export type { RecoveryCopyStore, RecoveryEnvelope };
 
 export async function sealRecoveryCopy(
@@ -38,6 +39,37 @@ export async function sealRecoveryCopy(
   } finally {
     salt.fill(0);
     nonce.fill(0);
+  }
+}
+
+/** Seal with a passphrase string. The string is NFC-normalized, then UTF-8. */
+export async function sealRecoveryCopyFromString(
+  keyring: AccountKeyring,
+  passphrase: string,
+  store: RecoveryCopyStore,
+): Promise<RecoveryEnvelope> {
+  const bytes = encodePassphrase(passphrase);
+  try {
+    return await sealRecoveryCopy(keyring, bytes, store);
+  } finally {
+    bytes.fill(0);
+  }
+}
+
+/** Open with a passphrase string. The string is NFC-normalized, then UTF-8. */
+export async function openRecoveryCopyFromString(
+  passphrase: string,
+  envelope: RecoveryEnvelope,
+  expected: PrincipalId,
+  expectedRotationSeq: number,
+  rotations: readonly unknown[],
+  context: ResolutionContext,
+): Promise<AccountKeyring> {
+  const bytes = encodePassphrase(passphrase);
+  try {
+    return await openRecoveryCopy(bytes, envelope, expected, expectedRotationSeq, rotations, context);
+  } finally {
+    bytes.fill(0);
   }
 }
 

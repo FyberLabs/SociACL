@@ -71,12 +71,16 @@ pub const RECOVERY_HEADER_LEN: usize = 1 + (4 * 6) + 8;
 pub const RECOVERY_NONCE_LEN: usize = 12;
 pub const RECOVERY_TAG_LEN: usize = 16;
 
-/// Largest recovery envelope. A longer blob is refused before the KDF and before decrypt.
-pub const RECOVERY_ENVELOPE_MAX: usize = RECOVERY_HEADER_LEN
-    + ARGON2ID_LIMITS.salt_length.ceiling as usize
-    + RECOVERY_NONCE_LEN
-    + KEYRING_SERIAL_MAX
-    + RECOVERY_TAG_LEN;
+/// Header, nonce, plaintext cap, and tag. Salt length is not a term.
+///
+/// A 16-byte salt and a 64-byte salt allow the same plaintext. The salt
+/// ceiling is only the pre-parse bound in [`RECOVERY_ABSOLUTE_MAX`].
+pub const RECOVERY_ENVELOPE_MAX: usize =
+    RECOVERY_HEADER_LEN + RECOVERY_NONCE_LEN + KEYRING_SERIAL_MAX + RECOVERY_TAG_LEN;
+
+/// Largest blob refused before the header is parsed: [`RECOVERY_ENVELOPE_MAX`] plus the salt ceiling.
+pub const RECOVERY_ABSOLUTE_MAX: usize =
+    RECOVERY_ENVELOPE_MAX + ARGON2ID_LIMITS.salt_length.ceiling as usize;
 
 pub(crate) fn in_bound(value: u32, bound: Argon2Bound) -> bool {
     value >= bound.floor && value <= bound.ceiling

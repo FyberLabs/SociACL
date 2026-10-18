@@ -152,7 +152,7 @@ pub use keyring::{
 };
 pub use limits::{
     Argon2Bound, Argon2IdLimits, ARGON2ID_LIMITS, DELIVERY_BLOB_MAX, KEYRING_SERIAL_MAX,
-    RECOVERY_ENVELOPE_MAX,
+    RECOVERY_ABSOLUTE_MAX, RECOVERY_ENVELOPE_MAX,
 };
 pub use migration::{
     accept_migration, apply_protocol_migration, open_migrated_item, prepare_protocol_migration,
@@ -169,8 +169,9 @@ pub use presenter::{
     PresenterChallenge, VerifierChallengeState,
 };
 pub use recovery::{
-    open_recovery_copy, rotate_and_reseal, seal_recovery_copy, MemoryRecoveryStore,
-    RecoveryCopyStore, RecoveryEnvelope,
+    encode_passphrase, open_recovery_copy, open_recovery_copy_str, rotate_and_reseal,
+    seal_recovery_copy, seal_recovery_copy_str, MemoryRecoveryStore, RecoveryCopyStore,
+    RecoveryEnvelope,
 };
 pub use rotation::{
     rotate_on_revoke, CancelledGrant, EpochRotation, GrantStorage, PlainGrant, PriorRevision,

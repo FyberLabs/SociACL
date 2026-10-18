@@ -32,10 +32,12 @@ export const RECOVERY_HEADER_LEN = 1 + 4 * 6 + 8;
 export const RECOVERY_NONCE_LEN = 12;
 export const RECOVERY_TAG_LEN = 16;
 
-/** Largest recovery envelope. A longer blob is refused before the KDF and before decrypt. */
+/**
+ * Header, nonce, plaintext cap, and tag. Salt length is not a term.
+ * A 16-byte salt and a 64-byte salt allow the same plaintext.
+ */
 export const RECOVERY_ENVELOPE_MAX =
-  RECOVERY_HEADER_LEN +
-  ARGON2ID_LIMITS.saltLength.ceiling +
-  RECOVERY_NONCE_LEN +
-  KEYRING_SERIAL_MAX +
-  RECOVERY_TAG_LEN;
+  RECOVERY_HEADER_LEN + RECOVERY_NONCE_LEN + KEYRING_SERIAL_MAX + RECOVERY_TAG_LEN;
+
+/** Pre-parse ceiling: `RECOVERY_ENVELOPE_MAX` plus the salt ceiling. */
+export const RECOVERY_ABSOLUTE_MAX = RECOVERY_ENVELOPE_MAX + ARGON2ID_LIMITS.saltLength.ceiling;

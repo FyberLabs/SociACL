@@ -21,14 +21,13 @@ use zeroize::{Zeroize, Zeroizing};
 
 use crate::canonical::{self, JS_SAFE_INTEGER_MAX};
 use crate::error::EncDiscError;
-use crate::hexutil::{self, encode_hex, encode_secret_hex};
+use crate::hexutil::{self, encode_hex};
 use crate::keyring::{rotate_keyring, AccountKeyring, KeyringRotation, RotationMint};
 use crate::limits::{
-    in_bound, ARGON2ID_LIMITS, KEYRING_SERIAL_MAX, RECOVERY_ENVELOPE_MAX, RECOVERY_HEADER_LEN,
-    RECOVERY_NONCE_LEN, RECOVERY_TAG_LEN,
+    in_bound, ARGON2ID_LIMITS, KEYRING_SERIAL_MAX, RECOVERY_ABSOLUTE_MAX, RECOVERY_ENVELOPE_MAX,
+    RECOVERY_HEADER_LEN, RECOVERY_NONCE_LEN, RECOVERY_TAG_LEN,
 };
-use crate::sea;
-
+use unicode_normalization::UnicodeNormalization;
 pub(crate) const DOMAIN_RECOVERY: &str = "sociacl-recovery-copy-v1";
 pub(crate) const DOMAIN_KEYRING_PLAIN: &str = "sociacl-keyring-plain-v1";
 
@@ -63,25 +62,28 @@ pub trait RecoveryCopyStore {
     }
 }
 
-/// In-memory adapter. One ciphertext per principal and keyring version.
+/// In-memory adapter. One ciphertext per principal: the latest put.
+///
+/// Putting a copy deletes every older copy for that principal. `get_copy`
+/// returns a clone, so the caller cannot alias the stored bytes.
 #[derive(Clone, Debug, Default)]
 pub struct MemoryRecoveryStore {
-    by_principal: BTreeMap<String, BTreeMap<u64, RecoveryEnvelope>>,
+    by_principal: BTreeMap<String, RecoveryEnvelope>,
 }
 
 impl MemoryRecoveryStore {
     pub fn len(&self) -> usize {
-        self.by_principal.values().map(|rows| rows.len()).sum()
+        self.by_principal.len()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.len() == 0
+        self.by_principal.is_empty()
     }
 }
 
 impl RecoveryCopyStore for MemoryRecoveryStore {
     fn put_copy(&mut self, envelope: &RecoveryEnvelope) -> Result<(), EncDiscError> {
-        if envelope.bytes.len() > RECOVERY_ENVELOPE_MAX || envelope.bytes.is_empty() {
+        if envelope.bytes.len() > RECOVERY_ABSOLUTE_MAX || envelope.bytes.is_empty() {
             return Err(EncDiscError::StoreRejected);
         }
         let seq = header_rotation_seq(&envelope.bytes)?;
@@ -89,9 +91,7 @@ impl RecoveryCopyStore for MemoryRecoveryStore {
             return Err(EncDiscError::StoreRejected);
         }
         self.by_principal
-            .entry(envelope.principal.as_ref().to_string())
-            .or_default()
-            .insert(envelope.rotation_seq, envelope.clone());
+            .insert(envelope.principal.as_ref().to_string(), envelope.clone());
         Ok(())
     }
 
@@ -100,12 +100,58 @@ impl RecoveryCopyStore for MemoryRecoveryStore {
         principal: &PrincipalId,
         rotation_seq: u64,
     ) -> Result<Option<RecoveryEnvelope>, EncDiscError> {
-        Ok(self
-            .by_principal
-            .get(principal.as_ref())
-            .and_then(|rows| rows.get(&rotation_seq))
-            .cloned())
+        Ok(self.by_principal.get(principal.as_ref()).and_then(|row| {
+            if row.rotation_seq == rotation_seq {
+                Some(row.clone())
+            } else {
+                None
+            }
+        }))
     }
+}
+
+/// NFC then UTF-8, in the style of an RFC 8265 OpaqueString.
+///
+/// An empty string and a whitespace-only string are [`EncDiscError::RecoveryParams`].
+/// Leading and trailing whitespace on a passphrase that also has a
+/// non-whitespace character is preserved. The byte API does not normalize;
+/// it receives these bytes.
+pub fn encode_passphrase(passphrase: &str) -> Result<Zeroizing<Vec<u8>>, EncDiscError> {
+    let nfc: String = passphrase.nfc().collect();
+    if nfc.is_empty() || nfc.chars().all(char::is_whitespace) {
+        return Err(EncDiscError::RecoveryParams);
+    }
+    Ok(Zeroizing::new(nfc.into_bytes()))
+}
+
+/// Seal with a passphrase string. The string is normalized by [`encode_passphrase`].
+pub fn seal_recovery_copy_str(
+    keyring: &AccountKeyring,
+    passphrase: &str,
+    store: &mut impl RecoveryCopyStore,
+) -> Result<RecoveryEnvelope, EncDiscError> {
+    let bytes = encode_passphrase(passphrase)?;
+    seal_recovery_copy(keyring, &bytes, store)
+}
+
+/// Open with a passphrase string. The string is normalized by [`encode_passphrase`].
+pub fn open_recovery_copy_str(
+    passphrase: &str,
+    envelope: &RecoveryEnvelope,
+    expected: &PrincipalId,
+    expected_rotation_seq: u64,
+    rotations: &[serde_json::Value],
+    context: &sociacl_ids::ResolutionContext<'_>,
+) -> Result<AccountKeyring, EncDiscError> {
+    let bytes = encode_passphrase(passphrase)?;
+    open_recovery_copy(
+        &bytes,
+        envelope,
+        expected,
+        expected_rotation_seq,
+        rotations,
+        context,
+    )
 }
 
 /// Seal `keyring` under `passphrase` and store the ciphertext.
@@ -134,7 +180,7 @@ pub(crate) fn seal_recovery_copy_with(
     nonce: &[u8],
     store: &mut impl RecoveryCopyStore,
 ) -> Result<RecoveryEnvelope, EncDiscError> {
-    if passphrase.is_empty() {
+    if passphrase_rejected(passphrase) {
         return Err(EncDiscError::RecoveryParams);
     }
     if salt.len() < ARGON2ID_LIMITS.salt_length.floor as usize
@@ -179,10 +225,9 @@ pub(crate) fn seal_recovery_copy_with(
     );
     bytes.extend_from_slice(nonce);
     bytes.extend_from_slice(&ciphertext);
-    if bytes.len() > RECOVERY_ENVELOPE_MAX {
+    if bytes.len() > RECOVERY_ABSOLUTE_MAX {
         return Err(EncDiscError::KeyringTooLarge);
     }
-    keyring_ciphertext_hides_secrets(&bytes, keyring)?;
     let envelope = RecoveryEnvelope {
         principal: keyring.principal().clone(),
         rotation_seq: keyring.rotation_seq(),
@@ -207,11 +252,11 @@ pub fn open_recovery_copy(
     rotations: &[serde_json::Value],
     context: &sociacl_ids::ResolutionContext<'_>,
 ) -> Result<AccountKeyring, EncDiscError> {
-    if envelope.bytes.len() > RECOVERY_ENVELOPE_MAX {
+    if envelope.bytes.len() > RECOVERY_ABSOLUTE_MAX {
         return Err(EncDiscError::KeyringTooLarge);
     }
     let header = parse_header(&envelope.bytes)?;
-    if passphrase.is_empty() {
+    if passphrase_rejected(passphrase) {
         return Err(EncDiscError::RecoveryParams);
     }
     if envelope.principal.as_ref() != expected.as_ref()
@@ -452,40 +497,6 @@ pub(crate) fn decode_keyring(bytes: &[u8]) -> Result<KeyringFields, EncDiscError
     })
 }
 
-pub(crate) fn keyring_ciphertext_hides_secrets(
-    blob: &[u8],
-    keyring: &AccountKeyring,
-) -> Result<(), EncDiscError> {
-    let mut needles = Vec::new();
-    needles.push(scalar_bytes(keyring.current_priv())?);
-    needles.push(scalar_bytes(keyring.current_epriv())?);
-    for row in keyring.retired() {
-        needles.push(scalar_bytes(row.epriv())?);
-    }
-    needles.push(lane_bytes(keyring.lane_id())?);
-    for lane in keyring.prior_lanes() {
-        needles.push(lane_bytes(lane)?);
-    }
-    let hex = encode_hex(blob);
-    for needle in &needles {
-        if contains_bytes(blob, needle.as_slice()) {
-            return Err(EncDiscError::RecoveryRejected);
-        }
-        let encoded = encode_secret_hex(needle.as_slice());
-        if hex.contains(encoded.as_str()) {
-            return Err(EncDiscError::RecoveryRejected);
-        }
-    }
-    for lane in
-        std::iter::once(keyring.lane_id()).chain(keyring.prior_lanes().iter().map(String::as_str))
-    {
-        if hex.contains(lane) {
-            return Err(EncDiscError::RecoveryRejected);
-        }
-    }
-    Ok(())
-}
-
 struct Header {
     version: u32,
     memory_kib: u32,
@@ -551,6 +562,16 @@ fn parse_header(bytes: &[u8]) -> Result<Header, EncDiscError> {
         nonce,
         ciphertext: ciphertext.to_vec(),
     })
+}
+
+fn passphrase_rejected(bytes: &[u8]) -> bool {
+    if bytes.is_empty() {
+        return true;
+    }
+    match std::str::from_utf8(bytes) {
+        Ok(text) => text.chars().all(char::is_whitespace),
+        Err(_) => false,
+    }
 }
 
 fn params_allowed(
@@ -732,30 +753,15 @@ fn read_u64(bytes: &[u8], offset: usize) -> u64 {
     u64::from_le_bytes(raw)
 }
 
-fn scalar_bytes(text: &str) -> Result<Zeroizing<[u8; 32]>, EncDiscError> {
-    let secret = sea::ecdh_secret(text)?;
-    let mut out = Zeroizing::new([0u8; 32]);
-    out.copy_from_slice(secret.to_bytes().as_slice());
-    Ok(out)
-}
-
-fn lane_bytes(text: &str) -> Result<Zeroizing<[u8; 32]>, EncDiscError> {
-    hexutil::decode_secret_array::<32>(text).map_err(|_| EncDiscError::BadLane)
-}
-
-fn contains_bytes(haystack: &[u8], needle: &[u8]) -> bool {
-    !needle.is_empty()
-        && haystack
-            .windows(needle.len())
-            .any(|window| window == needle)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::GenesisAccount;
     use serde_json::Value;
-    use sociacl_ids::{Jwks, KeyState, Reason, ResolutionContext, SiwePolicy};
+    use sociacl_ids::{
+        history_state, HistoryResolver, Jwks, KeyState, Reason, ResolutionContext, Rotate,
+        SiwePolicy,
+    };
     use std::collections::{BTreeMap, BTreeSet};
 
     const RING: &str = include_str!("../../../vectors/encrypted-discovery/account-keyring.json");
@@ -849,8 +855,24 @@ mod tests {
             limits["recoveryEnvelopeMax"].as_u64().unwrap() as usize,
             RECOVERY_ENVELOPE_MAX
         );
+        assert_eq!(
+            limits["recoveryAbsoluteMax"].as_u64().unwrap() as usize,
+            RECOVERY_ABSOLUTE_MAX
+        );
+        assert_eq!(
+            RECOVERY_ABSOLUTE_MAX,
+            RECOVERY_ENVELOPE_MAX + ARGON2ID_LIMITS.salt_length.ceiling as usize
+        );
         assert_eq!(v["domain"].as_str().unwrap(), DOMAIN_RECOVERY);
         assert_eq!(v["keyringDomain"].as_str().unwrap(), DOMAIN_KEYRING_PLAIN);
+        assert_eq!(
+            v["bindDomain"].as_str().unwrap(),
+            crate::delivery::DOMAIN_DELIVERY_BIND
+        );
+        assert_eq!(
+            v["sigDomain"].as_str().unwrap(),
+            crate::delivery::DOMAIN_DELIVERY_SIG
+        );
     }
 
     #[test]
@@ -1096,6 +1118,13 @@ mod tests {
         let held = hold();
         let ctx = context_of(&held);
         let mut store = MemoryRecoveryStore::default();
+        let old = RecoveryEnvelope {
+            principal: keyring.principal().clone(),
+            rotation_seq: 0,
+            bytes: hexutil::decode_hex(v["envelopeHex"].as_str().unwrap()).unwrap(),
+        };
+        store.put_copy(&old).unwrap();
+        assert!(store.get_copy(keyring.principal(), 0).unwrap().is_some());
         let trusted: Vec<&str> = ring["trusted"]
             .as_array()
             .unwrap()
@@ -1135,11 +1164,6 @@ mod tests {
             .keyring
             .gun_document()
             .contains(rotation.keyring.current_priv()));
-        let old = RecoveryEnvelope {
-            principal: keyring.principal().clone(),
-            rotation_seq: 0,
-            bytes: hexutil::decode_hex(v["envelopeHex"].as_str().unwrap()).unwrap(),
-        };
         let stale = open_recovery_copy(
             v["passphraseUtf8"].as_str().unwrap().as_bytes(),
             &old,
@@ -1160,5 +1184,228 @@ mod tests {
         )
         .unwrap_err();
         assert!(matches!(imported, EncDiscError::PubMismatch));
+    }
+
+    #[test]
+    fn the_store_copies_envelopes_and_keeps_only_the_latest() {
+        let principal = principal_of();
+        let mut store = MemoryRecoveryStore::default();
+        let mut older = dummy_envelope(&principal, 0);
+        let original = older.bytes.clone();
+        store.put_copy(&older).unwrap();
+        older.bytes[40] ^= 0x01;
+        let stored = store.get_copy(&principal, 0).unwrap().unwrap();
+        assert_eq!(stored.bytes, original);
+        let mut viewed = store.get_copy(&principal, 0).unwrap().unwrap();
+        viewed.bytes[40] ^= 0xff;
+        assert_eq!(
+            store.get_copy(&principal, 0).unwrap().unwrap().bytes,
+            original
+        );
+        store.put_copy(&dummy_envelope(&principal, 1)).unwrap();
+        assert!(store.get_copy(&principal, 0).unwrap().is_none());
+        assert!(store.get_copy(&principal, 1).unwrap().is_some());
+        assert_eq!(store.len(), 1);
+    }
+
+    #[test]
+    fn composed_and_decomposed_passphrases_derive_the_same_key() {
+        let n = &recovery()["normalization"];
+        let nfc = encode_passphrase(n["nfc"].as_str().unwrap()).unwrap();
+        let nfd = encode_passphrase(n["nfd"].as_str().unwrap()).unwrap();
+        assert_eq!(nfc.as_slice(), nfd.as_slice());
+        assert_eq!(encode_hex(&nfc), "636166c3a9");
+        let salt = hexutil::decode_hex(n["saltHex"].as_str().unwrap()).unwrap();
+        let key = derive_key(&nfc, &salt, 65536, 3, 4, 32).unwrap();
+        assert_eq!(
+            encode_hex(key.as_ref()),
+            n["derivedKeyHex"].as_str().unwrap()
+        );
+        assert!(matches!(
+            encode_passphrase("").unwrap_err(),
+            EncDiscError::RecoveryParams
+        ));
+        assert!(matches!(
+            encode_passphrase(" \t\n").unwrap_err(),
+            EncDiscError::RecoveryParams
+        ));
+        let spaced = encode_passphrase(" café").unwrap();
+        assert_eq!(spaced[0], b' ');
+        let started = std::time::Instant::now();
+        let rejected = seal_recovery_copy_with(
+            &genesis_keyring(),
+            b"   ",
+            &[0x11; 16],
+            &[0x22; 12],
+            &mut MemoryRecoveryStore::default(),
+        )
+        .unwrap_err();
+        assert!(started.elapsed().as_millis() < 200);
+        assert!(matches!(rejected, EncDiscError::RecoveryParams));
+    }
+
+    #[test]
+    fn a_cross_principal_envelope_is_recovery_rejected_before_the_kdf() {
+        let v = recovery();
+        let principal = principal_of();
+        let other = parse_principal_id(ring()["mint"]["signingPub"].as_str().unwrap()).unwrap();
+        let held = hold();
+        let ctx = context_of(&held);
+        let envelope = RecoveryEnvelope {
+            principal: principal.clone(),
+            rotation_seq: 0,
+            bytes: hexutil::decode_hex(v["envelopeHex"].as_str().unwrap()).unwrap(),
+        };
+        let started = std::time::Instant::now();
+        let swapped = open_recovery_copy(b"x", &envelope, &other, 0, &[], &ctx).unwrap_err();
+        assert!(started.elapsed().as_millis() < 200);
+        assert_eq!(token(&swapped), "recovery-rejected");
+        let mut both = envelope.clone();
+        both.principal = other.clone();
+        let ad = open_recovery_copy(
+            v["passphraseUtf8"].as_str().unwrap().as_bytes(),
+            &both,
+            &other,
+            0,
+            &[],
+            &ctx,
+        )
+        .unwrap_err();
+        assert_eq!(token(&ad), "recovery-rejected");
+    }
+
+    #[test]
+    fn a_recovery_copy_opens_after_rotation_against_its_chain() {
+        let v = recovery();
+        let ring = ring();
+        let records: Value = serde_json::from_str(RECORDS).unwrap();
+        let rotation = records["accept"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|item| item["name"] == ring["witnessed"]["rotationName"].as_str().unwrap())
+            .unwrap()["input"]
+            .clone();
+        let (genesis_pub, _genesis_priv) =
+            scalar_sea(ring["witnessed"]["genesisScalar"].as_u64().unwrap() as u16);
+        let (genesis_epub, genesis_epriv) =
+            scalar_sea(ring["witnessed"]["genesisEpubScalar"].as_u64().unwrap() as u16);
+        let (current_pub, current_priv) =
+            scalar_sea(ring["witnessed"]["currentScalar"].as_u64().unwrap() as u16);
+        let (current_epub, current_epriv) =
+            scalar_sea(ring["witnessed"]["epubScalar"].as_u64().unwrap() as u16);
+        let ctx = &records["context"];
+        let jwks: Jwks = serde_json::from_value(ctx["jwks"].clone()).unwrap();
+        let policy: SiwePolicy = serde_json::from_value(ctx["policy"].clone()).unwrap();
+        let pinned: BTreeSet<String> = ctx["pinnedIss"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|item| item.as_str().unwrap().to_string())
+            .collect();
+        let links: BTreeMap<String, Value> = ctx["links"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|pair| (pair[0].as_str().unwrap().to_string(), pair[1].clone()))
+            .collect();
+        let authenticated = ctx["authenticatedAccounts"].clone();
+        let history = |principal: &PrincipalId, at, until| {
+            if !authenticated
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|item| item.as_str() == Some(principal.as_ref()))
+            {
+                return Err(Reason::MissingHistory);
+            }
+            let empty: Vec<Rotate> = Vec::new();
+            Ok(history_state(principal, &empty, at, until))
+        };
+        let resolver: &HistoryResolver<'_> = &history;
+        let revocations = Vec::new();
+        let base = ResolutionContext {
+            jwks: &jwks,
+            links: &links,
+            revocations: &revocations,
+            now: ctx["now"].as_u64().unwrap(),
+            policy: &policy,
+            pinned_iss: &pinned,
+            history: resolver,
+            genesis_epub_bindings: &[],
+        };
+        let retired = [(genesis_epub.as_str(), genesis_epriv.as_str())];
+        let rotations = [rotation];
+        let keyring = AccountKeyring::import(
+            &genesis_pub,
+            &genesis_epub,
+            &current_pub,
+            current_priv.as_str(),
+            &current_epub,
+            current_epriv.as_str(),
+            &retired,
+            ring["witnessed"]["laneId"].as_str().unwrap(),
+            ring["witnessed"]["contentEpoch"].as_u64().unwrap(),
+            ring["witnessed"]["rotationSeq"].as_u64().unwrap(),
+            &rotations,
+            &base,
+        )
+        .unwrap();
+        let mut store = MemoryRecoveryStore::default();
+        let salt = hexutil::decode_hex(v["saltHex"].as_str().unwrap()).unwrap();
+        let nonce = hexutil::decode_hex(v["nonceHex"].as_str().unwrap()).unwrap();
+        let envelope = seal_recovery_copy_with(
+            &keyring,
+            v["passphraseUtf8"].as_str().unwrap().as_bytes(),
+            &salt,
+            &nonce,
+            &mut store,
+        )
+        .unwrap();
+        let opened = open_recovery_copy_str(
+            v["passphraseUtf8"].as_str().unwrap(),
+            &envelope,
+            keyring.principal(),
+            1,
+            &rotations,
+            &base,
+        )
+        .unwrap();
+        assert_eq!(opened.rotation_seq(), 1);
+        assert_eq!(opened.current_priv(), keyring.current_priv());
+        let unsigned = open_recovery_copy(
+            v["passphraseUtf8"].as_str().unwrap().as_bytes(),
+            &envelope,
+            keyring.principal(),
+            1,
+            &[],
+            &base,
+        )
+        .unwrap_err();
+        assert!(matches!(unsigned, EncDiscError::PubMismatch));
+    }
+
+    fn dummy_envelope(principal: &PrincipalId, seq: u64) -> RecoveryEnvelope {
+        let mut bytes = Vec::new();
+        write_header(&mut bytes, 0x13, 65536, 3, 4, 32, &[0x11; 16], seq);
+        bytes.extend_from_slice(&[0u8; 12]);
+        bytes.extend_from_slice(&[0u8; 16]);
+        RecoveryEnvelope {
+            principal: principal.clone(),
+            rotation_seq: seq,
+            bytes,
+        }
+    }
+
+    fn scalar_sea(n: u16) -> (String, Zeroizing<String>) {
+        let mut bytes = [0u8; 32];
+        bytes[30] = (n >> 8) as u8;
+        bytes[31] = n as u8;
+        let secret = p256::SecretKey::from_slice(&bytes).unwrap();
+        bytes.zeroize();
+        (
+            crate::sea::sea_pub_from_secret(&secret).unwrap(),
+            crate::sea::sea_priv_from_secret(&secret).unwrap(),
+        )
     }
 }

@@ -19,7 +19,17 @@
   and apply that length check to the recovery envelope before decrypt. The
   cap is a fixed byte limit. It is not a count of prior lanes.
 - The TypeScript KDF is hash-wasm, a single-threaded WASM build. `p=4` runs
-  its lanes one after another, including in a browser.
+  its lanes one after another, including in a browser. Mobile uses the same
+  64 MiB Argon2id parameters.
+- Normalize a passphrase string to Unicode NFC, then UTF-8. Empty and
+  whitespace-only passphrases are `recovery-params`.
+- Key the wrap store by principal and wrap id, so a second device delivery
+  keeps the first. Re-seal keeps only the latest recovery copy per principal.
+- Return `recovery-stale` for an older delivery before the current-key
+  signature check. Delivery uses `sociacl-keyring-delivery-v1` and
+  `sociacl-keyring-delivery-sig-v1`.
+- The recovery plaintext cap does not grow with the salt. `RECOVERY_ENVELOPE_MAX`
+  is 262205. The pre-parse ceiling `RECOVERY_ABSOLUTE_MAX` is 262269.
 
 ## sociacl-ids 0.8.0 — unreleased
 

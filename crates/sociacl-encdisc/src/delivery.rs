@@ -1,4 +1,6 @@
-//! Deliver an account keyring to a device through the #63 sealed wrap.
+//! Deliver an account keyring to a device. The outer domains are
+//! `sociacl-keyring-delivery-v1` and `sociacl-keyring-delivery-sig-v1`,
+//! separate from the genesis backup.
 //!
 //! The transport public key arrives out of band. The ciphertext goes to a
 //! [`KeyWrapStore`]. The device inherits the account keypair and does not
@@ -15,20 +17,24 @@ use rand::RngCore;
 use sociacl_ids::{parse_principal_id, ObjectId, PrincipalId};
 use zeroize::{Zeroize, Zeroizing};
 
-use crate::canonical;
 use crate::error::EncDiscError;
 use crate::hexutil::{self, encode_hex};
 use crate::identity::{
-    current_signing_key, KeyWrapStore, TransportKey, WrapIndex, DOMAIN_ACCOUNT_BIND,
-    DOMAIN_ACCOUNT_SIG,
+    aad_backup, current_signing_key, kdf_backup, signature_message, KeyWrapStore, TransportKey,
+    WrapIndex,
 };
 use crate::keyring::AccountKeyring;
 use crate::limits::{DELIVERY_BLOB_MAX, KEYRING_SERIAL_MAX};
-use crate::recovery::{decode_keyring, encode_keyring, keyring_ciphertext_hides_secrets};
+use crate::recovery::{decode_keyring, encode_keyring};
 use crate::sea::{self, ecdh_x, uncompressed_point};
 use crate::EncryptedAccountWrap;
 
 const VER_BACKUP: u8 = 1;
+
+/// KDF info and AES-GCM associated data for a delivered keyring. Not the #63 backup domain.
+pub(crate) const DOMAIN_DELIVERY_BIND: &str = "sociacl-keyring-delivery-v1";
+/// Signature domain for a delivered keyring. Not the #63 wrap signature domain.
+pub(crate) const DOMAIN_DELIVERY_SIG: &str = "sociacl-keyring-delivery-sig-v1";
 
 /// Seal the keyring to `transport_pub` and store the wrap.
 ///
@@ -79,14 +85,16 @@ pub(crate) fn deliver_keyring_with(
     let peer = transport_peer(keyring, transport_pub)?;
     let ephemeral_pub = sea::sea_pub_from_secret(ephemeral)?;
     let shared = ecdh_x(ephemeral, &peer)?;
-    let aes_key = kdf(
+    let aes_key = kdf_backup(
+        DOMAIN_DELIVERY_BIND,
         &shared,
         keyring.principal().as_ref(),
         wrap_id.as_ref(),
         transport_pub,
         &ephemeral_pub,
     )?;
-    let aad = aad(
+    let aad = aad_backup(
+        DOMAIN_DELIVERY_BIND,
         keyring.principal().as_ref(),
         wrap_id.as_ref(),
         transport_pub,
@@ -102,8 +110,7 @@ pub(crate) fn deliver_keyring_with(
     if blob.len() > DELIVERY_BLOB_MAX {
         return Err(EncDiscError::KeyringTooLarge);
     }
-    keyring_ciphertext_hides_secrets(&blob, keyring)?;
-    let message = signature_message(&blob, transport_pub, wrap_id.as_ref())?;
+    let message = signature_message(DOMAIN_DELIVERY_SIG, &blob, transport_pub, wrap_id.as_ref())?;
     let signature = sea::sign_sea(keyring.current_priv(), &message)?;
     let wrap = EncryptedAccountWrap {
         principal: keyring.principal().clone(),
@@ -154,21 +161,20 @@ pub fn open_delivered_keyring(
     let nonce: [u8; 12] = blob[66..78]
         .try_into()
         .map_err(|_| EncDiscError::WrapRejected)?;
-    let current = current_signing_key(expected, rotations, context)?;
     let wrap_id = crate::parse_wrap_object(wrap.wrap_id.as_ref())?;
-    let message = signature_message(&blob, transport.sea_pub(), wrap_id.as_ref())?;
-    sea::verify_sea(current.as_ref(), &message, &wrap.signature)?;
     let ephemeral_sea = sea::sea_pub_from_point(&ephemeral)?;
     let secret = transport.secret_key()?;
     let shared = ecdh_x(&secret, &ephemeral)?;
-    let aes_key = kdf(
+    let aes_key = kdf_backup(
+        DOMAIN_DELIVERY_BIND,
         &shared,
         expected.as_ref(),
         wrap_id.as_ref(),
         transport.sea_pub(),
         &ephemeral_sea,
     )?;
-    let aad = aad(
+    let aad = aad_backup(
+        DOMAIN_DELIVERY_BIND,
         expected.as_ref(),
         wrap_id.as_ref(),
         transport.sea_pub(),
@@ -187,13 +193,25 @@ pub fn open_delivered_keyring(
         }
     };
     plain.zeroize();
+    // Seq is inside the authenticated plaintext. Compare it before the
+    // current-key signature so an older delivery is `recovery-stale`
+    // rather than `wrap-rejected`.
+    if fields.rotation_seq != expected_rotation_seq {
+        return Err(EncDiscError::RecoveryStale);
+    }
+    let current = current_signing_key(expected, rotations, context)?;
+    let message = signature_message(
+        DOMAIN_DELIVERY_SIG,
+        &blob,
+        transport.sea_pub(),
+        wrap_id.as_ref(),
+    )?;
+    sea::verify_sea(current.as_ref(), &message, &wrap.signature)
+        .map_err(|_| EncDiscError::WrapRejected)?;
     let parsed =
         parse_principal_id(fields.principal.as_str()).map_err(|_| EncDiscError::WrapRejected)?;
     if parsed.as_ref() != fields.principal.as_str() || parsed.as_ref() != expected.as_ref() {
         return Err(EncDiscError::WrapRejected);
-    }
-    if fields.rotation_seq != expected_rotation_seq {
-        return Err(EncDiscError::RecoveryStale);
     }
     let retired: Vec<(&str, &str)> = fields
         .retired
@@ -244,49 +262,6 @@ fn transport_peer(
     sea::parse_sea_point(transport_pub).map_err(|_| EncDiscError::BadKey)
 }
 
-fn kdf(
-    shared_x: &[u8; 32],
-    principal: &str,
-    wrap_id: &str,
-    transport_pub: &str,
-    ephemeral_pub: &str,
-) -> Result<Zeroizing<[u8; 32]>, EncDiscError> {
-    let hex = hexutil::encode_secret_hex(shared_x);
-    let bytes = Zeroizing::new(canonical::length_prefixed(&[
-        DOMAIN_ACCOUNT_BIND,
-        hex.as_str(),
-        principal,
-        wrap_id,
-        transport_pub,
-        ephemeral_pub,
-    ])?);
-    Ok(Zeroizing::new(canonical::sha256(&bytes)))
-}
-
-fn aad(
-    principal: &str,
-    wrap_id: &str,
-    transport_pub: &str,
-    ephemeral_pub: &str,
-) -> Result<Vec<u8>, EncDiscError> {
-    canonical::length_prefixed(&[
-        DOMAIN_ACCOUNT_BIND,
-        principal,
-        wrap_id,
-        transport_pub,
-        ephemeral_pub,
-    ])
-}
-
-fn signature_message(
-    blob: &[u8],
-    transport_pub: &str,
-    wrap_id: &str,
-) -> Result<Vec<u8>, EncDiscError> {
-    let digest = canonical::sha256_hex(blob);
-    canonical::length_prefixed(&[DOMAIN_ACCOUNT_SIG, digest.as_str(), transport_pub, wrap_id])
-}
-
 fn encrypt(
     key: &[u8; 32],
     nonce: &[u8; 12],
@@ -326,7 +301,8 @@ mod tests {
     use crate::{GenesisAccount, MemoryKeyWrapStore};
     use serde_json::Value;
     use sociacl_ids::{
-        parse_object_id, Jwks, KeyState, PrincipalId, Reason, ResolutionContext, SiwePolicy,
+        history_state, parse_object_id, HistoryResolver, Jwks, KeyState, PrincipalId, Reason,
+        ResolutionContext, Rotate, SiwePolicy,
     };
     use std::collections::{BTreeMap, BTreeSet};
 
@@ -428,10 +404,271 @@ mod tests {
         let stale = open_delivered_keyring(&transport, &wrap, keyring.principal(), 1, &[], &ctx)
             .unwrap_err();
         assert!(matches!(stale, EncDiscError::RecoveryStale));
+        let mut bad = wrap.clone();
+        let mut signature = bad.signature.into_bytes();
+        let last = signature.len() - 1;
+        signature[last] = if signature[last] == b'0' { b'1' } else { b'0' };
+        bad.signature = String::from_utf8(signature).unwrap();
+        let stale_bad = open_delivered_keyring(&transport, &bad, keyring.principal(), 1, &[], &ctx)
+            .unwrap_err();
+        assert!(matches!(stale_bad, EncDiscError::RecoveryStale));
+        let rejected = open_delivered_keyring(&transport, &bad, keyring.principal(), 0, &[], &ctx)
+            .unwrap_err();
+        assert!(matches!(rejected, EncDiscError::WrapRejected));
         let gun = opened.gun_document();
         assert!(!gun.contains(opened.current_priv()));
         assert!(!gun.contains(opened.lane_id()));
+        let backup = crate::open_account_backup(&transport, &wrap, keyring.principal(), &[], &ctx)
+            .unwrap_err();
+        assert!(matches!(backup, EncDiscError::SignatureRejected));
+        let wrong_scalar = TransportKey::from_scalar_hex(&format!("{:064x}", 5u32)).unwrap();
+        let wrong_device =
+            open_delivered_keyring(&wrong_scalar, &wrap, keyring.principal(), 0, &[], &ctx)
+                .unwrap_err();
+        assert!(matches!(wrong_device, EncDiscError::WrapRejected));
+        let mut wrong_id = wrap.clone();
+        wrong_id.wrap_id = parse_object_id("wrap_00112233445566778899aabbccddee00").unwrap();
+        let wrong_wrap =
+            open_delivered_keyring(&transport, &wrong_id, keyring.principal(), 0, &[], &ctx)
+                .unwrap_err();
+        assert!(matches!(wrong_wrap, EncDiscError::WrapRejected));
+        let mut wrong_principal = wrap.clone();
+        wrong_principal.principal =
+            sociacl_ids::parse_principal_id(ring()["mint"]["signingPub"].as_str().unwrap())
+                .unwrap();
+        let wrong_account = open_delivered_keyring(
+            &transport,
+            &wrong_principal,
+            keyring.principal(),
+            0,
+            &[],
+            &ctx,
+        )
+        .unwrap_err();
+        assert!(matches!(wrong_account, EncDiscError::WrapRejected));
+        let mut wrong_epub = wrap.clone();
+        wrong_epub.epub = ring()["mint"]["epub"].as_str().unwrap().to_string();
+        let epub =
+            open_delivered_keyring(&transport, &wrong_epub, keyring.principal(), 0, &[], &ctx)
+                .unwrap_err();
+        assert!(matches!(epub, EncDiscError::WrapRejected));
         let _unused = MemoryRecoveryStore::default();
+    }
+
+    #[test]
+    fn two_devices_and_the_genesis_backup_share_the_store() {
+        let v = recovery();
+        let keyring = genesis_keyring();
+        let held = hold();
+        let ctx = context_of(&held);
+        let mut store = MemoryKeyWrapStore::default();
+        let g = &ring()["genesis"];
+        let account = GenesisAccount::import(
+            g["laneId"].as_str().unwrap(),
+            g["signingPub"].as_str().unwrap(),
+            g["signingPriv"].as_str().unwrap(),
+            g["epub"].as_str().unwrap(),
+            g["epriv"].as_str().unwrap(),
+        )
+        .unwrap();
+        let delivery = &v["delivery"];
+        let transport_pub = delivery["transportPub"].as_str().unwrap();
+        let genesis_id = parse_object_id("wrap_00112233445566778899aabbccddee01").unwrap();
+        let first_id = parse_object_id(delivery["wrapId"].as_str().unwrap()).unwrap();
+        let second_id = parse_object_id("wrap_00112233445566778899aabbccddee02").unwrap();
+        let genesis =
+            crate::seal_account_backup(&account, transport_pub, &genesis_id, &[], &ctx, &mut store)
+                .unwrap();
+        let ephemeral = p256::SecretKey::from_slice(
+            &hexutil::decode_hex(delivery["ephemeralScalarHex"].as_str().unwrap()).unwrap(),
+        )
+        .unwrap();
+        let nonce_bytes = hexutil::decode_hex(delivery["nonceHex"].as_str().unwrap()).unwrap();
+        let nonce: [u8; 12] = nonce_bytes.as_slice().try_into().unwrap();
+        let first = deliver_keyring_with(
+            &keyring,
+            transport_pub,
+            &ephemeral,
+            &nonce,
+            &first_id,
+            &[],
+            &ctx,
+            &mut store,
+        )
+        .unwrap();
+        let second_transport = TransportKey::from_scalar_hex(&format!("{:064x}", 4u32)).unwrap();
+        let second_ephemeral =
+            p256::SecretKey::from_slice(&hexutil::decode_hex(&format!("{:064x}", 7u32)).unwrap())
+                .unwrap();
+        let second_nonce = [
+            0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b,
+        ];
+        let second = deliver_keyring_with(
+            &keyring,
+            second_transport.sea_pub(),
+            &second_ephemeral,
+            &second_nonce,
+            &second_id,
+            &[],
+            &ctx,
+            &mut store,
+        )
+        .unwrap();
+        assert_eq!(store.list_wraps(keyring.principal()).unwrap().len(), 3);
+        assert_eq!(
+            store
+                .get_wrap(keyring.principal(), &genesis_id)
+                .unwrap()
+                .unwrap()
+                .ciphertext_hex,
+            genesis.ciphertext_hex
+        );
+        assert_eq!(
+            store
+                .get_wrap(keyring.principal(), &first_id)
+                .unwrap()
+                .unwrap()
+                .ciphertext_hex,
+            first.ciphertext_hex
+        );
+        let replacement = deliver_keyring_with(
+            &keyring,
+            second_transport.sea_pub(),
+            &second_ephemeral,
+            &[
+                0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29, 0x2a, 0x2b,
+            ],
+            &second_id,
+            &[],
+            &ctx,
+            &mut store,
+        )
+        .unwrap();
+        assert_ne!(replacement.ciphertext_hex, second.ciphertext_hex);
+        assert_eq!(store.list_wraps(keyring.principal()).unwrap().len(), 3);
+        assert_eq!(
+            store
+                .get_wrap(keyring.principal(), &first_id)
+                .unwrap()
+                .unwrap()
+                .ciphertext_hex,
+            first.ciphertext_hex
+        );
+        assert_eq!(
+            store
+                .get_wrap(keyring.principal(), &second_id)
+                .unwrap()
+                .unwrap()
+                .ciphertext_hex,
+            replacement.ciphertext_hex
+        );
+    }
+
+    #[test]
+    fn a_rotated_delivery_needs_its_chain_and_a_stale_seq_wins() {
+        let ring = ring();
+        let records: Value = serde_json::from_str(RECORDS).unwrap();
+        let rotation = records["accept"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|item| item["name"] == ring["witnessed"]["rotationName"].as_str().unwrap())
+            .unwrap()["input"]
+            .clone();
+        let (genesis_pub, _genesis_priv) =
+            scalar_sea(ring["witnessed"]["genesisScalar"].as_u64().unwrap() as u16);
+        let (genesis_epub, genesis_epriv) =
+            scalar_sea(ring["witnessed"]["genesisEpubScalar"].as_u64().unwrap() as u16);
+        let (current_pub, current_priv) =
+            scalar_sea(ring["witnessed"]["currentScalar"].as_u64().unwrap() as u16);
+        let (current_epub, current_epriv) =
+            scalar_sea(ring["witnessed"]["epubScalar"].as_u64().unwrap() as u16);
+        let ctx = &records["context"];
+        let jwks: Jwks = serde_json::from_value(ctx["jwks"].clone()).unwrap();
+        let policy: SiwePolicy = serde_json::from_value(ctx["policy"].clone()).unwrap();
+        let pinned: BTreeSet<String> = ctx["pinnedIss"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|item| item.as_str().unwrap().to_string())
+            .collect();
+        let links: BTreeMap<String, Value> = ctx["links"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|pair| (pair[0].as_str().unwrap().to_string(), pair[1].clone()))
+            .collect();
+        let authenticated = ctx["authenticatedAccounts"].clone();
+        let history = |principal: &PrincipalId, at, until| {
+            if !authenticated
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|item| item.as_str() == Some(principal.as_ref()))
+            {
+                return Err(Reason::MissingHistory);
+            }
+            let empty: Vec<Rotate> = Vec::new();
+            Ok(history_state(principal, &empty, at, until))
+        };
+        let resolver: &HistoryResolver<'_> = &history;
+        let revocations = Vec::new();
+        let base = ResolutionContext {
+            jwks: &jwks,
+            links: &links,
+            revocations: &revocations,
+            now: ctx["now"].as_u64().unwrap(),
+            policy: &policy,
+            pinned_iss: &pinned,
+            history: resolver,
+            genesis_epub_bindings: &[],
+        };
+        let retired = [(genesis_epub.as_str(), genesis_epriv.as_str())];
+        let rotations = [rotation];
+        let keyring = AccountKeyring::import(
+            &genesis_pub,
+            &genesis_epub,
+            &current_pub,
+            current_priv.as_str(),
+            &current_epub,
+            current_epriv.as_str(),
+            &retired,
+            ring["witnessed"]["laneId"].as_str().unwrap(),
+            ring["witnessed"]["contentEpoch"].as_u64().unwrap(),
+            ring["witnessed"]["rotationSeq"].as_u64().unwrap(),
+            &rotations,
+            &base,
+        )
+        .unwrap();
+        let mut store = MemoryKeyWrapStore::default();
+        let transport = TransportKey::from_scalar_hex(&format!("{:064x}", 4u32)).unwrap();
+        let ephemeral =
+            p256::SecretKey::from_slice(&hexutil::decode_hex(&format!("{:064x}", 7u32)).unwrap())
+                .unwrap();
+        let nonce = [9u8; 12];
+        let wrap_id = parse_object_id("wrap_00112233445566778899aabbccddee03").unwrap();
+        let wrap = deliver_keyring_with(
+            &keyring,
+            transport.sea_pub(),
+            &ephemeral,
+            &nonce,
+            &wrap_id,
+            &rotations,
+            &base,
+            &mut store,
+        )
+        .unwrap();
+        let opened =
+            open_delivered_keyring(&transport, &wrap, keyring.principal(), 1, &rotations, &base)
+                .unwrap();
+        assert_eq!(opened.rotation_seq(), 1);
+        let truncated =
+            open_delivered_keyring(&transport, &wrap, keyring.principal(), 1, &[], &base)
+                .unwrap_err();
+        assert!(matches!(truncated, EncDiscError::WrapRejected));
+        let stale = open_delivered_keyring(&transport, &wrap, keyring.principal(), 0, &[], &base)
+            .unwrap_err();
+        assert!(matches!(stale, EncDiscError::RecoveryStale));
     }
 
     fn genesis_keyring() -> AccountKeyring {
@@ -445,6 +682,18 @@ mod tests {
         )
         .unwrap();
         AccountKeyring::from_genesis(&account).unwrap()
+    }
+
+    fn scalar_sea(n: u16) -> (String, Zeroizing<String>) {
+        let mut bytes = [0u8; 32];
+        bytes[30] = (n >> 8) as u8;
+        bytes[31] = n as u8;
+        let secret = p256::SecretKey::from_slice(&bytes).unwrap();
+        bytes.zeroize();
+        (
+            crate::sea::sea_pub_from_secret(&secret).unwrap(),
+            crate::sea::sea_priv_from_secret(&secret).unwrap(),
+        )
     }
 
     struct Hold {

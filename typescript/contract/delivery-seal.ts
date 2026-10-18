@@ -3,19 +3,28 @@
  * Caller-chosen ephemerals are wrapped for tests in
  * typescript/tests/support/recovery-deterministic.ts.
  */
-import { createCipheriv, createDecipheriv, createHash } from "node:crypto";
+import { createCipheriv, createDecipheriv } from "node:crypto";
 import { p256 } from "@noble/curves/nist.js";
 import { parseObjectId, parsePrincipalId, type ObjectId, type PrincipalId, type ResolutionContext } from "../ids/src/index.js";
 import { currentSigningKey, type EncryptedAccountWrap, type KeyWrapStore } from "./account-key.ts";
-import { bytesToHex, hexToBytes, seaPoint, sharedX, unb64, uncompressedFromSea } from "./account-key-seal.ts";
+import {
+  backupAad,
+  backupKdf,
+  backupSignatureMessage,
+  bytesToHex,
+  hexToBytes,
+  seaPoint,
+  sharedX,
+  unb64,
+  uncompressedFromSea,
+} from "./account-key-seal.ts";
 import type { AccountKeyring } from "./account-keyring.ts";
 import { AccountKeyring as Keyring } from "./account-keyring.ts";
-import { lengthPrefixed } from "./canonical.ts";
-import { assertKeyringHidden, decodeKeyring, encodeKeyring } from "./keyring-codec.ts";
+import { decodeKeyring, encodeKeyring } from "./keyring-codec.ts";
 import { DELIVERY_BLOB_MAX, KEYRING_SERIAL_MAX } from "./keyring-limits.ts";
 
-const DOMAIN_ACCOUNT_BIND = "sociacl-account-key-bind-v1";
-const DOMAIN_ACCOUNT_SIG = "sociacl-account-key-wrap-sig-v1";
+const DOMAIN_DELIVERY_BIND = "sociacl-keyring-delivery-v1";
+const DOMAIN_DELIVERY_SIG = "sociacl-keyring-delivery-sig-v1";
 
 /** Caller-chosen ephemeral and nonce. Tests use this through the support wrapper. */
 export function deliverKeyringWith(
@@ -30,6 +39,7 @@ export function deliverKeyringWith(
 ): EncryptedAccountWrap {
   if (ephemeral.length !== 32 || nonce.length !== 12) throw new Error("bad-key");
   const plain = encodeKeyring(keyring);
+  let key: Uint8Array | undefined;
   try {
     if (plain.length > KEYRING_SERIAL_MAX) throw new Error("keyring-too-large");
     const current = currentSigningKey(keyring.principal, rotations, context);
@@ -37,18 +47,18 @@ export function deliverKeyringWith(
     const peer = transportPeer(keyring, transportPub);
     const point = p256.getPublicKey(ephemeral, false);
     const ephemeralPub = seaPoint(ephemeral);
-    const key = kdf(sharedX(ephemeral, peer), keyring.principal, wrapId, transportPub, ephemeralPub);
-    const aad = lengthPrefixed([DOMAIN_ACCOUNT_BIND, keyring.principal, wrapId, transportPub, ephemeralPub]);
+    const shared = sharedX(ephemeral, peer);
+    key = backupKdf(shared, keyring.principal, wrapId, transportPub, ephemeralPub, DOMAIN_DELIVERY_BIND);
+    shared.fill(0);
+    const aad = backupAad(keyring.principal, wrapId, transportPub, ephemeralPub, DOMAIN_DELIVERY_BIND);
     const ciphertext = aesEncrypt(key, nonce, aad, plain);
-    key.fill(0);
     const blob = new Uint8Array(1 + point.length + nonce.length + ciphertext.length);
     blob[0] = 1;
     blob.set(point, 1);
     blob.set(nonce, 1 + point.length);
     blob.set(ciphertext, 1 + point.length + nonce.length);
     if (blob.length > DELIVERY_BLOB_MAX) throw new Error("keyring-too-large");
-    assertKeyringHidden(blob, keyring);
-    const message = lengthPrefixed([DOMAIN_ACCOUNT_SIG, sha256Hex(blob), transportPub, wrapId]);
+    const message = backupSignatureMessage(blob, transportPub, wrapId, DOMAIN_DELIVERY_SIG);
     const signature = bytesToHex(p256.sign(message, unb64(keyring.currentPriv()), { lowS: true, prehash: true }));
     const wrap: EncryptedAccountWrap = {
       principal: keyring.principal,
@@ -61,6 +71,7 @@ export function deliverKeyringWith(
     return wrap;
   } finally {
     plain.fill(0);
+    key?.fill(0);
   }
 }
 
@@ -90,18 +101,11 @@ export function openDeliveredKeyring(
   const transportPub = seaPoint(transport);
   const ephemeral = blob.subarray(1, 66);
   const nonce = blob.subarray(66, 78);
-  const current = currentSigningKey(expected, rotations, context);
-  const message = lengthPrefixed([DOMAIN_ACCOUNT_SIG, sha256Hex(blob), transportPub, wrapId.value]);
-  let signatureOk = false;
-  try {
-    signatureOk = p256.verify(hexToBytes(wrap.signature), message, uncompressedFromSea(current), { lowS: true, prehash: true });
-  } catch {
-    signatureOk = false;
-  }
-  if (!signatureOk) throw new Error("wrap-rejected");
   const ephemeralPub = seaPoint(ephemeral);
-  const key = kdf(sharedX(transport, ephemeral), expected, wrapId.value, transportPub, ephemeralPub);
-  const aad = lengthPrefixed([DOMAIN_ACCOUNT_BIND, expected, wrapId.value, transportPub, ephemeralPub]);
+  const shared = sharedX(transport, ephemeral);
+  const key = backupKdf(shared, expected, wrapId.value, transportPub, ephemeralPub, DOMAIN_DELIVERY_BIND);
+  shared.fill(0);
+  const aad = backupAad(expected, wrapId.value, transportPub, ephemeralPub, DOMAIN_DELIVERY_BIND);
   let plain: Uint8Array | undefined;
   try {
     try {
@@ -111,9 +115,18 @@ export function openDeliveredKeyring(
     }
     if (plain.length > KEYRING_SERIAL_MAX) throw new Error("keyring-too-large");
     const fields = decodeKeyring(plain);
+    if (fields.rotationSeq !== expectedRotationSeq) throw new Error("recovery-stale");
+    const current = currentSigningKey(expected, rotations, context);
+    const message = backupSignatureMessage(blob, transportPub, wrapId.value, DOMAIN_DELIVERY_SIG);
+    let signatureOk = false;
+    try {
+      signatureOk = p256.verify(hexToBytes(wrap.signature), message, uncompressedFromSea(current), { lowS: true, prehash: true });
+    } catch {
+      signatureOk = false;
+    }
+    if (!signatureOk) throw new Error("wrap-rejected");
     const parsed = parsePrincipalId(fields.principal);
     if (!parsed.ok || parsed.value !== fields.principal || parsed.value !== expected) throw new Error("wrap-rejected");
-    if (fields.rotationSeq !== expectedRotationSeq) throw new Error("recovery-stale");
     const keyring = Keyring.import(
       fields.principal,
       fields.genesisEpub,
@@ -150,21 +163,6 @@ function transportPeer(keyring: AccountKeyring, transportPub: string): Uint8Arra
     if (error instanceof Error && error.message === "transport") throw error;
     throw new Error("bad-key");
   }
-}
-
-function kdf(x: Uint8Array, principal: string, wrapId: string, transportPub: string, ephemeralPub: string): Uint8Array {
-  const encoded = bytesToHex(x);
-  const key = sha256Bytes(lengthPrefixed([DOMAIN_ACCOUNT_BIND, encoded, principal, wrapId, transportPub, ephemeralPub]));
-  x.fill(0);
-  return key;
-}
-
-function sha256Bytes(bytes: Uint8Array): Uint8Array {
-  return new Uint8Array(createHash("sha256").update(bytes).digest());
-}
-
-function sha256Hex(bytes: Uint8Array): string {
-  return createHash("sha256").update(bytes).digest("hex");
 }
 
 function aesEncrypt(key: Uint8Array, nonce: Uint8Array, aad: Uint8Array, plain: Uint8Array): Uint8Array {

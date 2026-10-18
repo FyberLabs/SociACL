@@ -294,7 +294,7 @@ test("backup wrap is stored off gun and both devices open one epub wrap", () => 
   const gun = gunDocument(genesis);
   assert.equal(gun.includes(wrap.ciphertextHex), false);
   assert.equal(gun.includes(genesis.priv), false);
-  const stored = store.get(genesis.principal);
+  const stored = store.get(genesis.principal, wrap.wrapId);
   assert.ok(stored);
   if (!stored) return;
   const opened = openAccountBackup(vector.backupWrap.transportScalarHex, stored, genesis.principal, [], context);

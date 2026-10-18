@@ -84,7 +84,14 @@ pub trait KeyWrapStore {
     fn get_wrap(
         &self,
         principal: &PrincipalId,
+        wrap_id: &ObjectId,
     ) -> Result<Option<EncryptedAccountWrap>, EncDiscError>;
+
+    /// Every wrap stored for `principal`, including the genesis backup and each device delivery.
+    fn list_wraps(
+        &self,
+        principal: &PrincipalId,
+    ) -> Result<Vec<EncryptedAccountWrap>, EncDiscError>;
 
     fn is_authority(&self) -> bool {
         false
@@ -95,10 +102,13 @@ pub trait KeyWrapStore {
     }
 }
 
-/// In-memory adapter. One wrap per genesis principal.
+/// In-memory adapter. Wraps are keyed by `(principal, wrapId)`.
+///
+/// The genesis backup and device deliveries share this store. A second
+/// wrap id does not replace the first.
 #[derive(Clone, Debug, Default)]
 pub struct MemoryKeyWrapStore {
-    by_principal: BTreeMap<String, EncryptedAccountWrap>,
+    by_principal: BTreeMap<String, BTreeMap<String, EncryptedAccountWrap>>,
 }
 
 /// A wallet or OIDC link that `verify_wallet_link` / `verify_oidc_link` accepted.
@@ -361,11 +371,11 @@ impl std::fmt::Debug for TransportKey {
 
 impl MemoryKeyWrapStore {
     pub fn len(&self) -> usize {
-        self.by_principal.len()
+        self.by_principal.values().map(BTreeMap::len).sum()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.by_principal.is_empty()
+        self.len() == 0
     }
 }
 
@@ -387,21 +397,34 @@ impl KeyWrapStore for MemoryKeyWrapStore {
         {
             return Err(EncDiscError::StoreRejected);
         }
-        if let Some(existing) = self.by_principal.get(wrap.principal.as_ref()) {
-            if existing.wrap_id != wrap.wrap_id {
-                return Err(EncDiscError::StoreRejected);
-            }
-        }
         self.by_principal
-            .insert(wrap.principal.as_ref().to_string(), wrap.clone());
+            .entry(wrap.principal.as_ref().to_string())
+            .or_default()
+            .insert(wrap.wrap_id.as_ref().to_string(), wrap.clone());
         Ok(())
     }
 
     fn get_wrap(
         &self,
         principal: &PrincipalId,
+        wrap_id: &sociacl_ids::ObjectId,
     ) -> Result<Option<EncryptedAccountWrap>, EncDiscError> {
-        Ok(self.by_principal.get(principal.as_ref()).cloned())
+        Ok(self
+            .by_principal
+            .get(principal.as_ref())
+            .and_then(|rows| rows.get(wrap_id.as_ref()))
+            .cloned())
+    }
+
+    fn list_wraps(
+        &self,
+        principal: &PrincipalId,
+    ) -> Result<Vec<EncryptedAccountWrap>, EncDiscError> {
+        Ok(self
+            .by_principal
+            .get(principal.as_ref())
+            .map(|rows| rows.values().cloned().collect())
+            .unwrap_or_default())
     }
 }
 
@@ -577,12 +600,18 @@ pub fn open_account_backup(
         .try_into()
         .map_err(|_| EncDiscError::WrapRejected)?;
     let current = current_signing_key(expected, rotations, context)?;
-    let message = signature_message(&blob, transport.sea_pub(), wrap_id.as_ref())?;
+    let message = signature_message(
+        DOMAIN_ACCOUNT_SIG,
+        &blob,
+        transport.sea_pub(),
+        wrap_id.as_ref(),
+    )?;
     sea::verify_sea(current.as_ref(), &message, &wrap.signature)?;
     let ephemeral_sea = sea::sea_pub_from_point(&ephemeral)?;
     let secret = transport.secret_key()?;
     let shared = ecdh_x(&secret, &ephemeral)?;
     let aes_key = kdf_backup(
+        DOMAIN_ACCOUNT_BIND,
         &shared,
         expected.as_ref(),
         wrap_id.as_ref(),
@@ -590,6 +619,7 @@ pub fn open_account_backup(
         &ephemeral_sea,
     )?;
     let aad = aad_backup(
+        DOMAIN_ACCOUNT_BIND,
         expected.as_ref(),
         wrap_id.as_ref(),
         transport.sea_pub(),
@@ -641,6 +671,7 @@ fn encrypt_backup(
     let ephemeral_pub = sea::sea_pub_from_secret(ephemeral)?;
     let shared = ecdh_x(ephemeral, &peer)?;
     let aes_key = kdf_backup(
+        DOMAIN_ACCOUNT_BIND,
         &shared,
         account.principal().as_ref(),
         wrap_id.as_ref(),
@@ -648,6 +679,7 @@ fn encrypt_backup(
         &ephemeral_pub,
     )?;
     let aad = aad_backup(
+        DOMAIN_ACCOUNT_BIND,
         account.principal().as_ref(),
         wrap_id.as_ref(),
         transport_pub,
@@ -673,7 +705,7 @@ fn encrypt_backup(
         return Err(EncDiscError::WrapRejected);
     }
     backup_hides_scalars(&blob, account)?;
-    let message = signature_message(&blob, transport_pub, wrap_id.as_ref())?;
+    let message = signature_message(DOMAIN_ACCOUNT_SIG, &blob, transport_pub, wrap_id.as_ref())?;
     let signature = sea::sign_sea(account.local_priv(), &message)?;
     Ok(EncryptedAccountWrap {
         principal: account.principal().clone(),
@@ -706,7 +738,8 @@ fn require_held_current_key(
     Ok(current)
 }
 
-fn kdf_backup(
+pub(crate) fn kdf_backup(
+    domain: &str,
     shared_x: &[u8; 32],
     principal: &str,
     wrap_id: &str,
@@ -715,7 +748,7 @@ fn kdf_backup(
 ) -> Result<Zeroizing<[u8; 32]>, EncDiscError> {
     let hex = encode_secret_hex(shared_x);
     let bytes = Zeroizing::new(canonical::length_prefixed(&[
-        DOMAIN_ACCOUNT_BIND,
+        domain,
         hex.as_str(),
         principal,
         wrap_id,
@@ -725,28 +758,24 @@ fn kdf_backup(
     Ok(Zeroizing::new(canonical::sha256(&bytes)))
 }
 
-fn aad_backup(
+pub(crate) fn aad_backup(
+    domain: &str,
     principal: &str,
     wrap_id: &str,
     transport_pub: &str,
     ephemeral_pub: &str,
 ) -> Result<Vec<u8>, EncDiscError> {
-    canonical::length_prefixed(&[
-        DOMAIN_ACCOUNT_BIND,
-        principal,
-        wrap_id,
-        transport_pub,
-        ephemeral_pub,
-    ])
+    canonical::length_prefixed(&[domain, principal, wrap_id, transport_pub, ephemeral_pub])
 }
 
-fn signature_message(
+pub(crate) fn signature_message(
+    domain: &str,
     blob: &[u8],
     transport_pub: &str,
     wrap_id: &str,
 ) -> Result<Vec<u8>, EncDiscError> {
     let digest = canonical::sha256_hex(blob);
-    canonical::length_prefixed(&[DOMAIN_ACCOUNT_SIG, digest.as_str(), transport_pub, wrap_id])
+    canonical::length_prefixed(&[domain, digest.as_str(), transport_pub, wrap_id])
 }
 
 fn backup_hides_scalars(blob: &[u8], account: &GenesisAccount) -> Result<(), EncDiscError> {
@@ -1094,7 +1123,10 @@ mod tests {
         let gun = account.gun_document();
         assert!(!gun.contains(&wrap.ciphertext_hex));
         assert!(!gun.contains(account.local_priv()));
-        let stored = store.get_wrap(account.principal()).unwrap().unwrap();
+        let stored = store
+            .get_wrap(account.principal(), &wrap.wrap_id)
+            .unwrap()
+            .unwrap();
         let opened =
             open_account_backup(&transport, &stored, account.principal(), &[], &context).unwrap();
         assert_eq!(opened.principal(), account.principal());

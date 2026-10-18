@@ -1,5 +1,5 @@
 /**
- * Deliver an account keyring to a device through the #63 sealed wrap.
+ * Deliver an account keyring to a device. The outer domains are separate from the genesis backup.
  *
  * The transport public key arrives out of band. The ciphertext goes to a
  * KeyWrapStore. The device inherits the account keypair and does not mint

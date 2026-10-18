@@ -3,7 +3,6 @@
  * delivery. Secrets stay in the plaintext only until the caller seals it.
  */
 import type { AccountKeyring } from "./account-keyring.ts";
-import { bytesToHex, hexToBytes, unb64 } from "./account-key-seal.ts";
 import { canonicalDecimal, lengthPrefixed } from "./canonical.ts";
 import { KEYRING_SERIAL_MAX } from "./keyring-limits.ts";
 
@@ -74,37 +73,6 @@ export function decodeKeyring(bytes: Uint8Array): KeyringFields {
   const rotationSeq = decimal(cursor.nextString());
   if (cursor.remaining() !== 0) throw new Error("recovery-rejected");
   return { principal, genesisEpub, pub, priv, epub, epriv, retired, laneId, priorLanes, contentEpoch, rotationSeq };
-}
-
-/** Refuse a ciphertext that still contains a keyring scalar or lane id. */
-export function assertKeyringHidden(bytes: Uint8Array, keyring: AccountKeyring): void {
-  const hex = bytesToHex(bytes);
-  for (const lane of [keyring.laneId(), ...keyring.priorLanes()]) {
-    if (hex.includes(lane)) throw new Error("recovery-rejected");
-    const raw = hexToBytes(lane);
-    if (includesBytes(bytes, raw)) throw new Error("recovery-rejected");
-    raw.fill(0);
-  }
-  for (const secret of [keyring.currentPriv(), keyring.currentEpriv(), ...keyring.retired().map((row) => row.epriv)]) {
-    const raw = unb64(secret);
-    if (includesBytes(bytes, raw) || hex.includes(bytesToHex(raw))) throw new Error("recovery-rejected");
-    raw.fill(0);
-  }
-}
-
-function includesBytes(haystack: Uint8Array, needle: Uint8Array): boolean {
-  if (needle.length === 0 || haystack.length < needle.length) return false;
-  for (let i = 0; i <= haystack.length - needle.length; i += 1) {
-    let match = true;
-    for (let j = 0; j < needle.length; j += 1) {
-      if (haystack[i + j] !== needle[j]) {
-        match = false;
-        break;
-      }
-    }
-    if (match) return true;
-  }
-  return false;
 }
 
 function decimal(text: string): number {
