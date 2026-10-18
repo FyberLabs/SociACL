@@ -776,3 +776,53 @@ pub(crate) fn passphrase_whitespace(cp: u32) -> bool {
             | 0x3000
     ) || (0x2000..=0x200A).contains(&cp)
 }
+
+/// Unicode 16 `Default_Ignorable_Code_Point` plus `General_Category=Format`.
+///
+/// U+FEFF and U+200B are in this set. A passphrase that contains one is
+/// refused at seal. The set is the union of DerivedCoreProperties.txt and
+/// the Cf entries in UnicodeData.txt for version 16.0.0.
+const PASSPHRASE_HIDDEN: &[(u32, u32)] = &[
+    (0x00AD, 0x00AD),
+    (0x034F, 0x034F),
+    (0x0600, 0x0605),
+    (0x061C, 0x061C),
+    (0x06DD, 0x06DD),
+    (0x070F, 0x070F),
+    (0x0890, 0x0891),
+    (0x08E2, 0x08E2),
+    (0x115F, 0x1160),
+    (0x17B4, 0x17B5),
+    (0x180B, 0x180F),
+    (0x200B, 0x200F),
+    (0x202A, 0x202E),
+    (0x2060, 0x206F),
+    (0x3164, 0x3164),
+    (0xFE00, 0xFE0F),
+    (0xFEFF, 0xFEFF),
+    (0xFFA0, 0xFFA0),
+    (0xFFF0, 0xFFFB),
+    (0x110BD, 0x110BD),
+    (0x110CD, 0x110CD),
+    (0x13430, 0x1343F),
+    (0x1BCA0, 0x1BCA3),
+    (0x1D173, 0x1D17A),
+    (0xE0000, 0xE0FFF),
+];
+
+pub(crate) fn passphrase_hidden(cp: u32) -> bool {
+    let mut lo = 0usize;
+    let mut hi = PASSPHRASE_HIDDEN.len();
+    while lo < hi {
+        let mid = (lo + hi) / 2;
+        let (start, end) = PASSPHRASE_HIDDEN[mid];
+        if cp < start {
+            hi = mid;
+        } else if cp > end {
+            lo = mid + 1;
+        } else {
+            return true;
+        }
+    }
+    false
+}

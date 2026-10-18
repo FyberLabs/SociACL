@@ -8,7 +8,7 @@
  */
 import { createCipheriv, createDecipheriv } from "node:crypto";
 import { argon2id } from "hash-wasm";
-import { parsePrincipalId, resolveCurrentKey, type PrincipalId, type ResolutionContext } from "../ids/src/index.js";
+import { parsePrincipalId, type PrincipalId, type ResolutionContext } from "../ids/src/index.js";
 import { AccountKeyring } from "./account-keyring.ts";
 import { bytesToHex } from "./account-key-seal.ts";
 import { canonicalDecimal, lengthPrefixed } from "./canonical.ts";
@@ -21,8 +21,16 @@ import {
   RECOVERY_NONCE_LEN,
   RECOVERY_TAG_LEN,
 } from "./keyring-limits.ts";
+import { checkRecoveryPassphrase } from "./passphrase-strength.ts";
 import { assigned, passphraseWhitespace } from "./unicode16.ts";
-import { recoveryEnvelopeHash, signStoreWrite, verifyStoreWrite } from "./store-write.ts";
+import {
+  recoveryEnvelopeHash,
+  REPLACED_NONE,
+  signStoreWrite,
+  STORE_CLASS_NONE,
+  verifyStoreWrite,
+  type StoreWriteAccount,
+} from "./store-write.ts";
 
 export const DOMAIN_RECOVERY = "sociacl-recovery-copy-v1";
 
@@ -36,24 +44,30 @@ export type RecoveryEnvelope = {
 
 /** Ciphertext adapter. Not an authority, and not Gun.
  *
- * Every put, commit, and delete carries a signature by the account's current
- * chain-head key. Implementations must verify it against the resolved
- * published chain before they write. Session authentication is not this
- * check. Panopticon is a verifier and a witness, never the authority.
+ * The store reads the published chain from `publishedAccount`. The writer
+ * does not pass one. Every put, commit, and delete carries a compare-and-swap
+ * signature by the head key that resolver reports. Adapters, Panopticon
+ * included, must verify that signature before they write. Session
+ * authentication is not this check. Panopticon reads the published Gun chain.
+ * It is a verifier and a witness. It is never the authority.
  *
  * A put at the resolved head replaces the current copy and drops any pending
  * copy. A put at head + 1 is the only pending copy. Any other sequence is
- * `store-rejected`.
+ * `store-rejected` and changes nothing. A rejected commit leaves both copies
+ * where they were.
  */
 export interface RecoveryCopyStore {
   readonly isAuthority: false;
   readonly seesPlaintext: false;
   readonly seesPassphrase: false;
-  put(envelope: RecoveryEnvelope, signature: string, rotations: readonly unknown[], context: ResolutionContext): void;
+  publishedAccount(principal: PrincipalId): StoreWriteAccount;
+  writeGeneration(principal: PrincipalId): number;
+  put(envelope: RecoveryEnvelope, signature: string): void;
   get(principal: PrincipalId, rotationSeq: number): RecoveryEnvelope | undefined;
+  current(principal: PrincipalId): RecoveryEnvelope | undefined;
   pending(principal: PrincipalId): RecoveryEnvelope | undefined;
-  commit(principal: PrincipalId, signature: string, rotations: readonly unknown[], context: ResolutionContext): void;
-  delete(principal: PrincipalId, rotationSeq: number, signature: string, rotations: readonly unknown[], context: ResolutionContext): void;
+  commit(principal: PrincipalId, signature: string): void;
+  delete(principal: PrincipalId, rotationSeq: number, signature: string): void;
 }
 
 type RecoverySlot = { current?: RecoveryEnvelope; pending?: RecoveryEnvelope };
@@ -64,35 +78,58 @@ export class MemoryRecoveryStore implements RecoveryCopyStore {
   readonly seesPassphrase = false as const;
   /** Current copy per principal, plus at most one pending copy at head + 1. */
   readonly #slots = new Map<string, RecoverySlot>();
+  readonly #floor = new Map<string, number>();
+  readonly #generation = new Map<string, number>();
+  readonly #chain: (principal: PrincipalId) => StoreWriteAccount;
 
-  put(envelope: RecoveryEnvelope, signature: string, rotations: readonly unknown[], context: ResolutionContext): void {
+  constructor(chain: (principal: PrincipalId) => StoreWriteAccount) {
+    this.#chain = chain;
+  }
+
+  publishedAccount(principal: PrincipalId): StoreWriteAccount {
+    return this.#chain(principal);
+  }
+
+  writeGeneration(principal: PrincipalId): number {
+    return this.#generation.get(principal) ?? 0;
+  }
+
+  put(envelope: RecoveryEnvelope, signature: string): void {
     if (envelope.bytes.length === 0 || envelope.bytes.length > RECOVERY_ABSOLUTE_MAX) throw new Error("store-rejected");
     if (headerRotationSeq(envelope.bytes) !== envelope.rotationSeq) throw new Error("store-rejected");
-    const account = verifyStoreWrite(
-      envelope.principal,
-      "put",
-      canonicalDecimal(envelope.rotationSeq),
-      recoveryEnvelopeHash(envelope),
-      signature,
-      rotations,
-      context,
-    );
+    const account = this.#account(envelope.principal);
     const head = account.rotations.length;
     const slot = this.#slots.get(envelope.principal);
     if (slot?.current && slot.current.rotationSeq > head) throw new Error("store-rejected");
+    const atHead = envelope.rotationSeq === head;
+    const atNext = envelope.rotationSeq === head + 1;
+    if (!atHead && !atNext) throw new Error("store-rejected");
+    const replaced = predecessor(atHead ? slot?.current : slot?.pending);
+    const hash = recoveryEnvelopeHash(envelope);
+    const generation = this.writeGeneration(envelope.principal);
+    verifyStoreWrite(
+      envelope.principal,
+      "put",
+      canonicalDecimal(envelope.rotationSeq),
+      hash,
+      canonicalDecimal(head),
+      replaced,
+      STORE_CLASS_NONE,
+      canonicalDecimal(generation),
+      signature,
+      account,
+    );
     const copy = copyEnvelope(envelope);
-    if (copy.rotationSeq === head) {
+    if (atHead) {
       if (copy.signingPub !== account.currentKey || (account.currentEpub !== null && copy.epub !== account.currentEpub)) {
         throw new Error("store-rejected");
       }
       this.#slots.set(envelope.principal, { current: copy });
+      this.#bump(envelope.principal, head);
       return;
     }
-    if (copy.rotationSeq === head + 1) {
-      this.#slots.set(envelope.principal, { current: slot?.current, pending: copy });
-      return;
-    }
-    throw new Error("store-rejected");
+    this.#slots.set(envelope.principal, { current: slot?.current, pending: copy });
+    this.#bump(envelope.principal, head);
   }
 
   get(principal: PrincipalId, rotationSeq: number): RecoveryEnvelope | undefined {
@@ -103,51 +140,50 @@ export class MemoryRecoveryStore implements RecoveryCopyStore {
     return undefined;
   }
 
+  current(principal: PrincipalId): RecoveryEnvelope | undefined {
+    const current = this.#slots.get(principal)?.current;
+    return current ? copyEnvelope(current) : undefined;
+  }
+
   pending(principal: PrincipalId): RecoveryEnvelope | undefined {
     const pending = this.#slots.get(principal)?.pending;
     return pending ? copyEnvelope(pending) : undefined;
   }
 
-  commit(principal: PrincipalId, signature: string, rotations: readonly unknown[], context: ResolutionContext): void {
+  commit(principal: PrincipalId, signature: string): void {
+    const account = this.#account(principal);
     const slot = this.#slots.get(principal);
     const pending = slot?.pending;
     if (!slot || !pending) throw new Error("store-rejected");
-    const resolved = resolveCurrentKey(principal, rotations, context);
-    if (!resolved.ok) throw new Error("store-rejected");
-    const head = resolved.value.rotations.length;
-    const account = verifyStoreWrite(
+    const head = account.rotations.length;
+    const hash = recoveryEnvelopeHash(pending);
+    const generation = this.writeGeneration(principal);
+    verifyStoreWrite(
       principal,
       "commit",
       canonicalDecimal(head),
-      recoveryEnvelopeHash(pending),
+      hash,
+      canonicalDecimal(head),
+      predecessor(slot.current),
+      STORE_CLASS_NONE,
+      canonicalDecimal(generation),
       signature,
-      rotations,
-      context,
+      account,
     );
-    if (pending.rotationSeq === head) {
-      if (account.currentEpub === null) throw new Error("store-rejected");
-      if (pending.signingPub === account.currentKey && pending.epub === account.currentEpub) {
-        slot.current = pending;
-        slot.pending = undefined;
-        return;
-      }
-      slot.pending = undefined;
-      if (!slot.current) this.#slots.delete(principal);
-      throw new Error("store-rejected");
-    }
-    if (pending.rotationSeq === head + 1) throw new Error("store-rejected");
+    const pubsMatch =
+      pending.rotationSeq === head &&
+      account.currentEpub !== null &&
+      pending.signingPub === account.currentKey &&
+      pending.epub === account.currentEpub;
+    if (!pubsMatch) throw new Error("store-rejected");
+    slot.current = pending;
     slot.pending = undefined;
-    if (!slot.current) this.#slots.delete(principal);
-    throw new Error("store-rejected");
+    this.#bump(principal, head);
   }
 
-  delete(
-    principal: PrincipalId,
-    rotationSeq: number,
-    signature: string,
-    rotations: readonly unknown[],
-    context: ResolutionContext,
-  ): void {
+  delete(principal: PrincipalId, rotationSeq: number, signature: string): void {
+    const account = this.#account(principal);
+    const head = account.rotations.length;
     const slot = this.#slots.get(principal);
     const stored =
       slot?.current?.rotationSeq === rotationSeq
@@ -156,19 +192,74 @@ export class MemoryRecoveryStore implements RecoveryCopyStore {
           ? slot.pending
           : undefined;
     if (!slot || !stored) throw new Error("store-rejected");
+    const hash = recoveryEnvelopeHash(stored);
+    const generation = this.writeGeneration(principal);
     verifyStoreWrite(
       principal,
       "delete",
       canonicalDecimal(rotationSeq),
-      recoveryEnvelopeHash(stored),
+      hash,
+      canonicalDecimal(head),
+      hash,
+      STORE_CLASS_NONE,
+      canonicalDecimal(generation),
       signature,
-      rotations,
-      context,
+      account,
     );
     if (slot.current?.rotationSeq === rotationSeq) slot.current = undefined;
     if (slot.pending?.rotationSeq === rotationSeq) slot.pending = undefined;
     if (!slot.current && !slot.pending) this.#slots.delete(principal);
+    this.#bump(principal, head);
   }
+
+  #account(principal: PrincipalId): StoreWriteAccount {
+    let account: StoreWriteAccount;
+    try {
+      account = this.#chain(principal);
+    } catch (error) {
+      if (error instanceof Error && error.message === "store-rejected") throw error;
+      throw new Error("store-rejected");
+    }
+    const floor = this.#floor.get(principal) ?? 0;
+    if (account.rotations.length < floor) throw new Error("store-rejected");
+    return account;
+  }
+
+  #bump(principal: string, head: number): void {
+    const slot = this.#slots.get(principal);
+    let floor = Math.max(this.#floor.get(principal) ?? 0, head);
+    if (slot?.current) floor = Math.max(floor, slot.current.rotationSeq);
+    if (slot?.pending) floor = Math.max(floor, slot.pending.rotationSeq);
+    this.#floor.set(principal, floor);
+    this.#generation.set(principal, (this.#generation.get(principal) ?? 0) + 1);
+  }
+}
+
+function predecessor(row: RecoveryEnvelope | undefined): string {
+  return row ? recoveryEnvelopeHash(row) : REPLACED_NONE;
+}
+
+export function signRecoveryOp(
+  store: RecoveryCopyStore,
+  signerPriv: string,
+  principal: PrincipalId,
+  operation: string,
+  target: number,
+  envelopeHash: string,
+  replaced: string,
+): string {
+  const account = store.publishedAccount(principal);
+  return signStoreWrite(
+    signerPriv,
+    principal,
+    operation,
+    canonicalDecimal(target),
+    envelopeHash,
+    canonicalDecimal(account.rotations.length),
+    replaced,
+    STORE_CLASS_NONE,
+    canonicalDecimal(store.writeGeneration(principal)),
+  );
 }
 
 function copyEnvelope(envelope: RecoveryEnvelope): RecoveryEnvelope {
@@ -213,7 +304,8 @@ function passphraseRejected(bytes: Uint8Array): boolean {
   if (bytes.length === 0) return true;
   let text: string;
   try {
-    text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    // U+FEFF is a passphrase character. The UTF-8 BOM must stay in the text.
+    text = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes);
   } catch {
     return false;
   }
@@ -227,13 +319,13 @@ export async function sealRecoveryCopyWith(
   passphrase: Uint8Array,
   salt: Uint8Array,
   nonce: Uint8Array,
-  store: RecoveryCopyStore,
-  rotations: readonly unknown[],
-  context: ResolutionContext,
   signerPriv: string,
+  store: RecoveryCopyStore,
+  handle?: string,
 ): Promise<RecoveryEnvelope> {
   if (keyring.priorLanes().length !== keyring.rotationSeq) throw new Error("bad-lane");
   if (passphraseRejected(passphrase)) throw new Error("recovery-params");
+  checkRecoveryPassphrase(passphrase, keyring.principal, handle);
   if (
     salt.length < ARGON2ID_LIMITS.saltLength.floor ||
     salt.length > ARGON2ID_LIMITS.saltLength.ceiling ||
@@ -287,14 +379,21 @@ export async function sealRecoveryCopyWith(
       epub: keyring.epub,
       bytes,
     };
-    const signature = signStoreWrite(
+    const account = store.publishedAccount(envelope.principal);
+    const replaced =
+      envelope.rotationSeq === account.rotations.length
+        ? predecessor(store.current(envelope.principal))
+        : predecessor(store.pending(envelope.principal));
+    const signature = signRecoveryOp(
+      store,
       signerPriv,
       envelope.principal,
       "put",
-      canonicalDecimal(envelope.rotationSeq),
+      envelope.rotationSeq,
       recoveryEnvelopeHash(envelope),
+      replaced,
     );
-    store.put(envelope, signature, rotations, context);
+    store.put(envelope, signature);
     return envelope;
   } finally {
     plain?.fill(0);

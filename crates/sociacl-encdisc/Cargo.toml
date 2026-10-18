@@ -23,6 +23,10 @@ sha2 = "0.10"
 thiserror = "2"
 zeroize = { version = "=1.8.1", features = ["alloc"] }
 serde_json = "1"
+# zxcvbn 3.1.1 depends on time. Later 0.3 releases pull crates this
+# toolchain cannot parse, so the compatible release is pinned here.
+time = "=0.3.41"
+zxcvbn = { version = "=3.1.1", default-features = false }
 sociacl-gun = { path = "../sociacl-gun" }
 sociacl-ids = { path = "../sociacl-ids" }
 

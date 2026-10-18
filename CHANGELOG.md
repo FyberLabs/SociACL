@@ -29,20 +29,33 @@
   NFC is older than Unicode 16. The probe is U+11382 U+113C9 composing to
   U+11383.
 - **Breaking for adapter authors:** every recovery-store and wrap-store
-  `put`, `commit`, and `delete` requires a `sociacl-store-write-v1`
-  signature by the account's current chain-head key. The store verifies it
-  against the resolved published chain. Session authentication is not this
-  check. Panopticon verifies and witnesses; it is not the authority. A
-  recovery `put` is accepted only at the resolved head, which replaces the
-  current copy and drops any pending copy, or at head + 1, which is the
-  only pending copy. Any other sequence is `store-rejected`. Commit promotes
-  a pending copy only when its public keys equal the resolved current key,
-  and only when the caller passes the chain read back from the published
-  source. A fork is dropped. A signed rotation that is not on that chain
-  stays pending. `deleteRecoveryCopy` / `delete_recovery_copy` and
-  `deleteAccountWrap` / `delete_account_wrap` use the same signature.
-  Deleting the current recovery copy does not promote a pending copy. The
-  genesis backup wrap can be replaced, never deleted. The 64-row cap stays.
+  `put`, `commit`, and `delete` is a signed compare-and-swap on
+  `sociacl-store-write-v1`. The store does not take the chain from the
+  writer. The adapter injects a resolver, and the store reads the published
+  head itself. Panopticon fills that resolver from the Gun chain. The signed
+  message is the domain, the `PrincipalId`, the operation, the target, the
+  envelope or ciphertext hash, the decimal head, the hash of the row being
+  replaced or `none`, the wrap class or `none`, and a per-principal write
+  generation. A write whose resolved head is below the store's monotonic
+  floor is `store-rejected` and changes nothing. A rejected commit leaves
+  the pending copy in place. A recovery `put` is accepted only at the
+  resolved head, which replaces the current copy and drops any pending
+  copy, or at head + 1, which is the only pending copy. Any other sequence
+  is `store-rejected`. Commit promotes a pending copy only when its public
+  keys equal the resolved current key. A fork stays pending. A signed
+  rotation that is not on the published chain stays pending.
+  `deleteRecoveryCopy` / `delete_recovery_copy` and `deleteAccountWrap` /
+  `delete_account_wrap` use the same signature. Deleting the current
+  recovery copy does not promote a pending copy. The genesis backup wrap
+  can be replaced, never deleted. The 64-row cap stays. The wrap class is
+  covered by the store-write signature. Openers ignore it. Refs #64.
+- Seal refuses a weak passphrase with `recovery-weak-passphrase`. The gate
+  requires 12 visible code points after NFC, rejects Unicode 16
+  default-ignorable and format characters, and requires a zxcvbn score of
+  at least 3. TypeScript uses `@zxcvbn-ts/core` 4.2.0 with the English
+  dictionary. Rust uses `zxcvbn` 3.1.1. The score is advisory between the
+  two. Open does not run the gate. The error returns the score and feedback
+  and does not contain the passphrase. Refs #64.
 - Import and seal refuse a keyring unless `priorLanes.length` equals
   `rotationSeq` (`bad-lane`). That is SociACL#68 F1 for this path. Refs #64.
 - Key the wrap store by principal and wrap id, so a second device delivery
@@ -58,8 +71,8 @@
   is genuine. Codec failures on the delivery path are `wrap-rejected`.
   Delivery uses `sociacl-keyring-delivery-v1` and
   `sociacl-keyring-delivery-sig-v1`.
-- The TypeScript wrap store copies a row on put, get, and list. `class` is
-  a store-only label and openers ignore it.
+- The TypeScript wrap store copies a row on put, get, and list. The wrap
+  class is a field of the store-write signature, and openers ignore it.
 - The recovery plaintext cap does not grow with the salt. `RECOVERY_ENVELOPE_MAX`
   is 262205. The pre-parse ceiling `RECOVERY_ABSOLUTE_MAX` is 262269.
 

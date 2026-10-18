@@ -32,7 +32,14 @@ import {
   type SiwePolicy,
 } from "../ids/src/index.js";
 import { DELIVERY_BLOB_MAX, MAX_WRAPS_PER_PRINCIPAL } from "./keyring-limits.ts";
-import { signStoreWrite, verifyStoreWrite, wrapCiphertextHash } from "./store-write.ts";
+import { canonicalDecimal } from "./canonical.ts";
+import {
+  REPLACED_NONE,
+  signStoreWrite,
+  verifyStoreWrite,
+  wrapCiphertextHash,
+  type StoreWriteAccount,
+} from "./store-write.ts";
 import {
   MAX_BACKUP_HEX,
   backupAad,
@@ -79,8 +86,7 @@ export type WrapIndex = {
 };
 
 /** Which seal produced a wrap. A wrap id stays in the class that first stored it.
- * `class` is a store-only label. The wrap signature and the store-write
- * signature do not cover it. Openers ignore it. */
+ * The class is a field of the store-write signature. Openers ignore it. */
 export type WrapClass = "genesis" | "delivery";
 
 export type EncryptedAccountWrap = WrapIndex & {
@@ -101,21 +107,11 @@ export type EncryptedAccountWrap = WrapIndex & {
 export interface KeyWrapStore {
   readonly isAuthority: false;
   readonly mintsGrant: false;
-  put(
-    index: WrapIndex,
-    wrap: EncryptedAccountWrap,
-    storeSignature: string,
-    rotations: readonly unknown[],
-    context: ResolutionContext,
-  ): void;
+  publishedAccount(principal: PrincipalId): StoreWriteAccount;
+  writeGeneration(principal: PrincipalId): number;
+  put(index: WrapIndex, wrap: EncryptedAccountWrap, storeSignature: string): void;
   /** Delete a delivery row. A genesis row is `store-rejected` and stays. */
-  delete(
-    principal: PrincipalId,
-    wrapId: ObjectId,
-    storeSignature: string,
-    rotations: readonly unknown[],
-    context: ResolutionContext,
-  ): void;
+  delete(principal: PrincipalId, wrapId: ObjectId, storeSignature: string): void;
   get(principal: PrincipalId, wrapId: ObjectId): EncryptedAccountWrap | undefined;
   list(principal: PrincipalId): EncryptedAccountWrap[];
 }
@@ -124,14 +120,23 @@ export class MemoryKeyWrapStore implements KeyWrapStore {
   readonly isAuthority = false as const;
   readonly mintsGrant = false as const;
   readonly #wraps = new Map<string, Map<string, EncryptedAccountWrap>>();
+  readonly #floor = new Map<string, number>();
+  readonly #generation = new Map<string, number>();
+  readonly #chain: (principal: PrincipalId) => StoreWriteAccount;
 
-  put(
-    index: WrapIndex,
-    wrap: EncryptedAccountWrap,
-    storeSignature: string,
-    rotations: readonly unknown[],
-    context: ResolutionContext,
-  ): void {
+  constructor(chain: (principal: PrincipalId) => StoreWriteAccount) {
+    this.#chain = chain;
+  }
+
+  publishedAccount(principal: PrincipalId): StoreWriteAccount {
+    return this.#chain(principal);
+  }
+
+  writeGeneration(principal: PrincipalId): number {
+    return this.#generation.get(principal) ?? 0;
+  }
+
+  put(index: WrapIndex, wrap: EncryptedAccountWrap, storeSignature: string): void {
     // Genesis seal and open stay at MAX_BACKUP_HEX. A delivered keyring may
     // use the full DELIVERY_BLOB_MAX, so the adapter accepts that.
     if (wrap.ciphertextHex.length > DELIVERY_BLOB_MAX * 2 || wrap.signature.length !== 128) {
@@ -148,10 +153,25 @@ export class MemoryKeyWrapStore implements KeyWrapStore {
     ) {
       throw new Error("store-rejected");
     }
-    const hash = wrapCiphertextHash(wrap.ciphertextHex);
-    verifyStoreWrite(wrap.principal, "put", wrap.wrapId, hash, storeSignature, rotations, context);
+    const account = this.#account(wrap.principal);
+    const head = account.rotations.length;
     const rows = this.#wraps.get(index.principal) ?? new Map<string, EncryptedAccountWrap>();
     const existing = rows.get(index.wrapId);
+    const replaced = existing ? wrapCiphertextHash(existing.ciphertextHex) : REPLACED_NONE;
+    const hash = wrapCiphertextHash(wrap.ciphertextHex);
+    const generation = this.writeGeneration(wrap.principal);
+    verifyStoreWrite(
+      wrap.principal,
+      "put",
+      wrap.wrapId,
+      hash,
+      canonicalDecimal(head),
+      replaced,
+      wrap.class,
+      canonicalDecimal(generation),
+      storeSignature,
+      account,
+    );
     if (existing) {
       if (existing.class !== wrap.class) throw new Error("store-rejected");
     } else if (rows.size >= MAX_WRAPS_PER_PRINCIPAL) {
@@ -159,22 +179,48 @@ export class MemoryKeyWrapStore implements KeyWrapStore {
     }
     rows.set(index.wrapId, copyWrap(wrap));
     this.#wraps.set(index.principal, rows);
+    this.#floor.set(wrap.principal, Math.max(this.#floor.get(wrap.principal) ?? 0, head));
+    this.#generation.set(wrap.principal, generation + 1);
   }
 
-  delete(
-    principal: PrincipalId,
-    wrapId: ObjectId,
-    storeSignature: string,
-    rotations: readonly unknown[],
-    context: ResolutionContext,
-  ): void {
+  delete(principal: PrincipalId, wrapId: ObjectId, storeSignature: string): void {
+    const account = this.#account(principal);
+    const head = account.rotations.length;
     const row = this.#wraps.get(principal)?.get(wrapId);
     if (!row) throw new Error("store-rejected");
-    verifyStoreWrite(principal, "delete", wrapId, wrapCiphertextHash(row.ciphertextHex), storeSignature, rotations, context);
+    const hash = wrapCiphertextHash(row.ciphertextHex);
+    const generation = this.writeGeneration(principal);
+    verifyStoreWrite(
+      principal,
+      "delete",
+      wrapId,
+      hash,
+      canonicalDecimal(head),
+      hash,
+      row.class,
+      canonicalDecimal(generation),
+      storeSignature,
+      account,
+    );
     if (row.class === "genesis") throw new Error("store-rejected");
     const rows = this.#wraps.get(principal);
     rows?.delete(wrapId);
     if (rows && rows.size === 0) this.#wraps.delete(principal);
+    this.#floor.set(principal, Math.max(this.#floor.get(principal) ?? 0, head));
+    this.#generation.set(principal, generation + 1);
+  }
+
+  #account(principal: PrincipalId): StoreWriteAccount {
+    let account: StoreWriteAccount;
+    try {
+      account = this.#chain(principal);
+    } catch (error) {
+      if (error instanceof Error && error.message === "store-rejected") throw error;
+      throw new Error("store-rejected");
+    }
+    const floor = this.#floor.get(principal) ?? 0;
+    if (account.rotations.length < floor) throw new Error("store-rejected");
+    return account;
   }
 
   get(principal: PrincipalId, wrapId: ObjectId): EncryptedAccountWrap | undefined {
@@ -329,13 +375,23 @@ export function deleteAccountWrap(
   wrapId: ObjectId,
   signerPriv: string,
   store: KeyWrapStore,
-  rotations: readonly unknown[],
-  context: ResolutionContext,
 ): void {
   const row = store.get(principal, wrapId);
   if (!row) throw new Error("store-rejected");
-  const signature = signStoreWrite(signerPriv, principal, "delete", wrapId, wrapCiphertextHash(row.ciphertextHex));
-  store.delete(principal, wrapId, signature, rotations, context);
+  const hash = wrapCiphertextHash(row.ciphertextHex);
+  const account = store.publishedAccount(principal);
+  const signature = signStoreWrite(
+    signerPriv,
+    principal,
+    "delete",
+    wrapId,
+    hash,
+    canonicalDecimal(account.rotations.length),
+    hash,
+    row.class,
+    canonicalDecimal(store.writeGeneration(principal)),
+  );
+  store.delete(principal, wrapId, signature);
 }
 
 export function sealAccountBackup(

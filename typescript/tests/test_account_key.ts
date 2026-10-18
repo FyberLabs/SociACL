@@ -113,6 +113,14 @@ function account() {
   return importGenesis(vector.laneId, vector.signingPub, vector.signingPriv, vector.epub, vector.epriv);
 }
 
+function watch(rotations: readonly unknown[], context: ResolutionContext) {
+  return (principal: PrincipalId) => {
+    const resolved = resolveCurrentKey(principal, rotations, context);
+    if (!resolved.ok) throw new Error("store-rejected");
+    return resolved.value;
+  };
+}
+
 function emptyContext(): ResolutionContext {
   return {
     jwks: { keys: [] },
@@ -265,17 +273,17 @@ test("rotation uses the package current key", () => {
 
 test("backup wrap is stored off gun and both devices open one epub wrap", () => {
   const genesis = account();
-  const store = new MemoryKeyWrapStore();
+  const context = emptyContext();
+  const store = new MemoryKeyWrapStore(watch([], context));
   assert.equal(store.isAuthority, false);
   assert.equal(store.mintsGrant, false);
   const wrapId = parseWrapObject(vector.backupWrap.wrapId);
-  const context = emptyContext();
   const wrap = sealAccountBackup(genesis, vector.backupWrap.transportPub, wrapId, store, [], context);
   const again = sealAccountBackup(
     genesis,
     vector.backupWrap.transportPub,
     parseWrapObject("wrap_ffeeddccbbaa99887766554433221100"),
-    new MemoryKeyWrapStore(),
+    new MemoryKeyWrapStore(watch([], context)),
     [],
     context,
   );
@@ -284,11 +292,11 @@ test("backup wrap is stored off gun and both devices open one epub wrap", () => 
   assert.equal(wrap.ciphertextHex.includes(genesis.priv), false);
   assert.equal(wrap.ciphertextHex.includes(genesis.epriv), false);
   assert.throws(
-    () => sealAccountBackup(genesis, genesis.epub, wrapId, new MemoryKeyWrapStore(), [], context),
+    () => sealAccountBackup(genesis, genesis.epub, wrapId, new MemoryKeyWrapStore(watch([], context)), [], context),
     (error: unknown) => error instanceof Error && error.message === "transport",
   );
   assert.throws(
-    () => sealAccountBackup(genesis, genesis.pub, wrapId, new MemoryKeyWrapStore(), [], context),
+    () => sealAccountBackup(genesis, genesis.pub, wrapId, new MemoryKeyWrapStore(watch([], context)), [], context),
     (error: unknown) => error instanceof Error && error.message === "transport",
   );
   const gun = gunDocument(genesis);
@@ -348,7 +356,7 @@ test("backup wrap is stored off gun and both devices open one epub wrap", () => 
   assert.throws(() => contentWrapHex(genesis, vector.contentWrap.dekHex, Number.NaN, vector.contentWrap.objectId, vector.contentWrap.revisionId));
   assert.throws(() => contentWrapHex(genesis, vector.contentWrap.dekHex, vector.contentWrap.epoch, "not-an-object", vector.contentWrap.revisionId));
   assert.throws(
-    () => sealAccountBackup(genesis, vector.offCurveTransportPub, wrapId, new MemoryKeyWrapStore(), [], context),
+    () => sealAccountBackup(genesis, vector.offCurveTransportPub, wrapId, new MemoryKeyWrapStore(watch([], context)), [], context),
     (error: unknown) => error instanceof Error && error.message === "bad-key",
   );
   const shortSig: EncryptedAccountWrap = { ...stored, signature: "ab" };
@@ -363,7 +371,7 @@ test("backup wrap is stored off gun and both devices open one epub wrap", () => 
     vector.substitution.epub,
     vector.substitution.epriv,
   );
-  const swapped = sealAccountBackup(attacker, vector.backupWrap.transportPub, parseWrapObject("wrap_00112233445566778899aabbccddee00"), new MemoryKeyWrapStore(), [], context);
+  const swapped = sealAccountBackup(attacker, vector.backupWrap.transportPub, parseWrapObject("wrap_00112233445566778899aabbccddee00"), new MemoryKeyWrapStore(watch([], context)), [], context);
   assert.throws(() => openAccountBackup(vector.backupWrap.transportScalarHex, swapped, genesis.principal, [], context));
   assert.equal(soul.split("/").length, 5);
   assert.equal(soul.includes(principalKey(genesis)), true);
@@ -378,8 +386,8 @@ test("enrollment hop hint wrap request and inbox do not grant", () => {
 
 test("public transport key seal matches the shared vector", () => {
   const genesis = account();
-  const store = new MemoryKeyWrapStore();
   const context = emptyContext();
+  const store = new MemoryKeyWrapStore(watch([], context));
   const wrap = sealAccountBackupWith(
     genesis,
     vector.backupWrap.transportPub,
@@ -406,8 +414,8 @@ test("a wrap sealed to the victim transport pub by another account does not open
     vector.substitution.epub,
     vector.substitution.epriv,
   );
-  const store = new MemoryKeyWrapStore();
   const context = emptyContext();
+  const store = new MemoryKeyWrapStore(watch([], context));
   const wrap = sealAccountBackupWith(
     attacker,
     vector.backupWrap.transportPub,
@@ -434,7 +442,7 @@ test("seal is refused and open is rejected after rotation", () => {
   assert.ok(rotate);
   if (!rotate) return;
   const context = recordsContext();
-  const store = new MemoryKeyWrapStore();
+  const store = new MemoryKeyWrapStore(watch([], context));
   const wrap = sealAccountBackupWith(
     genesis,
     row.transportPub,
@@ -450,7 +458,7 @@ test("seal is refused and open is rejected after rotation", () => {
   const opened = openAccountBackup(row.transportScalarHex, wrap, genesis.principal, [], context);
   assert.equal(opened.priv, genesis.priv);
   assert.throws(
-    () => sealAccountBackup(genesis, row.transportPub, parseWrapObject(row.wrapId), new MemoryKeyWrapStore(), [rotate.input], context),
+    () => sealAccountBackup(genesis, row.transportPub, parseWrapObject(row.wrapId), new MemoryKeyWrapStore(watch([], context)), [rotate.input], context),
     (error: unknown) => error instanceof Error && error.message === "current-key",
   );
   assert.throws(
@@ -535,7 +543,7 @@ test("oversized and wrong-length transport pubs are bad-key", () => {
   const context = emptyContext();
   for (const transportPub of ["", "A".repeat(10), "A".repeat(86), "A".repeat(87), "A".repeat(88), "A".repeat(100_000)]) {
     assert.throws(
-      () => sealAccountBackup(genesis, transportPub, wrapId, new MemoryKeyWrapStore(), [], context),
+      () => sealAccountBackup(genesis, transportPub, wrapId, new MemoryKeyWrapStore(watch([], context)), [], context),
       (error: unknown) => error instanceof Error && error.message === "bad-key",
       `length ${transportPub.length}`,
     );

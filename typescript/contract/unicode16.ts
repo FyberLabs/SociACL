@@ -749,6 +749,53 @@ export function assigned(cp: number): boolean {
   return false;
 }
 
+/** Unicode 16 Default_Ignorable_Code_Point plus General_Category=Format.
+ *
+ * U+FEFF and U+200B are in this set. Seal refuses a passphrase that
+ * contains one. The ranges are the union of DerivedCoreProperties.txt and
+ * the Cf entries in UnicodeData.txt for version 16.0.0. */
+const PASSPHRASE_HIDDEN: ReadonlyArray<readonly [number, number]> = [
+  [0x00ad, 0x00ad],
+  [0x034f, 0x034f],
+  [0x0600, 0x0605],
+  [0x061c, 0x061c],
+  [0x06dd, 0x06dd],
+  [0x070f, 0x070f],
+  [0x0890, 0x0891],
+  [0x08e2, 0x08e2],
+  [0x115f, 0x1160],
+  [0x17b4, 0x17b5],
+  [0x180b, 0x180f],
+  [0x200b, 0x200f],
+  [0x202a, 0x202e],
+  [0x2060, 0x206f],
+  [0x3164, 0x3164],
+  [0xfe00, 0xfe0f],
+  [0xfeff, 0xfeff],
+  [0xffa0, 0xffa0],
+  [0xfff0, 0xfffb],
+  [0x110bd, 0x110bd],
+  [0x110cd, 0x110cd],
+  [0x13430, 0x1343f],
+  [0x1bca0, 0x1bca3],
+  [0x1d173, 0x1d17a],
+  [0xe0000, 0xe0fff],
+];
+
+export function passphraseHidden(cp: number): boolean {
+  let lo = 0;
+  let hi = PASSPHRASE_HIDDEN.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    const row = PASSPHRASE_HIDDEN[mid];
+    if (!row) return false;
+    if (cp < row[0]) hi = mid;
+    else if (cp > row[1]) lo = mid + 1;
+    else return true;
+  }
+  return false;
+}
+
 /** Unicode 16 `White_Space`, including U+0085 NEXT LINE. U+FEFF is not in this set. */
 export function passphraseWhitespace(cp: number): boolean {
   return (

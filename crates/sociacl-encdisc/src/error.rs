@@ -85,6 +85,16 @@ pub enum EncDiscError {
     RecoveryRejected,
     #[error("recovery parameters rejected")]
     RecoveryParams,
+    /// The passphrase failed the seal-time strength gate.
+    ///
+    /// `warning` and `suggestions` are for the UI. This error does not
+    /// contain the passphrase, and callers must not log the passphrase.
+    #[error("recovery passphrase is too weak")]
+    RecoveryWeakPassphrase {
+        score: u8,
+        warning: String,
+        suggestions: Vec<String>,
+    },
     #[error("recovery copy is stale")]
     RecoveryStale,
     #[error("keyring is too large")]

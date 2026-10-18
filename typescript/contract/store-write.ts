@@ -1,29 +1,67 @@
 /**
  * Authorization for a recovery-copy or wrap-store write.
  *
- * Every put, commit, and delete carries a signature by the account's current
- * chain-head key, over `sociacl-store-write-v1`, the PrincipalId, the
- * operation, the target sequence or wrap id, and the envelope hash. The store
- * verifies that signature against the resolved published chain. Session
- * authentication is not this check. Adapters, Panopticon included, must verify
- * before they write. Panopticon is a verifier and a witness. It is never the
- * authority.
+ * Every put, commit, and delete is a signed compare-and-swap by the
+ * account's current chain-head key. The message is `sociacl-store-write-v1`,
+ * the PrincipalId, the operation, the target sequence or wrap id, the
+ * envelope hash, the published head sequence, the hash of the row being
+ * replaced or `none`, the wrap class or `none`, and the per-principal write
+ * generation.
+ *
+ * The store does not take that chain from the writer. It asks a resolver,
+ * which an adapter fills from the published source. Panopticon reads the Gun
+ * chain. It verifies and witnesses. It is never the authority. Session
+ * authentication is not this check.
+ *
+ * A write whose resolved head is below the store's monotonic per-principal
+ * floor is `store-rejected` and changes nothing. The floor is the maximum of
+ * every accepted head and every stored recovery sequence.
  */
 import { p256 } from "@noble/curves/nist.js";
-import { resolveCurrentKey, type PrincipalId, type ResolutionContext } from "../ids/src/index.js";
+import type { PrincipalId } from "../ids/src/index.js";
 import { canonicalDecimal, lengthPrefixed, sha256Hex } from "./canonical.ts";
 
 export const DOMAIN_STORE_WRITE = "sociacl-store-write-v1";
 
+/** Predecessor field when the row being replaced is absent. */
+export const REPLACED_NONE = "none";
+
+/** Class field for a recovery-store write. Wrap writes use `genesis` or `delivery`. */
+export const STORE_CLASS_NONE = "none";
+
+export const STORE_CLASS_GENESIS = "genesis";
+
+export const STORE_CLASS_DELIVERY = "delivery";
+
 const SEA_PUB = /^[A-Za-z0-9_-]{43}\.[A-Za-z0-9_-]{43}$/u;
+
+export type StoreWriteAccount = {
+  readonly currentKey: PrincipalId;
+  readonly currentEpub: PrincipalId | null;
+  readonly rotations: readonly { readonly seq: number }[];
+};
 
 export function storeWriteMessage(
   principal: string,
   operation: string,
   target: string,
   envelopeHashHex: string,
+  head: string,
+  replaced: string,
+  className: string,
+  generation: string,
 ): Uint8Array {
-  return lengthPrefixed([DOMAIN_STORE_WRITE, principal, operation, target, envelopeHashHex]);
+  return lengthPrefixed([
+    DOMAIN_STORE_WRITE,
+    principal,
+    operation,
+    target,
+    envelopeHashHex,
+    head,
+    replaced,
+    className,
+    generation,
+  ]);
 }
 
 export function signStoreWrite(
@@ -32,27 +70,56 @@ export function signStoreWrite(
   operation: string,
   target: string,
   envelopeHashHex: string,
+  head: string,
+  replaced: string,
+  className: string,
+  generation: string,
 ): string {
-  const message = storeWriteMessage(principal, operation, target, envelopeHashHex);
+  const message = storeWriteMessage(
+    principal,
+    operation,
+    target,
+    envelopeHashHex,
+    head,
+    replaced,
+    className,
+    generation,
+  );
   return bytesToHex(p256.sign(message, unb64(seaPriv), { lowS: true, prehash: true }));
 }
 
-/** A chain that does not resolve, or a signature that does not verify, is `store-rejected`. */
+/**
+ * Verify `signature` under `account.currentKey`.
+ *
+ * The store has already resolved `account` from its own chain. A signature
+ * that does not verify is `store-rejected`. The store must not mutate on
+ * that error, or on any later rejection of the same call.
+ */
 export function verifyStoreWrite(
   principal: PrincipalId,
   operation: string,
   target: string,
   envelopeHashHex: string,
+  head: string,
+  replaced: string,
+  className: string,
+  generation: string,
   signature: string,
-  rotations: readonly unknown[],
-  context: ResolutionContext,
-): { currentKey: PrincipalId; currentEpub: PrincipalId | null; rotations: readonly { seq: number }[] } {
-  const resolved = resolveCurrentKey(principal, rotations, context);
-  if (!resolved.ok) throw new Error("store-rejected");
-  const message = storeWriteMessage(principal, operation, target, envelopeHashHex);
+  account: StoreWriteAccount,
+): void {
+  const message = storeWriteMessage(
+    principal,
+    operation,
+    target,
+    envelopeHashHex,
+    head,
+    replaced,
+    className,
+    generation,
+  );
   let ok = false;
   try {
-    ok = p256.verify(hexToBytes(signature), message, uncompressedFromSea(resolved.value.currentKey), {
+    ok = p256.verify(hexToBytes(signature), message, uncompressedFromSea(account.currentKey), {
       lowS: true,
       prehash: true,
     });
@@ -60,7 +127,6 @@ export function verifyStoreWrite(
     ok = false;
   }
   if (!ok) throw new Error("store-rejected");
-  return resolved.value;
 }
 
 /** SHA-256 of the wrap ciphertext bytes. The hex alphabet is not the hashed message. */

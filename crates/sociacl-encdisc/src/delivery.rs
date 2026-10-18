@@ -127,14 +127,25 @@ pub(crate) fn deliver_keyring_with(
         epub: wrap.epub.clone(),
     };
     let hash = crate::store_write::wrap_ciphertext_hash(&wrap.ciphertext_hex)?;
+    let account = store.published_account(&wrap.principal)?;
+    let head = account.rotations.len() as u64;
+    let generation = store.write_generation(&wrap.principal);
+    let replaced = match store.get_wrap(&wrap.principal, &wrap.wrap_id)? {
+        Some(existing) => crate::store_write::wrap_ciphertext_hash(&existing.ciphertext_hex)?,
+        None => crate::store_write::REPLACED_NONE.to_string(),
+    };
     let store_signature = crate::store_write::sign_store_write(
         keyring.current_priv(),
         &wrap.principal,
         "put",
         wrap.wrap_id.as_ref(),
         &hash,
+        &crate::store_write::decimal(head)?,
+        &replaced,
+        crate::store_write::STORE_CLASS_DELIVERY,
+        &crate::store_write::decimal(generation)?,
     )?;
-    store.put_wrap(&index, &wrap, &store_signature, rotations, context)?;
+    store.put_wrap(&index, &wrap, &store_signature)?;
     Ok(wrap)
 }
 
@@ -439,8 +450,8 @@ mod tests {
     use crate::{GenesisAccount, MemoryKeyWrapStore};
     use serde_json::Value;
     use sociacl_ids::{
-        history_state, parse_object_id, HistoryResolver, Jwks, KeyState, PrincipalId, Reason,
-        ResolutionContext, Rotate, SiwePolicy,
+        history_state, parse_object_id, resolve_current_key, HistoryResolver, Jwks, KeyState,
+        PrincipalId, Reason, ResolutionContext, Rotate, SiwePolicy,
     };
     use std::collections::{BTreeMap, BTreeSet};
 
@@ -496,7 +507,7 @@ mod tests {
         let keyring = genesis_keyring();
         let held = hold();
         let ctx = context_of(&held);
-        let mut store = MemoryKeyWrapStore::default();
+        let mut store = MemoryKeyWrapStore::new(watch(&[], &ctx));
         let ephemeral = p256::SecretKey::from_slice(
             &hexutil::decode_hex(delivery["ephemeralScalarHex"].as_str().unwrap()).unwrap(),
         )
@@ -649,7 +660,7 @@ mod tests {
             open_delivered_keyring(&transport, &wrong_epub, keyring.principal(), 0, &[], &ctx)
                 .unwrap_err();
         assert!(matches!(epub, EncDiscError::WrapRejected));
-        let _unused = MemoryRecoveryStore::default();
+        let _unused = MemoryRecoveryStore::new(watch(&[], &ctx));
     }
 
     #[test]
@@ -658,7 +669,7 @@ mod tests {
         let keyring = genesis_keyring();
         let held = hold();
         let ctx = context_of(&held);
-        let mut store = MemoryKeyWrapStore::default();
+        let mut store = MemoryKeyWrapStore::new(watch(&[], &ctx));
         let g = &ring()["genesis"];
         let account = GenesisAccount::import(
             g["laneId"].as_str().unwrap(),
@@ -791,7 +802,7 @@ mod tests {
         let ctx = context_of(&held);
         let records = ring();
         let signer = records["genesis"]["signingPriv"].as_str().unwrap();
-        let mut store = MemoryKeyWrapStore::default();
+        let mut store = MemoryKeyWrapStore::new(watch(&[], &ctx));
         let mut ids = Vec::new();
         for n in 0..crate::limits::MAX_WRAPS_PER_PRINCIPAL {
             let wrap_id = parse_object_id(&format!("wrap_{n:032x}")).unwrap();
@@ -809,7 +820,6 @@ mod tests {
                 class,
                 &format!("{n:02x}"),
                 signer,
-                &ctx,
             )
             .unwrap();
         }
@@ -826,7 +836,6 @@ mod tests {
             WrapClass::Delivery,
             "bb",
             signer,
-            &ctx,
         );
         assert!(matches!(capped, Err(EncDiscError::StoreRejected)));
         let unsigned = store.put_wrap(
@@ -837,8 +846,6 @@ mod tests {
             },
             &dummy_wrap(&principal, &extra, &epub, WrapClass::Delivery, "ee"),
             "00",
-            &[],
-            &ctx,
         );
         assert!(matches!(unsigned, Err(EncDiscError::StoreRejected)));
         let first = ids[0].clone();
@@ -850,11 +857,9 @@ mod tests {
             WrapClass::Delivery,
             "cc",
             signer,
-            &ctx,
         );
         assert!(matches!(stuck, Err(EncDiscError::StoreRejected)));
-        let genesis_delete =
-            crate::delete_account_wrap(&principal, &first, signer, &[], &ctx, &mut store);
+        let genesis_delete = crate::delete_account_wrap(&principal, &first, signer, &mut store);
         assert!(matches!(genesis_delete, Err(EncDiscError::StoreRejected)));
         assert_eq!(
             store
@@ -865,7 +870,7 @@ mod tests {
             "00"
         );
         let delivery = ids[1].clone();
-        crate::delete_account_wrap(&principal, &delivery, signer, &[], &ctx, &mut store).unwrap();
+        crate::delete_account_wrap(&principal, &delivery, signer, &mut store).unwrap();
         assert!(store.get_wrap(&principal, &delivery).unwrap().is_none());
         put_dummy(
             &mut store,
@@ -875,7 +880,6 @@ mod tests {
             WrapClass::Delivery,
             "bb",
             signer,
-            &ctx,
         )
         .unwrap();
         assert_eq!(
@@ -962,7 +966,7 @@ mod tests {
             &[prior],
         )
         .unwrap();
-        let mut store = MemoryKeyWrapStore::default();
+        let mut store = MemoryKeyWrapStore::new(watch(&rotations, &base));
         let transport = TransportKey::from_scalar_hex(&format!("{:064x}", 4u32)).unwrap();
         let ephemeral =
             p256::SecretKey::from_slice(&hexutil::decode_hex(&format!("{:064x}", 7u32)).unwrap())
@@ -1010,24 +1014,187 @@ mod tests {
         assert!(matches!(forged, EncDiscError::WrapRejected));
     }
 
-    fn put_dummy(
-        store: &mut MemoryKeyWrapStore,
+    #[test]
+    fn a_retired_key_cannot_fill_or_relabel_wraps() {
+        let records: Value = serde_json::from_str(RECORDS).unwrap();
+        let chain: Vec<Value> = records["accept"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|item| item["name"] == "probe-v3-then-v3")
+            .unwrap()["input"]
+            .as_array()
+            .unwrap()
+            .clone();
+        let (k0_pub, k0_priv) = scalar_sea(1);
+        let (_k2_pub, k2_priv) = scalar_sea(3);
+        let ctx = &records["context"];
+        let jwks: Jwks = serde_json::from_value(ctx["jwks"].clone()).unwrap();
+        let policy: SiwePolicy = serde_json::from_value(ctx["policy"].clone()).unwrap();
+        let pinned: BTreeSet<String> = ctx["pinnedIss"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|item| item.as_str().unwrap().to_string())
+            .collect();
+        let links: BTreeMap<String, Value> = ctx["links"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|pair| (pair[0].as_str().unwrap().to_string(), pair[1].clone()))
+            .collect();
+        let authenticated = ctx["authenticatedAccounts"].clone();
+        let history = |principal: &PrincipalId, at, until| {
+            if !authenticated
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|item| item.as_str() == Some(principal.as_ref()))
+            {
+                return Err(Reason::MissingHistory);
+            }
+            let empty: Vec<Rotate> = Vec::new();
+            Ok(history_state(principal, &empty, at, until))
+        };
+        let resolver: &HistoryResolver<'_> = &history;
+        let revocations = Vec::new();
+        let base = ResolutionContext {
+            jwks: &jwks,
+            links: &links,
+            revocations: &revocations,
+            now: ctx["now"].as_u64().unwrap(),
+            policy: &policy,
+            pinned_iss: &pinned,
+            history: resolver,
+            genesis_epub_bindings: &[],
+        };
+        let principal = sociacl_ids::parse_principal_id(&k0_pub).unwrap();
+        let ring = ring();
+        let epub = ring["genesis"]["epub"].as_str().unwrap();
+        let mut store = MemoryKeyWrapStore::new(watch(&chain, &base));
+        for n in 0..crate::limits::MAX_WRAPS_PER_PRINCIPAL {
+            let wrap_id = parse_object_id(&format!("wrap_{n:032x}")).unwrap();
+            let refused = put_dummy(
+                &mut store,
+                &principal,
+                &wrap_id,
+                epub,
+                WrapClass::Delivery,
+                &format!("{n:02x}"),
+                k0_priv.as_str(),
+            );
+            assert!(matches!(refused, Err(EncDiscError::StoreRejected)));
+        }
+        assert!(store.list_wraps(&principal).unwrap().is_empty());
+        let wrap_id = parse_object_id("wrap_00112233445566778899aabbccddee11").unwrap();
+        put_dummy(
+            &mut store,
+            &principal,
+            &wrap_id,
+            epub,
+            WrapClass::Delivery,
+            "aa",
+            k2_priv.as_str(),
+        )
+        .unwrap();
+        assert_eq!(store.list_wraps(&principal).unwrap().len(), 1);
+        assert!(matches!(
+            crate::delete_account_wrap(&principal, &wrap_id, k0_priv.as_str(), &mut store)
+                .unwrap_err(),
+            EncDiscError::StoreRejected
+        ));
+        assert_eq!(
+            store
+                .get_wrap(&principal, &wrap_id)
+                .unwrap()
+                .unwrap()
+                .ciphertext_hex,
+            "aa"
+        );
+
+        let mut labeled = MemoryKeyWrapStore::new(watch(&chain, &base));
+        let delivery = dummy_wrap(&principal, &wrap_id, epub, WrapClass::Delivery, "aa");
+        let hash = crate::store_write::wrap_ciphertext_hash(&delivery.ciphertext_hex).unwrap();
+        let signature = crate::store_write::sign_store_write(
+            k2_priv.as_str(),
+            &principal,
+            "put",
+            wrap_id.as_ref(),
+            &hash,
+            "2",
+            crate::store_write::REPLACED_NONE,
+            crate::store_write::STORE_CLASS_DELIVERY,
+            "0",
+        )
+        .unwrap();
+        let mut as_genesis = delivery.clone();
+        as_genesis.class = WrapClass::Genesis;
+        assert!(matches!(
+            labeled
+                .put_wrap(
+                    &WrapIndex {
+                        principal: principal.clone(),
+                        wrap_id: wrap_id.clone(),
+                        epub: epub.to_string(),
+                    },
+                    &as_genesis,
+                    &signature,
+                )
+                .unwrap_err(),
+            EncDiscError::StoreRejected
+        ));
+        assert!(labeled.get_wrap(&principal, &wrap_id).unwrap().is_none());
+        labeled
+            .put_wrap(
+                &WrapIndex {
+                    principal: principal.clone(),
+                    wrap_id: wrap_id.clone(),
+                    epub: epub.to_string(),
+                },
+                &delivery,
+                &signature,
+            )
+            .unwrap();
+        assert_eq!(
+            labeled
+                .get_wrap(&principal, &wrap_id)
+                .unwrap()
+                .unwrap()
+                .class,
+            WrapClass::Delivery
+        );
+        crate::delete_account_wrap(&principal, &wrap_id, k2_priv.as_str(), &mut labeled).unwrap();
+        assert!(labeled.get_wrap(&principal, &wrap_id).unwrap().is_none());
+    }
+
+    fn put_dummy<C: crate::store_write::PublishedChain>(
+        store: &mut MemoryKeyWrapStore<C>,
         principal: &PrincipalId,
         wrap_id: &sociacl_ids::ObjectId,
         epub: &str,
         class: WrapClass,
         ciphertext_hex: &str,
         signer: &str,
-        context: &ResolutionContext<'_>,
     ) -> Result<(), EncDiscError> {
         let wrap = dummy_wrap(principal, wrap_id, epub, class, ciphertext_hex);
         let hash = crate::store_write::wrap_ciphertext_hash(&wrap.ciphertext_hex)?;
+        let account = store.published_account(principal)?;
+        let head = account.rotations.len() as u64;
+        let generation = store.write_generation(principal);
+        let replaced = match store.get_wrap(principal, wrap_id)? {
+            Some(existing) => crate::store_write::wrap_ciphertext_hash(&existing.ciphertext_hex)?,
+            None => crate::store_write::REPLACED_NONE.to_string(),
+        };
         let signature = crate::store_write::sign_store_write(
             signer,
             principal,
             "put",
             wrap_id.as_ref(),
             &hash,
+            &crate::store_write::decimal(head)?,
+            &replaced,
+            crate::identity::wrap_class_label(class),
+            &crate::store_write::decimal(generation)?,
         )?;
         store.put_wrap(
             &WrapIndex {
@@ -1037,8 +1204,6 @@ mod tests {
             },
             &wrap,
             &signature,
-            &[],
-            context,
         )
     }
 
@@ -1184,6 +1349,17 @@ mod tests {
             pinned_iss: &hold.pinned,
             history: &missing_history,
             genesis_epub_bindings: &hold.binding,
+        }
+    }
+
+    fn watch<'a>(
+        rotations: &'a [Value],
+        context: &'a ResolutionContext<'a>,
+    ) -> impl Fn(&PrincipalId) -> Result<sociacl_ids::ResolvedAccount, EncDiscError> + 'a {
+        move |principal: &PrincipalId| {
+            resolve_current_key(principal, rotations, context)
+                .result
+                .map_err(|_| EncDiscError::StoreRejected)
         }
     }
 }

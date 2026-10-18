@@ -84,6 +84,7 @@ mod inbox;
 mod keyring;
 mod limits;
 mod migration;
+mod passphrase;
 mod present;
 mod presenter;
 mod recovery;
@@ -162,6 +163,7 @@ pub use migration::{
     MigrationOutcome, MigrationReader, PreparedMigration, ProtocolMigration, ReaderMigration,
     ReaderVersion, WrapReceipt,
 };
+pub use passphrase::check_recovery_passphrase;
 pub use present::{
     check_presented_grant, PresentedGrantDecision, PresentedGrantInput, VerifierGrantRevision,
     VerifierGrantRevisionState,
@@ -172,8 +174,8 @@ pub use presenter::{
 };
 pub use recovery::{
     commit_recovery_copy, delete_recovery_copy, encode_passphrase, open_recovery_copy,
-    open_recovery_copy_str, rotate_and_reseal, seal_recovery_copy, seal_recovery_copy_str,
-    MemoryRecoveryStore, RecoveryCopyStore, RecoveryEnvelope,
+    open_recovery_copy_str, recovery_envelope_hash, rotate_and_reseal, seal_recovery_copy,
+    seal_recovery_copy_str, MemoryRecoveryStore, RecoveryCopyStore, RecoveryEnvelope,
 };
 pub use rotation::{
     rotate_on_revoke, CancelledGrant, EpochRotation, GrantStorage, PlainGrant, PriorRevision,
@@ -185,7 +187,9 @@ pub use see::{
     HopFactor, IdentitySeeGrant, MeshMembership, ObjectSetName, PresentedGroup, SeeGraph,
 };
 pub use store_write::{
-    sign_store_write, verify_store_write, wrap_ciphertext_hash, DOMAIN_STORE_WRITE,
+    sign_store_write, store_write_message, verify_store_write, wrap_ciphertext_hash,
+    PublishedChain, DOMAIN_STORE_WRITE, REPLACED_NONE, STORE_CLASS_DELIVERY, STORE_CLASS_GENESIS,
+    STORE_CLASS_NONE,
 };
 pub use wrap::{
     open_group_epoch_wrap, open_reader_wrap, wrap_group_key_to_members,

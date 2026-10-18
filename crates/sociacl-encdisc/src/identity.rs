@@ -71,12 +71,18 @@ pub struct WrapIndex {
 
 /// Which seal produced a wrap. A wrap id stays in the class that first stored it.
 ///
-/// `class` is a store-only label. The wrap blob signature and the store-write
-/// signature do not cover it. Openers ignore it.
+/// The class is a field of the store-write signature. Openers ignore it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum WrapClass {
     Genesis,
     Delivery,
+}
+
+pub(crate) fn wrap_class_label(class: WrapClass) -> &'static str {
+    match class {
+        WrapClass::Genesis => crate::store_write::STORE_CLASS_GENESIS,
+        WrapClass::Delivery => crate::store_write::STORE_CLASS_DELIVERY,
+    }
 }
 
 /// Ciphertext of a genesis backup or a delivered keyring. The store holds this, not Gun.
@@ -93,20 +99,27 @@ pub struct EncryptedAccountWrap {
 
 /// Panopticon index and wrap store. Not an authority.
 ///
-/// Every put and delete carries a signature by the account's current
-/// chain-head key over [`crate::DOMAIN_STORE_WRITE`], in addition to the
-/// wrap's own blob signature. Implementations must verify the store-write
-/// signature against the resolved published chain before they write.
-/// Session authentication is not this check. Panopticon is a verifier and
-/// a witness. It is never the authority.
+/// The store reads the published chain from [`published_account`]. The writer
+/// does not pass one. Every put and delete carries a compare-and-swap
+/// signature by the head key that resolver reports, in addition to the wrap's
+/// own blob signature. The wrap class is inside the store-write message.
+/// Adapters, Panopticon included, must verify that signature before they
+/// write. Session authentication is not this check. Panopticon reads the
+/// published Gun chain. It is a verifier and a witness. It is never the
+/// authority.
 pub trait KeyWrapStore {
+    fn published_account(
+        &self,
+        principal: &PrincipalId,
+    ) -> Result<sociacl_ids::ResolvedAccount, EncDiscError>;
+
+    fn write_generation(&self, principal: &PrincipalId) -> u64;
+
     fn put_wrap(
         &mut self,
         index: &WrapIndex,
         wrap: &EncryptedAccountWrap,
         store_signature: &str,
-        rotations: &[serde_json::Value],
-        context: &sociacl_ids::ResolutionContext<'_>,
     ) -> Result<(), EncDiscError>;
 
     /// Delete a delivery row. The genesis backup can be replaced, never deleted.
@@ -115,8 +128,6 @@ pub trait KeyWrapStore {
         principal: &PrincipalId,
         wrap_id: &ObjectId,
         store_signature: &str,
-        rotations: &[serde_json::Value],
-        context: &sociacl_ids::ResolutionContext<'_>,
     ) -> Result<(), EncDiscError>;
 
     fn get_wrap(
@@ -151,9 +162,24 @@ pub trait KeyWrapStore {
 /// Adapters, Panopticon included, replace a row in place. They do not
 /// delete it and insert the replacement as two steps. They verify the
 /// store-write signature before either write. A genesis row is never deleted.
-#[derive(Clone, Debug, Default)]
-pub struct MemoryKeyWrapStore {
+/// `chain` is the published source. `head_floor` rejects a write resolved
+/// below every head this store has already accepted for that principal.
+pub struct MemoryKeyWrapStore<C> {
     by_principal: BTreeMap<String, BTreeMap<String, EncryptedAccountWrap>>,
+    head_floor: BTreeMap<String, u64>,
+    generation: BTreeMap<String, u64>,
+    chain: C,
+}
+
+impl<C> MemoryKeyWrapStore<C> {
+    pub fn new(chain: C) -> Self {
+        Self {
+            by_principal: BTreeMap::new(),
+            head_floor: BTreeMap::new(),
+            generation: BTreeMap::new(),
+            chain,
+        }
+    }
 }
 
 /// A wallet or OIDC link that `verify_wallet_link` / `verify_oidc_link` accepted.
@@ -415,7 +441,7 @@ impl std::fmt::Debug for TransportKey {
     }
 }
 
-impl MemoryKeyWrapStore {
+impl<C> MemoryKeyWrapStore<C> {
     pub fn len(&self) -> usize {
         self.by_principal.values().map(BTreeMap::len).sum()
     }
@@ -425,14 +451,26 @@ impl MemoryKeyWrapStore {
     }
 }
 
-impl KeyWrapStore for MemoryKeyWrapStore {
+impl<C: crate::store_write::PublishedChain> KeyWrapStore for MemoryKeyWrapStore<C> {
+    fn published_account(
+        &self,
+        principal: &PrincipalId,
+    ) -> Result<sociacl_ids::ResolvedAccount, EncDiscError> {
+        self.chain.published_account(principal)
+    }
+
+    fn write_generation(&self, principal: &PrincipalId) -> u64 {
+        self.generation
+            .get(principal.as_ref())
+            .copied()
+            .unwrap_or(0)
+    }
+
     fn put_wrap(
         &mut self,
         index: &WrapIndex,
         wrap: &EncryptedAccountWrap,
         store_signature: &str,
-        rotations: &[serde_json::Value],
-        context: &sociacl_ids::ResolutionContext<'_>,
     ) -> Result<(), EncDiscError> {
         if index.principal != wrap.principal
             || index.wrap_id != wrap.wrap_id
@@ -446,28 +484,51 @@ impl KeyWrapStore for MemoryKeyWrapStore {
         {
             return Err(EncDiscError::StoreRejected);
         }
+        let account = self.chain.published_account(&wrap.principal)?;
+        let head = account.rotations.len() as u64;
+        let key = wrap.principal.as_ref().to_string();
+        let floor = self.head_floor.get(&key).copied().unwrap_or(0);
+        if head < floor {
+            return Err(EncDiscError::StoreRejected);
+        }
+        let generation = self.generation.get(&key).copied().unwrap_or(0);
+        let existing = self
+            .by_principal
+            .get(&key)
+            .and_then(|rows| rows.get(wrap.wrap_id.as_ref()))
+            .cloned();
+        let replaced = match &existing {
+            Some(row) => wrap_ciphertext_hash(&row.ciphertext_hex)?,
+            None => crate::store_write::REPLACED_NONE.to_string(),
+        };
         let hash = wrap_ciphertext_hash(&wrap.ciphertext_hex)?;
         verify_store_write(
             &wrap.principal,
             "put",
             wrap.wrap_id.as_ref(),
             &hash,
+            &crate::store_write::decimal(head)?,
+            &replaced,
+            wrap_class_label(wrap.class),
+            &crate::store_write::decimal(generation)?,
             store_signature,
-            rotations,
-            context,
+            &account,
         )?;
-        let rows = self
-            .by_principal
-            .entry(wrap.principal.as_ref().to_string())
-            .or_default();
-        if let Some(existing) = rows.get(wrap.wrap_id.as_ref()) {
+        if let Some(existing) = &existing {
             if existing.class != wrap.class {
                 return Err(EncDiscError::StoreRejected);
             }
-        } else if rows.len() >= crate::limits::MAX_WRAPS_PER_PRINCIPAL {
+        } else if self.by_principal.get(&key).map(BTreeMap::len).unwrap_or(0)
+            >= crate::limits::MAX_WRAPS_PER_PRINCIPAL
+        {
             return Err(EncDiscError::StoreRejected);
         }
-        rows.insert(wrap.wrap_id.as_ref().to_string(), wrap.clone());
+        self.by_principal
+            .entry(key.clone())
+            .or_default()
+            .insert(wrap.wrap_id.as_ref().to_string(), wrap.clone());
+        self.head_floor.insert(key.clone(), floor.max(head));
+        self.generation.insert(key, generation.saturating_add(1));
         Ok(())
     }
 
@@ -476,9 +537,15 @@ impl KeyWrapStore for MemoryKeyWrapStore {
         principal: &PrincipalId,
         wrap_id: &ObjectId,
         store_signature: &str,
-        rotations: &[serde_json::Value],
-        context: &sociacl_ids::ResolutionContext<'_>,
     ) -> Result<(), EncDiscError> {
+        let account = self.chain.published_account(principal)?;
+        let head = account.rotations.len() as u64;
+        let key = principal.as_ref().to_string();
+        let floor = self.head_floor.get(&key).copied().unwrap_or(0);
+        if head < floor {
+            return Err(EncDiscError::StoreRejected);
+        }
+        let generation = self.generation.get(&key).copied().unwrap_or(0);
         let row = self
             .by_principal
             .get(principal.as_ref())
@@ -491,9 +558,12 @@ impl KeyWrapStore for MemoryKeyWrapStore {
             "delete",
             wrap_id.as_ref(),
             &hash,
+            &crate::store_write::decimal(head)?,
+            &hash,
+            wrap_class_label(row.class),
+            &crate::store_write::decimal(generation)?,
             store_signature,
-            rotations,
-            context,
+            &account,
         )?;
         if row.class == WrapClass::Genesis {
             return Err(EncDiscError::StoreRejected);
@@ -506,6 +576,8 @@ impl KeyWrapStore for MemoryKeyWrapStore {
         if rows.is_empty() {
             self.by_principal.remove(principal.as_ref());
         }
+        self.head_floor.insert(key.clone(), floor.max(head));
+        self.generation.insert(key, generation.saturating_add(1));
         Ok(())
     }
 
@@ -676,14 +748,8 @@ fn seal_account_backup_with(
         epub: wrap.epub.clone(),
     };
     let hash = wrap_ciphertext_hash(&wrap.ciphertext_hex)?;
-    let store_signature = sign_store_write(
-        account.local_priv(),
-        &wrap.principal,
-        "put",
-        wrap.wrap_id.as_ref(),
-        &hash,
-    )?;
-    store.put_wrap(&index, &wrap, &store_signature, rotations, context)?;
+    let store_signature = sign_wrap_write(store, account.local_priv(), &wrap, "put", &hash)?;
+    store.put_wrap(&index, &wrap, &store_signature)?;
     Ok(wrap)
 }
 
@@ -696,16 +762,46 @@ pub fn delete_account_wrap(
     principal: &PrincipalId,
     wrap_id: &ObjectId,
     signer_priv: &str,
-    rotations: &[serde_json::Value],
-    context: &sociacl_ids::ResolutionContext<'_>,
     store: &mut impl KeyWrapStore,
 ) -> Result<(), EncDiscError> {
     let row = store
         .get_wrap(principal, wrap_id)?
         .ok_or(EncDiscError::StoreRejected)?;
     let hash = wrap_ciphertext_hash(&row.ciphertext_hex)?;
-    let signature = sign_store_write(signer_priv, principal, "delete", wrap_id.as_ref(), &hash)?;
-    store.delete_wrap(principal, wrap_id, &signature, rotations, context)
+    let signature = sign_wrap_write(store, signer_priv, &row, "delete", &hash)?;
+    store.delete_wrap(principal, wrap_id, &signature)
+}
+
+fn sign_wrap_write(
+    store: &impl KeyWrapStore,
+    signer_priv: &str,
+    wrap: &EncryptedAccountWrap,
+    operation: &str,
+    envelope_hash: &str,
+) -> Result<String, EncDiscError> {
+    let account = store.published_account(&wrap.principal)?;
+    let head = account.rotations.len() as u64;
+    let generation = store.write_generation(&wrap.principal);
+    let replaced = match store.get_wrap(&wrap.principal, &wrap.wrap_id)? {
+        Some(existing) => wrap_ciphertext_hash(&existing.ciphertext_hex)?,
+        None => crate::store_write::REPLACED_NONE.to_string(),
+    };
+    let replaced = if operation == "delete" {
+        envelope_hash.to_string()
+    } else {
+        replaced
+    };
+    sign_store_write(
+        signer_priv,
+        &wrap.principal,
+        operation,
+        wrap.wrap_id.as_ref(),
+        envelope_hash,
+        &crate::store_write::decimal(head)?,
+        &replaced,
+        wrap_class_label(wrap.class),
+        &crate::store_write::decimal(generation)?,
+    )
 }
 
 /// Open a wrap for `expected`. A store row that names some other account is rejected.
@@ -1014,8 +1110,8 @@ mod tests {
     use crate::wrap::{open_reader_wrap, DetachedEphemeral};
     use serde_json::Value;
     use sociacl_ids::{
-        history_state, verify_oidc_link, verify_wallet_link, HistoryResolver, Jwks, KeyState,
-        PrincipalId, Reason, ResolutionContext, Rotate, SiwePolicy,
+        history_state, resolve_current_key, verify_oidc_link, verify_wallet_link, HistoryResolver,
+        Jwks, KeyState, PrincipalId, Reason, ResolutionContext, Rotate, SiwePolicy,
     };
     use std::collections::{BTreeMap, BTreeSet};
 
@@ -1200,11 +1296,11 @@ mod tests {
         let ephemeral = secret_from_hex(v["backupWrap"]["ephemeralScalarHex"].as_str().unwrap());
         let nonce = nonce_from_hex(v["backupWrap"]["nonceHex"].as_str().unwrap());
         let wrap_id = parse_wrap_object(v["backupWrap"]["wrapId"].as_str().unwrap()).unwrap();
-        let mut store = MemoryKeyWrapStore::default();
-        assert!(!store.is_authority());
-        assert!(!store.mints_grant());
         let parts = empty_resolution();
         let context = parts.context();
+        let mut store = MemoryKeyWrapStore::new(watch(&[], &context));
+        assert!(!store.is_authority());
+        assert!(!store.mints_grant());
         let wrap = seal_account_backup_with(
             &account,
             transport.sea_pub(),
@@ -1238,7 +1334,7 @@ mod tests {
                 &wrap_id,
                 &[],
                 &context,
-                &mut MemoryKeyWrapStore::default(),
+                &mut MemoryKeyWrapStore::new(watch(&[], &context)),
             )
             .unwrap_err(),
             EncDiscError::IdentityRejected("transport".into())
@@ -1250,7 +1346,7 @@ mod tests {
                 &wrap_id,
                 &[],
                 &context,
-                &mut MemoryKeyWrapStore::default(),
+                &mut MemoryKeyWrapStore::new(watch(&[], &context)),
             )
             .unwrap_err(),
             EncDiscError::IdentityRejected("transport".into())
@@ -1344,7 +1440,7 @@ mod tests {
         let wrap_id = parse_wrap_object(v["substitution"]["wrapId"].as_str().unwrap()).unwrap();
         let parts = empty_resolution();
         let context = parts.context();
-        let mut store = MemoryKeyWrapStore::default();
+        let mut store = MemoryKeyWrapStore::new(watch(&[], &context));
         let wrap = seal_account_backup_with(
             &attacker,
             transport.sea_pub(),
@@ -1381,14 +1477,8 @@ mod tests {
         );
         // The adapter accepts a keyring-sized wrap. Genesis open still stops at 8192.
         let huge_hash = wrap_ciphertext_hash(&huge.ciphertext_hex).unwrap();
-        let huge_sig = sign_store_write(
-            attacker.local_priv(),
-            &huge.principal,
-            "put",
-            huge.wrap_id.as_ref(),
-            &huge_hash,
-        )
-        .unwrap();
+        let huge_sig =
+            sign_wrap_write(&store, attacker.local_priv(), &huge, "put", &huge_hash).unwrap();
         assert!(store
             .put_wrap(
                 &WrapIndex {
@@ -1398,8 +1488,6 @@ mod tests {
                 },
                 &huge,
                 &huge_sig,
-                &[],
-                &context,
             )
             .is_ok());
         let mut over = wrap.clone();
@@ -1413,8 +1501,6 @@ mod tests {
                 },
                 &over,
                 "",
-                &[],
-                &context,
             )
             .is_err());
     }
@@ -1429,7 +1515,7 @@ mod tests {
         let wrap_id = parse_wrap_object(v["backupWrap"]["wrapId"].as_str().unwrap()).unwrap();
         let parts = empty_resolution();
         let context = parts.context();
-        let mut store = MemoryKeyWrapStore::default();
+        let mut store = MemoryKeyWrapStore::new(watch(&[], &context));
         let first = seal_account_backup(
             &account,
             transport.sea_pub(),
@@ -1439,7 +1525,7 @@ mod tests {
             &mut store,
         )
         .unwrap();
-        let mut other = MemoryKeyWrapStore::default();
+        let mut other = MemoryKeyWrapStore::new(watch(&[], &context));
         let second = seal_account_backup(
             &account,
             transport.sea_pub(),
@@ -1469,7 +1555,7 @@ mod tests {
             &wrap_id,
             &[],
             &context,
-            &mut MemoryKeyWrapStore::default(),
+            &mut MemoryKeyWrapStore::new(watch(&[], &context)),
         )
         .unwrap_err();
         assert_eq!(err, EncDiscError::BadKey);
@@ -1497,7 +1583,7 @@ mod tests {
                 &wrap_id,
                 &[],
                 &context,
-                &mut MemoryKeyWrapStore::default(),
+                &mut MemoryKeyWrapStore::new(watch(&[], &context)),
             )
             .unwrap_err();
             assert_eq!(err, EncDiscError::BadKey, "len {}", transport_pub.len());
@@ -1576,7 +1662,7 @@ mod tests {
         let ephemeral = secret_from_hex(row["ephemeralScalarHex"].as_str().unwrap());
         let nonce = nonce_from_hex(row["nonceHex"].as_str().unwrap());
         let wrap_id = parse_wrap_object(row["wrapId"].as_str().unwrap()).unwrap();
-        let mut store = MemoryKeyWrapStore::default();
+        let mut store = MemoryKeyWrapStore::new(watch(&[], &context));
         let wrap = seal_account_backup_with(
             &account,
             transport.sea_pub(),
@@ -1594,7 +1680,7 @@ mod tests {
             open_account_backup(&transport, &wrap, account.principal(), &[], &context).unwrap();
         assert_eq!(opened.local_priv(), account.local_priv());
         let rotations = [rotate["input"].clone()];
-        let mut refused = MemoryKeyWrapStore::default();
+        let mut refused = MemoryKeyWrapStore::new(watch(&[], &context));
         assert_eq!(
             seal_account_backup(
                 &account,
@@ -1690,6 +1776,17 @@ mod tests {
         _until: u64,
     ) -> Result<KeyState, Reason> {
         Err(Reason::MissingHistory)
+    }
+
+    fn watch<'a>(
+        rotations: &'a [Value],
+        context: &'a ResolutionContext<'a>,
+    ) -> impl Fn(&PrincipalId) -> Result<sociacl_ids::ResolvedAccount, EncDiscError> + 'a {
+        move |principal: &PrincipalId| {
+            resolve_current_key(principal, rotations, context)
+                .result
+                .map_err(|_| EncDiscError::StoreRejected)
+        }
     }
 
     fn empty_resolution() -> EmptyResolution {

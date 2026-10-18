@@ -76,7 +76,72 @@
     "equalSeqClearsPending": true,
     "commitKey": "resolved-current-key",
     "fork": "store-rejected",
-    "unpublished": "store-rejected"
+    "unpublished": "store-rejected",
+    "chain": "store-resolver",
+    "rejectedCommit": "pending-unchanged",
+    "sample": {
+      "principal": "YP7UuiVanTHJYet0xjVtaMBJuJI7Yfps5mliLmDyn7Y.eQP-EAi4vJmkGunpVii8ZPLxsgwtfp9Rd6PClNRGIpk",
+      "signingPub": "YP7UuiVanTHJYet0xjVtaMBJuJI7Yfps5mliLmDyn7Y.eQP-EAi4vJmkGunpVii8ZPLxsgwtfp9Rd6PClNRGIpk",
+      "epub": "EMvdmXTv89JPyMx5n3blU3L_D70U-6JoVaVzTvSzgYg.B_b0CP3o9X3I7tWrxA_F1VhXpjeMuIJCtQWnOh7LN5c",
+      "seq": 2,
+      "bytesHex": "010203",
+      "envelopeHash": "666a5ef352b1bc810d2346143f5c8e27baaa4a763f8161342454868f3ff384c3",
+      "wrapId": "wrap_00112233445566778899aabbccddee11",
+      "wrapCiphertextHex": "010203",
+      "wrapCiphertextHash": "039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81",
+      "messages": {
+        "put": {
+          "operation": "put",
+          "target": "2",
+          "envelopeHash": "666a5ef352b1bc810d2346143f5c8e27baaa4a763f8161342454868f3ff384c3",
+          "head": "2",
+          "replaced": "none",
+          "class": "none",
+          "generation": "0",
+          "messageHex": "16000000736f636961636c2d73746f72652d77726974652d76315700000059503755756956616e54484a59657430786a5674614d424a754a493759667073356d6c694c6d44796e37592e6551502d45416934764a6d6b47756e70566969385a504c787367777466703952643650436c4e524749706b03000000707574010000003240000000363636613565663335326231626338313064323334363134336635633865323762616161346137363366383136313334323435343836386633666633383463330100000032040000006e6f6e65040000006e6f6e650100000030"
+        },
+        "commit": {
+          "operation": "commit",
+          "target": "2",
+          "envelopeHash": "666a5ef352b1bc810d2346143f5c8e27baaa4a763f8161342454868f3ff384c3",
+          "head": "2",
+          "replaced": "none",
+          "class": "none",
+          "generation": "1",
+          "messageHex": "16000000736f636961636c2d73746f72652d77726974652d76315700000059503755756956616e54484a59657430786a5674614d424a754a493759667073356d6c694c6d44796e37592e6551502d45416934764a6d6b47756e70566969385a504c787367777466703952643650436c4e524749706b06000000636f6d6d6974010000003240000000363636613565663335326231626338313064323334363134336635633865323762616161346137363366383136313334323435343836386633666633383463330100000032040000006e6f6e65040000006e6f6e650100000031"
+        },
+        "delete": {
+          "operation": "delete",
+          "target": "2",
+          "envelopeHash": "666a5ef352b1bc810d2346143f5c8e27baaa4a763f8161342454868f3ff384c3",
+          "head": "2",
+          "replaced": "666a5ef352b1bc810d2346143f5c8e27baaa4a763f8161342454868f3ff384c3",
+          "class": "none",
+          "generation": "2",
+          "messageHex": "16000000736f636961636c2d73746f72652d77726974652d76315700000059503755756956616e54484a59657430786a5674614d424a754a493759667073356d6c694c6d44796e37592e6551502d45416934764a6d6b47756e70566969385a504c787367777466703952643650436c4e524749706b0600000064656c6574650100000032400000003636366135656633353262316263383130643233343631343366356338653237626161613461373633663831363133343234353438363866336666333834633301000000324000000036363661356566333532623162633831306432333436313433663563386532376261616134613736336638313631333432343534383638663366663338346333040000006e6f6e650100000032"
+        },
+        "wrapPut": {
+          "operation": "put",
+          "target": "wrap_00112233445566778899aabbccddee11",
+          "envelopeHash": "039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81",
+          "head": "2",
+          "replaced": "none",
+          "class": "delivery",
+          "generation": "3",
+          "messageHex": "16000000736f636961636c2d73746f72652d77726974652d76315700000059503755756956616e54484a59657430786a5674614d424a754a493759667073356d6c694c6d44796e37592e6551502d45416934764a6d6b47756e70566969385a504c787367777466703952643650436c4e524749706b0300000070757425000000777261705f303031313232333334343535363637373838393961616262636364646565313140000000303339303538633666326330636234393263353333623061346431346566373763633066373861626363636564353238376438346131613230313163666238310100000032040000006e6f6e650800000064656c69766572790100000033"
+        },
+        "wrapDelete": {
+          "operation": "delete",
+          "target": "wrap_00112233445566778899aabbccddee11",
+          "envelopeHash": "039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81",
+          "head": "2",
+          "replaced": "039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81",
+          "class": "delivery",
+          "generation": "4",
+          "messageHex": "16000000736f636961636c2d73746f72652d77726974652d76315700000059503755756956616e54484a59657430786a5674614d424a754a493759667073356d6c694c6d44796e37592e6551502d45416934764a6d6b47756e70566969385a504c787367777466703952643650436c4e524749706b0600000064656c65746525000000777261705f30303131323233333434353536363737383839396161626263636464656531314000000030333930353863366632633063623439326335333362306134643134656637376363306637386162636363656435323837643834613161323031316366623831010000003240000000303339303538633666326330636234393263353333623061346431346566373763633066373861626363636564353238376438346131613230313163666238310800000064656c69766572790100000034"
+        }
+      }
+    }
   },
   "unicodeRuntime": {
     "minimum": "16.0.0",
@@ -180,5 +245,77 @@
     "wrapId": "wrap_00112233445566778899aabbccddeeff",
     "ciphertextHex": "01045ecbe4d1a6330a44c8f7ef951d4bf165e6c6b721efada985fb41661bc6e7fd6c8734640c4998ff7e374b06ce1a64a2ecd82ab036384fb83d9a79b127a27d5032000102030405060708090a0be129567a3a993e1bbfa0412f50ab2b1d27a7484adeecb18c9c7b9769edcbd25050723c2f63eb26eb6b6dbb9d0cb42570de8055ee493ca27f4df53a538e0c14a1263a261bfc801b314f9500d448fd27eacc84e97422f28b29525f4c160f95ca38cb73e8caeb7a3c43eaf6ae1f4e45e18339aa7013d6080cd4121759a069c79c5f8e1f0588f89fc6b18b1ef2451abed551084f0a38238c4f48786ed2d06bd127c4ea9d3db0dae1921ee7ced73683e4b7f0bb7b07a96e84f4e753b231285aac3d6631576afc8b9cb20ad1f9c8c091ade1edf8845818b5f12f22a0c280bc4bf7b092b957837aa9c3faa5935d6859f2f600f77ed5508637395f2e621760f4ddfacd0ad6337c05d024851ffa334307795f5175ce32f44185c2551ebea928c469972e766f2233a53f52fe112f3ed0eaa6ac7d0e989895fd1210da7fcac664d4fd55a3bed0f9a23f0baea44fc522f2311d94670f7575f7c97b3b9fe4a39363e963edd0d9d32c26e13402550bbaddee6ab7f368c7cb7aec8533ea0df91e7719dcff6936998be985a49a77b83d849cbe2939164c20ee378ece725e31e8f88a48d0ae1aa522fc1f3c7758551947911b11b3606e417cca99b2ef989adff8f952e0d00e45a9c1e49fe3c649f700348b6721a6a67eb322fda9b42177217718ed4482d8e951e18f675f4b8699756da394bd98517490bf4dc0362e9511dfa7db9874b89fd4eb24528b5525505a6edf8236153bcb354247563ce58392bf07261f5a6065591f81b5e5f86243c1ea391c58dbef48586898414fb85c12dfd59734ca716c6a666d8d777506c06f1d8b65dddc5abfdc391aa5",
     "signature": "55de9f3450b11517b450c6a716342aad0b5e59e95b0bee2dd5ae3dc46f34ca0f34b214cdefc23ae3b1d41935169d748155b4a49de6985dfced21d7c142eba0e0"
+  },
+  "passphraseStrength": {
+    "error": "recovery-weak-passphrase",
+    "enforcedAt": "seal",
+    "open": "unchecked",
+    "minVisibleCodePoints": 12,
+    "minScore": 3,
+    "parity": "advisory",
+    "note": "Length and hidden-character checks match. The zxcvbn score is advisory between languages and can disagree near the threshold. These rows are clear in both. Feedback text from zxcvbn is not pinned.",
+    "cases": [
+      {
+        "name": "staple",
+        "passphrase": "correct horse battery staple",
+        "result": "pass"
+      },
+      {
+        "name": "random-words",
+        "passphrase": "flint-parcel-quantum-marble-92",
+        "result": "pass"
+      },
+      {
+        "name": "mixed-token",
+        "passphrase": "q7vN2mR9pL4xT8wK3c",
+        "result": "pass"
+      },
+      {
+        "name": "eleven",
+        "passphrase": "Tr0ub4dor&3",
+        "result": "fail",
+        "score": 0,
+        "warning": "passphrase needs at least 12 visible characters"
+      },
+      {
+        "name": "password",
+        "passphrase": "password",
+        "result": "fail",
+        "score": 0,
+        "warning": "passphrase needs at least 12 visible characters"
+      },
+      {
+        "name": "zwsp",
+        "passphrase": "\u200b",
+        "result": "fail",
+        "score": 0,
+        "warning": "passphrase contains a hidden character"
+      },
+      {
+        "name": "bom",
+        "passphrase": "\ufeff",
+        "result": "fail",
+        "score": 0,
+        "warning": "passphrase contains a hidden character"
+      },
+      {
+        "name": "staple-with-zwsp",
+        "passphrase": "correct horse\u200b battery staple",
+        "result": "fail",
+        "score": 0,
+        "warning": "passphrase contains a hidden character"
+      },
+      {
+        "name": "repeated-password",
+        "passphrase": "passwordpassword",
+        "result": "fail"
+      },
+      {
+        "name": "handle-is-passphrase",
+        "passphrase": "q7vN2mR9pL4xT8wK3c",
+        "handle": "q7vN2mR9pL4xT8wK3c",
+        "result": "fail"
+      }
+    ]
   }
 }
