@@ -1,6 +1,7 @@
 use crate::ids::{checksum, principal_bytes};
 use crate::*;
-use p256::ecdsa::{signature::Verifier, Signature, VerifyingKey};
+use p256::ecdsa::signature::Signer;
+use p256::ecdsa::{signature::Verifier, Signature, SigningKey, VerifyingKey};
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 use sha3::Keccak256;
@@ -2133,6 +2134,207 @@ fn resolve_wallet(
     note = "Use resolve_wallet_link; this alias retains historical verification semantics"
 )]
 pub use resolve_wallet_link as resolve_wallet_link_at_key;
+
+/// SEA P-256 ECDSA over SHA-256. Raw r||s, base64url. High-S and low-S both verify.
+pub fn verify_key_signature(key: &str, sig: &str, message: &[u8]) -> Result<(), Reason> {
+    let key = parse_principal_id(key)?;
+    let sig = text(sig, 128)?;
+    if key_verify(&key, sig, message) {
+        Ok(())
+    } else {
+        Err(Reason::BadSignature)
+    }
+}
+/// Sign ids bytes with a keyring SEA scalar (base64url of the 32-byte private key).
+/// The result is raw r||s, base64url, the encoding [`verify_key_signature`] accepts.
+pub fn sign_with_keyring(sea_priv: &str, message: &[u8]) -> Result<String, Reason> {
+    let scalar = unb64(text(sea_priv, 128)?).map_err(|_| Reason::BadSignature)?;
+    if scalar.len() != 32 {
+        return Err(Reason::BadSignature);
+    }
+    let key = SigningKey::from_slice(&scalar).map_err(|_| Reason::BadSignature)?;
+    let sig: Signature = key.sign(message);
+    Ok(b64(&sig.to_bytes()))
+}
+fn record_id_of(message: &[u8]) -> String {
+    hex(&Sha256::digest(message))
+}
+fn row_bytes(raw: &Value) -> Result<Vec<u8>, Reason> {
+    let s = raw.as_str().ok_or(Reason::BadRecord)?;
+    if s.len() % 2 != 0
+        || !s
+            .bytes()
+            .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
+    {
+        return Err(Reason::BadRecord);
+    }
+    unhex(s).map_err(|_| Reason::BadRecord)
+}
+/// `sociacl-acl-attest-v1`. Checked like [`attest_verify`] with `now = issued_at`.
+/// Nothing in this package issues the claim.
+pub fn verify_acl_attestation(
+    jws: &str,
+    jwks: &Jwks,
+    issued_at: u64,
+    message: &[u8],
+) -> Result<AclAttestation, Reason> {
+    if issued_at > MAX_SAFE {
+        return Err(Reason::BadAttestation);
+    }
+    let c = attest_verify(jws, jwks, issued_at, 0)?;
+    if !only(&c, &["typ", "principal", "recordId", "iat", "exp"])
+        || c["typ"] != "sociacl-acl-attest-v1"
+        || number(&c["iat"]).ok() != Some(issued_at)
+        || c["recordId"] != record_id_of(message)
+    {
+        return Err(Reason::BadAttestation);
+    }
+    let principal = parse_principal_id(c["principal"].as_str().ok_or(Reason::BadAttestation)?)
+        .map_err(|_| Reason::BadAttestation)?;
+    let exp = number(&c["exp"]).map_err(|_| Reason::BadAttestation)?;
+    Ok(AclAttestation {
+        typ: "sociacl-acl-attest-v1".to_owned(),
+        principal,
+        record_id: c["recordId"]
+            .as_str()
+            .ok_or(Reason::BadAttestation)?
+            .to_owned(),
+        iat: issued_at,
+        exp,
+    })
+}
+/// Present authority, or a retired key only for a witnessed cancel.
+/// Retired-key grants and requests are refused even when witnessed.
+/// A resolver failure is returned unchanged, diagnostics included.
+pub fn verify_signed_at(
+    row: &Value,
+    rotations: &[Value],
+    ctx: &ResolutionContext<'_>,
+) -> Resolution<SignedAt> {
+    let fail = |reason| Resolution {
+        result: Err(reason),
+        diagnostics: Vec::new(),
+    };
+    let Some(r) = row.as_object() else {
+        return fail(Reason::BadRecord);
+    };
+    if !only(
+        row,
+        &["principal", "sig", "bytes", "issuedAt", "role", "attest"],
+    ) {
+        return fail(Reason::BadRecord);
+    }
+    let principal = match r.get("principal").and_then(Value::as_str) {
+        Some(s) => match parse_principal_id(s) {
+            Ok(p) => p,
+            Err(e) => return fail(e),
+        },
+        None => return fail(Reason::NotString),
+    };
+    let issued_at = match r
+        .get("issuedAt")
+        .map(number)
+        .unwrap_or(Err(Reason::BadRecord))
+    {
+        Ok(n) => n,
+        Err(e) => return fail(e),
+    };
+    let role = match r.get("role").and_then(Value::as_str) {
+        Some("grant") => AclRole::Grant,
+        Some("request") => AclRole::Request,
+        Some("cancel") => AclRole::Cancel,
+        _ => return fail(Reason::BadRecord),
+    };
+    let sig = match r.get("sig").and_then(Value::as_str) {
+        Some(s) => match text(s, 128) {
+            Ok(s) => s,
+            Err(e) => return fail(e),
+        },
+        None => return fail(Reason::NotString),
+    };
+    let message = match r
+        .get("bytes")
+        .map(row_bytes)
+        .unwrap_or(Err(Reason::BadRecord))
+    {
+        Ok(b) => b,
+        Err(e) => return fail(e),
+    };
+    if let Some(attest) = r.get("attest") {
+        if !attest.is_string() {
+            return fail(Reason::BadRecord);
+        }
+    }
+    if ctx.now > MAX_SAFE {
+        return fail(Reason::MissingHistory);
+    }
+    if issued_at > ctx.now {
+        return fail(Reason::FutureRecord);
+    }
+    let account = resolve_current_key(&principal, rotations, ctx);
+    let account = match account.result {
+        Ok(account) => account,
+        Err(reason) => {
+            return Resolution {
+                result: Err(reason),
+                diagnostics: account.diagnostics,
+            }
+        }
+    };
+    let state = history_state(&principal, &account.rotations, issued_at, ctx.now);
+    if !key_verify(&state.key, sig, &message) {
+        return fail(Reason::BadSignature);
+    }
+    let retired = state.key != account.current_key;
+    if retired && role != AclRole::Cancel {
+        return fail(Reason::BadSignature);
+    }
+    if retired {
+        let Some(attest) = r.get("attest").and_then(Value::as_str) else {
+            return fail(Reason::BadAttestation);
+        };
+        let attest = match verify_acl_attestation(attest, ctx.jwks, issued_at, &message) {
+            Ok(a) => a,
+            Err(e) => return fail(e),
+        };
+        if attest.principal != principal {
+            return fail(Reason::BadAttestation);
+        }
+    }
+    Resolution {
+        result: Ok(SignedAt {
+            principal,
+            key: state.key,
+            role,
+            issued_at,
+        }),
+        diagnostics: Vec::new(),
+    }
+}
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum AclRole {
+    Grant,
+    Request,
+    Cancel,
+}
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SignedAt {
+    pub principal: PrincipalId,
+    pub key: PrincipalId,
+    pub role: AclRole,
+    pub issued_at: u64,
+}
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AclAttestation {
+    pub typ: String,
+    pub principal: PrincipalId,
+    pub record_id: String,
+    pub iat: u64,
+    pub exp: u64,
+}
 
 /// JSON wire boundary. Rust `str` cannot carry unpaired UTF-16 surrogates.
 /// Duplicate object members are rejected before deserialization can fold them.

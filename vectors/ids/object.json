@@ -296,6 +296,30 @@
       "reason": "reserved-kind"
     },
     {
+      "name": "reserved-kind-post",
+      "input": "post_01010101010101010101010101010101",
+      "reason": "reserved-kind"
+    },
+    {
+      "name": "reserved-kind-member",
+      "input": "member_01010101010101010101010101010101",
+      "reason": "reserved-kind"
+    },
+    {
+      "name": "reserved-kind-objset",
+      "input": "objset_01010101010101010101010101010101",
+      "reason": "reserved-kind"
+    },
+    {
+      "name": "mint-kind-post",
+      "input": {
+        "kind": "post",
+        "bytes": [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+      },
+      "reason": "reserved-kind",
+      "operation": "mint"
+    },
+    {
       "name": "claim-leading-nbsp",
       "input": " ens:alice.eth",
       "reason": "bad-alphabet",

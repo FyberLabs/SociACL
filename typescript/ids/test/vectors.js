@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import * as ids from '../src/index.js';
-import { hex } from '../src/util.js';
+import { hex, unhex } from '../src/util.js';
 const root = new URL('../../../vectors/ids/', import.meta.url);
 const files = readdirSync(root).filter(f => f.endsWith('.json')).sort();
 const parsers = { principal:ids.parsePrincipalId, wallet:ids.parseEip55, tenant:ids.parseTenantId,
@@ -17,8 +17,26 @@ function run(f, c) {
     return parsers[c.operation](c.input);
   }
   if (f.family === 'signing-bytes') {
+    if (c.operation === 'length-prefixed') return {ok:true,value:hex(ids.lengthPrefixed(c.input))};
     const b = ids.signingBytes(c.input);
     return b.ok ? {ok:true,value:hex(b.value)} : b;
+  }
+  if (f.family === 'signed-at') {
+    const ctx = {...f.context,...c};
+    const links = new Map(ctx.links ?? []);
+    const history = (p,at,until) => new Map(ctx.historyErrors??[]).has(p) ? {ok:false,reason:new Map(ctx.historyErrors).get(p)} : (ctx.authenticatedAccounts??[]).includes(p) ? {ok:true,value:ids.historyState(p,new Map(ctx.histories??[]).get(p)??[],at,until)} : {ok:false,reason:'missing-history'};
+    const rc={jwks:ctx.jwks,links,revocations:ctx.revocations??[],now:ctx.now,policy:ctx.policy,pinnedIss:new Set(ctx.pinnedIss??[]),history,genesisEpubBindings:ctx.genesisEpubBindings??[]};
+    const rotations = c.rotations ?? ctx.rotations ?? [];
+    let r;
+    switch (c.operation) {
+      case 'verify-signed-at': r = ids.verifySignedAt(c.input, rotations, rc); break;
+      case 'verify-acl-attest': r = ids.verifyAclAttestation(c.input.jws, ctx.jwks, c.input.issuedAt, unhex(c.input.bytes)); break;
+      case 'verify-key-signature': r = ids.verifyKeySignature(c.input.key, c.input.sig, unhex(c.input.bytes)); break;
+      case 'sign-with-keyring': r = ids.signWithKeyring(c.input.seaPriv, unhex(c.input.bytes)); break;
+      default: throw Error('unknown operation: '+c.operation);
+    }
+    if (c.diagnosticReasons) assert.deepEqual((r.diagnostics??[]).map(d=>d.reason), c.diagnosticReasons, c.name+' diagnostics');
+    return r.ok ? {ok:true,value:r.value} : {ok:false,reason:r.reason};
   }
   if (f.family === 'records') {
     const ctx = {...f.context,...c}; let r;
@@ -81,7 +99,7 @@ function run(f, c) {
   return (c.parser === 'wallet-input' ? ids.parseWalletInput : parsers[f.family])(c.input);
 }
 test('every shared vector and exact rejection reason', () => {
-  assert.equal(files.length,11);
+  assert.equal(files.length,12);
   for(const file of files) {
     const f = JSON.parse(readFileSync(new URL(file,root),'utf8'));
     assert.equal(f.v,1);

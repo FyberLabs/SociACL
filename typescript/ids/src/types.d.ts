@@ -22,7 +22,11 @@ export type Reason = 'not-string' | 'empty' | 'too-long' | 'control-char' | 'inv
   | 'rng-failure' | 'missing-history' | 'unretained-link' | 'wallet-required';
 export type Result<T> = { ok: true; value: T } | { ok: false; reason: Reason };
 export type Collection = 'items' | 'rooms' | 'users-legacy';
-export type ParsedSoul = { template: 'object' | 'user' | 'acl' | 'grant' | 'post'; ids: readonly string[] };
+export type ParsedSoul = { template: 'object' | 'user' | 'acl' | 'grant' | 'post' | 'membership' | 'objset'; ids: readonly string[] };
+export type MembershipPredicate = 'same-group' | 'named-circle';
+export type AclRole = 'grant' | 'request' | 'cancel';
+export type SignedAt = Readonly<{ principal: PrincipalId; key: PrincipalId; role: AclRole; issuedAt: number }>;
+export type AclAttestation = Readonly<{ typ: 'sociacl-acl-attest-v1'; principal: PrincipalId; recordId: string; iat: number; exp: number }>;
 export type Siwe = Readonly<{ message: string; signature: `0x${string}` }>;
 export type WalletLink = Readonly<{ v: 1; kind: 'wallet'; principal: PrincipalId; address: Eip55;
   issuedAt: number; nonce: string; keySig: string; siwe: Siwe; attest: string }>;

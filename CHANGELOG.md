@@ -95,6 +95,29 @@
 - The recovery plaintext cap does not grow with the salt. `RECOVERY_ENVELOPE_MAX`
   is 262205. The pre-parse ceiling `RECOVERY_ABSOLUTE_MAX` is 262269.
 
+## sociacl-ids 0.9.0 — unreleased
+
+- Export the shared length-prefix encoder `lengthPrefixed` / `length_prefixed`.
+  Integer fields are decimal strings. Copies in the post and request modules
+  stay where they are.
+- `verifyKeySignature` / `verify_key_signature` checks a SEA P-256 signature
+  over SHA-256. The signature is raw r||s, base64url. High-S and low-S both
+  verify. `signWithKeyring` / `sign_with_keyring` signs with a keyring SEA
+  scalar and returns that encoding.
+- `verifySignedAt` / `verify_signed_at` accepts a present key for a grant,
+  request, or cancel. A retired key is accepted only for a witnessed cancel.
+  A retired grant or request is `bad-signature` even when an attestation is
+  attached. `issuedAt` past `now` is `future-record`. A resolver failure is
+  returned unchanged.
+- `verifyAclAttestation` / `verify_acl_attestation` checks claim type
+  `sociacl-acl-attest-v1`. The claim is exactly `{typ, principal, recordId,
+  iat, exp}`, `iat` equals `issuedAt`, and `exp - iat` is at most 900. It is
+  verified like the other attestations against `ctx.jwks` with `now` set to
+  `issuedAt`. Nothing in this package issues the claim.
+- Add `membershipSoul` (seven segments) and `objectSetSoul` (five segments),
+  and the matching `parseSoul` templates. `post`, `member`, and `objset` are
+  reserved native kinds and mint or parse as `reserved-kind`.
+
 ## sociacl-ids 0.8.0 — unreleased
 
 This version is still untagged, so the witnessed genesis-epub binding lands

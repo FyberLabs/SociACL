@@ -1,0 +1,614 @@
+{
+  "v": 1,
+  "family": "signed-at",
+  "context": {
+    "jwks": {
+      "keys": [
+        {
+          "kty": "EC",
+          "crv": "P-256",
+          "kid": "fixture-1",
+          "x": "UVkLelFRQNLXhMhWCGaP3--Mgv0fW-UkIVVKDcPQM-0",
+          "y": "4MF9qJBKcn2K4b82v4p5Jg0BLwDU2AiI0dC7RP2hbaQ",
+          "alg": "ES256",
+          "use": "sig",
+          "key_ops": [
+            "verify"
+          ]
+        }
+      ]
+    },
+    "pinnedIss": [
+      "https://id.fyberlabs.com/realms/test"
+    ],
+    "now": 1700000060,
+    "genesis": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+    "links": [
+      [
+        "a90854a50712c3e090e4076385bec9d30c6831d5f04838c0589442ca23e74b1b",
+        {
+          "v": 1,
+          "kind": "wallet",
+          "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "address": "0x1efF47bc3a10a45D4B230B5d10E37751FE6AA718",
+          "issuedAt": 1700000000,
+          "nonce": "fixtureNonce123",
+          "keySig": "iGXFYXbObvjtpzvvcJNRvvtTUMBsAmGZTGE7-ad8z7nRrW3jpyOLjUEBtoWqBWcx-jQ9QFDI7q9mA87wjAx9Og",
+          "siwe": {
+            "message": "s3r.ch wants you to sign in with your Ethereum account:\n0x1efF47bc3a10a45D4B230B5d10E37751FE6AA718\n\nSociACL link: a90854a50712c3e090e4076385bec9d30c6831d5f04838c0589442ca23e74b1b\n\nURI: https://s3r.ch/identity/link\nVersion: 1\nChain ID: 1\nNonce: fixtureNonce123\nIssued At: 2023-11-14T22:13:20Z",
+            "signature": "0x84f6351b818c4597a06fbd9ae610321829dd7f9772701523c81e0023ee3738de53b9ea0083ce42b57e0bb525e6760b07cfc370a3e1d52f021f235b1acdfc0da31c"
+          },
+          "attest": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImZpeHR1cmUtMSIsInR5cCI6IkpXVCJ9.eyJ0eXAiOiJzb2NpYWNsLXdhbGxldC1hdHRlc3QtdjEiLCJwcmluY2lwYWwiOiJheGZSOHVFc1FrZjR2T2JsWTZSQThuY0RmWUV0NnpPZzlLRTVSZGlZd3BZLlQtTkM0djRhZjV1TzUtdEtmQS1lRml2T00xZHJNVjdPeTdaQWFEZV9VZlUiLCJsaW5rSWQiOiJhOTA4NTRhNTA3MTJjM2UwOTBlNDA3NjM4NWJlYzlkMzBjNjgzMWQ1ZjA0ODM4YzA1ODk0NDJjYTIzZTc0YjFiIiwiaWF0IjoxNzAwMDAwMDAwLCJleHAiOjE3MDAwMDA2MDB9.DbQ76adinFQJrdClbGXh_FwZd9KeYKAVSQirRzvG-4yP2xbuVLZZLkmSK3ljqUyg51AqPhdXQvvmnOb2axKcbg"
+        }
+      ]
+    ],
+    "policy": {
+      "allowedDomains": [
+        "s3r.ch"
+      ],
+      "allowedUris": [
+        "https://s3r.ch/identity/link"
+      ],
+      "allowedChainIds": [
+        "1"
+      ]
+    },
+    "authenticatedAccounts": [
+      "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+      "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+      "Xsvk0aYzCkTI9--VHUvxZebGtyHvramF-0FmG8bn_Ww.hzRkDEmY_343SwbOGmSi7NgqsDY4T7g9mnmxJ6J9UDI"
+    ],
+    "genesisEpubBindings": [],
+    "rotations": [
+      {
+        "v": 1,
+        "kind": "rotate",
+        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+        "seq": 1,
+        "prevKey": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+        "nextKey": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+        "issuedAt": 1700000030,
+        "retainedLinks": [
+          "a90854a50712c3e090e4076385bec9d30c6831d5f04838c0589442ca23e74b1b"
+        ],
+        "authorizer": {
+          "kind": "wallet",
+          "link": "a90854a50712c3e090e4076385bec9d30c6831d5f04838c0589442ca23e74b1b",
+          "siwe": {
+            "message": "s3r.ch wants you to sign in with your Ethereum account:\n0x1efF47bc3a10a45D4B230B5d10E37751FE6AA718\n\nSociACL link: 01164ac28b53b75b70c3a885ac6221e24d8b124e064bbcaac300262d1a267e38\n\nURI: https://s3r.ch/identity/link\nVersion: 1\nChain ID: 1\nNonce: rotation1234\nIssued At: 2023-11-14T22:13:50Z",
+            "signature": "0xd2b1dc6c76c6c71537e43160954b2e4f4b0a75f082f11a8fb28528cd17c257266088289470b9f725d8a7a29119fee04904740f5f6ca05852ae42c820e9ee66061c"
+          }
+        },
+        "nextSig": "mi0XktDFRJM1rDkLe8H-gf3n6FkpoXB1bTV63Qnp1xoOhx6qMShoMOxYH9NyqE7LgoCpA9X2Qzpe8qw4JLVPDg",
+        "attest": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImZpeHR1cmUtMSIsInR5cCI6IkpXVCJ9.eyJ0eXAiOiJzb2NpYWNsLXJvdGF0ZS1hdHRlc3QtdjIiLCJwcmluY2lwYWwiOiJheGZSOHVFc1FrZjR2T2JsWTZSQThuY0RmWUV0NnpPZzlLRTVSZGlZd3BZLlQtTkM0djRhZjV1TzUtdEtmQS1lRml2T00xZHJNVjdPeTdaQWFEZV9VZlUiLCJuZXh0S2V5IjoiZlBKN0dJMERUMzZLVWpnREJMVWF3OENKYWVKMzhoczFwZ3RJX0VkbW1YZy5CM2RWRU51TzBFQXBQWnJHbjNRdzI3cDlyZVk4NllJcG5nUzNuU0o0YzlFIiwic2VxIjoxLCJpYXQiOjE3MDAwMDAwMzAsImV4cCI6MTcwMDAwMDYzMCwiYXV0aCI6IndhbGxldCIsImxpbmtJZCI6ImE5MDg1NGE1MDcxMmMzZTA5MGU0MDc2Mzg1YmVjOWQzMGM2ODMxZDVmMDQ4MzhjMDU4OTQ0MmNhMjNlNzRiMWIiLCJyZXRhaW5lZExpbmtzIjpbImE5MDg1NGE1MDcxMmMzZTA5MGU0MDc2Mzg1YmVjOWQzMGM2ODMxZDVmMDQ4MzhjMDU4OTQ0MmNhMjNlNzRiMWIiXX0.BqL_3eFkH64k2RsZhUXZp4nSk65Te4lQ97rExVm3wQObF-jko3gi3wQslcA4lBOMo7coproAPB4iaSAFCK5IGw"
+      }
+    ]
+  },
+  "accept": [
+    {
+      "name": "present-grant",
+      "operation": "verify-signed-at",
+      "input": {
+        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+        "sig": "3ReYTMEE4LUBVHM4Wn1_RJRLBJjl7WWjGlqpvWJEHSL8q0Oiufn9YsMTS5a8NPsBFIwTi9bprFtazzKcJ9eX6A",
+        "bytes": "70726573656e742d6772616e74",
+        "issuedAt": 1700000000,
+        "role": "grant"
+      },
+      "rotations": [],
+      "canonical": {
+        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+        "key": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+        "role": "grant",
+        "issuedAt": 1700000000
+      }
+    },
+    {
+      "name": "present-request",
+      "operation": "verify-signed-at",
+      "input": {
+        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+        "sig": "jsL4gQkwbWOwXPxjdzL7JQwvx9mDboTL1_9BZhI2sFBS_Cx8sLSixbhr80h_Bt2u6m5P7UVCgm-uFWVgbaPUoQ",
+        "bytes": "70726573656e742d72657175657374",
+        "issuedAt": 1700000000,
+        "role": "request"
+      },
+      "rotations": [],
+      "canonical": {
+        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+        "key": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+        "role": "request",
+        "issuedAt": 1700000000
+      }
+    },
+    {
+      "name": "present-cancel",
+      "operation": "verify-signed-at",
+      "input": {
+        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+        "sig": "4ZflWDSMuebGcnb8feMB8mJOYlRwDkU1ueYU1O63Qil6YtOzyGVA3hAFqe55Tol6MNwhhtgsykHyFL4VtqMuLQ",
+        "bytes": "70726573656e742d63616e63656c",
+        "issuedAt": 1700000000,
+        "role": "cancel"
+      },
+      "rotations": [],
+      "canonical": {
+        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+        "key": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+        "role": "cancel",
+        "issuedAt": 1700000000
+      }
+    },
+    {
+      "name": "present-grant-ignores-attest",
+      "operation": "verify-signed-at",
+      "input": {
+        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+        "sig": "Nxf9SDBlCVYfYWP6u315qUJlzODSJ61vdDR4DntErIlXog4NqARJpcnCXBkM4WqgNqKSvmSWD36VPVW10ujssQ",
+        "bytes": "70726573656e742d6772616e742d69676e6f7265732d617474657374",
+        "issuedAt": 1700000000,
+        "role": "grant",
+        "attest": "not-a-jws"
+      },
+      "rotations": [],
+      "canonical": {
+        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+        "key": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+        "role": "grant",
+        "issuedAt": 1700000000
+      }
+    },
+    {
+      "name": "present-grant-opposite-s",
+      "operation": "verify-signed-at",
+      "input": {
+        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+        "sig": "TEOsOULC_jeUzBja1R-Sn6CNbiWu1nia_H2i7PbLrfkBZ8LboccELmEx5ObD0uL6GRvREqYOYppU7iZknIRCOQ",
+        "bytes": "70726573656e742d6772616e742d6f70706f736974652d73",
+        "issuedAt": 1700000000,
+        "role": "grant"
+      },
+      "rotations": [],
+      "canonical": {
+        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+        "key": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+        "role": "grant",
+        "issuedAt": 1700000000
+      }
+    },
+    {
+      "name": "present-grant-next-key",
+      "operation": "verify-signed-at",
+      "input": {
+        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+        "sig": "xIzH27nrzHVtwWfwVNqsPQTcpFW34oViYRAS3pgOFUgE-6aDADpnvbmnDbPlGkQBXFuXXvWyhaXtrgeYpH0X2Q",
+        "bytes": "70726573656e742d6772616e742d6e6578742d6b6579",
+        "issuedAt": 1700000040,
+        "role": "grant"
+      },
+      "canonical": {
+        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+        "key": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+        "role": "grant",
+        "issuedAt": 1700000040
+      }
+    },
+    {
+      "name": "retired-cancel-witnessed",
+      "operation": "verify-signed-at",
+      "input": {
+        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+        "sig": "ETyLYHsK9emIJ2eM-xYDe-LIH73HRMJYA2yJVVGrggnCe1gfYiQ-AIDzQA3sWwqI6X5hZSwa0J0dBntjeAaZyA",
+        "bytes": "726574697265642d63616e63656c2d7769746e6573736564",
+        "issuedAt": 1700000010,
+        "role": "cancel",
+        "attest": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImZpeHR1cmUtMSIsInR5cCI6IkpXVCJ9.eyJ0eXAiOiJzb2NpYWNsLWFjbC1hdHRlc3QtdjEiLCJwcmluY2lwYWwiOiJheGZSOHVFc1FrZjR2T2JsWTZSQThuY0RmWUV0NnpPZzlLRTVSZGlZd3BZLlQtTkM0djRhZjV1TzUtdEtmQS1lRml2T00xZHJNVjdPeTdaQWFEZV9VZlUiLCJyZWNvcmRJZCI6IjFmNzg4ODY2NDdlZjE0NDlhNGUwNjU4YjlmMmNkMTY3MDMxZWJkMDFmYTU4ZjAwNmNjNDZhMTYwZGMxYzUxYzMiLCJpYXQiOjE3MDAwMDAwMTAsImV4cCI6MTcwMDAwMDYxMH0.Kkzbvq6pfZvk1CtQk9KCfWJJwh1Zn0PLu-39BGSgRaLlRSodX2Z3s6esa97H_vECfVJSlWrsCngatc8waA2UIg"
+      },
+      "canonical": {
+        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+        "key": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+        "role": "cancel",
+        "issuedAt": 1700000010
+      }
+    },
+    {
+      "name": "retired-cancel-exp-900",
+      "operation": "verify-signed-at",
+      "input": {
+        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+        "sig": "bcVfxrL0T0HTzDykWMRd2iuCE2O8VCWTuP3SHlBlZskT9sKrouGdbdOZ7b726jK3KWg1fKXOYguJhmufP_9mvA",
+        "bytes": "726574697265642d63616e63656c2d6578702d393030",
+        "issuedAt": 1700000010,
+        "role": "cancel",
+        "attest": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImZpeHR1cmUtMSIsInR5cCI6IkpXVCJ9.eyJ0eXAiOiJzb2NpYWNsLWFjbC1hdHRlc3QtdjEiLCJwcmluY2lwYWwiOiJheGZSOHVFc1FrZjR2T2JsWTZSQThuY0RmWUV0NnpPZzlLRTVSZGlZd3BZLlQtTkM0djRhZjV1TzUtdEtmQS1lRml2T00xZHJNVjdPeTdaQWFEZV9VZlUiLCJyZWNvcmRJZCI6IjY1ZjlkOTZmYmUyMzU4MWMwOWZhZGRkNTdmMWYwNGM3NTNjNmMyMzQ4ODA5YTRjNDFiNWU0MzNhY2ZhZDUwMjciLCJpYXQiOjE3MDAwMDAwMTAsImV4cCI6MTcwMDAwMDkxMH0.qtBhqGEA7xVabAglJVuP9JtkU1SCm95hUa5eGf5RBnUFqZaYUIjexwvy4aIyqZeCwiaD-sliNYlcL-DxGWvd_w"
+      },
+      "canonical": {
+        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+        "key": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+        "role": "cancel",
+        "issuedAt": 1700000010
+      }
+    },
+    {
+      "name": "same-second-cancel-witnessed",
+      "operation": "verify-signed-at",
+      "input": {
+        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+        "sig": "D6iPBr07UAAu_BksaT7I0hr41uSJvwD3MYVw7r9sPJPwlXRPuvERSV1UQu62hRXcet57-Two4gFmX5A8Gf_fdg",
+        "bytes": "73616d652d7365636f6e642d63616e63656c",
+        "issuedAt": 1700000030,
+        "role": "cancel",
+        "attest": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImZpeHR1cmUtMSIsInR5cCI6IkpXVCJ9.eyJ0eXAiOiJzb2NpYWNsLWFjbC1hdHRlc3QtdjEiLCJwcmluY2lwYWwiOiJheGZSOHVFc1FrZjR2T2JsWTZSQThuY0RmWUV0NnpPZzlLRTVSZGlZd3BZLlQtTkM0djRhZjV1TzUtdEtmQS1lRml2T00xZHJNVjdPeTdaQWFEZV9VZlUiLCJyZWNvcmRJZCI6IjFkOTQ2YmY4NGM0OTVhY2M1ZWJhZDA1ZTE1YjA2YzcwODI0NGNhNzAwMTI5ZGZhOTgwZWYxYmFkOTlhYTI1ZWYiLCJpYXQiOjE3MDAwMDAwMzAsImV4cCI6MTcwMDAwMDYzMH0.Z_CTLW4XTBKkyodSi9o6pPiUfYZjwmLj7MiylxEYpiYhqSw54nPKESkbN54BXvpSeL-_5OMfdlSWtBAMiooXeA"
+      },
+      "canonical": {
+        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+        "key": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+        "role": "cancel",
+        "issuedAt": 1700000030
+      }
+    },
+    {
+      "name": "acl-attest",
+      "operation": "verify-acl-attest",
+      "input": {
+        "jws": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImZpeHR1cmUtMSIsInR5cCI6IkpXVCJ9.eyJ0eXAiOiJzb2NpYWNsLWFjbC1hdHRlc3QtdjEiLCJwcmluY2lwYWwiOiJheGZSOHVFc1FrZjR2T2JsWTZSQThuY0RmWUV0NnpPZzlLRTVSZGlZd3BZLlQtTkM0djRhZjV1TzUtdEtmQS1lRml2T00xZHJNVjdPeTdaQWFEZV9VZlUiLCJyZWNvcmRJZCI6ImYwNzZmZjc4YWM0NmUxMjg4MzIxOWFjZDBiYzFhYzQ1NWE5Yzk2MDA3MWZkYmVmZTllYjllOTBkYzMxNzBlZGQiLCJpYXQiOjE3MDAwMDAwMDAsImV4cCI6MTcwMDAwMDYwMH0.73k-P8ebhGQB54-6dfikPB00ArCNkgRXdhgUc9cxXwwmRSYYfEEfXlDJR0-v-3t43quE-EjyYBpzDwf6cri1uQ",
+        "issuedAt": 1700000000,
+        "bytes": "61636c2d617474657374"
+      },
+      "canonical": {
+        "typ": "sociacl-acl-attest-v1",
+        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+        "recordId": "f076ff78ac46e12883219acd0bc1ac455a9c960071fdbefe9eb9e90dc3170edd",
+        "iat": 1700000000,
+        "exp": 1700000600
+      }
+    },
+    {
+      "name": "key-signature",
+      "operation": "verify-key-signature",
+      "input": {
+        "key": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+        "sig": "3ReYTMEE4LUBVHM4Wn1_RJRLBJjl7WWjGlqpvWJEHSL8q0Oiufn9YsMTS5a8NPsBFIwTi9bprFtazzKcJ9eX6A",
+        "bytes": "70726573656e742d6772616e74"
+      },
+      "canonical": true
+    },
+    {
+      "name": "sign-with-keyring",
+      "operation": "sign-with-keyring",
+      "input": {
+        "seaPriv": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAE",
+        "bytes": "70726573656e742d6772616e74"
+      },
+      "canonical": "3ReYTMEE4LUBVHM4Wn1_RJRLBJjl7WWjGlqpvWJEHSL8q0Oiufn9YsMTS5a8NPsBFIwTi9bprFtazzKcJ9eX6A"
+    }
+  ],
+  "reject": [
+    {
+      "name": "retired-grant-witnessed",
+      "operation": "verify-signed-at",
+      "input": {
+        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+        "sig": "TqqNk_fdayqUpJrJygoLTQIjvkwQ5szmGiQhzNlECdJPXeGg27_FTz1hoQecquaVb7uAS63nVZuiiTvdBJLuFg",
+        "bytes": "726574697265642d6772616e74",
+        "issuedAt": 1700000010,
+        "role": "grant",
+        "attest": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImZpeHR1cmUtMSIsInR5cCI6IkpXVCJ9.eyJ0eXAiOiJzb2NpYWNsLWFjbC1hdHRlc3QtdjEiLCJwcmluY2lwYWwiOiJheGZSOHVFc1FrZjR2T2JsWTZSQThuY0RmWUV0NnpPZzlLRTVSZGlZd3BZLlQtTkM0djRhZjV1TzUtdEtmQS1lRml2T00xZHJNVjdPeTdaQWFEZV9VZlUiLCJyZWNvcmRJZCI6IjVmZGI3YmU0MDU0ODBkMmMwODZjZDY3NDU3M2I5YmRmM2Y5ZjFkZmFlMjljMmRjYTM4YWE5NGQwMTU1OTI5MDkiLCJpYXQiOjE3MDAwMDAwMTAsImV4cCI6MTcwMDAwMDYxMH0.Qbm4rVlu7RkGxp8NRgBx_PyLv4apzXtGlirjQpmW3I_iq8jqFUWZ6APWT7mp3G3-Ecjts1EBecL6MdScFvLSBA"
+      },
+      "reason": "bad-signature"
+    },
+    {
+      "name": "retired-request-witnessed",
+      "operation": "verify-signed-at",
+      "input": {
+        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+        "sig": "1_VjMjeQqmgLQh7QxxSfaV0ApAhdisAPonGljoAMbE0xh-eWA1kZRgRXMsnaXVSPhMnio2OPwImsDohyoPJInQ",
+        "bytes": "726574697265642d72657175657374",
+        "issuedAt": 1700000010,
+        "role": "request",
+        "attest": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImZpeHR1cmUtMSIsInR5cCI6IkpXVCJ9.eyJ0eXAiOiJzb2NpYWNsLWFjbC1hdHRlc3QtdjEiLCJwcmluY2lwYWwiOiJheGZSOHVFc1FrZjR2T2JsWTZSQThuY0RmWUV0NnpPZzlLRTVSZGlZd3BZLlQtTkM0djRhZjV1TzUtdEtmQS1lRml2T00xZHJNVjdPeTdaQWFEZV9VZlUiLCJyZWNvcmRJZCI6ImI5NDg2OGVlNTA4OTIwN2RkYjE0NWUzOTc5ODllMmVkZjgzMDM4MDkyNjMyZTUzMTc3MTAwZTZiMmUzMjM1ZjUiLCJpYXQiOjE3MDAwMDAwMTAsImV4cCI6MTcwMDAwMDYxMH0.VFBAw5qyFaDS4W8BAMWrTze4gi7LnJRDgoNoE4fvfYZS_fC21TO7JQI74YIkAse5azTN6kRmN8dbIVgF2nhSnA"
+      },
+      "reason": "bad-signature"
+    },
+    {
+      "name": "retired-cancel-unwitnessed",
+      "operation": "verify-signed-at",
+      "input": {
+        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+        "sig": "4bjLnDLPSwx5YRb8fcqeaD5YEfacaryGm1tEl5_-ywonzg9naqvlGcyVqp6hw6BVmJUEn_xIoP0DSSEyRRBdcw",
+        "bytes": "726574697265642d63616e63656c",
+        "issuedAt": 1700000010,
+        "role": "cancel"
+      },
+      "reason": "bad-attestation"
+    },
+    {
+      "name": "future-record",
+      "operation": "verify-signed-at",
+      "input": {
+        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+        "sig": "uEAAqcDMXFv6682eGuXc8fr7vQlfEWF9KvUMLxqTRk16vTKpcKQVySmEE89pPEd2OREo6k7GYMycT0rviaoYrA",
+        "bytes": "667574757265",
+        "issuedAt": 1700000061,
+        "role": "grant"
+      },
+      "rotations": [],
+      "reason": "future-record"
+    },
+    {
+      "name": "retired-cancel-bad-jws",
+      "operation": "verify-signed-at",
+      "input": {
+        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+        "sig": "23WwndLbGGkVyW6CJpoaMiIrUrrUCZQb4gzO0n6lwxvT1RYIGMw4lMiGrRzIbyO_WfslR69yUZhegdynI3TTEg",
+        "bytes": "6261642d6a7773",
+        "issuedAt": 1700000010,
+        "role": "cancel",
+        "attest": "a.b.c"
+      },
+      "reason": "bad-attestation"
+    },
+    {
+      "name": "retired-cancel-wrong-record",
+      "operation": "verify-signed-at",
+      "input": {
+        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+        "sig": "b5pEXAmh9CR0rp_i7BA_5FmsaGx98DmS4yei9fR2aQhvmjUF4gr8r429FlDFAn9GiWdkdXzCQ2_V48sn3o15QA",
+        "bytes": "77726f6e672d7265636f7264",
+        "issuedAt": 1700000010,
+        "role": "cancel",
+        "attest": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImZpeHR1cmUtMSIsInR5cCI6IkpXVCJ9.eyJ0eXAiOiJzb2NpYWNsLWFjbC1hdHRlc3QtdjEiLCJwcmluY2lwYWwiOiJheGZSOHVFc1FrZjR2T2JsWTZSQThuY0RmWUV0NnpPZzlLRTVSZGlZd3BZLlQtTkM0djRhZjV1TzUtdEtmQS1lRml2T00xZHJNVjdPeTdaQWFEZV9VZlUiLCJyZWNvcmRJZCI6IjAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAiLCJpYXQiOjE3MDAwMDAwMTAsImV4cCI6MTcwMDAwMDYxMH0.-uojD5C2OjdHK7WwR2lbhtNIWZqqS81ij3i1sUkqM7v0OHljuxyeaKs6KKmEO3QaW_uFbrvZ2Rt9slMgDn45hA"
+      },
+      "reason": "bad-attestation"
+    },
+    {
+      "name": "retired-cancel-iat-mismatch",
+      "operation": "verify-signed-at",
+      "input": {
+        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+        "sig": "V2ZIp1DT2Yt4zEo9MS9p8X3OykdTS0DuQy766URaHFvvsR77XEGaakY9zglYoxhOdCk-r2xd44cB5M4B_9QyVQ",
+        "bytes": "6961742d6d69736d61746368",
+        "issuedAt": 1700000010,
+        "role": "cancel",
+        "attest": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImZpeHR1cmUtMSIsInR5cCI6IkpXVCJ9.eyJ0eXAiOiJzb2NpYWNsLWFjbC1hdHRlc3QtdjEiLCJwcmluY2lwYWwiOiJheGZSOHVFc1FrZjR2T2JsWTZSQThuY0RmWUV0NnpPZzlLRTVSZGlZd3BZLlQtTkM0djRhZjV1TzUtdEtmQS1lRml2T00xZHJNVjdPeTdaQWFEZV9VZlUiLCJyZWNvcmRJZCI6IjEwMmRmMjk0NjNmNjc1YTZkNzFmNzgwZmEyZGJiMWRiN2IwZDkyZjI1NWIxZTNjMzAyM2IyYWExNTJlNDg5NTMiLCJpYXQiOjE3MDAwMDAwMDksImV4cCI6MTcwMDAwMDYxMH0.c6fXAg0R-eiD1SqRzBMmyNOdbodw_QHuNq-koqVLFyTVrob-HPzclZj1OInPNcHJ99MagoKwzky8cp7kJW8x7g"
+      },
+      "reason": "bad-attestation"
+    },
+    {
+      "name": "retired-cancel-window-901",
+      "operation": "verify-signed-at",
+      "input": {
+        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+        "sig": "rPA5na-ij1UQGeASY-mKfCi62X65t3rawP1Ha-i_VK-_3EdwUEQv6cPEU5YWM6HsM0gp3jpmbp8xP51BvEcxRg",
+        "bytes": "77696e646f772d393031",
+        "issuedAt": 1700000010,
+        "role": "cancel",
+        "attest": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImZpeHR1cmUtMSIsInR5cCI6IkpXVCJ9.eyJ0eXAiOiJzb2NpYWNsLWFjbC1hdHRlc3QtdjEiLCJwcmluY2lwYWwiOiJheGZSOHVFc1FrZjR2T2JsWTZSQThuY0RmWUV0NnpPZzlLRTVSZGlZd3BZLlQtTkM0djRhZjV1TzUtdEtmQS1lRml2T00xZHJNVjdPeTdaQWFEZV9VZlUiLCJyZWNvcmRJZCI6IjI5ZjZiMDc4MTU4NmU1YWFhYjc3MTU3N2MwZThiNTlmNzQyNWI0MWY5MjA3MWIwYmUwYTYyNzliZjFhNTVmMzEiLCJpYXQiOjE3MDAwMDAwMTAsImV4cCI6MTcwMDAwMDkxMX0.YMLUlUuHmrtUg3ocdCkQG2JUz1jVACCdnqtUK3rMBIVgXzgLL8pxT_bcId6V6YDHlP242zy1kW_aX1A-56CG5Q"
+      },
+      "reason": "bad-attestation"
+    },
+    {
+      "name": "retired-cancel-wrong-principal",
+      "operation": "verify-signed-at",
+      "input": {
+        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+        "sig": "LuOvo-n5SH6LQCbJfQaKY8uMi4EFDjboUKRDVlZy-0oiaGOwwWcsfjiOVVz4asBpKptN6R85oigeSjzpeM-cWw",
+        "bytes": "77726f6e672d7072696e636970616c",
+        "issuedAt": 1700000010,
+        "role": "cancel",
+        "attest": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImZpeHR1cmUtMSIsInR5cCI6IkpXVCJ9.eyJ0eXAiOiJzb2NpYWNsLWFjbC1hdHRlc3QtdjEiLCJwcmluY2lwYWwiOiJmUEo3R0kwRFQzNktVamdEQkxVYXc4Q0phZUozOGhzMXBndElfRWRtbVhnLkIzZFZFTnVPMEVBcFBackduM1F3MjdwOXJlWTg2WUlwbmdTM25TSjRjOUUiLCJyZWNvcmRJZCI6IjYzMTlmOGJlNjg3MmNlNGUwMzQyMzg4NjRhZmYyYzMyZGJmZTg3MzdhMjI5NWU5OGEyNWE1ZTg5NzljYzA3NGYiLCJpYXQiOjE3MDAwMDAwMTAsImV4cCI6MTcwMDAwMDYxMH0.Ws0nJUJ_tPEYRUzN1IUU7gkoqh_qnCqlNzSEpFMygN-rtwueNqsJM9z5FfCSKqVUMVe2IKgb1rKwLYrmX9RpdA"
+      },
+      "reason": "bad-attestation"
+    },
+    {
+      "name": "bad-signature",
+      "operation": "verify-signed-at",
+      "input": {
+        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+        "sig": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "bytes": "6261642d7369676e6174757265",
+        "issuedAt": 1700000000,
+        "role": "grant"
+      },
+      "rotations": [],
+      "reason": "bad-signature"
+    },
+    {
+      "name": "backdated-next-key",
+      "operation": "verify-signed-at",
+      "input": {
+        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+        "sig": "4OjbhQ491S65pqvMT019woIk20KWQW5mpTKYvYZok_z8zEa_Sm0BBXVGeXphjHNCzoQV_XkKkQ6wdCdxbDQmgg",
+        "bytes": "6261636b64617465642d6e6578742d6b6579",
+        "issuedAt": 1700000010,
+        "role": "grant"
+      },
+      "reason": "bad-signature"
+    },
+    {
+      "name": "same-second-retired-grant",
+      "operation": "verify-signed-at",
+      "input": {
+        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+        "sig": "r8EvfgjJTjgYbV320teLvnRuYv1EOk4OO0N9uVh6-ca1uvlVBJe3Nz5vevJrzw6-TJP_ZkdBBFMQ2acA9Cg0ew",
+        "bytes": "73616d652d7365636f6e642d6772616e74",
+        "issuedAt": 1700000030,
+        "role": "grant"
+      },
+      "reason": "bad-signature"
+    },
+    {
+      "name": "missing-history",
+      "operation": "verify-signed-at",
+      "input": {
+        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+        "sig": "3ReYTMEE4LUBVHM4Wn1_RJRLBJjl7WWjGlqpvWJEHSL8q0Oiufn9YsMTS5a8NPsBFIwTi9bprFtazzKcJ9eX6A",
+        "bytes": "70726573656e742d6772616e74",
+        "issuedAt": 1700000000,
+        "role": "grant"
+      },
+      "now": 9007199254740992,
+      "reason": "missing-history"
+    },
+    {
+      "name": "rotation-fork",
+      "operation": "verify-signed-at",
+      "input": {
+        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+        "sig": "3ReYTMEE4LUBVHM4Wn1_RJRLBJjl7WWjGlqpvWJEHSL8q0Oiufn9YsMTS5a8NPsBFIwTi9bprFtazzKcJ9eX6A",
+        "bytes": "70726573656e742d6772616e74",
+        "issuedAt": 1700000000,
+        "role": "grant"
+      },
+      "rotations": [
+        {
+          "v": 1,
+          "kind": "rotate",
+          "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "seq": 1,
+          "prevKey": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "nextKey": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "issuedAt": 1700000030,
+          "retainedLinks": [
+            "a90854a50712c3e090e4076385bec9d30c6831d5f04838c0589442ca23e74b1b"
+          ],
+          "authorizer": {
+            "kind": "wallet",
+            "link": "a90854a50712c3e090e4076385bec9d30c6831d5f04838c0589442ca23e74b1b",
+            "siwe": {
+              "message": "s3r.ch wants you to sign in with your Ethereum account:\n0x1efF47bc3a10a45D4B230B5d10E37751FE6AA718\n\nSociACL link: 01164ac28b53b75b70c3a885ac6221e24d8b124e064bbcaac300262d1a267e38\n\nURI: https://s3r.ch/identity/link\nVersion: 1\nChain ID: 1\nNonce: rotation1234\nIssued At: 2023-11-14T22:13:50Z",
+              "signature": "0xd2b1dc6c76c6c71537e43160954b2e4f4b0a75f082f11a8fb28528cd17c257266088289470b9f725d8a7a29119fee04904740f5f6ca05852ae42c820e9ee66061c"
+            }
+          },
+          "nextSig": "mi0XktDFRJM1rDkLe8H-gf3n6FkpoXB1bTV63Qnp1xoOhx6qMShoMOxYH9NyqE7LgoCpA9X2Qzpe8qw4JLVPDg",
+          "attest": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImZpeHR1cmUtMSIsInR5cCI6IkpXVCJ9.eyJ0eXAiOiJzb2NpYWNsLXJvdGF0ZS1hdHRlc3QtdjIiLCJwcmluY2lwYWwiOiJheGZSOHVFc1FrZjR2T2JsWTZSQThuY0RmWUV0NnpPZzlLRTVSZGlZd3BZLlQtTkM0djRhZjV1TzUtdEtmQS1lRml2T00xZHJNVjdPeTdaQWFEZV9VZlUiLCJuZXh0S2V5IjoiZlBKN0dJMERUMzZLVWpnREJMVWF3OENKYWVKMzhoczFwZ3RJX0VkbW1YZy5CM2RWRU51TzBFQXBQWnJHbjNRdzI3cDlyZVk4NllJcG5nUzNuU0o0YzlFIiwic2VxIjoxLCJpYXQiOjE3MDAwMDAwMzAsImV4cCI6MTcwMDAwMDYzMCwiYXV0aCI6IndhbGxldCIsImxpbmtJZCI6ImE5MDg1NGE1MDcxMmMzZTA5MGU0MDc2Mzg1YmVjOWQzMGM2ODMxZDVmMDQ4MzhjMDU4OTQ0MmNhMjNlNzRiMWIiLCJyZXRhaW5lZExpbmtzIjpbImE5MDg1NGE1MDcxMmMzZTA5MGU0MDc2Mzg1YmVjOWQzMGM2ODMxZDVmMDQ4MzhjMDU4OTQ0MmNhMjNlNzRiMWIiXX0.BqL_3eFkH64k2RsZhUXZp4nSk65Te4lQ97rExVm3wQObF-jko3gi3wQslcA4lBOMo7coproAPB4iaSAFCK5IGw"
+        },
+        {
+          "v": 1,
+          "kind": "rotate",
+          "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "seq": 1,
+          "prevKey": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "nextKey": "Xsvk0aYzCkTI9--VHUvxZebGtyHvramF-0FmG8bn_Ww.hzRkDEmY_343SwbOGmSi7NgqsDY4T7g9mnmxJ6J9UDI",
+          "issuedAt": 1700000030,
+          "retainedLinks": [
+            "a90854a50712c3e090e4076385bec9d30c6831d5f04838c0589442ca23e74b1b"
+          ],
+          "authorizer": {
+            "kind": "wallet",
+            "link": "a90854a50712c3e090e4076385bec9d30c6831d5f04838c0589442ca23e74b1b",
+            "siwe": {
+              "message": "s3r.ch wants you to sign in with your Ethereum account:\n0x1efF47bc3a10a45D4B230B5d10E37751FE6AA718\n\nSociACL link: e4a778b52d98c849eb8d0757ed6d89b585cd969b6763ef6e775d456a402cfd7c\n\nURI: https://s3r.ch/identity/link\nVersion: 1\nChain ID: 1\nNonce: rotation1234\nIssued At: 2023-11-14T22:13:50Z",
+              "signature": "0xe4c2536dfa0cee42040839b5bb0ddfd871d673ec38f387855a7fea14ae93b672557db827c32a6b2489ec0d8914c8c882f8b15736d28a25f29b28cf7bbbfc77801c"
+            }
+          },
+          "nextSig": "64B5Mzos1e7-5ar797qkuvaEyRDAoBJKthCykMljQcV5tqFUt79UTk6furV-5A18zixqs_d6cpRn5fqR4U7AEw",
+          "attest": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImZpeHR1cmUtMSIsInR5cCI6IkpXVCJ9.eyJ0eXAiOiJzb2NpYWNsLXJvdGF0ZS1hdHRlc3QtdjIiLCJwcmluY2lwYWwiOiJheGZSOHVFc1FrZjR2T2JsWTZSQThuY0RmWUV0NnpPZzlLRTVSZGlZd3BZLlQtTkM0djRhZjV1TzUtdEtmQS1lRml2T00xZHJNVjdPeTdaQWFEZV9VZlUiLCJuZXh0S2V5IjoiWHN2azBhWXpDa1RJOS0tVkhVdnhaZWJHdHlIdnJhbUYtMEZtRzhibl9Xdy5oelJrREVtWV8zNDNTd2JPR21TaTdOZ3FzRFk0VDdnOW1ubXhKNko5VURJIiwic2VxIjoxLCJpYXQiOjE3MDAwMDAwMzAsImV4cCI6MTcwMDAwMDYzMCwiYXV0aCI6IndhbGxldCIsImxpbmtJZCI6ImE5MDg1NGE1MDcxMmMzZTA5MGU0MDc2Mzg1YmVjOWQzMGM2ODMxZDVmMDQ4MzhjMDU4OTQ0MmNhMjNlNzRiMWIiLCJyZXRhaW5lZExpbmtzIjpbImE5MDg1NGE1MDcxMmMzZTA5MGU0MDc2Mzg1YmVjOWQzMGM2ODMxZDVmMDQ4MzhjMDU4OTQ0MmNhMjNlNzRiMWIiXX0.rASh9gJuiB7veAY983uVIaHqGW2NtRCcPpdBItMgx2cmJkBsPG2o3kyJ_9mwOPcEAPJhxDhE-MR6jsqI9hdGGw"
+        }
+      ],
+      "reason": "rotation-fork"
+    },
+    {
+      "name": "null-row",
+      "operation": "verify-signed-at",
+      "input": null,
+      "rotations": [],
+      "reason": "bad-record"
+    },
+    {
+      "name": "role-hop",
+      "operation": "verify-signed-at",
+      "input": {
+        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+        "sig": "DNqQ5CBiTcBa9uOQYH6NVWkPMjPLxiMwiflOLFgZED2Pl-9PJd_nF_P29Kc0XrugAho-XOMppKBnQYoXmcHmJQ",
+        "bytes": "726f6c652d686f70",
+        "issuedAt": 1700000000,
+        "role": "hop"
+      },
+      "rotations": [],
+      "reason": "bad-record"
+    },
+    {
+      "name": "role-hint",
+      "operation": "verify-signed-at",
+      "input": {
+        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+        "sig": "PQF5_C8ZubQ2LbM1xaz1KWfLV0GYFOFqhHywpDp5WMwOvnKFgGjxGbJ2G2jm3mTOaOKyEK54w2rwNAruwnjcjA",
+        "bytes": "726f6c652d68696e74",
+        "issuedAt": 1700000000,
+        "role": "hint"
+      },
+      "rotations": [],
+      "reason": "bad-record"
+    },
+    {
+      "name": "role-wrap",
+      "operation": "verify-signed-at",
+      "input": {
+        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+        "sig": "lKzEpqN8VgEZTuD57G6bJubsBtf0vSI0_Da06NYZAjqoPeiwLrW2_obhRENzEP-53v4zGgSVtMSA3jyhnTL-Fg",
+        "bytes": "726f6c652d77726170",
+        "issuedAt": 1700000000,
+        "role": "wrap"
+      },
+      "rotations": [],
+      "reason": "bad-record"
+    },
+    {
+      "name": "role-inbox",
+      "operation": "verify-signed-at",
+      "input": {
+        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+        "sig": "Cj93X4swfFTnv3pyhl-Ox2XViOoBJESN9oChxy8mdxqOZdBV0x8VzihxvI1aCIwX2SRlAsRRXrmXZn-Q8npyHw",
+        "bytes": "726f6c652d696e626f78",
+        "issuedAt": 1700000000,
+        "role": "inbox"
+      },
+      "rotations": [],
+      "reason": "bad-record"
+    },
+    {
+      "name": "non-string-attest",
+      "operation": "verify-signed-at",
+      "input": {
+        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+        "sig": "38hCHTyjl8yKRMB6PDMB6kT2jcosw1a0E3AOa0X_h8zWJ5n7yjx0Uw5FRiQQ1tzWNmOIDV5fhH6BtLCOYc7q2g",
+        "bytes": "6e6f6e2d737472696e672d617474657374",
+        "issuedAt": 1700000000,
+        "role": "grant",
+        "attest": 1
+      },
+      "rotations": [],
+      "reason": "bad-record"
+    },
+    {
+      "name": "key-signature-bad",
+      "operation": "verify-key-signature",
+      "input": {
+        "key": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+        "sig": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "bytes": "70726573656e742d6772616e74"
+      },
+      "reason": "bad-signature"
+    },
+    {
+      "name": "acl-attest-bad",
+      "operation": "verify-acl-attest",
+      "input": {
+        "jws": "a.b.c",
+        "issuedAt": 1700000000,
+        "bytes": "61636c2d617474657374"
+      },
+      "reason": "bad-attestation"
+    },
+    {
+      "name": "sign-with-keyring-bad",
+      "operation": "sign-with-keyring",
+      "input": {
+        "seaPriv": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "bytes": "70726573656e742d6772616e74"
+      },
+      "reason": "bad-signature"
+    }
+  ]
+}

@@ -45,7 +45,7 @@ test('10k roundtrips, idempotence, injectivity and segment safety across all fam
     const changed=val(ids.parseObjectId('chat_'+hex(object)));
     assert.notEqual(ids.objectKey(o),ids.objectKey(changed));
     assert.notEqual(ids.formatOidcKey(c),ids.formatOidcKey({...c,sub:c.sub+'x'}));
-    for(const [s,count] of [[ids.objectSoul('items',o),3],[ids.aclSoul(p),3],[ids.grantSoul(p,o,p),5],[ids.postSoul(p,o,p),6]]) {
+    for(const [s,count] of [[ids.objectSoul('items',o),3],[ids.aclSoul(p),3],[ids.grantSoul(p,o,p),5],[ids.postSoul(p,o,p),6],[ids.membershipSoul(p,'same-group',o,p),7],[ids.objectSetSoul(p,o),5]]) {
       assert.equal(s.split('/').length,count); s.split('/').forEach(k=>assert.match(k,/^[A-Za-z0-9_:-]+$/)); val(ids.parseSoul(s));
     }
     const user=val(ids.parseSoul(ids.userSoul(p))); assert.deepEqual(user,{template:'user',ids:[p]});

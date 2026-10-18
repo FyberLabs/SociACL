@@ -136,6 +136,10 @@ pub(crate) fn unb64(s: &str) -> Result<Vec<u8>, Reason> {
     }
     Ok(b)
 }
+/// Little-endian UTF-8 length prefix. Integer fields are decimal strings.
+pub fn length_prefixed(fields: &[&str]) -> Vec<u8> {
+    lp(fields)
+}
 pub(crate) fn lp(fields: &[&str]) -> Vec<u8> {
     let mut out = Vec::new();
     for s in fields {

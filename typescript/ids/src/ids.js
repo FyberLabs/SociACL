@@ -3,7 +3,7 @@ import { p256 } from '@noble/curves/nist.js';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { keccak_256 } from '@noble/hashes/sha3.js';
 import { ok, fail, text, data, b64, unb64, hex, unhex, utf8, lengthPrefixed } from './util.js';
-/** @import {PrincipalId, PrincipalKey, Eip55, TenantId, OidcCredential, ObjectId, MintedObjectId, NetworkId, SourceKey, PathKey, Soul, Result, Collection, ParsedSoul} from './types.js' */
+/** @import {PrincipalId, PrincipalKey, Eip55, TenantId, OidcCredential, ObjectId, MintedObjectId, NetworkId, SourceKey, PathKey, Soul, Result, Collection, ParsedSoul, MembershipPredicate} from './types.js' */
 
 /** @param {unknown} x @returns {Result<PrincipalId>} */
 export function parsePrincipalId(x) {
@@ -60,7 +60,7 @@ export function parseObjectId(x) {
   const s = t.value;
   if (/^(claim|ext)_[0-9a-f]{64}$/.test(s)) return ok(/** @type {ObjectId} */ (s));
   const m = /^([a-z][a-z0-9]{1,15})_([0-9a-f]{32})$/.exec(s);
-  if (m) return ['claim', 'ext'].includes(m[1]) ? fail('reserved-kind') : ok(/** @type {ObjectId} */ (s));
+  if (m) return ['claim', 'ext', 'post', 'member', 'objset'].includes(m[1]) ? fail('reserved-kind') : ok(/** @type {ObjectId} */ (s));
   if (/^[a-z][a-z0-9]{1,15}_[0-9a-f]{32,64}$/i.test(s) && s !== s.toLowerCase()) return fail('non-canonical');
   const legacy = /^s3rch:(?:(?:room|chat|forum-msg):(0x[0-9a-fA-F]{40}):[0-9]{1,12}:[a-z0-9]{1,64}|(?:forum-group|bot):(0x[0-9a-fA-F]{40}):[a-z0-9]{1,64}|forum:(0x[0-9a-fA-F]{40}))$/.exec(s);
   if (!legacy) return fail('bad-alphabet');
@@ -146,6 +146,13 @@ export const aclSoul = p => soul(['s3rch', 'acl', formatPrincipalKey(p)], 3);
 export const grantSoul = (owner, object, accessor) => soul(['s3rch', 'acl', formatPrincipalKey(owner), objectKey(object), formatPrincipalKey(accessor)], 5);
 /** @param {PrincipalId} owner @param {ObjectId} object @param {PrincipalId} accessor */
 export const postSoul = (owner, object, accessor) => soul(['s3rch', 'acl', formatPrincipalKey(owner), 'post', objectKey(object), formatPrincipalKey(accessor)], 6);
+/** @param {PrincipalId} owner @param {MembershipPredicate} predicate @param {ObjectId} set @param {PrincipalId} accessor */
+export function membershipSoul(owner, predicate, set, accessor) {
+  if (predicate !== 'same-group' && predicate !== 'named-circle') throw Error('invalid membership predicate');
+  return soul(['s3rch', 'acl', formatPrincipalKey(owner), 'member', predicate, objectKey(set), formatPrincipalKey(accessor)], 7);
+}
+/** @param {PrincipalId} owner @param {ObjectId} object */
+export const objectSetSoul = (owner, object) => soul(['s3rch', 'acl', formatPrincipalKey(owner), 'objset', objectKey(object)], 5);
 /** @param {unknown} x @returns {Result<PrincipalId>} */
 function keyPrincipal(x) {
   const t = text(x, 160); if (!t.ok) return t;
@@ -164,6 +171,18 @@ export function parseSoul(x) {
   if (a.length === 3 && ['items', 'rooms', 'users-legacy'].includes(a[1])) {
     const o = parseObjectId(a[2]); return o.ok ? ok({ template: 'object', ids: [a[1], o.value] }) : o;
   }
+  if (a[1] === 'acl' && a.length === 5 && a[3] === 'objset') {
+    const owner = keyPrincipal(a[2]); if (!owner.ok) return owner;
+    const object = parseObjectId(a[4]); if (!object.ok) return object;
+    return ok({ template: 'objset', ids: [owner.value, object.value] });
+  }
+  if (a[1] === 'acl' && a.length === 7 && a[3] === 'member') {
+    if (a[4] !== 'same-group' && a[4] !== 'named-circle') return fail('bad-template');
+    const owner = keyPrincipal(a[2]); if (!owner.ok) return owner;
+    const set = parseObjectId(a[5]); if (!set.ok) return set;
+    const accessor = keyPrincipal(a[6]); if (!accessor.ok) return accessor;
+    return ok({ template: 'membership', ids: [owner.value, a[4], set.value, accessor.value] });
+  }
   if (a[1] !== 'acl' || ![3, 5, 6].includes(a.length) || (a.length === 6 && a[3] !== 'post')) return fail('bad-template');
   const p = keyPrincipal(a[2]); if (!p.ok) return p;
   if (a.length === 3) return ok({ template: 'acl', ids: [p.value] });
@@ -175,7 +194,7 @@ export function parseSoul(x) {
 export function mintObjectId(kind, rng = n => crypto.getRandomValues(new Uint8Array(n))) {
   const k = text(kind, 16); if (!k.ok) return k;
   if (!/^[a-z][a-z0-9]{1,15}$/.test(k.value)) return fail('bad-alphabet');
-  if (['claim', 'ext'].includes(k.value)) return fail('reserved-kind');
+  if (['claim', 'ext', 'post', 'member', 'objset'].includes(k.value)) return fail('reserved-kind');
   try {
     const bytes = rng(16);
     if (!(bytes instanceof Uint8Array) || bytes.length !== 16) return fail('rng-failure');

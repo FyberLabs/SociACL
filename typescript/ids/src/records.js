@@ -3,10 +3,10 @@ import { p256 } from '@noble/curves/nist.js';
 import { secp256k1 } from '@noble/curves/secp256k1.js';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { keccak_256 } from '@noble/hashes/sha3.js';
-import { ok, fail, text, data, integer, unb64, hex, unhex, utf8, lengthPrefixed } from './util.js';
+import { ok, fail, text, data, integer, b64, unb64, hex, unhex, utf8, lengthPrefixed } from './util.js';
 import { parsePrincipalId, parseEip55, parseOidcCredential, checksum } from './ids.js';
 import { uniqueJson } from './json.js';
-/** @import {PrincipalId, Eip55, Result, WalletLink, OidcLink, Rotate, Revoke, GenesisEpub, IdentityRecord, UnsignedRecord, Jwks, Siwe, ResolutionContext, SiwePolicy, HistoryResolver, KeyState, Diagnostic, Resolution, ResolvedAccount} from './types.js' */
+/** @import {PrincipalId, Eip55, Result, WalletLink, OidcLink, Rotate, Revoke, GenesisEpub, IdentityRecord, UnsignedRecord, Jwks, Siwe, ResolutionContext, SiwePolicy, HistoryResolver, KeyState, Diagnostic, Resolution, ResolvedAccount, SignedAt, AclAttestation, AclRole} from './types.js' */
 
 /** @param {Record<string, unknown>} r @param {string[]} keys */
 const only = (r, keys) => Object.keys(r).every(k => keys.includes(k));
@@ -736,6 +736,73 @@ function resolveWallet(address, links, revocations, ctx, present) {
   if (!h.ok) return {...h,diagnostics};
   const revoked=revokedAt(newest,revocations,h.value.currentKey,ctx.now,ctx.jwks,diagnostics,present);
   return { ...(revoked ? fail('revoked-link') : ok(newest)), diagnostics };
+}
+/** SEA P-256 ECDSA over SHA-256. Raw r||s, base64url. High-S and low-S both verify.
+ * @param {PrincipalId} key @param {string} sig @param {Uint8Array} bytes @returns {Result<true>} */
+export function verifyKeySignature(key, sig, bytes) {
+  const p = parsePrincipalId(key); if (!p.ok) return p;
+  const s = text(sig, 128); if (!s.ok) return s;
+  if (!(bytes instanceof Uint8Array)) return fail('bad-signature');
+  return keyVerify(p.value, s.value, bytes) ? ok(true) : fail('bad-signature');
+}
+/** Sign ids bytes with a keyring SEA scalar (base64url of the 32-byte private key).
+ * The result is raw r||s, base64url, the encoding verifyKeySignature accepts.
+ * @param {string} seaPriv @param {Uint8Array} bytes @returns {Result<string>} */
+export function signWithKeyring(seaPriv, bytes) {
+  const t = text(seaPriv, 128); if (!t.ok) return t;
+  if (!(bytes instanceof Uint8Array)) return fail('bad-signature');
+  try {
+    const scalar = unb64(t.value);
+    if (scalar.length !== 32) return fail('bad-signature');
+    return ok(b64(p256.sign(bytes, scalar, { prehash: true, lowS: false, format: 'compact' })));
+  } catch { return fail('bad-signature'); }
+}
+/** @param {Uint8Array} bytes */
+function recordIdOf(bytes) { return hex(sha256(bytes)); }
+/** sociacl-acl-attest-v1. Checked like attestVerify with now = issuedAt.
+ * Nothing in this package issues the claim.
+ * @param {string} jws @param {Jwks} jwks @param {number} issuedAt @param {Uint8Array} bytes @returns {Result<AclAttestation>} */
+export function verifyAclAttestation(jws, jwks, issuedAt, bytes) {
+  if (!integer(issuedAt) || !(bytes instanceof Uint8Array)) return fail('bad-attestation');
+  const a = attestVerify(jws, jwks, issuedAt); if (!a.ok) return a;
+  const c = a.value;
+  if (!only(c, ['typ', 'principal', 'recordId', 'iat', 'exp']) || c.typ !== 'sociacl-acl-attest-v1' || c.iat !== issuedAt || c.recordId !== recordIdOf(bytes)) return fail('bad-attestation');
+  const principal = parsePrincipalId(c.principal); if (!principal.ok) return fail('bad-attestation');
+  return ok(Object.freeze({ typ: 'sociacl-acl-attest-v1', principal: principal.value, recordId: /** @type {string} */ (c.recordId), iat: issuedAt, exp: /** @type {number} */ (c.exp) }));
+}
+/** @param {unknown} raw @returns {Result<Uint8Array>} */
+function rowBytes(raw) {
+  if (typeof raw !== 'string' || raw.length % 2 !== 0 || !/^[0-9a-f]*$/.test(raw)) return fail('bad-record');
+  return ok(unhex(raw));
+}
+/** Present authority, or a retired key only for a witnessed cancel.
+ * Retired-key grants and requests are refused even when witnessed.
+ * @param {unknown} row @param {readonly unknown[]} rotations @param {ResolutionContext} ctx @returns {Result<SignedAt>} */
+export function verifySignedAt(row, rotations, ctx) {
+  const d = data(row); if (!d.ok) return d;
+  const r = d.value;
+  if (!only(r, ['principal', 'sig', 'bytes', 'issuedAt', 'role', 'attest'])) return fail('bad-record');
+  const principal = parsePrincipalId(r.principal); if (!principal.ok) return principal;
+  if (!integer(r.issuedAt)) return fail('bad-record');
+  if (r.role !== 'grant' && r.role !== 'request' && r.role !== 'cancel') return fail('bad-record');
+  const sig = text(r.sig, 128); if (!sig.ok) return sig;
+  const message = rowBytes(r.bytes); if (!message.ok) return message;
+  if (r.attest !== undefined && typeof r.attest !== 'string') return fail('bad-record');
+  if (!ctx || !integer(ctx.now) || !Array.isArray(rotations)) return fail('missing-history');
+  if (/** @type {number} */ (r.issuedAt) > ctx.now) return fail('future-record');
+  const account = resolveCurrentKey(principal.value, rotations, ctx);
+  if (!account.ok) return account;
+  const state = historyState(principal.value, account.value.rotations, /** @type {number} */ (r.issuedAt), ctx.now);
+  if (!keyVerify(state.key, sig.value, message.value)) return fail('bad-signature');
+  const retired = state.key !== account.value.currentKey;
+  if (retired && r.role !== 'cancel') return fail('bad-signature');
+  if (retired) {
+    if (typeof r.attest !== 'string') return fail('bad-attestation');
+    const attest = verifyAclAttestation(r.attest, ctx.jwks, /** @type {number} */ (r.issuedAt), message.value);
+    if (!attest.ok) return attest;
+    if (attest.value.principal !== principal.value) return fail('bad-attestation');
+  }
+  return ok(Object.freeze({ principal: principal.value, key: state.key, role: /** @type {AclRole} */ (r.role), issuedAt: /** @type {number} */ (r.issuedAt) }));
 }
 /** @deprecated Use verifyWalletLink; this alias retains historical verification semantics. */
 export const verifyWalletLinkAtKey = verifyWalletLink;
