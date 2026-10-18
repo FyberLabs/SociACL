@@ -53,6 +53,10 @@
     "priorLane": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "missingError": "bad-lane"
   },
+  "witnessContact": {
+    "secret": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "prior": ["b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1"]
+  },
   "errors": {
     "epubUnknown": "epub-unknown",
     "epubReuse": "epub-reuse",
@@ -66,7 +70,8 @@
     "emptyDevice": "empty-device",
     "contentEpoch": "content-epoch",
     "tooManyKeys": "too-many-keys",
-    "badConstruction": "bad-construction"
+    "badConstruction": "bad-construction",
+    "keyringRejected": "keyring-rejected"
   },
   "unsafeContentEpoch": 9007199254740992,
   "maxContentEpoch": 9007199254740991,

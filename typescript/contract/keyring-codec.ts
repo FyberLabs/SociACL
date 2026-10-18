@@ -6,7 +6,8 @@ import type { AccountKeyring } from "./account-keyring.ts";
 import { canonicalDecimal, lengthPrefixed } from "./canonical.ts";
 import { KEYRING_SERIAL_MAX } from "./keyring-limits.ts";
 
-export const DOMAIN_KEYRING_PLAIN = "sociacl-keyring-plain-v1";
+const DOMAIN_KEYRING_PLAIN_V1 = "sociacl-keyring-plain-v1";
+export const DOMAIN_KEYRING_PLAIN = "sociacl-keyring-plain-v2";
 
 export type KeyringFields = {
   principal: string;
@@ -55,7 +56,8 @@ export function encodeKeyring(keyring: AccountKeyring): Uint8Array {
 export function decodeKeyring(bytes: Uint8Array): KeyringFields {
   if (bytes.length > KEYRING_SERIAL_MAX) throw new Error("keyring-too-large");
   const cursor = new Cursor(bytes);
-  if (cursor.nextString() !== DOMAIN_KEYRING_PLAIN) throw new Error("recovery-rejected");
+  const domain = cursor.nextString();
+  if (domain === DOMAIN_KEYRING_PLAIN_V1 || domain !== DOMAIN_KEYRING_PLAIN) throw new Error("recovery-rejected");
   const principal = cursor.nextString();
   const genesisEpub = cursor.nextString();
   const pub = cursor.nextString();

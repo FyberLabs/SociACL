@@ -150,15 +150,23 @@ pub struct KeyringRotation {
 }
 
 impl AccountKeyring {
-    /// Local constructor for a new account. Does not ask the witness.
-    /// Import is the path that checks `resolve_current_key`.
-    pub fn from_genesis(account: &crate::GenesisAccount) -> Result<Self, EncDiscError> {
+    /// Create a brand-new account at sequence 0. This is the only path that
+    /// mints a contact-lane secret.
+    pub fn create_account(account: &crate::GenesisAccount) -> Result<Self, EncDiscError> {
         let secret = random_disjoint(&[account.lane_id()])?;
         Self::from_genesis_with_contact_secret(account, &secret)
     }
 
-    /// Same as [`Self::from_genesis`] with a caller-chosen contact-lane secret.
-    /// The secret is not the disclosed base lane.
+    /// Does not mint a contact-lane secret. A second device does not get one
+    /// from the genesis backup. Creation is [`Self::create_account`]. Restore
+    /// of a sequence-0 keyring is [`Self::from_genesis_with_contact_secret`].
+    pub fn from_genesis(account: &crate::GenesisAccount) -> Result<Self, EncDiscError> {
+        let _ = account;
+        Err(EncDiscError::KeyringRejected)
+    }
+
+    /// Restore a sequence-0 keyring with the contact-lane secret.
+    /// The secret is not the disclosed base lane. This does not mint one.
     pub fn from_genesis_with_contact_secret(
         account: &crate::GenesisAccount,
         contact_lane_secret: &str,
@@ -180,9 +188,9 @@ impl AccountKeyring {
         )
     }
 
-    /// Device import. The current pub and epub must equal the witnessed pair.
-    /// A null `current_epub` is [`EncDiscError::EpubUnknown`], not the bound
-    /// genesis epub and not a Gun `user.epub`.
+    /// Device import without a contact-lane history. Refused.
+    /// Restore goes through [`Self::import_with_contact_secrets`].
+    /// `rotation_seq` is checked before anything else.
     pub fn import(
         principal: &str,
         genesis_epub: &str,
@@ -197,7 +205,8 @@ impl AccountKeyring {
         rotations: &[serde_json::Value],
         context: &sociacl_ids::ResolutionContext<'_>,
     ) -> Result<Self, EncDiscError> {
-        Self::import_with_prior_lanes(
+        require_bounded_rotation_seq(rotation_seq)?;
+        let _ = (
             principal,
             genesis_epub,
             current_pub,
@@ -207,15 +216,15 @@ impl AccountKeyring {
             retired,
             lane_id,
             content_epoch,
-            rotation_seq,
             rotations,
             context,
-            &[],
-        )
+        );
+        Err(EncDiscError::KeyringRejected)
     }
 
-    /// Device import that also restores lane ids already issued. A later mint
-    /// cannot reuse the current lane or any of `prior_lanes`.
+    /// Device import of disclosed lanes without a contact-lane history.
+    /// Refused. A later mint still cannot reuse `prior_lanes`; the restoring
+    /// path is [`Self::import_with_contact_secrets`].
     pub fn import_with_prior_lanes(
         principal: &str,
         genesis_epub: &str,
@@ -231,9 +240,8 @@ impl AccountKeyring {
         context: &sociacl_ids::ResolutionContext<'_>,
         prior_lanes: &[&str],
     ) -> Result<Self, EncDiscError> {
-        let (secret, prior_contact) = mint_contact_history(rotation_seq, lane_id, prior_lanes)?;
-        let prior_contact_refs: Vec<&str> = prior_contact.iter().map(String::as_str).collect();
-        Self::import_with_contact_secrets(
+        require_bounded_rotation_seq(rotation_seq)?;
+        let _ = (
             principal,
             genesis_epub,
             current_pub,
@@ -243,17 +251,17 @@ impl AccountKeyring {
             retired,
             lane_id,
             content_epoch,
-            rotation_seq,
             rotations,
             context,
             prior_lanes,
-            &secret,
-            &prior_contact_refs,
-        )
+        );
+        Err(EncDiscError::KeyringRejected)
     }
 
     /// Restore a keyring including the contact-lane secret and its prior list.
-    /// `prior_contact_secrets.len()` must equal `rotation_seq`.
+    /// `prior_contact_secrets.len()` must equal `rotation_seq`. A missing
+    /// history is [`EncDiscError::KeyringRejected`]. `rotation_seq` must be
+    /// a safe non-negative integer, and that check runs first.
     pub fn import_with_contact_secrets(
         principal: &str,
         genesis_epub: &str,
@@ -271,6 +279,10 @@ impl AccountKeyring {
         contact_lane_secret: &str,
         prior_contact_secrets: &[&str],
     ) -> Result<Self, EncDiscError> {
+        require_bounded_rotation_seq(rotation_seq)?;
+        if prior_contact_secrets.len() as u64 != rotation_seq {
+            return Err(EncDiscError::KeyringRejected);
+        }
         let principal = parse_principal_id(principal).map_err(reject)?;
         let keyring = Self::hold(
             principal,
@@ -483,6 +495,7 @@ impl AccountKeyring {
         content_epoch: u64,
         rotation_seq: u64,
     ) -> Result<Self, EncDiscError> {
+        require_bounded_rotation_seq(rotation_seq)?;
         require_lane_set(lane_id, prior_lanes)?;
         if prior_lanes.len() as u64 != rotation_seq {
             return Err(EncDiscError::BadLane);
@@ -500,7 +513,7 @@ impl AccountKeyring {
             return Err(EncDiscError::IdentityRejected("too-many-keys".into()));
         }
         // Match TS Number.isSafeInteger. A larger epoch cannot be sealed in JS.
-        if content_epoch > 9_007_199_254_740_991 || rotation_seq > 9_007_199_254_740_991 {
+        if content_epoch > crate::canonical::JS_SAFE_INTEGER_MAX {
             return Err(EncDiscError::EpochRejected);
         }
         let genesis_epub = encryption_point(genesis_epub, None)?.0;
@@ -823,6 +836,13 @@ fn require_contact_set(
     Ok(())
 }
 
+fn require_bounded_rotation_seq(rotation_seq: u64) -> Result<(), EncDiscError> {
+    if rotation_seq > crate::canonical::JS_SAFE_INTEGER_MAX {
+        return Err(EncDiscError::KeyringRejected);
+    }
+    Ok(())
+}
+
 fn random_disjoint(banned: &[&str]) -> Result<String, EncDiscError> {
     use rand::rngs::OsRng;
     use rand::RngCore;
@@ -837,28 +857,6 @@ fn random_disjoint(banned: &[&str]) -> Result<String, EncDiscError> {
     }
     bytes.zeroize();
     Err(EncDiscError::BadLane)
-}
-
-fn mint_contact_history(
-    rotation_seq: u64,
-    lane_id: &str,
-    prior_lanes: &[&str],
-) -> Result<(String, Vec<String>), EncDiscError> {
-    let mut banned: Vec<String> = Vec::with_capacity(prior_lanes.len() + 1);
-    banned.push(lane_id.to_string());
-    banned.extend(prior_lanes.iter().map(|lane| (*lane).to_string()));
-    let banned_refs: Vec<&str> = banned.iter().map(String::as_str).collect();
-    let secret = random_disjoint(&banned_refs)?;
-    let mut owned = banned;
-    owned.push(secret.clone());
-    let mut prior = Vec::with_capacity(rotation_seq as usize);
-    for _ in 0..rotation_seq {
-        let refs: Vec<&str> = owned.iter().map(String::as_str).collect();
-        let next = random_disjoint(&refs)?;
-        owned.push(next.clone());
-        prior.push(next);
-    }
-    Ok((secret, prior))
 }
 
 fn holds_point(keyring: &AccountKeyring, point: &PrincipalId) -> bool {
@@ -971,6 +969,7 @@ mod tests {
             EncDiscError::EmptyDevice => "empty-device".into(),
             EncDiscError::IdentityRejected(reason) => reason.clone(),
             EncDiscError::EpochRejected => "content-epoch".into(),
+            EncDiscError::KeyringRejected => "keyring-rejected".into(),
             other => panic!("unexpected {other}"),
         }
     }
@@ -1140,7 +1139,7 @@ mod tests {
     fn rotation_matches_the_shared_vector_and_keeps_secrets_off_gun() {
         let v = ring();
         let account = genesis_of(&v);
-        let keyring = AccountKeyring::from_genesis(&account).unwrap();
+        let keyring = AccountKeyring::create_account(&account).unwrap();
         let hold = witness_hold(&v);
         let ctx = witness_context(&hold);
         let names = trusted(&v);
@@ -1281,7 +1280,7 @@ mod tests {
         let empty = empty_ctx();
         let ctx = context_of(&empty);
         let v = ring();
-        let keyring = AccountKeyring::from_genesis(&genesis_of(&v)).unwrap();
+        let keyring = AccountKeyring::create_account(&genesis_of(&v)).unwrap();
         let names = trusted(&v);
         let lost = v["lost"].as_str().unwrap();
         let genesis_epub = || RotationMint {
@@ -1413,7 +1412,7 @@ mod tests {
     fn null_current_epub_refuses_the_seal_and_ignores_gun() {
         let v = ring();
         let account = genesis_of(&v);
-        let keyring = AccountKeyring::from_genesis(&account).unwrap();
+        let keyring = AccountKeyring::create_account(&account).unwrap();
         let empty = empty_ctx();
         let context = context_of(&empty);
         let dek = ItemDek::from_bytes([1u8; 32]);
@@ -1453,10 +1452,12 @@ mod tests {
             )
             .unwrap_err(),
         );
+        let contact = v["witnessContact"]["secret"].as_str().unwrap();
+        let prior_contact = v["witnessContact"]["prior"][0].as_str().unwrap();
         expect_err(
             &v,
             "badLane",
-            AccountKeyring::import(
+            AccountKeyring::import_with_contact_secrets(
                 v["genesis"]["principal"].as_str().unwrap(),
                 v["genesis"]["epub"].as_str().unwrap(),
                 v["mint"]["signingPub"].as_str().unwrap(),
@@ -1472,6 +1473,9 @@ mod tests {
                 v["importPriorLanes"]["rotationSeq"].as_u64().unwrap(),
                 &[],
                 &context,
+                &[],
+                contact,
+                &[prior_contact],
             )
             .unwrap_err(),
         );
@@ -1479,7 +1483,7 @@ mod tests {
         expect_err(
             &v,
             "pubMismatch",
-            AccountKeyring::import_with_prior_lanes(
+            AccountKeyring::import_with_contact_secrets(
                 v["genesis"]["principal"].as_str().unwrap(),
                 v["genesis"]["epub"].as_str().unwrap(),
                 v["mint"]["signingPub"].as_str().unwrap(),
@@ -1496,6 +1500,8 @@ mod tests {
                 &[],
                 &context,
                 &[prior],
+                contact,
+                &[prior_contact],
             )
             .unwrap_err(),
         );
@@ -1571,7 +1577,10 @@ mod tests {
         let seq = v["witnessed"]["rotationSeq"].as_u64().unwrap();
         let rotations = [rotation.clone()];
         let prior = v["importPriorLanes"]["priorLane"].as_str().unwrap();
-        let imported = AccountKeyring::import_with_prior_lanes(
+        let contact = v["witnessContact"]["secret"].as_str().unwrap();
+        let prior_contact = v["witnessContact"]["prior"][0].as_str().unwrap();
+        let seq0_contact = v["genesis"]["contactLaneSecret"].as_str().unwrap();
+        let imported = AccountKeyring::import_with_contact_secrets(
             &genesis_pub,
             &genesis_epub,
             &current_pub,
@@ -1585,6 +1594,8 @@ mod tests {
             &rotations,
             &base,
             &[prior],
+            contact,
+            &[prior_contact],
         )
         .unwrap();
         assert_eq!(imported.principal().as_ref(), genesis_pub);
@@ -1626,7 +1637,7 @@ mod tests {
         expect_err(
             &v,
             "pubMismatch",
-            AccountKeyring::import_with_prior_lanes(
+            AccountKeyring::import_with_contact_secrets(
                 &genesis_pub,
                 &genesis_epub,
                 &current_pub,
@@ -1640,6 +1651,8 @@ mod tests {
                 &[],
                 &base,
                 &[prior],
+                contact,
+                &[prior_contact],
             )
             .unwrap_err(),
         );
@@ -1647,7 +1660,7 @@ mod tests {
         expect_err(
             &v,
             "epubMismatch",
-            AccountKeyring::import_with_prior_lanes(
+            AccountKeyring::import_with_contact_secrets(
                 &genesis_pub,
                 &genesis_epub,
                 &current_pub,
@@ -1661,13 +1674,15 @@ mod tests {
                 &rotations,
                 &base,
                 &[prior],
+                contact,
+                &[prior_contact],
             )
             .unwrap_err(),
         );
         expect_err(
             &v,
             "rotationRejected",
-            AccountKeyring::import(
+            AccountKeyring::import_with_contact_secrets(
                 &genesis_pub,
                 &genesis_epub,
                 &current_pub,
@@ -1680,6 +1695,9 @@ mod tests {
                 0,
                 &rotations,
                 &base,
+                &[],
+                seq0_contact,
+                &[],
             )
             .unwrap_err(),
         );
@@ -1694,7 +1712,7 @@ mod tests {
             history: base.history,
             genesis_epub_bindings: &junk,
         };
-        let kept = AccountKeyring::import_with_prior_lanes(
+        let kept = AccountKeyring::import_with_contact_secrets(
             &genesis_pub,
             &genesis_epub,
             &current_pub,
@@ -1708,13 +1726,15 @@ mod tests {
             &rotations,
             &ignored,
             &[prior],
+            contact,
+            &[prior_contact],
         )
         .unwrap();
         assert_eq!(kept.current_epub().as_ref(), current_epub);
         expect_err(
             &v,
             "contentEpoch",
-            AccountKeyring::import_with_prior_lanes(
+            AccountKeyring::import_with_contact_secrets(
                 &genesis_pub,
                 &genesis_epub,
                 &current_pub,
@@ -1728,6 +1748,8 @@ mod tests {
                 &rotations,
                 &base,
                 &[prior],
+                contact,
+                &[prior_contact],
             )
             .unwrap_err(),
         );
@@ -1737,7 +1759,7 @@ mod tests {
     fn a_fresh_mint_is_v3_and_leaves_the_principal_in_place() {
         let v = ring();
         let account = genesis_of(&v);
-        let keyring = AccountKeyring::from_genesis(&account).unwrap();
+        let keyring = AccountKeyring::create_account(&account).unwrap();
         let names = trusted(&v);
         let hold = witness_hold(&v);
         let ctx = witness_context(&hold);
@@ -1793,7 +1815,7 @@ mod tests {
             v["mint"]["epriv"].as_str().unwrap(),
         )
         .unwrap();
-        let keyring = AccountKeyring::from_genesis(&mismatched).unwrap();
+        let keyring = AccountKeyring::create_account(&mismatched).unwrap();
         let (signing_pub, signing_priv) = scalar_sea(5);
         let (epub, epriv) = scalar_sea(4);
         let names = trusted(&v);
@@ -1879,7 +1901,8 @@ mod tests {
             history: resolver,
             genesis_epub_bindings: &binding,
         };
-        let imported = AccountKeyring::import(
+        let seq0 = v["genesis"]["contactLaneSecret"].as_str().unwrap();
+        let imported = AccountKeyring::import_with_contact_secrets(
             &signing_pub,
             &epub,
             &signing_pub,
@@ -1892,6 +1915,9 @@ mod tests {
             0,
             &[],
             &bound,
+            &[],
+            seq0,
+            &[],
         )
         .unwrap();
         assert_eq!(imported.current_epub().as_ref(), epub);
@@ -1899,7 +1925,7 @@ mod tests {
         expect_err(
             &v,
             "epubMismatch",
-            AccountKeyring::import(
+            AccountKeyring::import_with_contact_secrets(
                 &signing_pub,
                 &epub,
                 &signing_pub,
@@ -1912,6 +1938,9 @@ mod tests {
                 0,
                 &[],
                 &bound,
+                &[],
+                seq0,
+                &[],
             )
             .unwrap_err(),
         );
@@ -1921,7 +1950,7 @@ mod tests {
         expect_err(
             &v,
             "tooManyKeys",
-            AccountKeyring::import(
+            AccountKeyring::import_with_contact_secrets(
                 v["genesis"]["principal"].as_str().unwrap(),
                 v["genesis"]["epub"].as_str().unwrap(),
                 v["genesis"]["signingPub"].as_str().unwrap(),
@@ -1934,6 +1963,9 @@ mod tests {
                 0,
                 &[],
                 &bare,
+                &[],
+                seq0,
+                &[],
             )
             .unwrap_err(),
         );
@@ -2003,7 +2035,8 @@ mod tests {
             .unwrap()
             .clone();
         let ctx = witness_context(&hold);
-        let imported = AccountKeyring::import(
+        let seq0 = v["genesis"]["contactLaneSecret"].as_str().unwrap();
+        let imported = AccountKeyring::import_with_contact_secrets(
             &signing_pub,
             &epub,
             &signing_pub,
@@ -2016,6 +2049,9 @@ mod tests {
             0,
             &[],
             &ctx,
+            &[],
+            seq0,
+            &[],
         )
         .unwrap();
         assert_eq!(imported.retired().len(), 1024);
@@ -2058,7 +2094,7 @@ mod tests {
         expect_err(
             &v,
             "contentEpoch",
-            AccountKeyring::import(
+            AccountKeyring::import_with_contact_secrets(
                 &signing_pub,
                 &epub,
                 &signing_pub,
@@ -2071,6 +2107,9 @@ mod tests {
                 0,
                 &[],
                 &ctx,
+                &[],
+                v["genesis"]["contactLaneSecret"].as_str().unwrap(),
+                &[],
             )
             .unwrap_err(),
         );
@@ -2093,7 +2132,7 @@ mod tests {
             .unwrap()
             .clone();
         let ctx = witness_context(&hold);
-        let imported = AccountKeyring::import(
+        let imported = AccountKeyring::import_with_contact_secrets(
             &signing_pub,
             &epub,
             &signing_pub,
@@ -2106,6 +2145,9 @@ mod tests {
             0,
             &[],
             &ctx,
+            &[],
+            v["genesis"]["contactLaneSecret"].as_str().unwrap(),
+            &[],
         )
         .unwrap();
         let (next_pub, next_priv) = scalar_sea_n(20);
@@ -2263,7 +2305,8 @@ mod tests {
             "33".repeat(32),
             "44".repeat(32),
         ];
-        let mut current = AccountKeyring::import(
+        let seq0 = v["genesis"]["contactLaneSecret"].as_str().unwrap();
+        let mut current = AccountKeyring::import_with_contact_secrets(
             &signing_pub,
             &epub,
             &signing_pub,
@@ -2276,6 +2319,9 @@ mod tests {
             0,
             &[],
             &bound,
+            &[],
+            seq0,
+            &[],
         )
         .unwrap();
         let mut chain = Vec::new();
@@ -2372,7 +2418,12 @@ mod tests {
             .map(|row| (row.epub().as_ref(), row.epriv()))
             .collect();
         let prior: Vec<&str> = current.prior_lanes().iter().map(String::as_str).collect();
-        let restored = AccountKeyring::import_with_prior_lanes(
+        let prior_contact: Vec<&str> = current
+            .prior_contact_secrets()
+            .iter()
+            .map(|secret| secret.as_str())
+            .collect();
+        let restored = AccountKeyring::import_with_contact_secrets(
             current.principal().as_ref(),
             current.genesis_epub().as_ref(),
             current.current_pub().as_ref(),
@@ -2386,8 +2437,16 @@ mod tests {
             &chain,
             &bound,
             &prior,
+            current.contact_lane_secret(),
+            &prior_contact,
         )
         .unwrap();
+        assert_eq!(restored.lane_id(), current.lane_id());
+        assert_eq!(
+            restored.contact_lane_secret(),
+            current.contact_lane_secret()
+        );
+        assert_eq!(restored.prior_lanes(), current.prior_lanes());
         expect_err(
             &v,
             "badLane",
@@ -2416,7 +2475,7 @@ mod tests {
         expect_err(
             &v,
             "badLane",
-            AccountKeyring::import_with_prior_lanes(
+            AccountKeyring::import_with_contact_secrets(
                 current.principal().as_ref(),
                 current.genesis_epub().as_ref(),
                 current.current_pub().as_ref(),
@@ -2430,8 +2489,113 @@ mod tests {
                 &chain,
                 &bound,
                 &same,
+                current.contact_lane_secret(),
+                &prior_contact,
             )
             .unwrap_err(),
         );
+    }
+
+    #[test]
+    fn create_then_restore_keeps_lanes_and_a_missing_history_is_refused() {
+        let v = ring();
+        let account = genesis_of(&v);
+        let created = AccountKeyring::create_account(&account).unwrap();
+        assert_eq!(created.rotation_seq(), 0);
+        assert_eq!(
+            AccountKeyring::from_genesis(&account)
+                .unwrap_err()
+                .to_string(),
+            v["errors"]["keyringRejected"].as_str().unwrap()
+        );
+        let restored = AccountKeyring::from_genesis_with_contact_secret(
+            &account,
+            created.contact_lane_secret(),
+        )
+        .unwrap();
+        let sender = v["mint"]["signingPub"].as_str().unwrap();
+        let created_lane = crate::derive_contact_lane(
+            created.contact_lane_secret(),
+            created.principal().as_ref(),
+            sender,
+        )
+        .unwrap();
+        let restored_lane = crate::derive_contact_lane(
+            restored.contact_lane_secret(),
+            restored.principal().as_ref(),
+            sender,
+        )
+        .unwrap();
+        assert_eq!(created_lane, restored_lane);
+        assert_eq!(restored.lane_id(), created.lane_id());
+        assert_ne!(created_lane, created.lane_id());
+        let hold = empty_ctx();
+        let ctx = context_of(&hold);
+        assert_eq!(
+            AccountKeyring::import(
+                account.principal().as_ref(),
+                account.epub().as_ref(),
+                account.sea_pub(),
+                account.local_priv(),
+                account.epub().as_ref(),
+                account.local_epriv(),
+                &[],
+                account.lane_id(),
+                0,
+                0,
+                &[],
+                &ctx,
+            )
+            .unwrap_err()
+            .to_string(),
+            v["errors"]["keyringRejected"].as_str().unwrap()
+        );
+        let secret = v["genesis"]["contactLaneSecret"].as_str().unwrap();
+        assert_eq!(
+            AccountKeyring::import_with_contact_secrets(
+                account.principal().as_ref(),
+                account.epub().as_ref(),
+                account.sea_pub(),
+                account.local_priv(),
+                account.epub().as_ref(),
+                account.local_epriv(),
+                &[],
+                account.lane_id(),
+                0,
+                1,
+                &[],
+                &ctx,
+                &[],
+                secret,
+                &[],
+            )
+            .unwrap_err()
+            .to_string(),
+            v["errors"]["keyringRejected"].as_str().unwrap()
+        );
+        for seq in [v["unsafeContentEpoch"].as_u64().unwrap(), u64::MAX] {
+            assert_eq!(
+                AccountKeyring::import_with_contact_secrets(
+                    account.principal().as_ref(),
+                    account.epub().as_ref(),
+                    account.sea_pub(),
+                    account.local_priv(),
+                    account.epub().as_ref(),
+                    account.local_epriv(),
+                    &[],
+                    account.lane_id(),
+                    0,
+                    seq,
+                    &[],
+                    &ctx,
+                    &[],
+                    secret,
+                    &[],
+                )
+                .unwrap_err()
+                .to_string(),
+                v["errors"]["keyringRejected"].as_str().unwrap()
+            );
+        }
     }
 }

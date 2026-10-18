@@ -72,12 +72,15 @@ export function contactLaneInfo(recipient: string, sender: string): Uint8Array {
  */
 export function deriveContactLane(contactSecretHex: string, recipient: string, sender: string): string {
   const ikm = laneSecretBytes(contactSecretHex);
-  const info = contactLaneInfo(recipient, sender);
-  const okm = hkdfSha256(ikm, info);
-  const lane = bytesToHex(okm);
-  ikm.fill(0);
-  okm.fill(0);
-  return lane;
+  let okm: Uint8Array | undefined;
+  try {
+    const info = contactLaneInfo(recipient, sender);
+    okm = hkdfSha256(ikm, info);
+    return bytesToHex(okm);
+  } finally {
+    ikm.fill(0);
+    okm?.fill(0);
+  }
 }
 
 /**

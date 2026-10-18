@@ -99,6 +99,10 @@ pub enum EncDiscError {
     RecoveryStale,
     #[error("keyring is too large")]
     KeyringTooLarge,
+    /// Missing contact-lane secret, missing prior history, or a rotation
+    /// sequence that is not a safe non-negative integer.
+    #[error("keyring-rejected")]
+    KeyringRejected,
     /// Stale, forged, tampered, and misaddressed contact-lane grants share this.
     /// The caller does not choose the code.
     #[error("lane-grant-rejected")]

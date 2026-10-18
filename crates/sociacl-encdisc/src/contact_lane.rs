@@ -1259,7 +1259,11 @@ mod tests {
         let sender_history = history_of(&sender_auth);
         let sender_resolver: &HistoryResolver<'_> = &sender_history;
         let sender_ctx = context(&sender_owned, sender_resolver);
-        let recipient = AccountKeyring::import(
+        let recipient_lane = "ab".repeat(32);
+        let sender_lane = "44".repeat(32);
+        let recipient_secret = "c0".repeat(32);
+        let sender_secret = "d2".repeat(32);
+        let recipient = AccountKeyring::import_with_contact_secrets(
             &signing_pub,
             &epub,
             &signing_pub,
@@ -1267,14 +1271,17 @@ mod tests {
             &epub,
             epriv.as_str(),
             &[],
-            "ab".repeat(32).as_str(),
+            &recipient_lane,
             0,
             0,
             &[],
             &recipient_ctx,
+            &[],
+            &recipient_secret,
+            &[],
         )
         .unwrap();
-        let sender = AccountKeyring::import(
+        let sender = AccountKeyring::import_with_contact_secrets(
             &sender_pub,
             &sender_epub,
             &sender_pub,
@@ -1282,11 +1289,14 @@ mod tests {
             &sender_epub,
             sender_epriv.as_str(),
             &[],
-            &"44".repeat(32),
+            &sender_lane,
             0,
             0,
             &[],
             &sender_ctx,
+            &[],
+            &sender_secret,
+            &[],
         )
         .unwrap();
         let grant = seal_contact_lane_grant(

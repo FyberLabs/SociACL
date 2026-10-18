@@ -30,7 +30,8 @@ use crate::limits::{
 use crate::store_write::{sign_store_write, verify_store_write};
 use unicode_normalization::UnicodeNormalization;
 pub(crate) const DOMAIN_RECOVERY: &str = "sociacl-recovery-copy-v1";
-pub(crate) const DOMAIN_KEYRING_PLAIN: &str = "sociacl-keyring-plain-v1";
+pub(crate) const DOMAIN_KEYRING_PLAIN_V1: &str = "sociacl-keyring-plain-v1";
+pub(crate) const DOMAIN_KEYRING_PLAIN: &str = "sociacl-keyring-plain-v2";
 
 /// Ciphertext of one keyring version. The store does not see the passphrase.
 ///
@@ -996,7 +997,7 @@ pub(crate) fn decode_keyring(bytes: &[u8]) -> Result<KeyringFields, EncDiscError
     }
     let mut cursor = Cursor { bytes, offset: 0 };
     let domain = cursor.next_string()?;
-    if domain.as_str() != DOMAIN_KEYRING_PLAIN {
+    if domain.as_str() == DOMAIN_KEYRING_PLAIN_V1 || domain.as_str() != DOMAIN_KEYRING_PLAIN {
         return Err(EncDiscError::RecoveryRejected);
     }
     let principal = cursor.next_string()?;
@@ -1460,6 +1461,7 @@ mod tests {
         );
         assert_eq!(v["domain"].as_str().unwrap(), DOMAIN_RECOVERY);
         assert_eq!(v["keyringDomain"].as_str().unwrap(), DOMAIN_KEYRING_PLAIN);
+        assert_eq!(DOMAIN_KEYRING_PLAIN, "sociacl-keyring-plain-v2");
         assert_eq!(
             v["bindDomain"].as_str().unwrap(),
             crate::delivery::DOMAIN_DELIVERY_BIND
@@ -1468,6 +1470,16 @@ mod tests {
             v["sigDomain"].as_str().unwrap(),
             crate::delivery::DOMAIN_DELIVERY_SIG
         );
+    }
+
+    #[test]
+    fn keyring_plaintext_v1_is_refused() {
+        let mut bytes = Vec::new();
+        write_field(&mut bytes, DOMAIN_KEYRING_PLAIN_V1);
+        assert!(matches!(
+            decode_keyring(&bytes),
+            Err(EncDiscError::RecoveryRejected)
+        ));
     }
 
     #[test]
@@ -2216,7 +2228,9 @@ mod tests {
         let retired = [(genesis_epub.as_str(), genesis_epriv.as_str())];
         let rotations = [rotation];
         let prior = ring["importPriorLanes"]["priorLane"].as_str().unwrap();
-        let keyring = AccountKeyring::import_with_prior_lanes(
+        let contact = ring["witnessContact"]["secret"].as_str().unwrap();
+        let prior_contact = ring["witnessContact"]["prior"][0].as_str().unwrap();
+        let keyring = AccountKeyring::import_with_contact_secrets(
             &genesis_pub,
             &genesis_epub,
             &current_pub,
@@ -2230,6 +2244,8 @@ mod tests {
             &rotations,
             &base,
             &[prior],
+            contact,
+            &[prior_contact],
         )
         .unwrap();
         let mut store = MemoryRecoveryStore::new(watch(&rotations, &base));

@@ -558,6 +558,24 @@ mod tests {
         assert_eq!(opened.principal(), keyring.principal());
         assert_eq!(opened.current_priv(), keyring.current_priv());
         assert_eq!(opened.current_epriv(), keyring.current_epriv());
+        assert_eq!(opened.contact_lane_secret(), keyring.contact_lane_secret());
+        assert_eq!(opened.lane_id(), keyring.lane_id());
+        let ring_vector = ring();
+        let sender = ring_vector["mint"]["signingPub"].as_str().unwrap();
+        assert_eq!(
+            crate::derive_contact_lane(
+                opened.contact_lane_secret(),
+                opened.principal().as_ref(),
+                sender
+            )
+            .unwrap(),
+            crate::derive_contact_lane(
+                keyring.contact_lane_secret(),
+                keyring.principal().as_ref(),
+                sender
+            )
+            .unwrap()
+        );
         let stale = open_delivered_keyring(&transport, &wrap, keyring.principal(), 1, &[], &ctx)
             .unwrap_err();
         assert!(matches!(stale, EncDiscError::RecoveryStale));
@@ -957,7 +975,9 @@ mod tests {
         let retired = [(genesis_epub.as_str(), genesis_epriv.as_str())];
         let rotations = [rotation];
         let prior = ring["importPriorLanes"]["priorLane"].as_str().unwrap();
-        let keyring = AccountKeyring::import_with_prior_lanes(
+        let contact = ring["witnessContact"]["secret"].as_str().unwrap();
+        let prior_contact = ring["witnessContact"]["prior"][0].as_str().unwrap();
+        let keyring = AccountKeyring::import_with_contact_secrets(
             &genesis_pub,
             &genesis_epub,
             &current_pub,
@@ -971,6 +991,8 @@ mod tests {
             &rotations,
             &base,
             &[prior],
+            contact,
+            &[prior_contact],
         )
         .unwrap();
         let mut store = MemoryKeyWrapStore::new(watch(&rotations, &base));

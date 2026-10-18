@@ -486,6 +486,9 @@ test("grant open, the wrong party, tamper, a stale grant, and a re-grant", () =>
     0,
     [],
     recipientContext,
+    [],
+    "c0".repeat(32),
+    [],
   );
   const senderKeyring = AccountKeyring.import(
     senderSign.pub,
@@ -500,6 +503,9 @@ test("grant open, the wrong party, tamper, a stale grant, and a re-grant", () =>
     0,
     [],
     senderContext,
+    [],
+    "d2".repeat(32),
+    [],
   );
   const grant = sealContactLaneGrant(
     recipient,

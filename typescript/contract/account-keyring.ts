@@ -84,9 +84,9 @@ export class AccountKeyring {
   readonly #priorContactSecrets: readonly string[];
 
   /**
-   * Not a public entry. {@link fromGenesis}, {@link import}, and
-   * {@link rotateKeyring} pass the module seal after the hold or rotation
-   * checks. Any other caller is rejected.
+   * Not a public entry. {@link createAccount}, {@link fromGenesis},
+   * {@link import}, and {@link rotateKeyring} pass the module seal after
+   * the hold or rotation checks. Any other caller is rejected.
    */
   constructor(
     principal: PrincipalId,
@@ -106,9 +106,8 @@ export class AccountKeyring {
   ) {
     if (seal !== keyringSeal) throw new Error("bad-construction");
     if (retired.length > 1024) throw new Error("too-many-keys");
-    if (!Number.isSafeInteger(contentEpoch) || contentEpoch < 0 || !Number.isSafeInteger(rotationSeq) || rotationSeq < 0) {
-      throw new Error("content-epoch");
-    }
+    requireBoundedRotationSeq(rotationSeq);
+    if (!Number.isSafeInteger(contentEpoch) || contentEpoch < 0) throw new Error("content-epoch");
     requireLaneSet(laneId, priorLanes);
     if (priorLanes.length !== rotationSeq) throw new Error("bad-lane");
     requireContactSet(contactLaneSecret, priorContactSecrets, laneId, priorLanes);
@@ -128,8 +127,21 @@ export class AccountKeyring {
     this.rotationSeq = rotationSeq;
   }
 
-  /** Local constructor for a new account. Import is the witnessed check. */
-  static fromGenesis(account: GenesisAccount, contactLaneSecret = randomDisjoint([account.laneId])): AccountKeyring {
+  /**
+   * Create a brand-new account at sequence 0. This is the only path that
+   * mints a contact-lane secret.
+   */
+  static createAccount(account: GenesisAccount): AccountKeyring {
+    return AccountKeyring.fromGenesis(account, randomDisjoint([account.laneId]));
+  }
+
+  /**
+   * Restore a sequence-0 keyring. The contact-lane secret is required.
+   * Omitting it is `keyring-rejected`. This does not mint one, and the
+   * genesis backup does not carry one.
+   */
+  static fromGenesis(account: GenesisAccount, contactLaneSecret?: string): AccountKeyring {
+    if (contactLaneSecret === undefined) throw new Error("keyring-rejected");
     return hold(
       account.principal,
       account.epub,
@@ -150,7 +162,11 @@ export class AccountKeyring {
   /**
    * Device import. The current pub and epub must equal the witnessed pair.
    * A null currentEpub throws epub-unknown. It is not the bound genesis epub
-   * and not a Gun user.epub.
+   * and not a Gun user.epub. The current contact-lane secret and
+   * `priorContactSecrets` are required, and `priorContactSecrets.length`
+   * must equal `rotationSeq`. A missing history is `keyring-rejected`.
+   * `rotationSeq` must be a safe non-negative integer. That check runs
+   * before any other work.
    */
   static import(
     principal: string,
@@ -169,11 +185,16 @@ export class AccountKeyring {
     contactLaneSecret?: string,
     priorContactSecrets?: readonly string[],
   ): AccountKeyring {
+    requireBoundedRotationSeq(rotationSeq);
+    if (
+      contactLaneSecret === undefined ||
+      priorContactSecrets === undefined ||
+      priorContactSecrets.length !== rotationSeq
+    ) {
+      throw new Error("keyring-rejected");
+    }
     const id = parsePrincipalId(principal);
     if (!id.ok) throw new Error(id.reason);
-    const history = contactLaneSecret === undefined
-      ? mintContactHistory(rotationSeq, laneId, priorLanes)
-      : { secret: contactLaneSecret, prior: priorContactSecrets ?? [] };
     const keyring = hold(
       id.value,
       genesisEpub,
@@ -184,8 +205,8 @@ export class AccountKeyring {
       retired,
       laneId,
       priorLanes,
-      history.secret,
-      history.prior,
+      contactLaneSecret,
+      priorContactSecrets,
       contentEpoch,
       rotationSeq,
     );
@@ -329,7 +350,10 @@ export function mintRotation(): RotationMint {
 /** Mint the next v3 rotation. Name every trusted device except `lost`.
  * `rotateAndReseal` seals the recovery copy. `deliverKeyring` sends it to a device.
  * `confirm` runs before the current epub is retired. The draft is checked with
- * `checkRotationDraft` before it is returned. A lane id is never reused. */
+ * `checkRotationDraft` before it is returned. A lane id is never reused.
+ * When the mint omits `contactLaneSecret`, rotation draws a fresh one that
+ * is disjoint from the disclosed lanes and from the contact-lane secrets
+ * already held. */
 export function rotateKeyring(
   keyring: AccountKeyring,
   trusted: readonly string[],
@@ -458,10 +482,9 @@ function hold(
   contentEpoch: number,
   rotationSeq: number,
 ): AccountKeyring {
+  requireBoundedRotationSeq(rotationSeq);
   if (retired.length > 1024) throw new Error("too-many-keys");
-  if (!Number.isSafeInteger(contentEpoch) || contentEpoch < 0 || !Number.isSafeInteger(rotationSeq) || rotationSeq < 0) {
-    throw new Error("content-epoch");
-  }
+  if (!Number.isSafeInteger(contentEpoch) || contentEpoch < 0) throw new Error("content-epoch");
   requireLaneSet(laneId, priorLanes);
   requireContactSet(contactLaneSecret, priorContactSecrets, laneId, priorLanes);
   const genesisEpub = encryptionPoint(genesisEpubText, null);
@@ -544,21 +567,8 @@ function randomDisjoint(banned: readonly string[]): string {
   }
 }
 
-function mintContactHistory(
-  rotationSeq: number,
-  laneId: string,
-  priorLanes: readonly string[],
-): { secret: string; prior: string[] } {
-  const banned = [laneId, ...priorLanes];
-  const secret = randomDisjoint(banned);
-  const prior: string[] = [];
-  const seen = [...banned, secret];
-  for (let i = 0; i < rotationSeq; i += 1) {
-    const next = randomDisjoint(seen);
-    seen.push(next);
-    prior.push(next);
-  }
-  return { secret, prior };
+function requireBoundedRotationSeq(rotationSeq: number): void {
+  if (!Number.isSafeInteger(rotationSeq) || rotationSeq < 0) throw new Error("keyring-rejected");
 }
 
 function holdsPoint(keyring: AccountKeyring, point: PrincipalId): boolean {
