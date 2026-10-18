@@ -27,6 +27,10 @@ pub enum EncDiscError {
     BindingRejected,
     #[error("epub is required")]
     EpubRequired,
+    #[error("witnessed encryption public key is unknown")]
+    EpubUnknown,
+    #[error("encryption public key is already held")]
+    EpubReuse,
     #[error("identity pub is missing")]
     IdentityPubMissing,
     #[error("pub does not match the enrolled account key")]

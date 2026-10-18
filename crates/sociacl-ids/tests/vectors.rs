@@ -134,6 +134,11 @@ fn run(f: &Family, c: &Case, v: &Value) -> Result<Value, Reason> {
             .iter()
             .map(|v| v.as_str().unwrap().to_owned())
             .collect();
+        let empty_bindings = Vec::new();
+        let bindings = ctx
+            .get("genesisEpubBindings")
+            .and_then(Value::as_array)
+            .unwrap_or(&empty_bindings);
         let rc = ResolutionContext {
             jwks: &jwks,
             links: &ls,
@@ -142,6 +147,7 @@ fn run(f: &Family, c: &Case, v: &Value) -> Result<Value, Reason> {
             policy: &policy,
             pinned_iss: &pinned_iss,
             history: &history,
+            genesis_epub_bindings: bindings,
         };
         let key_state = if ctx["directState"].is_object() {
             KeyState {
@@ -208,6 +214,35 @@ fn run(f: &Family, c: &Case, v: &Value) -> Result<Value, Reason> {
                         .collect::<BTreeSet<_>>(),
                     now,
                     &key_state,
+                )?
+                .principal
+            }
+            operation @ ("publish-check" | "draft-check") => {
+                let siblings = v["siblings"].as_array().unwrap();
+                let prior = v["prior"].as_array().unwrap();
+                let genesis = parse_principal_id(ctx["genesis"].as_str().unwrap())?;
+                let published = if operation == "draft-check" {
+                    check_rotation_draft(&v["candidate"], siblings, &genesis, prior, &rc)?
+                } else {
+                    check_rotation_publish(&v["candidate"], siblings, &genesis, prior, &rc)?
+                };
+                if let Some(expected) = c.extra.get("retainedLinks") {
+                    assert_eq!(
+                        serde_json::to_value(&published.retained_links).unwrap(),
+                        *expected,
+                        "{} retainedLinks",
+                        c.name
+                    );
+                }
+                published.principal
+            }
+            "rotation-request" => verify_rotation_request(v, &key, &rc)?.principal,
+            "genesis-epub-request" => {
+                verify_genesis_epub_request(
+                    v,
+                    &parse_principal_id(ctx["genesis"].as_str().unwrap())?,
+                    now,
+                    &policy,
                 )?
                 .principal
             }

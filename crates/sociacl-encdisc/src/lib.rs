@@ -80,6 +80,7 @@ mod grant;
 mod hexutil;
 mod identity;
 mod inbox;
+mod keyring;
 mod migration;
 mod present;
 mod presenter;
@@ -140,6 +141,10 @@ pub use inbox::{
     DailyShardScan, InboxAdmission, InboxAppendResult, InboxLane, InboxWriteDecision,
     InboxWriteFilter, InboxWriteHook, InboxWritePolicy, ReaderInboxes, SenderQuota, ShardScan,
     VerifierAdmissionState, INBOX_ENTRY_MAX_BYTES,
+};
+pub use keyring::{
+    epub_for_new_seal, mint_rotation, rotate_keyring, AccountKeyring, KeyringDevice,
+    KeyringRotation, RetiredEpriv, RotationDraft, RotationMint,
 };
 pub use migration::{
     accept_migration, apply_protocol_migration, open_migrated_item, prepare_protocol_migration,

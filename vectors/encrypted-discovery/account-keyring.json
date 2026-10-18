@@ -1,0 +1,93 @@
+{
+  "v": 1,
+  "family": "account-keyring",
+  "genesis": {
+    "laneId": "05e57cbbd329896b1f6a2b13ce15cda256ed2fc854b3fb2edadd08933448e385",
+    "signingPub": "YP7UuiVanTHJYet0xjVtaMBJuJI7Yfps5mliLmDyn7Y.eQP-EAi4vJmkGunpVii8ZPLxsgwtfp9Rd6PClNRGIpk",
+    "signingPriv": "ya-p2EW6dRZrXCFXZ7HWk05Qw9s26JsSe4piKxIPZyE",
+    "signingScalarHex": "C9AFA9D845BA75166B5C215767B1D6934E50C3DB36E89B127B8A622B120F6721",
+    "epub": "EMvdmXTv89JPyMx5n3blU3L_D70U-6JoVaVzTvSzgYg.B_b0CP3o9X3I7tWrxA_F1VhXpjeMuIJCtQWnOh7LN5c",
+    "epriv": "6EXhKuFCyTddo7uvYddNjXON5iKEMV7v8bCol7XOHt8",
+    "principal": "YP7UuiVanTHJYet0xjVtaMBJuJI7Yfps5mliLmDyn7Y.eQP-EAi4vJmkGunpVii8ZPLxsgwtfp9Rd6PClNRGIpk"
+  },
+  "mint": {
+    "signingPub": "UVkLelFRQNLXhMhWCGaP3--Mgv0fW-UkIVVKDcPQM-0.4MF9qJBKcn2K4b82v4p5Jg0BLwDU2AiI0dC7RP2hbaQ",
+    "signingPriv": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAU",
+    "epub": "sBoXKnakYCyS0yQsuJfd4wJMdA3rshW0xrCq6Twikak.6FwQdDI32tVv7A4t-6cDeRwA93Acfha9_XxIU4_Hf-I",
+    "epriv": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY",
+    "laneId": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "trusted": [
+    "phone",
+    "laptop",
+    "tablet"
+  ],
+  "lost": "laptop",
+  "expected": {
+    "principal": "YP7UuiVanTHJYet0xjVtaMBJuJI7Yfps5mliLmDyn7Y.eQP-EAi4vJmkGunpVii8ZPLxsgwtfp9Rd6PClNRGIpk",
+    "pub": "UVkLelFRQNLXhMhWCGaP3--Mgv0fW-UkIVVKDcPQM-0.4MF9qJBKcn2K4b82v4p5Jg0BLwDU2AiI0dC7RP2hbaQ",
+    "epub": "sBoXKnakYCyS0yQsuJfd4wJMdA3rshW0xrCq6Twikak.6FwQdDI32tVv7A4t-6cDeRwA93Acfha9_XxIU4_Hf-I",
+    "laneId": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "contentEpoch": 1,
+    "rotationSeq": 1,
+    "prevKey": "YP7UuiVanTHJYet0xjVtaMBJuJI7Yfps5mliLmDyn7Y.eQP-EAi4vJmkGunpVii8ZPLxsgwtfp9Rd6PClNRGIpk",
+    "nextKey": "UVkLelFRQNLXhMhWCGaP3--Mgv0fW-UkIVVKDcPQM-0.4MF9qJBKcn2K4b82v4p5Jg0BLwDU2AiI0dC7RP2hbaQ",
+    "nextEpub": "sBoXKnakYCyS0yQsuJfd4wJMdA3rshW0xrCq6Twikak.6FwQdDI32tVv7A4t-6cDeRwA93Acfha9_XxIU4_Hf-I",
+    "version": 3,
+    "devices": [
+      "phone",
+      "tablet"
+    ],
+    "retiredEpubs": [
+      "EMvdmXTv89JPyMx5n3blU3L_D70U-6JoVaVzTvSzgYg.B_b0CP3o9X3I7tWrxA_F1VhXpjeMuIJCtQWnOh7LN5c"
+    ],
+    "gunDocument": "{\"soul\":\"~YP7UuiVanTHJYet0xjVtaMBJuJI7Yfps5mliLmDyn7Y.eQP-EAi4vJmkGunpVii8ZPLxsgwtfp9Rd6PClNRGIpk\",\"account\":\"YP7UuiVanTHJYet0xjVtaMBJuJI7Yfps5mliLmDyn7Y.eQP-EAi4vJmkGunpVii8ZPLxsgwtfp9Rd6PClNRGIpk\",\"pub\":\"UVkLelFRQNLXhMhWCGaP3--Mgv0fW-UkIVVKDcPQM-0.4MF9qJBKcn2K4b82v4p5Jg0BLwDU2AiI0dC7RP2hbaQ\",\"epub\":\"sBoXKnakYCyS0yQsuJfd4wJMdA3rshW0xrCq6Twikak.6FwQdDI32tVv7A4t-6cDeRwA93Acfha9_XxIU4_Hf-I\"}",
+    "draftDocument": "{\"v\":1,\"kind\":\"rotate\",\"principal\":\"YP7UuiVanTHJYet0xjVtaMBJuJI7Yfps5mliLmDyn7Y.eQP-EAi4vJmkGunpVii8ZPLxsgwtfp9Rd6PClNRGIpk\",\"seq\":1,\"prevKey\":\"YP7UuiVanTHJYet0xjVtaMBJuJI7Yfps5mliLmDyn7Y.eQP-EAi4vJmkGunpVii8ZPLxsgwtfp9Rd6PClNRGIpk\",\"nextKey\":\"UVkLelFRQNLXhMhWCGaP3--Mgv0fW-UkIVVKDcPQM-0.4MF9qJBKcn2K4b82v4p5Jg0BLwDU2AiI0dC7RP2hbaQ\",\"nextEpub\":\"sBoXKnakYCyS0yQsuJfd4wJMdA3rshW0xrCq6Twikak.6FwQdDI32tVv7A4t-6cDeRwA93Acfha9_XxIU4_Hf-I\"}"
+  },
+  "wallet": "0x1efF47bc3a10a45D4B230B5d10E37751FE6AA718",
+  "errors": {
+    "epubUnknown": "epub-unknown",
+    "epubReuse": "epub-reuse",
+    "pubMismatch": "pub-mismatch",
+    "epubMismatch": "epub-mismatch",
+    "rotationRejected": "rotation-rejected",
+    "lostDevice": "lost-device",
+    "duplicateDevice": "duplicate-device",
+    "deviceId": "device-id",
+    "badLane": "bad-lane",
+    "emptyDevice": "empty-device",
+    "contentEpoch": "content-epoch",
+    "tooManyKeys": "too-many-keys",
+    "badConstruction": "bad-construction"
+  },
+  "unsafeContentEpoch": 9007199254740992,
+  "maxContentEpoch": 9007199254740991,
+  "witnessed": {
+    "rotationName": "rotate-v3-wallet",
+    "genesisScalar": 1,
+    "genesisEpubScalar": 9,
+    "currentScalar": 2,
+    "epubScalar": 6,
+    "laneId": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "contentEpoch": 4,
+    "rotationSeq": 1,
+    "dekHex": "1111111111111111111111111111111111111111111111111111111111111111",
+    "objectId": "item_00112233445566778899aabbccddeeff",
+    "revisionId": "7959127078e9212a046160203b536df084c7884f9f1c18f439fda77f28450008"
+  },
+  "crossWrap": {
+    "ephemeralScalar": 12,
+    "nonceByte": 34,
+    "epoch": 4,
+    "wrappedKey": "0104741dd5bda817d95e4626537320e5d55179983028b2f82c99d500c5ee8624e3c40770b46a9c385fdc567383554887b1548eeb912c35ba5ca71995ff22cd4481d32222222222222222222222223cc34b19ec5bbc1a34fc6e9b0e927a1d8066860fec3ec5fb7a178544960fdae4bbfaddc5dff9378181f3d5afbee2093fccd163c42a510f77068956f29294a3b159f767f5eb96e810d24cdf33471f049dba76d55b7ded7fb931609aa1d1c78a73c50a18b8027f1f3ea2f84f93d58c2026d0ce5861a888f87edb52f35d621f3bf4d85c5ff4868c9196a2dfdb9fb225b45e5223619309860926c7ef26421e98eb96e8f79e7d05df2d7ee713019d96079ccfda143577c51b452f61965a6769b592da092eeb000beb91e18101b4429e11c182570ba97e183cad9a22bec5b94348dbb8c2e379380db8c98d6eb1c76e651b4eb558170afe79af418218e18df0332815d67232a0ff2c5b2916249d86c915a1b51d0a436b8867861df4731f765ef400ccc545e0c36656d29058fcfa93c0db2a7260be6f62b56ef376e0c03c8d57b647b7945b5d0c30bef95b0a31e6a2d8169d106bf95df2f75a6d7ab9"
+  },
+  "genesisBinding": {
+    "v": 1,
+    "kind": "genesis-epub",
+    "principal": "YP7UuiVanTHJYet0xjVtaMBJuJI7Yfps5mliLmDyn7Y.eQP-EAi4vJmkGunpVii8ZPLxsgwtfp9Rd6PClNRGIpk",
+    "epub": "EMvdmXTv89JPyMx5n3blU3L_D70U-6JoVaVzTvSzgYg.B_b0CP3o9X3I7tWrxA_F1VhXpjeMuIJCtQWnOh7LN5c",
+    "issuedAt": 1700000000,
+    "keySig": "j1L79oCTDPehaaKZEhQrQiLpOgdMaY0LkLm2h45ThxlEJ5osNGZ2cCkDVt5ePwG22fwTyzzY1R8vqljIIY_Lmw",
+    "attest": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImZpeHR1cmUtMSIsInR5cCI6IkpXVCJ9.eyJ0eXAiOiJzb2NpYWNsLWdlbmVzaXMtZXB1Yi1hdHRlc3QtdjEiLCJwcmluY2lwYWwiOiJZUDdVdWlWYW5USEpZZXQweGpWdGFNQkp1Skk3WWZwczVtbGlMbUR5bjdZLmVRUC1FQWk0dkpta0d1bnBWaWk4WlBMeHNnd3RmcDlSZDZQQ2xOUkdJcGsiLCJlcHViIjoiRU12ZG1YVHY4OUpQeU14NW4zYmxVM0xfRDcwVS02Sm9WYVZ6VHZTemdZZy5CX2IwQ1AzbzlYM0k3dFdyeEFfRjFWaFhwamVNdUlKQ3RRV25PaDdMTjVjIiwiaWF0IjoxNzAwMDAwMDAwLCJleHAiOjE3MDAwMDA2MDB9.N0CEfqnu99EAQqvW7-_6rXg8Bke3VgscoOc_-O1v7e-Qw1UzTMOlKKnYxMrPu0pOdXP2r0VBLIU0nDxBKh6jHA"
+  }
+}

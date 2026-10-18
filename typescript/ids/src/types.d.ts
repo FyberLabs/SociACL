@@ -33,9 +33,13 @@ export type Rotate = Readonly<{ v: 1; kind: 'rotate'; principal: PrincipalId; se
   authorizer: { kind: 'wallet'; link: string; siwe: Siwe } | { kind: 'oidc-fresh-login'; link: string }; attest: string }>;
 export type Revoke = Readonly<{ v: 1; kind: 'revoke'; principal: PrincipalId; linkId: string;
   issuedAt: number; keySig: string; attest?: string }>;
-export type IdentityRecord = WalletLink | OidcLink | Rotate | Revoke;
+/** Genesis key signs the account's first epub. Panopticon attests it at signup. No wallet. */
+export type GenesisEpub = Readonly<{ v: 1; kind: 'genesis-epub'; principal: PrincipalId; epub: PrincipalId;
+  issuedAt: number; keySig: string; attest: string }>;
+export type IdentityRecord = WalletLink | OidcLink | Rotate | Revoke | GenesisEpub;
 export type UnsignedRecord = Omit<WalletLink, 'keySig' | 'siwe' | 'attest'> | Omit<OidcLink, 'keySig' | 'attest'>
-  | (Omit<Rotate, 'nextSig' | 'authorizer' | 'attest'> & {authorizer: {kind:'wallet'|'oidc-fresh-login';link:string}}) | Omit<Revoke, 'keySig' | 'attest'>;
+  | (Omit<Rotate, 'nextSig' | 'authorizer' | 'attest'> & {authorizer: {kind:'wallet'|'oidc-fresh-login';link:string}})
+  | Omit<Revoke, 'keySig' | 'attest'> | Omit<GenesisEpub, 'keySig' | 'attest'>;
 export type Jwks = Readonly<{ keys: readonly Readonly<{ kty: 'EC'; crv: 'P-256'; kid: string;
   x: string; y: string; alg?: 'ES256'; use?: 'sig'; key_ops?: readonly string[] }>[] }>;
 export type SiwePolicy = Readonly<{ allowedDomains: readonly string[]; allowedUris: readonly string[]; allowedChainIds: readonly string[]; clockSkewSeconds?: number }>;
@@ -43,8 +47,12 @@ export type SiwePolicy = Readonly<{ allowedDomains: readonly string[]; allowedUr
 // otherwise retainedLinks is the intersection of every rotation's commitments from at through until.
 export type KeyState = Readonly<{ key: PrincipalId; currentKey: PrincipalId; retainedLinks: readonly string[] | null }>;
 export type HistoryResolver = (principal: PrincipalId, at: number, until: number) => Result<KeyState>;
-export type Diagnostic = Readonly<{ source: 'rotation' | 'link' | 'revoke'; index: number; reason: Reason }>;
+export type Diagnostic = Readonly<{ source: 'rotation' | 'link' | 'revoke' | 'genesis-epub'; index: number; reason: Reason }>;
 export type Resolution<T> = Result<T> & { diagnostics: readonly Diagnostic[] };
-export type ResolvedAccount = Readonly<{ currentKey: PrincipalId; currentEpub: PrincipalId | null; rotations: readonly Rotate[] }>;
+export type ResolvedAccount = Readonly<{ currentKey: PrincipalId; currentEpub: PrincipalId | null;
+  /** In-force witnessed genesis epub. Null when none was attested, or the only one was issued too late. */
+  bindingEpub: PrincipalId | null; rotations: readonly Rotate[] }>;
 export type ResolutionContext = Readonly<{ jwks: Jwks; links: ReadonlyMap<string, unknown>;
-  revocations?: readonly unknown[]; now: number; policy: SiwePolicy; pinnedIss: ReadonlySet<string>; history: HistoryResolver }>;
+  revocations?: readonly unknown[]; now: number; policy: SiwePolicy; pinnedIss: ReadonlySet<string>; history: HistoryResolver;
+  /** Witnessed `genesis-epub` records. Gun `user.epub` is not this list and is never read. */
+  genesisEpubBindings?: readonly unknown[] }>;

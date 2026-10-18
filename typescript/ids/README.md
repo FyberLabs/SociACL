@@ -45,9 +45,9 @@ object. Rust cannot represent an unpaired UTF-16 surrogate in `str`;
 | Souls | `objectSoul`, `userSoul`, `aclSoul`, `grantSoul`, `postSoul` |
 | Creation | `mintObjectId`, `deriveClaimId`, `deriveExternalId` |
 | Signing | `signingBytes`, `linkId` |
-| Proofs | `verifyWalletLink`, `verifyOidcLink`, `verifyRotate`, `verifyRevoke` |
+| Proofs | `verifyWalletLink`, `verifyOidcLink`, `verifyRotate`, `verifyRotationRequest`, `verifyGenesisEpubRequest`, `verifyRevoke` |
 | Present eligibility | `verifyRevokeNow`, `resolveWalletLinkNow` |
-| Histories | `resolveCurrentKey`, `resolveWalletLink`, `historyState` |
+| Histories | `resolveCurrentKey`, `resolveWalletLink`, `historyState`, `checkRotationPublish`, `checkRotationDraft` |
 
 Every parser/verifier returns `{ok:true,value}` or `{ok:false,reason}`. Scalar
 parsers check the input type before examining it. Object parsers snapshot own
@@ -168,7 +168,7 @@ JWKS and enrollment proofs still authenticate existing links;
 complete authenticated history and a trusted latest-state checkpoint remain
 necessary. The offline revoke itself requires no network request.
 
-`ResolutionContext` contains `{jwks, pinnedIss, links, revocations?, now, policy, history}`.
+`ResolutionContext` contains `{jwks, pinnedIss, links, revocations?, now, policy, history, genesisEpubBindings?}`.
 `history(principal, issuedAt, until)` is required and returns `Result<KeyState>`
 from a complete authenticated snapshot through `until`. `historyState` computes
 that state from previously verified rotations. It does **not** authenticate its
@@ -182,18 +182,52 @@ history lookup. Unrelated or unwitnessed index entries cannot cause a fatal
 context failure.
 
 `resolveCurrentKey(genesis, rotations, context)` returns
-`{ok:true,value:{currentKey,currentEpub,rotations},diagnostics}` or
+`{ok:true,value:{currentKey,currentEpub,bindingEpub,rotations},diagnostics}` or
 `{ok:false,reason,diagnostics}`. The rotation version is inferred from whether
 `nextEpub` is present; record `v` stays 1. Each accepted rotation replaces
 `currentEpub`: a v3 record sets it to that `nextEpub`, and a v2 record sets it
 to null. Null means the encryption public key is unknown. Do not seal, and
-never fall back to Gun's `user.epub`. With no accepted v3 rotation,
-`currentEpub` stays null. New rotations must be v3, and from 0.7 Panopticon
-attests only v3. The library still verifies historical v2. Panopticon never
-attests both versions for the same principal and sequence; publishing both
-freezes the account with `rotation-fork`. `nextEpub` must not equal `nextKey`,
-genesis, any prior signing key, or any prior epub, and a later `nextKey` must
-not equal any prior epub (`bad-sequence`). It sorts sequences, verifies each candidate,
+never fall back to Gun's `user.epub`. With no accepted rotation, `currentEpub`
+is the witnessed `genesis-epub` binding, or null when there is none. A v2
+rotation still sets `currentEpub` to null. Pass those
+records as `ResolutionContext.genesisEpubBindings`. The genesis key signs
+domain `sociacl-genesis-epub-v1`. Panopticon attests typ
+`sociacl-genesis-epub-attest-v1` with `iat` equal to `issuedAt`, at most one
+binding per principal, only before the first rotation, across every instance
+and signing key (panopticon#499). Panopticon sets `iat` itself, with
+`exp <= iat + 900`, and verifies the genesis-key signature. Two valid bindings
+issued strictly before the first accepted rotation freeze the account. A
+binding issued at or after that rotation is skipped with `bad-sequence` and
+does not freeze a rotated account. `issuedAt` uses the policy clock skew.
+Once a rotation is accepted, that binding epub joins the reuse
+set. An unwitnessed `genesisEpub` string is ignored. New rotations must be v3,
+and from 0.7 Panopticon attests only v3. From 0.8, Panopticon calls
+`checkRotationPublish` before it attests. That function calls
+`verifyRotationRequest` when the candidate has no attestation, then checks
+chain sequence, sibling forks, and epub reuse. Freshness and present
+revocation apply only to that unattested request. An attested candidate does
+not use them, and `verifyRotate` checks the attestation as of `issuedAt`.
+Present revocation honors clock skew for an offline revoke dated at or before
+`now + skew`. The request helper covers one
+v3 request: no `attest` field, `|issuedAt - now|` within clock skew, the
+next-key signature, the authorizer, the links, the retained set, historical
+revocation, and present revocation of the authorizer and every retained link.
+It does not check chain sequence or epub reuse. An unsigned draft is
+`bad-record` from the publish check. `checkRotationDraft` is only the keyring
+builder's pre-signature check. `verifyGenesisEpubRequest`
+checks a genesis-epub request (shape, signature, freshness) before Panopticon
+attests it. A binding attestation is verified as of its `issuedAt`, and a
+sibling attestation is verified as of that sibling's `issuedAt`. A sibling
+counts only when its signature and the full claim match, including `auth`,
+`linkId`, and `retainedLinks`. An identical attested sibling is a retry and is not a
+fork. An unsigned draft is `bad-record`. Junk is skipped.
+It refuses a v2 record with `bad-record` and two versions of one
+`(principal, seq)` with `rotation-fork`. It does not replace `verifyRotate`.
+The library still verifies historical v2.
+Panopticon never attests both versions for the same principal and sequence;
+publishing both freezes the account with `rotation-fork`. `nextEpub` must not
+equal `nextKey`, genesis, any prior signing key, or any prior epub, and a later
+`nextKey` must not equal any prior epub (`bad-sequence`). It sorts sequences, verifies each candidate,
 skips unauthenticated malformed/forged candidates, and reports `{source,index,reason}` diagnostics.
 Once a rotation's new-key signature and attestation authenticate its references,
 copies are compared by signing-bytes hash. Any fully verified copy satisfies
@@ -287,15 +321,15 @@ present/historical revocation boundary. The browser check
 bundles the runtime dependency graph and rejects Node imports. Node built-ins
 are used only in build/test tooling, outside the shipped runtime.
 
-After review and merge, tag `ids-v0.7.0`. The release job waits for the full test
+After review and merge, tag `ids-v0.8.0`. The release job waits for the full test
 job, requires a protected `master` and verifies the tag commit is its ancestor.
 A read-only job installs dependencies with scripts disabled, explicitly builds,
 and checks the tag against `package.json`. A separate write-token job only
 downloads the resulting artifact, checks its SHA-256, and attaches
-`sociacl-ids-0.7.0.tgz` and its SHA-256 file. Consumers then install:
+`sociacl-ids-0.8.0.tgz` and its SHA-256 file. Consumers then install:
 
 ```sh
-npm install https://github.com/FyberLabs/SociACL/releases/download/ids-v0.7.0/sociacl-ids-0.7.0.tgz
+npm install https://github.com/FyberLabs/SociACL/releases/download/ids-v0.8.0/sociacl-ids-0.8.0.tgz
 ```
 
 Commit the consumer lockfile with tarball integrity. This URL becomes usable

@@ -160,10 +160,51 @@ already in this package: a v3 rotation sets `currentEpub` to that record's
 `nextEpub`, and a v2 rotation sets `currentEpub` to null. Null means the
 encryption public key for the current signing key is unknown. Consumers must
 not seal, and they must never fall back to Gun's `user.epub` or any other
-unwitnessed point. With no accepted v3 rotation, including a v2-only history
-and an empty history, `currentEpub` stays null. The genesis encryption public
-key is not bound here; the part 2 keyring covers that case. `historyState`
-stays signing-key state and carries no epub.
+unwitnessed point. With no accepted rotation, `currentEpub` is the witnessed
+`genesis-epub` binding, or null when there is none. A v2 rotation still sets
+`currentEpub` to null. Gun `user.epub` is never that value.
+`historyState` stays signing-key state and carries no epub.
+
+## Genesis epub binding
+
+A fresh account gets an encryption public key from a `genesis-epub` record,
+not from Gun. The record is `{v:1, kind:"genesis-epub", principal, epub,
+issuedAt, keySig, attest}`. The genesis key signs domain
+`sociacl-genesis-epub-v1`: length-prefixed principal, epub, and the decimal
+`issuedAt`. `epub` is a canonical on-curve SEA point and must not equal the
+genesis pub. Panopticon attests it with typ `sociacl-genesis-epub-attest-v1`
+and claims `principal`, `epub`, `iat`, and `exp`. `iat` must equal `issuedAt`.
+No wallet and no Keycloak login are required.
+
+Panopticon attests at most one binding per principal, and only before the
+first rotation. It refuses a binding when any rotation already exists. That
+one-per-principal record is global across instances and signing keys
+(panopticon#499). Panopticon calls `verifyGenesisEpubRequest` /
+`verify_genesis_epub_request` before it attests: shape, canonical epub
+distinct from the genesis pub, genesis-key signature, and
+`|issuedAt - now| <= clockSkewSeconds`. It then sets `iat` equal to that
+`issuedAt`, with `exp <= iat + 900`. Callers pass the records
+as `ResolutionContext.genesisEpubBindings`. Invalid or junk bindings are
+skipped with a diagnostic. The fork count runs only over bindings whose
+`issuedAt` is strictly before the first accepted rotation. With no accepted
+rotation, every valid binding counts, and two distinct ones freeze the account
+with `rotation-fork`. The diagnostic source `genesis-epub` distinguishes that
+freeze from a rotation fork. A binding issued at or after the first accepted
+rotation's `issuedAt` is skipped with `bad-sequence` and does not freeze the
+account or join the reuse set. `issuedAt` must be at or before `now` plus
+the policy clock skew. The attestation is verified as of `issuedAt`, so a
+binding stays valid after its 15-minute witness window.
+
+With no accepted rotation, `currentEpub` is that binding's epub, or null when
+none is in force. After a rotation is accepted, `currentEpub` still comes from
+the rotation chain, and the in-force binding epub is reused like any prior
+epub: a later `nextEpub` or `nextKey` equal to it is `bad-sequence`. An
+unwitnessed `genesisEpub` string on the context is ignored. `verifyRotate`
+does not take that string either. The binding is applied inside
+`resolveCurrentKey`.
+
+`confirm` and `import` accept a genesis-only keyring when its `epriv` matches
+the witnessed binding epub. A null `currentEpub` still refuses a new seal.
 
 `nextEpub` must be a fresh point. It must not equal `nextKey`, the genesis
 signing key, any prior signing key, or any prior `nextEpub`. A later `nextKey`
@@ -171,6 +212,61 @@ must not equal any prior `nextEpub`. Those collisions are `bad-sequence`, the
 same reason as signing-key reuse. Direct `verifyRotate` rejects `nextEpub`
 equal to `nextKey` or `prevKey`. During resolution the colliding candidate is
 skipped and the prior key and epub stay in place.
+
+## Attest and publish
+
+Panopticon runs the same reuse and sequence checks as `resolveCurrentKey`
+before it attests a rotation. Clients run those same checks before they
+publish. `checkRotationPublish` / `check_rotation_publish` is that shared
+check. It is not a second rotation scheme and it does not replace
+`verifyRotate`.
+
+The check refuses a v2 record (no `nextEpub`) with `bad-record`. Historical
+`verifyRotate` still accepts a v2 record. The check refuses two versions, or
+two signing-byte ids, offered for one `(principal, seq)` with `rotation-fork`.
+Panopticon must not attest a v2 record and must not attest both versions for
+that pair. A client must not publish either.
+
+Before it attests, Panopticon calls `checkRotationPublish` /
+`check_rotation_publish` (panopticon#499). That function calls
+`verifyRotationRequest` / `verify_rotation_request` for a signed candidate
+with no attestation, then applies chain sequence, sibling forks, and epub
+reuse. The request helper is not sufficient on its own. It covers a v3
+request only: it refuses v2 and any present `attest`; it requires
+`|issuedAt - now| <= clockSkewSeconds`; it checks the next-key signature,
+the authorizer, the links, and the retained set; it applies historical
+revocation at `issuedAt` and present revocation at `now`
+(`verifyRevokeNow` / `resolveWalletLinkNow`) to the authorizer and every
+retained link. Freshness and present revocation apply only to that
+unattested request. An attested candidate does not use the window: its
+attestation is checked as of `issuedAt`, and revocation is the witnessed
+check at `issuedAt`. Present revocation honors `clockSkewSeconds` for an
+offline revoke dated at or before `now + skew`. A revoke dated further
+ahead is ignored. Historical witnessed checks and direct `verifyRevokeNow`
+stay skew-free. It does not check chain sequence or historical epub reuse.
+Panopticon requires that window, sets `iat` equal to the client-signed
+`issuedAt`, and sets `exp <= iat + 900`. It runs that present-revocation
+check before attesting. It also attests at most one `genesis-epub` binding
+per principal, only before the first rotation, across every instance and
+signing key. Before attesting a binding it calls `verifyGenesisEpubRequest`
+/ `verify_genesis_epub_request` (shape, canonical epub distinct from the
+genesis pub, genesis-key signature, and the same freshness window) and
+refuses the binding when any rotation exists. The publish check
+uses the rotations `resolveCurrentKey` accepts as the prior chain, including
+an in-force binding epub in the reuse set. A sibling counts only when its
+next-key signature and the full Panopticon claim both verify, including
+`auth`, `linkId`, `retainedLinks`, and the exact claim shape. Junk and
+unattested siblings are skipped and are not a fatal parse error. A distinct
+authenticated sibling at the same `(principal, seq)` is `rotation-fork`. An
+identical attested sibling is a retry and is not a fork. An unsigned draft
+is `bad-record` here. `checkRotationDraft` / `check_rotation_draft` is the
+builder's check before a signature exists, and Panopticon does not call it.
+A draft's `retainedLinks` use the signed-record rule, and an identical
+attested sibling of that draft is a retry. A bad-signature prior does not
+block a later valid record. A null `currentEpub` still means do not seal
+and never fall back to Gun `user.epub`. `verifyRotate` checks an attested
+record as of its `issuedAt`, so a historical record still verifies after
+the witness window.
 
 The verifier authenticates the authorizing credential and **every retained ID**
 against the pre-rotation state. Each must belong to the principal and remain

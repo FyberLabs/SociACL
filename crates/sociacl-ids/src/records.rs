@@ -71,6 +71,18 @@ pub struct Rotate {
     pub authorizer: Authorizer,
     pub attest: String,
 }
+/// Genesis key signs the account's first epub. Panopticon attests it at signup.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct GenesisEpub {
+    pub v: u8,
+    pub principal: PrincipalId,
+    pub epub: PrincipalId,
+    #[serde(deserialize_with = "deserialize_integer")]
+    pub issued_at: u64,
+    pub key_sig: String,
+    pub attest: String,
+}
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Revoke {
@@ -90,6 +102,8 @@ pub enum IdentityRecord {
     Oidc(OidcLink),
     Rotate(Rotate),
     Revoke(Revoke),
+    #[serde(rename = "genesis-epub")]
+    GenesisEpub(GenesisEpub),
 }
 impl IdentityRecord {
     pub fn principal(&self) -> &PrincipalId {
@@ -98,6 +112,7 @@ impl IdentityRecord {
             Self::Oidc(r) => &r.principal,
             Self::Rotate(r) => &r.principal,
             Self::Revoke(r) => &r.principal,
+            Self::GenesisEpub(r) => &r.principal,
         }
     }
     pub fn issued_at(&self) -> u64 {
@@ -106,6 +121,7 @@ impl IdentityRecord {
             Self::Oidc(r) => r.issued_at,
             Self::Rotate(r) => r.issued_at,
             Self::Revoke(r) => r.issued_at,
+            Self::GenesisEpub(r) => r.issued_at,
         }
     }
     pub fn value(&self) -> Value {
@@ -135,6 +151,8 @@ pub struct ResolutionContext<'a> {
     pub policy: &'a SiwePolicy,
     pub pinned_iss: &'a BTreeSet<String>,
     pub history: &'a HistoryResolver<'a>,
+    /// Witnessed `genesis-epub` records. Gun `user.epub` is not this slice.
+    pub genesis_epub_bindings: &'a [Value],
 }
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -167,6 +185,9 @@ pub struct Resolution<T> {
 pub struct ResolvedAccount {
     pub current_key: PrincipalId,
     pub current_epub: Option<PrincipalId>,
+    /// In-force witnessed genesis epub. None when none was attested, or the
+    /// only one was issued at or after the first accepted rotation.
+    pub binding_epub: Option<PrincipalId>,
     pub rotations: Vec<Rotate>,
 }
 fn diagnostic(ds: &mut Vec<Diagnostic>, source: &str, index: usize, reason: Reason) {
@@ -222,8 +243,14 @@ fn siwe_data(v: &Value) -> Result<Siwe, Reason> {
 fn record(v: &Value, unsigned: bool) -> Result<IdentityRecord, Reason> {
     if !v.is_object()
         || v["v"].as_f64() != Some(1.0)
-        || ![Some("wallet"), Some("oidc"), Some("rotate"), Some("revoke")]
-            .contains(&v["kind"].as_str())
+        || ![
+            Some("wallet"),
+            Some("oidc"),
+            Some("rotate"),
+            Some("revoke"),
+            Some("genesis-epub"),
+        ]
+        .contains(&v["kind"].as_str())
     {
         return Err(Reason::BadRecord);
     }
@@ -244,6 +271,34 @@ fn record(v: &Value, unsigned: bool) -> Result<IdentityRecord, Reason> {
         }
     };
     match v["kind"].as_str().ok_or(Reason::BadRecord)? {
+        "genesis-epub" => {
+            if !only(
+                v,
+                &[
+                    "v",
+                    "kind",
+                    "principal",
+                    "epub",
+                    "issuedAt",
+                    "keySig",
+                    "attest",
+                ],
+            ) {
+                return Err(Reason::BadRecord);
+            }
+            let epub = parse_principal_id(v["epub"].as_str().ok_or(Reason::NotString)?)?;
+            if epub == principal {
+                return Err(Reason::BadRecord);
+            }
+            Ok(IdentityRecord::GenesisEpub(GenesisEpub {
+                v: 1,
+                principal,
+                epub,
+                issued_at,
+                key_sig: sig("keySig")?,
+                attest: attest()?,
+            }))
+        }
         "wallet" | "oidc" => {
             let nonce = field(v, "nonce", 128)?.to_owned();
             if !rx!(r"^[A-Za-z0-9]{8,128}$").is_match(&nonce) {
@@ -370,20 +425,7 @@ fn record(v: &Value, unsigned: bool) -> Result<IdentityRecord, Reason> {
             if seq == 0 {
                 return Err(Reason::BadSequence);
             }
-            let retained_links: Vec<String> = v["retainedLinks"]
-                .as_array()
-                .ok_or(Reason::BadRecord)?
-                .iter()
-                .map(|x| {
-                    x.as_str()
-                        .filter(|s| is_hex(s, 64))
-                        .map(str::to_owned)
-                        .ok_or(Reason::BadRecord)
-                })
-                .collect::<Result<_, _>>()?;
-            if retained_links.len() > 1024 || retained_links.windows(2).any(|w| w[0] >= w[1]) {
-                return Err(Reason::BadRecord);
-            }
+            let retained_links = retained_ids(&v["retainedLinks"])?;
             let prev_key = parse_principal_id(v["prevKey"].as_str().ok_or(Reason::NotString)?)?;
             let next_key = parse_principal_id(v["nextKey"].as_str().ok_or(Reason::NotString)?)?;
             let next_epub = if v.get("nextEpub").is_some() {
@@ -437,6 +479,24 @@ fn record(v: &Value, unsigned: bool) -> Result<IdentityRecord, Reason> {
         _ => Err(Reason::BadRecord),
     }
 }
+/// Sorted unique 64-hex link ids, at most 1024. The same rule as a signed rotation.
+fn retained_ids(v: &Value) -> Result<Vec<String>, Reason> {
+    let retained_links: Vec<String> = v
+        .as_array()
+        .ok_or(Reason::BadRecord)?
+        .iter()
+        .map(|x| {
+            x.as_str()
+                .filter(|s| is_hex(s, 64))
+                .map(str::to_owned)
+                .ok_or(Reason::BadRecord)
+        })
+        .collect::<Result<_, _>>()?;
+    if retained_links.len() > 1024 || retained_links.windows(2).any(|w| w[0] >= w[1]) {
+        return Err(Reason::BadRecord);
+    }
+    Ok(retained_links)
+}
 fn bytes(r: &IdentityRecord) -> Vec<u8> {
     let t = r.issued_at().to_string();
     match r {
@@ -488,6 +548,12 @@ fn bytes(r: &IdentityRecord) -> Vec<u8> {
         IdentityRecord::Revoke(r) => {
             lp(&["sociacl-revoke-v1", r.principal.as_ref(), &r.link_id, &t])
         }
+        IdentityRecord::GenesisEpub(r) => lp(&[
+            "sociacl-genesis-epub-v1",
+            r.principal.as_ref(),
+            r.epub.as_ref(),
+            &t,
+        ]),
     }
 }
 pub fn signing_bytes(r: &IdentityRecord) -> Result<Vec<u8>, Reason> {
@@ -830,6 +896,28 @@ fn proof_time(issued: u64, now: u64, skew: u64) -> Result<(), Reason> {
     }
     Ok(())
 }
+/// Request mode only. Historical proofs stay an upper bound.
+fn request_time(issued: u64, now: u64, skew: u64) -> Result<(), Reason> {
+    proof_time(issued, now, skew)?;
+    if (issued as i128) < now as i128 - skew as i128 {
+        return Err(Reason::Expired);
+    }
+    Ok(())
+}
+/// Present-revocation horizon for an unattested request. Historical checks stay skew-free.
+/// A sum past the safe-integer cap falls back to `now`, which is stricter.
+/// Direct [`verify_revoke_now`] does not use this.
+fn present_horizon(now: u64, skew: u64) -> u64 {
+    if now > MAX_SAFE || skew > MAX_SAFE {
+        return now;
+    }
+    let horizon = now.saturating_add(skew);
+    if horizon > MAX_SAFE {
+        now
+    } else {
+        horizon
+    }
+}
 fn wallet_witness(
     w: &WalletLink,
     jwks: &Jwks,
@@ -1116,11 +1204,19 @@ fn rotation_candidate(v: &Value) -> Result<IdentityRecord, Reason> {
         serde_json::json!({"message":"", "signature":format!("0x{}", "00".repeat(65))});
     record(&candidate, false).or(parsed)
 }
-fn reuses_epub(raw: &Rotate, genesis: &PrincipalId, history: &[Rotate]) -> bool {
+fn reuses_epub(
+    raw: &Rotate,
+    genesis: &PrincipalId,
+    history: &[Rotate],
+    binding_epub: Option<&PrincipalId>,
+) -> bool {
     if history
         .iter()
         .any(|h| h.next_epub.as_ref() == Some(&raw.next_key))
     {
+        return true;
+    }
+    if binding_epub.is_some_and(|bound| bound == &raw.next_key) {
         return true;
     }
     let Some(epub) = &raw.next_epub else {
@@ -1128,43 +1224,72 @@ fn reuses_epub(raw: &Rotate, genesis: &PrincipalId, history: &[Rotate]) -> bool 
     };
     epub == &raw.next_key
         || epub == genesis
+        || binding_epub.is_some_and(|bound| epub == bound)
         || history.iter().any(|h| {
             &h.next_key == epub || &h.prev_key == epub || h.next_epub.as_ref() == Some(epub)
         })
 }
-fn check_rotate(
-    v: &Value,
-    current_key: &PrincipalId,
+fn verify_genesis_epub(
+    raw: &Value,
+    genesis: &PrincipalId,
     ctx: &ResolutionContext<'_>,
-    diagnostics: &mut Vec<Diagnostic>,
-) -> Result<Rotate, Reason> {
-    let r = rotation_candidate(v)?;
-    let IdentityRecord::Rotate(rot) = &r else {
+) -> Result<GenesisEpub, Reason> {
+    let IdentityRecord::GenesisEpub(binding) = record(raw, false)? else {
         return Err(Reason::BadRecord);
     };
-    proof_time(rot.issued_at, ctx.now, ctx.policy.clock_skew_seconds)?;
-    if &rot.prev_key != current_key || &rot.next_key == current_key {
-        return Err(Reason::BadSequence);
+    if &binding.principal != genesis {
+        return Err(Reason::BadRecord);
     }
-    if rot
-        .next_epub
-        .as_ref()
-        .is_some_and(|epub| epub == &rot.next_key || epub == &rot.prev_key)
-    {
-        return Err(Reason::BadSequence);
-    }
-    if !key_verify(&rot.next_key, &rot.next_sig, &bytes(&r)) {
+    proof_time(binding.issued_at, ctx.now, ctx.policy.clock_skew_seconds)?;
+    let signed = IdentityRecord::GenesisEpub(binding.clone());
+    if !key_verify(&binding.principal, &binding.key_sig, &bytes(&signed)) {
         return Err(Reason::BadSignature);
     }
+    // The witness is checked as of issuance, so a binding does not expire.
     let c = attest_verify(
-        &rot.attest,
+        &binding.attest,
         ctx.jwks,
-        ctx.now,
+        binding.issued_at,
         ctx.policy.clock_skew_seconds,
     )?;
+    if !only(&c, &["typ", "principal", "epub", "iat", "exp"])
+        || c["typ"] != "sociacl-genesis-epub-attest-v1"
+        || c["principal"] != binding.principal.as_ref()
+        || c["epub"] != binding.epub.as_ref()
+        || number(&c["iat"]).ok() != Some(binding.issued_at)
+    {
+        return Err(Reason::BadAttestation);
+    }
+    Ok(binding)
+}
+fn verified_bindings(
+    genesis: &PrincipalId,
+    ctx: &ResolutionContext<'_>,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Result<Vec<(usize, GenesisEpub)>, Reason> {
+    let mut accepted: Vec<(usize, GenesisEpub, String)> = Vec::new();
+    for (index, raw) in ctx.genesis_epub_bindings.iter().enumerate() {
+        match verify_genesis_epub(raw, genesis, ctx) {
+            Ok(binding) => {
+                let id = link_id(&IdentityRecord::GenesisEpub(binding.clone()))?;
+                if accepted.iter().any(|(_, _, seen)| seen == &id) {
+                    continue;
+                }
+                accepted.push((index, binding, id));
+            }
+            Err(reason) => diagnostic(diagnostics, "genesis-epub", index, reason),
+        }
+    }
+    Ok(accepted
+        .into_iter()
+        .map(|(index, binding, _)| (index, binding))
+        .collect())
+}
+/// Exact Panopticon rotation claim, including auth, linkId, and retainedLinks.
+fn rotation_claims_match(rot: &Rotate, c: &Value) -> bool {
     let (auth, link) = match &rot.authorizer {
-        Authorizer::Wallet { link, .. } => ("wallet", link),
-        Authorizer::OidcFreshLogin { link } => ("oidc-fresh-login", link),
+        Authorizer::Wallet { link, .. } => ("wallet", link.as_str()),
+        Authorizer::OidcFreshLogin { link } => ("oidc-fresh-login", link.as_str()),
     };
     let v3 = rot.next_epub.is_some();
     let mut attest_keys = vec![
@@ -1185,19 +1310,388 @@ fn check_rotate(
         Some(epub) => c["nextEpub"] == epub.as_ref(),
         None => true,
     };
-    if !only(&c, &attest_keys)
-        || c["typ"] != if v3 { "sociacl-rotate-attest-v3" } else { "sociacl-rotate-attest-v2" }
-        || c["principal"] != rot.principal.as_ref()
-        || c["nextKey"] != rot.next_key.as_ref()
-        || !epub_matches
-        || number(&c["seq"]).ok() != Some(rot.seq)
-        || number(&c["iat"]).ok() != Some(rot.issued_at)
-        || c["auth"] != auth
-        || c["linkId"] != *link
-        || c["retainedLinks"] != serde_json::json!(rot.retained_links)
-    {
-        return Err(Reason::BadAttestation);
+    only(c, &attest_keys)
+        && c["typ"]
+            == if v3 {
+                "sociacl-rotate-attest-v3"
+            } else {
+                "sociacl-rotate-attest-v2"
+            }
+        && c["principal"] == rot.principal.as_ref()
+        && c["nextKey"] == rot.next_key.as_ref()
+        && epub_matches
+        && number(&c["seq"]).ok() == Some(rot.seq)
+        && number(&c["iat"]).ok() == Some(rot.issued_at)
+        && c["auth"] == auth
+        && c["linkId"] == link
+        && c["retainedLinks"] == serde_json::json!(rot.retained_links)
+}
+/// A sibling counts only when its next-key signature and Panopticon attestation both verify.
+fn authenticated_sibling(raw: &Value, ctx: &ResolutionContext<'_>) -> Option<Rotate> {
+    let IdentityRecord::Rotate(row) = rotation_candidate(raw).ok()? else {
+        return None;
+    };
+    let signed = IdentityRecord::Rotate(row.clone());
+    if !key_verify(&row.next_key, &row.next_sig, &bytes(&signed)) {
+        return None;
     }
+    let c = attest_verify(
+        &row.attest,
+        ctx.jwks,
+        row.issued_at,
+        ctx.policy.clock_skew_seconds,
+    )
+    .ok()?;
+    if !rotation_claims_match(&row, &c) {
+        return None;
+    }
+    Some(row)
+}
+fn draft_rotation(v: &Value) -> Result<Rotate, Reason> {
+    if v["v"].as_f64() != Some(1.0) || v["kind"] != "rotate" {
+        return Err(Reason::BadRecord);
+    }
+    if v.get("nextSig").is_some() || v.get("authorizer").is_some() || v.get("attest").is_some() {
+        return Err(Reason::BadRecord);
+    }
+    if !only(
+        v,
+        &[
+            "v",
+            "kind",
+            "principal",
+            "seq",
+            "prevKey",
+            "nextKey",
+            "nextEpub",
+            "retainedLinks",
+            "issuedAt",
+        ],
+    ) {
+        return Err(Reason::BadRecord);
+    }
+    let principal = parse_principal_id(v["principal"].as_str().ok_or(Reason::NotString)?)?;
+    let seq = number(&v["seq"])?;
+    if seq == 0 {
+        return Err(Reason::BadSequence);
+    }
+    let prev_key = parse_principal_id(v["prevKey"].as_str().ok_or(Reason::NotString)?)?;
+    let next_key = parse_principal_id(v["nextKey"].as_str().ok_or(Reason::NotString)?)?;
+    let next_epub = parse_principal_id(v["nextEpub"].as_str().ok_or(Reason::NotString)?)?;
+    let retained_links = retained_ids(&v["retainedLinks"])?;
+    let issued_at = if v.get("issuedAt").is_some() {
+        number(&v["issuedAt"])?
+    } else {
+        0
+    };
+    Ok(Rotate {
+        v: 1,
+        principal,
+        seq,
+        prev_key,
+        next_key,
+        next_epub: Some(next_epub),
+        retained_links,
+        issued_at,
+        next_sig: String::new(),
+        authorizer: Authorizer::OidcFreshLogin {
+            link: "0".repeat(64),
+        },
+        attest: String::new(),
+    })
+}
+/// A draft has no signing-byte id. The same transition is the same keys, epub, and retained set.
+fn same_draft(raw: &Rotate, other: &Rotate) -> bool {
+    other.next_epub.is_some()
+        && other.principal == raw.principal
+        && other.seq == raw.seq
+        && other.prev_key == raw.prev_key
+        && other.next_key == raw.next_key
+        && other.next_epub == raw.next_epub
+        && other.retained_links == raw.retained_links
+        && (raw.issued_at == 0 || other.issued_at == raw.issued_at)
+}
+struct LoadedChain {
+    history: Vec<Rotate>,
+    binding_epub: Option<PrincipalId>,
+}
+fn load_chain(
+    genesis: &PrincipalId,
+    prior_records: &[Value],
+    ctx: &ResolutionContext<'_>,
+) -> Result<LoadedChain, Reason> {
+    let account = resolve_current_key(genesis, prior_records, ctx).result?;
+    Ok(LoadedChain {
+        history: account.rotations,
+        binding_epub: account.binding_epub,
+    })
+}
+fn publish_tail(
+    raw: Rotate,
+    siblings: &[Value],
+    genesis: &PrincipalId,
+    history: &[Rotate],
+    binding_epub: Option<&PrincipalId>,
+    ctx: &ResolutionContext<'_>,
+    draft: bool,
+) -> Result<Rotate, Reason> {
+    let candidate_id = if draft {
+        String::new()
+    } else {
+        link_id(&IdentityRecord::Rotate(raw.clone()))?
+    };
+    for sibling in siblings {
+        let Some(other) = authenticated_sibling(sibling, ctx) else {
+            continue;
+        };
+        if other.principal != raw.principal || other.seq != raw.seq {
+            continue;
+        }
+        if draft {
+            if !same_draft(&raw, &other) {
+                return Err(Reason::RotationFork);
+            }
+            continue;
+        }
+        if other.next_epub.is_none() || link_id(&IdentityRecord::Rotate(other))? != candidate_id {
+            return Err(Reason::RotationFork);
+        }
+    }
+    let seq = history.len() as u64 + 1;
+    let current = history
+        .last()
+        .map(|row| row.next_key.clone())
+        .unwrap_or_else(|| genesis.clone());
+    let last_time = history.last().map(|row| row.issued_at);
+    let timed = !draft || raw.issued_at != 0;
+    if raw.seq != seq
+        || (timed && last_time.is_some_and(|time| raw.issued_at <= time))
+        || raw.prev_key != current
+        || &raw.next_key == genesis
+        || history.iter().any(|row| row.next_key == raw.next_key)
+        || reuses_epub(&raw, genesis, history, binding_epub)
+    {
+        return Err(Reason::BadSequence);
+    }
+    Ok(raw)
+}
+/// Structural draft the keyring builder checks before a signature exists.
+///
+/// An unsigned draft has no `nextSig`, `authorizer`, `attest`, or required
+/// `issuedAt`. `retainedLinks` uses the signed-record rule. An identical
+/// attested sibling of the same transition is a retry and is not a fork.
+/// [`check_rotation_publish`] rejects this shape with `bad-record`. Only
+/// `rotate_keyring` calls this.
+pub fn check_rotation_draft(
+    candidate: &Value,
+    siblings: &[Value],
+    genesis: &PrincipalId,
+    prior_records: &[Value],
+    ctx: &ResolutionContext<'_>,
+) -> Result<Rotate, Reason> {
+    let chain = load_chain(genesis, prior_records, ctx)?;
+    let raw = draft_rotation(candidate)?;
+    if &raw.principal != genesis {
+        return Err(Reason::BadRecord);
+    }
+    publish_tail(
+        raw,
+        siblings,
+        genesis,
+        &chain.history,
+        chain.binding_epub.as_ref(),
+        ctx,
+        true,
+    )
+}
+/// Client publish check and Panopticon attest check. Same rules.
+///
+/// Refuses a v2 record and an unsigned draft (`bad-record`). Draft validation
+/// is [`check_rotation_draft`], and only the keyring builder calls it.
+/// An authenticated sibling with a different signing-byte id at the same
+/// (principal, seq) is `rotation-fork`. An identical attested sibling is a
+/// retry and is not a fork. Junk and unattested siblings are skipped. Priors
+/// are whatever [`resolve_current_key`] accepts.
+/// A signed candidate with no attestation is checked by
+/// [`verify_rotation_request`] (its local checks only). Freshness and present
+/// revocation apply only to that unattested request. An attested candidate
+/// uses the historical checks: `issuedAt` is an upper bound, and revocation
+/// is the witnessed check at `issuedAt`. Chain sequence, sibling forks, and
+/// epub reuse are applied here, after that call.
+/// Panopticon MUST call this function before attesting. It attests at most
+/// one genesis-epub binding per principal, only before the first rotation,
+/// and that limit is global across instances and signing keys (panopticon#499).
+/// Does not replace [`verify_rotate`]. Historical v2 records still verify there.
+pub fn check_rotation_publish(
+    candidate: &Value,
+    siblings: &[Value],
+    genesis: &PrincipalId,
+    prior_records: &[Value],
+    ctx: &ResolutionContext<'_>,
+) -> Result<Rotate, Reason> {
+    let signed_request = candidate["kind"] == "rotate"
+        && candidate.get("attest").is_none()
+        && (candidate.get("nextSig").is_some() || candidate.get("authorizer").is_some());
+    let parsed = rotation_candidate(candidate);
+    if !signed_request && !matches!(&parsed, Ok(IdentityRecord::Rotate(_))) {
+        return Err(Reason::BadRecord);
+    }
+    let chain = load_chain(genesis, prior_records, ctx)?;
+    let current = chain
+        .history
+        .last()
+        .map(|item| item.next_key.clone())
+        .unwrap_or_else(|| genesis.clone());
+    let raw = if signed_request {
+        verify_rotation_request(candidate, &current, ctx)?
+    } else {
+        check_rotate(candidate, &current, ctx, &mut Vec::new())?
+    };
+    if raw.next_epub.is_none() || &raw.principal != genesis {
+        return Err(Reason::BadRecord);
+    }
+    publish_tail(
+        raw,
+        siblings,
+        genesis,
+        &chain.history,
+        chain.binding_epub.as_ref(),
+        ctx,
+        false,
+    )
+}
+/// Local pre-attestation check for one v3 rotation request.
+///
+/// Covers: v3 (`nextEpub` required; v2 is `bad-record`); no `attest` field (a
+/// present attestation is `bad-record` and is not returned); `|issuedAt-now|`
+/// within `policy.clock_skew_seconds` (`future-record` or `expired`); `prevKey`
+/// equal to the supplied current key and `nextKey` different from it;
+/// `nextEpub` different from `nextKey` and `prevKey`; the next-key signature;
+/// the authorizer (wallet SIWE, or OIDC with no active wallet); every authorizer
+/// and retained link historically valid at `issuedAt`; witnessed revocation of
+/// those links at `issuedAt` and at `now` (`rotation-conflict`); and an
+/// unwitnessed current-key revoke of those links at `now` (`revoked-link`,
+/// [`verify_revoke_now`]).
+///
+/// Freshness and present revocation apply only to this unattested request.
+/// Present revocation honors `policy.clock_skew_seconds`: an offline revoke
+/// issued at or before `now + skew` removes the link. A revoke dated further
+/// ahead is ignored. The same horizon applies to the active-wallet check:
+/// a wallet linked after `issuedAt` but at or before `now + skew` still makes
+/// OIDC recovery `wallet-required`. Historical witnessed checks stay
+/// skew-free, and [`verify_revoke_now`] itself stays skew-free.
+///
+/// Does not cover chain sequence, sibling forks, or epub reuse against history
+/// or the genesis-epub binding. Panopticon MUST call [`check_rotation_publish`]
+/// for those. This is the building block that function uses when the candidate
+/// has no attestation (panopticon#499). [`verify_rotate`] still requires an
+/// attestation and does not use this window.
+pub fn verify_rotation_request(
+    v: &Value,
+    current_key: &PrincipalId,
+    ctx: &ResolutionContext<'_>,
+) -> Result<Rotate, Reason> {
+    if v["kind"] != "rotate" || v.get("attest").is_some() || v.get("nextEpub").is_none() {
+        return Err(Reason::BadRecord);
+    }
+    let mut owned = v.clone();
+    owned["attest"] = Value::String("request".into());
+    let mut rot = check_rotate_record(
+        &rotation_candidate(&owned)?,
+        current_key,
+        ctx,
+        &mut Vec::new(),
+        false,
+    )?;
+    if rot.next_epub.is_none() {
+        return Err(Reason::BadRecord);
+    }
+    rot.attest.clear();
+    Ok(rot)
+}
+/// Pre-attestation check for a genesis-epub binding.
+///
+/// Shape, epub canonical and distinct from the genesis pub, genesis-key
+/// signature, and `|issued_at - now| <= policy.clock_skew_seconds`
+/// (`future-record` or `expired`). A present `attest` is `bad-record`. Does
+/// not check that no rotation exists; Panopticon does that, then attests
+/// (panopticon#499).
+pub fn verify_genesis_epub_request(
+    v: &Value,
+    genesis: &PrincipalId,
+    now: u64,
+    policy: &SiwePolicy,
+) -> Result<GenesisEpub, Reason> {
+    if v["kind"] != "genesis-epub" || v.get("attest").is_some() {
+        return Err(Reason::BadRecord);
+    }
+    let mut owned = v.clone();
+    owned["attest"] = Value::String("request".into());
+    let IdentityRecord::GenesisEpub(mut binding) = record(&owned, false)? else {
+        return Err(Reason::BadRecord);
+    };
+    if &binding.principal != genesis {
+        return Err(Reason::BadRecord);
+    }
+    request_time(binding.issued_at, now, policy.clock_skew_seconds)?;
+    let signed = IdentityRecord::GenesisEpub(binding.clone());
+    if !key_verify(genesis, &binding.key_sig, &bytes(&signed)) {
+        return Err(Reason::BadSignature);
+    }
+    binding.attest.clear();
+    Ok(binding)
+}
+fn check_rotate(
+    v: &Value,
+    current_key: &PrincipalId,
+    ctx: &ResolutionContext<'_>,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Result<Rotate, Reason> {
+    check_rotate_record(&rotation_candidate(v)?, current_key, ctx, diagnostics, true)
+}
+fn check_rotate_record(
+    r: &IdentityRecord,
+    current_key: &PrincipalId,
+    ctx: &ResolutionContext<'_>,
+    diagnostics: &mut Vec<Diagnostic>,
+    require_attest: bool,
+) -> Result<Rotate, Reason> {
+    let IdentityRecord::Rotate(rot) = r else {
+        return Err(Reason::BadRecord);
+    };
+    if require_attest {
+        proof_time(rot.issued_at, ctx.now, ctx.policy.clock_skew_seconds)?;
+    } else {
+        request_time(rot.issued_at, ctx.now, ctx.policy.clock_skew_seconds)?;
+    }
+    if &rot.prev_key != current_key || &rot.next_key == current_key {
+        return Err(Reason::BadSequence);
+    }
+    if rot
+        .next_epub
+        .as_ref()
+        .is_some_and(|epub| epub == &rot.next_key || epub == &rot.prev_key)
+    {
+        return Err(Reason::BadSequence);
+    }
+    if !key_verify(&rot.next_key, &rot.next_sig, &bytes(r)) {
+        return Err(Reason::BadSignature);
+    }
+    if require_attest {
+        // Historical records verify as of issued_at. The upper bound against ctx.now is proof_time above.
+        let c = attest_verify(
+            &rot.attest,
+            ctx.jwks,
+            rot.issued_at,
+            ctx.policy.clock_skew_seconds,
+        )?;
+        if !rotation_claims_match(rot, &c) {
+            return Err(Reason::BadAttestation);
+        }
+    }
+    let link = match &rot.authorizer {
+        Authorizer::Wallet { link, .. } | Authorizer::OidcFreshLogin { link } => link,
+    };
     let mut checked = BTreeMap::new();
     for id in std::iter::once(link).chain(rot.retained_links.iter()) {
         if checked.contains_key(id) {
@@ -1223,6 +1717,32 @@ fn check_rotate(
         ) {
             return Err(Reason::RotationConflict);
         }
+        if !require_attest
+            && revoked_at(
+                &v,
+                ctx.revocations,
+                current_key,
+                ctx.now,
+                ctx.jwks,
+                diagnostics,
+                RevocationMode::Witnessed,
+            )
+        {
+            return Err(Reason::RotationConflict);
+        }
+        if !require_attest
+            && revoked_at(
+                &v,
+                ctx.revocations,
+                current_key,
+                present_horizon(ctx.now, ctx.policy.clock_skew_seconds),
+                ctx.jwks,
+                diagnostics,
+                RevocationMode::Present,
+            )
+        {
+            return Err(Reason::RevokedLink);
+        }
         checked.insert(id.clone(), v);
     }
     let authorizer = checked.get(link).ok_or(Reason::MissingHistory)?;
@@ -1233,7 +1753,7 @@ fn check_rotate(
         siwe_verify(
             siwe,
             &w.address,
-            &bytes(&r),
+            &bytes(r),
             rot.issued_at,
             ctx.now,
             ctx.policy,
@@ -1244,48 +1764,59 @@ fn check_rotate(
         if !matches!(authorizer, IdentityRecord::Oidc(_)) {
             return Err(Reason::MissingHistory);
         }
-        for (index, (id, raw)) in ctx.links.iter().enumerate() {
-            let parsed = match record(raw, false) {
-                Ok(v) => v,
-                Err(e) => {
-                    diagnostic(diagnostics, "link", index, e);
-                    continue;
-                }
-            };
-            let IdentityRecord::Wallet(w) = &parsed else {
-                continue;
-            };
-            if w.principal != rot.principal {
-                continue;
-            }
-            if hex(&Sha256::digest(bytes(&parsed))) != *id {
-                diagnostic(diagnostics, "link", index, Reason::UnknownLink);
-                continue;
-            }
-            let v = match historical_link(&parsed, ctx, rot.issued_at) {
-                Ok(v) => v,
-                Err(e) => {
-                    diagnostic(diagnostics, "link", index, e);
-                    if matches!(
-                        e,
-                        Reason::MissingHistory | Reason::RotationFork | Reason::RotationConflict
-                    ) {
-                        return Err(e);
+        // OIDC recovery requires no active wallet. An unattested request also
+        // counts a wallet linked after issued_at, up to now+skew.
+        let mut wallet_absent = |until: u64| -> Result<(), Reason> {
+            for (index, (id, raw)) in ctx.links.iter().enumerate() {
+                let parsed = match record(raw, false) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        diagnostic(diagnostics, "link", index, e);
+                        continue;
                     }
+                };
+                let IdentityRecord::Wallet(w) = &parsed else {
+                    continue;
+                };
+                if w.principal != rot.principal {
                     continue;
                 }
-            };
-            if !revoked_at(
-                &v,
-                ctx.revocations,
-                current_key,
-                rot.issued_at,
-                ctx.jwks,
-                diagnostics,
-                RevocationMode::Witnessed,
-            ) {
-                return Err(Reason::WalletRequired);
+                if hex(&Sha256::digest(bytes(&parsed))) != *id {
+                    diagnostic(diagnostics, "link", index, Reason::UnknownLink);
+                    continue;
+                }
+                let v = match historical_link(&parsed, ctx, until) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        diagnostic(diagnostics, "link", index, e);
+                        if matches!(
+                            e,
+                            Reason::MissingHistory
+                                | Reason::RotationFork
+                                | Reason::RotationConflict
+                        ) {
+                            return Err(e);
+                        }
+                        continue;
+                    }
+                };
+                if !revoked_at(
+                    &v,
+                    ctx.revocations,
+                    current_key,
+                    until,
+                    ctx.jwks,
+                    diagnostics,
+                    RevocationMode::Witnessed,
+                ) {
+                    return Err(Reason::WalletRequired);
+                }
             }
+            Ok(())
+        };
+        wallet_absent(rot.issued_at)?;
+        if !require_attest {
+            wallet_absent(present_horizon(ctx.now, ctx.policy.clock_skew_seconds))?;
         }
     }
     Ok(rot.clone())
@@ -1308,6 +1839,9 @@ pub fn resolve_current_key(
         if ctx.now > MAX_SAFE {
             return Err(Reason::MissingHistory);
         }
+        let mut pending = verified_bindings(genesis, ctx, &mut diagnostics)?;
+        // A binding issued at or after the first accepted rotation is not a fork.
+        let mut binding: Option<(usize, GenesisEpub)> = None;
         let mut groups: BTreeMap<u64, Vec<(usize, Rotate)>> = BTreeMap::new();
         for (index, raw) in rotations.iter().enumerate() {
             let parsed = (|| {
@@ -1347,11 +1881,32 @@ pub fn resolve_current_key(
                     ..*ctx
                 };
                 let verified = (|| {
+                    let early: Vec<PrincipalId> = if history.is_empty() {
+                        pending
+                            .iter()
+                            .filter(|(_, row)| row.issued_at < raw.issued_at)
+                            .map(|(_, row)| row.epub.clone())
+                            .collect()
+                    } else {
+                        binding
+                            .as_ref()
+                            .filter(|(_, row)| {
+                                history
+                                    .first()
+                                    .is_some_and(|first| row.issued_at < first.issued_at)
+                            })
+                            .map(|(_, row)| vec![row.epub.clone()])
+                            .unwrap_or_default()
+                    };
+                    let reused = reuses_epub(&raw, genesis, &history, None)
+                        || early
+                            .iter()
+                            .any(|epub| reuses_epub(&raw, genesis, &history, Some(epub)));
                     if n != seq
                         || history.last().is_some_and(|r| raw.issued_at <= r.issued_at)
                         || &raw.next_key == genesis
                         || history.iter().any(|r| r.next_key == raw.next_key)
-                        || reuses_epub(&raw, genesis, &history)
+                        || reused
                     {
                         return Err(Reason::BadSequence);
                     }
@@ -1424,15 +1979,57 @@ pub fn resolve_current_key(
                 return Err(Reason::RotationFork);
             }
             if let Some(r) = valid.into_values().next() {
+                if history.is_empty() {
+                    let mut early = Vec::new();
+                    for (index, row) in pending.drain(..) {
+                        if row.issued_at < r.issued_at {
+                            early.push((index, row));
+                        } else {
+                            diagnostic(
+                                &mut diagnostics,
+                                "genesis-epub",
+                                index,
+                                Reason::BadSequence,
+                            );
+                        }
+                    }
+                    if early.len() > 1 {
+                        diagnostic(
+                            &mut diagnostics,
+                            "genesis-epub",
+                            early[1].0,
+                            Reason::RotationFork,
+                        );
+                        return Err(Reason::RotationFork);
+                    }
+                    binding = early.into_iter().next();
+                }
                 current = r.next_key.clone();
                 current_epub = r.next_epub.clone();
                 history.push(r);
                 seq += 1;
             }
         }
+        if history.is_empty() && pending.len() > 1 {
+            diagnostic(
+                &mut diagnostics,
+                "genesis-epub",
+                pending[1].0,
+                Reason::RotationFork,
+            );
+            return Err(Reason::RotationFork);
+        }
+        if history.is_empty() {
+            binding = pending.into_iter().next();
+        }
+        let binding_epub = binding.map(|(_, row)| row.epub);
+        if history.is_empty() {
+            current_epub = binding_epub.clone();
+        }
         Ok(ResolvedAccount {
             current_key: current,
             current_epub,
+            binding_epub,
             rotations: history,
         })
     })();

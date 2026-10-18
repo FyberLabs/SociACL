@@ -50,6 +50,10 @@ function run(f, c) {
       }
       case 'wallet-link': r=ids.verifyWalletLink(c.input,ctx.jwks,ctx.policy,ctx.now,keyState); break;
       case 'oidc-link': r=ids.verifyOidcLink(c.input,ctx.jwks,new Set(ctx.pinnedIss),ctx.now,keyState); break;
+      case 'publish-check': r=ids.checkRotationPublish(c.input.candidate,c.input.siblings,ctx.genesis,c.input.prior,rc); break;
+      case 'draft-check': r=ids.checkRotationDraft(c.input.candidate,c.input.siblings,ctx.genesis,c.input.prior,rc); break;
+      case 'rotation-request': r=ids.verifyRotationRequest(c.input,ctx.currentKey,rc); break;
+      case 'genesis-epub-request': r=ids.verifyGenesisEpubRequest(c.input,ctx.genesis,ctx.now,ctx.policy); break;
       case 'rotate': r=ids.verifyRotate(c.input,ctx.currentKey,rc); break;
       case 'revoke-now': r=ids.verifyRevokeNow(c.input,ctx.currentKey,ctx.now); break;
       case 'revoke': r=ids.verifyRevoke(c.input,ctx.currentKey,ctx.jwks,ctx.now); break;
@@ -66,6 +70,7 @@ function run(f, c) {
       default: throw Error('unknown operation: '+c.operation);
     }
     if(c.diagnosticReasons) assert.deepEqual(r.diagnostics.map(d=>d.reason),c.diagnosticReasons,c.name+' diagnostics');
+    if (r.ok && (c.operation === 'publish-check' || c.operation === 'draft-check') && Object.hasOwn(c, 'retainedLinks')) assert.deepEqual(r.value.retainedLinks, c.retainedLinks, c.name+' retainedLinks');
     if (r.ok && c.operation === 'resolve') assert.equal(r.value.currentEpub ?? null, c.currentEpub ?? null, c.name+' currentEpub');
     if (r.ok && c.operation === 'rotate' && Object.hasOwn(c, 'nextEpub')) assert.equal(r.value.nextEpub, c.nextEpub, c.name+' nextEpub');
     return r.ok ? {ok:true,value:r.value.currentKey??r.value.principal} : {ok:false,reason:r.reason};
