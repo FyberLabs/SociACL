@@ -176,13 +176,19 @@ genesis pub. Panopticon attests it with typ `sociacl-genesis-epub-attest-v1`
 and claims `principal`, `epub`, `iat`, and `exp`. `iat` must equal `issuedAt`.
 No wallet and no Keycloak login are required.
 
-Panopticon attests at most one binding per principal, and only at signup
-(panopticon#499). Callers pass the records as
-`ResolutionContext.genesisEpubBindings`. Invalid or junk bindings are skipped
-with a diagnostic. Two distinct validly attested bindings freeze the account
-with `rotation-fork`. A binding issued at or after the first accepted
-rotation's `issuedAt` is skipped with `bad-sequence` and does not join the
-reuse set.
+Panopticon attests at most one binding per principal, and only before the
+first rotation. It refuses a binding when any rotation already exists. That
+one-per-principal record is global across instances and signing keys
+(panopticon#499). Panopticon sets `iat` itself, with `exp <= iat + 900`, and
+verifies the genesis-key signature before it attests. Callers pass the records
+as `ResolutionContext.genesisEpubBindings`. Invalid or junk bindings are
+skipped with a diagnostic. The fork count runs only over bindings whose
+`issuedAt` is strictly before the first accepted rotation. With no accepted
+rotation, every valid binding counts, and two distinct ones freeze the account
+with `rotation-fork`. The diagnostic source `genesis-epub` distinguishes that
+freeze from a rotation fork. A binding issued at or after the first accepted
+rotation's `issuedAt` is skipped with `bad-sequence` and does not freeze the
+account or join the reuse set. `issuedAt` uses the policy clock skew.
 
 With no accepted rotation, `currentEpub` is that binding's epub, or null when
 none is in force. After a rotation is accepted, `currentEpub` still comes from
@@ -216,16 +222,24 @@ two signing-byte ids, offered for one `(principal, seq)` with `rotation-fork`.
 Panopticon must not attest a v2 record and must not attest both versions for
 that pair. A client must not publish either.
 
-Before it attests, Panopticon verifies the candidate's key signature, the
-wallet signature, and the linked records (panopticon#499). It also attests at
-most one `genesis-epub` binding per principal, and only at signup. The publish
-check uses the rotations `resolveCurrentKey` accepts as the prior chain,
-including an in-force binding epub in the reuse set. A sibling counts only
-when its next-key signature and Panopticon attestation both verify. Junk and
+Before it attests, Panopticon calls `verifyRotationRequest` /
+`verify_rotation_request` (panopticon#499). That check is the signature, the
+wallet signature, the links, the retained set, revocation, reuse, and
+sequence, with no attestation yet. `checkRotationPublish` uses it for a signed
+candidate that has no attestation, then applies the same reuse and sequence
+rules as resolution. Panopticon sets `iat` itself, with `exp <= iat + 900`.
+It also attests at most one `genesis-epub` binding per principal, only before
+the first rotation, across every instance and signing key. The publish check
+uses the rotations `resolveCurrentKey` accepts as the prior chain, including
+an in-force binding epub in the reuse set. A sibling counts only when its
+next-key signature and the full Panopticon claim both verify, including
+`auth`, `linkId`, `retainedLinks`, and the exact claim shape. Junk and
 unattested siblings are skipped and are not a fatal parse error. A distinct
-authenticated sibling at the same `(principal, seq)` is `rotation-fork`. A
-bad-signature prior does not block a later valid record. A null `currentEpub`
-still means do not seal and never fall back to Gun `user.epub`.
+authenticated sibling at the same `(principal, seq)` is `rotation-fork`. An
+identical sibling is a retry, including a draft of that same transition, and
+is not a fork. A bad-signature prior does not block a later valid record. A
+null `currentEpub` still means do not seal and never fall back to Gun
+`user.epub`. A draft's `retainedLinks` use the signed-record rule.
 
 The verifier authenticates the authorizing credential and **every retained ID**
 against the pre-rotation state. Each must belong to the principal and remain

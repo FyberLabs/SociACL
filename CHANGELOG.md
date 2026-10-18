@@ -18,12 +18,23 @@ here rather than in a later version. It replaces the unwitnessed
   null when there is none. A binding issued at or after the first accepted
   rotation is skipped with `bad-sequence`. Once a rotation is accepted, that
   binding epub joins the reuse set inside `resolveCurrentKey`.
-- `checkRotationPublish` authenticates the candidate (signature, wallet
-  signature, and links) before Panopticon attests it. Siblings count only when
-  they carry a valid next-key signature and a valid Panopticon attestation.
-  Junk and unattested siblings are skipped. Priors are the rotations
+- `checkRotationPublish` authenticates the candidate before Panopticon
+  attests it. A signed candidate with no attestation is checked by
+  `verifyRotationRequest` / `verify_rotation_request`: signature, wallet
+  signature, links, retained set, revocation, reuse, and sequence. Siblings
+  count only when the next-key signature and the full Panopticon claim both
+  verify (`auth`, `linkId`, `retainedLinks`, and the exact claim shape). Junk
+  and unattested siblings are skipped. An identical sibling is a retry, including
+  a draft of that same transition, and is not a fork. Priors are the rotations
   `resolveCurrentKey` accepts. A distinct authenticated sibling at the same
   (principal, seq) is `rotation-fork`.
+- A binding counts toward the two-binding `rotation-fork` only when its
+  `issuedAt` is strictly before the first accepted rotation. A later binding is
+  skipped with `bad-sequence` and does not freeze a rotated account. With no
+  accepted rotation, every valid binding counts. The binding's `issuedAt` uses
+  the policy clock skew, the same window as its attestation.
+- A rotation draft validates `retainedLinks` with the signed-record rule:
+  sorted, unique, 64-hex, at most 1024.
 - Add shared probes for a valid binding, a bad signature, a bad attestation,
   `iat` not equal to `issuedAt`, a binding issued after the first rotation, two
   attested bindings, a binding epub equal to the genesis pub, a later

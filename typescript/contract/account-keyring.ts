@@ -266,7 +266,8 @@ export function mintRotation(): RotationMint {
   return mint;
 }
 
-/** Mint the next v3 rotation. Name every trusted device except `lost`. Delivery is part 3. */
+/** Mint the next v3 rotation. Name every trusted device except `lost`. Delivery is part 3.
+ * `confirm` runs before the current epub is retired. */
 export function rotateKeyring(
   keyring: AccountKeyring,
   trusted: readonly string[],
@@ -289,10 +290,10 @@ export function rotateKeyring(
   if (nextEpub === nextPub || holdsPoint(keyring, nextEpub) || holdsPoint(keyring, nextPub)) {
     throw new Error("epub-reuse");
   }
+  if (minted.laneId === keyring.laneId()) throw new Error("bad-lane");
+  keyring.confirm(rotations, context);
   const resolved = resolveCurrentKey(keyring.principal, rotations, context);
   if (!resolved.ok) throw new Error(resolved.reason);
-  if (resolved.value.currentKey !== keyring.pub) throw new Error("pub-mismatch");
-  if (resolved.value.rotations.length !== keyring.rotationSeq) throw new Error("rotation-rejected");
   const historical = new Set<string>([keyring.principal, keyring.pub]);
   for (const row of resolved.value.rotations) {
     historical.add(row.prevKey);
@@ -301,7 +302,6 @@ export function rotateKeyring(
   if (historical.has(nextPub) || nextPub === resolved.value.bindingEpub || nextEpub === resolved.value.bindingEpub) {
     throw new Error("epub-reuse");
   }
-  if (minted.laneId === keyring.laneId()) throw new Error("bad-lane");
   const retired = [...keyring.retired(), { epub: keyring.epub, epriv: keyring.currentEpriv() }];
   const seq = keyring.rotationSeq + 1;
   const epoch = keyring.contentEpoch + 1;

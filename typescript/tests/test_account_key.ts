@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import * as accountKey from "../contract/account-key.ts";
+import * as accountKeyring from "../contract/account-keyring.ts";
+import * as contentWrap from "../contract/content-wrap.ts";
 import {
   accountGrantSoul,
   accountIdFromLabel,
@@ -570,9 +572,19 @@ test("deterministic helpers are not production exports", () => {
   assert.equal(names.includes("accountKeyTestApi"), false);
   assert.equal(names.includes("encryptAccountBackup"), false);
   assert.equal(names.includes("wrapContent"), false);
+  for (const surface of [accountKeyring, contentWrap]) {
+    const exportedNames = Object.keys(surface);
+    assert.equal(exportedNames.includes("sealAccountBackupWith"), false);
+    assert.equal(exportedNames.includes("contentWrapHexWith"), false);
+    assert.equal(exportedNames.includes("sealContentWith"), false);
+    assert.equal(exportedNames.includes("encryptAccountBackup"), false);
+    assert.equal(exportedNames.includes("wrapContent"), false);
+  }
   const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { exports: Record<string, string> };
   const exported = JSON.stringify(pkg.exports);
   assert.equal(exported.includes("account-key"), false);
+  assert.equal(exported.includes("account-keyring"), false);
+  assert.equal(exported.includes("content-wrap"), false);
   assert.equal(exported.includes("account-key-deterministic"), false);
 });
 

@@ -193,14 +193,21 @@ rotation still sets `currentEpub` to null. Pass those
 records as `ResolutionContext.genesisEpubBindings`. The genesis key signs
 domain `sociacl-genesis-epub-v1`. Panopticon attests typ
 `sociacl-genesis-epub-attest-v1` with `iat` equal to `issuedAt`, at most one
-binding per principal, and only at signup (panopticon#499). Two valid bindings
-freeze the account. A binding issued at or after the first accepted rotation
-is skipped. Once a rotation is accepted, that binding epub joins the reuse
+binding per principal, only before the first rotation, across every instance
+and signing key (panopticon#499). Panopticon sets `iat` itself, with
+`exp <= iat + 900`, and verifies the genesis-key signature. Two valid bindings
+issued strictly before the first accepted rotation freeze the account. A
+binding issued at or after that rotation is skipped with `bad-sequence` and
+does not freeze a rotated account. `issuedAt` uses the policy clock skew.
+Once a rotation is accepted, that binding epub joins the reuse
 set. An unwitnessed `genesisEpub` string is ignored. New rotations must be v3,
-and from 0.7 Panopticon attests only v3. From 0.8, `checkRotationPublish` is
-the check Panopticon runs before it attests and the check a client runs before
-it publishes. Before attesting, verify the candidate signature, the wallet
-signature, and the links. Only an attested sibling counts. Junk is skipped.
+and from 0.7 Panopticon attests only v3. From 0.8, `verifyRotationRequest` is
+the pre-attestation check (signature, wallet signature, links, retained set,
+revocation, reuse, and sequence). `checkRotationPublish` uses it when the
+candidate has no attestation yet. It is the check Panopticon runs before it
+attests and the check a client runs before it publishes. A sibling counts only
+when its signature and the full claim match, including `auth`, `linkId`, and
+`retainedLinks`. An identical sibling is a retry and is not a fork. Junk is skipped.
 It refuses a v2 record with `bad-record` and two versions of one
 `(principal, seq)` with `rotation-fork`. It does not replace `verifyRotate`.
 The library still verifies historical v2.

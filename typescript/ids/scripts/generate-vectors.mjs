@@ -522,6 +522,22 @@ accept('records','publish-forged-sibling',{candidate:rot3,siblings:[{...rotation
 accept('records','publish-bad-prior-skipped',{candidate:rotationV3('wallet',p3,3,2,p2,at+40,[wid],principal(7)),siblings:[],prior:[{...rot3,nextSig:'AA'},rot3]},p,{operation:'publish-check'});
 bad('publish-seq2-reuses-genesis-epub',{candidate:rotationV3('wallet',p3,3,2,p2,at+40,[wid],boundPoint),siblings:[],prior:[rot3]},'bad-sequence','publish-check',{genesisEpubBindings:[binding]});
 accept('records','junk-binding-skipped',[rot3],p2,{operation:'resolve',currentEpub:epub,diagnosticReasons:['bad-record'],genesisEpubBindings:[{kind:'nope'}]});
+accept('records','r2-late-second-binding-skipped',[rot3],p2,{operation:'resolve',currentEpub:epub,diagnosticReasons:['bad-sequence'],genesisEpubBindings:[binding,genesisBinding(principal(10),at+50)]});
+accept('records','binding-clock-skew',[],p,{operation:'resolve',currentEpub:boundPoint,now:at-30,policy:{...context.policy,clockSkewSeconds:60},genesisEpubBindings:[binding]});
+const {attest:_unattestedAttest,...unattestedRot3}=rot3;
+accept('records','r2-publish-signed-unattested-candidate',{candidate:unattestedRot3,siblings:[],prior:[]},p,{operation:'publish-check'});
+bad('r2-rotation-request-bad-signature',{...unattestedRot3,nextSig:'AA'},'bad-signature','rotation-request');
+{
+  const body={v:1,kind:'rotate',principal:p,seq:rot3.seq,prevKey:p,nextKey:p2,nextEpub:epub,issuedAt:rot3.issuedAt,retainedLinks:[],authorizer:{kind:'wallet',link:wid}};
+  const sibling={...body,nextSig:keySig(body,2),authorizer:{...body.authorizer,siwe:siwe(body)},attest:rot3.attest};
+  accept('records','r2-publish-altered-claim-sibling',{candidate:rot3,siblings:[sibling],prior:[]},p,{operation:'publish-check'});
+}
+const draftLinks={v:1,kind:'rotate',principal:p,seq:1,prevKey:p,nextKey:p2,nextEpub:epub,retainedLinks:[wid]};
+accept('records','r2-publish-draft-retained-links',{candidate:draftLinks,siblings:[],prior:[]},p,{operation:'publish-check',retainedLinks:[wid]});
+bad('r2-publish-draft-retained-junk',{candidate:{...draftLinks,retainedLinks:['zz']},siblings:[],prior:[]},'bad-record','publish-check');
+const draftSame={v:1,kind:'rotate',principal:p,seq:rot3.seq,prevKey:rot3.prevKey,nextKey:rot3.nextKey,nextEpub:rot3.nextEpub,retainedLinks:rot3.retainedLinks};
+accept('records','r2-publish-draft-identical-sibling',{candidate:draftSame,siblings:[rot3],prior:[]},p,{operation:'publish-check'});
+bad('r2-publish-draft-different-sibling',{candidate:{...draftSame,nextEpub:epub2},siblings:[rot3],prior:[]},'rotation-fork','publish-check');
 
 const root = new URL('../../../vectors/ids/',import.meta.url); mkdirSync(root,{recursive:true});
 for(const [name,value] of families) writeFileSync(new URL(name+'.json',root),JSON.stringify(value,null,2).replace(/"issuedAt": 1700000000,/g, name==='edges'?'"issuedAt": 1700000000,':'"issuedAt": 1700000000.0,')+'\n');

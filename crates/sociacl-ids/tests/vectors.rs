@@ -221,8 +221,19 @@ fn run(f: &Family, c: &Case, v: &Value) -> Result<Value, Reason> {
                 let siblings = v["siblings"].as_array().unwrap();
                 let prior = v["prior"].as_array().unwrap();
                 let genesis = parse_principal_id(ctx["genesis"].as_str().unwrap())?;
-                check_rotation_publish(&v["candidate"], siblings, &genesis, prior, &rc)?.principal
+                let published =
+                    check_rotation_publish(&v["candidate"], siblings, &genesis, prior, &rc)?;
+                if let Some(expected) = c.extra.get("retainedLinks") {
+                    assert_eq!(
+                        serde_json::to_value(&published.retained_links).unwrap(),
+                        *expected,
+                        "{} retainedLinks",
+                        c.name
+                    );
+                }
+                published.principal
             }
+            "rotation-request" => verify_rotation_request(v, &key, &rc)?.principal,
             "rotate" => {
                 let rot = verify_rotate(v, &key, &rc)?;
                 if let Some(expected) = c.extra.get("nextEpub") {

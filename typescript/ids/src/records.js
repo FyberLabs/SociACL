@@ -21,6 +21,19 @@ function siweData(x) {
   if (!/^0x[0-9a-fA-F]{130}$/.test(signature)) return fail('unsupported-wallet');
   return ok(Object.freeze({ message, signature: /** @type {`0x${string}`} */ (signature) }));
 }
+/** Sorted unique 64-hex link ids, at most 1024. The same rule as a signed rotation.
+ * @param {unknown} list @returns {Result<string[]>} */
+function retainedIds(list) {
+  /** @type {unknown[]} */ let retainedLinks;
+  try {
+    if (!Array.isArray(list)) return fail('bad-record');
+    const d = /** @type {Record<string, PropertyDescriptor>} */ (/** @type {unknown} */ (Object.getOwnPropertyDescriptors(list))), length=d.length.value;
+    if (!integer(length) || length > 1024) return fail('bad-record');
+    retainedLinks = Array.from({length}, (_,i) => d[String(i)]?.value);
+  } catch { return fail('bad-record'); }
+  if (!retainedLinks.every((v,i) => typeof v === 'string' && /^[0-9a-f]{64}$/.test(v) && (i === 0 || retainedLinks[i-1] < v))) return fail('bad-record');
+  return ok(/** @type {string[]} */ (retainedLinks));
+}
 /** @param {unknown} x @param {boolean} [unsigned] @returns {Result<IdentityRecord>} */
 function record(x, unsigned = false) {
   const d = data(x); if (!d.ok) return d;
@@ -66,14 +79,8 @@ function record(x, unsigned = false) {
   const hasEpub = Object.hasOwn(r, 'nextEpub');
   if (!only(r, [...common, 'seq', 'prevKey', 'nextKey', ...(hasEpub ? ['nextEpub'] : []), 'nextSig', 'authorizer', 'attest', 'retainedLinks'])) return fail('bad-record');
   if (!integer(r.seq) || r.seq === 0) return fail('bad-sequence');
-  /** @type {any[]} */ let retainedLinks;
-  try {
-    if (!Array.isArray(r.retainedLinks)) return fail('bad-record');
-    const d = /** @type {Record<string, PropertyDescriptor>} */ (/** @type {unknown} */ (Object.getOwnPropertyDescriptors(r.retainedLinks))), length=d.length.value;
-    if (!integer(length) || length > 1024) return fail('bad-record');
-    retainedLinks = Array.from({length}, (_,i) => d[String(i)]?.value);
-  } catch { return fail('bad-record'); }
-  if (!retainedLinks.every((v,i) => typeof v === 'string' && /^[0-9a-f]{64}$/.test(v) && (i === 0 || retainedLinks[i-1] < v))) return fail('bad-record');
+  const retained = retainedIds(r.retainedLinks); if (!retained.ok) return retained;
+  const retainedLinks = retained.value;
   const prev = parsePrincipalId(r.prevKey); if (!prev.ok) return prev;
   const next = parsePrincipalId(r.nextKey); if (!next.ok) return next;
   const nextEpub = hasEpub ? parsePrincipalId(r.nextEpub) : undefined; if (nextEpub && !nextEpub.ok) return nextEpub;
@@ -318,20 +325,42 @@ function requiredHistoryFailure(reason) {
 }
 /** @param {unknown} x @param {PrincipalId} currentKey @param {ResolutionContext} ctx @returns {Result<Rotate>} */
 export function verifyRotate(x,currentKey,ctx) {return checkRotate(x,currentKey,ctx,[]);}
-/** @param {unknown} x @param {PrincipalId} currentKey @param {ResolutionContext} ctx @param {Diagnostic[]} diagnostics @returns {Result<Rotate>} */
-function checkRotate(x,currentKey,ctx,diagnostics) {
+/** Pre-attestation check. Signature, wallet signature, links, retained set,
+ * revocation, local epub reuse, and sequence. No Panopticon attestation.
+ * A missing `attest` is a request; `verifyRotate` still requires one.
+ * `checkRotationPublish` uses this for a signed candidate that has no
+ * attestation yet (panopticon#499).
+ * @param {unknown} x @param {PrincipalId} currentKey @param {ResolutionContext} ctx @returns {Result<Rotate>} */
+export function verifyRotationRequest(x, currentKey, ctx) {
   if (typeof ctx.history !== 'function') return fail('missing-history');
-  const p=rotationCandidate(x); if (!p.ok) return p; const r=p.value;
-  if (r.kind !== 'rotate') return fail('bad-record');
+  const d = data(x); if (!d.ok) return d;
+  if (d.value.kind !== 'rotate') return fail('bad-record');
+  const omitted = !Object.hasOwn(d.value, 'attest');
+  const source = omitted ? { ...d.value, attest: 'request' } : x;
+  const p = rotationCandidate(source); if (!p.ok) return p;
+  if (p.value.kind !== 'rotate') return fail('bad-record');
+  const checked = checkRotateBody(/** @type {Rotate} */ (p.value), currentKey, ctx, [], false);
+  if (!checked.ok || !omitted) return checked;
+  return ok(/** @type {Rotate} */ ({ ...checked.value, attest: '' }));
+}
+/** Exact Panopticon rotation claim, including auth, linkId, and retainedLinks.
+ * @param {Rotate} r @param {Record<string, unknown>} c */
+function rotationClaimsMatch(r, c) {
+  const v3 = hasNextEpub(r);
+  const attestKeys = ['typ','principal','nextKey','seq','iat','exp','auth','linkId','retainedLinks'];
+  if (v3) attestKeys.push('nextEpub');
+  return only(c, attestKeys) && c.typ === (v3 ? 'sociacl-rotate-attest-v3' : 'sociacl-rotate-attest-v2') && c.principal === r.principal && c.nextKey === r.nextKey && (!v3 || c.nextEpub === r.nextEpub) && c.seq === r.seq && c.iat === r.issuedAt && c.auth === r.authorizer.kind && c.linkId === r.authorizer.link && JSON.stringify(c.retainedLinks) === JSON.stringify(r.retainedLinks);
+}
+/** @param {Rotate} r @param {PrincipalId} currentKey @param {ResolutionContext} ctx @param {Diagnostic[]} diagnostics @param {boolean} requireAttest @returns {Result<Rotate>} */
+function checkRotateBody(r, currentKey, ctx, diagnostics, requireAttest) {
   const t=time(r.issuedAt,ctx.now,ctx.policy.clockSkewSeconds??0); if (!t.ok) return t;
   if (r.prevKey !== currentKey || r.nextKey === currentKey) return fail('bad-sequence');
   if (hasNextEpub(r) && (r.nextEpub === r.nextKey || r.nextEpub === r.prevKey)) return fail('bad-sequence');
   if (!keyVerify(r.nextKey,r.nextSig,bytes(r))) return fail('bad-signature');
-  const a=attestVerify(r.attest,ctx.jwks,ctx.now,ctx.policy.clockSkewSeconds??0); if (!a.ok) return a;
-  const c=a.value;
-  const attestKeys = ['typ','principal','nextKey','seq','iat','exp','auth','linkId','retainedLinks'];
-  if (hasNextEpub(r)) attestKeys.push('nextEpub');
-  if (!only(c,attestKeys) || c.typ !== (hasNextEpub(r) ? 'sociacl-rotate-attest-v3' : 'sociacl-rotate-attest-v2') || c.principal !== r.principal || c.nextKey !== r.nextKey || (hasNextEpub(r) && c.nextEpub !== r.nextEpub) || c.seq !== r.seq || c.iat !== r.issuedAt || c.auth !== r.authorizer.kind || c.linkId !== r.authorizer.link || JSON.stringify(c.retainedLinks) !== JSON.stringify(r.retainedLinks)) return fail('bad-attestation');
+  if (requireAttest) {
+    const a=attestVerify(r.attest,ctx.jwks,ctx.now,ctx.policy.clockSkewSeconds??0); if (!a.ok) return a;
+    if (!rotationClaimsMatch(r, a.value)) return fail('bad-attestation');
+  }
   // Validate the authorizing credential and every retained ID against the pre-rotation state.
   /** @type {Map<string,WalletLink|OidcLink>} */ const checked=new Map();
   for (const id of new Set([r.authorizer.link,...r.retainedLinks])) {
@@ -368,6 +397,13 @@ function checkRotate(x,currentKey,ctx,diagnostics) {
   }
   return ok(r);
 }
+/** @param {unknown} x @param {PrincipalId} currentKey @param {ResolutionContext} ctx @param {Diagnostic[]} diagnostics @returns {Result<Rotate>} */
+function checkRotate(x,currentKey,ctx,diagnostics) {
+  if (typeof ctx.history !== 'function') return fail('missing-history');
+  const p=rotationCandidate(x); if (!p.ok) return p; const r=p.value;
+  if (r.kind !== 'rotate') return fail('bad-record');
+  return checkRotateBody(/** @type {Rotate} */ (r), currentKey, ctx, diagnostics, true);
+}
 /** Witnessed genesis-epub records. A missing list is empty. Gun user.epub is not read.
  * @param {ResolutionContext} ctx @returns {Result<readonly unknown[]>} */
 function genesisBindings(ctx) {
@@ -381,7 +417,7 @@ function verifyGenesisEpub(raw, genesis, ctx) {
   if (p.value.kind !== 'genesis-epub') return fail('bad-record');
   const b = p.value;
   if (b.principal !== genesis) return fail('bad-record');
-  const t = time(b.issuedAt, ctx.now, 0); if (!t.ok) return t;
+  const t = time(b.issuedAt, ctx.now, ctx.policy.clockSkewSeconds ?? 0); if (!t.ok) return t;
   if (!keyVerify(genesis, b.keySig, bytes(b))) return fail('bad-signature');
   const a = attestVerify(b.attest, ctx.jwks, ctx.now, ctx.policy.clockSkewSeconds ?? 0); if (!a.ok) return a;
   const c = a.value;
@@ -407,10 +443,7 @@ function authenticatedSibling(raw, ctx) {
   if (!keyVerify(row.nextKey, row.nextSig, bytes(row))) return null;
   const a = attestVerify(row.attest, ctx.jwks, ctx.now, ctx.policy.clockSkewSeconds ?? 0);
   if (!a.ok) return null;
-  const c = a.value;
-  const v3 = hasNextEpub(row);
-  if (c.typ !== (v3 ? 'sociacl-rotate-attest-v3' : 'sociacl-rotate-attest-v2') || c.principal !== row.principal || c.nextKey !== row.nextKey || c.seq !== row.seq || c.iat !== row.issuedAt) return null;
-  if (v3 && c.nextEpub !== row.nextEpub) return null;
+  if (!rotationClaimsMatch(row, a.value)) return null;
   return row;
 }
 /** Structural draft the keyring builder checks before a signature exists.
@@ -426,22 +459,31 @@ function draftRotation(x) {
   const prev = parsePrincipalId(r.prevKey); if (!prev.ok) return prev;
   const next = parsePrincipalId(r.nextKey); if (!next.ok) return next;
   const epub = parsePrincipalId(r.nextEpub); if (!epub.ok) return epub;
-  if (!Array.isArray(r.retainedLinks)) return fail('bad-record');
+  const retained = retainedIds(r.retainedLinks); if (!retained.ok) return retained;
   const issuedAt = Object.hasOwn(r, 'issuedAt') ? r.issuedAt : undefined;
   if (issuedAt !== undefined && !integer(issuedAt)) return fail('bad-record');
   return ok(/** @type {Rotate} */ ({
     v: 1, kind: 'rotate', principal: principal.value, seq: /** @type {number} */ (r.seq),
-    prevKey: prev.value, nextKey: next.value, nextEpub: epub.value, retainedLinks: r.retainedLinks,
+    prevKey: prev.value, nextKey: next.value, nextEpub: epub.value, retainedLinks: retained.value,
     issuedAt: /** @type {number} */ (issuedAt ?? 0), nextSig: '', authorizer: { kind: 'oidc-fresh-login', link: '0'.repeat(64) }, attest: '',
   }));
 }
+/** A draft has no signing-byte id. The same transition is the same keys, epub, and retained set.
+ * @param {Rotate} raw @param {Rotate} other */
+function sameDraft(raw, other) {
+  return hasNextEpub(other) && other.principal === raw.principal && other.seq === raw.seq && other.prevKey === raw.prevKey && other.nextKey === raw.nextKey && other.nextEpub === raw.nextEpub && JSON.stringify(other.retainedLinks) === JSON.stringify(raw.retainedLinks) && (raw.issuedAt === 0 || other.issuedAt === raw.issuedAt);
+}
 /** Client publish check and Panopticon attest check. Same rules.
  * Refuses v2. An authenticated sibling with a different signing-byte id at the
- * same (principal, seq) is `rotation-fork`. Junk and unattested siblings are
- * skipped. Priors are the records `resolveCurrentKey` accepts, not raw JSON.
- * Before attesting, Panopticon verifies the candidate signature, wallet
- * signature, and links (panopticon#499). Panopticon attests at most one
- * genesis-epub binding per principal, and only at signup.
+ * same (principal, seq) is `rotation-fork`. An identical sibling, including a
+ * draft of that same transition, is a retry and is not a fork. Junk and
+ * unattested siblings are skipped. Priors are the records `resolveCurrentKey`
+ * accepts, not raw JSON.
+ * A signed candidate with no attestation is checked by `verifyRotationRequest`
+ * (signature, wallet signature, links, retained set, revocation, reuse, and
+ * sequence). Panopticon attests at most one genesis-epub binding per principal,
+ * only before the first rotation, and that limit is global across instances
+ * and signing keys (panopticon#499).
  * Does not replace verifyRotate. Historical v2 records still verify there.
  * @param {unknown} candidate @param {readonly unknown[]} siblings @param {PrincipalId} genesis @param {readonly unknown[]} priorRecords @param {ResolutionContext} ctx @returns {Result<Rotate>} */
 export function checkRotationPublish(candidate, siblings, genesis, priorRecords, ctx) {
@@ -450,16 +492,17 @@ export function checkRotationPublish(candidate, siblings, genesis, priorRecords,
   if (!resolved.ok) return fail(resolved.reason);
   const history = resolved.value.rotations;
   const bindingEpub = resolved.value.bindingEpub;
+  const described = data(candidate);
+  const signedRequest = described.ok && described.value.kind === 'rotate' && !Object.hasOwn(described.value, 'attest') && (Object.hasOwn(described.value, 'nextSig') || Object.hasOwn(described.value, 'authorizer'));
   const parsed = rotationCandidate(candidate);
-  const draft = !parsed.ok || parsed.value.kind !== 'rotate';
+  const draft = !signedRequest && (!parsed.ok || parsed.value.kind !== 'rotate');
   /** @type {Rotate} */ let raw;
   if (!draft) {
-    raw = /** @type {Rotate} */ (parsed.value);
-    if (!hasNextEpub(raw) || raw.principal !== g.value) return fail('bad-record');
     const current = history.length ? history[history.length - 1].nextKey : g.value;
-    const checked = checkRotate(candidate, current, ctx, []);
+    const checked = signedRequest ? verifyRotationRequest(candidate, current, ctx) : checkRotate(candidate, current, ctx, []);
     if (!checked.ok) return checked;
     raw = checked.value;
+    if (!hasNextEpub(raw) || raw.principal !== g.value) return fail('bad-record');
   } else {
     const structural = draftRotation(candidate);
     if (!structural.ok) return parsed.ok ? fail('bad-record') : parsed;
@@ -470,7 +513,11 @@ export function checkRotationPublish(candidate, siblings, genesis, priorRecords,
   for (const sibling of siblings) {
     const other = authenticatedSibling(sibling, ctx);
     if (!other || other.principal !== raw.principal || other.seq !== raw.seq) continue;
-    if (draft || !hasNextEpub(other) || hex(sha256(bytes(other))) !== id) return fail('rotation-fork');
+    if (draft) {
+      if (!sameDraft(raw, other)) return fail('rotation-fork');
+      continue;
+    }
+    if (!hasNextEpub(other) || hex(sha256(bytes(other))) !== id) return fail('rotation-fork');
   }
   const seq = history.length + 1;
   const current = history.length ? history[history.length - 1].nextKey : g.value;
@@ -487,20 +534,18 @@ export function resolveCurrentKey(genesis, rotations, ctx) {
   if (!integer(ctx.now) || typeof ctx.history !== 'function') return { ...fail('missing-history'), diagnostics };
   const g = parsePrincipalId(genesis); if (!g.ok) return { ...g, diagnostics };
   const listed = genesisBindings(ctx); if (!listed.ok) return { ...listed, diagnostics };
-  /** @type {{row: GenesisEpub, index: number}[]} */ const acceptedBindings = [];
+  /** @type {{row: GenesisEpub, index: number}[]} */
+  let pending = [];
   listed.value.forEach((raw, index) => {
     const v = verifyGenesisEpub(raw, g.value, ctx);
     if (!v.ok) { diagnostics.push({ source: 'genesis-epub', index, reason: v.reason }); return; }
     const id = hex(sha256(bytes(v.value)));
-    if (acceptedBindings.some(b => hex(sha256(bytes(b.row))) === id)) return;
-    acceptedBindings.push({ row: v.value, index });
+    if (pending.some(b => hex(sha256(bytes(b.row))) === id)) return;
+    pending.push({ row: v.value, index });
   });
-  if (acceptedBindings.length > 1) {
-    diagnostics.push({ source: 'genesis-epub', index: acceptedBindings[1].index, reason: 'rotation-fork' });
-    return { ...fail('rotation-fork'), diagnostics };
-  }
-  /** @type {{row: GenesisEpub, index: number}|null} */
-  let binding = acceptedBindings[0] ?? null;
+  /** Bindings issued at or after the first accepted rotation are not a fork.
+   * @type {{row: GenesisEpub, index: number}|null} */
+  let binding = null;
   /** @type {Rotate[]} */ const history = [];
   /** @type {Map<number, {r:Rotate,index:number}[]>} */ const groups = new Map();
   for (const [index,raw] of rotations.entries()) {
@@ -518,8 +563,11 @@ export function resolveCurrentKey(genesis, rotations, ctx) {
       /** @type {ResolutionContext} */ const candidate = { ...ctx, now:raw.issuedAt,
         history:(p,at,until) => p === genesis ? ok(historyState(genesis,history,at,until)) : state(ctx.history,p,at,until) };
       /** @type {Result<Rotate>} */ let result;
-      const activeBinding = binding && (history.length ? binding.row.issuedAt < history[0].issuedAt : binding.row.issuedAt < raw.issuedAt) ? binding.row.epub : null;
-      if (n !== seq || raw.issuedAt <= lastTime || raw.nextKey === genesis || history.some(r => r.nextKey === raw.nextKey) || reusesEpub(raw, genesis, history, activeBinding)) result = fail('bad-sequence');
+      const earlyEpubs = history.length
+        ? (binding && binding.row.issuedAt < history[0].issuedAt ? [binding.row.epub] : [])
+        : pending.filter(b => b.row.issuedAt < raw.issuedAt).map(b => b.row.epub);
+      const reused = reusesEpub(raw, genesis, history, null) || earlyEpubs.some(epub => reusesEpub(raw, genesis, history, epub));
+      if (n !== seq || raw.issuedAt <= lastTime || raw.nextKey === genesis || history.some(r => r.nextKey === raw.nextKey) || reused) result = fail('bad-sequence');
       else {
         result = checkRotate(raw,current,candidate,diagnostics);
         // A witnessed OIDC rotation contradicted by an active wallet cannot be skipped.
@@ -547,13 +595,24 @@ export function resolveCurrentKey(genesis, rotations, ctx) {
     if (valid.size > 1) return { ...fail('rotation-fork'), diagnostics };
     const next = [...valid.values()][0];
     if (next) {
-      if (history.length === 0 && binding && binding.row.issuedAt >= next.issuedAt) {
-        diagnostics.push({ source: 'genesis-epub', index: binding.index, reason: 'bad-sequence' });
-        binding = null;
+      if (history.length === 0) {
+        const early = pending.filter(b => b.row.issuedAt < next.issuedAt);
+        for (const late of pending) if (late.row.issuedAt >= next.issuedAt) diagnostics.push({ source: 'genesis-epub', index: late.index, reason: 'bad-sequence' });
+        if (early.length > 1) {
+          diagnostics.push({ source: 'genesis-epub', index: early[1].index, reason: 'rotation-fork' });
+          return { ...fail('rotation-fork'), diagnostics };
+        }
+        binding = early[0] ?? null;
+        pending = [];
       }
       current=next.nextKey; currentEpub=hasNextEpub(next) ? next.nextEpub : null; lastTime=next.issuedAt; history.push(next); seq++;
     }
   }
+  if (!history.length && pending.length > 1) {
+    diagnostics.push({ source: 'genesis-epub', index: pending[1].index, reason: 'rotation-fork' });
+    return { ...fail('rotation-fork'), diagnostics };
+  }
+  if (!history.length) binding = pending[0] ?? null;
   const bindingEpub = binding ? binding.row.epub : null;
   if (!history.length) currentEpub = bindingEpub;
   return { ...ok({currentKey:current,currentEpub,bindingEpub,rotations:history}), diagnostics };

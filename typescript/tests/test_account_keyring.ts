@@ -39,6 +39,7 @@ const vector = JSON.parse(readFileSync(new URL("../../vectors/encrypted-discover
   trusted: string[];
   lost: string;
   wallet: string;
+  genesisBinding: unknown;
   errors: Record<string, string>;
   expected: {
     principal: string;
@@ -159,6 +160,10 @@ function emptyContext(): ResolutionContext {
   };
 }
 
+function witnessedContext(): ResolutionContext {
+  return recordsContext([vector.genesisBinding]);
+}
+
 function recordsContext(bindings: readonly unknown[] = []): ResolutionContext {
   const links = new Map(records.context.links);
   const history = (principal: PrincipalId, at: number, until: number) =>
@@ -179,7 +184,7 @@ function recordsContext(bindings: readonly unknown[] = []): ResolutionContext {
 
 test("rotation matches the shared vector and keeps secrets off gun", () => {
   const keyring = AccountKeyring.fromGenesis(genesis());
-  const outcome = rotateKeyring(keyring, vector.trusted, vector.lost, [], emptyContext(), vectorMint);
+  const outcome = rotateKeyring(keyring, vector.trusted, vector.lost, [], witnessedContext(), vectorMint);
   const expected = vector.expected;
   assert.equal(outcome.keyring.principal, expected.principal);
   assert.equal(outcome.keyring.principal, vector.genesis.principal);
@@ -283,7 +288,7 @@ test("builder refuses a held epub and a bad device", () => {
     message(() => rotateKeyring(keyring, [vector.wallet, "phone"], "phone", [], emptyContext(), vectorMint)),
     vector.errors.deviceId,
   );
-  const outcome = rotateKeyring(keyring, vector.trusted, vector.lost, [], emptyContext(), vectorMint);
+  const outcome = rotateKeyring(keyring, vector.trusted, vector.lost, [], witnessedContext(), vectorMint);
   assert.equal(
     message(() => rotateKeyring(outcome.keyring, vector.trusted, vector.lost, [], emptyContext(), genesisEpubMint)),
     vector.errors.epubReuse,
@@ -488,7 +493,7 @@ test("witnessed import seals only the resolved epub", () => {
 test("a fresh mint is v3 and leaves the principal in place", () => {
   const account = genesis();
   const keyring = AccountKeyring.fromGenesis(account);
-  const outcome = rotateKeyring(keyring, vector.trusted, vector.lost, [], emptyContext(), mintRotation);
+  const outcome = rotateKeyring(keyring, vector.trusted, vector.lost, [], witnessedContext(), mintRotation);
   assert.equal(outcome.keyring.principal, account.principal);
   assert.equal(outcome.draft.version, 3);
   assert.equal(draftDocument(outcome.draft).includes("\"nextEpub\""), true);
@@ -553,6 +558,26 @@ test("genesis-only import accepts the witnessed binding", () => {
       [],
       context,
     )),
+    vector.errors.epubMismatch,
+  );
+});
+
+test("builder confirms the witnessed epub before rotating", () => {
+  const keyring = AccountKeyring.fromGenesis({
+    ...genesis(),
+    epub: vector.mint.epub,
+    epriv: vector.mint.epriv,
+  });
+  const fresh = scalarSea(4);
+  const signing = scalarSea(5);
+  assert.equal(
+    message(() => rotateKeyring(keyring, vector.trusted, vector.lost, [], witnessedContext(), () => ({
+      signingPub: signing.pub,
+      signingPriv: signing.priv,
+      epub: fresh.pub,
+      epriv: fresh.priv,
+      laneId: "ee".repeat(32),
+    }))),
     vector.errors.epubMismatch,
   );
 });

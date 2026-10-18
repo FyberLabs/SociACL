@@ -477,8 +477,9 @@ pub fn mint_rotation() -> Result<RotationMint, EncDiscError> {
 
 /// Mint the next v3 rotation. Name every trusted device except `lost`.
 /// Delivery of the new keyring is part 3 and is not done here.
-/// The account id does not change. The draft is checked with
-/// `check_rotation_publish` before it is returned.
+/// The account id does not change. `confirm` runs before the current epub is
+/// retired. The draft is checked with `check_rotation_publish` before it is
+/// returned.
 pub fn rotate_keyring<F>(
     keyring: &AccountKeyring,
     trusted: &[&str],
@@ -511,14 +512,10 @@ where
     {
         return Err(EncDiscError::EpubReuse);
     }
-    let resolved = sociacl_ids::resolve_current_key(&keyring.principal, rotations, context);
-    let account = resolved.result.map_err(reject)?;
-    if account.current_key.as_ref() != keyring.current_pub.as_ref() {
-        return Err(EncDiscError::PubMismatch);
+    if minted.lane_id == keyring.lane_id {
+        return Err(EncDiscError::BadLane);
     }
-    if account.rotations.len() as u64 != keyring.rotation_seq {
-        return Err(EncDiscError::RotationRejected);
-    }
+    let account = keyring.confirm(rotations, context)?;
     if account
         .rotations
         .iter()
@@ -527,9 +524,6 @@ where
         || account.binding_epub.as_ref() == Some(&next_epub)
     {
         return Err(EncDiscError::EpubReuse);
-    }
-    if minted.lane_id == keyring.lane_id {
-        return Err(EncDiscError::BadLane);
     }
     let mut retired = keyring.retired.clone();
     retired.push(RetiredEpriv {
@@ -816,13 +810,60 @@ mod tests {
         }
     }
 
+    struct WitnessHold {
+        jwks: Jwks,
+        policy: SiwePolicy,
+        pinned: BTreeSet<String>,
+        links: BTreeMap<String, Value>,
+        binding: Vec<Value>,
+        revocations: Vec<Value>,
+        now: u64,
+    }
+
+    fn witness_hold(v: &Value) -> WitnessHold {
+        let records = records();
+        let ctx = &records["context"];
+        WitnessHold {
+            jwks: serde_json::from_value(ctx["jwks"].clone()).unwrap(),
+            policy: serde_json::from_value(ctx["policy"].clone()).unwrap(),
+            pinned: ctx["pinnedIss"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|item| item.as_str().unwrap().to_string())
+                .collect(),
+            links: ctx["links"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|pair| (pair[0].as_str().unwrap().to_string(), pair[1].clone()))
+                .collect(),
+            binding: vec![v["genesisBinding"].clone()],
+            revocations: Vec::new(),
+            now: ctx["now"].as_u64().unwrap(),
+        }
+    }
+
+    fn witness_context<'a>(hold: &'a WitnessHold) -> ResolutionContext<'a> {
+        ResolutionContext {
+            jwks: &hold.jwks,
+            links: &hold.links,
+            revocations: &hold.revocations,
+            now: hold.now,
+            policy: &hold.policy,
+            pinned_iss: &hold.pinned,
+            history: &missing_history,
+            genesis_epub_bindings: &hold.binding,
+        }
+    }
+
     #[test]
     fn rotation_matches_the_shared_vector_and_keeps_secrets_off_gun() {
         let v = ring();
         let account = genesis_of(&v);
         let keyring = AccountKeyring::from_genesis(&account).unwrap();
-        let empty = empty_ctx();
-        let ctx = context_of(&empty);
+        let hold = witness_hold(&v);
+        let ctx = witness_context(&hold);
         let names = trusted(&v);
         let lost = v["lost"].as_str().unwrap();
         let outcome =
@@ -1059,8 +1100,12 @@ mod tests {
             })
             .unwrap_err(),
         );
-        let outcome =
-            rotate_keyring(&keyring, &names, lost, &[], &ctx, || Ok(vector_mint(&v))).unwrap();
+        let hold = witness_hold(&v);
+        let witnessed = witness_context(&hold);
+        let outcome = rotate_keyring(&keyring, &names, lost, &[], &witnessed, || {
+            Ok(vector_mint(&v))
+        })
+        .unwrap();
         expect_err(
             &v,
             "epubReuse",
@@ -1377,8 +1422,8 @@ mod tests {
         let account = genesis_of(&v);
         let keyring = AccountKeyring::from_genesis(&account).unwrap();
         let names = trusted(&v);
-        let empty = empty_ctx();
-        let ctx = context_of(&empty);
+        let hold = witness_hold(&v);
+        let ctx = witness_context(&hold);
         let outcome = rotate_keyring(
             &keyring,
             &names,
@@ -1417,6 +1462,46 @@ mod tests {
             &v,
             "pubMismatch",
             outcome.keyring.confirm(&[], &context).unwrap_err(),
+        );
+    }
+
+    #[test]
+    fn builder_confirms_the_witnessed_epub_before_rotating() {
+        let v = ring();
+        let mismatched = GenesisAccount::import(
+            v["genesis"]["laneId"].as_str().unwrap(),
+            v["genesis"]["signingPub"].as_str().unwrap(),
+            v["genesis"]["signingPriv"].as_str().unwrap(),
+            v["mint"]["epub"].as_str().unwrap(),
+            v["mint"]["epriv"].as_str().unwrap(),
+        )
+        .unwrap();
+        let keyring = AccountKeyring::from_genesis(&mismatched).unwrap();
+        let (signing_pub, signing_priv) = scalar_sea(5);
+        let (epub, epriv) = scalar_sea(4);
+        let names = trusted(&v);
+        let hold = witness_hold(&v);
+        let ctx = witness_context(&hold);
+        expect_err(
+            &v,
+            "epubMismatch",
+            rotate_keyring(
+                &keyring,
+                &names,
+                v["lost"].as_str().unwrap(),
+                &[],
+                &ctx,
+                || {
+                    Ok(RotationMint {
+                        signing_pub,
+                        signing_priv,
+                        epub,
+                        epriv,
+                        lane_id: "ee".repeat(32),
+                    })
+                },
+            )
+            .unwrap_err(),
         );
     }
 
