@@ -99,4 +99,8 @@ pub enum EncDiscError {
     RecoveryStale,
     #[error("keyring is too large")]
     KeyringTooLarge,
+    /// Stale, forged, tampered, and misaddressed contact-lane grants share this.
+    /// The caller does not choose the code.
+    #[error("lane-grant-rejected")]
+    LaneGrantRejected,
 }

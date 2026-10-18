@@ -2,6 +2,15 @@
 
 ## Encrypted discovery — unreleased
 
+- Derive a per-contact inbox lane with HKDF-SHA256 from the account lane
+  secret and the sender `PrincipalId`. Info is length-prefixed
+  `sociacl-contact-lane-v1`, version `1`, the recipient, then the sender.
+  Salt is 32 zero bytes. Output is 32 bytes. The recipient seals that lane
+  id to the sender's resolved `currentEpub` under
+  `sociacl-contact-lane-grant-v1` and signs it under
+  `sociacl-contact-lane-grant-sig-v1`. A null `currentEpub` is
+  `epub-unknown`. Open failures are `lane-grant-rejected`. Storage indexes
+  the lane id hex alone. Refs #64. Follow-ups #70 and #71.
 - Add a passphrase recovery copy of the account keyring
   (`sociacl-recovery-copy-v1`). Argon2id is pinned to RFC 9106's second
   recommended option (`m=64` MiB, `t=3`, `p=4`, version `0x13`, 32-byte

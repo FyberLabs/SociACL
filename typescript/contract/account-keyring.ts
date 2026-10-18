@@ -5,8 +5,8 @@
  * against resolveCurrentKey. A null currentEpub is not a match and is not
  * Gun's user.epub. New rotations are v3 and mint a fresh epub.
  *
- * Passphrase recovery lives in recovery.ts. HKDF per-contact lanes are not
- * this module.
+ * Passphrase recovery lives in recovery.ts. Per-contact lanes are derived
+ * from this lane secret in contact-lane.ts.
  */
 import { randomBytes } from "node:crypto";
 import { p256 } from "@noble/curves/nist.js";

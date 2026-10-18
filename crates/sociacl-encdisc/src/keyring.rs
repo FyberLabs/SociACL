@@ -1,7 +1,8 @@
 //! Account keyring.
 //!
 //! Holds the current signing key, the current encryption key, the retired
-//! encryption keys, the current lane id, and every lane id already issued.
+//! encryption keys, the current lane secret, and every lane secret already issued.
+//! Contact lanes are derived from that secret in `contact_lane`.
 //! A later mint cannot reuse one. The account id
 //! stays the genesis signing pub. Import checks that pair against
 //! `resolve_current_key`. A null `current_epub` is not a match and is not
