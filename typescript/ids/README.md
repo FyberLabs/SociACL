@@ -168,7 +168,7 @@ JWKS and enrollment proofs still authenticate existing links;
 complete authenticated history and a trusted latest-state checkpoint remain
 necessary. The offline revoke itself requires no network request.
 
-`ResolutionContext` contains `{jwks, pinnedIss, links, revocations?, now, policy, history}`.
+`ResolutionContext` contains `{jwks, pinnedIss, links, revocations?, now, policy, history, genesisEpubBindings?}`.
 `history(principal, issuedAt, until)` is required and returns `Result<KeyState>`
 from a complete authenticated snapshot through `until`. `historyState` computes
 that state from previously verified rotations. It does **not** authenticate its
@@ -182,20 +182,28 @@ history lookup. Unrelated or unwitnessed index entries cannot cause a fatal
 context failure.
 
 `resolveCurrentKey(genesis, rotations, context)` returns
-`{ok:true,value:{currentKey,currentEpub,rotations},diagnostics}` or
+`{ok:true,value:{currentKey,currentEpub,bindingEpub,rotations},diagnostics}` or
 `{ok:false,reason,diagnostics}`. The rotation version is inferred from whether
 `nextEpub` is present; record `v` stays 1. Each accepted rotation replaces
 `currentEpub`: a v3 record sets it to that `nextEpub`, and a v2 record sets it
 to null. Null means the encryption public key is unknown. Do not seal, and
-never fall back to Gun's `user.epub`. With no accepted v3 rotation,
-`currentEpub` stays null. The genesis encryption public key does not become
-`currentEpub`. When the account keyring supplies `ResolutionContext.genesisEpub`,
-that point joins the reuse check and a collision is `bad-sequence`. New
-rotations must be v3, and from 0.7 Panopticon attests only v3. From 0.8,
-`checkRotationPublish` is the check Panopticon runs before it attests and the
-check a client runs before it publishes. It refuses a v2 record with
-`bad-record` and two versions of one `(principal, seq)` with `rotation-fork`.
-It does not replace `verifyRotate`. The library still verifies historical v2.
+never fall back to Gun's `user.epub`. With no accepted rotation, `currentEpub`
+is the witnessed `genesis-epub` binding, or null when there is none. A v2
+rotation still sets `currentEpub` to null. Pass those
+records as `ResolutionContext.genesisEpubBindings`. The genesis key signs
+domain `sociacl-genesis-epub-v1`. Panopticon attests typ
+`sociacl-genesis-epub-attest-v1` with `iat` equal to `issuedAt`, at most one
+binding per principal, and only at signup (panopticon#499). Two valid bindings
+freeze the account. A binding issued at or after the first accepted rotation
+is skipped. Once a rotation is accepted, that binding epub joins the reuse
+set. An unwitnessed `genesisEpub` string is ignored. New rotations must be v3,
+and from 0.7 Panopticon attests only v3. From 0.8, `checkRotationPublish` is
+the check Panopticon runs before it attests and the check a client runs before
+it publishes. Before attesting, verify the candidate signature, the wallet
+signature, and the links. Only an attested sibling counts. Junk is skipped.
+It refuses a v2 record with `bad-record` and two versions of one
+`(principal, seq)` with `rotation-fork`. It does not replace `verifyRotate`.
+The library still verifies historical v2.
 Panopticon never attests both versions for the same principal and sequence;
 publishing both freezes the account with `rotation-fork`. `nextEpub` must not
 equal `nextKey`, genesis, any prior signing key, or any prior epub, and a later

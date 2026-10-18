@@ -71,6 +71,18 @@ pub struct Rotate {
     pub authorizer: Authorizer,
     pub attest: String,
 }
+/// Genesis key signs the account's first epub. Panopticon attests it at signup.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct GenesisEpub {
+    pub v: u8,
+    pub principal: PrincipalId,
+    pub epub: PrincipalId,
+    #[serde(deserialize_with = "deserialize_integer")]
+    pub issued_at: u64,
+    pub key_sig: String,
+    pub attest: String,
+}
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Revoke {
@@ -90,6 +102,8 @@ pub enum IdentityRecord {
     Oidc(OidcLink),
     Rotate(Rotate),
     Revoke(Revoke),
+    #[serde(rename = "genesis-epub")]
+    GenesisEpub(GenesisEpub),
 }
 impl IdentityRecord {
     pub fn principal(&self) -> &PrincipalId {
@@ -98,6 +112,7 @@ impl IdentityRecord {
             Self::Oidc(r) => &r.principal,
             Self::Rotate(r) => &r.principal,
             Self::Revoke(r) => &r.principal,
+            Self::GenesisEpub(r) => &r.principal,
         }
     }
     pub fn issued_at(&self) -> u64 {
@@ -106,6 +121,7 @@ impl IdentityRecord {
             Self::Oidc(r) => r.issued_at,
             Self::Rotate(r) => r.issued_at,
             Self::Revoke(r) => r.issued_at,
+            Self::GenesisEpub(r) => r.issued_at,
         }
     }
     pub fn value(&self) -> Value {
@@ -135,10 +151,8 @@ pub struct ResolutionContext<'a> {
     pub policy: &'a SiwePolicy,
     pub pinned_iss: &'a BTreeSet<String>,
     pub history: &'a HistoryResolver<'a>,
-    /// Encryption public key bound by the account keyring at genesis.
-    /// Absent means the reuse check does not know that point. It never
-    /// becomes `current_epub`.
-    pub genesis_epub: Option<&'a PrincipalId>,
+    /// Witnessed `genesis-epub` records. Gun `user.epub` is not this slice.
+    pub genesis_epub_bindings: &'a [Value],
 }
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -171,6 +185,9 @@ pub struct Resolution<T> {
 pub struct ResolvedAccount {
     pub current_key: PrincipalId,
     pub current_epub: Option<PrincipalId>,
+    /// In-force witnessed genesis epub. None when none was attested, or the
+    /// only one was issued at or after the first accepted rotation.
+    pub binding_epub: Option<PrincipalId>,
     pub rotations: Vec<Rotate>,
 }
 fn diagnostic(ds: &mut Vec<Diagnostic>, source: &str, index: usize, reason: Reason) {
@@ -226,8 +243,14 @@ fn siwe_data(v: &Value) -> Result<Siwe, Reason> {
 fn record(v: &Value, unsigned: bool) -> Result<IdentityRecord, Reason> {
     if !v.is_object()
         || v["v"].as_f64() != Some(1.0)
-        || ![Some("wallet"), Some("oidc"), Some("rotate"), Some("revoke")]
-            .contains(&v["kind"].as_str())
+        || ![
+            Some("wallet"),
+            Some("oidc"),
+            Some("rotate"),
+            Some("revoke"),
+            Some("genesis-epub"),
+        ]
+        .contains(&v["kind"].as_str())
     {
         return Err(Reason::BadRecord);
     }
@@ -248,6 +271,34 @@ fn record(v: &Value, unsigned: bool) -> Result<IdentityRecord, Reason> {
         }
     };
     match v["kind"].as_str().ok_or(Reason::BadRecord)? {
+        "genesis-epub" => {
+            if !only(
+                v,
+                &[
+                    "v",
+                    "kind",
+                    "principal",
+                    "epub",
+                    "issuedAt",
+                    "keySig",
+                    "attest",
+                ],
+            ) {
+                return Err(Reason::BadRecord);
+            }
+            let epub = parse_principal_id(v["epub"].as_str().ok_or(Reason::NotString)?)?;
+            if epub == principal {
+                return Err(Reason::BadRecord);
+            }
+            Ok(IdentityRecord::GenesisEpub(GenesisEpub {
+                v: 1,
+                principal,
+                epub,
+                issued_at,
+                key_sig: sig("keySig")?,
+                attest: attest()?,
+            }))
+        }
         "wallet" | "oidc" => {
             let nonce = field(v, "nonce", 128)?.to_owned();
             if !rx!(r"^[A-Za-z0-9]{8,128}$").is_match(&nonce) {
@@ -492,6 +543,12 @@ fn bytes(r: &IdentityRecord) -> Vec<u8> {
         IdentityRecord::Revoke(r) => {
             lp(&["sociacl-revoke-v1", r.principal.as_ref(), &r.link_id, &t])
         }
+        IdentityRecord::GenesisEpub(r) => lp(&[
+            "sociacl-genesis-epub-v1",
+            r.principal.as_ref(),
+            r.epub.as_ref(),
+            &t,
+        ]),
     }
 }
 pub fn signing_bytes(r: &IdentityRecord) -> Result<Vec<u8>, Reason> {
@@ -1124,7 +1181,7 @@ fn reuses_epub(
     raw: &Rotate,
     genesis: &PrincipalId,
     history: &[Rotate],
-    genesis_epub: Option<&PrincipalId>,
+    binding_epub: Option<&PrincipalId>,
 ) -> bool {
     if history
         .iter()
@@ -1132,7 +1189,7 @@ fn reuses_epub(
     {
         return true;
     }
-    if genesis_epub.is_some_and(|bound| bound == &raw.next_key) {
+    if binding_epub.is_some_and(|bound| bound == &raw.next_key) {
         return true;
     }
     let Some(epub) = &raw.next_epub else {
@@ -1140,49 +1197,226 @@ fn reuses_epub(
     };
     epub == &raw.next_key
         || epub == genesis
-        || genesis_epub.is_some_and(|bound| epub == bound)
+        || binding_epub.is_some_and(|bound| epub == bound)
         || history.iter().any(|h| {
             &h.next_key == epub || &h.prev_key == epub || h.next_epub.as_ref() == Some(epub)
         })
 }
+fn verify_genesis_epub(
+    raw: &Value,
+    genesis: &PrincipalId,
+    ctx: &ResolutionContext<'_>,
+) -> Result<GenesisEpub, Reason> {
+    let IdentityRecord::GenesisEpub(binding) = record(raw, false)? else {
+        return Err(Reason::BadRecord);
+    };
+    if &binding.principal != genesis {
+        return Err(Reason::BadRecord);
+    }
+    time(binding.issued_at, ctx.now)?;
+    let signed = IdentityRecord::GenesisEpub(binding.clone());
+    if !key_verify(&binding.principal, &binding.key_sig, &bytes(&signed)) {
+        return Err(Reason::BadSignature);
+    }
+    let c = attest_verify(
+        &binding.attest,
+        ctx.jwks,
+        ctx.now,
+        ctx.policy.clock_skew_seconds,
+    )?;
+    if !only(&c, &["typ", "principal", "epub", "iat", "exp"])
+        || c["typ"] != "sociacl-genesis-epub-attest-v1"
+        || c["principal"] != binding.principal.as_ref()
+        || c["epub"] != binding.epub.as_ref()
+        || number(&c["iat"]).ok() != Some(binding.issued_at)
+    {
+        return Err(Reason::BadAttestation);
+    }
+    Ok(binding)
+}
+fn accept_bindings(
+    genesis: &PrincipalId,
+    ctx: &ResolutionContext<'_>,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Result<Option<(usize, GenesisEpub)>, Reason> {
+    let mut accepted: Vec<(usize, GenesisEpub, String)> = Vec::new();
+    for (index, raw) in ctx.genesis_epub_bindings.iter().enumerate() {
+        match verify_genesis_epub(raw, genesis, ctx) {
+            Ok(binding) => {
+                let id = link_id(&IdentityRecord::GenesisEpub(binding.clone()))?;
+                if accepted.iter().any(|(_, _, seen)| seen == &id) {
+                    continue;
+                }
+                accepted.push((index, binding, id));
+            }
+            Err(reason) => diagnostic(diagnostics, "genesis-epub", index, reason),
+        }
+    }
+    if accepted.len() > 1 {
+        diagnostic(
+            diagnostics,
+            "genesis-epub",
+            accepted[1].0,
+            Reason::RotationFork,
+        );
+        return Err(Reason::RotationFork);
+    }
+    Ok(accepted
+        .into_iter()
+        .next()
+        .map(|(index, binding, _)| (index, binding)))
+}
+/// A sibling counts only when its next-key signature and Panopticon attestation both verify.
+fn authenticated_sibling(raw: &Value, ctx: &ResolutionContext<'_>) -> Option<Rotate> {
+    let IdentityRecord::Rotate(row) = rotation_candidate(raw).ok()? else {
+        return None;
+    };
+    let signed = IdentityRecord::Rotate(row.clone());
+    if !key_verify(&row.next_key, &row.next_sig, &bytes(&signed)) {
+        return None;
+    }
+    let c = attest_verify(
+        &row.attest,
+        ctx.jwks,
+        ctx.now,
+        ctx.policy.clock_skew_seconds,
+    )
+    .ok()?;
+    let v3 = row.next_epub.is_some();
+    if c["typ"]
+        != if v3 {
+            "sociacl-rotate-attest-v3"
+        } else {
+            "sociacl-rotate-attest-v2"
+        }
+        || c["principal"] != row.principal.as_ref()
+        || c["nextKey"] != row.next_key.as_ref()
+        || number(&c["seq"]).ok() != Some(row.seq)
+        || number(&c["iat"]).ok() != Some(row.issued_at)
+    {
+        return None;
+    }
+    if let Some(epub) = &row.next_epub {
+        if c["nextEpub"] != epub.as_ref() {
+            return None;
+        }
+    }
+    Some(row)
+}
+fn draft_rotation(v: &Value) -> Result<Rotate, Reason> {
+    if v["v"].as_f64() != Some(1.0) || v["kind"] != "rotate" {
+        return Err(Reason::BadRecord);
+    }
+    if v.get("nextSig").is_some() || v.get("authorizer").is_some() || v.get("attest").is_some() {
+        return Err(Reason::BadRecord);
+    }
+    if !only(
+        v,
+        &[
+            "v",
+            "kind",
+            "principal",
+            "seq",
+            "prevKey",
+            "nextKey",
+            "nextEpub",
+            "retainedLinks",
+            "issuedAt",
+        ],
+    ) {
+        return Err(Reason::BadRecord);
+    }
+    let principal = parse_principal_id(v["principal"].as_str().ok_or(Reason::NotString)?)?;
+    let seq = number(&v["seq"])?;
+    if seq == 0 {
+        return Err(Reason::BadSequence);
+    }
+    let prev_key = parse_principal_id(v["prevKey"].as_str().ok_or(Reason::NotString)?)?;
+    let next_key = parse_principal_id(v["nextKey"].as_str().ok_or(Reason::NotString)?)?;
+    let next_epub = parse_principal_id(v["nextEpub"].as_str().ok_or(Reason::NotString)?)?;
+    if !v["retainedLinks"].is_array() {
+        return Err(Reason::BadRecord);
+    }
+    let issued_at = if v.get("issuedAt").is_some() {
+        number(&v["issuedAt"])?
+    } else {
+        0
+    };
+    Ok(Rotate {
+        v: 1,
+        principal,
+        seq,
+        prev_key,
+        next_key,
+        next_epub: Some(next_epub),
+        retained_links: Vec::new(),
+        issued_at,
+        next_sig: String::new(),
+        authorizer: Authorizer::OidcFreshLogin {
+            link: "0".repeat(64),
+        },
+        attest: String::new(),
+    })
+}
 /// Client publish check and Panopticon attest check. Same rules.
 ///
-/// Refuses a v2 record. Refuses two versions, or two signing-byte ids, for
-/// one (principal, seq). Runs the same reuse and sequence checks as
-/// resolution, including a bound genesis epub. Does not replace
-/// [`verify_rotate`]. Historical v2 records still verify there.
+/// Refuses a v2 record. An authenticated sibling with a different signing-byte
+/// id at the same (principal, seq) is `rotation-fork`. Junk and unattested
+/// siblings are skipped. Priors are whatever [`resolve_current_key`] accepts.
+/// Before attesting, Panopticon verifies the candidate signature, the wallet
+/// signature, and the links (panopticon#499). Panopticon attests at most one
+/// genesis-epub binding per principal, and only at signup.
+/// Does not replace [`verify_rotate`]. Historical v2 records still verify there.
 pub fn check_rotation_publish(
     candidate: &Value,
     siblings: &[Value],
     genesis: &PrincipalId,
-    accepted_prior: &[Value],
+    prior_records: &[Value],
     ctx: &ResolutionContext<'_>,
 ) -> Result<Rotate, Reason> {
-    let IdentityRecord::Rotate(raw) = rotation_candidate(candidate)? else {
-        return Err(Reason::BadRecord);
-    };
-    if raw.next_epub.is_none() || &raw.principal != genesis {
-        return Err(Reason::BadRecord);
-    }
-    let candidate_id = link_id(&IdentityRecord::Rotate(raw.clone()))?;
-    for sibling in siblings {
-        let IdentityRecord::Rotate(other) = rotation_candidate(sibling)? else {
+    let resolved = resolve_current_key(genesis, prior_records, ctx);
+    let account = resolved.result?;
+    let history = account.rotations;
+    let binding_epub = account.binding_epub;
+    let parsed = rotation_candidate(candidate);
+    let draft = !matches!(&parsed, Ok(IdentityRecord::Rotate(_)));
+    let raw = if !draft {
+        let Ok(IdentityRecord::Rotate(row)) = parsed else {
             return Err(Reason::BadRecord);
+        };
+        if row.next_epub.is_none() || &row.principal != genesis {
+            return Err(Reason::BadRecord);
+        }
+        let current = history
+            .last()
+            .map(|item| item.next_key.clone())
+            .unwrap_or_else(|| genesis.clone());
+        check_rotate(candidate, &current, ctx, &mut Vec::new())?
+    } else {
+        match draft_rotation(candidate) {
+            Ok(row) if &row.principal == genesis => row,
+            Ok(_) => return Err(Reason::BadRecord),
+            Err(_) => return parsed.and(Err(Reason::BadRecord)),
+        }
+    };
+    let candidate_id = if draft {
+        String::new()
+    } else {
+        link_id(&IdentityRecord::Rotate(raw.clone()))?
+    };
+    for sibling in siblings {
+        let Some(other) = authenticated_sibling(sibling, ctx) else {
+            continue;
         };
         if other.principal != raw.principal || other.seq != raw.seq {
             continue;
         }
-        let other_id = link_id(&IdentityRecord::Rotate(other.clone()))?;
-        if other.next_epub.is_none() || other_id != candidate_id {
+        if draft
+            || other.next_epub.is_none()
+            || link_id(&IdentityRecord::Rotate(other))? != candidate_id
+        {
             return Err(Reason::RotationFork);
         }
-    }
-    let mut history = Vec::with_capacity(accepted_prior.len());
-    for prior in accepted_prior {
-        let IdentityRecord::Rotate(row) = rotation_candidate(prior)? else {
-            return Err(Reason::BadRecord);
-        };
-        history.push(row);
     }
     let seq = history.len() as u64 + 1;
     let current = history
@@ -1190,12 +1424,13 @@ pub fn check_rotation_publish(
         .map(|row| row.next_key.clone())
         .unwrap_or_else(|| genesis.clone());
     let last_time = history.last().map(|row| row.issued_at);
+    let timed = !draft || raw.issued_at != 0;
     if raw.seq != seq
-        || last_time.is_some_and(|time| raw.issued_at <= time)
+        || (timed && last_time.is_some_and(|time| raw.issued_at <= time))
         || raw.prev_key != current
         || &raw.next_key == genesis
         || history.iter().any(|row| row.next_key == raw.next_key)
-        || reuses_epub(&raw, genesis, &history, ctx.genesis_epub)
+        || reuses_epub(&raw, genesis, &history, binding_epub.as_ref())
     {
         return Err(Reason::BadSequence);
     }
@@ -1219,12 +1454,6 @@ fn check_rotate(
         .next_epub
         .as_ref()
         .is_some_and(|epub| epub == &rot.next_key || epub == &rot.prev_key)
-    {
-        return Err(Reason::BadSequence);
-    }
-    if ctx
-        .genesis_epub
-        .is_some_and(|bound| &rot.next_key == bound || rot.next_epub.as_ref() == Some(bound))
     {
         return Err(Reason::BadSequence);
     }
@@ -1388,6 +1617,7 @@ pub fn resolve_current_key(
         if ctx.now > MAX_SAFE {
             return Err(Reason::MissingHistory);
         }
+        let mut binding = accept_bindings(genesis, ctx, &mut diagnostics)?;
         let mut groups: BTreeMap<u64, Vec<(usize, Rotate)>> = BTreeMap::new();
         for (index, raw) in rotations.iter().enumerate() {
             let parsed = (|| {
@@ -1427,11 +1657,18 @@ pub fn resolve_current_key(
                     ..*ctx
                 };
                 let verified = (|| {
+                    let active = binding.as_ref().and_then(|(_, row)| {
+                        let in_force = match history.first() {
+                            Some(first) => row.issued_at < first.issued_at,
+                            None => row.issued_at < raw.issued_at,
+                        };
+                        in_force.then_some(row.epub.clone())
+                    });
                     if n != seq
                         || history.last().is_some_and(|r| raw.issued_at <= r.issued_at)
                         || &raw.next_key == genesis
                         || history.iter().any(|r| r.next_key == raw.next_key)
-                        || reuses_epub(&raw, genesis, &history, ctx.genesis_epub)
+                        || reuses_epub(&raw, genesis, &history, active.as_ref())
                     {
                         return Err(Reason::BadSequence);
                     }
@@ -1504,15 +1741,33 @@ pub fn resolve_current_key(
                 return Err(Reason::RotationFork);
             }
             if let Some(r) = valid.into_values().next() {
+                if history.is_empty() {
+                    if let Some((index, row)) = &binding {
+                        if row.issued_at >= r.issued_at {
+                            diagnostic(
+                                &mut diagnostics,
+                                "genesis-epub",
+                                *index,
+                                Reason::BadSequence,
+                            );
+                            binding = None;
+                        }
+                    }
+                }
                 current = r.next_key.clone();
                 current_epub = r.next_epub.clone();
                 history.push(r);
                 seq += 1;
             }
         }
+        let binding_epub = binding.map(|(_, row)| row.epub);
+        if history.is_empty() {
+            current_epub = binding_epub.clone();
+        }
         Ok(ResolvedAccount {
             current_key: current,
             current_epub,
+            binding_epub,
             rotations: history,
         })
     })();

@@ -492,18 +492,36 @@ accept('records','probe-v3-oidc',rot3Oidc,p,{operation:'rotate',links:[[oid,oidc
 bad('probe-v3-oidc-wallet-active',rot3Oidc,'wallet-required','rotate');
 accept('records','probe-v3-damaged-copy-plus-good',[{...rot3,authorizer:{kind:'wallet',link:wid}},rot3],p2,{operation:'resolve',currentEpub:epub});
 accept('records','probe-v3-then-v2-clears-epub',[rot3,rotation('wallet',p3,3,2,p2,at+40)],p3,{operation:'resolve'});
+accept('records','probe-v3-then-v3',[rot3,rotationV3('wallet',p3,3,2,p2,at+40,[wid],principal(7))],p3,{operation:'resolve',currentEpub:principal(7)});
 accept('records','probe-v2-only-epub-null',[rot],p2,{operation:'resolve'});
 accept('records','probe-no-rotations-epub-null',[],p,{operation:'resolve'});
-// Part 2: the keyring binds the genesis epub and the reuse check includes it.
-const genesisEpub = principal(9);
-accept('records','probe-genesis-epub-at-seq-2',[rot3,rotationV3('wallet',p3,3,2,p2,at+40,[wid],genesisEpub)],p2,{operation:'resolve',currentEpub:epub,diagnosticReasons:['bad-sequence'],genesisEpub});
 accept('records','probe-v2-nextkey-reuses-prior-epub',[rot3,rotation('wallet',epub,6,2,p2,at+40)],p2,{operation:'resolve',currentEpub:epub,diagnosticReasons:['bad-sequence']});
 accept('records','probe-v3-v2-v3-reuses-first-epub',[rot3,rotation('wallet',p3,3,2,p2,at+40),rotationV3('wallet',principal(4),4,3,p3,at+50,[wid],epub)],p3,{operation:'resolve',diagnosticReasons:['bad-sequence']});
 accept('records','publish-v3',{candidate:rot3,siblings:[],prior:[]},p,{operation:'publish-check'});
 bad('publish-v2-refused',{candidate:rot,siblings:[],prior:[]},'bad-record','publish-check');
 bad('publish-both-versions',{candidate:rot3,siblings:[rot],prior:[]},'rotation-fork','publish-check');
-bad('publish-seq2-reuses-genesis-epub',{candidate:rotationV3('wallet',p3,3,2,p2,at+40,[wid],genesisEpub),siblings:[],prior:[rot3]},'bad-sequence','publish-check',{genesisEpub});
-bad('genesis-epub-malformed',[rot3],'not-on-curve','resolve',{genesisEpub:'A'.repeat(43)+'.'+'A'.repeat(43)});
+const boundPoint = principal(9);
+const genesisBinding = (epub = boundPoint, issuedAt = at, principalId = p, n = 1, claims = {}) => {
+  const r = { v: 1, kind: 'genesis-epub', principal: principalId, epub, issuedAt };
+  return { ...r, keySig: keySig(r, n), attest: jws({ typ: 'sociacl-genesis-epub-attest-v1', principal: principalId, epub, iat: issuedAt, exp: issuedAt + 600, ...claims }) };
+};
+const binding = genesisBinding();
+accept('signing-bytes','genesis-epub',binding,hex(bytes(binding)),{linkId:val(ids.linkId(binding))});
+accept('records','binding-valid-no-rotation',[],p,{operation:'resolve',currentEpub:boundPoint,genesisEpubBindings:[binding]});
+accept('records','binding-bad-signature',[],p,{operation:'resolve',diagnosticReasons:['bad-signature'],genesisEpubBindings:[{...binding,keySig:'AA'}]});
+accept('records','binding-bad-attestation',[],p,{operation:'resolve',diagnosticReasons:['bad-attestation'],genesisEpubBindings:[{...binding,attest:'aa.bb.cc'}]});
+accept('records','binding-iat-mismatch',[],p,{operation:'resolve',diagnosticReasons:['bad-attestation'],genesisEpubBindings:[genesisBinding(boundPoint, at, p, 1, { iat: at + 1 })]});
+accept('records','binding-after-first-rotation',[rot3,rotationV3('wallet',p3,3,2,p2,at+40,[wid],boundPoint)],p3,{operation:'resolve',currentEpub:boundPoint,diagnosticReasons:['bad-sequence'],genesisEpubBindings:[genesisBinding(boundPoint, at + 50)]});
+bad('binding-two-freeze',[],'rotation-fork','resolve',{diagnosticReasons:['rotation-fork'],genesisEpubBindings:[binding,genesisBinding(principal(10), at + 1)]});
+accept('records','binding-epub-equals-genesis',[],p,{operation:'resolve',diagnosticReasons:['bad-record'],genesisEpubBindings:[{v:1,kind:'genesis-epub',principal:p,epub:p,issuedAt:at,keySig:'AA',attest:'aa.bb.cc'}]});
+accept('records','binding-reused-by-later-next-epub',[rot3,rotationV3('wallet',p3,3,2,p2,at+40,[wid],boundPoint)],p2,{operation:'resolve',currentEpub:epub,diagnosticReasons:['bad-sequence'],genesisEpubBindings:[binding]});
+accept('records','probe-genesis-epub-at-seq-2',[rot3,rotationV3('wallet',p3,3,2,p2,at+40,[wid],boundPoint)],p2,{operation:'resolve',currentEpub:epub,diagnosticReasons:['bad-sequence'],genesisEpubBindings:[binding]});
+accept('records','unwitnessed-genesis-epub-ignored',[rot3],p2,{operation:'resolve',currentEpub:epub,genesisEpub:epub});
+accept('records','publish-junk-sibling',{candidate:rot3,siblings:[{kind:'nope'}],prior:[]},p,{operation:'publish-check'});
+accept('records','publish-forged-sibling',{candidate:rot3,siblings:[{...rotationV3('wallet',principal(8),8,1,p,at+30,[wid],principal(11)),attest:'aa.bb.cc'}],prior:[]},p,{operation:'publish-check'});
+accept('records','publish-bad-prior-skipped',{candidate:rotationV3('wallet',p3,3,2,p2,at+40,[wid],principal(7)),siblings:[],prior:[{...rot3,nextSig:'AA'},rot3]},p,{operation:'publish-check'});
+bad('publish-seq2-reuses-genesis-epub',{candidate:rotationV3('wallet',p3,3,2,p2,at+40,[wid],boundPoint),siblings:[],prior:[rot3]},'bad-sequence','publish-check',{genesisEpubBindings:[binding]});
+accept('records','junk-binding-skipped',[rot3],p2,{operation:'resolve',currentEpub:epub,diagnosticReasons:['bad-record'],genesisEpubBindings:[{kind:'nope'}]});
 
 const root = new URL('../../../vectors/ids/',import.meta.url); mkdirSync(root,{recursive:true});
 for(const [name,value] of families) writeFileSync(new URL(name+'.json',root),JSON.stringify(value,null,2).replace(/"issuedAt": 1700000000,/g, name==='edges'?'"issuedAt": 1700000000,':'"issuedAt": 1700000000.0,')+'\n');

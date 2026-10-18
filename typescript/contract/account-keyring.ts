@@ -7,32 +7,20 @@
  *
  * Argon2id recovery and HKDF per-contact lanes are not this module.
  */
-import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import { p256 } from "@noble/curves/nist.js";
 import {
   parseEip55,
-  parseObjectId,
   parsePrincipalId,
+  checkRotationPublish,
   resolveCurrentKey,
   userSoul,
-  type ObjectId,
   type PrincipalId,
   type ResolutionContext,
 } from "../ids/src/index.js";
 import type { GenesisAccount } from "./account-key.ts";
-import {
-  bytesToHex,
-  decodeLengthPrefixed,
-  hexToBytes,
-  seaPoint,
-  sharedX,
-  unb64,
-  uncompressedFromSea,
-} from "./account-key-seal.ts";
-import { canonicalDecimal, lengthPrefixed } from "./canonical.ts";
-
-const DOMAIN_WRAPPED_KEY = "s3rch-wrapped-key-v1";
-const DOMAIN_SEA_SECRET = "s3rch-sea-secret-v1";
+import { bytesToHex, seaPoint, unb64 } from "./account-key-seal.ts";
+import { openReaderWrap, sealReaderWrap } from "./content-wrap.ts";
 
 export type RetiredEpriv = {
   readonly epub: PrincipalId;
@@ -206,15 +194,22 @@ export class AccountKeyring {
   }
 
   confirm(rotations: readonly unknown[], context: ResolutionContext): PrincipalId {
-    if (context.genesisEpub != null && context.genesisEpub !== this.genesisEpub) {
-      throw new Error("epub-mismatch");
-    }
-    const resolved = resolveCurrentKey(this.principal, rotations, { ...context, genesisEpub: this.genesisEpub });
+    const resolved = resolveCurrentKey(this.principal, rotations, context);
     if (!resolved.ok) throw new Error(resolved.reason);
     if (resolved.value.currentKey !== this.pub) throw new Error("pub-mismatch");
     if (resolved.value.currentEpub == null) throw new Error("epub-unknown");
     if (resolved.value.currentEpub !== this.epub) throw new Error("epub-mismatch");
+    if (resolved.value.bindingEpub != null && resolved.value.bindingEpub !== this.genesisEpub) {
+      throw new Error("epub-mismatch");
+    }
     if (resolved.value.rotations.length !== this.rotationSeq) throw new Error("rotation-rejected");
+    if (this.contentEpoch < resolved.value.rotations.length) throw new Error("content-epoch");
+    for (const row of resolved.value.rotations) {
+      if (row.nextEpub && row.nextEpub !== this.epub && !this.#retired.some((retired) => retired.epub === row.nextEpub)) {
+        throw new Error("epub-mismatch");
+      }
+    }
+    if (this.#retired.length > 1024) throw new Error("too-many-keys");
     return resolved.value.currentEpub;
   }
 
@@ -229,21 +224,19 @@ export class AccountKeyring {
     rotations: readonly unknown[],
     context: ResolutionContext,
     gunUserEpub: string | null,
-    ephemeralScalar: Uint8Array,
-    nonce: Uint8Array,
   ): { epoch: number; targetId: string; wrappedKey: string } {
     const witnessed = this.confirm(rotations, context);
     const epub = epubForNewSeal(witnessed, gunUserEpub);
     if (epub !== this.epub) throw new Error("epub-mismatch");
-    const wrappedKey = sealDek(epub, dekHex, this.contentEpoch, objectId, revisionId, ephemeralScalar, nonce);
+    const wrappedKey = sealReaderWrap(epub, dekHex, this.contentEpoch, objectId, revisionId, randomScalar(), randomBytes(12));
     return { epoch: this.contentEpoch, targetId: epub, wrappedKey };
   }
 
   /** Open with the current epriv, or a retired one when the target epub matches. */
   openContent(wrappedHex: string, epoch: number, objectId: string, revisionId: string, targetEpub: string): string {
-    if (targetEpub === this.epub) return openDek(this.#epriv, this.epub, wrappedHex, epoch, objectId, revisionId);
+    if (targetEpub === this.epub) return openReaderWrap(this.#epriv, this.epub, wrappedHex, epoch, objectId, revisionId);
     for (const retired of this.#retired) {
-      if (targetEpub === retired.epub) return openDek(retired.epriv, retired.epub, wrappedHex, epoch, objectId, revisionId);
+      if (targetEpub === retired.epub) return openReaderWrap(retired.epriv, retired.epub, wrappedHex, epoch, objectId, revisionId);
     }
     throw new Error("wrap-rejected");
   }
@@ -273,12 +266,14 @@ export function mintRotation(): RotationMint {
   return mint;
 }
 
-/** Mint the next v3 rotation, re-enroll every trusted device except `lost`, and advance the content epoch. */
+/** Mint the next v3 rotation. Name every trusted device except `lost`. Delivery is part 3. */
 export function rotateKeyring(
   keyring: AccountKeyring,
   trusted: readonly string[],
   lost: string,
-  mint: () => RotationMint,
+  rotations: readonly unknown[],
+  context: ResolutionContext,
+  mint: () => RotationMint = mintRotation,
 ): KeyringRotation {
   if (trusted.length === 0 || !trusted.includes(lost)) throw new Error("lost-device");
   const seen = new Set<string>();
@@ -292,6 +287,18 @@ export function rotateKeyring(
   const nextEpub = encryptionPoint(minted.epub, minted.epriv);
   if (!/^[0-9a-f]{64}$/u.test(minted.laneId)) throw new Error("bad-lane");
   if (nextEpub === nextPub || holdsPoint(keyring, nextEpub) || holdsPoint(keyring, nextPub)) {
+    throw new Error("epub-reuse");
+  }
+  const resolved = resolveCurrentKey(keyring.principal, rotations, context);
+  if (!resolved.ok) throw new Error(resolved.reason);
+  if (resolved.value.currentKey !== keyring.pub) throw new Error("pub-mismatch");
+  if (resolved.value.rotations.length !== keyring.rotationSeq) throw new Error("rotation-rejected");
+  const historical = new Set<string>([keyring.principal, keyring.pub]);
+  for (const row of resolved.value.rotations) {
+    historical.add(row.prevKey);
+    historical.add(row.nextKey);
+  }
+  if (historical.has(nextPub) || nextPub === resolved.value.bindingEpub || nextEpub === resolved.value.bindingEpub) {
     throw new Error("epub-reuse");
   }
   if (minted.laneId === keyring.laneId()) throw new Error("bad-lane");
@@ -331,6 +338,23 @@ export function rotateKeyring(
     nextEpub,
     version: 3,
   };
+  const published = checkRotationPublish(
+    {
+      v: 1,
+      kind: "rotate",
+      principal: draft.principal,
+      seq: draft.seq,
+      prevKey: draft.prevKey,
+      nextKey: draft.nextKey,
+      nextEpub: draft.nextEpub,
+      retainedLinks: [],
+    },
+    [],
+    keyring.principal,
+    rotations,
+    context,
+  );
+  if (!published.ok) throw new Error(published.reason);
   return { keyring: rotated, devices, draft, lostLocalId: lost };
 }
 
@@ -350,6 +374,10 @@ function hold(
   contentEpoch: number,
   rotationSeq: number,
 ): AccountKeyring {
+  if (retired.length > 1024) throw new Error("too-many-keys");
+  if (!Number.isSafeInteger(contentEpoch) || contentEpoch < 0 || !Number.isSafeInteger(rotationSeq) || rotationSeq < 0) {
+    throw new Error("content-epoch");
+  }
   if (!/^[0-9a-f]{64}$/u.test(laneId)) throw new Error("bad-lane");
   const genesisEpub = encryptionPoint(genesisEpubText, null);
   if (genesisEpub === principal) throw new Error("epub-mismatch");
@@ -415,97 +443,6 @@ function encryptionPoint(epub: string, epriv: string | null): PrincipalId {
   scalar.fill(0);
   if (derived !== epub) throw new Error("epub-mismatch");
   return parsed.value;
-}
-
-function sealDek(
-  epub: string,
-  dekHex: string,
-  epoch: number,
-  objectId: string,
-  revisionId: string,
-  ephemeral: Uint8Array,
-  nonce: Uint8Array,
-): string {
-  const parsed = parseObjectId(objectId);
-  if (!parsed.ok) throw new Error(parsed.reason);
-  if (!/^[0-9a-f]{64}$/u.test(revisionId)) throw new Error("bad-revision");
-  const dek = hexToBytes(dekHex);
-  if (dek.length !== 32 || ephemeral.length !== 32 || nonce.length !== 12) throw new Error("bad-key");
-  const plain = lengthPrefixed([
-    DOMAIN_WRAPPED_KEY,
-    "item-dek",
-    canonicalDecimal(epoch),
-    "reader-epub",
-    epub,
-    parsed.value,
-    "",
-    revisionId,
-    bytesToHex(dek),
-  ]);
-  dek.fill(0);
-  const point = p256.getPublicKey(ephemeral, false);
-  const ct = aesEncrypt(contentKdf(sharedX(ephemeral, uncompressedFromSea(epub))), nonce, plain);
-  const blob = new Uint8Array(1 + point.length + nonce.length + ct.length);
-  blob[0] = 1;
-  blob.set(point, 1);
-  blob.set(nonce, 1 + point.length);
-  blob.set(ct, 1 + point.length + nonce.length);
-  return bytesToHex(blob);
-}
-
-function openDek(
-  epriv: string,
-  epub: string,
-  wrappedHex: string,
-  epoch: number,
-  objectId: string,
-  revisionId: string,
-): string {
-  const scalar = unb64(epriv);
-  if (seaPoint(scalar) !== epub) {
-    scalar.fill(0);
-    throw new Error("wrap-rejected");
-  }
-  const blob = hexToBytes(wrappedHex);
-  if (blob[0] !== 1 || blob.length < 1 + 65 + 12 + 16) throw new Error("wrap-rejected");
-  const ephemeral = blob.slice(1, 66);
-  const nonce = blob.slice(66, 78);
-  const plain = aesDecrypt(contentKdf(sharedX(scalar, ephemeral)), nonce, blob.slice(78));
-  scalar.fill(0);
-  const fields = decodeLengthPrefixed(plain);
-  plain.fill(0);
-  if (
-    fields.length !== 9 ||
-    fields[0] !== DOMAIN_WRAPPED_KEY ||
-    fields[1] !== "item-dek" ||
-    fields[2] !== canonicalDecimal(epoch) ||
-    fields[3] !== "reader-epub" ||
-    fields[4] !== epub ||
-    fields[5] !== objectId ||
-    fields[7] !== revisionId
-  ) {
-    throw new Error("wrap-rejected");
-  }
-  return fields[8] ?? "";
-}
-
-function contentKdf(x: Uint8Array): Uint8Array {
-  return new Uint8Array(createHash("sha256").update(lengthPrefixed([DOMAIN_SEA_SECRET, bytesToHex(x)])).digest());
-}
-
-function aesEncrypt(key: Uint8Array, nonce: Uint8Array, plain: Uint8Array): Uint8Array {
-  const cipher = createCipheriv("aes-256-gcm", key, nonce);
-  cipher.setAAD(new Uint8Array());
-  return new Uint8Array(Buffer.concat([cipher.update(plain), cipher.final(), cipher.getAuthTag()]));
-}
-
-function aesDecrypt(key: Uint8Array, nonce: Uint8Array, body: Uint8Array): Uint8Array {
-  const tag = body.slice(body.length - 16);
-  const data = body.slice(0, body.length - 16);
-  const decipher = createDecipheriv("aes-256-gcm", key, nonce);
-  decipher.setAAD(new Uint8Array());
-  decipher.setAuthTag(tag);
-  return new Uint8Array(Buffer.concat([decipher.update(data), decipher.final()]));
 }
 
 function randomScalar(): Uint8Array {

@@ -2,18 +2,33 @@
 
 ## sociacl-ids 0.8.0 — unreleased
 
-- Bind an optional genesis encryption public key on `ResolutionContext`
-  (`genesisEpub` / `genesis_epub`). The reuse check rejects that point as
-  `nextEpub` or as a later `nextKey`, including at sequence 2 or later. The
-  bound point does not become `currentEpub`.
-- Add `checkRotationPublish` / `check_rotation_publish`. Panopticon runs it
-  before attesting a rotation, and a client runs it before publishing. It
-  refuses a v2 record with `bad-record` and two versions, or two signing-byte
-  ids, of one (principal, seq) with `rotation-fork`. It does not replace
-  `verifyRotate`. Historical v2 records still verify there.
-- Add shared probes for a genesis epub reused at sequence 2, a v2 `nextKey`
-  equal to a prior epub, a v3 then v2 then v3 that reuses the first epub, and
-  the publish check.
+This version is still untagged, so the witnessed genesis-epub binding lands
+here rather than in a later version. It replaces the unwitnessed
+`ResolutionContext.genesisEpub` input. Gun `user.epub` is never read.
+
+- Add a `genesis-epub` record. The genesis key signs domain
+  `sociacl-genesis-epub-v1` over principal, epub, and issuedAt. Panopticon
+  attests it with typ `sociacl-genesis-epub-attest-v1`, and `iat` must equal
+  `issuedAt`. No wallet or Keycloak proof is required. The epub must be a
+  canonical on-curve SEA point and must not equal the genesis pub. Panopticon
+  attests at most one binding per principal, and only at signup
+  (panopticon#499). Two validly attested bindings freeze the account with
+  `rotation-fork`.
+- With no accepted rotation, `currentEpub` is the witnessed binding's epub, or
+  null when there is none. A binding issued at or after the first accepted
+  rotation is skipped with `bad-sequence`. Once a rotation is accepted, that
+  binding epub joins the reuse set inside `resolveCurrentKey`.
+- `checkRotationPublish` authenticates the candidate (signature, wallet
+  signature, and links) before Panopticon attests it. Siblings count only when
+  they carry a valid next-key signature and a valid Panopticon attestation.
+  Junk and unattested siblings are skipped. Priors are the rotations
+  `resolveCurrentKey` accepts. A distinct authenticated sibling at the same
+  (principal, seq) is `rotation-fork`.
+- Add shared probes for a valid binding, a bad signature, a bad attestation,
+  `iat` not equal to `issuedAt`, a binding issued after the first rotation, two
+  attested bindings, a binding epub equal to the genesis pub, a later
+  `nextEpub` that reuses the binding, an ignored unwitnessed `genesisEpub`, a
+  forged sibling, a junk sibling, and a bad-signature prior.
 
 ## sociacl-ids 0.7.0 — merged, not tagged
 

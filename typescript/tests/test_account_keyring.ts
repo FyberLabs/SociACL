@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { randomBytes } from "node:crypto";
 import {
   deliveryMintsGrant,
   importGenesis,
@@ -14,7 +13,9 @@ import {
   mintRotation,
   rotateKeyring,
 } from "../contract/account-keyring.ts";
-import { hexToBytes, seaPoint } from "../contract/account-key-seal.ts";
+import { seaPoint } from "../contract/account-key-seal.ts";
+import { openReaderWrap } from "../contract/content-wrap.ts";
+import { sealContentWith } from "./support/account-key-deterministic.ts";
 import {
   formatPrincipalKey,
   historyState,
@@ -68,6 +69,7 @@ const vector = JSON.parse(readFileSync(new URL("../../vectors/encrypted-discover
     objectId: string;
     revisionId: string;
   };
+  crossWrap: { ephemeralScalar: number; nonceByte: number; epoch: number; wrappedKey: string };
 };
 
 const accountKey = JSON.parse(readFileSync(new URL("../../vectors/encrypted-discovery/account-key.json", import.meta.url), "utf8")) as {
@@ -157,7 +159,7 @@ function emptyContext(): ResolutionContext {
   };
 }
 
-function recordsContext(genesisEpub?: PrincipalId): ResolutionContext {
+function recordsContext(bindings: readonly unknown[] = []): ResolutionContext {
   const links = new Map(records.context.links);
   const history = (principal: PrincipalId, at: number, until: number) =>
     records.context.authenticatedAccounts.includes(principal)
@@ -171,13 +173,13 @@ function recordsContext(genesisEpub?: PrincipalId): ResolutionContext {
     policy: records.context.policy,
     pinnedIss: new Set(records.context.pinnedIss),
     history,
-    genesisEpub,
+    genesisEpubBindings: bindings,
   } as ResolutionContext;
 }
 
 test("rotation matches the shared vector and keeps secrets off gun", () => {
   const keyring = AccountKeyring.fromGenesis(genesis());
-  const outcome = rotateKeyring(keyring, vector.trusted, vector.lost, vectorMint);
+  const outcome = rotateKeyring(keyring, vector.trusted, vector.lost, [], emptyContext(), vectorMint);
   const expected = vector.expected;
   assert.equal(outcome.keyring.principal, expected.principal);
   assert.equal(outcome.keyring.principal, vector.genesis.principal);
@@ -239,11 +241,11 @@ test("builder refuses a held epub and a bad device", () => {
     laneId: vector.mint.laneId,
   });
   assert.equal(
-    message(() => rotateKeyring(keyring, vector.trusted, vector.lost, genesisEpubMint)),
+    message(() => rotateKeyring(keyring, vector.trusted, vector.lost, [], emptyContext(), genesisEpubMint)),
     vector.errors.epubReuse,
   );
   assert.equal(
-    message(() => rotateKeyring(keyring, vector.trusted, vector.lost, () => ({
+    message(() => rotateKeyring(keyring, vector.trusted, vector.lost, [], emptyContext(), () => ({
       signingPub: vector.mint.signingPub,
       signingPriv: vector.mint.signingPriv,
       epub: vector.mint.signingPub,
@@ -253,7 +255,7 @@ test("builder refuses a held epub and a bad device", () => {
     vector.errors.epubReuse,
   );
   assert.equal(
-    message(() => rotateKeyring(keyring, vector.trusted, vector.lost, () => ({
+    message(() => rotateKeyring(keyring, vector.trusted, vector.lost, [], emptyContext(), () => ({
       signingPub: vector.genesis.signingPub,
       signingPriv: vector.genesis.signingPriv,
       epub: vector.mint.epub,
@@ -263,31 +265,31 @@ test("builder refuses a held epub and a bad device", () => {
     vector.errors.epubReuse,
   );
   assert.equal(
-    message(() => rotateKeyring(keyring, vector.trusted, vector.lost, () => ({
+    message(() => rotateKeyring(keyring, vector.trusted, vector.lost, [], emptyContext(), () => ({
       ...vectorMint(),
       laneId: vector.genesis.laneId,
     }))),
     vector.errors.badLane,
   );
-  assert.equal(message(() => rotateKeyring(keyring, [], vector.lost, vectorMint)), vector.errors.lostDevice);
-  assert.equal(message(() => rotateKeyring(keyring, ["phone"], vector.lost, vectorMint)), vector.errors.lostDevice);
-  assert.equal(message(() => rotateKeyring(keyring, ["phone", "phone"], "phone", vectorMint)), vector.errors.duplicateDevice);
-  assert.equal(message(() => rotateKeyring(keyring, ["", "phone"], "phone", vectorMint)), vector.errors.emptyDevice);
+  assert.equal(message(() => rotateKeyring(keyring, [], vector.lost, [], emptyContext(), vectorMint)), vector.errors.lostDevice);
+  assert.equal(message(() => rotateKeyring(keyring, ["phone"], vector.lost, [], emptyContext(), vectorMint)), vector.errors.lostDevice);
+  assert.equal(message(() => rotateKeyring(keyring, ["phone", "phone"], "phone", [], emptyContext(), vectorMint)), vector.errors.duplicateDevice);
+  assert.equal(message(() => rotateKeyring(keyring, ["", "phone"], "phone", [], emptyContext(), vectorMint)), vector.errors.emptyDevice);
   assert.equal(
-    message(() => rotateKeyring(keyring, [vector.genesis.principal, "phone"], "phone", vectorMint)),
+    message(() => rotateKeyring(keyring, [vector.genesis.principal, "phone"], "phone", [], emptyContext(), vectorMint)),
     vector.errors.deviceId,
   );
   assert.equal(
-    message(() => rotateKeyring(keyring, [vector.wallet, "phone"], "phone", vectorMint)),
+    message(() => rotateKeyring(keyring, [vector.wallet, "phone"], "phone", [], emptyContext(), vectorMint)),
     vector.errors.deviceId,
   );
-  const outcome = rotateKeyring(keyring, vector.trusted, vector.lost, vectorMint);
+  const outcome = rotateKeyring(keyring, vector.trusted, vector.lost, [], emptyContext(), vectorMint);
   assert.equal(
-    message(() => rotateKeyring(outcome.keyring, vector.trusted, vector.lost, genesisEpubMint)),
+    message(() => rotateKeyring(outcome.keyring, vector.trusted, vector.lost, [], emptyContext(), genesisEpubMint)),
     vector.errors.epubReuse,
   );
   assert.equal(
-    message(() => rotateKeyring(outcome.keyring, vector.trusted, vector.lost, vectorMint)),
+    message(() => rotateKeyring(outcome.keyring, vector.trusted, vector.lost, [], emptyContext(), vectorMint)),
     vector.errors.epubReuse,
   );
 });
@@ -303,8 +305,6 @@ test("null currentEpub refuses the seal and ignores gun", () => {
       [],
       context,
       vector.genesis.epub,
-      randomBytes(32),
-      randomBytes(12),
     )),
     vector.errors.epubUnknown,
   );
@@ -373,8 +373,6 @@ test("witnessed import seals only the resolved epub", () => {
   assert.equal(imported.genesisEpub, genesisEpub.pub);
   assert.equal(imported.epub, epub.pub);
   assert.equal(imported.rotationSeq, 1);
-  const ephemeral = hexToBytes(accountKey.contentWrap.ephemeralScalarHex);
-  const nonce = hexToBytes(accountKey.contentWrap.nonceHex);
   const sealed = imported.sealContent(
     vector.witnessed.dekHex,
     vector.witnessed.objectId,
@@ -382,8 +380,6 @@ test("witnessed import seals only the resolved epub", () => {
     [rotation.input],
     context,
     genesisPair.pub,
-    ephemeral,
-    nonce,
   );
   assert.equal(sealed.epoch, vector.witnessed.contentEpoch);
   assert.equal(sealed.targetId, epub.pub);
@@ -396,8 +392,6 @@ test("witnessed import seals only the resolved epub", () => {
     [rotation.input],
     context,
     genesisEpub.pub,
-    ephemeral,
-    nonce,
   );
   assert.equal(sealedGun.targetId, epub.pub);
   const gun = imported.gunDocument();
@@ -457,8 +451,21 @@ test("witnessed import seals only the resolved epub", () => {
     )),
     vector.errors.rotationRejected,
   );
-  const bound = parsePrincipalId(other.pub);
-  if (!bound.ok) throw new Error(bound.reason);
+  const ignored = AccountKeyring.import(
+    genesisPair.pub,
+    genesisEpub.pub,
+    current.pub,
+    current.priv,
+    epub.pub,
+    epub.priv,
+    retired,
+    vector.witnessed.laneId,
+    vector.witnessed.contentEpoch,
+    vector.witnessed.rotationSeq,
+    [rotation.input],
+    recordsContext([{ kind: "nope" }]),
+  );
+  assert.equal(ignored.epub, epub.pub);
   assert.equal(
     message(() => AccountKeyring.import(
       genesisPair.pub,
@@ -469,19 +476,19 @@ test("witnessed import seals only the resolved epub", () => {
       epub.priv,
       retired,
       vector.witnessed.laneId,
-      vector.witnessed.contentEpoch,
+      0,
       vector.witnessed.rotationSeq,
       [rotation.input],
-      recordsContext(bound.value),
+      context,
     )),
-    vector.errors.epubMismatch,
+    vector.errors.contentEpoch,
   );
 });
 
 test("a fresh mint is v3 and leaves the principal in place", () => {
   const account = genesis();
   const keyring = AccountKeyring.fromGenesis(account);
-  const outcome = rotateKeyring(keyring, vector.trusted, vector.lost, mintRotation);
+  const outcome = rotateKeyring(keyring, vector.trusted, vector.lost, [], emptyContext(), mintRotation);
   assert.equal(outcome.keyring.principal, account.principal);
   assert.equal(outcome.draft.version, 3);
   assert.equal(draftDocument(outcome.draft).includes("\"nextEpub\""), true);
@@ -493,4 +500,172 @@ test("a fresh mint is v3 and leaves the principal in place", () => {
   assert.equal(gun.includes(outcome.keyring.laneId()), false);
   for (const retired of outcome.keyring.retired()) assert.equal(gun.includes(retired.epriv), false);
   assert.equal(message(() => outcome.keyring.confirm([], emptyContext())), vector.errors.pubMismatch);
+});
+
+test("genesis-only import accepts the witnessed binding", () => {
+  const row = records.accept.find((item) => item.name === "binding-valid-no-rotation") as { genesisEpubBindings?: unknown[] } | undefined;
+  if (!row?.genesisEpubBindings) throw new Error("missing binding vector");
+  const signing = scalarSea(1);
+  const enc = scalarSea(9);
+  const context = recordsContext(row.genesisEpubBindings);
+  const imported = AccountKeyring.import(
+    signing.pub,
+    enc.pub,
+    signing.pub,
+    signing.priv,
+    enc.pub,
+    enc.priv,
+    [],
+    vector.genesis.laneId,
+    0,
+    0,
+    [],
+    context,
+  );
+  assert.equal(imported.epub, enc.pub);
+  const sealed = imported.sealContent(
+    vector.witnessed.dekHex,
+    vector.witnessed.objectId,
+    vector.witnessed.revisionId,
+    [],
+    context,
+    signing.pub,
+  );
+  assert.equal(sealed.targetId, enc.pub);
+  assert.notEqual(sealed.targetId, signing.pub);
+  assert.equal(
+    imported.openContent(sealed.wrappedKey, sealed.epoch, vector.witnessed.objectId, vector.witnessed.revisionId, sealed.targetId),
+    vector.witnessed.dekHex,
+  );
+  const other = scalarSea(8);
+  assert.equal(
+    message(() => AccountKeyring.import(
+      signing.pub,
+      enc.pub,
+      signing.pub,
+      signing.priv,
+      other.pub,
+      other.priv,
+      [],
+      vector.genesis.laneId,
+      0,
+      0,
+      [],
+      context,
+    )),
+    vector.errors.epubMismatch,
+  );
+});
+
+test("builder refuses an older signing key", () => {
+  const chain = records.accept.find((item) => item.name === "probe-v3-then-v3") as { input: unknown[] } | undefined;
+  if (!chain) throw new Error("missing chain");
+  const genesisPair = scalarSea(1);
+  const prior = scalarSea(2);
+  const current = scalarSea(3);
+  const firstEpub = scalarSea(6);
+  const secondEpub = scalarSea(7);
+  const genesisEpub = scalarSea(9);
+  const fresh = scalarSea(11);
+  const context = recordsContext();
+  const imported = AccountKeyring.import(
+    genesisPair.pub,
+    genesisEpub.pub,
+    current.pub,
+    current.priv,
+    secondEpub.pub,
+    secondEpub.priv,
+    [
+      { epub: genesisEpub.pub, epriv: genesisEpub.priv },
+      { epub: firstEpub.pub, epriv: firstEpub.priv },
+    ],
+    vector.witnessed.laneId,
+    2,
+    2,
+    chain.input,
+    context,
+  );
+  assert.equal(
+    message(() => rotateKeyring(imported, vector.trusted, vector.lost, chain.input, context, () => ({
+      signingPub: prior.pub,
+      signingPriv: prior.priv,
+      epub: fresh.pub,
+      epriv: fresh.priv,
+      laneId: "ee".repeat(32),
+    }))),
+    vector.errors.epubReuse,
+  );
+});
+
+test("too many retired keys are refused", () => {
+  const retired = Array.from({ length: 1025 }, () => ({ epub: "x", epriv: "y" }));
+  assert.equal(
+    message(() => AccountKeyring.import(
+      vector.genesis.principal,
+      vector.genesis.epub,
+      vector.genesis.signingPub,
+      vector.genesis.signingPriv,
+      vector.mint.epub,
+      vector.mint.epriv,
+      retired,
+      vector.genesis.laneId,
+      0,
+      0,
+      [],
+      emptyContext(),
+    )),
+    vector.errors.tooManyKeys,
+  );
+});
+
+test("typescript seal opens and matches the shared rust wrap", () => {
+  const row = records.accept.find((item) => item.name === "rotate-v3-wallet");
+  if (!row) throw new Error("missing rotation");
+  const genesisPair = scalarSea(vector.witnessed.genesisScalar);
+  const genesisEpub = scalarSea(vector.witnessed.genesisEpubScalar);
+  const current = scalarSea(vector.witnessed.currentScalar);
+  const epub = scalarSea(vector.witnessed.epubScalar);
+  const context = recordsContext();
+  const imported = AccountKeyring.import(
+    genesisPair.pub,
+    genesisEpub.pub,
+    current.pub,
+    current.priv,
+    epub.pub,
+    epub.priv,
+    [{ epub: genesisEpub.pub, epriv: genesisEpub.priv }],
+    vector.witnessed.laneId,
+    vector.witnessed.contentEpoch,
+    vector.witnessed.rotationSeq,
+    [row.input],
+    context,
+  );
+  const ephemeral = new Uint8Array(32);
+  ephemeral[31] = vector.crossWrap.ephemeralScalar;
+  const nonce = new Uint8Array(12).fill(vector.crossWrap.nonceByte);
+  const sealed = sealContentWith(
+    imported,
+    vector.witnessed.dekHex,
+    vector.witnessed.objectId,
+    vector.witnessed.revisionId,
+    [row.input],
+    context,
+    genesisPair.pub,
+    ephemeral,
+    nonce,
+  );
+  assert.equal(sealed.wrappedKey, vector.crossWrap.wrappedKey);
+  assert.equal(sealed.targetId, epub.pub);
+  assert.equal(
+    imported.openContent(vector.crossWrap.wrappedKey, vector.crossWrap.epoch, vector.witnessed.objectId, vector.witnessed.revisionId, epub.pub),
+    vector.witnessed.dekHex,
+  );
+  assert.equal(
+    openReaderWrap(epub.priv, epub.pub, vector.crossWrap.wrappedKey, vector.crossWrap.epoch, vector.witnessed.objectId, vector.witnessed.revisionId),
+    vector.witnessed.dekHex,
+  );
+  assert.equal(
+    message(() => openReaderWrap(epub.priv, epub.pub, "ab".repeat(8193), vector.crossWrap.epoch, vector.witnessed.objectId, vector.witnessed.revisionId)),
+    "wrap-rejected",
+  );
 });

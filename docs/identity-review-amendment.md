@@ -160,12 +160,40 @@ already in this package: a v3 rotation sets `currentEpub` to that record's
 `nextEpub`, and a v2 rotation sets `currentEpub` to null. Null means the
 encryption public key for the current signing key is unknown. Consumers must
 not seal, and they must never fall back to Gun's `user.epub` or any other
-unwitnessed point. With no accepted v3 rotation, including a v2-only history
-and an empty history, `currentEpub` stays null. The genesis encryption public
-key does not become `currentEpub`. The account keyring binds it and supplies
-it as `ResolutionContext.genesisEpub` / `genesis_epub`. The reuse check then
-rejects that point, including at sequence 2 or later. `historyState` stays
-signing-key state and carries no epub.
+unwitnessed point. With no accepted rotation, `currentEpub` is the witnessed
+`genesis-epub` binding, or null when there is none. A v2 rotation still sets
+`currentEpub` to null. Gun `user.epub` is never that value.
+`historyState` stays signing-key state and carries no epub.
+
+## Genesis epub binding
+
+A fresh account gets an encryption public key from a `genesis-epub` record,
+not from Gun. The record is `{v:1, kind:"genesis-epub", principal, epub,
+issuedAt, keySig, attest}`. The genesis key signs domain
+`sociacl-genesis-epub-v1`: length-prefixed principal, epub, and the decimal
+`issuedAt`. `epub` is a canonical on-curve SEA point and must not equal the
+genesis pub. Panopticon attests it with typ `sociacl-genesis-epub-attest-v1`
+and claims `principal`, `epub`, `iat`, and `exp`. `iat` must equal `issuedAt`.
+No wallet and no Keycloak login are required.
+
+Panopticon attests at most one binding per principal, and only at signup
+(panopticon#499). Callers pass the records as
+`ResolutionContext.genesisEpubBindings`. Invalid or junk bindings are skipped
+with a diagnostic. Two distinct validly attested bindings freeze the account
+with `rotation-fork`. A binding issued at or after the first accepted
+rotation's `issuedAt` is skipped with `bad-sequence` and does not join the
+reuse set.
+
+With no accepted rotation, `currentEpub` is that binding's epub, or null when
+none is in force. After a rotation is accepted, `currentEpub` still comes from
+the rotation chain, and the in-force binding epub is reused like any prior
+epub: a later `nextEpub` or `nextKey` equal to it is `bad-sequence`. An
+unwitnessed `genesisEpub` string on the context is ignored. `verifyRotate`
+does not take that string either. The binding is applied inside
+`resolveCurrentKey`.
+
+`confirm` and `import` accept a genesis-only keyring when its `epriv` matches
+the witnessed binding epub. A null `currentEpub` still refuses a new seal.
 
 `nextEpub` must be a fresh point. It must not equal `nextKey`, the genesis
 signing key, any prior signing key, or any prior `nextEpub`. A later `nextKey`
@@ -188,11 +216,16 @@ two signing-byte ids, offered for one `(principal, seq)` with `rotation-fork`.
 Panopticon must not attest a v2 record and must not attest both versions for
 that pair. A client must not publish either.
 
-When the account keyring supplies `ResolutionContext.genesisEpub`, the reuse
-check includes that point. `nextEpub` equal to it, or a later `nextKey` equal
-to it, is `bad-sequence`, including at sequence 2 or later. The bound point
-does not become `currentEpub`. A null `currentEpub` stays null, and callers
-still must not seal or fall back to Gun `user.epub`.
+Before it attests, Panopticon verifies the candidate's key signature, the
+wallet signature, and the linked records (panopticon#499). It also attests at
+most one `genesis-epub` binding per principal, and only at signup. The publish
+check uses the rotations `resolveCurrentKey` accepts as the prior chain,
+including an in-force binding epub in the reuse set. A sibling counts only
+when its next-key signature and Panopticon attestation both verify. Junk and
+unattested siblings are skipped and are not a fatal parse error. A distinct
+authenticated sibling at the same `(principal, seq)` is `rotation-fork`. A
+bad-signature prior does not block a later valid record. A null `currentEpub`
+still means do not seal and never fall back to Gun `user.epub`.
 
 The verifier authenticates the authorizing credential and **every retained ID**
 against the pre-rotation state. Each must belong to the principal and remain

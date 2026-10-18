@@ -255,23 +255,7 @@ impl AccountKeyring {
         rotations: &[serde_json::Value],
         context: &sociacl_ids::ResolutionContext<'_>,
     ) -> Result<sociacl_ids::ResolvedAccount, EncDiscError> {
-        if context
-            .genesis_epub
-            .is_some_and(|bound| bound != &self.genesis_epub)
-        {
-            return Err(EncDiscError::EpubMismatch);
-        }
-        let ctx = sociacl_ids::ResolutionContext {
-            jwks: context.jwks,
-            links: context.links,
-            revocations: context.revocations,
-            now: context.now,
-            policy: context.policy,
-            pinned_iss: context.pinned_iss,
-            history: context.history,
-            genesis_epub: Some(&self.genesis_epub),
-        };
-        let resolved = sociacl_ids::resolve_current_key(&self.principal, rotations, &ctx);
+        let resolved = sociacl_ids::resolve_current_key(&self.principal, rotations, context);
         let account = resolved.result.map_err(reject)?;
         if account.current_key.as_ref() != self.current_pub.as_ref() {
             return Err(EncDiscError::PubMismatch);
@@ -281,8 +265,30 @@ impl AccountKeyring {
             Some(_) => return Err(EncDiscError::EpubMismatch),
             None => return Err(EncDiscError::EpubUnknown),
         }
+        if account
+            .binding_epub
+            .as_ref()
+            .is_some_and(|bound| bound != &self.genesis_epub)
+        {
+            return Err(EncDiscError::EpubMismatch);
+        }
         if account.rotations.len() as u64 != self.rotation_seq {
             return Err(EncDiscError::RotationRejected);
+        }
+        if self.content_epoch < account.rotations.len() as u64 {
+            return Err(EncDiscError::EpochRejected);
+        }
+        for row in &account.rotations {
+            if let Some(epub) = &row.next_epub {
+                if epub != &self.current_epub
+                    && !self.retired.iter().any(|retired| &retired.epub == epub)
+                {
+                    return Err(EncDiscError::EpubMismatch);
+                }
+            }
+        }
+        if self.retired.len() > 1024 {
+            return Err(EncDiscError::IdentityRejected("too-many-keys".into()));
         }
         Ok(account)
     }
@@ -363,6 +369,9 @@ impl AccountKeyring {
         rotation_seq: u64,
     ) -> Result<Self, EncDiscError> {
         require_lane(lane_id)?;
+        if retired.len() > 1024 {
+            return Err(EncDiscError::IdentityRejected("too-many-keys".into()));
+        }
         let genesis_epub = encryption_point(genesis_epub, None)?.0;
         if genesis_epub == principal {
             return Err(EncDiscError::EpubMismatch);
@@ -466,12 +475,16 @@ pub fn mint_rotation() -> Result<RotationMint, EncDiscError> {
     })
 }
 
-/// Mint the next v3 rotation, re-enroll every trusted device except `lost`,
-/// and advance the content epoch. The account id does not change.
+/// Mint the next v3 rotation. Name every trusted device except `lost`.
+/// Delivery of the new keyring is part 3 and is not done here.
+/// The account id does not change. The draft is checked with
+/// `check_rotation_publish` before it is returned.
 pub fn rotate_keyring<F>(
     keyring: &AccountKeyring,
     trusted: &[&str],
     lost: &str,
+    rotations: &[serde_json::Value],
+    context: &sociacl_ids::ResolutionContext<'_>,
     mint: F,
 ) -> Result<KeyringRotation, EncDiscError>
 where
@@ -495,6 +508,23 @@ where
     };
     require_lane(&minted.lane_id)?;
     if next_epub == next_key || holds_point(keyring, &next_epub) || holds_point(keyring, &next_key)
+    {
+        return Err(EncDiscError::EpubReuse);
+    }
+    let resolved = sociacl_ids::resolve_current_key(&keyring.principal, rotations, context);
+    let account = resolved.result.map_err(reject)?;
+    if account.current_key.as_ref() != keyring.current_pub.as_ref() {
+        return Err(EncDiscError::PubMismatch);
+    }
+    if account.rotations.len() as u64 != keyring.rotation_seq {
+        return Err(EncDiscError::RotationRejected);
+    }
+    if account
+        .rotations
+        .iter()
+        .any(|row| row.prev_key == next_key || row.next_key == next_key)
+        || account.binding_epub.as_ref() == Some(&next_key)
+        || account.binding_epub.as_ref() == Some(&next_epub)
     {
         return Err(EncDiscError::EpubReuse);
     }
@@ -544,6 +574,18 @@ where
         next_epub,
     };
     debug_assert_eq!(draft.version(), 3);
+    let draft_record = serde_json::json!({
+        "v": 1,
+        "kind": "rotate",
+        "principal": draft.principal.as_ref(),
+        "seq": draft.seq,
+        "prevKey": draft.prev_key.as_ref(),
+        "nextKey": draft.next_key.as_ref(),
+        "nextEpub": draft.next_epub.as_ref(),
+        "retainedLinks": [],
+    });
+    sociacl_ids::check_rotation_publish(&draft_record, &[], &keyring.principal, rotations, context)
+        .map_err(reject)?;
     Ok(KeyringRotation {
         keyring: rotated,
         devices,
@@ -621,8 +663,12 @@ fn reject(reason: Reason) -> EncDiscError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::account::EnrolledSeaPub;
     use crate::hexutil;
-    use crate::wrap::{ItemDek, WrapScope, WrapTarget, WrappedKey};
+    use crate::wrap::{
+        open_reader_wrap, wrap_item_dek_to_readers_with, DetachedEphemeral, ItemDek, NamedSet,
+        WrapScope, WrapTarget, WrappedKey,
+    };
     use crate::{delivery_mints_grant, GenesisAccount};
     use serde_json::Value;
     use sociacl_ids::{
@@ -657,6 +703,7 @@ mod tests {
             EncDiscError::BadLane => "bad-lane".into(),
             EncDiscError::EmptyDevice => "empty-device".into(),
             EncDiscError::IdentityRejected(reason) => reason.clone(),
+            EncDiscError::EpochRejected => "content-epoch".into(),
             other => panic!("unexpected {other}"),
         }
     }
@@ -765,7 +812,7 @@ mod tests {
             policy: &empty.policy,
             pinned_iss: &empty.pinned,
             history: &missing_history,
-            genesis_epub: None,
+            genesis_epub_bindings: &[],
         }
     }
 
@@ -774,9 +821,12 @@ mod tests {
         let v = ring();
         let account = genesis_of(&v);
         let keyring = AccountKeyring::from_genesis(&account).unwrap();
+        let empty = empty_ctx();
+        let ctx = context_of(&empty);
         let names = trusted(&v);
         let lost = v["lost"].as_str().unwrap();
-        let outcome = rotate_keyring(&keyring, &names, lost, || Ok(vector_mint(&v))).unwrap();
+        let outcome =
+            rotate_keyring(&keyring, &names, lost, &[], &ctx, || Ok(vector_mint(&v))).unwrap();
         let expected = &v["expected"];
         assert_eq!(
             outcome.keyring.principal().as_ref(),
@@ -908,6 +958,8 @@ mod tests {
 
     #[test]
     fn builder_refuses_a_held_epub_and_a_bad_device() {
+        let empty = empty_ctx();
+        let ctx = context_of(&empty);
         let v = ring();
         let keyring = AccountKeyring::from_genesis(&genesis_of(&v)).unwrap();
         let names = trusted(&v);
@@ -922,7 +974,7 @@ mod tests {
         expect_err(
             &v,
             "epubReuse",
-            rotate_keyring(&keyring, &names, lost, || Ok(genesis_epub())).unwrap_err(),
+            rotate_keyring(&keyring, &names, lost, &[], &ctx, || Ok(genesis_epub())).unwrap_err(),
         );
         let same_point = RotationMint {
             signing_pub: v["mint"]["signingPub"].as_str().unwrap().to_string(),
@@ -934,7 +986,7 @@ mod tests {
         expect_err(
             &v,
             "epubReuse",
-            rotate_keyring(&keyring, &names, lost, || Ok(same_point)).unwrap_err(),
+            rotate_keyring(&keyring, &names, lost, &[], &ctx, || Ok(same_point)).unwrap_err(),
         );
         let held_signing = RotationMint {
             signing_pub: v["genesis"]["signingPub"].as_str().unwrap().to_string(),
@@ -946,7 +998,7 @@ mod tests {
         expect_err(
             &v,
             "epubReuse",
-            rotate_keyring(&keyring, &names, lost, || Ok(held_signing)).unwrap_err(),
+            rotate_keyring(&keyring, &names, lost, &[], &ctx, || Ok(held_signing)).unwrap_err(),
         );
         let reused_lane = RotationMint {
             signing_pub: v["mint"]["signingPub"].as_str().unwrap().to_string(),
@@ -958,22 +1010,25 @@ mod tests {
         expect_err(
             &v,
             "badLane",
-            rotate_keyring(&keyring, &names, lost, || Ok(reused_lane)).unwrap_err(),
+            rotate_keyring(&keyring, &names, lost, &[], &ctx, || Ok(reused_lane)).unwrap_err(),
         );
         expect_err(
             &v,
             "lostDevice",
-            rotate_keyring(&keyring, &[], lost, || Ok(vector_mint(&v))).unwrap_err(),
+            rotate_keyring(&keyring, &[], lost, &[], &ctx, || Ok(vector_mint(&v))).unwrap_err(),
         );
         expect_err(
             &v,
             "lostDevice",
-            rotate_keyring(&keyring, &["phone"], lost, || Ok(vector_mint(&v))).unwrap_err(),
+            rotate_keyring(&keyring, &["phone"], lost, &[], &ctx, || {
+                Ok(vector_mint(&v))
+            })
+            .unwrap_err(),
         );
         expect_err(
             &v,
             "duplicateDevice",
-            rotate_keyring(&keyring, &["phone", "phone"], "phone", || {
+            rotate_keyring(&keyring, &["phone", "phone"], "phone", &[], &ctx, || {
                 Ok(vector_mint(&v))
             })
             .unwrap_err(),
@@ -981,13 +1036,16 @@ mod tests {
         expect_err(
             &v,
             "emptyDevice",
-            rotate_keyring(&keyring, &["", "phone"], "phone", || Ok(vector_mint(&v))).unwrap_err(),
+            rotate_keyring(&keyring, &["", "phone"], "phone", &[], &ctx, || {
+                Ok(vector_mint(&v))
+            })
+            .unwrap_err(),
         );
         let principal = v["genesis"]["principal"].as_str().unwrap();
         expect_err(
             &v,
             "deviceId",
-            rotate_keyring(&keyring, &[principal, "phone"], "phone", || {
+            rotate_keyring(&keyring, &[principal, "phone"], "phone", &[], &ctx, || {
                 Ok(vector_mint(&v))
             })
             .unwrap_err(),
@@ -996,22 +1054,26 @@ mod tests {
         expect_err(
             &v,
             "deviceId",
-            rotate_keyring(&keyring, &[wallet, "phone"], "phone", || {
+            rotate_keyring(&keyring, &[wallet, "phone"], "phone", &[], &ctx, || {
                 Ok(vector_mint(&v))
             })
             .unwrap_err(),
         );
-        let outcome = rotate_keyring(&keyring, &names, lost, || Ok(vector_mint(&v))).unwrap();
+        let outcome =
+            rotate_keyring(&keyring, &names, lost, &[], &ctx, || Ok(vector_mint(&v))).unwrap();
         expect_err(
             &v,
             "epubReuse",
-            rotate_keyring(&outcome.keyring, &names, lost, || Ok(genesis_epub())).unwrap_err(),
+            rotate_keyring(&outcome.keyring, &names, lost, &[], &ctx, || {
+                Ok(genesis_epub())
+            })
+            .unwrap_err(),
         );
         let again = vector_mint(&v);
         expect_err(
             &v,
             "epubReuse",
-            rotate_keyring(&outcome.keyring, &names, lost, || Ok(again)).unwrap_err(),
+            rotate_keyring(&outcome.keyring, &names, lost, &[], &ctx, || Ok(again)).unwrap_err(),
         );
     }
 
@@ -1145,7 +1207,7 @@ mod tests {
             policy: &policy,
             pinned_iss: &pinned,
             history: resolver,
-            genesis_epub: None,
+            genesis_epub_bindings: &[],
         };
         let retired = [(genesis_epub.as_str(), genesis_epriv.as_str())];
         let lane = v["witnessed"]["laneId"].as_str().unwrap();
@@ -1261,8 +1323,8 @@ mod tests {
             )
             .unwrap_err(),
         );
-        let other = sociacl_ids::parse_principal_id(&other_pub).unwrap();
-        let mismatched = ResolutionContext {
+        let junk = vec![serde_json::json!({"kind": "nope"})];
+        let ignored = ResolutionContext {
             jwks: base.jwks,
             links: base.links,
             revocations: base.revocations,
@@ -1270,11 +1332,27 @@ mod tests {
             policy: base.policy,
             pinned_iss: base.pinned_iss,
             history: base.history,
-            genesis_epub: Some(&other),
+            genesis_epub_bindings: &junk,
         };
+        let kept = AccountKeyring::import(
+            &genesis_pub,
+            &genesis_epub,
+            &current_pub,
+            current_priv.as_str(),
+            &current_epub,
+            current_epriv.as_str(),
+            &retired,
+            lane,
+            epoch,
+            seq,
+            &rotations,
+            &ignored,
+        )
+        .unwrap();
+        assert_eq!(kept.current_epub().as_ref(), current_epub);
         expect_err(
             &v,
-            "epubMismatch",
+            "contentEpoch",
             AccountKeyring::import(
                 &genesis_pub,
                 &genesis_epub,
@@ -1284,10 +1362,10 @@ mod tests {
                 current_epriv.as_str(),
                 &retired,
                 lane,
-                epoch,
+                0,
                 seq,
                 &rotations,
-                &mismatched,
+                &base,
             )
             .unwrap_err(),
         );
@@ -1299,8 +1377,17 @@ mod tests {
         let account = genesis_of(&v);
         let keyring = AccountKeyring::from_genesis(&account).unwrap();
         let names = trusted(&v);
-        let outcome =
-            rotate_keyring(&keyring, &names, v["lost"].as_str().unwrap(), mint_rotation).unwrap();
+        let empty = empty_ctx();
+        let ctx = context_of(&empty);
+        let outcome = rotate_keyring(
+            &keyring,
+            &names,
+            v["lost"].as_str().unwrap(),
+            &[],
+            &ctx,
+            mint_rotation,
+        )
+        .unwrap();
         assert_eq!(outcome.keyring.principal(), account.principal());
         assert_eq!(outcome.draft.version(), 3);
         assert!(outcome.draft.document().contains("\"nextEpub\""));
@@ -1331,5 +1418,152 @@ mod tests {
             "pubMismatch",
             outcome.keyring.confirm(&[], &context).unwrap_err(),
         );
+    }
+
+    #[test]
+    fn genesis_binding_import_and_cross_language_wrap() {
+        let v = ring();
+        let records = records();
+        let binding = records["accept"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|item| item["name"] == "binding-valid-no-rotation")
+            .unwrap()["genesisEpubBindings"]
+            .as_array()
+            .unwrap()
+            .clone();
+        let (signing_pub, signing_priv) = scalar_sea(1);
+        let (epub, epriv) = scalar_sea(9);
+        let ctx = &records["context"];
+        let jwks: Jwks = serde_json::from_value(ctx["jwks"].clone()).unwrap();
+        let policy: SiwePolicy = serde_json::from_value(ctx["policy"].clone()).unwrap();
+        let pinned: BTreeSet<String> = ctx["pinnedIss"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|item| item.as_str().unwrap().to_string())
+            .collect();
+        let links: BTreeMap<String, Value> = ctx["links"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|pair| (pair[0].as_str().unwrap().to_string(), pair[1].clone()))
+            .collect();
+        let authenticated = ctx["authenticatedAccounts"].clone();
+        let history = |principal: &PrincipalId, at, until| {
+            if !authenticated
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|item| item.as_str() == Some(principal.as_ref()))
+            {
+                return Err(Reason::MissingHistory);
+            }
+            Ok(history_state(principal, &Vec::<Rotate>::new(), at, until))
+        };
+        let resolver: &HistoryResolver<'_> = &history;
+        let revocations = Vec::new();
+        let bound = ResolutionContext {
+            jwks: &jwks,
+            links: &links,
+            revocations: &revocations,
+            now: ctx["now"].as_u64().unwrap(),
+            policy: &policy,
+            pinned_iss: &pinned,
+            history: resolver,
+            genesis_epub_bindings: &binding,
+        };
+        let imported = AccountKeyring::import(
+            &signing_pub,
+            &epub,
+            &signing_pub,
+            signing_priv.as_str(),
+            &epub,
+            epriv.as_str(),
+            &[],
+            v["genesis"]["laneId"].as_str().unwrap(),
+            0,
+            0,
+            &[],
+            &bound,
+        )
+        .unwrap();
+        assert_eq!(imported.current_epub().as_ref(), epub);
+        let (other_pub, other_priv) = scalar_sea(8);
+        expect_err(
+            &v,
+            "epubMismatch",
+            AccountKeyring::import(
+                &signing_pub,
+                &epub,
+                &signing_pub,
+                signing_priv.as_str(),
+                &other_pub,
+                other_priv.as_str(),
+                &[],
+                v["genesis"]["laneId"].as_str().unwrap(),
+                0,
+                0,
+                &[],
+                &bound,
+            )
+            .unwrap_err(),
+        );
+        let empty = empty_ctx();
+        let bare = context_of(&empty);
+        let retired = vec![("x", "y"); 1025];
+        expect_err(
+            &v,
+            "tooManyKeys",
+            AccountKeyring::import(
+                v["genesis"]["principal"].as_str().unwrap(),
+                v["genesis"]["epub"].as_str().unwrap(),
+                v["genesis"]["signingPub"].as_str().unwrap(),
+                v["genesis"]["signingPriv"].as_str().unwrap(),
+                v["mint"]["epub"].as_str().unwrap(),
+                v["mint"]["epriv"].as_str().unwrap(),
+                &retired,
+                v["genesis"]["laneId"].as_str().unwrap(),
+                0,
+                0,
+                &[],
+                &bare,
+            )
+            .unwrap_err(),
+        );
+        let (reader, reader_priv) =
+            scalar_sea(v["witnessed"]["epubScalar"].as_u64().unwrap() as u8);
+        let (_ephemeral_pub, ephemeral_priv) =
+            scalar_sea(v["crossWrap"]["ephemeralScalar"].as_u64().unwrap() as u8);
+        let dek_bytes =
+            hexutil::decode_secret_array::<32>(v["witnessed"]["dekHex"].as_str().unwrap()).unwrap();
+        let dek = ItemDek::from_bytes(*dek_bytes);
+        let principal = records["context"]["genesis"].as_str().unwrap();
+        let granted = NamedSet::try_from_accessors([principal]).unwrap();
+        let wraps = wrap_item_dek_to_readers_with(
+            &dek,
+            v["crossWrap"]["epoch"].as_u64().unwrap(),
+            v["witnessed"]["objectId"].as_str().unwrap(),
+            v["witnessed"]["revisionId"].as_str().unwrap(),
+            &[EnrolledSeaPub {
+                account: principal.to_string(),
+                sea_pub: principal.to_string(),
+                epub: reader.clone(),
+                identity_pub: principal.to_string(),
+            }],
+            &granted,
+            &[DetachedEphemeral {
+                epriv: ephemeral_priv.to_string(),
+                nonce: [v["crossWrap"]["nonceByte"].as_u64().unwrap() as u8; 12],
+            }],
+        )
+        .unwrap();
+        assert_eq!(
+            wraps[0].wrapped_key,
+            v["crossWrap"]["wrappedKey"].as_str().unwrap()
+        );
+        let opened = open_reader_wrap(&wraps[0], reader_priv.as_str(), &reader).unwrap();
+        assert_eq!(opened.key_bytes(), dek.as_bytes());
     }
 }

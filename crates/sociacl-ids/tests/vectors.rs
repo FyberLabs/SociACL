@@ -134,11 +134,11 @@ fn run(f: &Family, c: &Case, v: &Value) -> Result<Value, Reason> {
             .iter()
             .map(|v| v.as_str().unwrap().to_owned())
             .collect();
-        let genesis_epub_owned = ctx
-            .get("genesisEpub")
-            .and_then(Value::as_str)
-            .map(|text| parse_principal_id(text))
-            .transpose()?;
+        let empty_bindings = Vec::new();
+        let bindings = ctx
+            .get("genesisEpubBindings")
+            .and_then(Value::as_array)
+            .unwrap_or(&empty_bindings);
         let rc = ResolutionContext {
             jwks: &jwks,
             links: &ls,
@@ -147,7 +147,7 @@ fn run(f: &Family, c: &Case, v: &Value) -> Result<Value, Reason> {
             policy: &policy,
             pinned_iss: &pinned_iss,
             history: &history,
-            genesis_epub: genesis_epub_owned.as_ref(),
+            genesis_epub_bindings: bindings,
         };
         let key_state = if ctx["directState"].is_object() {
             KeyState {

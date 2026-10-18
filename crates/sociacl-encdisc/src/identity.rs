@@ -1371,7 +1371,7 @@ mod tests {
             policy: &policy,
             pinned_iss: &pinned,
             history: resolver,
-            genesis_epub: None,
+            genesis_epub_bindings: &[],
         };
         let transport =
             TransportKey::from_scalar_hex(row["transportScalarHex"].as_str().unwrap()).unwrap();
@@ -1484,7 +1484,7 @@ mod tests {
                 policy: &self.policy,
                 pinned_iss: &self.pinned,
                 history: &missing_history,
-                genesis_epub: None,
+                genesis_epub_bindings: &[],
             }
         }
     }
@@ -1566,7 +1566,7 @@ mod tests {
             policy: &policy,
             pinned_iss: &pinned,
             history: resolver,
-            genesis_epub: None,
+            genesis_epub_bindings: &[],
         };
         current_signing_key(&genesis, std::slice::from_ref(rotation), &context).unwrap()
     }
