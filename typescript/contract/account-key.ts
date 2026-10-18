@@ -31,6 +31,16 @@ import {
   type ResolutionContext,
   type SiwePolicy,
 } from "../ids/src/index.js";
+import { DELIVERY_BLOB_MAX, MAX_WRAPS_PER_PRINCIPAL } from "./keyring-limits.ts";
+import { canonicalDecimal } from "./canonical.ts";
+import {
+  HeadFloor,
+  REPLACED_NONE,
+  signStoreWrite,
+  verifyStoreWrite,
+  wrapCiphertextHash,
+  type StoreWriteAccount,
+} from "./store-write.ts";
 import {
   MAX_BACKUP_HEX,
   backupAad,
@@ -76,26 +86,64 @@ export type WrapIndex = {
   readonly epub: string;
 };
 
+/** Which seal produced a wrap. A wrap id stays in the class that first stored it.
+ * The class is a field of the store-write signature. Openers ignore it. */
+export type WrapClass = "genesis" | "delivery";
+
 export type EncryptedAccountWrap = WrapIndex & {
+  readonly class: WrapClass;
   readonly ciphertextHex: string;
   readonly signature: string;
 };
 
-/** Index plus ciphertext. Not an authority and not a grant minter. */
+/** Index plus ciphertext. Not an authority and not a grant minter.
+ * Rows are keyed by `(principal, wrapId)`. The genesis backup and device
+ * deliveries share the store. A delivery cannot replace the genesis backup's
+ * wrap id. A principal holds at most `MAX_WRAPS_PER_PRINCIPAL` rows.
+ * Replacing an existing id does not count as a new row. Every put and delete
+ * carries a store-write signature by the current chain-head key. Adapters,
+ * Panopticon included, must verify that signature before they write. Session
+ * authentication is not this check. Panopticon is a verifier and a witness,
+ * never the authority. The genesis backup can be replaced, never deleted. */
 export interface KeyWrapStore {
   readonly isAuthority: false;
   readonly mintsGrant: false;
-  put(index: WrapIndex, wrap: EncryptedAccountWrap): void;
-  get(principal: PrincipalId): EncryptedAccountWrap | undefined;
+  publishedAccount(principal: PrincipalId): StoreWriteAccount;
+  writeGeneration(principal: PrincipalId): number;
+  put(index: WrapIndex, wrap: EncryptedAccountWrap, storeSignature: string): void;
+  /** Delete a delivery row. A genesis row is `store-rejected` and stays. */
+  delete(principal: PrincipalId, wrapId: ObjectId, storeSignature: string): void;
+  get(principal: PrincipalId, wrapId: ObjectId): EncryptedAccountWrap | undefined;
+  list(principal: PrincipalId): EncryptedAccountWrap[];
 }
 
 export class MemoryKeyWrapStore implements KeyWrapStore {
   readonly isAuthority = false as const;
   readonly mintsGrant = false as const;
-  readonly #wraps = new Map<string, EncryptedAccountWrap>();
+  readonly #wraps = new Map<string, Map<string, EncryptedAccountWrap>>();
+  readonly #floor: HeadFloor;
+  readonly #generation = new Map<string, number>();
+  readonly #chain: (principal: PrincipalId) => StoreWriteAccount;
 
-  put(index: WrapIndex, wrap: EncryptedAccountWrap): void {
-    if (wrap.ciphertextHex.length > MAX_BACKUP_HEX || wrap.signature.length !== 128) {
+  constructor(chain: (principal: PrincipalId) => StoreWriteAccount, floor: HeadFloor = new HeadFloor()) {
+    this.#chain = chain;
+    this.#floor = floor;
+  }
+
+  publishedAccount(principal: PrincipalId): StoreWriteAccount {
+    const account = this.#chain(principal);
+    this.#floor.observe(principal, account.rotations.length);
+    return account;
+  }
+
+  writeGeneration(principal: PrincipalId): number {
+    return this.#generation.get(principal) ?? 0;
+  }
+
+  put(index: WrapIndex, wrap: EncryptedAccountWrap, storeSignature: string): void {
+    // Genesis seal and open stay at MAX_BACKUP_HEX. A delivered keyring may
+    // use the full DELIVERY_BLOB_MAX, so the adapter accepts that.
+    if (wrap.ciphertextHex.length > DELIVERY_BLOB_MAX * 2 || wrap.signature.length !== 128) {
       throw new Error("store-rejected");
     }
     if (
@@ -109,14 +157,91 @@ export class MemoryKeyWrapStore implements KeyWrapStore {
     ) {
       throw new Error("store-rejected");
     }
-    const existing = this.#wraps.get(index.principal);
-    if (existing && existing.wrapId !== wrap.wrapId) throw new Error("store-rejected");
-    this.#wraps.set(index.principal, wrap);
+    const account = this.#account(wrap.principal);
+    const head = account.rotations.length;
+    const rows = this.#wraps.get(index.principal) ?? new Map<string, EncryptedAccountWrap>();
+    const existing = rows.get(index.wrapId);
+    const replaced = existing ? wrapCiphertextHash(existing.ciphertextHex) : REPLACED_NONE;
+    const hash = wrapCiphertextHash(wrap.ciphertextHex);
+    const generation = this.writeGeneration(wrap.principal);
+    verifyStoreWrite(
+      wrap.principal,
+      "put",
+      wrap.wrapId,
+      hash,
+      canonicalDecimal(head),
+      replaced,
+      wrap.class,
+      canonicalDecimal(generation),
+      storeSignature,
+      account,
+    );
+    if (existing) {
+      if (existing.class !== wrap.class) throw new Error("store-rejected");
+    } else if (rows.size >= MAX_WRAPS_PER_PRINCIPAL) {
+      throw new Error("store-rejected");
+    }
+    rows.set(index.wrapId, copyWrap(wrap));
+    this.#wraps.set(index.principal, rows);
+    this.#floor.raise(wrap.principal, head);
+    this.#generation.set(wrap.principal, generation + 1);
   }
 
-  get(principal: PrincipalId): EncryptedAccountWrap | undefined {
-    return this.#wraps.get(principal);
+  delete(principal: PrincipalId, wrapId: ObjectId, storeSignature: string): void {
+    const account = this.#account(principal);
+    const head = account.rotations.length;
+    const row = this.#wraps.get(principal)?.get(wrapId);
+    if (!row) throw new Error("store-rejected");
+    const hash = wrapCiphertextHash(row.ciphertextHex);
+    const generation = this.writeGeneration(principal);
+    verifyStoreWrite(
+      principal,
+      "delete",
+      wrapId,
+      hash,
+      canonicalDecimal(head),
+      hash,
+      row.class,
+      canonicalDecimal(generation),
+      storeSignature,
+      account,
+    );
+    if (row.class === "genesis") throw new Error("store-rejected");
+    const rows = this.#wraps.get(principal);
+    rows?.delete(wrapId);
+    if (rows && rows.size === 0) this.#wraps.delete(principal);
+    this.#floor.raise(principal, head);
+    this.#generation.set(principal, generation + 1);
   }
+
+  #account(principal: PrincipalId): StoreWriteAccount {
+    try {
+      return this.publishedAccount(principal);
+    } catch (error) {
+      if (error instanceof Error && error.message === "store-rejected") throw error;
+      throw new Error("store-rejected");
+    }
+  }
+
+  get(principal: PrincipalId, wrapId: ObjectId): EncryptedAccountWrap | undefined {
+    const row = this.#wraps.get(principal)?.get(wrapId);
+    return row ? copyWrap(row) : undefined;
+  }
+
+  list(principal: PrincipalId): EncryptedAccountWrap[] {
+    return [...(this.#wraps.get(principal)?.values() ?? [])].map(copyWrap);
+  }
+}
+
+function copyWrap(wrap: EncryptedAccountWrap): EncryptedAccountWrap {
+  return {
+    principal: wrap.principal,
+    wrapId: wrap.wrapId,
+    epub: wrap.epub,
+    class: wrap.class,
+    ciphertextHex: wrap.ciphertextHex,
+    signature: wrap.signature,
+  };
 }
 
 const linkedBrand = Symbol("verified-link");
@@ -244,6 +369,31 @@ export function parseWrapObject(text: string): ObjectId {
  * Seal to `transportPub`. Randomness stays inside this function.
  * `rotations` and `context` are the trusted latest-state checkpoint (sociacl-ids §4.6).
  */
+/** Delete a delivery row. The genesis backup can only be replaced. */
+export function deleteAccountWrap(
+  principal: PrincipalId,
+  wrapId: ObjectId,
+  signerPriv: string,
+  store: KeyWrapStore,
+): void {
+  const row = store.get(principal, wrapId);
+  if (!row) throw new Error("store-rejected");
+  const hash = wrapCiphertextHash(row.ciphertextHex);
+  const account = store.publishedAccount(principal);
+  const signature = signStoreWrite(
+    signerPriv,
+    principal,
+    "delete",
+    wrapId,
+    hash,
+    canonicalDecimal(account.rotations.length),
+    hash,
+    row.class,
+    canonicalDecimal(store.writeGeneration(principal)),
+  );
+  store.delete(principal, wrapId, signature);
+}
+
 export function sealAccountBackup(
   account: GenesisAccount,
   transportPub: string,

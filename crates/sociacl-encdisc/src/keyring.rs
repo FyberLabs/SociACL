@@ -413,6 +413,9 @@ impl AccountKeyring {
         rotation_seq: u64,
     ) -> Result<Self, EncDiscError> {
         require_lane_set(lane_id, prior_lanes)?;
+        if prior_lanes.len() as u64 != rotation_seq {
+            return Err(EncDiscError::BadLane);
+        }
         if retired.len() > 1024 {
             return Err(EncDiscError::IdentityRejected("too-many-keys".into()));
         }
@@ -526,7 +529,8 @@ pub fn mint_rotation() -> Result<RotationMint, EncDiscError> {
 }
 
 /// Mint the next v3 rotation. Name every trusted device except `lost`.
-/// Delivery of the new keyring is part 3 and is not done here.
+/// [`crate::rotate_and_reseal`] seals a recovery copy of the keyring this
+/// returns. Delivery to a device is [`crate::deliver_keyring`].
 /// The account id does not change. `confirm` runs before the current epub is
 /// retired. The draft is checked with `check_rotation_draft` before it is
 /// returned. A lane id is never reused.
@@ -599,6 +603,9 @@ where
     }
     let mut prior_lanes = keyring.prior_lanes.clone();
     prior_lanes.push(keyring.lane_id.clone());
+    if prior_lanes.len() as u64 != keyring.rotation_seq.saturating_add(1) {
+        return Err(EncDiscError::BadLane);
+    }
     let rotated = AccountKeyring {
         principal: keyring.principal.clone(),
         genesis_epub: keyring.genesis_epub.clone(),
@@ -1254,7 +1261,7 @@ mod tests {
         );
         expect_err(
             &v,
-            "pubMismatch",
+            "badLane",
             AccountKeyring::import(
                 v["genesis"]["principal"].as_str().unwrap(),
                 v["genesis"]["epub"].as_str().unwrap(),
@@ -1268,9 +1275,33 @@ mod tests {
                 )],
                 v["mint"]["laneId"].as_str().unwrap(),
                 1,
-                1,
+                v["importPriorLanes"]["rotationSeq"].as_u64().unwrap(),
                 &[],
                 &context,
+            )
+            .unwrap_err(),
+        );
+        let prior = v["importPriorLanes"]["priorLane"].as_str().unwrap();
+        expect_err(
+            &v,
+            "pubMismatch",
+            AccountKeyring::import_with_prior_lanes(
+                v["genesis"]["principal"].as_str().unwrap(),
+                v["genesis"]["epub"].as_str().unwrap(),
+                v["mint"]["signingPub"].as_str().unwrap(),
+                v["mint"]["signingPriv"].as_str().unwrap(),
+                v["mint"]["epub"].as_str().unwrap(),
+                v["mint"]["epriv"].as_str().unwrap(),
+                &[(
+                    v["genesis"]["epub"].as_str().unwrap(),
+                    v["genesis"]["epriv"].as_str().unwrap(),
+                )],
+                v["mint"]["laneId"].as_str().unwrap(),
+                1,
+                v["importPriorLanes"]["rotationSeq"].as_u64().unwrap(),
+                &[],
+                &context,
+                &[prior],
             )
             .unwrap_err(),
         );
@@ -1345,7 +1376,8 @@ mod tests {
         let epoch = v["witnessed"]["contentEpoch"].as_u64().unwrap();
         let seq = v["witnessed"]["rotationSeq"].as_u64().unwrap();
         let rotations = [rotation.clone()];
-        let imported = AccountKeyring::import(
+        let prior = v["importPriorLanes"]["priorLane"].as_str().unwrap();
+        let imported = AccountKeyring::import_with_prior_lanes(
             &genesis_pub,
             &genesis_epub,
             &current_pub,
@@ -1358,6 +1390,7 @@ mod tests {
             seq,
             &rotations,
             &base,
+            &[prior],
         )
         .unwrap();
         assert_eq!(imported.principal().as_ref(), genesis_pub);
@@ -1399,7 +1432,7 @@ mod tests {
         expect_err(
             &v,
             "pubMismatch",
-            AccountKeyring::import(
+            AccountKeyring::import_with_prior_lanes(
                 &genesis_pub,
                 &genesis_epub,
                 &current_pub,
@@ -1412,6 +1445,7 @@ mod tests {
                 seq,
                 &[],
                 &base,
+                &[prior],
             )
             .unwrap_err(),
         );
@@ -1419,7 +1453,7 @@ mod tests {
         expect_err(
             &v,
             "epubMismatch",
-            AccountKeyring::import(
+            AccountKeyring::import_with_prior_lanes(
                 &genesis_pub,
                 &genesis_epub,
                 &current_pub,
@@ -1432,6 +1466,7 @@ mod tests {
                 seq,
                 &rotations,
                 &base,
+                &[prior],
             )
             .unwrap_err(),
         );
@@ -1465,7 +1500,7 @@ mod tests {
             history: base.history,
             genesis_epub_bindings: &junk,
         };
-        let kept = AccountKeyring::import(
+        let kept = AccountKeyring::import_with_prior_lanes(
             &genesis_pub,
             &genesis_epub,
             &current_pub,
@@ -1478,13 +1513,14 @@ mod tests {
             seq,
             &rotations,
             &ignored,
+            &[prior],
         )
         .unwrap();
         assert_eq!(kept.current_epub().as_ref(), current_epub);
         expect_err(
             &v,
             "contentEpoch",
-            AccountKeyring::import(
+            AccountKeyring::import_with_prior_lanes(
                 &genesis_pub,
                 &genesis_epub,
                 &current_pub,
@@ -1497,6 +1533,7 @@ mod tests {
                 seq,
                 &rotations,
                 &base,
+                &[prior],
             )
             .unwrap_err(),
         );

@@ -1,0 +1,321 @@
+{
+  "v": 1,
+  "family": "recovery-copy",
+  "domain": "sociacl-recovery-copy-v1",
+  "keyringDomain": "sociacl-keyring-plain-v1",
+  "bindDomain": "sociacl-keyring-delivery-v1",
+  "sigDomain": "sociacl-keyring-delivery-sig-v1",
+  "limits": {
+    "version": {
+      "floor": 19,
+      "ceiling": 19
+    },
+    "memoryKiB": {
+      "floor": 65536,
+      "ceiling": 65536
+    },
+    "iterations": {
+      "floor": 3,
+      "ceiling": 3
+    },
+    "parallelism": {
+      "floor": 4,
+      "ceiling": 4
+    },
+    "hashLength": {
+      "floor": 32,
+      "ceiling": 32
+    },
+    "saltLength": {
+      "floor": 16,
+      "ceiling": 64
+    },
+    "keyringSerialMax": 262144,
+    "deliveryBlobMax": 262238,
+    "recoveryEnvelopeMax": 262205,
+    "recoveryAbsoluteMax": 262269,
+    "wrapsPerPrincipal": 64
+  },
+  "unicodeVersion": "16.0.0",
+  "passphraseRejects": [
+    {
+      "name": "nel",
+      "passphrase": "\u0085",
+      "error": "recovery-params"
+    },
+    {
+      "name": "unicode-17-mark",
+      "passphrase": "x\u1acf\u0323",
+      "error": "recovery-params"
+    }
+  ],
+  "retention": {
+    "downgrade": "store-rejected",
+    "sameSeq": "replace-clears-pending",
+    "higherSeq": "pending-only-head-plus-one",
+    "commitUnverified": "store-rejected"
+  },
+  "passphraseUtf8": "correct horse battery staple",
+  "wrongPassphraseUtf8": "wrong passphrase",
+  "saltHex": "11111111111111111111111111111111",
+  "nonceHex": "222222222222222222222222",
+  "normalization": {
+    "nfc": "caf\u00e9",
+    "nfd": "cafe\u0301",
+    "saltHex": "11111111111111111111111111111111",
+    "derivedKeyHex": "adfb0936679e96f5d87355ccd478d63e52e9021a3b86468a5130b674e97a034e"
+  },
+  "storeWrite": {
+    "domain": "sociacl-store-write-v1",
+    "operations": [
+      "put",
+      "commit",
+      "delete"
+    ],
+    "pending": "head-plus-one",
+    "equalSeqClearsPending": true,
+    "commitKey": "resolved-current-key",
+    "fork": "store-rejected",
+    "unpublished": "store-rejected",
+    "chain": "store-resolver",
+    "rejectedCommit": "pending-unchanged",
+    "sample": {
+      "principal": "YP7UuiVanTHJYet0xjVtaMBJuJI7Yfps5mliLmDyn7Y.eQP-EAi4vJmkGunpVii8ZPLxsgwtfp9Rd6PClNRGIpk",
+      "signingPub": "YP7UuiVanTHJYet0xjVtaMBJuJI7Yfps5mliLmDyn7Y.eQP-EAi4vJmkGunpVii8ZPLxsgwtfp9Rd6PClNRGIpk",
+      "epub": "EMvdmXTv89JPyMx5n3blU3L_D70U-6JoVaVzTvSzgYg.B_b0CP3o9X3I7tWrxA_F1VhXpjeMuIJCtQWnOh7LN5c",
+      "seq": 2,
+      "bytesHex": "010203",
+      "envelopeHash": "666a5ef352b1bc810d2346143f5c8e27baaa4a763f8161342454868f3ff384c3",
+      "wrapId": "wrap_00112233445566778899aabbccddee11",
+      "wrapCiphertextHex": "010203",
+      "wrapCiphertextHash": "039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81",
+      "messages": {
+        "put": {
+          "operation": "put",
+          "target": "2",
+          "envelopeHash": "666a5ef352b1bc810d2346143f5c8e27baaa4a763f8161342454868f3ff384c3",
+          "head": "2",
+          "replaced": "none",
+          "class": "none",
+          "generation": "0",
+          "messageHex": "16000000736f636961636c2d73746f72652d77726974652d76315700000059503755756956616e54484a59657430786a5674614d424a754a493759667073356d6c694c6d44796e37592e6551502d45416934764a6d6b47756e70566969385a504c787367777466703952643650436c4e524749706b03000000707574010000003240000000363636613565663335326231626338313064323334363134336635633865323762616161346137363366383136313334323435343836386633666633383463330100000032040000006e6f6e65040000006e6f6e650100000030"
+        },
+        "commit": {
+          "operation": "commit",
+          "target": "2",
+          "envelopeHash": "666a5ef352b1bc810d2346143f5c8e27baaa4a763f8161342454868f3ff384c3",
+          "head": "2",
+          "replaced": "none",
+          "class": "none",
+          "generation": "1",
+          "messageHex": "16000000736f636961636c2d73746f72652d77726974652d76315700000059503755756956616e54484a59657430786a5674614d424a754a493759667073356d6c694c6d44796e37592e6551502d45416934764a6d6b47756e70566969385a504c787367777466703952643650436c4e524749706b06000000636f6d6d6974010000003240000000363636613565663335326231626338313064323334363134336635633865323762616161346137363366383136313334323435343836386633666633383463330100000032040000006e6f6e65040000006e6f6e650100000031"
+        },
+        "delete": {
+          "operation": "delete",
+          "target": "2",
+          "envelopeHash": "666a5ef352b1bc810d2346143f5c8e27baaa4a763f8161342454868f3ff384c3",
+          "head": "2",
+          "replaced": "666a5ef352b1bc810d2346143f5c8e27baaa4a763f8161342454868f3ff384c3",
+          "class": "none",
+          "generation": "2",
+          "messageHex": "16000000736f636961636c2d73746f72652d77726974652d76315700000059503755756956616e54484a59657430786a5674614d424a754a493759667073356d6c694c6d44796e37592e6551502d45416934764a6d6b47756e70566969385a504c787367777466703952643650436c4e524749706b0600000064656c6574650100000032400000003636366135656633353262316263383130643233343631343366356338653237626161613461373633663831363133343234353438363866336666333834633301000000324000000036363661356566333532623162633831306432333436313433663563386532376261616134613736336638313631333432343534383638663366663338346333040000006e6f6e650100000032"
+        },
+        "wrapPut": {
+          "operation": "put",
+          "target": "wrap_00112233445566778899aabbccddee11",
+          "envelopeHash": "039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81",
+          "head": "2",
+          "replaced": "none",
+          "class": "delivery",
+          "generation": "3",
+          "messageHex": "16000000736f636961636c2d73746f72652d77726974652d76315700000059503755756956616e54484a59657430786a5674614d424a754a493759667073356d6c694c6d44796e37592e6551502d45416934764a6d6b47756e70566969385a504c787367777466703952643650436c4e524749706b0300000070757425000000777261705f303031313232333334343535363637373838393961616262636364646565313140000000303339303538633666326330636234393263353333623061346431346566373763633066373861626363636564353238376438346131613230313163666238310100000032040000006e6f6e650800000064656c69766572790100000033"
+        },
+        "wrapDelete": {
+          "operation": "delete",
+          "target": "wrap_00112233445566778899aabbccddee11",
+          "envelopeHash": "039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81",
+          "head": "2",
+          "replaced": "039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81",
+          "class": "delivery",
+          "generation": "4",
+          "messageHex": "16000000736f636961636c2d73746f72652d77726974652d76315700000059503755756956616e54484a59657430786a5674614d424a754a493759667073356d6c694c6d44796e37592e6551502d45416934764a6d6b47756e70566969385a504c787367777466703952643650436c4e524749706b0600000064656c65746525000000777261705f30303131323233333434353536363737383839396161626263636464656531314000000030333930353863366632633063623439326335333362306134643134656637376363306637386162636363656435323837643834613161323031316366623831010000003240000000303339303538633666326330636234393263353333623061346431346566373763633066373861626363636564353238376438346131613230313163666238310800000064656c69766572790100000034"
+        }
+      }
+    }
+  },
+  "unicodeRuntime": {
+    "minimum": "16.0.0",
+    "probe": "U+11382 U+113C9 normalizes to U+11383",
+    "error": "unicode-version"
+  },
+  "envelopeHex": "01130000000000010003000000040000002000000010000000000000000000000011111111111111111111111111111111222222222222222222222222f36c35ab1625ec3588c4808a59a29b35d7084755f71c37a44d6cee7b8d6837df1616d87f9921e0e4b361a2af3bc303055df6521a4feacb7a1605ab50169e9d30f39cf3a8d7b34abcad9b39fe538cfc77afaed76b34bdc60d360def098f09dc23acccbb08657352cf07bfe3957f107caa3dcbf0cd9826fc7fcec07c634e764f5bd9aa142786c1d6c8ec88f973ac1829162cc4c1a5b588e60fcbf6a1ee9ced9f0855b57f99f27c8cb467820c59359462d18468b9b062ad35d862ee3cccb0cd6e965ab3305561e4ef7ef8f32a1d319429541c2fc7a02020baf8a785c1097b3404c7fc75e1fa6807d8df091f881c1c9c93ce5529bd632cb01cab6dcac83d14ec98e315e9891292b126b997a17b330ac81da50be0f9c94d51225a233c391efef871bb8a86b72f6d60728d380d79f42048131623742d4d293f3e0735e07cf23473a338b8162716c1c1bcb7f05f670f24c475f8f901d50d4d465362a49ec8f7b5d40fe81e71ef480a3c88c9cba61856381efcec4dbecaf43894418703f8af1bdc8f5b3b9ea891a1b930af736b186d6d569a42186400d0d53b470a5b2914b3ed468b3f46a60f5acfc9fee6d84b9b914c633dd17c9da4306c8a4a0906542faad2341f0fac29cc73f55054f7466deb5c261a0fbd3aac31a87e9ba658198fe1958288adee0f45522b32b60f841621891e46f868dbc615bd0d83221af065bb33d303c47100076f4ee9ad478a6becc8ef72663a7879bd4dddc40b43f14b9c73114f8d87945183ffbdf1e7390dc70e98e328b878a4be7eb22b9ed6c7bd6c8071a9d4bc7e5ae8d928fd93bd9bc2466c2fc6da8ed0fd",
+  "rejects": [
+    {
+      "name": "memory-below-floor",
+      "memoryKiB": 65535,
+      "error": "recovery-params"
+    },
+    {
+      "name": "memory-above-ceiling",
+      "memoryKiB": 65537,
+      "error": "recovery-params"
+    },
+    {
+      "name": "iterations-below-floor",
+      "iterations": 2,
+      "error": "recovery-params"
+    },
+    {
+      "name": "iterations-above-ceiling",
+      "iterations": 4,
+      "error": "recovery-params"
+    },
+    {
+      "name": "parallelism-below-floor",
+      "parallelism": 3,
+      "error": "recovery-params"
+    },
+    {
+      "name": "parallelism-above-ceiling",
+      "parallelism": 5,
+      "error": "recovery-params"
+    },
+    {
+      "name": "hash-below-floor",
+      "hashLength": 31,
+      "error": "recovery-params"
+    },
+    {
+      "name": "hash-above-ceiling",
+      "hashLength": 33,
+      "error": "recovery-params"
+    },
+    {
+      "name": "version-below-floor",
+      "version": 18,
+      "error": "recovery-params"
+    },
+    {
+      "name": "version-above-ceiling",
+      "version": 20,
+      "error": "recovery-params"
+    },
+    {
+      "name": "salt-below-floor",
+      "saltHex": "111111111111111111111111111111",
+      "error": "recovery-params"
+    },
+    {
+      "name": "salt-above-ceiling",
+      "saltHex": "1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111",
+      "error": "recovery-params"
+    },
+    {
+      "name": "memory-hostile",
+      "memoryKiB": 1048576,
+      "error": "recovery-params"
+    },
+    {
+      "name": "envelope-above-cap",
+      "envelopeBytes": 262270,
+      "error": "keyring-too-large"
+    },
+    {
+      "name": "ciphertext-above-cap",
+      "ciphertextBytes": 262161,
+      "error": "keyring-too-large"
+    },
+    {
+      "name": "ciphertext-above-cap-long-salt",
+      "saltHex": "11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111",
+      "ciphertextBytes": 262161,
+      "error": "keyring-too-large"
+    },
+    {
+      "name": "delivery-above-cap",
+      "blobBytes": 262239,
+      "error": "keyring-too-large"
+    }
+  ],
+  "delivery": {
+    "transportScalarHex": "0000000000000000000000000000000000000000000000000000000000000002",
+    "transportPub": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+    "ephemeralScalarHex": "0000000000000000000000000000000000000000000000000000000000000003",
+    "nonceHex": "000102030405060708090a0b",
+    "wrapId": "wrap_00112233445566778899aabbccddeeff",
+    "ciphertextHex": "01045ecbe4d1a6330a44c8f7ef951d4bf165e6c6b721efada985fb41661bc6e7fd6c8734640c4998ff7e374b06ce1a64a2ecd82ab036384fb83d9a79b127a27d5032000102030405060708090a0be129567a3a993e1bbfa0412f50ab2b1d27a7484adeecb18c9c7b9769edcbd25050723c2f63eb26eb6b6dbb9d0cb42570de8055ee493ca27f4df53a538e0c14a1263a261bfc801b314f9500d448fd27eacc84e97422f28b29525f4c160f95ca38cb73e8caeb7a3c43eaf6ae1f4e45e18339aa7013d6080cd4121759a069c79c5f8e1f0588f89fc6b18b1ef2451abed551084f0a38238c4f48786ed2d06bd127c4ea9d3db0dae1921ee7ced73683e4b7f0bb7b07a96e84f4e753b231285aac3d6631576afc8b9cb20ad1f9c8c091ade1edf8845818b5f12f22a0c280bc4bf7b092b957837aa9c3faa5935d6859f2f600f77ed5508637395f2e621760f4ddfacd0ad6337c05d024851ffa334307795f5175ce32f44185c2551ebea928c469972e766f2233a53f52fe112f3ed0eaa6ac7d0e989895fd1210da7fcac664d4fd55a3bed0f9a23f0baea44fc522f2311d94670f7575f7c97b3b9fe4a39363e963edd0d9d32c26e13402550bbaddee6ab7f368c7cb7aec8533ea0df91e7719dcff6936998be985a49a77b83d849cbe2939164c20ee378ece725e31e8f88a48d0ae1aa522fc1f3c7758551947911b11b3606e417cca99b2ef989adff8f952e0d00e45a9c1e49fe3c649f700348b6721a6a67eb322fda9b42177217718ed4482d8e951e18f675f4b8699756da394bd98517490bf4dc0362e9511dfa7db9874b89fd4eb24528b5525505a6edf8236153bcb354247563ce58392bf07261f5a6065591f81b5e5f86243c1ea391c58dbef48586898414fb85c12dfd59734ca716c6a666d8d777506c06f1d8b65dddc5abfdc391aa5",
+    "signature": "55de9f3450b11517b450c6a716342aad0b5e59e95b0bee2dd5ae3dc46f34ca0f34b214cdefc23ae3b1d41935169d748155b4a49de6985dfced21d7c142eba0e0"
+  },
+  "passphraseStrength": {
+    "error": "recovery-weak-passphrase",
+    "enforcedAt": "seal",
+    "open": "unchecked",
+    "minVisibleCodePoints": 12,
+    "minScore": 3,
+    "parity": "advisory",
+    "note": "Length and hidden-character checks match. The zxcvbn score is advisory between languages and can disagree near the threshold. These rows are clear in both. Feedback text from zxcvbn is not pinned.",
+    "cases": [
+      {
+        "name": "staple",
+        "passphrase": "correct horse battery staple",
+        "result": "pass"
+      },
+      {
+        "name": "random-words",
+        "passphrase": "flint-parcel-quantum-marble-92",
+        "result": "pass"
+      },
+      {
+        "name": "mixed-token",
+        "passphrase": "q7vN2mR9pL4xT8wK3c",
+        "result": "pass"
+      },
+      {
+        "name": "eleven",
+        "passphrase": "Tr0ub4dor&3",
+        "result": "fail",
+        "score": 0,
+        "warning": "passphrase needs at least 12 visible characters"
+      },
+      {
+        "name": "password",
+        "passphrase": "password",
+        "result": "fail",
+        "score": 0,
+        "warning": "passphrase needs at least 12 visible characters"
+      },
+      {
+        "name": "zwsp",
+        "passphrase": "\u200b",
+        "result": "fail",
+        "score": 0,
+        "warning": "passphrase contains a hidden character"
+      },
+      {
+        "name": "bom",
+        "passphrase": "\ufeff",
+        "result": "fail",
+        "score": 0,
+        "warning": "passphrase contains a hidden character"
+      },
+      {
+        "name": "staple-with-zwsp",
+        "passphrase": "correct horse\u200b battery staple",
+        "result": "fail",
+        "score": 0,
+        "warning": "passphrase contains a hidden character"
+      },
+      {
+        "name": "repeated-password",
+        "passphrase": "passwordpassword",
+        "result": "fail"
+      },
+      {
+        "name": "handle-is-passphrase",
+        "passphrase": "q7vN2mR9pL4xT8wK3c",
+        "handle": "q7vN2mR9pL4xT8wK3c",
+        "result": "fail"
+      }
+    ]
+  }
+}

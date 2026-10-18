@@ -45,6 +45,7 @@ node --experimental-strip-types --test --experimental-test-coverage \
   typescript/tests/test_migration.ts \
   typescript/tests/test_account_key.ts \
   typescript/tests/test_account_keyring.ts \
+  typescript/tests/test_recovery.ts \
   > target/coverage/typescript-report.txt 2>&1 || {
   cat target/coverage/typescript-report.txt
   exit 1

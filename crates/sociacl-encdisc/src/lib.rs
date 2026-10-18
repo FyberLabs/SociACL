@@ -74,6 +74,7 @@
 
 mod account;
 mod canonical;
+mod delivery;
 mod epoch;
 mod error;
 mod grant;
@@ -81,12 +82,17 @@ mod hexutil;
 mod identity;
 mod inbox;
 mod keyring;
+mod limits;
 mod migration;
+mod passphrase;
 mod present;
 mod presenter;
+mod recovery;
 mod rotation;
 mod sea;
 mod see;
+mod store_write;
+mod unicode16;
 mod wrap;
 mod writer;
 
@@ -113,6 +119,7 @@ pub use canonical::{
     DOMAIN_PRESENTER_BINDING, DOMAIN_SEA_SECRET, DOMAIN_WRAPPED_KEY, DOMAIN_WRAP_RECEIPT,
     DOMAIN_WRITER_APPEND, DOMAIN_WRITER_CHANNEL, JS_SAFE_INTEGER_MAX,
 };
+pub use delivery::{deliver_keyring, open_delivered_keyring};
 pub use epoch::{
     acl_snapshot_bytes, acl_snapshot_id, epoch_read_key, epoch_step_current, epoch_winner,
     rebuild_grant_revision, select_group_epoch_config, settle_window_in_range,
@@ -129,10 +136,10 @@ pub use grant::{
     MeshSeeGrant, SignedGrantPayload,
 };
 pub use identity::{
-    account_grant_soul, account_id_from_label, current_signing_key, delivery_mints_grant,
-    open_account_backup, parse_wrap_object, seal_account_backup, EncryptedAccountWrap,
-    GenesisAccount, InheritedDevice, KeyWrapStore, LinkedCredential, MemoryKeyWrapStore,
-    TransportKey, WrapIndex,
+    account_grant_soul, account_id_from_label, current_signing_key, delete_account_wrap,
+    delivery_mints_grant, open_account_backup, parse_wrap_object, seal_account_backup,
+    EncryptedAccountWrap, GenesisAccount, InheritedDevice, KeyWrapStore, LinkedCredential,
+    MemoryKeyWrapStore, TransportKey, WrapClass, WrapIndex,
 };
 pub use inbox::{
     filter_inbox_append, lane_id_is_opaque, lanes_per_device, replicated_row_admitted,
@@ -146,12 +153,17 @@ pub use keyring::{
     epub_for_new_seal, mint_rotation, rotate_keyring, AccountKeyring, KeyringDevice,
     KeyringRotation, RetiredEpriv, RotationDraft, RotationMint,
 };
+pub use limits::{
+    Argon2Bound, Argon2IdLimits, ARGON2ID_LIMITS, DELIVERY_BLOB_MAX, KEYRING_SERIAL_MAX,
+    MAX_WRAPS_PER_PRINCIPAL, RECOVERY_ABSOLUTE_MAX, RECOVERY_ENVELOPE_MAX,
+};
 pub use migration::{
     accept_migration, apply_protocol_migration, open_migrated_item, prepare_protocol_migration,
     sign_wrap_receipt, EncryptedMigration, MigrationAdmissionInput, MigrationEpoch, MigrationGrant,
     MigrationOutcome, MigrationReader, PreparedMigration, ProtocolMigration, ReaderMigration,
     ReaderVersion, WrapReceipt,
 };
+pub use passphrase::check_recovery_passphrase;
 pub use present::{
     check_presented_grant, PresentedGrantDecision, PresentedGrantInput, VerifierGrantRevision,
     VerifierGrantRevisionState,
@@ -159,6 +171,11 @@ pub use present::{
 pub use presenter::{
     binding_for, verify_presenter_binding, AuthenticatedPresenterChannel, PresenterBinding,
     PresenterChallenge, VerifierChallengeState,
+};
+pub use recovery::{
+    commit_recovery_copy, delete_recovery_copy, encode_passphrase, open_recovery_copy,
+    open_recovery_copy_str, recovery_envelope_hash, rotate_and_reseal, seal_recovery_copy,
+    seal_recovery_copy_str, MemoryRecoveryStore, RecoveryCopyStore, RecoveryEnvelope,
 };
 pub use rotation::{
     rotate_on_revoke, CancelledGrant, EpochRotation, GrantStorage, PlainGrant, PriorRevision,
@@ -168,6 +185,11 @@ pub use sea::{sign_sea, verify_sea};
 pub use see::{
     check_group_see, check_opened_grant, hop_forbidden, CheckResult, GroupPredicate, HandoffHint,
     HopFactor, IdentitySeeGrant, MeshMembership, ObjectSetName, PresentedGroup, SeeGraph,
+};
+pub use store_write::{
+    sign_store_write, store_write_message, verify_store_write, wrap_ciphertext_hash, HeadFloor,
+    PublishedChain, DOMAIN_STORE_WRITE, REPLACED_NONE, STORE_CLASS_DELIVERY, STORE_CLASS_GENESIS,
+    STORE_CLASS_NONE,
 };
 pub use wrap::{
     open_group_epoch_wrap, open_reader_wrap, wrap_group_key_to_members,

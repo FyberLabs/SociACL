@@ -8,6 +8,7 @@ import { p256 } from "@noble/curves/nist.js";
 import { parseObjectId, resolveCurrentKey, type ObjectId, type PrincipalId, type ResolutionContext } from "../ids/src/index.js";
 import type { EncryptedAccountWrap, GenesisAccount, KeyWrapStore } from "./account-key.ts";
 import { canonicalDecimal, lengthPrefixed } from "./canonical.ts";
+import { REPLACED_NONE, signStoreWrite, wrapCiphertextHash } from "./store-write.ts";
 
 const DOMAIN_ACCOUNT_WRAP = "sociacl-account-key-wrap-v1";
 const DOMAIN_ACCOUNT_BIND = "sociacl-account-key-bind-v1";
@@ -64,8 +65,8 @@ export function encryptAccountBackup(
     account.epriv,
     account.laneId,
   ]);
-  const aad = lengthPrefixed([DOMAIN_ACCOUNT_BIND, account.principal, wrapId, transportPub, ephemeralPub]);
-  const ct = aesEncrypt(kdf(sharedX(ephemeral, peer), account.principal, wrapId, transportPub, ephemeralPub), nonce, aad, plain);
+  const aad = backupAad(account.principal, wrapId, transportPub, ephemeralPub);
+  const ct = aesEncrypt(backupKdf(sharedX(ephemeral, peer), account.principal, wrapId, transportPub, ephemeralPub), nonce, aad, plain);
   const blob = new Uint8Array(1 + point.length + nonce.length + ct.length);
   blob[0] = 1;
   blob.set(point, 1);
@@ -76,10 +77,35 @@ export function encryptAccountBackup(
   const privHex = bytesToHex(unb64(account.priv));
   const eprivHex = bytesToHex(unb64(account.epriv));
   if (ciphertextHex.includes(privHex) || ciphertextHex.includes(eprivHex)) throw new Error("wrap-rejected");
-  const message = lengthPrefixed([DOMAIN_ACCOUNT_SIG, sha256Hex(blob), transportPub, wrapId]);
+  const message = backupSignatureMessage(blob, transportPub, wrapId);
   const signature = bytesToHex(p256.sign(message, unb64(account.priv), { lowS: true, prehash: true }));
-  const wrap: EncryptedAccountWrap = { principal: account.principal, wrapId, epub: account.epub, ciphertextHex, signature };
-  store.put({ principal: wrap.principal, wrapId: wrap.wrapId, epub: wrap.epub }, wrap);
+  const wrap: EncryptedAccountWrap = {
+    principal: account.principal,
+    wrapId,
+    epub: account.epub,
+    class: "genesis",
+    ciphertextHex,
+    signature,
+  };
+  const hash = wrapCiphertextHash(wrap.ciphertextHex);
+  const accountHead = store.publishedAccount(wrap.principal);
+  const existing = store.get(wrap.principal, wrap.wrapId);
+  const storeSignature = signStoreWrite(
+    account.priv,
+    wrap.principal,
+    "put",
+    wrap.wrapId,
+    hash,
+    canonicalDecimal(accountHead.rotations.length),
+    existing ? wrapCiphertextHash(existing.ciphertextHex) : REPLACED_NONE,
+    wrap.class,
+    canonicalDecimal(store.writeGeneration(wrap.principal)),
+  );
+  store.put(
+    { principal: wrap.principal, wrapId: wrap.wrapId, epub: wrap.epub },
+    wrap,
+    storeSignature,
+  );
   return wrap;
 }
 
@@ -137,16 +163,34 @@ export function backupPlaintext(
   return aesDecrypt(key, nonce, aad, body);
 }
 
-export function backupKdf(x: Uint8Array, principal: string, wrapId: string, transportPub: string, ephemeralPub: string): Uint8Array {
-  return kdf(x, principal, wrapId, transportPub, ephemeralPub);
+export function backupKdf(
+  x: Uint8Array,
+  principal: string,
+  wrapId: string,
+  transportPub: string,
+  ephemeralPub: string,
+  domain = DOMAIN_ACCOUNT_BIND,
+): Uint8Array {
+  return kdf(domain, x, principal, wrapId, transportPub, ephemeralPub);
 }
 
-export function backupAad(principal: string, wrapId: string, transportPub: string, ephemeralPub: string): Uint8Array {
-  return lengthPrefixed([DOMAIN_ACCOUNT_BIND, principal, wrapId, transportPub, ephemeralPub]);
+export function backupAad(
+  principal: string,
+  wrapId: string,
+  transportPub: string,
+  ephemeralPub: string,
+  domain = DOMAIN_ACCOUNT_BIND,
+): Uint8Array {
+  return lengthPrefixed([domain, principal, wrapId, transportPub, ephemeralPub]);
 }
 
-export function backupSignatureMessage(blob: Uint8Array, transportPub: string, wrapId: string): Uint8Array {
-  return lengthPrefixed([DOMAIN_ACCOUNT_SIG, sha256Hex(blob), transportPub, wrapId]);
+export function backupSignatureMessage(
+  blob: Uint8Array,
+  transportPub: string,
+  wrapId: string,
+  domain = DOMAIN_ACCOUNT_SIG,
+): Uint8Array {
+  return lengthPrefixed([domain, sha256Hex(blob), transportPub, wrapId]);
 }
 
 export const MAX_BACKUP_HEX = MAX_BACKUP_BYTES * 2;
@@ -166,8 +210,15 @@ function contentKdf(x: Uint8Array): Uint8Array {
   return sha256Bytes(lengthPrefixed(["s3rch-sea-secret-v1", bytesToHex(x)]));
 }
 
-function kdf(x: Uint8Array, principal: string, wrapId: string, transportPub: string, ephemeralPub: string): Uint8Array {
-  return sha256Bytes(lengthPrefixed([DOMAIN_ACCOUNT_BIND, bytesToHex(x), principal, wrapId, transportPub, ephemeralPub]));
+function kdf(
+  domain: string,
+  x: Uint8Array,
+  principal: string,
+  wrapId: string,
+  transportPub: string,
+  ephemeralPub: string,
+): Uint8Array {
+  return sha256Bytes(lengthPrefixed([domain, bytesToHex(x), principal, wrapId, transportPub, ephemeralPub]));
 }
 
 export function sharedX(scalar: Uint8Array, peerUncompressed: Uint8Array): Uint8Array {

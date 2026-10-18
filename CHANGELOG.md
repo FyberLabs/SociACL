@@ -1,5 +1,84 @@
 # Changelog
 
+## Encrypted discovery — unreleased
+
+- Add a passphrase recovery copy of the account keyring
+  (`sociacl-recovery-copy-v1`). Argon2id is pinned to RFC 9106's second
+  recommended option (`m=64` MiB, `t=3`, `p=4`, version `0x13`, 32-byte
+  output) as both the floor and the ceiling. Salt is 16 through 64 bytes.
+  Open refuses a header outside that constant before the KDF. Refs #64.
+- Associated data binds the domain, the `PrincipalId`, the keyring version,
+  the signing public key, the encryption public key, the KDF parameters, and
+  the salt. A wrong passphrase and tampering share `recovery-rejected`. A
+  decrypted copy of another version is `recovery-stale`.
+- `rotateAndReseal` / `rotate_and_reseal` writes a new copy for the new
+  version. The store keeps ciphertext only.
+- Deliver the keyring to a device through the account-key wrap. The device
+  inherits the one keypair and does not mint an identity.
+- Refuse a serialized keyring over 256 KiB before seal and before decrypt,
+  and apply that length check to the recovery envelope before decrypt. The
+  cap is a fixed byte limit. It is not a count of prior lanes.
+- The TypeScript KDF is hash-wasm, a single-threaded WASM build. `p=4` runs
+  its lanes one after another, including in a browser. Mobile uses the same
+  64 MiB Argon2id parameters.
+- Normalize a passphrase string to Unicode NFC, then UTF-8, against Unicode
+  16.0.0. Code points unassigned in that version are `recovery-params`
+  before NFC. Whitespace is one explicit set in both languages and includes
+  U+0085. Empty and whitespace-only passphrases are `recovery-params`.
+  TypeScript `encodePassphrase` throws `unicode-version` when the runtime's
+  NFC is older than Unicode 16. The probe is U+11382 U+113C9 composing to
+  U+11383.
+- **Breaking for adapter authors:** every recovery-store and wrap-store
+  `put`, `commit`, and `delete` is a signed compare-and-swap on
+  `sociacl-store-write-v1`. The store does not take the chain from the
+  writer. The adapter injects a resolver, and the store reads the published
+  head itself. Panopticon fills that resolver from the Gun chain. The signed
+  message is the domain, the `PrincipalId`, the operation, the target, the
+  envelope or ciphertext hash, the decimal head, the hash of the row being
+  replaced or `none`, the wrap class or `none`, and a per-principal write
+  generation. The monotonic floor records every head the resolver reports,
+  not only accepted writes, and one floor is shared by the recovery store
+  and the wrap store. A pending recovery sequence is not part of the floor.
+  A write whose resolved head is below that floor is `store-rejected` and
+  changes nothing. A rejected commit leaves
+  the pending copy in place. A recovery `put` is accepted only at the
+  resolved head, which replaces the current copy and drops any pending
+  copy, or at head + 1, which is the only pending copy. Any other sequence
+  is `store-rejected`. Commit promotes a pending copy only when its public
+  keys equal the resolved current key. A fork stays pending. A signed
+  rotation that is not on the published chain stays pending.
+  `deleteRecoveryCopy` / `delete_recovery_copy` and `deleteAccountWrap` /
+  `delete_account_wrap` use the same signature. Deleting the current
+  recovery copy does not promote a pending copy. The genesis backup wrap
+  can be replaced, never deleted. The 64-row cap stays. The wrap class is
+  covered by the store-write signature. Openers ignore it. Refs #64.
+- Seal refuses a weak passphrase with `recovery-weak-passphrase`. The gate
+  requires 12 visible code points after NFC, rejects Unicode 16
+  default-ignorable and format characters, and requires a zxcvbn score of
+  at least 3. TypeScript uses `@zxcvbn-ts/core` 4.2.0 with the English
+  dictionary. Rust uses `zxcvbn` 3.1.1. The score is advisory between the
+  two. Open does not run the gate. The error returns the score and feedback
+  and does not contain the passphrase. Refs #64.
+- Import and seal refuse a keyring unless `priorLanes.length` equals
+  `rotationSeq` (`bad-lane`). That is SociACL#68 F1 for this path. Refs #64.
+- Key the wrap store by principal and wrap id, so a second device delivery
+  keeps the first. **Breaking for adapter authors:** `KeyWrapStore.get` /
+  `get_wrap` now takes a wrap id, and `list` / `list_wraps` was added.
+  A principal holds at most 64 wrap rows. A wrap id stays in the class that
+  first stored it (`genesis` or `delivery`); a delivery cannot replace the
+  genesis backup's wrap id.
+- Verify a delivery signature before parsing the plaintext. `recovery-stale`
+  is returned only when that signature also verifies under the key that was
+  valid at the older sequence. That key is chosen by each rotation record's
+  `seq`, not by array position. `recovery-stale` is not proof the delivery
+  is genuine. Codec failures on the delivery path are `wrap-rejected`.
+  Delivery uses `sociacl-keyring-delivery-v1` and
+  `sociacl-keyring-delivery-sig-v1`.
+- The TypeScript wrap store copies a row on put, get, and list. The wrap
+  class is a field of the store-write signature, and openers ignore it.
+- The recovery plaintext cap does not grow with the salt. `RECOVERY_ENVELOPE_MAX`
+  is 262205. The pre-parse ceiling `RECOVERY_ABSOLUTE_MAX` is 262269.
+
 ## sociacl-ids 0.8.0 — unreleased
 
 This version is still untagged, so the witnessed genesis-epub binding lands
