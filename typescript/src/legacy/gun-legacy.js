@@ -1,12 +1,10 @@
 /**
- * Label-graph helpers still used by post, group, request, and feed tests.
+ * Label-graph helpers still used by group and feed tests.
  *
- * The stored-id see path does not import this module. Each caller deletes
- * its copy when it migrates: post in PR 3, request in PR 4, group in PR 5,
- * and feed, encdisc, and the contract in PR 6.
+ * The stored-id see, post, and request paths do not import this module.
+ * Group's copy is deleted in PR 5. Feed, encrypted discovery, and the
+ * contract copies are deleted in PR 6.
  */
-
-import { canonicalAccessorId, nextPostHam, objectIdRejected, postGrantKey, postRowEncodable, postSoul, sameObjectId } from "./post-label.js";
 
 /** @param {string | null | undefined} left @param {string | null | undefined} right */
 function samePrincipal(left, right) {
@@ -93,8 +91,145 @@ export function aclKey(id) {
   return escapeKey(asciiTrim(id), true);
 }
 
+/**
+ * A lone UTF-16 surrogate is not a Unicode scalar value.
+ * @param {string} text
+ */
+function hasUnpairedSurrogate(text) {
+  for (let i = 0; i < text.length; i += 1) {
+    const code = text.charCodeAt(i);
+    if (code >= 0xd800 && code <= 0xdbff) {
+      const next = text.charCodeAt(i + 1);
+      if (!(next >= 0xdc00 && next <= 0xdfff)) return true;
+      i += 1;
+      continue;
+    }
+    if (code >= 0xdc00 && code <= 0xdfff) return true;
+  }
+  return false;
+}
+
+/**
+ * A bare principal, or null. `.` may occur inside an id.
+ * @param {string} id
+ * @returns {string | null}
+ */
+function barePrincipal(id) {
+  if (!id || id === "." || id === ".." || id === "..." || id.includes(".get(") || id.includes(" ")) return null;
+  if (hasUnpairedSurrogate(id)) return null;
+  if ([...id].length > 256) return null;
+  if (/[/#$[\]~]/.test(id)) return null;
+  if (/\p{Z}|\p{Cf}/u.test(id)) return null;
+  for (let i = 0; i < id.length; i += 1) {
+    const code = id.charCodeAt(i);
+    if (code <= 0x1f || (code >= 0x7f && code <= 0x9f)) return null;
+  }
+  return id;
+}
+
+/**
+ * Owner / accessor key. An exact `s3rch/users/<wallet>` collapses to that wallet.
+ * @param {string | null | undefined} id
+ * @returns {string | null}
+ */
 export function aclPrincipalKey(id) {
-  return canonicalAccessorId(id);
+  if (typeof id !== "string" || hasUnpairedSurrogate(id)) return null;
+  const text = asciiTrim(id);
+  if (!text || text.includes(".get(")) return null;
+  const segments = text
+    .split("/")
+    .map((part) => asciiTrim(part))
+    .filter((part) => part !== "");
+  if (segments.length === 3 && segments[0] === "s3rch" && segments[1] === "users") {
+    return barePrincipal(segments[2] ?? "");
+  }
+  if (text.includes("/")) return null;
+  return barePrincipal(text);
+}
+
+/** @param {string | null | undefined} id */
+export function canonicalAccessorId(id) {
+  return aclPrincipalKey(id);
+}
+
+const HELD_CLAIM_PREFIXES = ["ens:", "unstoppable:", "fc:", "lens:", "rss3:"];
+
+/** @param {string} id */
+function isItemShaped(id) {
+  const parts = asciiTrim(String(id)).split("/");
+  return parts.length === 3 && parts[0] === "s3rch" && parts[1] === "items" && parts[2] !== "";
+}
+
+/** @param {string} id */
+function mayAliasToItemSoul(id) {
+  const text = asciiTrim(String(id));
+  if (isItemShaped(text)) return true;
+  if (!text.includes("/") && HELD_CLAIM_PREFIXES.some((prefix) => text.startsWith(prefix))) return false;
+  return true;
+}
+
+/** @param {string} id */
+function itemSoulOf(id) {
+  return `s3rch/items/${encodeKey(asciiTrim(String(id)))}`;
+}
+
+/** @param {string} left @param {string} right */
+function itemSoulAlias(left, right) {
+  const a = asciiTrim(String(left));
+  const b = asciiTrim(String(right));
+  if (!isItemShaped(a) && !isItemShaped(b)) return false;
+  if (!mayAliasToItemSoul(a) || !mayAliasToItemSoul(b)) return false;
+  return itemSoulOf(a) === b || itemSoulOf(b) === a;
+}
+
+/** @param {string} stored @param {string} query */
+function objectNames(stored, query) {
+  return aclKey(stored) === aclKey(query) || itemSoulAlias(stored, query);
+}
+
+/** @param {string | null | undefined} id */
+export function objectIdRejected(id) {
+  const text = String(id ?? "");
+  if (!text || hasUnpairedSurrogate(text)) return true;
+  return edgeSpace(text, true) || edgeSpace(text, false);
+}
+
+/** @param {string} text @param {boolean} fromStart */
+function edgeSpace(text, fromStart) {
+  const index = fromStart ? 0 : lastScalarIndex(text);
+  const cp = text.codePointAt(index);
+  if (cp == null) return true;
+  if (cp === 0x09 || cp === 0x0a || cp === 0x0b || cp === 0x0c || cp === 0x0d || cp === 0x20 || cp === 0x85) {
+    return true;
+  }
+  return /\p{Z}|\p{Cf}/u.test(String.fromCodePoint(cp));
+}
+
+/** @param {string} text */
+function lastScalarIndex(text) {
+  const end = text.charCodeAt(text.length - 1);
+  if (end >= 0xdc00 && end <= 0xdfff && text.length > 1) {
+    const prev = text.charCodeAt(text.length - 2);
+    if (prev >= 0xd800 && prev <= 0xdbff) return text.length - 2;
+  }
+  return text.length - 1;
+}
+
+/** @param {string} left @param {string} right */
+export function sameObjectId(left, right) {
+  const a = String(left ?? "");
+  const b = String(right ?? "");
+  if (objectIdRejected(a) || objectIdRejected(b)) return false;
+  return objectNames(a, b);
+}
+
+/** Storage key for a label see row.
+ * @param {string} owner @param {string} object @param {string} accessor */
+export function postGrantKey(owner, object, accessor) {
+  const ownerKey = aclPrincipalKey(owner);
+  const accessorKey = aclPrincipalKey(accessor);
+  if (ownerKey == null || accessorKey == null) return null;
+  return `${ownerKey}\0${aclKey(object)}\0${accessorKey}`;
 }
 
 export function aclSoul(owner) {
@@ -177,22 +312,11 @@ export function cancelSee(acl, owner, accessor, object) {
   acl.unstateSeeGrant(owner, accessor, object);
 }
 
-export function applyPostGrant(acl, owner, grant) {
-  if (!samePrincipal(acl.ownerOf(grant.claimId ?? grant.object), owner)) return;
-  acl.statePostGrant(owner, grant);
-}
-
-export function cancelPost(acl, owner, accessor, object) {
-  if (!samePrincipal(acl.ownerOf(object), owner)) return;
-  acl.unstatePostGrant(owner, accessor, object);
-}
-
 /** In-memory dest ACL for tests and adapters. Not a Gun peer. */
 export class MemorySeeAcl {
   constructor() {
     this.objects = new Map();
     this.grants = new Map();
-    this.posts = new Map();
   }
 
   hasObject(object) {
@@ -299,65 +423,5 @@ export class MemorySeeAcl {
         stated: grant.stated === 0 ? 0 : 1,
       },
     };
-  }
-
-  postGrant(object, accessor) {
-    if (objectIdRejected(object)) return undefined;
-    const id = canonicalStoredObject(this.objects, object);
-    const owner = this.ownerOf(id) ?? "";
-    const key = postGrantKey(owner, id, accessor);
-    if (key == null) return undefined;
-    return this.posts.get(key);
-  }
-
-  statePostGrant(owner, grant) {
-    const query = String(grant.claimId ?? grant.object ?? "");
-    if (objectIdRejected(query)) return;
-    const object = canonicalStoredObject(this.objects, query);
-    if (!samePrincipal(this.ownerOf(object), owner)) return;
-    const key = postGrantKey(owner, object, grant.accessor);
-    if (key == null) return;
-    const prev = this.posts.get(key);
-    const hamState = nextPostHam(prev?.hamState, false);
-    if (hamState === undefined) return;
-    const edge = {
-      soul: postSoul(owner, object, grant.accessor),
-      owner,
-      hamState,
-      grant: {
-        object,
-        accessor: grant.accessor,
-        from: grant.from,
-        until: grant.until,
-        stated: 1,
-      },
-    };
-    if (!postRowEncodable(edge)) return;
-    this.posts.set(key, edge);
-  }
-
-  unstatePostGrant(owner, accessor, object) {
-    if (objectIdRejected(object)) return;
-    const id = canonicalStoredObject(this.objects, object);
-    if (!samePrincipal(this.ownerOf(id), owner)) return;
-    const key = postGrantKey(owner, id, accessor);
-    if (key == null) return;
-    const prev = this.posts.get(key);
-    const hamState = nextPostHam(prev?.hamState, true);
-    if (hamState === undefined) return;
-    const edge = {
-      soul: postSoul(owner, id, accessor),
-      owner,
-      hamState,
-      grant: {
-        object: prev?.grant.object ?? id,
-        accessor: prev?.grant.accessor ?? accessor,
-        from: prev?.grant.from ?? 0,
-        until: prev?.grant.until ?? 0,
-        stated: 0,
-      },
-    };
-    if (!postRowEncodable(edge)) return;
-    this.posts.set(key, edge);
   }
 }

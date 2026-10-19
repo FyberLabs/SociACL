@@ -192,6 +192,32 @@ export function admitPost(graph, row, resolver) {
   return { ok: true, value: present(stored), kept };
 }
 
+/** The sealed post row, so a later write can be put back.
+ * @param {object} graph @param {PrincipalId} owner @param {ObjectId} object @param {PrincipalId} accessor */
+export function snapshotPost(graph, owner, object, accessor) {
+  const held = graph && typeof graph === 'object' ? postTables.get(graph) : undefined;
+  if (!held) return undefined;
+  const id = seeObjectEdge(object);
+  const who = seeAccessorEdge(owner);
+  const accessorId = seeAccessorEdge(accessor);
+  if (!id.ok || !who.ok || !accessorId.ok) return undefined;
+  return held.get(postSoul(who.value, id.value, accessorId.value));
+}
+
+/** Put back the row from snapshotPost. `row` undefined removes it.
+ * @param {object} graph @param {PrincipalId} owner @param {ObjectId} object @param {PrincipalId} accessor
+ * @param {SealedPost | undefined} row */
+export function restorePost(graph, owner, object, accessor, row) {
+  const id = seeObjectEdge(object);
+  const who = seeAccessorEdge(owner);
+  const accessorId = seeAccessorEdge(accessor);
+  if (!id.ok || !who.ok || !accessorId.ok || !graph || typeof graph !== 'object') return;
+  const held = postMap(graph);
+  const key = postSoul(who.value, id.value, accessorId.value);
+  if (row) held.set(key, row);
+  else held.delete(key);
+}
+
 /** @param {object} graph @param {ObjectId} object @param {PrincipalId} accessor */
 export function admittedPost(graph, object, accessor) {
   const id = seeObjectEdge(object);
@@ -243,17 +269,17 @@ export function checkPost(graph, object, accessor, now, hint, hop) {
 }
 
 /**
- * Recheck post rows for one principal. see.js calls this. The seal stays here.
+ * Recheck post rows for one principal. see.js passes the rotations it already resolved.
  * @param {object} graph
  * @param {PrincipalId} principal
- * @param {SeeResolver} resolver
+ * @param {readonly unknown[] | undefined} rotations
+ * @param {ResolutionContext | undefined} ctx
  * @returns {import('../ids/src/types.js').Result<{ dropped: number }>}
  */
-export function reverifyPosts(graph, principal, resolver) {
+export function reverifyPosts(graph, principal, rotations, ctx) {
   const held = graph && typeof graph === 'object' ? postTables.get(graph) : undefined;
   if (!held) return { ok: true, value: { dropped: 0 } };
-  if (!ready(graph, resolver)) return { ok: false, reason: 'missing-history' };
-  const rotations = resolver.rotations(principal);
+  if (!graph || typeof graph !== 'object' || !ctx) return { ok: false, reason: 'missing-history' };
   if (!Array.isArray(rotations)) {
     for (const [key, row] of [...held]) {
       if (row.grant.owner === principal) held.delete(key);
@@ -263,13 +289,13 @@ export function reverifyPosts(graph, principal, resolver) {
   let dropped = 0;
   for (const [key, row] of [...held]) {
     if (row.grant.owner !== principal) continue;
-    const again = verifyPostGrant(row.source, rotations, resolver.ctx);
+    const again = verifyPostGrant(row.source, rotations, ctx);
     if (!again.ok) {
       held.delete(key);
       dropped += 1;
       continue;
     }
-    held.set(key, seal(again.value, resolver.ctx));
+    held.set(key, seal(again.value, ctx));
   }
   return { ok: true, value: { dropped } };
 }

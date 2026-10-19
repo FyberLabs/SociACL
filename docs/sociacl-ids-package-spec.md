@@ -111,7 +111,7 @@ Debug builds must assert the segment count. **No function parses a soul back** i
 
 ## 4. TypeScript API (`typescript/ids`, ESM, zero runtime dependencies besides `@noble/curves` and `@noble/hashes`)
 
-The package must run unchanged in browsers (s3r.ch client) and Node ≥ 24. **Do not use `node:crypto`.** Existing `typescript/src/request.js:52` uses it; this package must not.
+The package must run unchanged in browsers (s3r.ch client) and Node ≥ 24. **Do not use `node:crypto`.** `typescript/src/request.js` signs with the ids keyring and does not load it either.
 
 ### 4.1 Types
 ```ts

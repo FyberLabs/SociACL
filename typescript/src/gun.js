@@ -3,7 +3,7 @@
  * Same names as docs/s3rch-check.d.ts. Copy or import from here.
  * Hint and hop never set allowed. A post grant is a separate row.
  * A hop, a hint, a wrap, a request, or an inbox delivery never grants.
- * Request signing lives in group.js so this module does not load node:crypto.
+ * Request signing lives in request.js and uses the ids keyring.
  * Stored-id see Check is see.js. Label rows stay out of this module.
  */
 

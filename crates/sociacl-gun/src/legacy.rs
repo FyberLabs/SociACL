@@ -309,10 +309,6 @@ mod tests {
         );
         assert_eq!(crate::legacy::acl_soul("../meta"), None);
         assert_eq!(canonical_accessor_id("a\u{0}b"), None);
-        assert_eq!(
-            crate::post_label::post_soul("0xalice", "doc", "a\u{0}b"),
-            None
-        );
         assert_eq!(canonical_accessor_id("bob~name"), None);
         assert_eq!(canonical_accessor_id("x~1get('s3rch')"), None);
         assert_eq!(canonical_accessor_id("."), None);
@@ -706,18 +702,6 @@ impl LabelGraph {
             .collect();
         for edge in grants {
             self.merge_edge(edge);
-        }
-        let posts: Vec<crate::post_label::GunPostEdge> = other
-            .posts
-            .values()
-            .filter(|edge| {
-                self.lookup_object(&edge.grant.object)
-                    .is_some_and(|object| accessor_names(&object.owner, &edge.owner))
-            })
-            .cloned()
-            .collect();
-        for edge in posts {
-            self.merge_post_edge(edge);
         }
         let object_owners: HashMap<String, String> = self
             .objects

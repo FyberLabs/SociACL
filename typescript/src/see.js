@@ -301,7 +301,7 @@ export function reverifyPrincipal(graph, principal, resolver) {
     for (const [id, row] of [...held.owners]) {
       if (row.owner === who.value) held.owners.delete(id);
     }
-    reverifyPosts(graph, who.value, resolver);
+    reverifyPosts(graph, who.value, rotations, resolver.ctx);
     return { ok: false, reason: 'missing-history' };
   }
   let dropped = 0;
@@ -323,7 +323,7 @@ export function reverifyPrincipal(graph, principal, resolver) {
       dropped += 1;
     }
   }
-  const posts = reverifyPosts(graph, who.value, resolver);
+  const posts = reverifyPosts(graph, who.value, rotations, resolver.ctx);
   if (!posts.ok) return posts;
   dropped += posts.value.dropped;
   return { ok: true, value: { dropped } };
@@ -353,6 +353,32 @@ export function admittedView(graph, object, accessor) {
     issuedAt: row.grant.issuedAt,
     attest: row.grant.attest !== undefined,
   };
+}
+
+/** The sealed see row, so a later write can be put back. Absent is undefined.
+ * @param {object} graph @param {PrincipalId} owner @param {ObjectId} object @param {PrincipalId} accessor */
+export function snapshotRow(graph, owner, object, accessor) {
+  if (!graphObject(graph)) return undefined;
+  const id = seeObjectEdge(object);
+  const who = seeAccessorEdge(owner);
+  const accessorId = seeAccessorEdge(accessor);
+  if (!id.ok || !who.ok || !accessorId.ok) return undefined;
+  return store(graph).rows.get(grantSoul(who.value, id.value, accessorId.value));
+}
+
+/** Put back the row from snapshotRow. `row` undefined removes it.
+ * @param {object} graph @param {PrincipalId} owner @param {ObjectId} object @param {PrincipalId} accessor
+ * @param {SealedRow | undefined} row */
+export function restoreRow(graph, owner, object, accessor, row) {
+  if (!graphObject(graph)) return;
+  const id = seeObjectEdge(object);
+  const who = seeAccessorEdge(owner);
+  const accessorId = seeAccessorEdge(accessor);
+  if (!id.ok || !who.ok || !accessorId.ok) return;
+  const key = grantSoul(who.value, id.value, accessorId.value);
+  const held = store(graph);
+  if (row) held.rows.set(key, row);
+  else held.rows.delete(key);
 }
 
 /** @param {object} graph @param {ObjectId} object */

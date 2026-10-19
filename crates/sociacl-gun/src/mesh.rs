@@ -149,12 +149,11 @@ pub(crate) struct MeshObject {
 ///
 /// Group and circle rows live on this same graph. They do not fork
 /// items or users, and they are not see-grant souls.
-/// Label graph still used by post, group, and request. It is not the typed see API.
+/// Label graph still used by group. It is not the typed see, post, or request API.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct LabelGraph {
     pub(crate) objects: HashMap<String, MeshObject>,
     pub(crate) grants: HashMap<String, GunAclEdge>,
-    pub(crate) posts: HashMap<String, crate::post_label::GunPostEdge>,
     pub(crate) friends: HashSet<(String, String)>,
     pub(crate) groups: crate::group::GroupRows,
 }
@@ -318,6 +317,38 @@ impl MeshSeeGraph {
         }
         let stored = self.admitted.get(&key).expect("admitted row");
         Ok((view_row(stored), kept))
+    }
+
+    /// Write a see row and, when present, a post row. A failed post write
+    /// puts the previous see row back, including removing one that was new.
+    pub(crate) fn commit_grant_rows(
+        &mut self,
+        see: &Value,
+        post: Option<&Value>,
+        resolver: &dyn Fn(&PrincipalId) -> Option<Vec<Value>>,
+        ctx: &ResolutionContext<'_>,
+    ) -> Result<(VerifiedRow, Option<VerifiedRow>), Reason> {
+        let (parsed, _) = parse_see_grant(see)?;
+        let key = id_grant_soul(&parsed.owner, &parsed.object, &parsed.accessor).to_string();
+        let previous = self.admitted.get(&key).cloned();
+        let (see_row, _) = self.admit_row(see, resolver, ctx)?;
+        let Some(post) = post else {
+            return Ok((see_row, None));
+        };
+        match self.admit_post(post, resolver, ctx) {
+            Ok((post_row, _)) => Ok((see_row, Some(post_row))),
+            Err(reason) => {
+                match previous {
+                    Some(row) => {
+                        self.admitted.insert(key, row);
+                    }
+                    None => {
+                        self.admitted.remove(&key);
+                    }
+                }
+                Err(reason)
+            }
+        }
     }
 
     /// Drop this principal's grants and object records that the new checkpoint

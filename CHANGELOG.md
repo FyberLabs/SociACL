@@ -2,6 +2,20 @@
 
 ## sociacl/gun — unreleased
 
+- **Breaking:** an access request is `sociacl-access-request-v2`. The
+  request id is `hex(sha256)` of `sociacl-request-id-v2`, the requester
+  `PrincipalId`, and the object `ObjectId`. `grantApprovedRequest` takes
+  `(graph, owner, request, window, members, signer)`. The owner signs
+  the v2 see row and, for `read+post`, the v2 post row. Both ceilings
+  are checked before either row is written. Ed25519 request signatures,
+  `node:crypto` in `request.js`, and the alias helpers in `request.js`
+  and `request.rs` are gone. `vectors/mesh/access-request.json` is
+  replaced by `vectors/mesh/v2/request.json`.
+- **Breaking:** `typescript/src/legacy/post-label.js` and
+  `crates/sociacl-gun/src/post_label.rs` are deleted, along with
+  `cancelLabelPost`, the group post WeakMap, and `LabelGraph`'s post map.
+  Rust `LabelGraph::merge_from` no longer copies post rows. A typed post
+  row is `admitPost` / `admit_post` only.
 - **Breaking (TypeScript):** `sociacl/group` no longer exports
   `POST_GRANT_DOMAIN`, `POST_GRANT_SCOPE`, `postGrantSigningBytes`, or the
   label `postSoul`. `sociacl/gun` still exports `POST_GRANT_DOMAIN`. Its
@@ -12,23 +26,21 @@
 - **Breaking (Rust):** `sociacl_gun` no longer exports
   `post_grant_signing_bytes`, `post_soul`, `GunPostEdge`, `MeshPostGrant`,
   `POST_GRANT_DOMAIN`, or `POST_GRANT_SCOPE`. `post_grants`, `post_edge`,
-  `state_post_grant`, `unstate_post_grant`, and `merge_post_edge` are
-  `pub(crate)`. `OwnerGrantRows.post` is `pub(crate)`.
-- The label post writer stays inside the request and group modules until
-  PR 4. It is not a method on `MemoryGroupGraph`. `mergeFrom` does not
-  copy label post rows. A `read+post` approval with no label post writer
-  writes nothing.
+  `state_post_grant`, `unstate_post_grant`, `merge_post_edge`,
+  `GunPostEdge`, and `OwnerGrantRows` are removed with `post_label.rs`.
+- `reverifyPosts` takes the rotations `reverifyPrincipal` already
+  resolved and does not look them up again.
 
 ## Encrypted discovery — unreleased
 
 - The see path takes stored ids only. `checkSee` / `check_see` have no string
   parameter and no label fallback. A string is the edge parser's reject.
   `CheckObjectId` is `ObjectId` and `AccessorId` is `PrincipalId`. Helpers
-  that post, request, group, feed, and the contract migration path still
+  that group, feed, and the contract migration path still
   call live in `typescript/src/legacy/gun-legacy.js` and
-  `crates/sociacl-gun/src/legacy.rs`. The see path does not import them.
-  Post's copy is deleted in PR 3, request's in PR 4, group's in PR 5, and
-  the feed, encrypted-discovery, and contract copies in PR 6. The #55
+  `crates/sociacl-gun/src/legacy.rs`. The see, post, and request paths do
+  not import them. Group's copy is deleted in PR 5, and the feed,
+  encrypted-discovery, and contract copies in PR 6. The #55
   rebuild spec is not in this repo; that schedule is also in
   `docs/s3rch-check.md`. `vectors/mesh/forbidden-names.json` scopes the
   banned names to the see-path files. Later pull requests append their
@@ -164,6 +176,13 @@ is `ids-v0.10.0`.
   `verify_post_grant` cover `sociacl-post-grant-v2`. A retired cancel
   is `stated` 0 in those signed bytes. A retired `stated` 1 row is
   refused. An uppercase `P_` tag on a bound object id is `non-canonical`.
+- `requestId` / `request_id` and `parseAccessRequest` /
+  `parse_access_request` cover `sociacl-request-id-v2` and
+  `sociacl-access-request-v2`. The request id is the hash of the
+  requester and the object. An empty message is allowed. A wrong
+  domain or a missing signature is `legacy-row`. `verifyAccessRequest`
+  / `verify_access_request` uses `verifySignedAt` / `verify_signed_at`.
+  A retired key is refused. The package version stays 0.10.0.
 
 ## sociacl-ids 0.9.0 — unreleased
 

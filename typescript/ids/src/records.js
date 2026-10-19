@@ -939,6 +939,77 @@ export function verifySignedAt(principal, rotations, ctx, bytes, sig, issuedAt) 
   if (!(bytes instanceof Uint8Array) || !s.ok || !keyVerify(account.value.currentKey, s.value, bytes)) return fail('bad-signature');
   return ok(Object.freeze({ key: account.value.currentKey, mode: 'present' }));
 }
+/** Length-prefixed domain for requestId. The hash input is this domain, the requester, and the object. */
+export const REQUEST_ID_DOMAIN = 'sociacl-request-id-v2';
+/** Length-prefixed domain for an access request. */
+export const REQUEST_DOMAIN = 'sociacl-access-request-v2';
+const REQUEST_MESSAGE_MAX = 280;
+const loneRequestSurrogate = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/;
+/** @param {unknown} value @returns {Result<string>} */
+function requestMessage(value) {
+  if (typeof value !== 'string') return fail('not-string');
+  if (loneRequestSurrogate.test(value)) return fail('unpaired-surrogate');
+  if ([...value].length > REQUEST_MESSAGE_MAX) return fail('too-long');
+  return ok(value);
+}
+/** Signing bytes for a request id. Scope, message, and status are not inputs.
+ * @param {PrincipalId} requester @param {import('./types.js').ObjectId} object */
+export function requestIdBytes(requester, object) {
+  return lp([REQUEST_ID_DOMAIN, requester, object]);
+}
+/** `hex(sha256(requestIdBytes))` after both ids parse. A non-string is `not-string`.
+ * @param {unknown} requester @param {unknown} object @returns {Result<string>} */
+export function requestId(requester, object) {
+  const who = parsePrincipalId(requester); if (!who.ok) return who;
+  const id = parseObjectId(object); if (!id.ok) return id;
+  return ok(hex(sha256(requestIdBytes(who.value, id.value))));
+}
+/** Signing bytes for one already-parsed access request.
+ * @param {{ requestId: string, requester: PrincipalId, object: import('./types.js').ObjectId, scope: string, status: string, message: string, issuedAt: number }} request */
+export function accessRequestBytes(request) {
+  return lp([REQUEST_DOMAIN, request.requestId, request.requester, request.object, request.scope, request.status, request.message, String(request.issuedAt)]);
+}
+/** One snapshot of an access request. The request id is computed from the requester and object.
+ * A wrong domain or a missing signature is `legacy-row`. An empty message is allowed.
+ * @param {unknown} row @returns {Result<{ request: { requestId: string, requester: PrincipalId, object: import('./types.js').ObjectId, scope: 'read' | 'read+post', status: 'pending' | 'withdrawn', message: string, issuedAt: number, sig: string }, bytes: Uint8Array }>} */
+export function parseAccessRequest(row) {
+  const d = data(row); if (!d.ok) return d;
+  const r = d.value;
+  if (r.domain !== undefined && r.domain !== REQUEST_DOMAIN) return fail('legacy-row');
+  if (!Object.hasOwn(r, 'sig')) return fail('legacy-row');
+  const requester = parsePrincipalId(r.requester); if (!requester.ok) return requester;
+  const object = parseObjectId(r.object); if (!object.ok) return object;
+  const id = hex(sha256(requestIdBytes(requester.value, object.value)));
+  if (typeof r.requestId !== 'string') return fail(r.requestId === undefined ? 'bad-record' : 'not-string');
+  if (r.requestId !== id) return fail('bad-record');
+  if (typeof r.scope !== 'string') return fail('not-string');
+  if (r.scope !== 'read' && r.scope !== 'read+post') return fail('bad-record');
+  if (typeof r.status !== 'string') return fail('not-string');
+  if (r.status !== 'pending' && r.status !== 'withdrawn') return fail('bad-record');
+  const message = requestMessage(r.message); if (!message.ok) return message;
+  if (!integer(r.issuedAt)) return fail('bad-record');
+  const sig = text(r.sig, 128); if (!sig.ok) return sig;
+  const request = Object.freeze({
+    requestId: id,
+    requester: requester.value,
+    object: object.value,
+    scope: /** @type {'read' | 'read+post'} */ (r.scope),
+    status: /** @type {'pending' | 'withdrawn'} */ (r.status),
+    message: message.value,
+    issuedAt: /** @type {number} */ (r.issuedAt),
+    sig: sig.value,
+  });
+  return ok(Object.freeze({ request, bytes: accessRequestBytes(request) }));
+}
+/** Present authority for the requester. A retired key is refused. Kind is not a parameter.
+ * @param {unknown} row @param {readonly unknown[]} rotations @param {ResolutionContext} ctx
+ * @returns {Result<SignedAt & { request: { requestId: string, requester: PrincipalId, object: import('./types.js').ObjectId, scope: 'read' | 'read+post', status: 'pending' | 'withdrawn', message: string, issuedAt: number, sig: string }, bytes: Uint8Array }>} */
+export function verifyAccessRequest(row, rotations, ctx) {
+  const parsed = parseAccessRequest(row); if (!parsed.ok) return parsed;
+  const signed = verifySignedAt(parsed.value.request.requester, rotations, ctx, parsed.value.bytes, parsed.value.request.sig, parsed.value.request.issuedAt);
+  if (!signed.ok) return signed;
+  return ok(Object.freeze({ ...signed.value, request: parsed.value.request, bytes: parsed.value.bytes }));
+}
 const OBJECT_DOMAIN = 'sociacl-object-v2';
 /** Signing bytes for an object-owner record. The domain is inside the bytes.
  * @param {{ object: import('./types.js').ObjectId, owner: PrincipalId, issuedAt: number }} record */

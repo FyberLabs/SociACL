@@ -112,34 +112,18 @@ import {
   sign,
   verify,
 } from "node:crypto";
-import {
-  canonicalAccessorId,
-  canonicalPostEdge,
-  nextPostHam,
-  objectIdRejected,
-  postRowEncodable,
-  registerLabelPostWriters,
-  sameObjectId,
-} from "./legacy/post-label.js";
+import { canonicalAccessorId, objectIdRejected, sameObjectId } from "./legacy/gun-legacy.js";
 
 export { checkPost, factorGrants } from "./post.js";
 
 export {
-  ACCESS_MESSAGE_MAX,
-  ACCESS_REQUEST_DOMAIN,
-  ACCESS_REQUEST_ID_DOMAIN,
-  ACCESS_SCOPE_READ,
-  ACCESS_SCOPE_READ_POST,
-  ACCESS_STATUS_PENDING,
-  ACCESS_STATUS_WITHDRAWN,
-  acceptAccessRequest,
-  accessRequestId,
-  accessRequestSigningBytes,
-  canonicalRequestAccessor,
-  canonicalRequestObject,
+  REQUEST_DOMAIN,
+  REQUEST_ID_DOMAIN,
+  accessRequestBytes,
   grantApprovedRequest,
-  requestIssuerFromSeed,
-  signAccessRequest,
+  parseAccessRequest,
+  requestId,
+  verifyAccessRequest,
 } from "./request.js";
 
 const PKCS8_PREFIX = Uint8Array.from([
@@ -972,10 +956,6 @@ export class MemoryGroupGraph {
     this.objectSets = new Map();
     /** @type {Map<string, Uint8Array>} */
     this.enrolled = new Map();
-    registerLabelPostWriters(this, {
-      state: (owner, grant) => writeLabelPost(this, owner, grant),
-      unstate: (owner, accessor, object) => cancelLabelPost(this, owner, accessor, object),
-    });
     this.replicaId = randomBytes(16);
   }
 
@@ -1179,26 +1159,6 @@ export class MemoryGroupGraph {
       };
     }
     return best;
-  }
-
-  /**
-   * @param {string} object
-   * @param {string} accessor
-   */
-  postGrant(object, accessor) {
-    const record = this.objectRecord(object);
-    const requested = record?.id ?? plainObjectId(object) ?? "";
-    const who = aclPrincipalKey(accessor);
-    if (!who) return undefined;
-    const ownerNow = record?.owner;
-    for (const edge of labelPostRows(this).values()) {
-      if (!sameObjectId(edge.grant.object, requested)) continue;
-      if (aclPrincipalKey(edge.grant.accessor) !== who) continue;
-      const ownerKey = aclPrincipalKey(edge.owner);
-      if (!ownerNow || !ownerKey || ownerKey !== aclPrincipalKey(ownerNow)) continue;
-      return edge;
-    }
-    return undefined;
   }
 
   /**
@@ -1611,84 +1571,6 @@ export class MemoryGroupGraph {
     refreshObject(mapLookup(this.enrolled), record);
     this.objectSets.set(key, record);
   }
-}
-
-/** @type {WeakMap<object, Map<string, import("./legacy/post-label.js").PostEdge>>} */
-const labelPosts = new WeakMap();
-
-/** @param {object} graph */
-function labelPostRows(graph) {
-  let held = labelPosts.get(graph);
-  if (!held) {
-    held = new Map();
-    labelPosts.set(graph, held);
-  }
-  return held;
-}
-
-/**
- * Owner-only live post row. Does not write a see grant.
- * @param {MemoryGroupGraph} graph
- * @param {string} owner
- * @param {{ object?: string, claimId?: string, accessor: string, from: number, until: number }} grant
- */
-function writeLabelPost(graph, owner, grant) {
-  const query = plainObjectId(grant.object ?? grant.claimId ?? "") ?? "";
-  const who = asciiTrim(String(grant.accessor ?? ""));
-  const record = graph.objectRecord(query);
-  const ownerKey = aclPrincipalKey(owner);
-  if (!query || !who || !aclPrincipalKey(who) || !record || !ownerKey || !samePrincipal(record.owner, owner)) return;
-  const object = record.id;
-  const key = grantKey(owner, object, who);
-  if (key == null) return;
-  const rows = labelPostRows(graph);
-  const prev = rows.get(key);
-  const hamState = nextPostHam(prev?.hamState, false);
-  if (hamState === undefined) return;
-  const edge = canonicalPostEdge({
-    soul: "",
-    owner: asciiTrim(String(owner)),
-    hamState,
-    grant: { object, accessor: who, from: grant.from, until: grant.until, stated: 1 },
-  });
-  if (!postRowEncodable(edge)) return;
-  rows.set(key, edge);
-}
-
-/**
- * Owner-only. stated 0 and a hamState bump.
- * @param {MemoryGroupGraph} graph
- * @param {string} owner
- * @param {string} accessor
- * @param {string} object
- */
-function cancelLabelPost(graph, owner, accessor, object) {
-  const query = plainObjectId(object) ?? "";
-  const who = asciiTrim(String(accessor));
-  const record = graph.objectRecord(query);
-  const ownerKey = aclPrincipalKey(owner);
-  if (!query || !who || !aclPrincipalKey(who) || !record || !ownerKey || !samePrincipal(record.owner, owner)) return;
-  const id = record.id;
-  const key = grantKey(owner, id, who);
-  if (key == null) return;
-  const rows = labelPostRows(graph);
-  const prev = rows.get(key);
-  const hamState = nextPostHam(prev?.hamState, true);
-  if (hamState === undefined) return;
-  const edge = canonicalPostEdge({
-    soul: "",
-    owner: asciiTrim(String(owner)),
-    hamState,
-    grant: {
-      object: prev?.grant.object ?? id,
-      accessor: who,
-      from: prev?.grant.from ?? 0,
-      until: prev?.grant.until ?? 0,
-      stated: 0,
-    },
-  });
-  if (!postRowEncodable(edge)) return;
-  rows.set(key, edge);
 }
 
 /** @param {string} owner @param {string} object @param {string} accessor */

@@ -58,6 +58,8 @@
     "crates/sociacl-gun/src/mesh.rs",
     "typescript/src/post.js",
     "crates/sociacl-gun/src/post.rs",
+    "typescript/src/request.js",
+    "crates/sociacl-gun/src/request.rs",
     "docs/s3rch-check.d.ts"
   ]
 }

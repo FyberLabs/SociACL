@@ -39,18 +39,6 @@ pub enum GunError {
     SignerNotEnrolled,
     #[error("row signature is not valid")]
     RowSignature,
-    #[error("post grant field is not a canonical integer")]
-    PostGrantField,
-    #[error("access request field is not canonical")]
-    AccessRequestField,
-    #[error("access request signature is not valid")]
-    AccessRequestSignature,
-    #[error("see grant cannot advance")]
-    SeeGrantCeiling,
-    #[error("a withdrawn request does not grant")]
-    AccessRequestWithdrawn,
-    #[error("members auto-approve did not allow")]
-    AccessRequestNotMember,
     #[error("check rejected: {0}")]
     Check(CheckError),
     #[error("{0}")]
