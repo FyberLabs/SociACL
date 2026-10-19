@@ -25,7 +25,8 @@ proptest! {
         let p=principal_from_sec1(secret.public_key().to_encoded_point(false).as_bytes()).unwrap();
         let w=parse_wallet_input(&format!("0x{}",hex(&wallet))).unwrap();
         let t=parse_tenant_id(&format!("{}-{}-{}-{}-{}",hex(&object[..4]),hex(&object[4..6]),hex(&object[6..8]),hex(&object[8..10]),hex(&object[10..]))).unwrap();
-        let o=mint_object_id_with("room",|out|{*out=object;Ok(())}).unwrap();let o=o.object_id();
+        let o=mint_object_id_with("room",&p,|out|{*out=object;Ok(())}).unwrap();let o=o.object_id();
+        prop_assert_eq!(object_principal(o).unwrap(),p.clone());
         let net=parse_network_id(&format!("s3rch:https://node{n}.s3r.ch:443;key={}",hex(&seed))).unwrap();
         let source=parse_source_key(&format!("sr1:{}/{}/{}/chat",pct(net.as_ref()),pct(p.as_ref()),o)).unwrap();
         let cred=parse_oidc_credential(&serde_json::json!({"iss":"https://id.s3r.ch","tenant":t,"sub":format!("subject{n}")})).unwrap();
@@ -56,7 +57,7 @@ proptest! {
         prop_assert_ne!(claim,derive_claim_id(&format!("ens:{}",hex(&seed2))).unwrap());
         prop_assert_ne!(ext,derive_external_id(&s2,&format!("provider/{n}")).unwrap());
 
-        for key in &keys{prop_assert!(key.len()<=160&&key.bytes().all(|c|c.is_ascii_alphanumeric()||b"_:-".contains(&c)));prop_assert_eq!(key.parse::<PathKey>().unwrap().to_string(),key.clone());}
+        for key in &keys{prop_assert!(key.len()<=180&&key.bytes().all(|c|c.is_ascii_alphanumeric()||b"_:-".contains(&c)));prop_assert_eq!(key.parse::<PathKey>().unwrap().to_string(),key.clone());}
         let other=parse_object_id(&format!("chat_{}",hex(&object))).unwrap();
         prop_assert_ne!(object_key(o),object_key(&other));
         prop_assert_ne!(grant_soul(&p,o,&p),grant_soul(&p,&other,&p));
@@ -84,10 +85,15 @@ proptest! {
 }
 #[test]
 fn million_mints_are_unique_and_parse() {
+    let creator = parse_principal_id(
+        "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+    )
+    .unwrap();
     let mut seen = HashSet::with_capacity(1_000_000);
     for _ in 0..1_000_000 {
-        let id = mint_object_id("room").unwrap();
+        let id = mint_object_id("room", &creator).unwrap();
         assert_eq!(&parse_object_id(id.as_ref()).unwrap(), id.object_id());
+        assert_eq!(object_principal(id.object_id()).unwrap(), creator);
         assert!(seen.insert(id.to_string()));
     }
 }
@@ -101,7 +107,11 @@ fn deserialization_cannot_bypass_newtypes() {
     );
     assert_eq!(parse_json_input(r#"{"a":1,"a":2}"#), Err(Reason::BadRecord));
     assert_eq!(
-        mint_object_id_with("room", |_| Err(Reason::RngFailure)),
+        mint_object_id_with(
+            "room",
+            &parse_principal_id("axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU").unwrap(),
+            |_| Err(Reason::RngFailure),
+        ),
         Err(Reason::RngFailure)
     );
 }

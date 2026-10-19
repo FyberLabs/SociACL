@@ -4,9 +4,9 @@ import { secp256k1 } from '@noble/curves/secp256k1.js';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { keccak_256 } from '@noble/hashes/sha3.js';
 import { ok, fail, text, data, integer, b64, unb64, hex, unhex, utf8, lp } from './util.js';
-import { parsePrincipalId, parseEip55, parseOidcCredential, checksum } from './ids.js';
+import { parsePrincipalId, parseObjectId, objectPrincipal, parseEip55, parseOidcCredential, checksum } from './ids.js';
 import { uniqueJson } from './json.js';
-/** @import {PrincipalId, Eip55, Result, WalletLink, OidcLink, Rotate, Revoke, GenesisEpub, IdentityRecord, UnsignedRecord, Jwks, Siwe, ResolutionContext, SiwePolicy, HistoryResolver, KeyState, Diagnostic, Resolution, ResolvedAccount, SignedAt, AclAttestation} from './types.js' */
+/** @import {PrincipalId, Eip55, Result, WalletLink, OidcLink, Rotate, Revoke, GenesisEpub, IdentityRecord, UnsignedRecord, Jwks, Siwe, ResolutionContext, SiwePolicy, HistoryResolver, KeyState, Diagnostic, Resolution, ResolvedAccount, SignedAt, AclAttestation, SeeGrant} from './types.js' */
 
 /** @param {Record<string, unknown>} r @param {string[]} keys */
 const only = (r, keys) => Object.keys(r).every(k => keys.includes(k));
@@ -777,11 +777,84 @@ export function verifyAclAttestation(jws, jwks, issuedAt, bytes) {
   const principal = parsePrincipalId(c.principal); if (!principal.ok) return fail('bad-attestation');
   return ok(Object.freeze({ typ: 'sociacl-acl-attest-v1', principal: principal.value, recordId: /** @type {string} */ (c.recordId), iat: issuedAt, exp: /** @type {number} */ (c.exp) }));
 }
+const SEE_DOMAIN = 'sociacl-see-grant-v2';
+/** Signing bytes for one already-parsed see row. The domain and stated are inside the bytes.
+ * @param {SeeGrant} grant */
+export function seeGrantBytes(grant) {
+  return lp([SEE_DOMAIN, grant.owner, grant.object, grant.accessor, String(grant.stated), String(grant.from), String(grant.until), String(grant.hamState), String(grant.issuedAt)]);
+}
+/** One snapshot of a see row. A getter or proxy is `bad-record`. `kind` is ignored.
+ * @param {unknown} row @returns {Result<{ grant: SeeGrant, bytes: Uint8Array }>} */
+export function parseSeeGrant(row) {
+  const d = data(row); if (!d.ok) return d;
+  const r = d.value;
+  if (r.domain !== undefined && r.domain !== SEE_DOMAIN) return fail('legacy-row');
+  if (!Object.hasOwn(r, 'sig')) return fail('legacy-row');
+  const owner = parsePrincipalId(r.owner); if (!owner.ok) return owner;
+  const object = parseObjectId(r.object); if (!object.ok) return object;
+  const accessor = parsePrincipalId(r.accessor); if (!accessor.ok) return accessor;
+  if (!Object.is(r.stated, 0) && !Object.is(r.stated, 1)) return fail('bad-record');
+  const from = r.from, until = r.until, hamState = r.hamState, issuedAt = r.issuedAt;
+  if (!integer(from) || !integer(until) || !integer(hamState) || !integer(issuedAt) || /** @type {number} */ (until) < /** @type {number} */ (from)) return fail('bad-record');
+  const sig = text(r.sig, 128); if (!sig.ok) return sig;
+  if (Object.hasOwn(r, 'attest')) {
+    const attest = text(r.attest, 16384); if (!attest.ok) return attest;
+  }
+  /** @type {SeeGrant} */
+  const grant = Object.freeze({
+    owner: owner.value,
+    object: object.value,
+    accessor: accessor.value,
+    stated: /** @type {0|1} */ (r.stated),
+    from: /** @type {number} */ (r.from),
+    until: /** @type {number} */ (r.until),
+    hamState: /** @type {number} */ (r.hamState),
+    issuedAt: /** @type {number} */ (r.issuedAt),
+    sig: sig.value,
+    ...(Object.hasOwn(r, 'attest') ? { attest: /** @type {string} */ (r.attest) } : {}),
+  });
+  return ok(Object.freeze({ grant, bytes: seeGrantBytes(grant) }));
+}
+/** @param {SeeGrant} grant @param {Uint8Array} bytes @param {ResolutionContext} ctx */
+function seeWitness(grant, bytes, ctx) {
+  if (grant.attest === undefined) return fail('unwitnessed-retired-key');
+  const attest = verifyAclAttestation(grant.attest, ctx.jwks, grant.issuedAt, bytes);
+  if (!attest.ok) return attest;
+  if (attest.value.principal !== grant.owner) return fail('bad-attestation');
+  return attest;
+}
+/** See-grant authority. Eligibility of a retired cancel is `stated === 0` on this parsed row.
+ * There is no kind argument. A retired `stated === 1` row is refused even when witnessed.
+ * @param {unknown} row @param {readonly unknown[]} rotations @param {ResolutionContext} ctx
+ * @returns {Result<SignedAt & { grant: SeeGrant, bytes: Uint8Array }>} */
+export function verifySeeGrant(row, rotations, ctx) {
+  const parsed = parseSeeGrant(row); if (!parsed.ok) return parsed;
+  const { grant, bytes } = parsed.value;
+  if (!ctx || !Array.isArray(rotations)) return fail('missing-history');
+  const account = resolveCurrentKey(grant.owner, rotations, ctx);
+  if (!account.ok) return fail(account.reason);
+  const skew = ctx.policy?.clockSkewSeconds ?? 0;
+  const when = time(grant.issuedAt, ctx.now, skew); if (!when.ok) return when;
+  const state = historyState(grant.owner, account.value.rotations, grant.issuedAt, ctx.now);
+  if (state.key === account.value.currentKey) {
+    if (!keyVerify(account.value.currentKey, grant.sig, bytes)) return fail('bad-signature');
+    return ok(Object.freeze({ key: account.value.currentKey, mode: 'present', grant, bytes }));
+  }
+  if (grant.stated !== 0) {
+    if (grant.attest !== undefined) {
+      const seen = seeWitness(grant, bytes, ctx);
+      if (!seen.ok) return seen;
+    }
+    return fail('unwitnessed-retired-key');
+  }
+  const seen = seeWitness(grant, bytes, ctx); if (!seen.ok) return seen;
+  if (!keyVerify(state.key, grant.sig, bytes)) return fail('bad-signature');
+  return ok(Object.freeze({ key: state.key, mode: 'witnessed', grant, bytes }));
+}
 /** Present authority under the resolved current key.
- * A retired key is `unwitnessed-retired-key` until PR 2 of the #55 rebuild
- * reads the `sociacl-cancel-v2` domain from the signed bytes.
- * Kind is not a parameter, and there is no attestation argument until that PR.
- * `mode: "witnessed"` is reserved for that check. Nothing here returns it.
+ * Arbitrary bytes stay fail-closed on a retired key. A see cancel is
+ * `verifySeeGrant`: the signed `stated` field is `0`.
+ * Kind is not a parameter, and this function does not take an attestation.
  * @param {PrincipalId} principal @param {readonly unknown[]} rotations @param {ResolutionContext} ctx
  * @param {Uint8Array} bytes @param {string} sig @param {number} issuedAt
  * @returns {Result<SignedAt>} */
@@ -798,6 +871,43 @@ export function verifySignedAt(principal, rotations, ctx, bytes, sig, issuedAt) 
   const s = text(sig, 128);
   if (!(bytes instanceof Uint8Array) || !s.ok || !keyVerify(account.value.currentKey, s.value, bytes)) return fail('bad-signature');
   return ok(Object.freeze({ key: account.value.currentKey, mode: 'present' }));
+}
+const OBJECT_DOMAIN = 'sociacl-object-v2';
+/** Signing bytes for an object-owner record. The domain is inside the bytes.
+ * @param {{ object: import('./types.js').ObjectId, owner: PrincipalId, issuedAt: number }} record */
+export function objectRecordBytes(record) {
+  return lp([OBJECT_DOMAIN, record.object, record.owner, String(record.issuedAt)]);
+}
+/** Snapshot one object-owner record. A missing signature is unsigned.
+ * @param {unknown} row @returns {Result<{ record: import('./types.js').ObjectRecord, bytes: Uint8Array }>} */
+export function parseObjectRecord(row) {
+  const d = data(row); if (!d.ok) return d;
+  const r = d.value;
+  if (r.domain !== undefined && r.domain !== OBJECT_DOMAIN) return fail('bad-record');
+  const object = parseObjectId(r.object); if (!object.ok) return object;
+  const owner = parsePrincipalId(r.owner); if (!owner.ok) return owner;
+  if (!integer(r.issuedAt)) return fail('bad-record');
+  const creator = objectPrincipal(object.value);
+  if (!creator.ok || creator.value !== owner.value) return fail('bad-record');
+  if (!Object.hasOwn(r, 'sig')) return fail('bad-signature');
+  const sig = text(r.sig, 128); if (!sig.ok) return sig;
+  /** @type {import('./types.js').ObjectRecord} */
+  const record = Object.freeze({
+    object: object.value,
+    owner: owner.value,
+    issuedAt: /** @type {number} */ (r.issuedAt),
+    sig: sig.value,
+  });
+  return ok(Object.freeze({ record, bytes: objectRecordBytes(record) }));
+}
+/** The owner signs `sociacl-object-v2`. A retired key is refused.
+ * @param {unknown} row @param {readonly unknown[]} rotations @param {ResolutionContext} ctx
+ * @returns {Result<SignedAt & { record: import('./types.js').ObjectRecord, bytes: Uint8Array }>} */
+export function verifyObjectRecord(row, rotations, ctx) {
+  const parsed = parseObjectRecord(row); if (!parsed.ok) return parsed;
+  const signed = verifySignedAt(parsed.value.record.owner, rotations, ctx, parsed.value.bytes, parsed.value.record.sig, parsed.value.record.issuedAt);
+  if (!signed.ok) return signed;
+  return ok(Object.freeze({ ...signed.value, record: parsed.value.record, bytes: parsed.value.bytes }));
 }
 /** @deprecated Use verifyWalletLink; this alias retains historical verification semantics. */
 export const verifyWalletLinkAtKey = verifyWalletLink;

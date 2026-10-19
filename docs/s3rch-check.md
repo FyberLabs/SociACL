@@ -71,6 +71,10 @@ s3rch/acl/0xalice/ens:alice~1eth/0xbob       // held claim ens:alice.eth
 
 Each field HAM-merges. `MeshSeeGrant.stated` is `1` (live) or `0` (cancelled). Cancel is owner-only and **must bump Gun HAM state** so privilege-down wins the next merge. Each peer runs `checkSee` on its locally HAM-merged graph at `now`. Do not cache an allow across a privilege-down merge.
 
+The stored-id see path keeps one row per owner, object, and accessor. Higher `hamState` wins. At an equal `hamState` a cancel (`stated` 0) wins, then a window that is strictly inside the other: its `from` is at least the other's `from`, its `until` is at most the other's `until`, and one bound is strict. Equal windows are not inside each other. When neither window contains the other, the smaller `sociacl-see-grant-v2` bytes win. When those bytes are equal, the copy whose `sociacl-acl-attest-v1` witness validates replaces the copy whose witness does not. A string that is not a valid witness does not win. Two invalid witnesses, or two valid ones, keep the first copy. That copy only adds the witness. It does not re-open a row. Typed rows move only through `admitRow` / `admit_row` and `putObject` / `put_object`. A label merge does not carry them.
+
+An object owner is a signed `sociacl-object-v2` record. The fields are the object, the owner `PrincipalId`, and `issuedAt`, length-prefixed under that domain. The owner signs it with the current key. The object id must be the bound form in the ids spec: `<kind>_<principal-key>_<32 lowercase hex>`, and the record's owner must be the embedded genesis principal. An id with no embedded principal, or an owner that is not that principal, is `bad-record`. It is not admitted and it does not freeze the object. There is no `owner-conflict` freeze: the same embedded owner cannot sign two valid records for different owners, and a later record from that owner is a no-op while the stored record still verifies. When the stored record no longer verifies under the current key, the new record replaces it. A retired-key object record is refused, including one that carries a valid see witness. `putObject` parses the record before it asks the resolver for that owner's history. `reverifyPrincipal` checks object records again. After a rotation, a record the current key does not sign stops counting until a record signed by that key is admitted. Missing history drops that principal's see rows and object records. An owner allow comes only from an admitted object record. Object records are added in PR 2 of the #55 rebuild. PR 7 does not re-sign legacy objects. There are no legacy objects: SociACL has not launched. The owner re-signs a bound object record on rotation, in this see path, by admitting the new signature.
+
 ### Post grant
 
 A post grant is a second dest-ACL row, not a field on the see grant. Same shape: `object`, `accessor`, `from` (inclusive), `until` (exclusive), `stated` (`1` live, `0` cancelled). Cancel is owner-only: set `stated` to `0` and bump `hamState`. Storage and lookup use `aclPrincipalKey` and `aclKey`, the same ids as `postSoul`, so `s3rch/users/<wallet>` and the wallet name the same row. `checkPost` reads the see row and the post row that name the current object owner. Higher `hamState` wins. At the same `hamState` a cancellation wins, then the narrower window, then the smaller `postGrantSigningBytes`. A peer row whose `stated`, `from`, `until`, or `hamState` is not a canonical non-negative integer is dropped on merge and does not abort the rest of that merge. That includes an integer above 9007199254740991. Rust and TypeScript both drop it. A raw id and the item soul that already name one in-graph object share one post row and one `hamState`. The group graph keeps the original object id. That id is the canonical object id, and `aclPrincipalKey` is the canonical accessor id. `putObject`, see and post writes, cancels, `seeGrants`, `checkSee`, `checkSeeGrant`, and `checkPost` use those two forms in TypeScript and Rust. A second `putObject` through the item soul updates that one owner row. A see cancel through the other spelling updates that one see row. `checkPost` allows only when `checkSee` allows the same triple. A peer post row is stored only when that object is already in the graph and the row owner is the current object owner. The light `checkSee` compares the owner with `aclPrincipalKey`, the same owner rule as `checkPost`. At `hamState` 9007199254740991 a cancellation keeps that value and `stated` 0 wins. A local `from` or `until` that is not a canonical integer is not stored. The light see lookup keeps the owner stored on the grant and compares `aclPrincipalKey`. The next `checkPost` after a cancel merges in denies. Do not cache an allow.
@@ -113,7 +117,7 @@ Rust `sociacl-gun` and `typescript/src/request.js` both load `vectors/mesh/acces
 
 ### Hop factor
 
-`checkSee(graph, object, accessor, now, hint?, hop?)`.
+`checkSee(graph, object, accessor, now, hint?, hop?)` takes an `ObjectId` and a `PrincipalId`. A string argument is the edge parser's reject and does not reach a label check. Check allows a delegate only on an admitted, verified `sociacl-see-grant-v2` row. A retired key counts only when the signed `stated` field is `0` and the attestation binds those bytes. Hint and hop never grant. `CheckObjectId` is `ObjectId`. `AccessorId` is `PrincipalId`.
 
 - hop missing does not fail.
 - hop alone never allows.
@@ -122,6 +126,46 @@ Rust `sociacl-gun` and `typescript/src/request.js` both load `vectors/mesh/acces
 - URL handoffs stay untrusted `HandoffHint`. A hint plus a hop still fail closed without dest ACL.
 
 Reuse SociACL Social Light (`convention-badge` / `enrolled-station`, SLHP v1). Do not reimplement the hop frame.
+
+### Legacy helper deletion
+
+The #55 rebuild spec is not in this repository. This section is the deletion schedule.
+
+`checkSee` / `check_see` do not import the alias helpers. Post, request, group, feed, and the contract migration path still call them. Those copies live in private modules:
+
+- `typescript/src/legacy/gun-legacy.js`
+- `crates/sociacl-gun/src/legacy.rs`
+
+Nothing on the see path imports either file. Each copy is deleted in the pull request that migrates its caller:
+
+| Caller | Delete the copy in |
+| --- | --- |
+| post | PR 3 |
+| request | PR 4 |
+| group | PR 5 |
+| feed, encrypted discovery, and the contract migration module | PR 6 |
+
+`vectors/mesh/forbidden-names.json` lists the banned names and the see-path globs. Those later pull requests append their files to `scopes`. The legacy modules stay out of the guard until then.
+
+`acl-snapshot-utf8-order` still names U+E000 and U+10000. Those scalars are not principals, so a typed snapshot entry cannot carry them. The shared field vector and the Rust suite keep that order. Inbox and wrap vectors still use the object string `s3rch/items/post`. That string is the encrypted-discovery fixture. It is not an `ObjectId`. PR 6 retargets those inbox and wrap vectors and adds encrypted discovery to the forbidden-name scopes, including `crates/sociacl-encdisc/src/gun_soul.rs`. PR 6 also switches `contract/migration.ts` accessor sorting from `localeCompare` to UTF-8 byte order, with a vector using `a`/`B` and `-`/`_` principals. Encrypted discovery keeps a private copy of the soul helpers in `crates/sociacl-encdisc/src/gun_soul.rs` until PR 6 deletes that file. PR 6 also deletes the C exports `sociacl_gun_item_soul` and `sociacl_gun_user_soul`. `sociacl_gun_encode_key` is already gone.
+
+PR 6 still mints or parses unbound object ids. Switch these to `mintObjectId(kind, creator)` / `mint_object_id` when that pull request lands:
+
+- `typescript/contract/delivery-seal.ts`, `typescript/contract/content-wrap.ts`, and `typescript/contract/account-key.ts` parse `wrap_` plus 32 hex.
+- `crates/sociacl-encdisc/src/delivery.rs` and `crates/sociacl-encdisc/src/recovery.rs` parse the same `wrap_` form.
+- `typescript/tests/test_epoch.ts` and `crates/sociacl-encdisc` tests still build `chat_` plus 32 hex fixtures.
+
+Post, request, and group still take caller-supplied label ids. Those creation sites move in PRs 3, 4, and 5.
+
+Nothing besides the ids object grammar reads an s3r.ch legacy object id. Post, request, group, feed, encrypted discovery, the contract, and the C ABI do not mint one and do not read one as an owner. A path key accepts one only because an object id is its own path key. A soul can carry one as an object segment, and no soul vector or caller does. `vectors/ids/object.json` is what still locks the parse. An object record rejects each of them. Delete these forms from `parseObjectId` / `parse_object_id` and from that vector:
+
+- `s3rch:room:<eip55>:<ts>:<hex>`
+- `s3rch:chat:<eip55>:<ts>:<hex>`
+- `s3rch:forum-msg:<eip55>:<ts>:<hex>`
+- `s3rch:post:<eip55>:<ts>:<hex>`
+- `s3rch:forum-group:<eip55>:<hex>`
+- `s3rch:bot:<eip55>:<hex>`
+- `s3rch:forum:<eip55>`
 
 ## Private rows and group predicates (spec)
 

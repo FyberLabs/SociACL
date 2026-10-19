@@ -70,6 +70,7 @@
       "name": "deterministic-mint",
       "input": {
         "kind": "room",
+        "creator": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
         "bytes": [
           7,
           7,
@@ -89,8 +90,27 @@
           7
         ]
       },
-      "canonical": "room_07070707070707070707070707070707",
-      "operation": "mint"
+      "canonical": "room_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_07070707070707070707070707070707",
+      "operation": "mint",
+      "pathKey": "room_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_07070707070707070707070707070707"
+    },
+    {
+      "name": "bound-creator",
+      "input": "room_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_07070707070707070707070707070707",
+      "canonical": "room_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_07070707070707070707070707070707",
+      "pathKey": "room_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_07070707070707070707070707070707"
+    },
+    {
+      "name": "bound-principal",
+      "input": "room_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_07070707070707070707070707070707",
+      "canonical": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+      "operation": "object-principal"
+    },
+    {
+      "name": "bound-max-length",
+      "input": "abcdefghijklmnop_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_22222222222222222222222222222222",
+      "canonical": "abcdefghijklmnop_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_22222222222222222222222222222222",
+      "pathKey": "abcdefghijklmnop_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_22222222222222222222222222222222"
     }
   ],
   "reject": [
@@ -350,6 +370,7 @@
       "name": "mint-kind-post",
       "input": {
         "kind": "post",
+        "creator": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
         "bytes": [
           1,
           1,
@@ -371,6 +392,32 @@
       },
       "reason": "reserved-kind",
       "operation": "mint"
+    },
+    {
+      "name": "unbound-principal",
+      "input": "room_01010101010101010101010101010101",
+      "reason": "bad-template",
+      "operation": "object-principal"
+    },
+    {
+      "name": "bound-off-curve",
+      "input": "room_p_00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000_11111111111111111111111111111111",
+      "reason": "not-on-curve"
+    },
+    {
+      "name": "bound-uppercase",
+      "input": "room_p_6B17D1F2E12C4247F8BCE6E563A440F277037D812DEB33A0F4A13945D898C2964FE342E2FE1A7F9B8EE7EB4A7C0F9E162BCE33576B315ECECBB6406837BF51F5_07070707070707070707070707070707",
+      "reason": "non-canonical"
+    },
+    {
+      "name": "bound-too-long",
+      "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "reason": "too-long"
+    },
+    {
+      "name": "bound-reserved-kind",
+      "input": "post_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+      "reason": "reserved-kind"
     },
     {
       "name": "claim-leading-nbsp",

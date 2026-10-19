@@ -1004,12 +1004,13 @@ dependencies = [
  "serde_json",
  "sha2",
  "sociacl-core",
+ "sociacl-ids",
  "thiserror",
 ]
 
 [[package]]
 name = "sociacl-ids"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "base64ct",
  "getrandom",

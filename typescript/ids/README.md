@@ -17,10 +17,11 @@ import {
 
 const owner = parsePrincipalId(untrustedGenesisPublicKey);
 const accessor = parsePrincipalId(untrustedAccessorPublicKey);
-const object = mintObjectId('room');
-if (!owner.ok || !accessor.ok || !object.ok) throw Error('invalid identity');
+if (!owner.ok || !accessor.ok) throw Error('invalid identity');
+const object = mintObjectId('room', owner.value);
+if (!object.ok) throw Error('invalid identity');
 const soul = grantSoul(owner.value, object.value, accessor.value);
-// s3rch/acl/p_<point hex>/room_<128-bit random hex>/p_<point hex>
+// s3rch/acl/p_<point hex>/room_p_<creator hex>_<128-bit nonce>/p_<point hex>
 ```
 
 Parse once at an untrusted edge; carry the brand through the core. Stored values
@@ -66,13 +67,17 @@ path key. SHA-256 path keys use domain-separated, little-endian length-prefixed
 UTF-8 fields. Hash collision resistance is computational, not a mathematical
 claim of injectivity.
 
-Object ids are `<kind>_<32 lowercase hex>`, `claim_<64hex>`, `ext_<64hex>`, or the
-specified read-only `s3rch:` legacy formats. That includes
-`s3rch:post:<wallet>:<ts>:<hex>`. `claim`, `ext`, `post`, `member`,
-and `objset` cannot be minted as native kinds. Legacy timestamps retain the specified 1–12 decimal digit limit;
-legacy identifiers are opaque and confer no ownership authority. The wallet and
+New object ids are `<kind>_<principal-key>_<32 lowercase hex>`. The
+principal key is the creator's genesis principal as `p_` plus 128
+lowercase hex. `objectPrincipal` reads that one principal back out.
+`claim_<64hex>`, `ext_<64hex>`, the older `<kind>_<32 hex>` form, and the
+read-only `s3rch:` legacy formats still parse. `s3rch:post:<wallet>:<ts>:<hex>`
+is one of those legacy forms. `claim`, `ext`, `post`, `member`,
+and `objset` cannot be minted as native kinds. Legacy timestamps retain the specified 1–12 decimal digit limit.
+Legacy identifiers are not object records. The wallet and
 timestamp inside a legacy post id are not read out. Native mints
-use `crypto.getRandomValues` (Rust: `getrandom`) for 128 bits.
+take the creator and use `crypto.getRandomValues` (Rust: `getrandom`) for 128 bits.
+A path key may be 180 characters.
 
 `SourceKey` ports the canonical SourceRef format from s3r.ch Views. s3r.ch owners
 are genesis principals; open protocols retain DID, FID, Nostr key, ActivityPub
@@ -88,13 +93,17 @@ base64url; both high-S and low-S verify. SEA envelopes are not accepted.
 `verifySignedAt(principal, rotations, ctx, bytes, sig, issuedAt)`
 does not take a kind or an attestation. It resolves the current key first. A present key returns
 `{key, mode: "present"}` or `bad-signature`. Every retired-key row is
-`unwitnessed-retired-key`, including a witnessed cancel, until PR 2 of the #55 rebuild
-reads the `sociacl-cancel-v2` domain from the signed bytes. `mode: "witnessed"` is reserved for that check. A negative or fractional `issuedAt` is `bad-record`.
+`unwitnessed-retired-key`. `verifySeeGrant(row, rotations, ctx)` is the see-row
+check: it parses once, encodes `sociacl-see-grant-v2` from that value, and
+accepts a retired key only when `stated` is 0 and the attestation binds those
+bytes. A retired `stated` 1 row is refused even when witnessed.
+`mode: "witnessed"` is that result. `sociacl-cancel-v2` is not a see cancel.
+A negative or fractional `issuedAt` is `bad-record`.
 `clockSkewSeconds` must be an integer from 0 through 300; a larger, non-finite,
 or non-numeric skew is `bad-record`. `issuedAt` past `now` plus that skew is
 `future-record`. `signWithKeyring(scalar, bytes, expectedKey)` signs only when
 the scalar's public key is `expectedKey`, and it wipes its copy of the scalar.
-Bad key material is `bad-key`. `lengthPrefixed` copies its input once and accepts only well-formed strings from that copy. A throwing getter or iterator is `bad-record`.
+Bad key material is `bad-key`. `lengthPrefixed` reads `length` once, then reads and validates each element once, returning on the first bad field. A throwing length or element access is `bad-record`.
 
 Wallet proofs are EIP-4361 messages signed with EIP-191 `personal_sign`. The
 statement is exactly `SociACL link: <signing-byte sha256>`, the address must
@@ -337,15 +346,15 @@ present/historical revocation boundary. The browser check
 bundles the runtime dependency graph and rejects Node imports. Node built-ins
 are used only in build/test tooling, outside the shipped runtime.
 
-After review and merge, tag `ids-v0.9.0`. The release job waits for the full test
+After review and merge, tag `ids-v0.10.0`. The release job waits for the full test
 job, requires a protected `master` and verifies the tag commit is its ancestor.
 A read-only job installs dependencies with scripts disabled, explicitly builds,
 and checks the tag against `package.json`. A separate write-token job only
 downloads the resulting artifact, checks its SHA-256, and attaches
-`sociacl-ids-0.9.0.tgz` and its SHA-256 file. Consumers then install:
+`sociacl-ids-0.10.0.tgz` and its SHA-256 file. Consumers then install:
 
 ```sh
-npm install https://github.com/FyberLabs/SociACL/releases/download/ids-v0.9.0/sociacl-ids-0.9.0.tgz
+npm install https://github.com/FyberLabs/SociACL/releases/download/ids-v0.10.0/sociacl-ids-0.10.0.tgz
 ```
 
 Commit the consumer lockfile with tarball integrity. This URL becomes usable

@@ -36,8 +36,11 @@
 use sha2::{Digest, Sha256};
 use sociacl_core::{AttestationSig, IssuerSecret, Timestamp};
 
-use crate::mesh::{closed_reason, is_item_shaped, may_alias_to_item_soul};
-use crate::soul::{acl_key, canonical_accessor_id, encode_key, unescape_acl_key, GunSoul};
+use crate::legacy::{
+    acl_key, canonical_accessor_id, closed_reason, encode_key, is_item_shaped,
+    may_alias_to_item_soul, unescape_acl_key,
+};
+use crate::soul::GunSoul;
 use crate::{
     post_grant_signing_bytes, GroupPredicate, GunAclEdge, GunError, GunPostEdge, MeshPostGrant,
     MeshSeeGrant, MeshSeeGraph,
@@ -248,6 +251,7 @@ impl MeshSeeGraph {
         canonical_window(from, until)?;
         let owner = owner.as_ref().trim();
         let (stored_id, object_owner) = self
+            .labels
             .object_record(&request.source)
             .map(|(id, object_owner)| (id.to_string(), object_owner.to_string()))
             .ok_or(GunError::ObjectNotInGraph)?;
@@ -268,7 +272,7 @@ impl MeshSeeGraph {
             }
         }
         let accessor = accepted.requester.clone();
-        if let Some(edge) = self.folded_see(&stored_id, &accessor, owner) {
+        if let Some(edge) = self.labels.folded_see(&stored_id, &accessor, owner) {
             if edge.ham_state.saturating_add(1) > JS_SAFE_INTEGER_MAX {
                 return Err(GunError::SeeGrantCeiling);
             }
@@ -280,11 +284,12 @@ impl MeshSeeGraph {
                 }
             }
         }
-        self.state_see_grant(
+        self.labels.state_see_grant(
             &object_owner,
             MeshSeeGrant::live(&stored_id, &accessor, from, until),
         )?;
         let see_live = self
+            .labels
             .grant_edge(&stored_id, &accessor)
             .map(|edge| edge.grant.stated == 1)
             .unwrap_or(false);
@@ -305,6 +310,7 @@ impl MeshSeeGraph {
             None
         };
         let see = self
+            .labels
             .grant_edge(&stored_id, &accessor)
             .cloned()
             .ok_or(GunError::ObjectNotInGraph)?;

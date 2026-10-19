@@ -1,7 +1,9 @@
 import { parseTenantId, mintObjectId, objectSoul, grantSoul, parsePrincipalId, parseEip55, verifyRevokeNow, verifyRevoke, resolveWalletLinkNow, resolveWalletLink, historyState, type Revoke, type ResolutionContext, type ObjectId } from 'sociacl-ids';
 const tenant = parseTenantId('01234567-89ab-cdef-0123-456789abcdef');
 if (!tenant.ok) throw Error(tenant.reason);
-const created = mintObjectId('room');
+const creator = parsePrincipalId('axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU');
+if (!creator.ok) throw Error(creator.reason);
+const created = mintObjectId('room', creator.value);
 if (!created.ok) throw Error(created.reason);
 const object: ObjectId = created.value;
 if (!objectSoul('rooms', object).startsWith('s3rch/rooms/room_')) throw Error('consumer failed');

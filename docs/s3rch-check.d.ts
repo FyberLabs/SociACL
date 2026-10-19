@@ -12,7 +12,16 @@
  *     (account SEA key, enrollment, wrap edge, canonical ids,
  *      blinded rows, presenter binding, inbox admission,
  *      epoch admission, rotateOnRevoke)
- *
+ */
+declare const sociaclObjectId: unique symbol;
+declare const sociaclPrincipalId: unique symbol;
+
+/** Object id. A copied contract file does not import the ids package. */
+export type ObjectId = string & { readonly [sociaclObjectId]: "ObjectId" };
+/** Genesis principal. A copied contract file does not import the ids package. */
+export type PrincipalId = string & { readonly [sociaclPrincipalId]: "PrincipalId" };
+
+/**
  * CHECK(see, object, accessor) at now.
  *   object   = GunFeedNode | held claim id | later opaque post/room
  *   claim id = the id itself (ens:… / unstoppable:… / fc:… / lens:… /
@@ -43,7 +52,7 @@ export type FeedSource = "rss3" | "rss" | "atom";
 
 /**
  * In-graph feed node. Native Check object.
- * gun.get('s3rch').get('items').get(encodeKey(id))
+ * gun.get('s3rch').get('items').get(<id>)
  * Gun cannot store arrays: `tags` is a comma-separated string.
  */
 export type GunFeedNode = {
@@ -152,22 +161,17 @@ export type FeedMeta = {
 };
 
 /**
- * Mesh Check / hop `object`. Examples:
- *   s3rch/items/<encodeKey(id)>     GunFeedNode
- *   ens:name.eth                    held claim (ENS)
- *   unstoppable:name.crypto         held claim (Unstoppable)
- *   fc:name                         held claim (Farcaster)
- *   lens:name                       held claim (Lens)
- *   rss3:0x…                        held claim (RSS3)
- * Claim id = the id itself, linked from GunUserNode.indicators.
- * Same checkSee / hop path as a GunFeedNode id.
- * Do not invent s3rch/users/<wallet>/claims/….
- * Later posts/rooms are opaque — s3r.ch owns those souls.
+ * Mesh Check / hop `object`. A stored id from the ids parser.
+ * ens:name.eth, unstoppable:name.crypto, fc:name, lens:name, and
+ * rss3:0x… are parse rejects, not object ids. s3rch/items/<id> is a
+ * parse reject. Do not invent s3rch/users/<wallet>/claims/….
+ * GunUserNode.indicators still names held claims; Check does not
+ * read those strings as object ids.
  */
-export type CheckObjectId = string;
+export type CheckObjectId = ObjectId;
 
-/** Wallet or s3rch/users/{wallet}. */
-export type AccessorId = string;
+/** Stored principal. A wallet string is not this id. */
+export type AccessorId = PrincipalId;
 
 export type CheckResult = {
   allowed: boolean;
@@ -191,15 +195,6 @@ export type CheckResult = {
 export type SeeGraph = {
   hasObject(object: CheckObjectId): boolean;
   ownerOf(object: CheckObjectId): AccessorId | undefined;
-  seeGrants(object: CheckObjectId): readonly IdentitySeeGrant[];
-  /**
-   * Merged see row for this pair, including stated 0.
-   * Absent when no row has been merged. seeGrants hides a cancel.
-   */
-  seeGrant(
-    object: CheckObjectId,
-    accessor: AccessorId,
-  ): GunAclEdge | undefined;
   /**
    * Merged post row for this pair, including stated 0.
    * Absent when no row has been merged. A see row is not this row.
@@ -223,15 +218,8 @@ export type SeeGraph = {
   snapshotHash(object: CheckObjectId): string | undefined;
 };
 
-/** Writable dest ACL. Cancel and admit land here, not on a URL. */
+/** Writable dest ACL for post rows. See rows are admitted separately. */
 export type SeeAcl = SeeGraph & {
-  putObject(object: CheckObjectId, owner: AccessorId): void;
-  stateSeeGrant(owner: AccessorId, grant: IdentitySeeGrant): void;
-  unstateSeeGrant(
-    owner: AccessorId,
-    accessor: AccessorId,
-    object: CheckObjectId,
-  ): void;
   /**
    * Owner-only live post row. Does not write a see grant.
    * `stated` is forced to 1. Omit it.
@@ -248,15 +236,6 @@ export type SeeAcl = SeeGraph & {
   ): void;
 };
 
-/** Injective escape of `~ . # $ [ ]`. `/` is left for aclKey. */
-export function encodeKey(id: string): string;
-
-/** s3rch/items/<encodeKey(id)> */
-export function itemSoul(id: string): string;
-
-/** s3rch/users/<wallet> */
-export function userSoul(wallet: string): string;
-
 /** s3rch/meta — not a Check object. */
 export function metaSoul(): string;
 
@@ -271,32 +250,87 @@ export function fromGunNode(
 export function acceptHint(hint: HandoffHint): HandoffHint;
 
 /**
+ * Rotation history for one principal. A missing result is not an
+ * empty history. admitRow and reverifyPrincipal fail closed.
+ */
+export type SeeResolver = {
+  rotations(principal: PrincipalId): readonly unknown[] | undefined;
+  ctx: object;
+};
+
+/** Signed object owner. Domain sociacl-object-v2. The owner signs it. */
+export type ObjectRecord = {
+  object: ObjectId;
+  owner: PrincipalId;
+  issuedAt: number;
+  sig: string;
+};
+
+/** Admitted owner. `frozen` stays false. A mismatched owner does not freeze the object. */
+export type ObjectAdmission = {
+  owner: PrincipalId;
+  issuedAt: number;
+  frozen: boolean;
+};
+
+/**
+ * One admitted see row. mode witnessed is a retired stated-0 cancel.
+ * The tie-break bytes returned to the caller are a copy.
+ */
+export type VerifiedRow = {
+  mode: "present" | "witnessed";
+  grant: {
+    owner: PrincipalId;
+    object: ObjectId;
+    accessor: PrincipalId;
+    stated: 0 | 1;
+    from: number;
+    until: number;
+    hamState: number;
+    issuedAt: number;
+    sig: string;
+    attest?: string;
+  };
+};
+
+/**
+ * Admit a signed sociacl-object-v2 record. The owner is the record.
+ * The object id embeds that genesis principal. Anything else is
+ * bad-record and does not freeze the object. There is no owner-conflict.
+ * The same owner later is a no-op while the stored record still verifies.
+ */
+export function putObject(
+  graph: object,
+  record: unknown,
+  resolver: SeeResolver,
+): { ok: true; value: ObjectAdmission; kept: boolean } | { ok: false; reason: string };
+
+/** Admit one sociacl-see-grant-v2 row. Missing history is missing-history. */
+export function admitRow(
+  graph: object,
+  row: unknown,
+  resolver: SeeResolver,
+): { ok: true; value: VerifiedRow; kept: boolean } | { ok: false; reason: string };
+
+/** Recheck one principal. A retired object record stops counting until it is re-signed. Missing history drops that principal's rows and object records. */
+export function reverifyPrincipal(
+  graph: object,
+  principal: PrincipalId,
+  resolver: SeeResolver,
+): { ok: true; value: { dropped: number } } | { ok: false; reason: string };
+
+/**
  * CHECK(see, object, accessor) at now.
  * see maps to dest read. Hint is ignored for allowed.
- * Hop missing does not fail. Hop alone never allows. Hop may only
- * factor an already-named grant or owner path.
- * Owner sees their object. Else a live IdentitySeeGrant / MeshSeeGrant
- * must name this pair and now ∈ [from, until). meta, dest ACL souls,
- * and UrlLeaf fail closed.
- * A wrap is not an argument. A wrap is not a grant.
+ * Hop missing does not fail. Hop alone never allows.
+ * An owner allow comes only from an admitted object record.
+ * A delegate allow is an
+ * admitted stated-1 row with now in [from, until).
+ * A primitive graph is bad-record. A wrap is not an argument.
  * A hop, a hint, or a wrap never mints.
  */
 export function checkSee(
-  graph: SeeGraph,
-  object: CheckObjectId,
-  accessor: AccessorId,
-  now: number,
-  hint?: HandoffHint,
-  hop?: HopFactor,
-): CheckResult;
-
-/**
- * Dest Check AND the presented grant window.
- * from denies until now is in range.
- */
-export function checkSeeGrant(
-  graph: SeeGraph,
-  grant: IdentitySeeGrant,
+  graph: object,
   object: CheckObjectId,
   accessor: AccessorId,
   now: number,
@@ -333,17 +367,6 @@ export function factorGrants(
   kind: "hop" | "hint" | "wrap" | "inbox" | "request",
 ): false;
 
-/**
- * Destination re-authorizes, then may put a GunFeedNode into items.
- * Hint / URL fetch is not authorization.
- */
-export function admitFeedNode(
-  acl: SeeAcl,
-  node: GunFeedNode,
-  owner: AccessorId,
-  hint?: HandoffHint,
-): { object: CheckObjectId } | { denied: true };
-
 /** Owner-only live post row. Does not write a see grant. */
 export function applyPostGrant(
   acl: SeeAcl,
@@ -353,21 +376,6 @@ export function applyPostGrant(
 
 /** Owner-only privilege-down. The next checkPost denies. */
 export function cancelPost(
-  acl: SeeAcl,
-  owner: AccessorId,
-  accessor: AccessorId,
-  object: CheckObjectId,
-): void;
-
-/** Jointly stated. hopcap 1. */
-export function applySeeGrant(
-  acl: SeeAcl,
-  owner: AccessorId,
-  grant: IdentitySeeGrant,
-): void;
-
-/** Privilege-down is immediate. Dest ACL only. */
-export function cancelSee(
   acl: SeeAcl,
   owner: AccessorId,
   accessor: AccessorId,
@@ -388,30 +396,8 @@ export function cancelSee(
 export type S3rchAcl = "acl";
 
 /**
- * Dest-ACL path key. encodeKey, then `/` escaped to a form that is
- * not `_`, so a grant soul stays five segments and `room.alpha`,
- * `room_alpha`, and `room/alpha` are three keys. Not a second
- * encodeKey for items or users.
- */
-export function aclKey(id: string): string;
-
-/**
- * Owner / accessor key on dest ACL. An exact `s3rch/users/<wallet>`
- * collapses to that wallet text. A bare id may contain `.` and must
- * not be `.` or `..`. It must not contain `/ # $ [ ] ~`, an inner
- * space, a control, Unicode whitespace, a format character, `.get(`,
- * an unpaired surrogate, or more than 256 scalar values. A failed
- * parse is null and is not a soul segment. Trim is ASCII whitespace
- * only, so U+FEFF and U+0085 are rejected rather than stripped.
- * escapeKey is for object keys, not principals. Each user-soul
- * segment is ASCII-trimmed and an empty segment is dropped, so
- * `s3rch/users/ bob ` and `s3rch/users//bob` are `bob`.
- */
-export function aclPrincipalKey(id: string): string | null;
-
-/**
  * Owner dest-ACL root. Not a Check object.
- * gun.get('s3rch').get('acl').get(aclPrincipalKey(owner))
+ * gun.get('s3rch').get('acl').get(<owner>)
  */
 export function aclSoul(owner: AccessorId): string | null;
 
@@ -419,9 +405,9 @@ export function aclSoul(owner: AccessorId): string | null;
  * Jointly stated see grant under the object owner's dest ACL.
  * Does not fork items or users.
  * gun.get('s3rch').get('acl')
- *   .get(aclPrincipalKey(owner))
- *   .get(aclKey(object))
- *   .get(aclPrincipalKey(accessor))
+ *   .get(<owner>)
+ *   .get(<object>)
+ *   .get(<accessor>)
  */
 export function grantSoul(
   owner: AccessorId,
@@ -510,10 +496,10 @@ export const POST_GRANT_SCOPE: "post";
  * Post grant under the object owner's dest ACL.
  * Does not fork items or users. Not a see-grant soul.
  * gun.get('s3rch').get('acl')
- *   .get(aclPrincipalKey(owner))
+ *   .get(<owner>)
  *   .get('post')
- *   .get(aclKey(object))
- *   .get(aclPrincipalKey(accessor))
+ *   .get(<object>)
+ *   .get(<accessor>)
  */
 export function postSoul(
   owner: AccessorId,
@@ -523,8 +509,8 @@ export function postSoul(
 
 /**
  * Length-prefixed row encoding a later owner signature can cover.
- * Domain s3rch-post-grant-v1, then aclKey(object),
- * aclPrincipalKey(accessor), decimal stated, decimal from,
+ * Domain s3rch-post-grant-v1, then the object key,
+ * the accessor key, decimal stated, decimal from,
  * decimal until, scope post, and decimal hamState.
  * Lengths are uint32 little-endian. Integers are ASCII decimal
  * with no leading zeros. Check does not verify a signature.
@@ -616,7 +602,7 @@ export const ACCESS_STATUS_WITHDRAWN: "withdrawn";
 export const ACCESS_MESSAGE_MAX: 280;
 
 /**
- * Canonical accessor id. Same as aclPrincipalKey.
+ * Canonical accessor id for a request.
  * `s3rch/users/<wallet>` and the wallet are this id. Each segment
  * is trimmed and an empty segment is dropped. Empty is rejected.
  * The raw string is Unicode scalar values. U+0085 and U+FEFF are
@@ -625,8 +611,8 @@ export const ACCESS_MESSAGE_MAX: 280;
 export function canonicalRequestAccessor(requester: AccessorId): string;
 
 /**
- * Object key for a request id. aclKey, with an aliasable item soul
- * reduced to the raw id's aclKey. An underscore in that raw id stays.
+ * Object key for a request id. An aliasable item soul
+ * reduces to the raw id. An underscore in that raw id stays.
  * A held claim id does not alias to an item soul.
  * `s3rch/items/ foo` does not alias to `foo`. `a_b` and
  * `s3rch/items/a_b` are one source. `a/b` is not. The raw string is
@@ -1323,7 +1309,7 @@ export type PresentedGroup = {
  * payload outside that window denies. A live membership
  * edge does not override either deny. The revision record
  * may still store the cancel. When group is omitted,
- * it runs checkSee / checkSeeGrant. A group object is an
+ * it runs checkSee. A group object is an
  * authenticated, currently grantable object-set edge. A
  * stated bit alone does not name it. A group object with
  * no group argument fails closed.

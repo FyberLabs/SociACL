@@ -2,6 +2,28 @@
 
 ## Encrypted discovery — unreleased
 
+- The see path takes stored ids only. `checkSee` / `check_see` have no string
+  parameter and no label fallback. A string is the edge parser's reject.
+  `CheckObjectId` is `ObjectId` and `AccessorId` is `PrincipalId`. Helpers
+  that post, request, group, feed, and the contract migration path still
+  call live in `typescript/src/legacy/gun-legacy.js` and
+  `crates/sociacl-gun/src/legacy.rs`. The see path does not import them.
+  Post's copy is deleted in PR 3, request's in PR 4, group's in PR 5, and
+  the feed, encrypted-discovery, and contract copies in PR 6. The #55
+  rebuild spec is not in this repo; that schedule is also in
+  `docs/s3rch-check.md`. `vectors/mesh/forbidden-names.json` scopes the
+  banned names to the see-path files. Later pull requests append their
+  files to `scopes`.
+- `parseSeeGrant` / `parse_see_grant` and `seeGrantBytes` / `see_grant_bytes`
+  snapshot a `sociacl-see-grant-v2` row. A missing signature or a wrong
+  domain is `legacy-row`. `stated` is the exact integer 0 or 1. `parseObjectRecord`
+  / `parse_object_record`, `objectRecordBytes` / `object_record_bytes`, and
+  `verifyObjectRecord` / `verify_object_record` cover domain `sociacl-object-v2`.
+  An object record is valid only when the object id embeds that owner.
+  A mismatch is `bad-record` and does not freeze the object. After a
+  rotation, `reverifyPrincipal` drops an object record the current key
+  does not sign. The same owner can replace that stored record with one
+  the current key signs.
 - Derive a per-contact inbox lane with HKDF-SHA256 from a contact-lane
   secret that is not the disclosed base `laneId`. Info is length-prefixed
   `sociacl-contact-lane-v1`, version `1`, the recipient, then the sender.
@@ -95,17 +117,38 @@
 - The recovery plaintext cap does not grow with the salt. `RECOVERY_ENVELOPE_MAX`
   is 262205. The pre-parse ceiling `RECOVERY_ABSOLUTE_MAX` is 262269.
 
+## sociacl-ids 0.10.0 — unreleased
+
+0.10.0 is the next minor after the still-untagged 0.9.0. The release tag
+is `ids-v0.10.0`.
+
+- A new object id embeds its creator's genesis principal:
+  `<kind>_<principal-key>_<32 lowercase hex>`. The principal key is the
+  existing `p_` + 128 lowercase hex form. The 32 hex digits are a fresh
+  128-bit nonce from `mintObjectId(kind, creator)` /
+  `mint_object_id(kind, creator)`. Parsing a bound id returns exactly
+  that principal through `objectPrincipal` / `object_principal`. The
+  longest id is 180 characters, so the path-key maximum is 180. An
+  object record whose owner is not that principal, or whose id has no
+  embedded principal, is `bad-record`. The older `<kind>_<32 hex>` form
+  still parses and is not an object record. The s3r.ch spellings
+  (`s3rch:room`, `s3rch:chat`, `s3rch:forum-msg`, `s3rch:post`,
+  `s3rch:forum-group`, `s3rch:bot`, `s3rch:forum`) are still parsed and
+  are listed for deletion in `docs/s3rch-check.md`. No other package
+  reads them. They are not object records.
+
 ## sociacl-ids 0.9.0 — unreleased
 
-0.9.0 is the next minor after the still-untagged 0.8.0. New ids work is
-recorded here. The release tag is `ids-v0.9.0`.
+0.9.0 was not tagged. New ids work from that cut is recorded here. The
+release tag moved to `ids-v0.10.0`.
 
 - Export the shared length-prefix encoder `lengthPrefixed` / `length_prefixed`.
   Integer fields are decimal strings. The public encoder accepts only real
   strings, rejects lone surrogates, and rejects a field of 4 GiB or more
-  instead of truncating its length. It copies the input once and validates
-  only that copy. A throwing getter or iterator is `bad-record`. Valid strings
-  stay byte-identical to the post and request copies.
+  instead of truncating its length. It reads `length` once and validates each
+  element as it goes, so a sparse array stops at the first hole. A throwing
+  length or element access is `bad-record`. Valid strings stay byte-identical
+  to the post and request copies.
 - `verifyKeySignature` / `verify_key_signature` checks a SEA P-256 signature
   over SHA-256. The signature is raw r||s, base64url. High-S and low-S both
   verify. `signWithKeyring` / `sign_with_keyring` signs a 32-byte SEA scalar
@@ -118,9 +161,21 @@ recorded here. The release tag is `ids-v0.9.0`.
   Clock skew must be an integer from 0 through 300. `issuedAt` past `now`
   plus that skew is `future-record`. A present key returns
   `{key, mode: "present"}`, or `bad-signature` when the signature fails.
-  Every retired-key row is `unwitnessed-retired-key`, including a witnessed
-  cancel. PR 2 of the #55 rebuild is what reads `sociacl-cancel-v2` from the
-  signed bytes. `mode: "witnessed"` is reserved for that check.
+  Every retired-key row passed to `verifySignedAt` is
+  `unwitnessed-retired-key`. That function stays kind-free. A see cancel is
+  `verifySeeGrant` / `verify_see_grant`: one parse, then the signing bytes,
+  and a retired row counts only when those bytes are `sociacl-see-grant-v2`
+  with `stated` 0 and the attestation matches them. `sociacl-cancel-v2` is
+  the later group-cancel domain. `mode: "witnessed"` is that see-cancel result.
+  `parseSeeGrant` / `parse_see_grant` and `seeGrantBytes` / `see_grant_bytes`
+  are that snapshot. A missing signature or a wrong domain is `legacy-row`.
+  `stated` is the exact integer 0 or 1, so `-0` is `bad-record`. An
+  attestation on a current-key row is capped at 16384 characters.
+  `parseObjectRecord` / `parse_object_record`, `objectRecordBytes` /
+  `object_record_bytes`, and `verifyObjectRecord` / `verify_object_record`
+  are the `sociacl-object-v2` owner record. A retired key is
+  `unwitnessed-retired-key`. A missing signature is `bad-signature`. A null
+  or numeric signature is `not-string`.
 - `verifyAclAttestation` / `verify_acl_attestation` checks claim type
   `sociacl-acl-attest-v1`. The token is capped at 16384 characters before it
   is parsed. The claim is exactly `{typ, principal, recordId, iat, exp}`,

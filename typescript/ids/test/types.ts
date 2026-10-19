@@ -12,7 +12,7 @@ if (p.ok && o.ok) {
   // @ts-expect-error Membership predicates are only same-group and named-circle.
   membershipSoul(p.value, 'nope', o.value, p.value);
 }
-const minted = mintObjectId('room');
+const minted = p.ok ? mintObjectId('room', p.value) : p;
 if (p.ok && minted.ok) grantSoul(p.value, minted.value, p.value);
 import { verifyWalletLink, verifyRotate, resolveWalletLink, type ResolutionContext } from '../src/index.js';
 declare const ctx: ResolutionContext;

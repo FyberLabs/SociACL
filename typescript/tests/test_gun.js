@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { checkPost, checkSee } from "../src/gun.js";
+import { seeAccessorEdge, seeObjectEdge } from "../src/see.js";
 import {
   MemorySeeAcl,
   aclKey,
@@ -8,14 +10,13 @@ import {
   applyPostGrant,
   cancelPost,
   cancelSee,
-  checkPost,
-  checkSee,
   checkSeeGrant,
+  checkSeeLabel,
   encodeKey,
   grantSoul,
   itemSoul,
   userSoul,
-} from "../src/gun.js";
+} from "../src/legacy/gun-legacy.js";
 import { canonicalAccessorId, postGrantKey, postSoul, sameObjectId } from "../src/post.js";
 
 test("souls match the s3r.ch consume contract", () => {
@@ -34,14 +35,14 @@ test("checkSee: owner and live grant; hint never allows", () => {
     from: 0,
     until: 100,
   });
-  assert.equal(checkSee(acl, object, "0xalice", 10).allowed, true);
-  assert.equal(checkSee(acl, object, "0xbob", 10).allowed, true);
+  assert.equal(checkSeeLabel(acl, object, "0xalice", 10).allowed, true);
+  assert.equal(checkSeeLabel(acl, object, "0xbob", 10).allowed, true);
   assert.equal(
-    checkSee(acl, object, "0xcarol", 10, { principal: "0xcarol", target: object }).allowed,
+    checkSeeLabel(acl, object, "0xcarol", 10, { principal: "0xcarol", target: object }).allowed,
     false,
   );
-  assert.equal(checkSee(acl, object, "0xbob", 100).allowed, false);
-  assert.equal(checkSee(acl, "s3rch/meta", "0xalice", 10).allowed, false);
+  assert.equal(checkSeeLabel(acl, object, "0xbob", 100).allowed, false);
+  assert.equal(checkSeeLabel(acl, "s3rch/meta", "0xalice", 10).allowed, false);
 });
 
 test("checkSeeGrant ANDs the window; cancel is immediate", () => {
@@ -53,7 +54,7 @@ test("checkSeeGrant ANDs the window; cancel is immediate", () => {
   assert.equal(checkSeeGrant(acl, grant, object, "0xbob", 5).allowed, false);
   assert.equal(checkSeeGrant(acl, grant, object, "0xbob", 10).allowed, true);
   cancelSee(acl, "0xalice", "0xbob", object);
-  assert.equal(checkSee(acl, object, "0xbob", 10).allowed, false);
+  assert.equal(checkSeeLabel(acl, object, "0xbob", 10).allowed, false);
 });
 
 test("checkPost requires see and does not keep a cancelled allow", () => {
@@ -66,7 +67,7 @@ test("checkPost requires see and does not keep a cancelled allow", () => {
   assert.equal(checkPost(acl, object, "0xbob", 10).allowed, true);
   cancelPost(acl, "0xalice", "0xbob", object);
   assert.equal(checkPost(acl, object, "0xbob", 10).allowed, false);
-  assert.equal(checkSee(acl, object, "0xbob", 10).allowed, true);
+  assert.equal(checkSeeLabel(acl, object, "0xbob", 10).allowed, true);
 });
 
 test("acl keys for dot, underscore, and slash stay distinct", () => {
@@ -88,17 +89,17 @@ test("a grant names one object and a gun chain is not the inner wallet", () => {
   const window = { accessor: "0xbob", from: 0, until: 100 };
   applySeeGrant(acl, "0xalice", { ...window, claimId: "room.alpha" });
   applySeeGrant(acl, "0xalice", { ...window, claimId: "alpha" });
-  assert.equal(checkSee(acl, "room.alpha", "0xbob", 10).allowed, true);
-  assert.equal(checkSee(acl, "alpha", "0xbob", 10).allowed, true);
-  assert.equal(checkSee(acl, "room_alpha", "0xbob", 10).allowed, false);
-  assert.equal(checkSee(acl, "room/alpha", "0xbob", 10).allowed, false);
-  assert.equal(checkSee(acl, "room/chat/alpha", "0xbob", 10).allowed, false);
+  assert.equal(checkSeeLabel(acl, "room.alpha", "0xbob", 10).allowed, true);
+  assert.equal(checkSeeLabel(acl, "alpha", "0xbob", 10).allowed, true);
+  assert.equal(checkSeeLabel(acl, "room_alpha", "0xbob", 10).allowed, false);
+  assert.equal(checkSeeLabel(acl, "room/alpha", "0xbob", 10).allowed, false);
+  assert.equal(checkSeeLabel(acl, "room/chat/alpha", "0xbob", 10).allowed, false);
   const spoof = "0xattacker.get('s3rch').get('users').get('0xvictim')";
   assert.equal(canonicalAccessorId(spoof), null);
   assert.notEqual(canonicalAccessorId(spoof), "0xvictim");
   acl.putObject("doc", "0xvictim");
-  assert.equal(checkSee(acl, "doc", spoof, 10).allowed, false);
-  assert.equal(checkSee(acl, "doc", "0xvictim", 10).allowed, true);
+  assert.equal(checkSeeLabel(acl, "doc", spoof, 10).allowed, false);
+  assert.equal(checkSeeLabel(acl, "doc", "0xvictim", 10).allowed, true);
 });
 
 test("a rejected principal is not a grant path", () => {
@@ -132,12 +133,52 @@ test("a rejected principal is not a grant path", () => {
   assert.equal(canonicalAccessorId("s3rch/users/ 0xbob "), "0xbob");
   const acl = new MemorySeeAcl();
   acl.putObject("doc", "../meta");
-  assert.equal(checkSee(acl, "doc", "a\u0000b", 10).allowed, false);
-  assert.equal(checkSee(acl, "doc", "../meta", 10).allowed, false);
-  assert.equal(checkSee(acl, "doc", "\uFEFF../meta", 10).allowed, false);
+  assert.equal(checkSeeLabel(acl, "doc", "a\u0000b", 10).allowed, false);
+  assert.equal(checkSeeLabel(acl, "doc", "../meta", 10).allowed, false);
+  assert.equal(checkSeeLabel(acl, "doc", "\uFEFF../meta", 10).allowed, false);
   acl.putObject("owned", "0xalice");
-  assert.equal(checkSee(acl, "owned", "\uFEFF0xalice", 10).allowed, false);
-  assert.equal(checkSee(acl, "owned", "0xalice\uFEFF", 10).allowed, false);
-  assert.equal(checkSee(acl, "owned", "\u00850xalice", 10).allowed, false);
+  assert.equal(checkSeeLabel(acl, "owned", "\uFEFF0xalice", 10).allowed, false);
+  assert.equal(checkSeeLabel(acl, "owned", "0xalice\uFEFF", 10).allowed, false);
+  assert.equal(checkSeeLabel(acl, "owned", "\u00850xalice", 10).allowed, false);
+});
+
+test("stored-id checkSee returns the edge reject and does not alias", () => {
+  const acl = new MemorySeeAcl();
+  acl.putObject("room.alpha", "0xalice");
+  applySeeGrant(acl, "0xalice", { claimId: "room.alpha", accessor: "0xbob", from: 0, until: 100 });
+  const folded = checkSee(acl, "room.alpha", "0xbob", 10);
+  assert.equal(folded.allowed, false);
+  assert.equal(folded.reason, "bad-alphabet");
+  const chain = checkSee(
+    acl,
+    "chat_" + "11".repeat(16),
+    "0xattacker.get('s3rch').get('users').get('0xvictim')",
+    10,
+  );
+  assert.equal(chain.allowed, false);
+  assert.equal(chain.reason, "gun-chain");
+});
+
+test("alias strings are an edge reject", () => {
+  for (const value of ["room.alpha", "room_alpha", "room/alpha", "item-1", "doc", "room"]) {
+    const parsed = seeObjectEdge(value);
+    assert.equal(parsed.ok, false, value);
+    if (!parsed.ok) assert.equal(parsed.reason, "bad-alphabet", value);
+  }
+  const reasons = {
+    "0xbob": "bad-length",
+    "0xalice": "bad-length",
+    "0xbob/x": "bad-length",
+    "0xattacker.get('s3rch').get('users').get('0xvictim')": "gun-chain",
+    "x~1get('s3rch')": "gun-chain",
+    "../meta": "bad-length",
+    "...": "bad-length",
+    "s3rch/users/0xbob": "bad-length",
+  };
+  for (const [value, reason] of Object.entries(reasons)) {
+    const parsed = seeAccessorEdge(value);
+    assert.equal(parsed.ok, false, value);
+    if (!parsed.ok) assert.equal(parsed.reason, reason, value);
+  }
 });
 

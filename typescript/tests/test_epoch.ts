@@ -8,8 +8,11 @@ import type {
   EpochReplicaView,
   EpochRotation,
   EpochStatusProof,
+  ObjectId,
+  PrincipalId,
 } from "../../docs/s3rch-check.js";
-import { sha256Hex } from "../contract/canonical.ts";
+import { lengthPrefixed, sha256Hex } from "../contract/canonical.ts";
+import { parseObjectId, parsePrincipalId } from "../ids/src/index.js";
 import {
   aclSnapshotBytes,
   aclSnapshotId,
@@ -36,6 +39,36 @@ const REV = "ab".repeat(32);
 const OTHER = "cd".repeat(32);
 const FAR = 4_000_000_000_000;
 
+function mustObject(value: string): ObjectId {
+  const parsed = parseObjectId(value);
+  if (!parsed.ok) throw new Error(parsed.reason);
+  return parsed.value as ObjectId;
+}
+
+function mustPrincipal(value: string): PrincipalId {
+  const parsed = parsePrincipalId(value);
+  if (!parsed.ok) throw new Error(parsed.reason);
+  return parsed.value as PrincipalId;
+}
+
+const OBJECT = mustObject("chat_" + "11".repeat(16));
+const OBJECT_B = mustObject("chat_" + "22".repeat(16));
+const ALICE = mustPrincipal(
+  "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+);
+const BOB = mustPrincipal(
+  "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+);
+const CAROL = mustPrincipal(
+  "Xsvk0aYzCkTI9--VHUvxZebGtyHvramF-0FmG8bn_Ww.hzRkDEmY_343SwbOGmSi7NgqsDY4T7g9mnmxJ6J9UDI",
+);
+const ADA = mustPrincipal(
+  "4lNKNTLQj7ugLd5lnuYr0AMf4tt4VZbvUJMCRGsDCFI.4PFXWkxjPMcZ3-5f2oYtdk78lsPzDuAFXELCPxhO2MY",
+);
+const AMY = mustPrincipal(
+  "UVkLelFRQNLXhMhWCGaP3--Mgv0fW-UkIVVKDcPQM-0.4MF9qJBKcn2K4b82v4p5Jg0BLwDU2AiI0dC7RP2hbaQ",
+);
+
 type VectorCase = {
   name: string;
   kind: string;
@@ -61,7 +94,7 @@ function assertHash(name: string, bytes: Uint8Array): void {
 }
 
 function directEntry(
-  accessor: string,
+  accessor: PrincipalId,
   stated: 0 | 1,
   grantRevision = 1,
 ): AclSnapshotEntry {
@@ -87,14 +120,14 @@ function finalization(
 ): EpochFinalization {
   const previousFinalizationId = "";
   return {
-    object: "item-1",
+    object: OBJECT,
     previousEpoch: 1,
     epoch: 2,
     revisionId,
     candidateRevisionIds: candidates,
     previousFinalizationId,
     finalizationId: epochFinalizationId(
-      "item-1",
+      OBJECT,
       2,
       1,
       revisionId,
@@ -107,7 +140,7 @@ function finalization(
 
 function view(seen: readonly EpochFinalization[], extras: Partial<EpochReplicaView> = {}): EpochReplicaView {
   return {
-    object: "item-1",
+    object: OBJECT,
     epoch: 2,
     previousFinalizationId: "",
     seen,
@@ -121,28 +154,28 @@ function view(seen: readonly EpochFinalization[], extras: Partial<EpochReplicaVi
 
 function proof(signedAt: number): EpochStatusProof {
   return {
-    object: "item-1",
+    object: OBJECT,
     epoch: 1,
     revisionId: REV,
-    accessor: "bob",
+    accessor: BOB,
     grantRevision: 4,
     stated: 0,
     signedAt,
     maxAgeMs: 60_000,
     signature: "ab".repeat(64),
-    zookie: { object: "item-1", objectVersion: 3, snapshotHash: OTHER },
+    zookie: { object: OBJECT, objectVersion: 3, snapshotHash: OTHER },
   };
 }
 
 const READERS: readonly RotationReader[] = [
-  { account: "bob", epub: "bob-epub" },
-  { account: "carol", epub: "carol-epub" },
+  { account: BOB, epub: "bob-epub" },
+  { account: CAROL, epub: "carol-epub" },
 ];
-const PRIOR: readonly PriorHamState[] = [{ accessor: "bob", hamState: 1 }];
+const PRIOR: readonly PriorHamState[] = [{ accessor: BOB, hamState: 1 }];
 
 function rotation(cipher: EpochRotation["cipher"], targetId = "carol-epub"): EpochRotation {
   return {
-    object: "item-1",
+    object: OBJECT,
     revokedEpoch: 1,
     nextEpoch: 2,
     revisionId: REV,
@@ -150,7 +183,7 @@ function rotation(cipher: EpochRotation["cipher"], targetId = "carol-epub"): Epo
       {
         kind: "plain",
         grant: {
-          grant: { object: "item-1", accessor: "bob", from: 0, until: FAR, stated: 0 },
+          grant: { object: OBJECT, accessor: BOB, from: 0, until: FAR, stated: 0 },
           hamState: 2,
         },
       },
@@ -161,7 +194,7 @@ function rotation(cipher: EpochRotation["cipher"], targetId = "carol-epub"): Epo
         epoch: 2,
         target: "reader-epub",
         targetId,
-        object: "item-1",
+        object: OBJECT,
         revisionId: REV,
         wrappedKey: "aa",
       },
@@ -184,7 +217,7 @@ test("epoch canonical bodies match the shared fixture", () => {
     aclSnapshotBytes({
       entries: [
         {
-          accessor: "bob",
+          accessor: BOB,
           grantRevision: 4,
           stated: 0,
           from: 10,
@@ -200,7 +233,7 @@ test("epoch canonical bodies match the shared fixture", () => {
     aclSnapshotId({
       entries: [
         {
-          accessor: "bob",
+          accessor: BOB,
           grantRevision: 4,
           stated: 0,
           from: 10,
@@ -219,7 +252,7 @@ test("epoch canonical bodies match the shared fixture", () => {
       objectSet: { predicate: "same-group", setId: "crew", stated: 1, hamState: 3 },
       entries: [
         {
-          accessor: "ada",
+          accessor: ADA,
           grantRevision: 2,
           stated: 1,
           from: 0,
@@ -232,44 +265,38 @@ test("epoch canonical bodies match the shared fixture", () => {
     }),
   );
   assert.equal(
-    epochFinalizationId("item-1", 3, 2, REV, "", [REV]),
+    epochFinalizationId(OBJECT, 3, 2, REV, "", [REV]),
     vector("epoch-finalization-body").sha256,
   );
   assertHash("epoch-manifest-sig", epochManifestSigBytes(REV));
   assertHash("epoch-finalization-sig", epochFinalizationSigBytes(REV));
   assertHash(
     "group-epoch-config",
-    groupEpochConfigBytes("alice", "crew", "named-circle", 7_200_000, 2),
+    groupEpochConfigBytes(ALICE, "crew", "named-circle", 7_200_000, 2),
   );
-  const tie = groupEpochConfigDigest("alice", "crew", "named-circle", SETTLE_WINDOW_DEFAULT_MS, 2);
+  const tie = groupEpochConfigDigest(ALICE, "crew", "named-circle", SETTLE_WINDOW_DEFAULT_MS, 2);
   assert.equal(tie, vector("group-epoch-config-tie").sha256);
   assert.ok(vector("group-epoch-config").sha256 < tie);
   assert.throws(() =>
     aclSnapshotId({
-      entries: [directEntry("bob", 1, 1), directEntry("amy", 1, 1)],
+      entries: [directEntry(BOB, 1, 1), directEntry(AMY, 1, 1)],
     }),
   );
+  // U+E000 and U+10000 are not principals. The shared fields and the Rust suite lock this order.
   const low = "\uE000";
   const high = "\u{10000}";
+  assert.equal(parsePrincipalId(low).ok, false);
+  assert.equal(parsePrincipalId(high).ok, false);
   assert.equal(high < low, true);
   assert.equal(low < high, false);
-  assertHash(
-    "acl-snapshot-utf8-order",
-    aclSnapshotBytes({
-      entries: [
-        { ...directEntry(low, 1), until: FAR, grantRevision: 1 },
-        { ...directEntry(high, 0, 2), until: FAR },
-      ],
-    }),
-  );
-  assert.throws(() =>
-    aclSnapshotId({
-      entries: [
-        { ...directEntry(high, 0, 2), until: FAR },
-        { ...directEntry(low, 1), until: FAR, grantRevision: 1 },
-      ],
-    }),
-  );
+  const utf8 = vector("acl-snapshot-utf8-order");
+  const fields = utf8.fields;
+  if (fields === undefined) throw new Error("acl-snapshot-utf8-order");
+  assert.ok(fields.includes(low));
+  assert.ok(fields.includes(high));
+  assert.ok(fields.indexOf(low) < fields.indexOf(high));
+  assert.equal(sha256Hex(lengthPrefixed(fields)), utf8.sha256);
+  assert.equal(lengthPrefixed(fields).length, utf8.encodedLen);
 });
 
 test("settle window stays inside the signed bounds", () => {
@@ -296,47 +323,47 @@ test("the smaller finalization id wins independent of seen order", () => {
   assert.equal(epochWinner(view([right, left]))?.finalizationId, smaller.finalizationId);
   const unsorted = finalization("11".repeat(32), ["11".repeat(32), "00".repeat(32)]);
   assert.equal(epochWinner(view([unsorted, right]))?.finalizationId, right.finalizationId);
-  const foreign = { ...left, object: "item-2" };
+  const foreign = { ...left, object: OBJECT_B };
   assert.equal(epochWinner(view([foreign]))?.finalizationId, undefined);
   const forged = { ...smaller, finalizationId: "00".repeat(32) };
   assert.equal(epochWinner(view([forged, right]))?.revisionId, right.revisionId);
 });
 
 test("epoch step and settled key follow the merged acl", () => {
-  const live = directSnapshot([directEntry("ada", 1)]);
+  const live = directSnapshot([directEntry(ADA, 1)]);
   const fin = finalization(REV);
   const pending = view([fin]);
   const open = pending.winnerSeenAt + SETTLE_WINDOW_MIN_MS;
   assert.equal(epochStepCurrent(pending, live, live, open - 1), false);
   assert.equal(epochStepCurrent(pending, live, live, open), true);
-  const cancelled = directSnapshot([directEntry("ada", 0)]);
+  const cancelled = directSnapshot([directEntry(ADA, 0)]);
   assert.equal(epochStepCurrent(pending, live, cancelled, open), false);
-  const expired = directSnapshot([{ ...directEntry("ada", 1), until: open }]);
+  const expired = directSnapshot([{ ...directEntry(ADA, 1), until: open }]);
   assert.equal(epochStepCurrent(pending, expired, expired, open), false);
   const elapsed = view([fin], { winnerSeenAt: 0, settleWindowMs: SETTLE_WINDOW_DEFAULT_MS });
   const settledNow = SETTLE_WINDOW_DEFAULT_MS;
   const pair = directSnapshot([
-    directEntry("ada", 1, 1),
-    { ...directEntry("bob", 0, 2), stated: 0 },
+    directEntry(ADA, 1, 1),
+    { ...directEntry(BOB, 0, 2), stated: 0 },
   ]);
   assert.equal(epochStepCurrent(elapsed, pair, pair, settledNow), true);
   const adaCancelled = directSnapshot([
-    directEntry("ada", 0, 10),
-    directEntry("bob", 0, 2),
+    directEntry(ADA, 0, 10),
+    directEntry(BOB, 0, 2),
   ]);
   assert.equal(epochStepCurrent(elapsed, pair, adaCancelled, settledNow), false);
-  const omitsBob = directSnapshot([directEntry("ada", 0, 10)]);
+  const omitsBob = directSnapshot([directEntry(ADA, 0, 10)]);
   assert.equal(epochStepCurrent(elapsed, omitsBob, adaCancelled, settledNow), false);
   const lowBob = directSnapshot([
-    directEntry("ada", 0, 10),
-    directEntry("bob", 0, 1),
+    directEntry(ADA, 0, 10),
+    directEntry(BOB, 0, 1),
   ]);
   assert.equal(epochStepCurrent(elapsed, lowBob, adaCancelled, settledNow), false);
   const setA: AclSnapshotBody = {
     objectSet: { predicate: "same-group", setId: "crew-a", stated: 1, hamState: 2 },
     entries: [
       {
-        accessor: "carol",
+        accessor: CAROL,
         grantRevision: 1,
         stated: 1,
         from: 0,
@@ -351,7 +378,7 @@ test("epoch step and settled key follow the merged acl", () => {
     objectSet: { predicate: "same-group", setId: "crew-b", stated: 1, hamState: 4 },
     entries: [
       {
-        accessor: "carol",
+        accessor: CAROL,
         grantRevision: 1,
         stated: 1,
         from: 0,
@@ -415,7 +442,7 @@ test("rotateOnRevoke accepts both cipher modes and fails closed", () => {
   assert.ok(quietCancel && quietCancel.kind === "plain");
   quietCancel.grant.hamState = 0;
   reject(quiet);
-  reject(rotation("forward-only"), [{ accessor: "bob", hamState: 10 }]);
+  reject(rotation("forward-only"), [{ accessor: BOB, hamState: 10 }]);
   reject(rotation("forward-only"), []);
   reject(rotation("forward-only", "bob-epub"));
   reject(rotation("re-encrypt", "bob-epub"));
@@ -439,7 +466,7 @@ test("rotateOnRevoke accepts both cipher modes and fails closed", () => {
     epoch: 2,
     target: "group-epoch" as const,
     targetId: "crew",
-    object: "item-1",
+    object: OBJECT,
     group: "crew",
     revisionId: REV,
     wrappedKey: "bb",
@@ -450,7 +477,7 @@ test("rotateOnRevoke accepts both cipher modes and fails closed", () => {
   reject(group);
 
   const privateRow: EpochRotation = {
-    object: "item-1",
+    object: OBJECT,
     revokedEpoch: 1,
     nextEpoch: 2,
     revisionId: REV,
@@ -458,13 +485,13 @@ test("rotateOnRevoke accepts both cipher modes and fails closed", () => {
       {
         kind: "private-row",
         payload: {
-          object: "item-1",
-          accessor: "bob",
+          object: OBJECT,
+          accessor: BOB,
           from: 0,
           until: FAR,
           stated: 0,
           epoch: 1,
-          owner: "alice",
+          owner: ALICE,
           grantRevision: 5,
           itemCiphertextDigest: "",
         },

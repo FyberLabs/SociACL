@@ -22,11 +22,11 @@ use rand::RngCore;
 use sha2::{Digest, Sha256};
 use sociacl_core::{AttestationSig, IssuerSecret, Timestamp, VerifyKey};
 
-use crate::mesh::{closed_reason, MeshCheckResult, MeshSeeGraph};
-use crate::soul::{
-    acl_key, acl_principal_key, ascii_trim, object_id_rejected, unescape_acl_key, S3RCH_ACL,
-    S3RCH_ROOT,
+use crate::legacy::{
+    acl_key, acl_principal_key, ascii_trim, closed_reason, object_id_rejected, unescape_acl_key,
 };
+use crate::mesh::{MeshCheckResult, MeshSeeGraph};
+use crate::soul::{S3RCH_ACL, S3RCH_ROOT};
 use crate::{GunError, HandoffHint, HopFactor};
 
 /// `same-group` or `named-circle`. The accessor does not pick a richer one.
@@ -385,7 +385,7 @@ impl MeshSeeGraph {
         if acl_principal_key(owner).is_none() {
             return Err(GunError::UnboundSetOwner);
         }
-        if let Some(existing) = self.groups.set_owners.get(&key) {
+        if let Some(existing) = self.labels.groups.set_owners.get(&key) {
             if !principals_match(existing, owner) {
                 return Err(GunError::SetOwnerConflict);
             }
@@ -394,13 +394,14 @@ impl MeshSeeGraph {
         if !set_id_binds_owner(&canonical, owner) {
             return Err(GunError::UnboundSetOwner);
         }
-        self.groups.set_owners.insert(key, owner.to_string());
+        self.labels.groups.set_owners.insert(key, owner.to_string());
         Ok(())
     }
 
     pub fn owner_of_set(&self, predicate: GroupPredicate, set_id: &str) -> Option<&str> {
         let canonical = canonical_set_id(ascii_trim(set_id)).ok()?;
-        self.groups
+        self.labels
+            .groups
             .set_owners
             .get(&(predicate, set_map_key(&canonical)))
             .map(String::as_str)
@@ -420,13 +421,13 @@ impl MeshSeeGraph {
         let Some(id) = acl_principal_key(principal) else {
             return Err(GunError::SignerNotEnrolled);
         };
-        if let Some(existing) = self.groups.enrolled.get(&id) {
+        if let Some(existing) = self.labels.groups.enrolled.get(&id) {
             if existing != &key {
                 return Err(GunError::SignerNotEnrolled);
             }
             return Ok(());
         }
-        self.groups.enrolled.insert(id, key);
+        self.labels.groups.enrolled.insert(id, key);
         Ok(())
     }
 
@@ -434,7 +435,7 @@ impl MeshSeeGraph {
     /// accessor id. A missing enrollment is not a key.
     pub fn enrolled_key(&self, principal: &str) -> Option<VerifyKey> {
         let id = acl_principal_key(principal)?;
-        self.groups.enrolled.get(&id).copied()
+        self.labels.groups.enrolled.get(&id).copied()
     }
 
     /// One side of a direct membership. Live only when both the member
@@ -464,10 +465,12 @@ impl MeshSeeGraph {
             .ok_or(GunError::SetUnknown)?
             .to_string();
         let soul = membership_soul(&owner, predicate, &canonical, accessor);
-        let mut record =
-            self.groups.memberships.remove(&key).unwrap_or_else(|| {
-                blank_membership(predicate, &canonical, accessor, &soul, &owner)
-            });
+        let mut record = self
+            .labels
+            .groups
+            .memberships
+            .remove(&key)
+            .unwrap_or_else(|| blank_membership(predicate, &canonical, accessor, &soul, &owner));
         record.soul = soul;
         record.set_owner = owner;
         record.membership.ham_state = record.membership.ham_state.saturating_add(1);
@@ -475,7 +478,7 @@ impl MeshSeeGraph {
         if speaks_member {
             let ham = record.member.ham_state.saturating_add(1);
             let Some(message) = party_message("member", &record, true, ham, &observed) else {
-                self.groups.memberships.insert(key, record);
+                self.labels.groups.memberships.insert(key, record);
                 return Err(GunError::EmptyPrincipal);
             };
             sign_party(&mut record.member, true, observed.clone(), secret, &message);
@@ -483,7 +486,7 @@ impl MeshSeeGraph {
         if speaks_set {
             let ham = record.set_party.ham_state.saturating_add(1);
             let Some(message) = party_message("set", &record, true, ham, &observed) else {
-                self.groups.memberships.insert(key, record);
+                self.labels.groups.memberships.insert(key, record);
                 return Err(GunError::EmptyPrincipal);
             };
             sign_party(
@@ -494,9 +497,9 @@ impl MeshSeeGraph {
                 &message,
             );
         }
-        let enrolled = self.groups.enrolled.clone();
+        let enrolled = self.labels.groups.enrolled.clone();
         record.publish(&enrolled);
-        self.groups.memberships.insert(key, record);
+        self.labels.groups.memberships.insert(key, record);
         Ok(())
     }
 
@@ -526,17 +529,19 @@ impl MeshSeeGraph {
             .ok_or(GunError::SetUnknown)?
             .to_string();
         let soul = membership_soul(&owner, predicate, &canonical, accessor);
-        let mut record =
-            self.groups.memberships.remove(&key).unwrap_or_else(|| {
-                blank_membership(predicate, &canonical, accessor, &soul, &owner)
-            });
+        let mut record = self
+            .labels
+            .groups
+            .memberships
+            .remove(&key)
+            .unwrap_or_else(|| blank_membership(predicate, &canonical, accessor, &soul, &owner));
         record.soul = soul;
         record.set_owner = owner;
         let Some(row_key) = membership_row_key(&record) else {
-            self.groups.memberships.insert(key, record);
+            self.labels.groups.memberships.insert(key, record);
             return Err(GunError::EmptyPrincipal);
         };
-        self.groups.push_cancel(
+        self.labels.groups.push_cancel(
             &mut record.cancels,
             "membership",
             &row_key,
@@ -547,7 +552,7 @@ impl MeshSeeGraph {
         if speaks_member {
             let ham = record.member.ham_state.saturating_add(1);
             let Some(message) = party_message("member", &record, false, ham, &observed) else {
-                self.groups.memberships.insert(key, record);
+                self.labels.groups.memberships.insert(key, record);
                 return Err(GunError::EmptyPrincipal);
             };
             sign_party(
@@ -561,7 +566,7 @@ impl MeshSeeGraph {
         if speaks_set {
             let ham = record.set_party.ham_state.saturating_add(1);
             let Some(message) = party_message("set", &record, false, ham, &observed) else {
-                self.groups.memberships.insert(key, record);
+                self.labels.groups.memberships.insert(key, record);
                 return Err(GunError::EmptyPrincipal);
             };
             sign_party(
@@ -573,9 +578,9 @@ impl MeshSeeGraph {
             );
         }
         record.membership.ham_state = record.membership.ham_state.saturating_add(1);
-        let enrolled = self.groups.enrolled.clone();
+        let enrolled = self.labels.groups.enrolled.clone();
         record.publish(&enrolled);
-        self.groups.memberships.insert(key, record);
+        self.labels.groups.memberships.insert(key, record);
         Ok(())
     }
 
@@ -689,7 +694,7 @@ impl MeshSeeGraph {
         if let Some(reason) = closed_reason(object) {
             return closed(reason, hint, hop);
         }
-        let Some((object_id, object_owner)) = self.object_record(object) else {
+        let Some((object_id, object_owner)) = self.labels.object_record(object) else {
             return closed(crate::MESH_REASON_MISSING, hint, hop);
         };
         let object_id = object_id.to_string();
@@ -721,7 +726,7 @@ impl MeshSeeGraph {
             let reason = if edge.signed_stated == 0
                 || !verified_cancel_ids(
                     &edge.cancels,
-                    &self.groups.enrolled,
+                    &self.labels.groups.enrolled,
                     "object-set",
                     &object_set_key(&object_id),
                     |signer| principals_match(signer, &edge.object_owner),
@@ -810,7 +815,9 @@ impl MeshSeeGraph {
             if named {
                 return finish(false, crate::MESH_REASON_MISSING.into());
             }
-            let dest = self.check_see(object, accessor, now, hint, hop);
+            let dest = self
+                .labels
+                .check_see_label(object, accessor, now, hint, hop);
             if dest.allowed && payload.live_at(now.0) {
                 return finish(true, dest.reason);
             }
@@ -865,7 +872,7 @@ impl MeshSeeGraph {
         {
             return true;
         }
-        self.groups.memberships.values().any(|record| {
+        self.labels.groups.memberships.values().any(|record| {
             record.removed
                 && record.membership.predicate == current_predicate
                 && record.membership.set_id == current_set
@@ -877,7 +884,7 @@ impl MeshSeeGraph {
         let Some(id) = acl_principal_key(principal) else {
             return Err(GunError::SignerNotEnrolled);
         };
-        let Some(key) = self.groups.enrolled.get(&id) else {
+        let Some(key) = self.labels.groups.enrolled.get(&id) else {
             return Err(GunError::SignerNotEnrolled);
         };
         if secret.verify_key() != *key {
@@ -911,6 +918,7 @@ impl MeshSeeGraph {
         object: &str,
     ) -> Result<(String, String), GunError> {
         let (object_id, object_owner) = self
+            .labels
             .object_record(object)
             .ok_or(GunError::ObjectNotInGraph)?;
         if !principals_match(object_owner, owner) {
@@ -929,13 +937,14 @@ impl MeshSeeGraph {
         secret: &IssuerSecret,
     ) {
         let key = object_set_key(object_id);
-        let previous = self.groups.object_sets.get(&key);
+        let previous = self.labels.groups.object_sets.get(&key);
         let ham_state = previous
             .map(|r| r.name.ham_state.saturating_add(1))
             .unwrap_or(1);
         let mut cancels = previous.map(|r| r.cancels.clone()).unwrap_or_default();
         if stated == 0 {
-            self.groups
+            self.labels
+                .groups
                 .push_cancel(&mut cancels, "object-set", &key, object_owner, secret);
         }
         let observed = cancel_ids(&cancels);
@@ -958,29 +967,29 @@ impl MeshSeeGraph {
             return;
         };
         record.signature = secret.sign(&message);
-        let enrolled = self.groups.enrolled.clone();
+        let enrolled = self.labels.groups.enrolled.clone();
         refresh_object(&mut record, &enrolled);
-        self.groups.object_sets.insert(key, record);
+        self.labels.groups.object_sets.insert(key, record);
     }
 
     fn object_set_grantable(&self, record: &ObjectSetRecord) -> bool {
-        object_live(record, &self.groups.enrolled)
+        object_live(record, &self.labels.groups.enrolled)
     }
 
     fn membership_grantable(&self, record: &MembershipRecord) -> bool {
-        record.is_grantable(&self.groups.enrolled)
+        record.is_grantable(&self.labels.groups.enrolled)
     }
 
     fn object_set_record(&self, object: &str) -> Option<&ObjectSetRecord> {
         if object_id_rejected(object) {
             return None;
         }
-        if let Some((id, _)) = self.object_record(object) {
-            if let Some(found) = self.groups.object_sets.get(&object_set_key(id)) {
+        if let Some((id, _)) = self.labels.object_record(object) {
+            if let Some(found) = self.labels.groups.object_sets.get(&object_set_key(id)) {
                 return Some(found);
             }
         }
-        self.groups.object_sets.get(&object_set_key(object))
+        self.labels.groups.object_sets.get(&object_set_key(object))
     }
 
     fn membership_record(
@@ -992,7 +1001,8 @@ impl MeshSeeGraph {
         let Ok(canonical) = canonical_set_id(ascii_trim(set_id)) else {
             return None;
         };
-        self.groups
+        self.labels
+            .groups
             .memberships
             .get(&membership_key_parts(predicate, &canonical, accessor)?)
     }
@@ -1672,8 +1682,8 @@ mod tests {
         let mut graph = MeshSeeGraph::new();
         graph.enroll_signer("0xalice", alice.verify_key()).unwrap();
         graph.enroll_signer("0xbob", bob.verify_key()).unwrap();
-        graph.put_object("doc", "0xalice");
-        graph.put_object("other", "0xalice");
+        graph.labels.put_object("doc", "0xalice");
+        graph.labels.put_object("other", "0xalice");
         graph
             .record_set_owner("0xalice", GroupPredicate::SameGroup, "0xalice/ops")
             .unwrap();
@@ -1731,15 +1741,27 @@ mod tests {
             membership_key_parts(GroupPredicate::SameGroup, "0xalice/ops", "0xbob").unwrap();
         let carol_key =
             membership_key_parts(GroupPredicate::SameGroup, "0xalice/ops", "0xcarol").unwrap();
-        let membership = source.groups.memberships.get(&bob_key).unwrap().clone();
-        source.groups.memberships.insert(carol_key, membership);
+        let membership = source
+            .labels
+            .groups
+            .memberships
+            .get(&bob_key)
+            .unwrap()
+            .clone();
+        source
+            .labels
+            .groups
+            .memberships
+            .insert(carol_key, membership);
         let edge = source
+            .labels
             .groups
             .object_sets
             .get(&object_set_key("doc"))
             .unwrap()
             .clone();
         source
+            .labels
             .groups
             .object_sets
             .insert(object_set_key("other"), edge);
@@ -1749,7 +1771,7 @@ mod tests {
         assert!(see(&source, "doc", "0xbob").allowed);
 
         let mut dest = enrolled(&alice, &bob);
-        dest.merge_from(&source);
+        dest.labels.merge_from(&source.labels);
         assert!(dest
             .membership(GroupPredicate::SameGroup, "0xalice/ops", "0xcarol")
             .is_none());
@@ -1781,6 +1803,7 @@ mod tests {
             .unwrap();
         let key = membership_key_parts(GroupPredicate::SameGroup, "0xalice/ops", "0xbob").unwrap();
         cancelled
+            .labels
             .groups
             .memberships
             .get_mut(&key)
@@ -1789,11 +1812,11 @@ mod tests {
             .signature = AttestationSig::empty();
 
         let mut from_cancel = enrolled(&alice, &bob);
-        from_cancel.merge_from(&cancelled);
-        from_cancel.merge_from(&live_row);
+        from_cancel.labels.merge_from(&cancelled.labels);
+        from_cancel.labels.merge_from(&live_row.labels);
         let mut from_live = enrolled(&alice, &bob);
-        from_live.merge_from(&live_row);
-        from_live.merge_from(&cancelled);
+        from_live.labels.merge_from(&live_row.labels);
+        from_live.labels.merge_from(&cancelled.labels);
         for graph in [&from_cancel, &from_live] {
             let result = see(graph, "doc", "0xbob");
             assert!(!result.allowed);
@@ -1823,6 +1846,7 @@ mod tests {
             .unwrap();
         let key = membership_key_parts(GroupPredicate::SameGroup, "0xalice/ops", "0xbob").unwrap();
         let real = cancelled
+            .labels
             .groups
             .memberships
             .get(&key)
@@ -1852,6 +1876,7 @@ mod tests {
         alias.id.0[0] ^= 0xff;
         let mut attacked = live_row.clone();
         attacked
+            .labels
             .groups
             .memberships
             .get_mut(&key)
@@ -1859,9 +1884,10 @@ mod tests {
             .cancels
             .insert(alias.id, alias);
         let mut dest = enrolled(&alice, &bob);
-        dest.merge_from(&attacked);
+        dest.labels.merge_from(&attacked.labels);
         assert!(see(&dest, "doc", "0xbob").allowed);
         assert!(dest
+            .labels
             .groups
             .memberships
             .get(&key)
@@ -1870,13 +1896,13 @@ mod tests {
             .is_empty());
 
         let mut sunk = enrolled(&alice, &bob);
-        sunk.merge_from(&cancelled);
+        sunk.labels.merge_from(&cancelled.labels);
         let denied = see(&sunk, "doc", "0xbob");
         assert!(!denied.allowed);
         assert_eq!(denied.reason, crate::MESH_REASON_CANCELLED);
 
         let mut orphan = live_row.clone();
-        orphan.groups.set_owners.clear();
+        orphan.labels.groups.set_owners.clear();
         let missing = see(&orphan, "doc", "0xbob");
         assert!(!missing.allowed);
         assert_eq!(missing.reason, crate::MESH_REASON_MISSING);
@@ -1887,12 +1913,13 @@ mod tests {
         let (alice, bob) = pair();
         let mut graph = enrolled(&alice, &bob);
         graph
+            .labels
             .state_see_grant(
                 "0xalice",
                 crate::mesh::MeshSeeGrant::live("doc", "0xbob", 0, 80),
             )
             .unwrap();
-        graph.groups.object_sets.insert(
+        graph.labels.groups.object_sets.insert(
             object_set_key("doc"),
             ObjectSetRecord {
                 name: ObjectSetName {
@@ -1957,6 +1984,7 @@ mod tests {
 
         let mut named = live(&alice, &bob);
         named
+            .labels
             .state_see_grant(
                 "0xalice",
                 crate::mesh::MeshSeeGrant::live("doc", "0xbob", 0, 80),
@@ -2000,6 +2028,7 @@ mod tests {
         .unwrap();
         let key = membership_key_parts(GroupPredicate::SameGroup, "0xalice/ops", "0xbob").unwrap();
         let first = *base
+            .labels
             .groups
             .memberships
             .get(&key)
@@ -2010,7 +2039,7 @@ mod tests {
             .unwrap();
 
         let mut restated = live(&alice, &bob);
-        restated.merge_from(&base);
+        restated.labels.merge_from(&base.labels);
         restated
             .state_membership(
                 "0xbob",
@@ -2038,9 +2067,9 @@ mod tests {
         );
 
         let mut newer = live(&alice, &bob);
-        newer.merge_from(&base);
+        newer.labels.merge_from(&base.labels);
         {
-            let row = newer.groups.memberships.get_mut(&key).unwrap();
+            let row = newer.labels.groups.memberships.get_mut(&key).unwrap();
             let again = row.cancels.get(&first).unwrap().clone();
             row.cancels.insert(first, again);
             assert_eq!(row.cancels.len(), 1);
@@ -2054,7 +2083,7 @@ mod tests {
                 &alice,
             )
             .unwrap();
-        let issued = newer.groups.memberships.get(&key).unwrap();
+        let issued = newer.labels.groups.memberships.get(&key).unwrap();
         assert_eq!(issued.cancels.len(), 2);
         let next = issued
             .cancels
@@ -2064,21 +2093,21 @@ mod tests {
         assert_eq!(next.prior, canonical_prior(&BTreeSet::from([first])));
         assert!(cancel_verifies(
             next,
-            &newer.groups.enrolled,
+            &newer.labels.groups.enrolled,
             "membership",
             &membership_row_key(issued).expect("membership accessor parses"),
             |signer| membership_cancel_signer(issued, signer),
         ));
 
         let mut from_newer = newer.clone();
-        from_newer.merge_from(&restated);
+        from_newer.labels.merge_from(&restated.labels);
         let mut from_restated = restated.clone();
-        from_restated.merge_from(&newer);
+        from_restated.labels.merge_from(&newer.labels);
         for graph in [&from_newer, &from_restated] {
             let denied = see(graph, "doc", "0xbob");
             assert!(!denied.allowed);
             assert_eq!(denied.reason, crate::MESH_REASON_CANCELLED);
-            let kept = graph.groups.memberships.get(&key).unwrap();
+            let kept = graph.labels.groups.memberships.get(&key).unwrap();
             assert_eq!(kept.cancels.len(), 2);
             assert!(kept.cancels.contains_key(&first));
             assert_eq!(
@@ -2095,6 +2124,7 @@ mod tests {
         cleared.clear_object_set("0xalice", "doc", &alice).unwrap();
         let edge_key = object_set_key("doc");
         let edge_id = *cleared
+            .labels
             .groups
             .object_sets
             .get(&edge_key)
@@ -2104,7 +2134,7 @@ mod tests {
             .next()
             .unwrap();
         let mut renamed = live(&alice, &bob);
-        renamed.merge_from(&cleared);
+        renamed.labels.merge_from(&cleared.labels);
         renamed
             .name_object_set(
                 "0xalice",
@@ -2117,9 +2147,14 @@ mod tests {
         assert_eq!(renamed.object_set("doc").unwrap().stated, 1);
 
         let mut cleared_again = live(&alice, &bob);
-        cleared_again.merge_from(&cleared);
+        cleared_again.labels.merge_from(&cleared.labels);
         {
-            let edge = cleared_again.groups.object_sets.get_mut(&edge_key).unwrap();
+            let edge = cleared_again
+                .labels
+                .groups
+                .object_sets
+                .get_mut(&edge_key)
+                .unwrap();
             let again = edge.cancels.get(&edge_id).unwrap().clone();
             edge.cancels.insert(edge_id, again);
             assert_eq!(edge.cancels.len(), 1);
@@ -2127,7 +2162,12 @@ mod tests {
         cleared_again
             .clear_object_set("0xalice", "doc", &alice)
             .unwrap();
-        let issued_edge = cleared_again.groups.object_sets.get(&edge_key).unwrap();
+        let issued_edge = cleared_again
+            .labels
+            .groups
+            .object_sets
+            .get(&edge_key)
+            .unwrap();
         assert_eq!(issued_edge.cancels.len(), 2);
         assert_eq!(
             issued_edge
@@ -2140,15 +2180,15 @@ mod tests {
         );
 
         let mut from_clear = cleared_again.clone();
-        from_clear.merge_from(&renamed);
+        from_clear.labels.merge_from(&renamed.labels);
         let mut from_rename = renamed.clone();
-        from_rename.merge_from(&cleared_again);
+        from_rename.labels.merge_from(&cleared_again.labels);
         for graph in [&from_clear, &from_rename] {
             assert_eq!(graph.object_set("doc").unwrap().stated, 0);
             let denied = see(graph, "doc", "0xbob");
             assert!(!denied.allowed);
             assert_eq!(denied.reason, crate::MESH_REASON_CANCELLED);
-            let kept = graph.groups.object_sets.get(&edge_key).unwrap();
+            let kept = graph.labels.groups.object_sets.get(&edge_key).unwrap();
             assert_eq!(kept.cancels.len(), 2);
             assert_eq!(
                 kept.cancels

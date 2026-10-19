@@ -13,8 +13,8 @@ use sociacl_core::{
 };
 use sociacl_gun::{
     accept_hint_bytes, cancel as gun_cancel, check as gun_check,
-    check_see_grant as gun_check_see_grant, elect_from_hint, encode_key, remint as gun_remint,
-    GunSoul, HandoffHint, IdentitySeeGrant, UrlLeaf,
+    check_see_grant as gun_check_see_grant, elect_from_hint, remint as gun_remint, GunSoul,
+    HandoffHint, IdentitySeeGrant, UrlLeaf,
 };
 
 #[allow(non_camel_case_types)]
@@ -1909,21 +1909,6 @@ pub extern "C" fn sociacl_gun_item_soul(
 }
 
 #[no_mangle]
-pub extern "C" fn sociacl_gun_encode_key(
-    id: *const c_char,
-    dst: *mut c_char,
-    dst_len: usize,
-) -> c_int {
-    let Some(id) = cstr(id) else {
-        return -1;
-    };
-    if dst.is_null() || dst_len == 0 {
-        return -1;
-    }
-    write_exact(dst, dst_len, &encode_key(id))
-}
-
-#[no_mangle]
 pub extern "C" fn sociacl_gun_normalize_url(
     url: *const c_char,
     dst: *mut c_char,
@@ -2991,35 +2976,16 @@ mod tests {
             .to_string_lossy()
             .into_owned();
         assert_eq!(item_soul, "s3rch/items/rss3:act/1~2x");
-        let dotted = ".".repeat(128);
-        let mut small = [0i8; 256];
-        assert_eq!(
-            sociacl_gun_encode_key(c(&dotted).as_ptr(), small.as_mut_ptr(), small.len()),
-            -1
-        );
-        let mut exact = vec![0i8; 257];
-        assert_eq!(
-            sociacl_gun_encode_key(c(&dotted).as_ptr(), exact.as_mut_ptr(), exact.len()),
-            0
-        );
-        let encoded = unsafe { CStr::from_ptr(exact.as_ptr()) }
-            .to_string_lossy()
-            .into_owned();
-        assert_eq!(encoded, "~1".repeat(128));
-        assert_eq!(
-            sociacl_gun_item_soul(c(&dotted).as_ptr(), small.as_mut_ptr(), small.len()),
-            -1
-        );
-        let mut soul_buf = vec![0i8; 12 + 256 + 1];
-        assert_eq!(
-            sociacl_gun_item_soul(c(&dotted).as_ptr(), soul_buf.as_mut_ptr(), soul_buf.len()),
-            0
-        );
-        let expanded = unsafe { CStr::from_ptr(soul_buf.as_ptr()) }
-            .to_string_lossy()
-            .into_owned();
-        assert_eq!(expanded, format!("s3rch/items/{encoded}"));
         sociacl_plane_free(plane);
+    }
+
+    #[test]
+    fn gun_key_escape_symbol_is_absent() {
+        let header = include_str!("../include/sociacl.h");
+        let source = include_str!("lib.rs");
+        let name = ["encode", "_key"].concat();
+        assert!(!header.contains(&name), "{name} in header");
+        assert!(!source.contains(&name), "{name} in source");
     }
 
     #[test]

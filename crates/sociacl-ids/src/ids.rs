@@ -213,8 +213,35 @@ fn valid_kind(s: &str) -> bool {
         && s.bytes()
             .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
 }
+fn bound_parts(s: &str) -> Option<(&str, &str, &str)> {
+    let (kind, rest) = s.split_once('_')?;
+    let (key, nonce) = rest.rsplit_once('_')?;
+    Some((kind, key, nonce))
+}
+fn bound_shape(kind: &str, key: &str, nonce: &str) -> bool {
+    valid_kind(&kind.to_ascii_lowercase())
+        && key.len() == 130
+        && key
+            .get(..2)
+            .is_some_and(|tag| tag.eq_ignore_ascii_case("p_"))
+        && key[2..].bytes().all(|c| c.is_ascii_hexdigit())
+        && nonce.len() == 32
+        && nonce.bytes().all(|c| c.is_ascii_hexdigit())
+}
 pub fn parse_object_id(s: &str) -> Result<ObjectId, Reason> {
-    text(s, 160)?;
+    text(s, 180)?;
+    if let Some((kind, key, nonce)) = bound_parts(s) {
+        if bound_shape(kind, key, nonce) {
+            if s != s.to_ascii_lowercase() {
+                return Err(Reason::NonCanonical);
+            }
+            if ["claim", "ext", "post", "member", "objset"].contains(&kind) {
+                return Err(Reason::ReservedKind);
+            }
+            key_principal(key)?;
+            return Ok(ObjectId(s.into()));
+        }
+    }
     if let Some((kind, raw)) = s.split_once('_') {
         if ["claim", "ext"].contains(&kind) && is_hex(raw, 64) {
             return Ok(ObjectId(s.into()));
@@ -428,8 +455,19 @@ pub fn format_source_path_key(s: &SourceKey) -> PathKey {
 pub fn object_key(o: &ObjectId) -> PathKey {
     PathKey(o.0.clone())
 }
+/// Genesis principal embedded in a bound object id.
+/// An id with no embedded principal is `bad-template`.
+pub fn object_principal(object: &ObjectId) -> Result<PrincipalId, Reason> {
+    let Some((kind, key, nonce)) = bound_parts(object.as_ref()) else {
+        return Err(Reason::BadTemplate);
+    };
+    if !bound_shape(kind, key, nonce) || object.as_ref() != object.as_ref().to_ascii_lowercase() {
+        return Err(Reason::BadTemplate);
+    }
+    key_principal(key)
+}
 pub fn parse_path_key(s: &str) -> Result<PathKey, Reason> {
-    text(s, 160)?;
+    text(s, 180)?;
     if s.starts_with("p_") {
         parse_principal_key(s)?;
     } else if s.strip_prefix("w_").is_some_and(|r| is_hex(r, 40))
@@ -616,13 +654,14 @@ fn parse_soul_value(s: &str) -> Result<Soul, Reason> {
     parse_soul(s)?;
     Ok(Soul(s.into()))
 }
-pub fn mint_object_id(kind: &str) -> Result<MintedObjectId, Reason> {
-    mint_object_id_with(kind, |bytes| {
+pub fn mint_object_id(kind: &str, creator: &PrincipalId) -> Result<MintedObjectId, Reason> {
+    mint_object_id_with(kind, creator, |bytes| {
         getrandom::getrandom(bytes).map_err(|_| Reason::RngFailure)
     })
 }
 pub fn mint_object_id_with(
     kind: &str,
+    creator: &PrincipalId,
     rng: impl FnOnce(&mut [u8; 16]) -> Result<(), Reason>,
 ) -> Result<MintedObjectId, Reason> {
     text(kind, 16)?;
@@ -634,7 +673,12 @@ pub fn mint_object_id_with(
     }
     let mut bytes = [0; 16];
     rng(&mut bytes)?;
-    Ok(MintedObjectId(ObjectId(format!("{kind}_{}", hex(&bytes)))))
+    let key = format_principal_key(creator);
+    Ok(MintedObjectId(ObjectId(format!(
+        "{kind}_{}_{}",
+        key.as_ref(),
+        hex(&bytes)
+    ))))
 }
 pub fn derive_claim_id(claim: &str) -> Result<ObjectId, Reason> {
     text(claim, 2048)?;

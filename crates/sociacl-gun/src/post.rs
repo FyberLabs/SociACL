@@ -19,10 +19,10 @@ use std::cmp::Ordering;
 
 use sociacl_core::{NodeId, Timestamp};
 
-use crate::mesh::{accessor_names, object_names};
-use crate::soul::{
-    acl_key, acl_principal_key, ascii_trim, object_id_rejected, S3RCH_ACL, S3RCH_ROOT,
+use crate::legacy::{
+    accessor_names, acl_key, acl_principal_key, ascii_trim, object_id_rejected, object_names,
 };
+use crate::soul::{S3RCH_ACL, S3RCH_ROOT};
 use crate::{
     GunError, MeshCheckResult, MeshSeeGraph, MESH_REASON_CANCELLED, MESH_REASON_MISSING,
     MESH_REASON_OWNER,
@@ -283,8 +283,9 @@ fn same_post_row(edge: &GunPostEdge, object: &str, accessor: &str, owner: &str) 
 
 impl MeshSeeGraph {
     pub fn post_grants(&self, object: &str) -> Vec<&MeshPostGrant> {
-        let owner = self.owner_of(object).unwrap_or("");
-        self.posts
+        let owner = self.labels.owner_of(object).unwrap_or("");
+        self.labels
+            .posts
             .values()
             .filter(|edge| {
                 post_row_in_range(edge)
@@ -297,14 +298,11 @@ impl MeshSeeGraph {
     }
 
     pub fn post_edge(&self, object: &str, accessor: &str) -> Option<&GunPostEdge> {
-        let owner = self.owner_of(object).unwrap_or("");
-        self.posts
+        let owner = self.labels.owner_of(object).unwrap_or("");
+        self.labels
+            .posts
             .values()
             .find(|edge| post_row_in_range(edge) && same_post_row(edge, object, accessor, owner))
-    }
-
-    fn canonical_post_object(&self, object: &str) -> String {
-        self.canonical_object_id(object)
     }
 
     /// In-range rows that name this object, accessor, and owner, folded
@@ -315,7 +313,8 @@ impl MeshSeeGraph {
         accessor: &str,
         owner: &str,
     ) -> Option<GunPostEdge> {
-        self.posts
+        self.labels
+            .posts
             .values()
             .filter(|edge| post_row_in_range(edge) && same_post_row(edge, object, accessor, owner))
             .cloned()
@@ -330,6 +329,7 @@ impl MeshSeeGraph {
     ) -> Result<(), GunError> {
         let owner = ascii_trim(owner.as_ref());
         let (stored_id, object_owner) = self
+            .labels
             .object_record(&grant.object)
             .map(|(id, object_owner)| (id.to_string(), object_owner.to_string()))
             .ok_or(GunError::ObjectNotInGraph)?;
@@ -367,6 +367,7 @@ impl MeshSeeGraph {
         }
         let accessor = ascii_trim(accessor.as_ref());
         let (stored_id, object_owner) = self
+            .labels
             .object_record(object)
             .map(|(id, object_owner)| (id.to_string(), object_owner.to_string()))
             .ok_or(GunError::ObjectNotInGraph)?;
@@ -409,6 +410,65 @@ impl MeshSeeGraph {
     /// must be that object's current owner. A row that arrives earlier
     /// is not retained.
     pub fn merge_post_edge(&mut self, incoming: GunPostEdge) {
+        self.labels.merge_post_edge(incoming);
+    }
+
+    /// Allow-post. See must pass. A post row alone does not allow.
+    /// The object owner may post. Hop and hint are echoed and ignored
+    /// for `allowed`.
+    pub fn check_post(
+        &self,
+        object: impl AsRef<str>,
+        accessor: impl AsRef<str>,
+        now: Timestamp,
+        hint: Option<&crate::HandoffHint>,
+        hop: Option<&crate::HopFactor>,
+    ) -> MeshCheckResult {
+        let see = self
+            .labels
+            .check_see_label(object.as_ref(), accessor.as_ref(), now, hint, hop);
+        if !see.allowed {
+            return see;
+        }
+        if see.reason == MESH_REASON_OWNER {
+            return see;
+        }
+        let object = self.labels.canonical_object_id(object.as_ref());
+        let accessor = ascii_trim(accessor.as_ref());
+        let owner = self.labels.owner_of(&object).unwrap_or("");
+        if let Some(edge) = self.post_edge(&object, accessor) {
+            let names = edge.grant.names_object(&object)
+                && edge.grant.names_accessor(accessor)
+                && accessor_names(&edge.owner, owner);
+            if names && edge.grant.live_at(now) {
+                return MeshCheckResult {
+                    allowed: true,
+                    reason: MESH_REASON_POST.into(),
+                    hint: see.hint,
+                    hop: see.hop,
+                };
+            }
+            if names && !edge.grant.is_stated() {
+                return MeshCheckResult {
+                    allowed: false,
+                    reason: MESH_REASON_CANCELLED.into(),
+                    hint: see.hint,
+                    hop: see.hop,
+                };
+            }
+        }
+        MeshCheckResult {
+            allowed: false,
+            reason: MESH_REASON_MISSING.into(),
+            hint: see.hint,
+            hop: see.hop,
+        }
+    }
+}
+
+impl crate::mesh::LabelGraph {
+    /// HAM-merge an incoming post node onto the label graph.
+    pub(crate) fn merge_post_edge(&mut self, incoming: GunPostEdge) {
         if !post_row_in_range(&incoming) || !post_edge_parsable(&incoming) {
             return;
         }
@@ -451,62 +511,12 @@ impl MeshSeeGraph {
             None => incoming,
         };
         let mut merged = merged.canonical();
-        merged.grant.object = self.canonical_post_object(&merged.grant.object);
+        merged.grant.object = self.canonical_object_id(&merged.grant.object);
         merged = merged.canonical();
         if !post_row_in_range(&merged) {
             return;
         }
         let key = merged.soul.clone();
         self.posts.insert(key, merged);
-    }
-
-    /// Allow-post. See must pass. A post row alone does not allow.
-    /// The object owner may post. Hop and hint are echoed and ignored
-    /// for `allowed`.
-    pub fn check_post(
-        &self,
-        object: impl AsRef<str>,
-        accessor: impl AsRef<str>,
-        now: Timestamp,
-        hint: Option<&crate::HandoffHint>,
-        hop: Option<&crate::HopFactor>,
-    ) -> MeshCheckResult {
-        let see = self.check_see(object.as_ref(), accessor.as_ref(), now, hint, hop);
-        if !see.allowed {
-            return see;
-        }
-        if see.reason == MESH_REASON_OWNER {
-            return see;
-        }
-        let object = self.canonical_object_id(object.as_ref());
-        let accessor = ascii_trim(accessor.as_ref());
-        let owner = self.owner_of(&object).unwrap_or("");
-        if let Some(edge) = self.post_edge(&object, accessor) {
-            let names = edge.grant.names_object(&object)
-                && edge.grant.names_accessor(accessor)
-                && accessor_names(&edge.owner, owner);
-            if names && edge.grant.live_at(now) {
-                return MeshCheckResult {
-                    allowed: true,
-                    reason: MESH_REASON_POST.into(),
-                    hint: see.hint,
-                    hop: see.hop,
-                };
-            }
-            if names && !edge.grant.is_stated() {
-                return MeshCheckResult {
-                    allowed: false,
-                    reason: MESH_REASON_CANCELLED.into(),
-                    hint: see.hint,
-                    hop: see.hop,
-                };
-            }
-        }
-        MeshCheckResult {
-            allowed: false,
-            reason: MESH_REASON_MISSING.into(),
-            hint: see.hint,
-            hop: see.hop,
-        }
     }
 }

@@ -48,6 +48,7 @@ pub enum Reason {
     WalletRequired,
     UnwitnessedRetiredKey,
     BadKey,
+    LegacyRow,
 }
 impl fmt::Display for Reason {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

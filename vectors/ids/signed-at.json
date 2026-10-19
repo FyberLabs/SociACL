@@ -131,14 +131,13 @@
       }
     },
     {
-      "name": "present-grant-ignores-attest",
+      "name": "present-grant",
       "operation": "verify-signed-at",
       "input": {
         "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
-        "sig": "Nxf9SDBlCVYfYWP6u315qUJlzODSJ61vdDR4DntErIlXog4NqARJpcnCXBkM4WqgNqKSvmSWD36VPVW10ujssQ",
-        "bytes": "70726573656e742d6772616e742d69676e6f7265732d617474657374",
-        "issuedAt": 1700000000,
-        "attest": "not-a-jws"
+        "sig": "3ReYTMEE4LUBVHM4Wn1_RJRLBJjl7WWjGlqpvWJEHSL8q0Oiufn9YsMTS5a8NPsBFIwTi9bprFtazzKcJ9eX6A",
+        "bytes": "70726573656e742d6772616e74",
+        "issuedAt": 1700000000
       },
       "rotations": [],
       "canonical": {
@@ -312,26 +311,24 @@
       "reason": "unwitnessed-retired-key"
     },
     {
-      "name": "retired-grant-witnessed",
+      "name": "retired-grant",
       "operation": "verify-signed-at",
       "input": {
         "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
         "sig": "TqqNk_fdayqUpJrJygoLTQIjvkwQ5szmGiQhzNlECdJPXeGg27_FTz1hoQecquaVb7uAS63nVZuiiTvdBJLuFg",
         "bytes": "726574697265642d6772616e74",
-        "issuedAt": 1700000010,
-        "attest": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImZpeHR1cmUtMSIsInR5cCI6IkpXVCJ9.eyJ0eXAiOiJzb2NpYWNsLWFjbC1hdHRlc3QtdjEiLCJwcmluY2lwYWwiOiJheGZSOHVFc1FrZjR2T2JsWTZSQThuY0RmWUV0NnpPZzlLRTVSZGlZd3BZLlQtTkM0djRhZjV1TzUtdEtmQS1lRml2T00xZHJNVjdPeTdaQWFEZV9VZlUiLCJyZWNvcmRJZCI6IjVmZGI3YmU0MDU0ODBkMmMwODZjZDY3NDU3M2I5YmRmM2Y5ZjFkZmFlMjljMmRjYTM4YWE5NGQwMTU1OTI5MDkiLCJpYXQiOjE3MDAwMDAwMTAsImV4cCI6MTcwMDAwMDYxMH0.Qbm4rVlu7RkGxp8NRgBx_PyLv4apzXtGlirjQpmW3I_iq8jqFUWZ6APWT7mp3G3-Ecjts1EBecL6MdScFvLSBA"
+        "issuedAt": 1700000010
       },
       "reason": "unwitnessed-retired-key"
     },
     {
-      "name": "retired-request-witnessed",
+      "name": "retired-request",
       "operation": "verify-signed-at",
       "input": {
         "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
         "sig": "1_VjMjeQqmgLQh7QxxSfaV0ApAhdisAPonGljoAMbE0xh-eWA1kZRgRXMsnaXVSPhMnio2OPwImsDohyoPJInQ",
         "bytes": "726574697265642d72657175657374",
-        "issuedAt": 1700000010,
-        "attest": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImZpeHR1cmUtMSIsInR5cCI6IkpXVCJ9.eyJ0eXAiOiJzb2NpYWNsLWFjbC1hdHRlc3QtdjEiLCJwcmluY2lwYWwiOiJheGZSOHVFc1FrZjR2T2JsWTZSQThuY0RmWUV0NnpPZzlLRTVSZGlZd3BZLlQtTkM0djRhZjV1TzUtdEtmQS1lRml2T00xZHJNVjdPeTdaQWFEZV9VZlUiLCJyZWNvcmRJZCI6ImI5NDg2OGVlNTA4OTIwN2RkYjE0NWUzOTc5ODllMmVkZjgzMDM4MDkyNjMyZTUzMTc3MTAwZTZiMmUzMjM1ZjUiLCJpYXQiOjE3MDAwMDAwMTAsImV4cCI6MTcwMDAwMDYxMH0.VFBAw5qyFaDS4W8BAMWrTze4gi7LnJRDgoNoE4fvfYZS_fC21TO7JQI74YIkAse5azTN6kRmN8dbIVgF2nhSnA"
+        "issuedAt": 1700000010
       },
       "reason": "unwitnessed-retired-key"
     },
@@ -347,50 +344,13 @@
       "reason": "unwitnessed-retired-key"
     },
     {
-      "name": "kind-relabel",
-      "operation": "verify-signed-at",
-      "input": {
-        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
-        "sig": "TqqNk_fdayqUpJrJygoLTQIjvkwQ5szmGiQhzNlECdJPXeGg27_FTz1hoQecquaVb7uAS63nVZuiiTvdBJLuFg",
-        "bytes": "726574697265642d6772616e74",
-        "issuedAt": 1700000010,
-        "attest": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImZpeHR1cmUtMSIsInR5cCI6IkpXVCJ9.eyJ0eXAiOiJzb2NpYWNsLWFjbC1hdHRlc3QtdjEiLCJwcmluY2lwYWwiOiJheGZSOHVFc1FrZjR2T2JsWTZSQThuY0RmWUV0NnpPZzlLRTVSZGlZd3BZLlQtTkM0djRhZjV1TzUtdEtmQS1lRml2T00xZHJNVjdPeTdaQWFEZV9VZlUiLCJyZWNvcmRJZCI6IjVmZGI3YmU0MDU0ODBkMmMwODZjZDY3NDU3M2I5YmRmM2Y5ZjFkZmFlMjljMmRjYTM4YWE5NGQwMTU1OTI5MDkiLCJpYXQiOjE3MDAwMDAwMTAsImV4cCI6MTcwMDAwMDYxMH0.Qbm4rVlu7RkGxp8NRgBx_PyLv4apzXtGlirjQpmW3I_iq8jqFUWZ6APWT7mp3G3-Ecjts1EBecL6MdScFvLSBA"
-      },
-      "reason": "unwitnessed-retired-key"
-    },
-    {
-      "name": "retired-cancel-witnessed",
-      "operation": "verify-signed-at",
-      "input": {
-        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
-        "sig": "ETyLYHsK9emIJ2eM-xYDe-LIH73HRMJYA2yJVVGrggnCe1gfYiQ-AIDzQA3sWwqI6X5hZSwa0J0dBntjeAaZyA",
-        "bytes": "726574697265642d63616e63656c2d7769746e6573736564",
-        "issuedAt": 1700000010,
-        "attest": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImZpeHR1cmUtMSIsInR5cCI6IkpXVCJ9.eyJ0eXAiOiJzb2NpYWNsLWFjbC1hdHRlc3QtdjEiLCJwcmluY2lwYWwiOiJheGZSOHVFc1FrZjR2T2JsWTZSQThuY0RmWUV0NnpPZzlLRTVSZGlZd3BZLlQtTkM0djRhZjV1TzUtdEtmQS1lRml2T00xZHJNVjdPeTdaQWFEZV9VZlUiLCJyZWNvcmRJZCI6IjFmNzg4ODY2NDdlZjE0NDlhNGUwNjU4YjlmMmNkMTY3MDMxZWJkMDFmYTU4ZjAwNmNjNDZhMTYwZGMxYzUxYzMiLCJpYXQiOjE3MDAwMDAwMTAsImV4cCI6MTcwMDAwMDYxMH0.Kkzbvq6pfZvk1CtQk9KCfWJJwh1Zn0PLu-39BGSgRaLlRSodX2Z3s6esa97H_vECfVJSlWrsCngatc8waA2UIg"
-      },
-      "reason": "unwitnessed-retired-key"
-    },
-    {
-      "name": "retired-cancel-exp-900",
-      "operation": "verify-signed-at",
-      "input": {
-        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
-        "sig": "bcVfxrL0T0HTzDykWMRd2iuCE2O8VCWTuP3SHlBlZskT9sKrouGdbdOZ7b726jK3KWg1fKXOYguJhmufP_9mvA",
-        "bytes": "726574697265642d63616e63656c2d6578702d393030",
-        "issuedAt": 1700000010,
-        "attest": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImZpeHR1cmUtMSIsInR5cCI6IkpXVCJ9.eyJ0eXAiOiJzb2NpYWNsLWFjbC1hdHRlc3QtdjEiLCJwcmluY2lwYWwiOiJheGZSOHVFc1FrZjR2T2JsWTZSQThuY0RmWUV0NnpPZzlLRTVSZGlZd3BZLlQtTkM0djRhZjV1TzUtdEtmQS1lRml2T00xZHJNVjdPeTdaQWFEZV9VZlUiLCJyZWNvcmRJZCI6IjY1ZjlkOTZmYmUyMzU4MWMwOWZhZGRkNTdmMWYwNGM3NTNjNmMyMzQ4ODA5YTRjNDFiNWU0MzNhY2ZhZDUwMjciLCJpYXQiOjE3MDAwMDAwMTAsImV4cCI6MTcwMDAwMDkxMH0.qtBhqGEA7xVabAglJVuP9JtkU1SCm95hUa5eGf5RBnUFqZaYUIjexwvy4aIyqZeCwiaD-sliNYlcL-DxGWvd_w"
-      },
-      "reason": "unwitnessed-retired-key"
-    },
-    {
       "name": "issuedAt-equals-rotation-time",
       "operation": "verify-signed-at",
       "input": {
         "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
         "sig": "Zl_9hxq4t8LrtXbLpE_pyz9HeWJ-KM8sdT-YgJCcjIo7zyDXfJSpM10xHi78FCfywUt5YFWRqqbi_jJDVgUiMA",
         "bytes": "69737375656441742d657175616c732d726f746174696f6e2d74696d65",
-        "issuedAt": 1700000030,
-        "attest": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImZpeHR1cmUtMSIsInR5cCI6IkpXVCJ9.eyJ0eXAiOiJzb2NpYWNsLWFjbC1hdHRlc3QtdjEiLCJwcmluY2lwYWwiOiJheGZSOHVFc1FrZjR2T2JsWTZSQThuY0RmWUV0NnpPZzlLRTVSZGlZd3BZLlQtTkM0djRhZjV1TzUtdEtmQS1lRml2T00xZHJNVjdPeTdaQWFEZV9VZlUiLCJyZWNvcmRJZCI6ImM0MDEyNzU1Y2ZjNDY0MTYxOTQwYTJjODVmMDA1MjAzNjQyNGY4NTVlNDJkNzBkYWRlMDNlZDI5YmQzMWE1ZjUiLCJpYXQiOjE3MDAwMDAwMzAsImV4cCI6MTcwMDAwMDYzMH0.p1VgQeLtAIaDX7GQNT_lF4tOfswFgdFe9FTpmunfTg-0XjCPH9PJ6u_YLZwjytISix4PD5OZ-IcJJs-dDEFuvQ"
+        "issuedAt": 1700000030
       },
       "reason": "unwitnessed-retired-key"
     },
@@ -535,78 +495,6 @@
         "clockSkewSeconds": "x"
       },
       "reason": "bad-record"
-    },
-    {
-      "name": "retired-cancel-bad-jws",
-      "operation": "verify-signed-at",
-      "input": {
-        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
-        "sig": "23WwndLbGGkVyW6CJpoaMiIrUrrUCZQb4gzO0n6lwxvT1RYIGMw4lMiGrRzIbyO_WfslR69yUZhegdynI3TTEg",
-        "bytes": "6261642d6a7773",
-        "issuedAt": 1700000010,
-        "attest": "a.b.c"
-      },
-      "reason": "unwitnessed-retired-key"
-    },
-    {
-      "name": "retired-cancel-witness-wrong-recordId",
-      "operation": "verify-signed-at",
-      "input": {
-        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
-        "sig": "b5pEXAmh9CR0rp_i7BA_5FmsaGx98DmS4yei9fR2aQhvmjUF4gr8r429FlDFAn9GiWdkdXzCQ2_V48sn3o15QA",
-        "bytes": "77726f6e672d7265636f7264",
-        "issuedAt": 1700000010,
-        "attest": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImZpeHR1cmUtMSIsInR5cCI6IkpXVCJ9.eyJ0eXAiOiJzb2NpYWNsLWFjbC1hdHRlc3QtdjEiLCJwcmluY2lwYWwiOiJheGZSOHVFc1FrZjR2T2JsWTZSQThuY0RmWUV0NnpPZzlLRTVSZGlZd3BZLlQtTkM0djRhZjV1TzUtdEtmQS1lRml2T00xZHJNVjdPeTdaQWFEZV9VZlUiLCJyZWNvcmRJZCI6IjAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAiLCJpYXQiOjE3MDAwMDAwMTAsImV4cCI6MTcwMDAwMDYxMH0.-uojD5C2OjdHK7WwR2lbhtNIWZqqS81ij3i1sUkqM7v0OHljuxyeaKs6KKmEO3QaW_uFbrvZ2Rt9slMgDn45hA"
-      },
-      "reason": "unwitnessed-retired-key"
-    },
-    {
-      "name": "retired-cancel-witness-iat-mismatch",
-      "operation": "verify-signed-at",
-      "input": {
-        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
-        "sig": "V2ZIp1DT2Yt4zEo9MS9p8X3OykdTS0DuQy766URaHFvvsR77XEGaakY9zglYoxhOdCk-r2xd44cB5M4B_9QyVQ",
-        "bytes": "6961742d6d69736d61746368",
-        "issuedAt": 1700000010,
-        "attest": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImZpeHR1cmUtMSIsInR5cCI6IkpXVCJ9.eyJ0eXAiOiJzb2NpYWNsLWFjbC1hdHRlc3QtdjEiLCJwcmluY2lwYWwiOiJheGZSOHVFc1FrZjR2T2JsWTZSQThuY0RmWUV0NnpPZzlLRTVSZGlZd3BZLlQtTkM0djRhZjV1TzUtdEtmQS1lRml2T00xZHJNVjdPeTdaQWFEZV9VZlUiLCJyZWNvcmRJZCI6IjEwMmRmMjk0NjNmNjc1YTZkNzFmNzgwZmEyZGJiMWRiN2IwZDkyZjI1NWIxZTNjMzAyM2IyYWExNTJlNDg5NTMiLCJpYXQiOjE3MDAwMDAwMDksImV4cCI6MTcwMDAwMDYxMH0.c6fXAg0R-eiD1SqRzBMmyNOdbodw_QHuNq-koqVLFyTVrob-HPzclZj1OInPNcHJ99MagoKwzky8cp7kJW8x7g"
-      },
-      "reason": "unwitnessed-retired-key"
-    },
-    {
-      "name": "retired-cancel-witness-expired",
-      "operation": "verify-signed-at",
-      "input": {
-        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
-        "sig": "03yYql7nbfjpLSFOQfhxyBlCVdCFe9TyeeccQFyGGUM6YmWfF8_zPE5L2kebi14lvkaENhcxv76591D1HZaq8w",
-        "bytes": "726574697265642d63616e63656c2d7769746e6573732d65787069726564",
-        "issuedAt": 1700000010,
-        "attest": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImZpeHR1cmUtMSIsInR5cCI6IkpXVCJ9.eyJ0eXAiOiJzb2NpYWNsLWFjbC1hdHRlc3QtdjEiLCJwcmluY2lwYWwiOiJheGZSOHVFc1FrZjR2T2JsWTZSQThuY0RmWUV0NnpPZzlLRTVSZGlZd3BZLlQtTkM0djRhZjV1TzUtdEtmQS1lRml2T00xZHJNVjdPeTdaQWFEZV9VZlUiLCJyZWNvcmRJZCI6ImRlZDA3ZGZjZjIzNzZmM2VhMDAxOTUyODgxZmU3MjllNDI0NWQ0ZjBlZGNlNzc2Yzc2YmI0ZDY5MGQzNzk1MzUiLCJpYXQiOjE3MDAwMDAwMDAsImV4cCI6MTcwMDAwMDAxMH0.JQUE80ewRMZo7Qu-Wf9cddNTNmawEqHFPyTv_uXr1f7rrqdYU3rNgINEyKJollChEg_ew889YcmCS7qm8M-pMQ"
-      },
-      "reason": "unwitnessed-retired-key"
-    },
-    {
-      "name": "retired-cancel-window-901",
-      "operation": "verify-signed-at",
-      "input": {
-        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
-        "sig": "rPA5na-ij1UQGeASY-mKfCi62X65t3rawP1Ha-i_VK-_3EdwUEQv6cPEU5YWM6HsM0gp3jpmbp8xP51BvEcxRg",
-        "bytes": "77696e646f772d393031",
-        "issuedAt": 1700000010,
-        "attest": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImZpeHR1cmUtMSIsInR5cCI6IkpXVCJ9.eyJ0eXAiOiJzb2NpYWNsLWFjbC1hdHRlc3QtdjEiLCJwcmluY2lwYWwiOiJheGZSOHVFc1FrZjR2T2JsWTZSQThuY0RmWUV0NnpPZzlLRTVSZGlZd3BZLlQtTkM0djRhZjV1TzUtdEtmQS1lRml2T00xZHJNVjdPeTdaQWFEZV9VZlUiLCJyZWNvcmRJZCI6IjI5ZjZiMDc4MTU4NmU1YWFhYjc3MTU3N2MwZThiNTlmNzQyNWI0MWY5MjA3MWIwYmUwYTYyNzliZjFhNTVmMzEiLCJpYXQiOjE3MDAwMDAwMTAsImV4cCI6MTcwMDAwMDkxMX0.YMLUlUuHmrtUg3ocdCkQG2JUz1jVACCdnqtUK3rMBIVgXzgLL8pxT_bcId6V6YDHlP242zy1kW_aX1A-56CG5Q"
-      },
-      "reason": "unwitnessed-retired-key"
-    },
-    {
-      "name": "retired-cancel-wrong-principal",
-      "operation": "verify-signed-at",
-      "input": {
-        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
-        "sig": "LuOvo-n5SH6LQCbJfQaKY8uMi4EFDjboUKRDVlZy-0oiaGOwwWcsfjiOVVz4asBpKptN6R85oigeSjzpeM-cWw",
-        "bytes": "77726f6e672d7072696e636970616c",
-        "issuedAt": 1700000010,
-        "attest": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImZpeHR1cmUtMSIsInR5cCI6IkpXVCJ9.eyJ0eXAiOiJzb2NpYWNsLWFjbC1hdHRlc3QtdjEiLCJwcmluY2lwYWwiOiJmUEo3R0kwRFQzNktVamdEQkxVYXc4Q0phZUozOGhzMXBndElfRWRtbVhnLkIzZFZFTnVPMEVBcFBackduM1F3MjdwOXJlWTg2WUlwbmdTM25TSjRjOUUiLCJyZWNvcmRJZCI6IjYzMTlmOGJlNjg3MmNlNGUwMzQyMzg4NjRhZmYyYzMyZGJmZTg3MzdhMjI5NWU5OGEyNWE1ZTg5NzljYzA3NGYiLCJpYXQiOjE3MDAwMDAwMTAsImV4cCI6MTcwMDAwMDYxMH0.Ws0nJUJ_tPEYRUzN1IUU7gkoqh_qnCqlNzSEpFMygN-rtwueNqsJM9z5FfCSKqVUMVe2IKgb1rKwLYrmX9RpdA"
-      },
-      "reason": "unwitnessed-retired-key"
     },
     {
       "name": "bad-signature",
