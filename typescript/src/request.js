@@ -48,10 +48,21 @@ function deny(reason) {
   return { granted: false, reason };
 }
 
-/** @param {SeeGrant} fields @param {Uint8Array} scalar @param {PrincipalId} key @param {(grant: SeeGrant) => Uint8Array} bytesOf */
+/** @param {unknown} value @returns {value is number} */
+function whole(value) {
+  return integer(value);
+}
+
+/**
+ * @param {SeeGrant} fields
+ * @param {Uint8Array} scalar
+ * @param {PrincipalId} key
+ * @param {(grant: SeeGrant) => Uint8Array} bytesOf
+ * @returns {{ ok: true, value: SeeGrant } | { ok: false, reason: string }}
+ */
 function signRow(fields, scalar, key, bytesOf) {
   const sig = signWithKeyring(scalar, bytesOf(fields), key);
-  if (!sig.ok) return sig;
+  if (!sig.ok) return { ok: false, reason: sig.reason };
   return { ok: true, value: { ...fields, sig: sig.value } };
 }
 
@@ -73,7 +84,7 @@ export function grantApprovedRequest(graph, owner, request, window, members, sig
   const req = parsed.value.request;
   if (req.status === 'withdrawn') return deny('withdrawn');
   if (!window || typeof window !== 'object') return deny('bad-record');
-  if (!integer(window.from) || !integer(window.until) || window.until <= window.from) return deny('bad-record');
+  if (!whole(window.from) || !whole(window.until) || window.until <= window.from) return deny('bad-record');
   const who = parsePrincipalId(owner);
   if (!who.ok) return deny(who.reason);
   if (!signer || !(signer.scalar instanceof Uint8Array) || !signer.resolver) return deny('bad-key');

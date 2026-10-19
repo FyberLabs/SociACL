@@ -60,14 +60,17 @@ function escapeKey(id, slash) {
   });
 }
 
+/** @param {string} id */
 export function encodeKey(id) {
   return escapeKey(id, false);
 }
 
+/** @param {string} id */
 export function itemSoul(id) {
   return `s3rch/items/${encodeKey(id)}`;
 }
 
+/** @param {string} wallet */
 export function userSoul(wallet) {
   return `s3rch/users/${wallet}`;
 }
@@ -76,10 +79,12 @@ export function metaSoul() {
   return "s3rch/meta";
 }
 
+/** @param {string} text */
 function asciiTrim(text) {
   const value = String(text);
   let start = 0;
   let end = value.length;
+  /** @param {number} code */
   const space = (code) =>
     code === 0x09 || code === 0x0a || code === 0x0b || code === 0x0c || code === 0x0d || code === 0x20;
   while (start < end && space(value.charCodeAt(start))) start += 1;
@@ -87,6 +92,7 @@ function asciiTrim(text) {
   return value.slice(start, end);
 }
 
+/** @param {string} id */
 export function aclKey(id) {
   return escapeKey(asciiTrim(id), true);
 }
@@ -232,12 +238,14 @@ export function postGrantKey(owner, object, accessor) {
   return `${ownerKey}\0${aclKey(object)}\0${accessorKey}`;
 }
 
+/** @param {string} owner */
 export function aclSoul(owner) {
   const ownerKey = aclPrincipalKey(owner);
   if (ownerKey == null) return null;
   return `s3rch/acl/${ownerKey}`;
 }
 
+/** @param {string} owner @param {string} object @param {string} accessor */
 export function grantSoul(owner, object, accessor) {
   const ownerKey = aclPrincipalKey(owner);
   const accessorKey = aclPrincipalKey(accessor);
@@ -245,18 +253,26 @@ export function grantSoul(owner, object, accessor) {
   return `s3rch/acl/${ownerKey}/${aclKey(object)}/${accessorKey}`;
 }
 
+/** @param {string} reason */
 function deny(reason) {
   return { allowed: false, reason };
 }
 
+/** @param {string} reason */
 function allow(reason) {
   return { allowed: true, reason };
 }
 
+/** @param {string} object */
 function isMetaOrAcl(object) {
   return object === "s3rch/meta" || object === "s3rch/acl" || String(object).startsWith("s3rch/acl/");
 }
 
+/**
+ * @param {{ seeGrants: (object: string) => Array<{ stated?: number, from: number, until: number, owner?: string, accessor: string, object?: string, claimId?: string }> }} graph
+ * @param {string} object
+ * @param {number} now
+ */
 function liveGrants(graph, object, now) {
   return (graph.seeGrants(object) ?? []).filter((g) => {
     if (g.stated === 0) return false;
@@ -264,6 +280,14 @@ function liveGrants(graph, object, now) {
   });
 }
 
+/**
+ * @param {{ hasObject: (object: string) => boolean, ownerOf: (object: string) => string | undefined, seeGrants: (object: string) => Array<{ stated?: number, from: number, until: number, owner?: string, accessor: string, object?: string, claimId?: string }> }} graph
+ * @param {string} object
+ * @param {string} accessor
+ * @param {number} now
+ * @param {unknown} hint
+ * @param {unknown} hop
+ */
 export function checkSeeLabel(graph, object, accessor, now, hint, hop) {
   void hint;
   void hop;
@@ -275,7 +299,7 @@ export function checkSeeLabel(graph, object, accessor, now, hint, hop) {
   const grants = liveGrants(graph, object, now);
   const ownerNow = graph.ownerOf(object);
   if (
-    grants.some((g) => {
+    grants.some((/** @type {{ owner?: string, accessor: string, object?: string, claimId?: string }} */ g) => {
       const ownerOk = g.owner == null || samePrincipal(g.owner, ownerNow);
       return ownerOk && samePrincipal(g.accessor, accessor) && grantNamesObject(g, object);
     })
@@ -285,6 +309,15 @@ export function checkSeeLabel(graph, object, accessor, now, hint, hop) {
   return deny("delegate");
 }
 
+/**
+ * @param {{ hasObject: (object: string) => boolean, ownerOf: (object: string) => string | undefined, seeGrants: (object: string) => Array<{ stated?: number, from: number, until: number, owner?: string, accessor: string, object?: string, claimId?: string }> }} graph
+ * @param {{ from: number, until: number, accessor: string, object?: string, claimId?: string }} grant
+ * @param {string} object
+ * @param {string} accessor
+ * @param {number} now
+ * @param {unknown} hint
+ * @param {unknown} hop
+ */
 export function checkSeeGrant(graph, grant, object, accessor, now, hint, hop) {
   if (now < grant.from || now >= grant.until) return deny("delegate");
   const dest = checkSeeLabel(graph, object, accessor, now, hint, hop);
@@ -295,6 +328,12 @@ export function checkSeeGrant(graph, grant, object, accessor, now, hint, hop) {
   return dest;
 }
 
+/**
+ * @param {{ putObject: (object: string, owner: string) => void }} acl
+ * @param {{ id?: string } | null | undefined} node
+ * @param {string} owner
+ * @param {unknown} hint
+ */
 export function admitFeedNode(acl, node, owner, hint) {
   void hint;
   if (!node?.id) return { denied: true };
@@ -302,11 +341,23 @@ export function admitFeedNode(acl, node, owner, hint) {
   return { object: itemSoul(node.id) };
 }
 
+/**
+ * @param {{ ownerOf: (object: string) => string | undefined, stateSeeGrant: (owner: string, grant: { accessor: string, object?: string, claimId?: string }) => void }} acl
+ * @param {string} owner
+ * @param {{ accessor: string, object?: string, claimId?: string }} grant
+ */
 export function applySeeGrant(acl, owner, grant) {
-  if (acl.ownerOf(grant.claimId ?? grant.object) !== owner) return;
+  const id = grant.claimId ?? grant.object ?? "";
+  if (acl.ownerOf(id) !== owner) return;
   acl.stateSeeGrant(owner, grant);
 }
 
+/**
+ * @param {{ ownerOf: (object: string) => string | undefined, unstateSeeGrant: (owner: string, accessor: string, object: string) => void }} acl
+ * @param {string} owner
+ * @param {string} accessor
+ * @param {string} object
+ */
 export function cancelSee(acl, owner, accessor, object) {
   if (acl.ownerOf(object) !== owner) return;
   acl.unstateSeeGrant(owner, accessor, object);
@@ -319,6 +370,7 @@ export class MemorySeeAcl {
     this.grants = new Map();
   }
 
+  /** @param {string} object */
   hasObject(object) {
     const text = String(object ?? "");
     if (objectIdRejected(text)) return false;
@@ -329,10 +381,12 @@ export class MemorySeeAcl {
     return false;
   }
 
+  /** @param {string} object */
   ownerOf(object) {
     return this.objects.get(canonicalStoredObject(this.objects, object));
   }
 
+  /** @param {string} object */
   seeGrants(object) {
     const text = String(object ?? "");
     if (objectIdRejected(text)) return [];
@@ -342,6 +396,7 @@ export class MemorySeeAcl {
     });
   }
 
+  /** @param {string} object @param {string} owner */
   putObject(object, owner) {
     const id = String(object);
     if (objectIdRejected(id)) return;
@@ -356,6 +411,7 @@ export class MemorySeeAcl {
     this.objects.set(id, next);
   }
 
+  /** @param {string} owner @param {{ accessor: string, object?: string, claimId?: string, stated?: number, hamState?: number }} grant */
   stateSeeGrant(owner, grant) {
     const query = String(grant.claimId ?? grant.object ?? "");
     if (objectIdRejected(query)) return;
@@ -368,6 +424,7 @@ export class MemorySeeAcl {
     this.grants.set(key, stored);
   }
 
+  /** @param {string} owner @param {string} accessor @param {string} object */
   unstateSeeGrant(owner, accessor, object) {
     if (objectIdRejected(object)) return;
     const id = canonicalStoredObject(this.objects, object);
@@ -398,6 +455,7 @@ export class MemorySeeAcl {
     });
   }
 
+  /** @param {string} object @param {string} accessor */
   seeGrant(object, accessor) {
     if (objectIdRejected(object)) return undefined;
     const id = canonicalStoredObject(this.objects, object);
