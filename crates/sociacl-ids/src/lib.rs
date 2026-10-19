@@ -10,6 +10,7 @@ use std::{fmt, str::FromStr};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
+#[non_exhaustive]
 pub enum Reason {
     NotString,
     Empty,

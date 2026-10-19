@@ -14,7 +14,6 @@
  * @typedef {{
  *   owners: Map<string, StoredOwner>,
  *   rows: Map<string, SealedRow>,
- *   posts: Map<string, import('./post.js').SealedPost>,
  * }} SeeStore
  * @typedef {{
  *   key: PrincipalId,
@@ -39,9 +38,9 @@ import {
   resolveCurrentKey,
   verifyAclAttestation,
   verifyObjectRecord,
-  verifyPostGrant,
   verifySeeGrant,
 } from '../ids/src/index.js';
+import { reverifyPosts } from './post.js';
 
 const verified = new WeakSet();
 /** @type {WeakMap<object, SeeStore>} */
@@ -51,7 +50,7 @@ const stores = new WeakMap();
 function store(graph) {
   let held = stores.get(graph);
   if (!held) {
-    held = { owners: new Map(), rows: new Map(), posts: new Map() };
+    held = { owners: new Map(), rows: new Map() };
     stores.set(graph, held);
   }
   return held;
@@ -204,24 +203,6 @@ export function seeAccessorEdge(value) {
 function admissionCopy(row) {
   return { owner: row.owner, issuedAt: row.issuedAt };
 }
-/** Live post table. post.js is the writer. see.js does not import post.js.
- * @param {object} graph */
-export function postTable(graph) {
-  if (!graphObject(graph)) return undefined;
-  return store(graph).posts;
-}
-/** A copy of the admitted post rows. Mutating it does not change Check.
- * @param {object} graph */
-export function postRows(graph) {
-  const live = postTable(graph);
-  if (!live) return undefined;
-  /** @type {Map<string, { mode: string, grant: object }>} */
-  const copy = new Map();
-  for (const [key, row] of live) {
-    copy.set(key, { mode: row.mode, grant: { ...row.grant } });
-  }
-  return copy;
-}
 /** A stored rotation already replaced this signer before `issuedAt`.
  * An unreadable stored history fails closed.
  * @param {readonly unknown[]} stored
@@ -320,9 +301,7 @@ export function reverifyPrincipal(graph, principal, resolver) {
     for (const [id, row] of [...held.owners]) {
       if (row.owner === who.value) held.owners.delete(id);
     }
-    for (const [key, row] of [...held.posts]) {
-      if (row.grant.owner === who.value) held.posts.delete(key);
-    }
+    reverifyPosts(graph, who.value, resolver);
     return { ok: false, reason: 'missing-history' };
   }
   let dropped = 0;
@@ -344,16 +323,9 @@ export function reverifyPrincipal(graph, principal, resolver) {
       dropped += 1;
     }
   }
-  for (const [key, row] of [...held.posts]) {
-    if (row.grant.owner !== who.value) continue;
-    const again = verifyPostGrant(row.source, rotations, resolver.ctx);
-    if (!again.ok) {
-      held.posts.delete(key);
-      dropped += 1;
-      continue;
-    }
-    held.posts.set(key, row.reseal(again.value, resolver.ctx));
-  }
+  const posts = reverifyPosts(graph, who.value, resolver);
+  if (!posts.ok) return posts;
+  dropped += posts.value.dropped;
   return { ok: true, value: { dropped } };
 }
 

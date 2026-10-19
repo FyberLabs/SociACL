@@ -457,24 +457,14 @@ export type MeshPostGrant = {
   attest?: string;
 };
 
-/**
- * One admitted post edge. Soul is the typed postSoul: each principal
- * segment is `p_` plus 128 lowercase hex. `issuedAt` is the row's
- * signed time.
- */
-export type GunPostEdge = {
-  soul: string;
-  owner: PrincipalId;
-  issuedAt: number;
-  grant: MeshPostGrant;
-};
-
 /** Length-prefixed domain for postGrantBytes. */
 export const POST_GRANT_DOMAIN: "sociacl-post-grant-v2";
 
 /**
  * Six-segment post soul. Each principal is `p_` plus 128 lowercase hex.
  * Not a label soul and not a five-segment see soul.
+ * Throws when owner, object, or accessor is not an already-parsed id.
+ * A parsed triple returns the soul string.
  */
 export function postSoul(
   owner: PrincipalId,

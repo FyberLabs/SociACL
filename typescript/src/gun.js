@@ -9,10 +9,8 @@
 
 export { admitPost, checkPost, factorGrants } from "./post.js";
 
-/** Length-prefixed domain for postGrantBytes. */
-export const POST_GRANT_DOMAIN = "sociacl-post-grant-v2";
-
-export { postGrantBytes, postSoul } from "../ids/src/index.js";
+/** Length-prefixed domain for postGrantBytes. The ids constant, not a second string. */
+export { POST_DOMAIN as POST_GRANT_DOMAIN, postGrantBytes, postSoul } from "../ids/src/index.js";
 
 export { admitRow, checkSee, putObject, reverifyPrincipal } from "./see.js";
 

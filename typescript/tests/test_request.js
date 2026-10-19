@@ -488,6 +488,60 @@ test("requester signature matches the enrolled key", () => {
   }
 });
 
+test("a read+post graph without a post writer writes nothing", () => {
+  const bob = signer("0xbob");
+  const request = {
+    requester: "0xbob",
+    source: "room:alpha",
+    scope: "read+post",
+    message: "",
+    status: "pending",
+  };
+  request.signature = signAccessRequest(bob.privateKey, request);
+  let seeWrites = 0;
+  const graph = {
+    enrolledKey(principal) {
+      return principal === "0xbob" ? bob.publicKey : undefined;
+    },
+    objectRecord() {
+      return { id: "room:alpha", owner: "0xalice" };
+    },
+    seeGrant() {
+      return undefined;
+    },
+    postGrant() {
+      return undefined;
+    },
+    stateSeeGrant() {
+      seeWrites += 1;
+    },
+  };
+  const result = grantApprovedRequest(graph, "0xalice", request, { from: 0, until: 80 });
+  assert.equal(result.granted, false);
+  assert.equal(result.reason, "missing");
+  assert.equal(seeWrites, 0);
+  assert.equal(graph.seeGrant(), undefined);
+});
+
+test("mergeFrom does not copy label post rows and writers stay off the prototype", () => {
+  const row = fixture.approvals.find((item) => item.name === "owner-read-post");
+  const source = new MemoryGroupGraph();
+  prepare(source, row);
+  assert.equal(approve(source, row).granted, true);
+  assert.ok(source.postGrant(row.object, row.requester));
+  const dest = new MemoryGroupGraph();
+  prepare(dest, row);
+  dest.mergeFrom(source);
+  assert.equal(dest.postGrant(row.object, row.requester), undefined);
+  assert.ok(source.postGrant(row.object, row.requester));
+  const symbols = [
+    ...Object.getOwnPropertySymbols(MemoryGroupGraph.prototype),
+    ...Object.getOwnPropertySymbols(source),
+  ].map((item) => String(item));
+  assert.equal(symbols.some((name) => name.toLowerCase().includes("post")), false);
+  assert.equal(source.posts, undefined);
+});
+
 test("owner client writes rows and a request does not", () => {
   for (const row of fixture.approvals) {
     const graph = new MemoryGroupGraph();

@@ -2,12 +2,22 @@
 
 ## sociacl/gun — unreleased
 
-- **Breaking:** `sociacl/gun` and `sociacl/group` no longer export
+- **Breaking (TypeScript):** `sociacl/group` no longer exports
   `POST_GRANT_DOMAIN`, `POST_GRANT_SCOPE`, `postGrantSigningBytes`, or the
-  label `postSoul`. The label post writer stays inside the request and group
-  modules until PR 4. `admitPost` admits a `sociacl-post-grant-v2` row.
-  `postGrantBytes` and the typed `postSoul` (`p_` plus 128 lowercase hex)
-  are the public post signing surface.
+  label `postSoul`. `sociacl/gun` still exports `POST_GRANT_DOMAIN`. Its
+  value is the v2 domain `sociacl-post-grant-v2`, the ids `POST_DOMAIN`
+  constant. `admitPost`, `postGrantBytes`, and the typed `postSoul`
+  (`p_` plus 128 lowercase hex) are the public post signing surface.
+  `postSoul` throws when an argument is not an already-parsed id.
+- **Breaking (Rust):** `sociacl_gun` no longer exports
+  `post_grant_signing_bytes`, `post_soul`, `GunPostEdge`, `MeshPostGrant`,
+  `POST_GRANT_DOMAIN`, or `POST_GRANT_SCOPE`. `post_grants`, `post_edge`,
+  `state_post_grant`, `unstate_post_grant`, and `merge_post_edge` are
+  `pub(crate)`. `OwnerGrantRows.post` is `pub(crate)`.
+- The label post writer stays inside the request and group modules until
+  PR 4. It is not a method on `MemoryGroupGraph`. `mergeFrom` does not
+  copy label post rows. A `read+post` approval with no label post writer
+  writes nothing.
 
 ## Encrypted discovery — unreleased
 
@@ -148,7 +158,8 @@ is `ids-v0.10.0`.
   forum id needs a random part when s3r.ch adopts SociACL. Those seven
   spellings parse as `bad-alphabet`. A non-string `owner`, `object`, or
   `accessor` on a see or post row is `not-string`. `unknown` is the reason
-  when a post row has no admitted object record.
+  when a post row has no admitted object record. Rust `Reason` is
+  `#[non_exhaustive]` and includes `Reason::Unknown`.
 - `parsePostGrant` / `verifyPostGrant` and `parse_post_grant` /
   `verify_post_grant` cover `sociacl-post-grant-v2`. A retired cancel
   is `stated` 0 in those signed bytes. A retired `stated` 1 row is

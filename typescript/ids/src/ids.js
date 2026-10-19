@@ -154,7 +154,8 @@ export const userSoul = p => soul(['~' + p], 1);
 export const aclSoul = p => soul(['s3rch', 'acl', formatPrincipalKey(p)], 3);
 /** @param {PrincipalId} owner @param {ObjectId} object @param {PrincipalId} accessor */
 export const grantSoul = (owner, object, accessor) => soul(['s3rch', 'acl', formatPrincipalKey(owner), objectKey(object), formatPrincipalKey(accessor)], 5);
-/** @param {PrincipalId} owner @param {ObjectId} object @param {PrincipalId} accessor */
+/** Six-segment post soul. Throws when an argument is not an already-parsed id.
+ * @param {PrincipalId} owner @param {ObjectId} object @param {PrincipalId} accessor */
 export const postSoul = (owner, object, accessor) => soul(['s3rch', 'acl', formatPrincipalKey(owner), 'post', objectKey(object), formatPrincipalKey(accessor)], 6);
 /** @param {PrincipalId} setOwner @param {MembershipPredicate} predicate @param {ObjectId} set @param {PrincipalId} member */
 export function membershipSoul(setOwner, predicate, set, member) {

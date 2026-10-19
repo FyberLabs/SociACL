@@ -24,10 +24,40 @@
 export const POST_GRANT_DOMAIN = "s3rch-post-grant-v1";
 export const POST_GRANT_SCOPE = "post";
 
-/** Label writers. Not exported from sociacl/group. */
-export const statePostGrantKey = Symbol("statePostGrant");
-export const unstatePostGrantKey = Symbol("unstatePostGrant");
-export const mergePostKey = Symbol("mergePost");
+/**
+ * Label post writers. The map is module-private. MemoryGroupGraph
+ * registers itself. request.js is the caller. Neither is a package export.
+ * @typedef {{
+ *   state: (owner: string, grant: { object?: string, claimId?: string, accessor: string, from: number, until: number }) => void,
+ *   unstate: (owner: string, accessor: string, object: string) => void,
+ * }} LabelPostWriters
+ */
+
+/** @type {WeakMap<object, LabelPostWriters>} */
+const labelPostWriters = new WeakMap();
+
+/** @param {object} graph @param {LabelPostWriters} writers */
+export function registerLabelPostWriters(graph, writers) {
+  labelPostWriters.set(graph, writers);
+}
+
+/** @param {object} graph */
+export function hasLabelPostWriter(graph) {
+  return !!graph && typeof graph === "object" && labelPostWriters.has(graph);
+}
+
+/**
+ * @param {object} graph
+ * @param {string} owner
+ * @param {{ object?: string, claimId?: string, accessor: string, from: number, until: number }} grant
+ * @returns {boolean}
+ */
+export function stateLabelPost(graph, owner, grant) {
+  const writers = graph && typeof graph === "object" ? labelPostWriters.get(graph) : undefined;
+  if (!writers) return false;
+  writers.state(owner, grant);
+  return true;
+}
 
 const JS_SAFE_INTEGER_MAX = Number.MAX_SAFE_INTEGER;
 

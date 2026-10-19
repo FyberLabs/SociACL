@@ -15,7 +15,6 @@
  *   bytes: Uint8Array,
  *   source: PostGrant,
  *   witness: boolean,
- *   reseal: (next: { key: PrincipalId, mode: 'present' | 'witnessed', grant: PostGrant, bytes: Uint8Array }, ctx: ResolutionContext) => SealedPost,
  * }} SealedPost
  */
 
@@ -30,7 +29,6 @@ import {
   admittedOwner,
   admittedView,
   checkSee,
-  postTable,
   putObject,
   reverifyPrincipal,
   seeAccessorEdge,
@@ -38,6 +36,32 @@ import {
 } from './see.js';
 
 const sealedPosts = new WeakSet();
+/** @type {WeakMap<object, Map<string, SealedPost>>} */
+const postTables = new WeakMap();
+
+/** @param {object} graph */
+function postMap(graph) {
+  let held = postTables.get(graph);
+  if (!held) {
+    held = new Map();
+    postTables.set(graph, held);
+  }
+  return held;
+}
+
+/** A copy of the admitted post rows. Mutating it does not change Check.
+ * @param {object} graph */
+export function postRows(graph) {
+  if (!graph || typeof graph !== 'object') return undefined;
+  const live = postTables.get(graph);
+  /** @type {Map<string, { mode: string, grant: object }>} */
+  const copy = new Map();
+  if (!live) return copy;
+  for (const [key, row] of live) {
+    copy.set(key, { mode: row.mode, grant: { ...row.grant } });
+  }
+  return copy;
+}
 
 /** @param {Uint8Array} left @param {Uint8Array} right */
 function smallerBytes(left, right) {
@@ -111,9 +135,6 @@ function seal(verifiedRow, ctx) {
     bytes,
     source: sourceOf(verifiedRow.grant),
     witness: witnessOk(verifiedRow.grant, bytes, ctx),
-    reseal(next, nextCtx) {
-      return seal(next, nextCtx);
-    },
   };
   Object.freeze(row);
   sealedPosts.add(row);
@@ -161,8 +182,7 @@ export function admitPost(graph, row, resolver) {
   const admission = admittedOwner(graph, grant.object);
   if (!admission) return { ok: false, reason: 'unknown' };
   if (admission.owner !== grant.owner) return { ok: false, reason: 'bad-record' };
-  const held = postTable(graph);
-  if (!held) return { ok: false, reason: 'bad-record' };
+  const held = postMap(graph);
   const key = postSoul(admission.owner, grant.object, grant.accessor);
   const sealed = seal(verified.value, resolver.ctx);
   const prev = held.get(key);
@@ -178,7 +198,7 @@ export function admittedPost(graph, object, accessor) {
   const who = seeAccessorEdge(accessor);
   if (!id.ok || !who.ok) return undefined;
   const admission = admittedOwner(graph, id.value);
-  const held = postTable(graph);
+  const held = postTables.get(graph);
   if (!admission || !held) return undefined;
   const row = held.get(postSoul(admission.owner, id.value, who.value));
   if (!row || !sealedPosts.has(row)) return undefined;
@@ -212,13 +232,46 @@ export function checkPost(graph, object, accessor, now, hint, hop) {
   const who = seeAccessorEdge(accessor);
   if (!id.ok || !who.ok) return { ...see, ...echoed };
   const admission = admittedOwner(graph, id.value);
-  const held = postTable(graph);
-  if (!admission || !held) return { allowed: false, reason: 'unknown', ...echoed };
+  if (!admission) return { allowed: false, reason: 'unknown', ...echoed };
+  const held = postTables.get(graph);
+  if (!held) return { allowed: false, reason: 'missing', ...echoed };
   const row = held.get(postSoul(admission.owner, id.value, who.value));
   if (!row || !sealedPosts.has(row)) return { allowed: false, reason: 'missing', ...echoed };
   if (row.grant.stated !== 1) return { allowed: false, reason: 'cancelled', ...echoed };
   if (now >= row.grant.from && now < row.grant.until) return { allowed: true, reason: 'post', ...echoed };
   return { allowed: false, reason: 'missing', ...echoed };
+}
+
+/**
+ * Recheck post rows for one principal. see.js calls this. The seal stays here.
+ * @param {object} graph
+ * @param {PrincipalId} principal
+ * @param {SeeResolver} resolver
+ * @returns {import('../ids/src/types.js').Result<{ dropped: number }>}
+ */
+export function reverifyPosts(graph, principal, resolver) {
+  const held = graph && typeof graph === 'object' ? postTables.get(graph) : undefined;
+  if (!held) return { ok: true, value: { dropped: 0 } };
+  if (!ready(graph, resolver)) return { ok: false, reason: 'missing-history' };
+  const rotations = resolver.rotations(principal);
+  if (!Array.isArray(rotations)) {
+    for (const [key, row] of [...held]) {
+      if (row.grant.owner === principal) held.delete(key);
+    }
+    return { ok: false, reason: 'missing-history' };
+  }
+  let dropped = 0;
+  for (const [key, row] of [...held]) {
+    if (row.grant.owner !== principal) continue;
+    const again = verifyPostGrant(row.source, rotations, resolver.ctx);
+    if (!again.ok) {
+      held.delete(key);
+      dropped += 1;
+      continue;
+    }
+    held.set(key, seal(again.value, resolver.ctx));
+  }
+  return { ok: true, value: { dropped } };
 }
 
 /** A hop, a hint, a wrap, a request, or an inbox delivery never grants.

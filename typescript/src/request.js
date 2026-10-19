@@ -49,7 +49,7 @@
  */
 
 import { createHash, createPrivateKey, createPublicKey, sign, verify } from "node:crypto";
-import { canonicalAccessorId, nextPostHam, postGrantSigningBytes, statePostGrantKey } from "./legacy/post-label.js";
+import { canonicalAccessorId, hasLabelPostWriter, nextPostHam, postGrantSigningBytes, stateLabelPost } from "./legacy/post-label.js";
 
 const PKCS8_PREFIX = Uint8Array.from([
   0x30, 0x2e, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x04, 0x22, 0x04, 0x20,
@@ -503,6 +503,7 @@ export function grantApprovedRequest(graph, owner, request, window, members) {
     if (nextPostHam(prev?.hamState, false) === undefined) {
       throw new Error("post grant field is not a canonical integer");
     }
+    if (!hasLabelPostWriter(graph)) return { granted: false, reason: "missing" };
   }
   graph.stateSeeGrant(record.owner, {
     object: record.id,
@@ -517,11 +518,7 @@ export function grantApprovedRequest(graph, owner, request, window, members) {
   /** @type {Uint8Array | null} */
   let postSigningBytes = null;
   if (accepted.scope === ACCESS_SCOPE_READ_POST) {
-    const writePost = /** @type {((owner: string, grant: { object: string, accessor: string, from: number, until: number }) => void) | undefined} */ (
-      /** @type {any} */ (graph)[statePostGrantKey]
-    );
-    if (typeof writePost !== "function") return { granted: false, reason: "missing" };
-    writePost.call(graph, record.owner, {
+    stateLabelPost(graph, record.owner, {
       object: record.id,
       accessor,
       from: window.from,

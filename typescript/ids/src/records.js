@@ -851,7 +851,8 @@ export function verifySeeGrant(row, rotations, ctx) {
   if (!keyVerify(state.key, grant.sig, bytes)) return fail('bad-signature');
   return ok(Object.freeze({ key: state.key, mode: 'witnessed', grant, bytes }));
 }
-const POST_DOMAIN = 'sociacl-post-grant-v2';
+/** Length-prefixed domain for postGrantBytes. */
+export const POST_DOMAIN = 'sociacl-post-grant-v2';
 /** Signing bytes for one already-parsed post row. The domain and stated are inside the bytes.
  * @param {SeeGrant} grant */
 export function postGrantBytes(grant) {
