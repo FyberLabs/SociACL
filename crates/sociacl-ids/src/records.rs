@@ -2233,6 +2233,13 @@ pub struct VerifiedSee {
 fn see_u64(v: Option<&Value>) -> Result<u64, Reason> {
     number(v.ok_or(Reason::BadRecord)?)
 }
+/// A missing or non-string id is `not-string`, in both see and post parsers.
+fn grant_id(value: Option<&Value>) -> Result<&str, Reason> {
+    match value {
+        Some(Value::String(text)) => Ok(text),
+        _ => Err(Reason::NotString),
+    }
+}
 /// Signing bytes for one parsed see row. Domain and `stated` are inside the bytes.
 pub fn see_grant_bytes(grant: &SeeGrant) -> Vec<u8> {
     lp(&[
@@ -2258,21 +2265,9 @@ pub fn parse_see_grant(row: &Value) -> Result<(SeeGrant, Vec<u8>), Reason> {
     if !map.contains_key("sig") {
         return Err(Reason::LegacyRow);
     }
-    let owner = parse_principal_id(
-        map.get("owner")
-            .and_then(Value::as_str)
-            .ok_or(Reason::BadRecord)?,
-    )?;
-    let object = parse_object_id(
-        map.get("object")
-            .and_then(Value::as_str)
-            .ok_or(Reason::BadRecord)?,
-    )?;
-    let accessor = parse_principal_id(
-        map.get("accessor")
-            .and_then(Value::as_str)
-            .ok_or(Reason::BadRecord)?,
-    )?;
+    let owner = parse_principal_id(grant_id(map.get("owner"))?)?;
+    let object = parse_object_id(grant_id(map.get("object"))?)?;
+    let accessor = parse_principal_id(grant_id(map.get("accessor"))?)?;
     let stated = see_u64(map.get("stated"))?;
     if stated > 1 {
         return Err(Reason::BadRecord);
@@ -2421,21 +2416,9 @@ pub fn parse_post_grant(row: &Value) -> Result<(SeeGrant, Vec<u8>), Reason> {
     if !map.contains_key("sig") {
         return Err(Reason::LegacyRow);
     }
-    let owner = parse_principal_id(
-        map.get("owner")
-            .and_then(Value::as_str)
-            .ok_or(Reason::BadRecord)?,
-    )?;
-    let object = parse_object_id(
-        map.get("object")
-            .and_then(Value::as_str)
-            .ok_or(Reason::BadRecord)?,
-    )?;
-    let accessor = parse_principal_id(
-        map.get("accessor")
-            .and_then(Value::as_str)
-            .ok_or(Reason::BadRecord)?,
-    )?;
+    let owner = parse_principal_id(grant_id(map.get("owner"))?)?;
+    let object = parse_object_id(grant_id(map.get("object"))?)?;
+    let accessor = parse_principal_id(grant_id(map.get("accessor"))?)?;
     let stated = see_u64(map.get("stated"))?;
     if stated > 1 {
         return Err(Reason::BadRecord);

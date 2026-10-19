@@ -116,6 +116,8 @@ reject('object','unbound-principal',obj,'bad-template',{operation:'object-princi
 reject('object','bound-off-curve','room_p_'+'00'.repeat(64)+'_'+'11'.repeat(16),'not-on-curve');
 reject('object','bound-uppercase',minted.slice(0,6)+minted.slice(6).toUpperCase(),'non-canonical');
 reject('object','bound-uppercase-p-tag',minted.replace('_p_','_P_'),'non-canonical');
+reject('object','s3rch-room','s3rch:room:0x52908400098527886E0F7030069857D2E4169EE7:1:'+'ab'.repeat(8),'bad-alphabet');
+reject('object','s3rch-forum','s3rch:forum:0x52908400098527886E0F7030069857D2E4169EE7','bad-alphabet');
 reject('object','bound-too-long','a'.repeat(181),'too-long');
 reject('object','bound-reserved-kind','post_'+ids.formatPrincipalKey(p)+'_'+'11'.repeat(16),'reserved-kind');
 const maxBound = 'abcdefghijklmnop_'+ids.formatPrincipalKey(p)+'_'+'22'.repeat(16);

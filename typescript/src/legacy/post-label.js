@@ -19,15 +19,15 @@
  *   hamState: number,
  *   grant: PostGrantRow,
  * }} PostEdge
- * @typedef {{
- *   ownerOf(object: string): string | undefined,
- *   seeGrant(object: string, accessor: string): PostEdge | undefined,
- *   postGrant(object: string, accessor: string): PostEdge | undefined,
- * }} PostGraph
  */
 
 export const POST_GRANT_DOMAIN = "s3rch-post-grant-v1";
 export const POST_GRANT_SCOPE = "post";
+
+/** Label writers. Not exported from sociacl/group. */
+export const statePostGrantKey = Symbol("statePostGrant");
+export const unstatePostGrantKey = Symbol("unstatePostGrant");
+export const mergePostKey = Symbol("mergePost");
 
 const JS_SAFE_INTEGER_MAX = Number.MAX_SAFE_INTEGER;
 
@@ -150,14 +150,6 @@ function aclPrincipalKey(id) {
   }
   if (text.includes("/")) return null;
   return barePrincipal(text);
-}
-
-/** @param {string | null | undefined} left @param {string | null | undefined} right */
-function sameParsed(left, right) {
-  if (left == null || right == null) return false;
-  const a = aclPrincipalKey(left);
-  const b = aclPrincipalKey(right);
-  return a != null && a === b;
 }
 
 const HELD_CLAIM_PREFIXES = ["ens:", "unstoppable:", "fc:", "lens:", "rss3:"];
@@ -374,20 +366,6 @@ export function postGrantSigningBytes(edge) {
   ]);
 }
 
-/** A hop, a hint, a wrap, a request, or an inbox delivery never grants. @param {string} _kind */
-export function factorGrants(_kind) {
-  return false;
-}
-
-/** @param {string} object */
-function closedReason(object) {
-  const text = String(object).trim();
-  if (text.includes("://")) return "url-leaf";
-  if (text === "s3rch/meta") return "meta";
-  if (text === "s3rch/acl" || text.startsWith("s3rch/acl/")) return "acl";
-  return null;
-}
-
 /**
  * @param {{ from: number, until: number }} left
  * @param {{ from: number, until: number }} right
@@ -454,65 +432,4 @@ export function preferPost(local, incoming) {
   const keptBytes = postGrantSigningBytes(kept);
   const nextBytes = postGrantSigningBytes(next);
   return bytesBefore(nextBytes, keptBytes) ? next : kept;
-}
-
-/**
- * @param {PostGraph} graph
- * @param {string} object
- * @param {string} accessor
- * @param {number} now
- */
-function seeDecision(graph, object, accessor, now) {
-  const closed = closedReason(object);
-  if (closed) return { allowed: false, reason: closed };
-  const owner = graph.ownerOf(String(object));
-  if (!owner) return { allowed: false, reason: "missing" };
-  if (sameParsed(owner, accessor)) {
-    return { allowed: true, reason: "owner" };
-  }
-  const edge = graph.seeGrant(object, accessor);
-  if (!edge) return { allowed: false, reason: "missing" };
-  const grant = edge.grant;
-  const names =
-    sameObjectId(grant.object, object) &&
-    sameParsed(grant.accessor, accessor) &&
-    sameParsed(edge.owner, owner);
-  if (!names) return { allowed: false, reason: "missing" };
-  if (grant.stated !== 1) return { allowed: false, reason: "cancelled" };
-  if (now >= grant.from && now < grant.until) return { allowed: true, reason: "delegate" };
-  return { allowed: false, reason: "missing" };
-}
-
-/**
- * Allow-post only when see also passes.
- * The object owner may post. Any other accessor needs a live post row.
- * Hint and hop are echoed and do not set allowed.
- *
- * @param {PostGraph} graph
- * @param {string} object
- * @param {string} accessor
- * @param {number} now
- * @param {object | null | undefined} hint
- * @param {object | null | undefined} hop
- */
-export function checkPost(graph, object, accessor, now, hint, hop) {
-  const echoed = { hint: hint ?? null, hop: hop ?? null };
-  const see = seeDecision(graph, object, accessor, now);
-  if (!see.allowed || see.reason === "owner") {
-    return { ...see, ...echoed };
-  }
-  const owner = graph.ownerOf(String(object));
-  const edge = graph.postGrant(object, accessor);
-  if (!edge || !owner) return { allowed: false, reason: "missing", ...echoed };
-  const grant = edge.grant;
-  const names =
-    sameObjectId(grant.object, object) &&
-    sameParsed(grant.accessor, accessor) &&
-    sameParsed(edge.owner, owner);
-  if (!names) return { allowed: false, reason: "missing", ...echoed };
-  if (grant.stated !== 1) return { allowed: false, reason: "cancelled", ...echoed };
-  if (now >= grant.from && now < grant.until) {
-    return { allowed: true, reason: "post", ...echoed };
-  }
-  return { allowed: false, reason: "missing", ...echoed };
 }

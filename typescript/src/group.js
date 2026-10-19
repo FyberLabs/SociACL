@@ -115,18 +115,14 @@ import {
 import {
   canonicalAccessorId,
   canonicalPostEdge,
+  mergePostKey,
   nextPostHam,
   objectIdRejected,
   postRowEncodable,
   preferPost,
   sameObjectId,
-} from "./legacy/post-label.js";
-
-export {
-  POST_GRANT_DOMAIN,
-  POST_GRANT_SCOPE,
-  postGrantSigningBytes,
-  postSoul,
+  statePostGrantKey,
+  unstatePostGrantKey,
 } from "./legacy/post-label.js";
 
 export { checkPost, factorGrants } from "./post.js";
@@ -1211,7 +1207,7 @@ export class MemoryGroupGraph {
    * @param {string} owner
    * @param {{ object?: string, claimId?: string, accessor: string, from: number, until: number }} grant
    */
-  statePostGrant(owner, grant) {
+  [statePostGrantKey](owner, grant) {
     const query = plainObjectId(grant.object ?? grant.claimId ?? "") ?? "";
     const who = asciiTrim(String(grant.accessor ?? ""));
     const record = this.objectRecord(query);
@@ -1239,7 +1235,7 @@ export class MemoryGroupGraph {
    * @param {string} accessor
    * @param {string} object
    */
-  unstatePostGrant(owner, accessor, object) {
+  [unstatePostGrantKey](owner, accessor, object) {
     const query = plainObjectId(object) ?? "";
     const who = asciiTrim(String(accessor));
     const record = this.objectRecord(query);
@@ -1268,7 +1264,7 @@ export class MemoryGroupGraph {
   }
 
   /** @param {import("./legacy/post-label.js").PostEdge} incoming */
-  mergePost(incoming) {
+  [mergePostKey](incoming) {
     if (!postRowEncodable(incoming)) return;
     const query = plainObjectId(incoming.grant?.object ?? "") ?? "";
     const record = this.objectRecord(query);
@@ -1604,7 +1600,7 @@ export class MemoryGroupGraph {
       this.grants.set(storedKey, stored);
     }
     for (const incoming of other.posts.values()) {
-      this.mergePost(incoming);
+      this[mergePostKey](incoming);
     }
     for (const [key, owner] of other.setOwners) {
       const setKey = key.split("\0")[1] ?? "";

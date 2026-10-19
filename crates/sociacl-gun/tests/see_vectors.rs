@@ -1,6 +1,6 @@
 use serde_json::Value;
 use sociacl_core::IssuerSecret;
-use sociacl_gun::{GroupPredicate, GunError, MeshPostGrant, MeshSeeGraph};
+use sociacl_gun::{GroupPredicate, GunError, MeshSeeGraph};
 use sociacl_ids::{
     history_state, parse_object_id, parse_principal_id, parse_see_grant, verify_see_grant, Jwks,
     ObjectId, PrincipalId, Reason, ResolutionContext, SignedAtMode, SiwePolicy,
@@ -305,7 +305,11 @@ fn run_case(file: &Value, case: &Value) -> MeshSeeGraph {
                     }
                 } else {
                     let reason = got.expect_err(name);
-                    assert_eq!(reason, step["reason"].as_str().unwrap(), "{name}");
+                    assert_eq!(
+                        reason_name(reason),
+                        step["reason"].as_str().unwrap(),
+                        "{name}"
+                    );
                 }
             }
             "view-post" => {
@@ -616,11 +620,9 @@ fn signed_owner_reaches_post_and_group_until_history_drops_it() {
     let mut graph = run_case(&file, case);
     let object = case["steps"][0]["record"]["object"].as_str().unwrap();
     let owner = case["steps"][0]["record"]["owner"].as_str().unwrap();
-    let post = MeshPostGrant::live(object, owner, 0, 10);
-    match graph.state_post_grant(owner, post.clone()) {
-        Ok(()) => {}
-        Err(err) => not_missing(err),
-    }
+    assert!(graph
+        .admitted_owner(&object_of(&Value::String(object.into())))
+        .is_some());
     let secret = IssuerSecret::generate();
     match graph.name_object_set(
         owner,
@@ -653,10 +655,9 @@ fn signed_owner_reaches_post_and_group_until_history_drops_it() {
     assert!(graph
         .reverify_principal(&principal, &|_| None, &rc)
         .is_err());
-    assert_eq!(
-        graph.state_post_grant(owner, post).unwrap_err(),
-        GunError::ObjectNotInGraph
-    );
+    assert!(graph
+        .admitted_owner(&object_of(&Value::String(object.into())))
+        .is_none());
     assert_eq!(
         graph
             .name_object_set(

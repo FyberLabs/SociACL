@@ -11,9 +11,9 @@ use std::collections::{HashMap, HashSet};
 use serde_json::Value;
 use sociacl_core::Timestamp;
 use sociacl_ids::{
-    grant_soul as id_grant_soul, parse_object_record, parse_see_grant, verify_acl_attestation,
-    verify_object_record, verify_see_grant, ObjectId, PrincipalId, Reason, ResolutionContext,
-    SignedAtMode,
+    grant_soul as id_grant_soul, parse_object_record, parse_see_grant, resolve_current_key,
+    verify_acl_attestation, verify_object_record, verify_see_grant, ObjectId, PrincipalId, Reason,
+    ResolutionContext, SignedAtMode,
 };
 
 use crate::soul::GunSoul;
@@ -161,12 +161,15 @@ pub(crate) struct LabelGraph {
 
 /// Admitted object owner. `record` is the canonical signed snapshot,
 /// rechecked when the owner rotates. A later record replaces it only
-/// when `issued_at` is strictly newer and this snapshot no longer verifies.
+/// when `issued_at` is strictly newer, this snapshot no longer verifies,
+/// and the new signer is not a key `history` marks retired.
 #[derive(Clone, Debug)]
 struct ObjectAdmission {
     owner: PrincipalId,
     issued_at: u64,
     record: Value,
+    /// Rotation records that admitted this snapshot.
+    history: Vec<Value>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -210,6 +213,24 @@ struct AdmittedSee {
     witness: bool,
 }
 
+/// True when `signer` is a `prevKey` of a stored rotation already in force at `issued_at`.
+/// An unreadable stored history fails closed and blocks the replacement.
+fn signer_retired(
+    stored: &[Value],
+    signer: &PrincipalId,
+    issued_at: u64,
+    owner: &PrincipalId,
+    ctx: &ResolutionContext<'_>,
+) -> bool {
+    let Ok(account) = resolve_current_key(owner, stored, ctx).result else {
+        return true;
+    };
+    account
+        .rotations
+        .iter()
+        .any(|row| row.prev_key == *signer && row.issued_at < issued_at)
+}
+
 impl MeshSeeGraph {
     pub fn new() -> Self {
         Self::default()
@@ -219,7 +240,8 @@ impl MeshSeeGraph {
     /// History comes from `resolver` called with the parsed owner.
     /// The same owner later is a no-op while the stored record still verifies.
     /// A stored record is replaced only when the new `issued_at` is strictly
-    /// newer and the stored record no longer verifies.
+    /// newer, the stored record no longer verifies, and the new signer is not
+    /// a key the stored history marks retired.
     pub fn put_object(
         &mut self,
         record: &Value,
@@ -240,6 +262,15 @@ impl MeshSeeGraph {
             if verify_object_record(&existing.record, &rotations, ctx).is_ok() {
                 return Ok(false);
             }
+            if signer_retired(
+                &existing.history,
+                &verified.key,
+                verified.record.issued_at,
+                &verified.record.owner,
+                ctx,
+            ) {
+                return Ok(false);
+            }
         }
         self.labels.put_object(
             verified.record.object.as_ref(),
@@ -251,6 +282,7 @@ impl MeshSeeGraph {
                 owner: verified.record.owner,
                 issued_at: verified.record.issued_at,
                 record: snapshot,
+                history: rotations,
             },
         );
         Ok(true)

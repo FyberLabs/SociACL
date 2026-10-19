@@ -158,18 +158,17 @@ impl MeshSeeGraph {
         row: &Value,
         resolver: &dyn Fn(&PrincipalId) -> Option<Vec<Value>>,
         ctx: &ResolutionContext<'_>,
-    ) -> Result<(VerifiedRow, bool), String> {
-        let (grant, _) = parse_reason(sociacl_ids::parse_post_grant(row))?;
+    ) -> Result<(VerifiedRow, bool), Reason> {
+        let (grant, _) = sociacl_ids::parse_post_grant(row)?;
         let Some(rotations) = resolver(&grant.owner) else {
-            return Err("missing-history".into());
+            return Err(Reason::MissingHistory);
         };
-        let verified = verify_post_grant(&snapshot_post(&grant), &rotations, ctx)
-            .map_err(|reason| reason_name(reason))?;
+        let verified = verify_post_grant(&snapshot_post(&grant), &rotations, ctx)?;
         let Some(owner) = self.object_owner(&verified.grant.object).cloned() else {
-            return Err("unknown".into());
+            return Err(Reason::Unknown);
         };
         if owner != verified.grant.owner {
-            return Err("bad-record".into());
+            return Err(Reason::BadRecord);
         }
         let key =
             id_post_soul(&owner, &verified.grant.object, &verified.grant.accessor).to_string();
@@ -182,7 +181,7 @@ impl MeshSeeGraph {
             self.post_rows.insert(key.clone(), next);
         }
         let stored = self.post_rows.get(&key).expect("admitted post");
-        let (stored_grant, _) = parse_reason(sociacl_ids::parse_post_grant(&stored.source))?;
+        let (stored_grant, _) = sociacl_ids::parse_post_grant(&stored.source)?;
         Ok((view_post(stored, &stored_grant), kept))
     }
 
@@ -248,15 +247,4 @@ impl MeshSeeGraph {
             hop: see.hop,
         }
     }
-}
-
-fn reason_name(reason: Reason) -> String {
-    serde_json::to_value(reason)
-        .ok()
-        .and_then(|value| value.as_str().map(str::to_string))
-        .unwrap_or_else(|| "bad-record".into())
-}
-
-fn parse_reason<T>(result: Result<T, Reason>) -> Result<T, String> {
-    result.map_err(reason_name)
 }

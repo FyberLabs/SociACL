@@ -10,7 +10,7 @@
  * @typedef {import('../ids/src/types.js').ResolutionContext} ResolutionContext
  * @typedef {{ allowed: boolean, reason: string }} SeeCheck
  * @typedef {{ owner: PrincipalId, issuedAt: number }} ObjectAdmission
- * @typedef {ObjectAdmission & { record: ObjectRecord }} StoredOwner
+ * @typedef {ObjectAdmission & { record: ObjectRecord, history: readonly unknown[] }} StoredOwner
  * @typedef {{
  *   owners: Map<string, StoredOwner>,
  *   rows: Map<string, SealedRow>,
@@ -36,6 +36,7 @@ import {
   parsePrincipalId,
   parseObjectRecord,
   parseSeeGrant,
+  resolveCurrentKey,
   verifyAclAttestation,
   verifyObjectRecord,
   verifyPostGrant,
@@ -203,17 +204,43 @@ export function seeAccessorEdge(value) {
 function admissionCopy(row) {
   return { owner: row.owner, issuedAt: row.issuedAt };
 }
-/** Post rows share this graph. post.js admits them. see.js does not import post.js.
+/** Live post table. post.js is the writer. see.js does not import post.js.
  * @param {object} graph */
-export function postRows(graph) {
+export function postTable(graph) {
   if (!graphObject(graph)) return undefined;
   return store(graph).posts;
+}
+/** A copy of the admitted post rows. Mutating it does not change Check.
+ * @param {object} graph */
+export function postRows(graph) {
+  const live = postTable(graph);
+  if (!live) return undefined;
+  /** @type {Map<string, { mode: string, grant: object }>} */
+  const copy = new Map();
+  for (const [key, row] of live) {
+    copy.set(key, { mode: row.mode, grant: { ...row.grant } });
+  }
+  return copy;
+}
+/** A stored rotation already replaced this signer before `issuedAt`.
+ * An unreadable stored history fails closed.
+ * @param {readonly unknown[]} stored
+ * @param {PrincipalId} signer
+ * @param {number} issuedAt
+ * @param {PrincipalId} owner
+ * @param {ResolutionContext} ctx
+ */
+function signerRetired(stored, signer, issuedAt, owner, ctx) {
+  const account = resolveCurrentKey(owner, stored, ctx);
+  if (!account.ok || !account.value) return true;
+  return account.value.rotations.some((row) => row.prevKey === signer && row.issuedAt < issuedAt);
 }
 /**
  * Admit a signed object record. The owner is the record, never an argument.
  * The object id must embed that owner. The same owner later is a no-op while
  * the stored record still verifies. A stored record is replaced only when the
- * new issuedAt is strictly newer and the stored record no longer verifies.
+ * new issuedAt is strictly newer, the stored record no longer verifies, and
+ * the new signer is not a key the stored history marks retired.
  * @param {object} graph
  * @param {unknown} record
  * @param {SeeResolver} resolver
@@ -233,15 +260,19 @@ export function putObject(graph, record, resolver) {
   const issuedAt = verified.value.record.issuedAt;
   const existing = held.owners.get(id);
   if (!existing) {
-    const admitted = { owner, issuedAt, record: verified.value.record };
+    const admitted = { owner, issuedAt, record: verified.value.record, history: history.slice() };
     held.owners.set(id, admitted);
     return { ok: true, value: admissionCopy(admitted), kept: true };
   }
   if (issuedAt <= existing.issuedAt) return { ok: true, value: admissionCopy(existing), kept: false };
   const still = verifyObjectRecord(existing.record, history, resolver.ctx);
   if (still.ok) return { ok: true, value: admissionCopy(existing), kept: false };
+  if (signerRetired(existing.history, verified.value.key, issuedAt, owner, resolver.ctx)) {
+    return { ok: true, value: admissionCopy(existing), kept: false };
+  }
   existing.issuedAt = issuedAt;
   existing.record = verified.value.record;
+  existing.history = history.slice();
   return { ok: true, value: admissionCopy(existing), kept: true };
 }
 

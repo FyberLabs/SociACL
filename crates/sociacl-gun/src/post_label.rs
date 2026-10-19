@@ -276,7 +276,7 @@ fn same_post_row(edge: &GunPostEdge, object: &str, accessor: &str, owner: &str) 
 }
 
 impl MeshSeeGraph {
-    pub fn post_grants(&self, object: &str) -> Vec<&MeshPostGrant> {
+    pub(crate) fn post_grants(&self, object: &str) -> Vec<&MeshPostGrant> {
         let owner = self.labels.owner_of(object).unwrap_or("");
         self.labels
             .posts
@@ -291,7 +291,7 @@ impl MeshSeeGraph {
             .collect()
     }
 
-    pub fn post_edge(&self, object: &str, accessor: &str) -> Option<&GunPostEdge> {
+    pub(crate) fn post_edge(&self, object: &str, accessor: &str) -> Option<&GunPostEdge> {
         let owner = self.labels.owner_of(object).unwrap_or("");
         self.labels
             .posts
@@ -316,7 +316,7 @@ impl MeshSeeGraph {
     }
 
     /// Owner-only. Writes a live post grant. Does not write a see grant.
-    pub fn state_post_grant(
+    pub(crate) fn state_post_grant(
         &mut self,
         owner: impl AsRef<str>,
         grant: MeshPostGrant,
@@ -348,7 +348,7 @@ impl MeshSeeGraph {
     }
 
     /// Owner-only privilege-down. Sets `stated` to 0 and bumps HAM state.
-    pub fn unstate_post_grant(
+    pub(crate) fn unstate_post_grant(
         &mut self,
         owner: impl AsRef<str>,
         accessor: impl AsRef<str>,
@@ -403,8 +403,29 @@ impl MeshSeeGraph {
     /// The object must already be in the graph, and `incoming.owner`
     /// must be that object's current owner. A row that arrives earlier
     /// is not retained.
-    pub fn merge_post_edge(&mut self, incoming: GunPostEdge) {
+    pub(crate) fn merge_post_edge(&mut self, incoming: GunPostEdge) {
         self.labels.merge_post_edge(incoming);
+    }
+}
+
+#[cfg(test)]
+mod label_post_tests {
+    use super::*;
+    use crate::GunError;
+
+    #[test]
+    fn state_post_grant_requires_the_object() {
+        let mut graph = MeshSeeGraph::new();
+        let post = MeshPostGrant::live("room", "0xbob", 0, 10);
+        assert_eq!(
+            graph.state_post_grant("0xalice", post.clone()).unwrap_err(),
+            GunError::ObjectNotInGraph
+        );
+        graph.labels.put_object("room", "0xalice");
+        graph
+            .state_post_grant("0xalice", post)
+            .expect("object is in the label graph");
+        assert!(graph.post_edge("room", "0xbob").is_some());
     }
 }
 

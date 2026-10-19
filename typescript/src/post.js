@@ -30,12 +30,14 @@ import {
   admittedOwner,
   admittedView,
   checkSee,
-  postRows,
+  postTable,
   putObject,
   reverifyPrincipal,
   seeAccessorEdge,
   seeObjectEdge,
 } from './see.js';
+
+const sealedPosts = new WeakSet();
 
 /** @param {Uint8Array} left @param {Uint8Array} right */
 function smallerBytes(left, right) {
@@ -114,6 +116,7 @@ function seal(verifiedRow, ctx) {
     },
   };
   Object.freeze(row);
+  sealedPosts.add(row);
   return row;
 }
 
@@ -158,12 +161,12 @@ export function admitPost(graph, row, resolver) {
   const admission = admittedOwner(graph, grant.object);
   if (!admission) return { ok: false, reason: 'unknown' };
   if (admission.owner !== grant.owner) return { ok: false, reason: 'bad-record' };
-  const held = postRows(graph);
+  const held = postTable(graph);
   if (!held) return { ok: false, reason: 'bad-record' };
   const key = postSoul(admission.owner, grant.object, grant.accessor);
   const sealed = seal(verified.value, resolver.ctx);
   const prev = held.get(key);
-  const kept = !prev || replaces(prev, sealed);
+  const kept = !prev || !sealedPosts.has(prev) || replaces(prev, sealed);
   if (kept) held.set(key, sealed);
   const stored = held.get(key) ?? sealed;
   return { ok: true, value: present(stored), kept };
@@ -175,10 +178,10 @@ export function admittedPost(graph, object, accessor) {
   const who = seeAccessorEdge(accessor);
   if (!id.ok || !who.ok) return undefined;
   const admission = admittedOwner(graph, id.value);
-  const held = postRows(graph);
+  const held = postTable(graph);
   if (!admission || !held) return undefined;
   const row = held.get(postSoul(admission.owner, id.value, who.value));
-  if (!row) return undefined;
+  if (!row || !sealedPosts.has(row)) return undefined;
   return {
     stated: row.grant.stated,
     hamState: row.grant.hamState,
@@ -209,10 +212,10 @@ export function checkPost(graph, object, accessor, now, hint, hop) {
   const who = seeAccessorEdge(accessor);
   if (!id.ok || !who.ok) return { ...see, ...echoed };
   const admission = admittedOwner(graph, id.value);
-  const held = postRows(graph);
+  const held = postTable(graph);
   if (!admission || !held) return { allowed: false, reason: 'unknown', ...echoed };
   const row = held.get(postSoul(admission.owner, id.value, who.value));
-  if (!row) return { allowed: false, reason: 'missing', ...echoed };
+  if (!row || !sealedPosts.has(row)) return { allowed: false, reason: 'missing', ...echoed };
   if (row.grant.stated !== 1) return { allowed: false, reason: 'cancelled', ...echoed };
   if (now >= row.grant.from && now < row.grant.until) return { allowed: true, reason: 'post', ...echoed };
   return { allowed: false, reason: 'missing', ...echoed };

@@ -30,7 +30,6 @@
  * @typedef {{
  *   objectRecord(source: string): { id: string, owner: string } | undefined,
  *   stateSeeGrant(owner: string, grant: { object: string, accessor: string, from: number, until: number }): void,
- *   statePostGrant(owner: string, grant: { object: string, accessor: string, from: number, until: number }): void,
  *   seeGrant(object: string, accessor: string): { soul?: string, owner?: string, hamState?: number, grant?: { object?: string, accessor?: string, from?: number, until?: number, stated?: number } } | undefined,
  *   postGrant(object: string, accessor: string): { soul?: string, owner?: string, hamState?: number, grant?: { object?: string, accessor?: string, from?: number, until?: number, stated?: number } } | undefined,
  *   enrolledKey(principal: string): Uint8Array | undefined,
@@ -50,7 +49,7 @@
  */
 
 import { createHash, createPrivateKey, createPublicKey, sign, verify } from "node:crypto";
-import { canonicalAccessorId, nextPostHam, postGrantSigningBytes } from "./legacy/post-label.js";
+import { canonicalAccessorId, nextPostHam, postGrantSigningBytes, statePostGrantKey } from "./legacy/post-label.js";
 
 const PKCS8_PREFIX = Uint8Array.from([
   0x30, 0x2e, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x04, 0x22, 0x04, 0x20,
@@ -518,7 +517,11 @@ export function grantApprovedRequest(graph, owner, request, window, members) {
   /** @type {Uint8Array | null} */
   let postSigningBytes = null;
   if (accepted.scope === ACCESS_SCOPE_READ_POST) {
-    graph.statePostGrant(record.owner, {
+    const writePost = /** @type {((owner: string, grant: { object: string, accessor: string, from: number, until: number }) => void) | undefined} */ (
+      /** @type {any} */ (graph)[statePostGrantKey]
+    );
+    if (typeof writePost !== "function") return { granted: false, reason: "missing" };
+    writePost.call(graph, record.owner, {
       object: record.id,
       accessor,
       from: window.from,

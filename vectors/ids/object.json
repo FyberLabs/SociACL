@@ -338,6 +338,16 @@
       "reason": "non-canonical"
     },
     {
+      "name": "s3rch-room",
+      "input": "s3rch:room:0x52908400098527886E0F7030069857D2E4169EE7:1:abababababababab",
+      "reason": "bad-alphabet"
+    },
+    {
+      "name": "s3rch-forum",
+      "input": "s3rch:forum:0x52908400098527886E0F7030069857D2E4169EE7",
+      "reason": "bad-alphabet"
+    },
+    {
       "name": "bound-too-long",
       "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       "reason": "too-long"

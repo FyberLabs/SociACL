@@ -316,6 +316,11 @@ function compareBytes(left, right) {
   add('reject', 'sig-numeric', [
     { op: 'verify', row: numeric, rotations: 'genesis', ok: false, reason: 'not-string' },
   ]);
+  add('reject', 'id-field-not-string', [
+    { op: 'admit', row, rotations: 'genesis', patch: { owner: 5 }, ok: false, reason: 'not-string' },
+    { op: 'admit', row, rotations: 'genesis', patch: { object: 5 }, ok: false, reason: 'not-string' },
+    { op: 'admit', row, rotations: 'genesis', patch: { accessor: 5 }, ok: false, reason: 'not-string' },
+  ]);
   add('reject', 'sig-null', [
     { op: 'verify', row: missing, rotations: 'genesis', ok: false, reason: 'not-string' },
   ]);
@@ -400,6 +405,11 @@ function compareBytes(left, right) {
     { op: 'put', record: objectRecord(chatA, p, 1, at), rotations: 'genesis', ok: true, kept: false },
     { op: 'owner', object: chatA, owner: p, issuedAt: at + 40 },
     { op: 'check', object: chatA, accessor: p, now: at + 50, allowed: true, reason: 'owner' },
+  ]);
+  add('accept', 'regressed-history-retired-key-does-not-replace', [
+    { op: 'put', record: objectRecord(chatA, p, 2, at + 40), rotations: 'rotated', ok: true, kept: true },
+    { op: 'put', record: objectRecord(chatA, p, 1, at + 50), rotations: 'genesis', ok: true, kept: false },
+    { op: 'owner', object: chatA, owner: p, issuedAt: at + 40 },
   ]);
 }
 {

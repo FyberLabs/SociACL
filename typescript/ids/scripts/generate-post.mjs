@@ -206,6 +206,31 @@ add('reject', 'post-row-owner-must-match-record', [
   { op: 'admit-post', row: postRow({ owner: p2 }, 2), rotations: 'genesis', ok: false, reason: 'bad-record' },
   { op: 'view-post', object: chatA, accessor: p2, absent: true },
 ]);
+{
+  const row = postRow({});
+  add('reject', 'id-field-not-string', [
+    { op: 'admit-post', row, rotations: 'genesis', patch: { owner: 5 }, ok: false, reason: 'not-string' },
+    { op: 'admit-post', row, rotations: 'genesis', patch: { object: 5 }, ok: false, reason: 'not-string' },
+    { op: 'admit-post', row, rotations: 'genesis', patch: { accessor: 5 }, ok: false, reason: 'not-string' },
+  ]);
+}
+{
+  const live = postRow({ stated: 1, issuedAt: retiredAt }, 1, {});
+  add('reject', 'retired-post-grant-witnessed', [
+    { op: 'admit-post', row: live, rotations: 'rotated', ok: false, reason: 'unwitnessed-retired-key' },
+  ]);
+}
+function retiredPost(name, patch, reason) {
+  const made = postRow({ stated: 0, issuedAt: retiredAt }, 1, patch);
+  add('reject', name, [
+    { op: 'admit-post', row: made, rotations: 'rotated', ok: false, reason },
+  ]);
+}
+retiredPost('witness-wrong-iat', { iat: retiredAt - 1, exp: retiredAt + 100 }, 'bad-attestation');
+retiredPost('witness-wrong-recordId', { recordId: '00'.repeat(32) }, 'bad-attestation');
+retiredPost('witness-window-901', { exp: retiredAt + 901 }, 'bad-attestation');
+retiredPost('witness-wrong-principal', { principal: p2 }, 'bad-attestation');
+retiredPost('witness-too-long', 'x'.repeat(16385), 'too-long');
 add('reject', 'post-grant-v1-refused', [
   put(chatA, p, 1),
   { op: 'admit-post', row: { ...postRow({}), domain: 's3rch-post-grant-v1' }, rotations: 'genesis', ok: false, reason: 'legacy-row' },

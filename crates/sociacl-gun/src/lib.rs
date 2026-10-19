@@ -67,10 +67,6 @@ pub use mesh::{
     MESH_REASON_OWNER, MESH_REASON_URL_LEAF,
 };
 pub use post::MESH_REASON_POST;
-pub use post_label::{
-    post_grant_signing_bytes, post_soul, GunPostEdge, MeshPostGrant, POST_GRANT_DOMAIN,
-    POST_GRANT_SCOPE,
-};
 pub use request::{
     accept_access_request, access_request_id, access_request_signing_bytes,
     canonical_request_accessor, canonical_request_object, sign_access_request,

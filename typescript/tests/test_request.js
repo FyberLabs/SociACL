@@ -19,11 +19,10 @@ import {
   aclKey,
   grantApprovedRequest,
   issuerFromSeed,
-  postGrantSigningBytes,
   requestIssuerFromSeed,
   signAccessRequest,
 } from "../src/group.js";
-import { canonicalAccessorId } from "../src/legacy/post-label.js";
+import { canonicalAccessorId, postGrantSigningBytes } from "../src/legacy/post-label.js";
 import { checkSee } from "../src/gun.js";
 
 const fixture = JSON.parse(

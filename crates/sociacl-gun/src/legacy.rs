@@ -309,7 +309,10 @@ mod tests {
         );
         assert_eq!(crate::legacy::acl_soul("../meta"), None);
         assert_eq!(canonical_accessor_id("a\u{0}b"), None);
-        assert_eq!(crate::post_soul("0xalice", "doc", "a\u{0}b"), None);
+        assert_eq!(
+            crate::post_label::post_soul("0xalice", "doc", "a\u{0}b"),
+            None
+        );
         assert_eq!(canonical_accessor_id("bob~name"), None);
         assert_eq!(canonical_accessor_id("x~1get('s3rch')"), None);
         assert_eq!(canonical_accessor_id("."), None);

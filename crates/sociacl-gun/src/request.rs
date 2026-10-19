@@ -40,11 +40,9 @@ use crate::legacy::{
     acl_key, canonical_accessor_id, closed_reason, encode_key, is_item_shaped,
     may_alias_to_item_soul, unescape_acl_key,
 };
+use crate::post_label::{post_grant_signing_bytes, GunPostEdge, MeshPostGrant};
 use crate::soul::GunSoul;
-use crate::{
-    post_grant_signing_bytes, GroupPredicate, GunAclEdge, GunError, GunPostEdge, MeshPostGrant,
-    MeshSeeGrant, MeshSeeGraph,
-};
+use crate::{GroupPredicate, GunAclEdge, GunError, MeshSeeGrant, MeshSeeGraph};
 
 /// Length-prefixed domain for [`access_request_signing_bytes`].
 pub const ACCESS_REQUEST_DOMAIN: &str = "s3rch-access-request-v1";
@@ -111,7 +109,7 @@ pub struct OwnerGrantRows {
     pub request_id: String,
     pub request_signing_bytes: Vec<u8>,
     pub see: GunAclEdge,
-    pub post: Option<GunPostEdge>,
+    pub(crate) post: Option<GunPostEdge>,
     pub post_signing_bytes: Option<Vec<u8>>,
 }
 

@@ -49,6 +49,8 @@ pub enum Reason {
     UnwitnessedRetiredKey,
     BadKey,
     LegacyRow,
+    /// No admitted object record for this id.
+    Unknown,
 }
 impl fmt::Display for Reason {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

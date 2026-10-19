@@ -2,13 +2,13 @@
 //! A request is a hint. The helper writes owner rows. Hopcap stays 1.
 
 use crate::legacy::grant_soul;
+use crate::post_label::post_grant_signing_bytes;
 use crate::{
     accept_access_request, access_request_id, access_request_signing_bytes, factor_grants,
-    post_grant_signing_bytes, sign_access_request, AccessRequest, GroupPredicate, GunAclEdge,
-    GunError, HandoffHint, HopFactor, MembersAutoApprove, MeshSeeGrant, MeshSeeGraph,
-    OwnerGrantRows, ACCESS_MESSAGE_MAX, ACCESS_REQUEST_DOMAIN, ACCESS_REQUEST_ID_DOMAIN,
-    ACCESS_SCOPE_READ, ACCESS_SCOPE_READ_POST, ACCESS_STATUS_PENDING, ACCESS_STATUS_WITHDRAWN,
-    MESH_REASON_DELEGATE, MESH_REASON_MISSING,
+    sign_access_request, AccessRequest, GroupPredicate, GunAclEdge, GunError, HandoffHint,
+    HopFactor, MembersAutoApprove, MeshSeeGrant, MeshSeeGraph, OwnerGrantRows, ACCESS_MESSAGE_MAX,
+    ACCESS_REQUEST_DOMAIN, ACCESS_REQUEST_ID_DOMAIN, ACCESS_SCOPE_READ, ACCESS_SCOPE_READ_POST,
+    ACCESS_STATUS_PENDING, ACCESS_STATUS_WITHDRAWN, MESH_REASON_DELEGATE, MESH_REASON_MISSING,
 };
 use sociacl_core::{AttestationChannel, IssuerSecret, Timestamp};
 

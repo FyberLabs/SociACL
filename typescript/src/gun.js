@@ -9,6 +9,11 @@
 
 export { admitPost, checkPost, factorGrants } from "./post.js";
 
+/** Length-prefixed domain for postGrantBytes. */
+export const POST_GRANT_DOMAIN = "sociacl-post-grant-v2";
+
+export { postGrantBytes, postSoul } from "../ids/src/index.js";
+
 export { admitRow, checkSee, putObject, reverifyPrincipal } from "./see.js";
 
 export function toGunNode(item) {

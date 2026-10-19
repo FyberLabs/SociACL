@@ -70,13 +70,15 @@ claim of injectivity.
 New object ids are `<kind>_<principal-key>_<32 lowercase hex>`. The
 principal key is the creator's genesis principal as `p_` plus 128
 lowercase hex. `objectPrincipal` reads that one principal back out.
-`claim_<64hex>`, `ext_<64hex>`, the older `<kind>_<32 hex>` form, and the
-read-only `s3rch:` legacy formats still parse. `s3rch:post:<wallet>:<ts>:<hex>`
-is one of those legacy forms. `claim`, `ext`, `post`, `member`,
-and `objset` cannot be minted as native kinds. Legacy timestamps retain the specified 1–12 decimal digit limit.
-Legacy identifiers are not object records. The wallet and
-timestamp inside a legacy post id are not read out. Native mints
-take the creator and use `crypto.getRandomValues` (Rust: `getrandom`) for 128 bits.
+`claim_<64hex>`, `ext_<64hex>`, and the older `<kind>_<32 hex>` form still
+parse. The older form is not an object record. The s3r.ch object spellings
+do not parse: `s3rch:room`, `s3rch:chat`, `s3rch:forum-msg`, `s3rch:post`,
+`s3rch:forum-group`, `s3rch:bot`, and `s3rch:forum` are `bad-alphabet`.
+`post` is a reserved kind, so a s3r.ch post cannot use kind `post`.
+`s3rch:forum:<owner>` has no random part. A forum id needs a nonce before
+it can be an object id. `claim`, `ext`, `post`, `member`, and `objset`
+cannot be minted as native kinds. Native mints take the creator and use
+`crypto.getRandomValues` (Rust: `getrandom`) for 128 bits.
 A path key may be 180 characters.
 
 `SourceKey` ports the canonical SourceRef format from s3r.ch Views. s3r.ch owners

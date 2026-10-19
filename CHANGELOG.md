@@ -1,5 +1,14 @@
 # Changelog
 
+## sociacl/gun — unreleased
+
+- **Breaking:** `sociacl/gun` and `sociacl/group` no longer export
+  `POST_GRANT_DOMAIN`, `POST_GRANT_SCOPE`, `postGrantSigningBytes`, or the
+  label `postSoul`. The label post writer stays inside the request and group
+  modules until PR 4. `admitPost` admits a `sociacl-post-grant-v2` row.
+  `postGrantBytes` and the typed `postSoul` (`p_` plus 128 lowercase hex)
+  are the public post signing surface.
+
 ## Encrypted discovery — unreleased
 
 - The see path takes stored ids only. `checkSee` / `check_see` have no string
@@ -136,7 +145,10 @@ is `ids-v0.10.0`.
   `s3rch:post`, `s3rch:forum-group`, `s3rch:bot`, `s3rch:forum`) are
   removed from the grammar. Network ids `s3rch:https://...` stay.
   `post` is a reserved kind. `s3rch:forum:<owner>` has no nonce, so a
-  forum id needs a random part when s3r.ch adopts SociACL.
+  forum id needs a random part when s3r.ch adopts SociACL. Those seven
+  spellings parse as `bad-alphabet`. A non-string `owner`, `object`, or
+  `accessor` on a see or post row is `not-string`. `unknown` is the reason
+  when a post row has no admitted object record.
 - `parsePostGrant` / `verifyPostGrant` and `parse_post_grant` /
   `verify_post_grant` cover `sociacl-post-grant-v2`. A retired cancel
   is `stated` 0 in those signed bytes. A retired `stated` 1 row is
