@@ -6,7 +6,7 @@
  * and feed, encdisc, and the contract in PR 6.
  */
 
-import { canonicalAccessorId, nextPostHam, objectIdRejected, postGrantKey, postRowEncodable, postSoul, sameObjectId } from "../post.js";
+import { canonicalAccessorId, nextPostHam, objectIdRejected, postGrantKey, postRowEncodable, postSoul, sameObjectId } from "./post-label.js";
 
 /** @param {string | null | undefined} left @param {string | null | undefined} right */
 function samePrincipal(left, right) {

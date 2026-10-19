@@ -260,30 +260,7 @@ pub fn parse_object_id(s: &str) -> Result<ObjectId, Reason> {
             return Err(Reason::NonCanonical);
         }
     }
-    let p: Vec<_> = s.split(':').collect();
-    let suffix = |x: &str| {
-        (1..=64).contains(&x.len())
-            && x.bytes()
-                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
-    };
-    let valid = match p.as_slice() {
-        // `post` is the s3r.ch native-post legacy form. The wallet and timestamp stay opaque.
-        ["s3rch", "room" | "chat" | "forum-msg" | "post", _, ts, tail] => {
-            (1..=12).contains(&ts.len()) && ts.bytes().all(|c| c.is_ascii_digit()) && suffix(tail)
-        }
-        ["s3rch", "forum-group" | "bot", _, tail] => suffix(tail),
-        ["s3rch", "forum", _] => true,
-        _ => false,
-    };
-    if !valid
-        || p[2].len() != 42
-        || !p[2].starts_with("0x")
-        || !p[2].as_bytes()[2..].iter().all(u8::is_ascii_hexdigit)
-    {
-        return Err(Reason::BadAlphabet);
-    }
-    parse_eip55(p[2])?;
-    Ok(ObjectId(s.into()))
+    Err(Reason::BadAlphabet)
 }
 pub fn parse_network_id(s: &str) -> Result<NetworkId, Reason> {
     text(s, 2048)?;

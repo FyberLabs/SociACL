@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { checkPost, checkSee } from "../src/gun.js";
+import { checkSee } from "../src/gun.js";
 import { seeAccessorEdge, seeObjectEdge } from "../src/see.js";
 import {
   MemorySeeAcl,
@@ -17,7 +17,7 @@ import {
   itemSoul,
   userSoul,
 } from "../src/legacy/gun-legacy.js";
-import { canonicalAccessorId, postGrantKey, postSoul, sameObjectId } from "../src/post.js";
+import { canonicalAccessorId, postGrantKey, postSoul, sameObjectId } from "../src/legacy/post-label.js";
 
 test("souls match the s3r.ch consume contract", () => {
   assert.equal(encodeKey("rss3:act/1#x"), "rss3:act/1~2x");
@@ -57,16 +57,15 @@ test("checkSeeGrant ANDs the window; cancel is immediate", () => {
   assert.equal(checkSeeLabel(acl, object, "0xbob", 10).allowed, false);
 });
 
-test("checkPost requires see and does not keep a cancelled allow", () => {
+test("label post rows stay on the label graph until request migrates", () => {
   const acl = new MemorySeeAcl();
   const object = itemSoul("room:alpha");
   acl.putObject(object, "0xalice");
   applyPostGrant(acl, "0xalice", { object, accessor: "0xbob", from: 0, until: 80 });
-  assert.equal(checkPost(acl, object, "0xbob", 10, { principal: "0xbob", target: object }).allowed, false);
+  assert.equal(acl.postGrant(object, "0xbob").grant.stated, 1);
   applySeeGrant(acl, "0xalice", { claimId: object, accessor: "0xbob", from: 0, until: 80 });
-  assert.equal(checkPost(acl, object, "0xbob", 10).allowed, true);
   cancelPost(acl, "0xalice", "0xbob", object);
-  assert.equal(checkPost(acl, object, "0xbob", 10).allowed, false);
+  assert.equal(acl.postGrant(object, "0xbob").grant.stated, 0);
   assert.equal(checkSeeLabel(acl, object, "0xbob", 10).allowed, true);
 });
 

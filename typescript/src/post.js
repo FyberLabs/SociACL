@@ -1,407 +1,70 @@
 /**
- * Post grant row for s3r.ch Views read+post.
- * Separate from the see grant. Same cancel rule: stated 0 and a
- * hamState bump. At an equal hamState a cancellation wins, then the
- * narrower window, then the smaller signing bytes.
- * Check does not verify a signature. A hop, a hint, a wrap, a request,
- * or an inbox delivery never grants.
- *
+ * Stored-id post path. One soul, domain sociacl-post-grant-v2.
+ * Admission verifies. Check does not. A post allow requires the
+ * admitted see graph to allow the same triple. The owner is the
+ * admitted object record. Hint and hop are echoed and never grant.
+ * @typedef {import('../ids/src/types.js').ObjectId} ObjectId
+ * @typedef {import('../ids/src/types.js').PrincipalId} PrincipalId
+ * @typedef {import('../ids/src/types.js').SeeGrant} PostGrant
+ * @typedef {import('../ids/src/types.js').ResolutionContext} ResolutionContext
+ * @typedef {import('./see.js').SeeResolver} SeeResolver
  * @typedef {{
- *   object: string,
- *   accessor: string,
- *   from: number,
- *   until: number,
- *   stated: number,
- * }} PostGrantRow
- * @typedef {{
- *   soul: string | null,
- *   owner: string,
- *   hamState: number,
- *   grant: PostGrantRow,
- * }} PostEdge
- * @typedef {{
- *   ownerOf(object: string): string | undefined,
- *   seeGrant(object: string, accessor: string): PostEdge | undefined,
- *   postGrant(object: string, accessor: string): PostEdge | undefined,
- * }} PostGraph
+ *   key: PrincipalId,
+ *   mode: 'present' | 'witnessed',
+ *   grant: PostGrant,
+ *   bytes: Uint8Array,
+ *   source: PostGrant,
+ *   witness: boolean,
+ * }} SealedPost
  */
 
-export const POST_GRANT_DOMAIN = "s3rch-post-grant-v1";
-export const POST_GRANT_SCOPE = "post";
+import {
+  postSoul,
+  parsePostGrant,
+  verifyAclAttestation,
+  verifyPostGrant,
+} from '../ids/src/index.js';
+import {
+  admitRow,
+  admittedOwner,
+  admittedView,
+  checkSee,
+  putObject,
+  reverifyPrincipal,
+  seeAccessorEdge,
+  seeObjectEdge,
+} from './see.js';
 
-const JS_SAFE_INTEGER_MAX = Number.MAX_SAFE_INTEGER;
+const sealedPosts = new WeakSet();
+/** @type {WeakMap<object, Map<string, SealedPost>>} */
+const postTables = new WeakMap();
 
-/**
- * Injective path escape. `~` is the escape character.
- * `. # $ [ ]` each get their own form. `/` stays, so an item soul
- * does not gain a new spelling of a slash-bearing id.
- * @param {string} id
- * @param {boolean} slash
- */
-function escapeKey(id, slash) {
-  return String(id).replace(slash ? /[~.#$[\]/]/g : /[~.#$[\]]/g, (ch) => {
-    switch (ch) {
-      case "~":
-        return "~0";
-      case ".":
-        return "~1";
-      case "#":
-        return "~2";
-      case "$":
-        return "~3";
-      case "[":
-        return "~4";
-      case "]":
-        return "~5";
-      case "/":
-        return "~6";
-      default:
-        return ch;
-    }
-  });
-}
-
-/** @param {string} id */
-function encodeKey(id) {
-  return escapeKey(id, false);
-}
-
-/**
- * ASCII whitespace only: tab, LF, VT, FF, CR, space.
- * U+FEFF and U+0085 stay in the text so a principal can reject them.
- * @param {string} text
- */
-function asciiTrim(text) {
-  let start = 0;
-  let end = text.length;
-  while (start < end && isAsciiSpace(text.charCodeAt(start))) start += 1;
-  while (end > start && isAsciiSpace(text.charCodeAt(end - 1))) end -= 1;
-  return text.slice(start, end);
-}
-
-/** @param {number} code */
-function isAsciiSpace(code) {
-  return code === 0x09 || code === 0x0a || code === 0x0b || code === 0x0c || code === 0x0d || code === 0x20;
-}
-
-/**
- * A lone UTF-16 surrogate is not a Unicode scalar value.
- * Checked before a Unicode property escape, which throws on one.
- * @param {string} text
- */
-function hasUnpairedSurrogate(text) {
-  for (let i = 0; i < text.length; i += 1) {
-    const code = text.charCodeAt(i);
-    if (code >= 0xd800 && code <= 0xdbff) {
-      const next = text.charCodeAt(i + 1);
-      if (!(next >= 0xdc00 && next <= 0xdfff)) return true;
-      i += 1;
-      continue;
-    }
-    if (code >= 0xdc00 && code <= 0xdfff) return true;
+/** @param {object} graph */
+function postMap(graph) {
+  let held = postTables.get(graph);
+  if (!held) {
+    held = new Map();
+    postTables.set(graph, held);
   }
-  return false;
+  return held;
 }
 
-/** @param {string} id */
-function aclKey(id) {
-  return escapeKey(asciiTrim(String(id)), true);
-}
-
-/**
- * A bare principal, or null. `.` may occur inside an id. The whole id
- * cannot be `.`, `..`, or `...`. `/ # $ [ ] ~`, an inner space, a control,
- * Unicode whitespace, a format character, `.get(`, an unpaired
- * surrogate, and more than 256 scalar values are rejected.
- * Never returns "".
- * @param {string} id
- * @returns {string | null}
- */
-function barePrincipal(id) {
-  if (!id || id === "." || id === ".." || id === "..." || id.includes(".get(") || id.includes(" ")) return null;
-  if (hasUnpairedSurrogate(id)) return null;
-  if ([...id].length > 256) return null;
-  if (/[/#$[\]~]/.test(id)) return null;
-  if (/\p{Z}|\p{Cf}/u.test(id)) return null;
-  for (let i = 0; i < id.length; i += 1) {
-    const code = id.charCodeAt(i);
-    if (code <= 0x1f || (code >= 0x7f && code <= 0x9f)) return null;
+/** A copy of the admitted post rows. Mutating it does not change Check.
+ * @param {object} graph */
+export function postRows(graph) {
+  if (!graph || typeof graph !== 'object') return undefined;
+  const live = postTables.get(graph);
+  /** @type {Map<string, { mode: string, grant: object }>} */
+  const copy = new Map();
+  if (!live) return copy;
+  for (const [key, row] of live) {
+    copy.set(key, { mode: row.mode, grant: { ...row.grant } });
   }
-  return id;
-}
-
-/**
- * Owner / accessor key. An exact `s3rch/users/<wallet>` collapses to
- * that wallet. Anything else must be a bare principal. A failed parse
- * is null and is not a soul segment. Not an object escape.
- * @param {string | null | undefined} id
- * @returns {string | null}
- */
-function aclPrincipalKey(id) {
-  if (typeof id !== "string" || hasUnpairedSurrogate(id)) return null;
-  const text = asciiTrim(id);
-  if (!text || text.includes(".get(")) return null;
-  const segments = text
-    .split("/")
-    .map((part) => asciiTrim(part))
-    .filter((part) => part !== "");
-  if (segments.length === 3 && segments[0] === "s3rch" && segments[1] === "users") {
-    return barePrincipal(segments[2] ?? "");
-  }
-  if (text.includes("/")) return null;
-  return barePrincipal(text);
-}
-
-/** @param {string | null | undefined} left @param {string | null | undefined} right */
-function sameParsed(left, right) {
-  if (left == null || right == null) return false;
-  const a = aclPrincipalKey(left);
-  const b = aclPrincipalKey(right);
-  return a != null && a === b;
-}
-
-const HELD_CLAIM_PREFIXES = ["ens:", "unstoppable:", "fc:", "lens:", "rss3:"];
-
-/** @param {string} id */
-function isItemShaped(id) {
-  const parts = asciiTrim(String(id)).split("/");
-  return parts.length === 3 && parts[0] === "s3rch" && parts[1] === "items" && parts[2] !== "";
-}
-
-/** @param {string} id */
-function mayAliasToItemSoul(id) {
-  const text = asciiTrim(String(id));
-  if (isItemShaped(text)) return true;
-  if (!text.includes("/") && HELD_CLAIM_PREFIXES.some((prefix) => text.startsWith(prefix))) return false;
-  return true;
-}
-
-/** @param {string} id */
-function itemSoulOf(id) {
-  return `s3rch/items/${encodeKey(asciiTrim(String(id)))}`;
-}
-
-/**
- * A raw id and `s3rch/items/<encodeKey(id)>` name one object when
- * one side is an item soul. A held claim id without `/` does not.
- * @param {string} left
- * @param {string} right
- */
-function itemSoulAlias(left, right) {
-  const a = asciiTrim(String(left));
-  const b = asciiTrim(String(right));
-  if (!isItemShaped(a) && !isItemShaped(b)) return false;
-  if (!mayAliasToItemSoul(a) || !mayAliasToItemSoul(b)) return false;
-  return itemSoulOf(a) === b || itemSoulOf(b) === a;
-}
-
-/** @param {string} stored @param {string} query */
-function objectNames(stored, query) {
-  return aclKey(stored) === aclKey(query) || itemSoulAlias(stored, query);
-}
-
-/**
- * One accessor id. `s3rch/users/<wallet>` and the wallet are this key.
- * @param {string | null | undefined} id
- * @returns {string | null}
- */
-export function canonicalAccessorId(id) {
-  return aclPrincipalKey(id);
-}
-
-/**
- * Leading or trailing whitespace, including U+0085, U+00A0, and U+FEFF.
- * That id is not stored and does not alias to the trimmed spelling.
- * @param {string | null | undefined} id
- */
-export function objectIdRejected(id) {
-  const text = String(id ?? "");
-  if (!text || hasUnpairedSurrogate(text)) return true;
-  return edgeSpace(text, true) || edgeSpace(text, false);
-}
-
-/** @param {string} text @param {boolean} fromStart */
-function edgeSpace(text, fromStart) {
-  const index = fromStart ? 0 : lastScalarIndex(text);
-  const cp = text.codePointAt(index);
-  if (cp == null) return true;
-  if (cp === 0x09 || cp === 0x0a || cp === 0x0b || cp === 0x0c || cp === 0x0d || cp === 0x20 || cp === 0x85) {
-    return true;
-  }
-  return /\p{Z}|\p{Cf}/u.test(String.fromCodePoint(cp));
-}
-
-/** @param {string} text */
-function lastScalarIndex(text) {
-  const end = text.charCodeAt(text.length - 1);
-  if (end >= 0xdc00 && end <= 0xdfff && text.length > 1) {
-    const prev = text.charCodeAt(text.length - 2);
-    if (prev >= 0xd800 && prev <= 0xdbff) return text.length - 2;
-  }
-  return text.length - 1;
-}
-
-/**
- * Two strings name one object when their acl keys match, or one is
- * the item soul of the other. A held claim id without `/` does not.
- * Surrounding whitespace does not name the trimmed id.
- * @param {string} left
- * @param {string} right
- */
-export function sameObjectId(left, right) {
-  const a = String(left ?? "");
-  const b = String(right ?? "");
-  if (objectIdRejected(a) || objectIdRejected(b)) return false;
-  return objectNames(a, b);
-}
-
-/**
- * @param {string} owner
- * @param {string} object
- * @param {string} accessor
- */
-export function postSoul(owner, object, accessor) {
-  const ownerKey = aclPrincipalKey(owner);
-  const accessorKey = aclPrincipalKey(accessor);
-  if (ownerKey == null || accessorKey == null) return null;
-  return `s3rch/acl/${ownerKey}/${POST_GRANT_SCOPE}/${aclKey(object)}/${accessorKey}`;
-}
-
-/**
- * @param {unknown} value
- * @returns {value is number}
- */
-function canonicalInteger(value) {
-  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 && value <= JS_SAFE_INTEGER_MAX;
-}
-
-/** @param {number} value */
-function canonicalDecimal(value) {
-  if (!canonicalInteger(value)) {
-    throw new Error("post grant field is not a canonical integer");
-  }
-  return String(value);
-}
-
-/**
- * Peer merge drops a row that cannot be encoded. It does not throw.
- * A principal that does not parse has no soul, so that row is dropped
- * before the signing-byte tie-break.
- * @param {PostEdge | null | undefined} edge
- */
-export function postRowEncodable(edge) {
-  if (!edge?.grant) return false;
-  const grant = edge.grant;
-  if (
-    !canonicalInteger(edge.hamState) ||
-    !canonicalInteger(grant.stated) ||
-    !canonicalInteger(grant.from) ||
-    !canonicalInteger(grant.until)
-  ) {
-    return false;
-  }
-  return postSoul(edge.owner, grant.object, grant.accessor) != null;
-}
-
-/**
- * Next hamState that still fits in a canonical integer.
- * A cancellation at the maximum keeps that value so stated 0 wins.
- * @param {number | undefined} prev
- * @param {boolean} forCancel
- * @returns {number | undefined}
- */
-export function nextPostHam(prev, forCancel) {
-  const base = canonicalInteger(prev) ? prev : 0;
-  const bumped = base + 1;
-  if (canonicalInteger(bumped)) return bumped;
-  if (forCancel && base > 0) return base;
-  return undefined;
-}
-
-/**
- * Storage and lookup key. Same canonical ids as postSoul.
- * @param {string} owner
- * @param {string} object
- * @param {string} accessor
- */
-export function postGrantKey(owner, object, accessor) {
-  const ownerKey = aclPrincipalKey(owner);
-  const accessorKey = aclPrincipalKey(accessor);
-  if (ownerKey == null || accessorKey == null) return null;
-  return `${ownerKey}\0${aclKey(object)}\0${accessorKey}`;
-}
-
-/** @param {readonly string[]} fields */
-function lengthPrefixed(fields) {
-  /** @type {Uint8Array[]} */
-  const parts = [];
-  const encoder = new TextEncoder();
-  for (const field of fields) {
-    const bytes = encoder.encode(field);
-    const len = new Uint8Array(4);
-    new DataView(len.buffer).setUint32(0, bytes.length, true);
-    parts.push(len, bytes);
-  }
-  const size = parts.reduce((sum, part) => sum + part.length, 0);
-  const out = new Uint8Array(size);
-  let offset = 0;
-  for (const part of parts) {
-    out.set(part, offset);
-    offset += part.length;
-  }
-  return out;
-}
-
-/**
- * Length-prefixed row encoding. Check does not verify a signature.
- * @param {{ grant: { object: string, accessor: string, stated: number, from: number, until: number }, hamState: number }} edge
- */
-export function postGrantSigningBytes(edge) {
-  const grant = edge.grant;
-  const accessorKey = aclPrincipalKey(grant.accessor);
-  if (accessorKey == null) {
-    throw new Error("post grant field is not a canonical integer");
-  }
-  return lengthPrefixed([
-    POST_GRANT_DOMAIN,
-    aclKey(grant.object),
-    accessorKey,
-    canonicalDecimal(grant.stated),
-    canonicalDecimal(grant.from),
-    canonicalDecimal(grant.until),
-    POST_GRANT_SCOPE,
-    canonicalDecimal(edge.hamState),
-  ]);
-}
-
-/** A hop, a hint, a wrap, a request, or an inbox delivery never grants. @param {string} _kind */
-export function factorGrants(_kind) {
-  return false;
-}
-
-/** @param {string} object */
-function closedReason(object) {
-  const text = String(object).trim();
-  if (text.includes("://")) return "url-leaf";
-  if (text === "s3rch/meta") return "meta";
-  if (text === "s3rch/acl" || text.startsWith("s3rch/acl/")) return "acl";
-  return null;
-}
-
-/**
- * @param {{ from: number, until: number }} left
- * @param {{ from: number, until: number }} right
- */
-function windowInside(left, right) {
-  return (
-    left.from >= right.from &&
-    left.until <= right.until &&
-    (left.from > right.from || left.until < right.until)
-  );
+  return copy;
 }
 
 /** @param {Uint8Array} left @param {Uint8Array} right */
-function bytesBefore(left, right) {
+function smallerBytes(left, right) {
   const n = Math.min(left.length, right.length);
   for (let i = 0; i < n; i += 1) {
     if (left[i] !== right[i]) return left[i] < right[i];
@@ -409,110 +72,323 @@ function bytesBefore(left, right) {
   return left.length < right.length;
 }
 
+/** @param {Uint8Array} left @param {Uint8Array} right */
+function sameBytes(left, right) {
+  if (left.length !== right.length) return false;
+  for (let i = 0; i < left.length; i += 1) if (left[i] !== right[i]) return false;
+  return true;
+}
+
+/** @param {{ from: number, until: number }} inner @param {{ from: number, until: number }} outer */
+function inside(inner, outer) {
+  return inner.from >= outer.from && inner.until <= outer.until && (inner.from > outer.from || inner.until < outer.until);
+}
+
+/** Higher HAM, then a cancel, then a strictly contained window, then the
+ * smaller signed bytes, then a validating witness. Same order as see.
+ * @param {SealedPost} prev @param {SealedPost} next */
+function replaces(prev, next) {
+  if (next.grant.hamState !== prev.grant.hamState) return next.grant.hamState > prev.grant.hamState;
+  if ((next.grant.stated === 0) !== (prev.grant.stated === 0)) return next.grant.stated === 0;
+  const nextInside = inside(next.grant, prev.grant);
+  const prevInside = inside(prev.grant, next.grant);
+  if (nextInside !== prevInside) return nextInside;
+  if (!sameBytes(next.bytes, prev.bytes)) return smallerBytes(next.bytes, prev.bytes);
+  return next.witness && !prev.witness;
+}
+
+/** @param {PostGrant} grant @param {Uint8Array} bytes @param {ResolutionContext} ctx */
+function witnessOk(grant, bytes, ctx) {
+  if (grant.attest === undefined || !ctx) return false;
+  const attest = verifyAclAttestation(grant.attest, ctx.jwks, grant.issuedAt, bytes);
+  return attest.ok && attest.value.principal === grant.owner;
+}
+
+/** @param {PostGrant} grant @returns {PostGrant} */
+function sourceOf(grant) {
+  return Object.freeze({
+    owner: grant.owner,
+    object: grant.object,
+    accessor: grant.accessor,
+    stated: grant.stated,
+    from: grant.from,
+    until: grant.until,
+    hamState: grant.hamState,
+    issuedAt: grant.issuedAt,
+    sig: grant.sig,
+    ...(grant.attest !== undefined ? { attest: grant.attest } : {}),
+  });
+}
+
 /**
- * @param {PostEdge} edge
- * @returns {PostEdge}
+ * @param {{ key: PrincipalId, mode: 'present' | 'witnessed', grant: PostGrant, bytes: Uint8Array }} verifiedRow
+ * @param {ResolutionContext} ctx
+ * @returns {SealedPost}
  */
-export function canonicalPostEdge(edge) {
-  const grant = edge.grant;
+function seal(verifiedRow, ctx) {
+  const bytes = new Uint8Array(verifiedRow.bytes);
+  /** @type {SealedPost} */
+  const row = {
+    key: verifiedRow.key,
+    mode: verifiedRow.mode,
+    grant: Object.freeze({ ...verifiedRow.grant }),
+    bytes,
+    source: sourceOf(verifiedRow.grant),
+    witness: witnessOk(verifiedRow.grant, bytes, ctx),
+  };
+  Object.freeze(row);
+  sealedPosts.add(row);
+  return row;
+}
+
+/** @param {SealedPost} row */
+function present(row) {
+  return Object.freeze({
+    key: row.key,
+    mode: row.mode,
+    grant: row.grant,
+    bytes: new Uint8Array(row.bytes),
+    source: row.source,
+    witness: row.witness,
+  });
+}
+
+/** @param {unknown} graph @param {unknown} resolver */
+function ready(graph, resolver) {
+  return !!graph && typeof graph === 'object' && !!resolver && typeof resolver === 'object'
+    && typeof /** @type {SeeResolver} */ (resolver).rotations === 'function'
+    && !!/** @type {SeeResolver} */ (resolver).ctx;
+}
+
+/**
+ * Admit one sociacl-post-grant-v2 row. The owner is the admitted object
+ * record. A missing object is `unknown`. A row owner that is not that
+ * record is `bad-record`. Retired-key cancels are `stated === 0` in the
+ * signed bytes.
+ * @param {object} graph
+ * @param {unknown} row
+ * @param {SeeResolver} resolver
+ * @returns {{ ok: true, value: { mode: 'present' | 'witnessed', grant: PostGrant }, kept: boolean } | { ok: false, reason: string }}
+ */
+export function admitPost(graph, row, resolver) {
+  if (!ready(graph, resolver)) return { ok: false, reason: 'missing-history' };
+  const parsed = parsePostGrant(row);
+  if (!parsed.ok) return parsed;
+  const rotations = resolver.rotations(parsed.value.grant.owner);
+  if (!Array.isArray(rotations)) return { ok: false, reason: 'missing-history' };
+  const verified = verifyPostGrant(parsed.value.grant, rotations, resolver.ctx);
+  if (!verified.ok) return verified;
+  const grant = verified.value.grant;
+  const admission = admittedOwner(graph, grant.object);
+  if (!admission) return { ok: false, reason: 'unknown' };
+  if (admission.owner !== grant.owner) return { ok: false, reason: 'bad-record' };
+  const held = postMap(graph);
+  const key = postSoul(admission.owner, grant.object, grant.accessor);
+  const sealed = seal(verified.value, resolver.ctx);
+  const prev = held.get(key);
+  const kept = !prev || !sealedPosts.has(prev) || replaces(prev, sealed);
+  if (kept) held.set(key, sealed);
+  const stored = held.get(key) ?? sealed;
+  return { ok: true, value: present(stored), kept };
+}
+
+/** @param {object} graph @param {ObjectId} object @param {PrincipalId} accessor */
+export function admittedPost(graph, object, accessor) {
+  const id = seeObjectEdge(object);
+  const who = seeAccessorEdge(accessor);
+  if (!id.ok || !who.ok) return undefined;
+  const admission = admittedOwner(graph, id.value);
+  const held = postTables.get(graph);
+  if (!admission || !held) return undefined;
+  const row = held.get(postSoul(admission.owner, id.value, who.value));
+  if (!row || !sealedPosts.has(row)) return undefined;
   return {
-    soul: postSoul(edge.owner, grant.object, grant.accessor),
-    owner: asciiTrim(String(edge.owner)),
-    hamState: edge.hamState,
-    grant: {
-      object: asciiTrim(String(grant.object)),
-      accessor: asciiTrim(String(grant.accessor)),
-      from: grant.from,
-      until: grant.until,
-      stated: grant.stated,
-    },
+    stated: row.grant.stated,
+    hamState: row.grant.hamState,
+    mode: row.mode,
+    from: row.grant.from,
+    until: row.grant.until,
+    issuedAt: row.grant.issuedAt,
+    attest: row.grant.attest !== undefined,
   };
 }
 
 /**
- * Higher hamState wins. At the same hamState a cancellation wins,
- * then the narrower window, then the smaller signing bytes.
- * @param {PostEdge} local
- * @param {PostEdge} incoming
- * @returns {PostEdge}
- */
-export function preferPost(local, incoming) {
-  const nextOk = postRowEncodable(incoming);
-  const keptOk = postRowEncodable(local);
-  if (!nextOk) return keptOk ? canonicalPostEdge(local) : local;
-  if (!keptOk) return canonicalPostEdge(incoming);
-  const kept = canonicalPostEdge(local);
-  const next = canonicalPostEdge(incoming);
-  if (next.hamState > kept.hamState) return next;
-  if (next.hamState < kept.hamState) return kept;
-  const nextDown = next.grant.stated !== 1;
-  const keptDown = kept.grant.stated !== 1;
-  if (nextDown && !keptDown) return next;
-  if (keptDown && !nextDown) return kept;
-  if (windowInside(kept.grant, next.grant) && !windowInside(next.grant, kept.grant)) return kept;
-  if (windowInside(next.grant, kept.grant) && !windowInside(kept.grant, next.grant)) return next;
-  const keptBytes = postGrantSigningBytes(kept);
-  const nextBytes = postGrantSigningBytes(next);
-  return bytesBefore(nextBytes, keptBytes) ? next : kept;
-}
-
-/**
- * @param {PostGraph} graph
- * @param {string} object
- * @param {string} accessor
- * @param {number} now
- */
-function seeDecision(graph, object, accessor, now) {
-  const closed = closedReason(object);
-  if (closed) return { allowed: false, reason: closed };
-  const owner = graph.ownerOf(String(object));
-  if (!owner) return { allowed: false, reason: "missing" };
-  if (sameParsed(owner, accessor)) {
-    return { allowed: true, reason: "owner" };
-  }
-  const edge = graph.seeGrant(object, accessor);
-  if (!edge) return { allowed: false, reason: "missing" };
-  const grant = edge.grant;
-  const names =
-    sameObjectId(grant.object, object) &&
-    sameParsed(grant.accessor, accessor) &&
-    sameParsed(edge.owner, owner);
-  if (!names) return { allowed: false, reason: "missing" };
-  if (grant.stated !== 1) return { allowed: false, reason: "cancelled" };
-  if (now >= grant.from && now < grant.until) return { allowed: true, reason: "delegate" };
-  return { allowed: false, reason: "missing" };
-}
-
-/**
- * Allow-post only when see also passes.
+ * Allow-post only when the admitted see graph allows the same triple.
  * The object owner may post. Any other accessor needs a live post row.
- * Hint and hop are echoed and do not set allowed.
- *
- * @param {PostGraph} graph
- * @param {string} object
- * @param {string} accessor
+ * A raw string is not a parameter. Hint and hop do not grant.
+ * @param {object} graph
+ * @param {ObjectId} object
+ * @param {PrincipalId} accessor
  * @param {number} now
- * @param {object | null | undefined} hint
- * @param {object | null | undefined} hop
+ * @param {unknown} [hint]
+ * @param {unknown} [hop]
  */
 export function checkPost(graph, object, accessor, now, hint, hop) {
   const echoed = { hint: hint ?? null, hop: hop ?? null };
-  const see = seeDecision(graph, object, accessor, now);
-  if (!see.allowed || see.reason === "owner") {
-    return { ...see, ...echoed };
+  const see = checkSee(graph, object, accessor, now, hint, hop);
+  if (!see.allowed || see.reason === 'owner') return { ...see, ...echoed };
+  const id = seeObjectEdge(object);
+  const who = seeAccessorEdge(accessor);
+  if (!id.ok || !who.ok) return { ...see, ...echoed };
+  const admission = admittedOwner(graph, id.value);
+  if (!admission) return { allowed: false, reason: 'unknown', ...echoed };
+  const held = postTables.get(graph);
+  if (!held) return { allowed: false, reason: 'missing', ...echoed };
+  const row = held.get(postSoul(admission.owner, id.value, who.value));
+  if (!row || !sealedPosts.has(row)) return { allowed: false, reason: 'missing', ...echoed };
+  if (row.grant.stated !== 1) return { allowed: false, reason: 'cancelled', ...echoed };
+  if (now >= row.grant.from && now < row.grant.until) return { allowed: true, reason: 'post', ...echoed };
+  return { allowed: false, reason: 'missing', ...echoed };
+}
+
+/**
+ * Recheck post rows for one principal. see.js calls this. The seal stays here.
+ * @param {object} graph
+ * @param {PrincipalId} principal
+ * @param {SeeResolver} resolver
+ * @returns {import('../ids/src/types.js').Result<{ dropped: number }>}
+ */
+export function reverifyPosts(graph, principal, resolver) {
+  const held = graph && typeof graph === 'object' ? postTables.get(graph) : undefined;
+  if (!held) return { ok: true, value: { dropped: 0 } };
+  if (!ready(graph, resolver)) return { ok: false, reason: 'missing-history' };
+  const rotations = resolver.rotations(principal);
+  if (!Array.isArray(rotations)) {
+    for (const [key, row] of [...held]) {
+      if (row.grant.owner === principal) held.delete(key);
+    }
+    return { ok: false, reason: 'missing-history' };
   }
-  const owner = graph.ownerOf(String(object));
-  const edge = graph.postGrant(object, accessor);
-  if (!edge || !owner) return { allowed: false, reason: "missing", ...echoed };
-  const grant = edge.grant;
-  const names =
-    sameObjectId(grant.object, object) &&
-    sameParsed(grant.accessor, accessor) &&
-    sameParsed(edge.owner, owner);
-  if (!names) return { allowed: false, reason: "missing", ...echoed };
-  if (grant.stated !== 1) return { allowed: false, reason: "cancelled", ...echoed };
-  if (now >= grant.from && now < grant.until) {
-    return { allowed: true, reason: "post", ...echoed };
+  let dropped = 0;
+  for (const [key, row] of [...held]) {
+    if (row.grant.owner !== principal) continue;
+    const again = verifyPostGrant(row.source, rotations, resolver.ctx);
+    if (!again.ok) {
+      held.delete(key);
+      dropped += 1;
+      continue;
+    }
+    held.set(key, seal(again.value, resolver.ctx));
   }
-  return { allowed: false, reason: "missing", ...echoed };
+  return { ok: true, value: { dropped } };
+}
+
+/** A hop, a hint, a wrap, a request, or an inbox delivery never grants.
+ * @param {string} _kind */
+export function factorGrants(_kind) {
+  return false;
+}
+
+/**
+ * Run one shared post vector. See steps on the same graph stay available.
+ * @param {readonly Record<string, any>[]} steps
+ * @param {{ ctx: ResolutionContext, rotations: (name: string) => readonly unknown[] }} options
+ */
+export function runPostCase(steps, options) {
+  const graph = {};
+  const resolverFor = (/** @type {Record<string, any>} */ step) => ({
+    rotations: () => (step.history === 'unavailable' ? undefined : options.rotations(step.rotations)),
+    ctx: step.revocations ? { ...options.ctx, revocations: step.revocations } : options.ctx,
+  });
+  for (const step of steps) {
+    const row = patchRow(step.row, step.patch);
+    if (step.op === 'edge') {
+      const got = step.kind === 'object' ? seeObjectEdge(step.value) : seeAccessorEdge(step.value);
+      if (got.ok || got.reason !== step.reason) failStep(step, got);
+      continue;
+    }
+    if (step.op === 'put') {
+      const got = putObject(graph, patchRow(step.record, step.patch), resolverFor(step));
+      if (step.ok === false) {
+        if (got.ok || got.reason !== step.reason) failStep(step, got.ok ? 'ok' : got.reason);
+        continue;
+      }
+      if (!got.ok) failStep(step, got.reason);
+      if (step.kept !== undefined && got.kept !== step.kept) failStep(step, got.kept);
+      continue;
+    }
+    if (step.op === 'admit') {
+      const got = admitRow(graph, row, resolverFor(step));
+      if (!step.ok) {
+        if (got.ok || got.reason !== step.reason) failStep(step, got.ok ? 'ok' : got.reason);
+        continue;
+      }
+      if (!got.ok || got.kept !== step.kept) failStep(step, got.ok ? got.kept : got.reason);
+      continue;
+    }
+    if (step.op === 'admit-post') {
+      const got = admitPost(graph, row, resolverFor(step));
+      if (!step.ok) {
+        if (got.ok || got.reason !== step.reason) failStep(step, got.ok ? 'ok' : got.reason);
+        continue;
+      }
+      if (!got.ok || got.kept !== step.kept) failStep(step, got.ok ? got.kept : got.reason);
+      if (!got.ok) continue;
+      if (step.mode !== undefined && got.value.mode !== step.mode) failStep(step, got.value.mode);
+      if (step.stated !== undefined && got.value.grant.stated !== step.stated) failStep(step, got.value.grant.stated);
+      if (step.hamState !== undefined && got.value.grant.hamState !== step.hamState) failStep(step, got.value.grant.hamState);
+      continue;
+    }
+    if (step.op === 'reverify') {
+      const got = reverifyPrincipal(graph, step.principal, resolverFor(step));
+      if (step.ok === false) {
+        if (got.ok || got.reason !== step.reason) failStep(step, got.ok ? 'ok' : got.reason);
+        continue;
+      }
+      if (!got.ok || got.value.dropped !== step.dropped) failStep(step, got.ok ? got.value.dropped : got.reason);
+      continue;
+    }
+    if (step.op === 'owner') {
+      const got = admittedOwner(graph, step.object);
+      if (step.absent) {
+        if (got) failStep(step, got);
+        continue;
+      }
+      if (!got || got.owner !== step.owner) failStep(step, got);
+      if (step.issuedAt !== undefined && got.issuedAt !== step.issuedAt) failStep(step, got);
+      continue;
+    }
+    if (step.op === 'view') {
+      const got = admittedView(graph, step.object, step.accessor);
+      if (step.absent) {
+        if (got) failStep(step, got);
+        continue;
+      }
+      if (!got || got.stated !== step.stated || got.hamState !== step.hamState) failStep(step, got);
+      continue;
+    }
+    if (step.op === 'view-post') {
+      const got = admittedPost(graph, step.object, step.accessor);
+      if (step.absent) {
+        if (got) failStep(step, got);
+        continue;
+      }
+      if (!got || got.stated !== step.stated || got.hamState !== step.hamState || got.mode !== step.mode) failStep(step, got);
+      if (step.from !== undefined && got.from !== step.from) failStep(step, got);
+      if (step.until !== undefined && got.until !== step.until) failStep(step, got);
+      continue;
+    }
+    if (step.op === 'check-post') {
+      const got = checkPost(graph, step.object, step.accessor, step.now, step.hint ? { principal: step.accessor } : undefined, step.hop ? { channel: 'convention-badge' } : undefined);
+      if (got.allowed !== step.allowed || got.reason !== step.reason) failStep(step, got);
+      if (step.hint && got.hint == null) failStep(step, got);
+      if (step.hop && got.hop == null) failStep(step, got);
+      continue;
+    }
+    throw Error('unknown post step ' + step.op);
+  }
+}
+
+/** @param {Record<string, any> | undefined} row @param {Record<string, any> | undefined} patch */
+function patchRow(row, patch) {
+  if (!row || !patch) return row;
+  const copy = { ...row };
+  for (const [key, value] of Object.entries(patch)) copy[key] = value === '-0' ? -0 : value;
+  return copy;
+}
+
+/** @param {Record<string, unknown>} step @param {unknown} got @returns {never} */
+function failStep(step, got) {
+  throw Error(JSON.stringify({ step, got }));
 }

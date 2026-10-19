@@ -15,16 +15,14 @@ import {
   accessRequestId,
   accessRequestSigningBytes,
   canonicalRequestAccessor,
-  checkPost,
   factorGrants,
   aclKey,
   grantApprovedRequest,
   issuerFromSeed,
-  postGrantSigningBytes,
   requestIssuerFromSeed,
   signAccessRequest,
 } from "../src/group.js";
-import { canonicalAccessorId } from "../src/post.js";
+import { canonicalAccessorId, postGrantSigningBytes } from "../src/legacy/post-label.js";
 import { checkSee } from "../src/gun.js";
 
 const fixture = JSON.parse(
@@ -151,21 +149,19 @@ function assertGranted(graph, row, result, ham) {
   const see = seeResult(graph, row.source, row.requester, row.now);
   assert.equal(see.allowed, true, row.name);
   assert.equal(see.reason, "delegate");
-  const post = checkPost(graph, row.source, row.requester, row.now);
+  const label = graph.postGrant(row.object, accessor);
   if (row.expect === "both") {
     assert.ok(result.post, row.name);
     assert.equal(result.post.grant.object, row.object);
     assert.equal(result.post.grant.accessor, accessor);
     assert.equal(result.post.hamState, ham);
     assert.equal(hex(result.postSigningBytes), hex(postGrantSigningBytes(result.post)));
-    assert.equal(post.allowed, true, row.name);
-    assert.equal(post.reason, "post");
+    assert.ok(label, row.name);
+    assert.equal(label.grant.stated, 1, row.name);
   } else {
     assert.equal(result.post, null, row.name);
     assert.equal(result.postSigningBytes, null, row.name);
-    assert.equal(post.allowed, false, row.name);
-    assert.equal(post.reason, "missing");
-    assert.equal(graph.postGrant(row.object, accessor), undefined);
+    assert.equal(label, undefined, row.name);
   }
   const bySource = graph.seeGrant(row.source, row.requester);
   const byObject = graph.seeGrant(row.object, accessor);
@@ -490,6 +486,60 @@ test("requester signature matches the enrolled key", () => {
     assert.equal(fresh.seeGrant(row.source, row.requester), undefined);
     assert.equal(fresh.postGrant(row.source, row.requester), undefined);
   }
+});
+
+test("a read+post graph without a post writer writes nothing", () => {
+  const bob = signer("0xbob");
+  const request = {
+    requester: "0xbob",
+    source: "room:alpha",
+    scope: "read+post",
+    message: "",
+    status: "pending",
+  };
+  request.signature = signAccessRequest(bob.privateKey, request);
+  let seeWrites = 0;
+  const graph = {
+    enrolledKey(principal) {
+      return principal === "0xbob" ? bob.publicKey : undefined;
+    },
+    objectRecord() {
+      return { id: "room:alpha", owner: "0xalice" };
+    },
+    seeGrant() {
+      return undefined;
+    },
+    postGrant() {
+      return undefined;
+    },
+    stateSeeGrant() {
+      seeWrites += 1;
+    },
+  };
+  const result = grantApprovedRequest(graph, "0xalice", request, { from: 0, until: 80 });
+  assert.equal(result.granted, false);
+  assert.equal(result.reason, "missing");
+  assert.equal(seeWrites, 0);
+  assert.equal(graph.seeGrant(), undefined);
+});
+
+test("mergeFrom does not copy label post rows and writers stay off the prototype", () => {
+  const row = fixture.approvals.find((item) => item.name === "owner-read-post");
+  const source = new MemoryGroupGraph();
+  prepare(source, row);
+  assert.equal(approve(source, row).granted, true);
+  assert.ok(source.postGrant(row.object, row.requester));
+  const dest = new MemoryGroupGraph();
+  prepare(dest, row);
+  dest.mergeFrom(source);
+  assert.equal(dest.postGrant(row.object, row.requester), undefined);
+  assert.ok(source.postGrant(row.object, row.requester));
+  const symbols = [
+    ...Object.getOwnPropertySymbols(MemoryGroupGraph.prototype),
+    ...Object.getOwnPropertySymbols(source),
+  ].map((item) => String(item));
+  assert.equal(symbols.some((name) => name.toLowerCase().includes("post")), false);
+  assert.equal(source.posts, undefined);
 });
 
 test("owner client writes rows and a request does not", () => {

@@ -9,8 +9,8 @@
  * @typedef {import('../ids/src/types.js').ObjectRecord} ObjectRecord
  * @typedef {import('../ids/src/types.js').ResolutionContext} ResolutionContext
  * @typedef {{ allowed: boolean, reason: string }} SeeCheck
- * @typedef {{ owner: PrincipalId, issuedAt: number, frozen: boolean }} ObjectAdmission
- * @typedef {ObjectAdmission & { record: ObjectRecord }} StoredOwner
+ * @typedef {{ owner: PrincipalId, issuedAt: number }} ObjectAdmission
+ * @typedef {ObjectAdmission & { record: ObjectRecord, history: readonly unknown[] }} StoredOwner
  * @typedef {{
  *   owners: Map<string, StoredOwner>,
  *   rows: Map<string, SealedRow>,
@@ -35,10 +35,12 @@ import {
   parsePrincipalId,
   parseObjectRecord,
   parseSeeGrant,
+  resolveCurrentKey,
   verifyAclAttestation,
   verifyObjectRecord,
   verifySeeGrant,
 } from '../ids/src/index.js';
+import { reverifyPosts } from './post.js';
 
 const verified = new WeakSet();
 /** @type {WeakMap<object, SeeStore>} */
@@ -199,13 +201,27 @@ export function seeAccessorEdge(value) {
 /** Caller-facing admission. Mutating it does not change the store.
  * @param {StoredOwner} row @returns {ObjectAdmission} */
 function admissionCopy(row) {
-  return { owner: row.owner, issuedAt: row.issuedAt, frozen: false };
+  return { owner: row.owner, issuedAt: row.issuedAt };
+}
+/** A stored rotation already replaced this signer before `issuedAt`.
+ * An unreadable stored history fails closed.
+ * @param {readonly unknown[]} stored
+ * @param {PrincipalId} signer
+ * @param {number} issuedAt
+ * @param {PrincipalId} owner
+ * @param {ResolutionContext} ctx
+ */
+function signerRetired(stored, signer, issuedAt, owner, ctx) {
+  const account = resolveCurrentKey(owner, stored, ctx);
+  if (!account.ok || !account.value) return true;
+  return account.value.rotations.some((row) => row.prevKey === signer && row.issuedAt < issuedAt);
 }
 /**
  * Admit a signed object record. The owner is the record, never an argument.
  * The object id must embed that owner. The same owner later is a no-op while
- * the stored record still verifies. A stored record the current key no longer
- * signs is replaced by the new one. A different owner is `bad-record`.
+ * the stored record still verifies. A stored record is replaced only when the
+ * new issuedAt is strictly newer, the stored record no longer verifies, and
+ * the new signer is not a key the stored history marks retired.
  * @param {object} graph
  * @param {unknown} record
  * @param {SeeResolver} resolver
@@ -225,19 +241,20 @@ export function putObject(graph, record, resolver) {
   const issuedAt = verified.value.record.issuedAt;
   const existing = held.owners.get(id);
   if (!existing) {
-    const admitted = { owner, issuedAt, frozen: false, record: verified.value.record };
+    const admitted = { owner, issuedAt, record: verified.value.record, history: history.slice() };
     held.owners.set(id, admitted);
     return { ok: true, value: admissionCopy(admitted), kept: true };
   }
-  if (existing.owner === owner) {
-    const still = verifyObjectRecord(existing.record, history, resolver.ctx);
-    if (still.ok) return { ok: true, value: admissionCopy(existing), kept: false };
-    existing.issuedAt = issuedAt;
-    existing.record = verified.value.record;
-    existing.frozen = false;
-    return { ok: true, value: admissionCopy(existing), kept: true };
+  if (issuedAt <= existing.issuedAt) return { ok: true, value: admissionCopy(existing), kept: false };
+  const still = verifyObjectRecord(existing.record, history, resolver.ctx);
+  if (still.ok) return { ok: true, value: admissionCopy(existing), kept: false };
+  if (signerRetired(existing.history, verified.value.key, issuedAt, owner, resolver.ctx)) {
+    return { ok: true, value: admissionCopy(existing), kept: false };
   }
-  return { ok: false, reason: 'bad-record' };
+  existing.issuedAt = issuedAt;
+  existing.record = verified.value.record;
+  existing.history = history.slice();
+  return { ok: true, value: admissionCopy(existing), kept: true };
 }
 
 /**
@@ -284,6 +301,7 @@ export function reverifyPrincipal(graph, principal, resolver) {
     for (const [id, row] of [...held.owners]) {
       if (row.owner === who.value) held.owners.delete(id);
     }
+    reverifyPosts(graph, who.value, resolver);
     return { ok: false, reason: 'missing-history' };
   }
   let dropped = 0;
@@ -305,6 +323,9 @@ export function reverifyPrincipal(graph, principal, resolver) {
       dropped += 1;
     }
   }
+  const posts = reverifyPosts(graph, who.value, resolver);
+  if (!posts.ok) return posts;
+  dropped += posts.value.dropped;
   return { ok: true, value: { dropped } };
 }
 
@@ -437,7 +458,7 @@ export function runSeeCase(steps, options) {
         if (got) failStep(step, got);
         continue;
       }
-      if (!got || got.owner !== step.owner || got.frozen !== !!step.frozen) failStep(step, got);
+      if (!got || got.owner !== step.owner) failStep(step, got);
       if (step.issuedAt !== undefined && got.issuedAt !== step.issuedAt) failStep(step, got);
       continue;
     }

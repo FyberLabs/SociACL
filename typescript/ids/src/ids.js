@@ -58,7 +58,7 @@ const RESERVED_KINDS = ['claim', 'ext', 'post', 'member', 'objset'];
 /** Bound object id: kind, the creator's principal key, and 128 fresh bits.
  * @param {string} s @returns {RegExpExecArray | null} */
 function boundParts(s) {
-  return /^([A-Za-z][A-Za-z0-9]{1,15})_(p_[0-9A-Fa-f]{128})_([0-9A-Fa-f]{32})$/.exec(s);
+  return /^([A-Za-z][A-Za-z0-9]{1,15})_([Pp]_[0-9A-Fa-f]{128})_([0-9A-Fa-f]{32})$/.exec(s);
 }
 /** @param {unknown} x @returns {Result<ObjectId>} */
 export function parseObjectId(x) {
@@ -75,11 +75,7 @@ export function parseObjectId(x) {
   const m = /^([a-z][a-z0-9]{1,15})_([0-9a-f]{32})$/.exec(s);
   if (m) return RESERVED_KINDS.includes(m[1]) ? fail('reserved-kind') : ok(/** @type {ObjectId} */ (s));
   if (/^[a-z][a-z0-9]{1,15}_[0-9a-f]{32,64}$/i.test(s) && s !== s.toLowerCase()) return fail('non-canonical');
-  // Legacy ids, including s3rch:post:<eip55>:<ts>:<hex>, are opaque. The wallet and timestamp are not read out.
-  const legacy = /^s3rch:(?:(?:room|chat|forum-msg|post):(0x[0-9a-fA-F]{40}):[0-9]{1,12}:[a-z0-9]{1,64}|(?:forum-group|bot):(0x[0-9a-fA-F]{40}):[a-z0-9]{1,64}|forum:(0x[0-9a-fA-F]{40}))$/.exec(s);
-  if (!legacy) return fail('bad-alphabet');
-  const w = parseEip55(legacy[1] ?? legacy[2] ?? legacy[3]); if (!w.ok) return w;
-  return ok(/** @type {ObjectId} */ (s));
+  return fail('bad-alphabet');
 }
 /** @param {unknown} x @returns {Result<NetworkId>} */
 export function parseNetworkId(x) {
@@ -158,7 +154,8 @@ export const userSoul = p => soul(['~' + p], 1);
 export const aclSoul = p => soul(['s3rch', 'acl', formatPrincipalKey(p)], 3);
 /** @param {PrincipalId} owner @param {ObjectId} object @param {PrincipalId} accessor */
 export const grantSoul = (owner, object, accessor) => soul(['s3rch', 'acl', formatPrincipalKey(owner), objectKey(object), formatPrincipalKey(accessor)], 5);
-/** @param {PrincipalId} owner @param {ObjectId} object @param {PrincipalId} accessor */
+/** Six-segment post soul. Throws when an argument is not an already-parsed id.
+ * @param {PrincipalId} owner @param {ObjectId} object @param {PrincipalId} accessor */
 export const postSoul = (owner, object, accessor) => soul(['s3rch', 'acl', formatPrincipalKey(owner), 'post', objectKey(object), formatPrincipalKey(accessor)], 6);
 /** @param {PrincipalId} setOwner @param {MembershipPredicate} predicate @param {ObjectId} set @param {PrincipalId} member */
 export function membershipSoul(setOwner, predicate, set, member) {

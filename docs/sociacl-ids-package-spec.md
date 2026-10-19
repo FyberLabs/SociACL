@@ -33,7 +33,7 @@ Rules. Each rule is normative.
 | OIDC credential | `(iss, tenant, sub)` | Panopticon Keycloak | A linked credential. A Panopticon attestation is required (§4.6). Linked per tenant. |
 | `TenantId` | Panopticon tenant UUID (lowercase, hyphenated) | Panopticon | Panopticon uses `uuid.UUID` (`core/auth-service/src/auth_service/enrollment.py:231`). |
 | `ObjectId` (native object) | `<kind>_<principal-key>_<32 lowercase hex>`. The principal key is the creator's genesis `PrincipalId` in the existing `p_` + 128 hex form. The 32 hex digits are 128 fresh bits. | The creating client | Stored on the object. Parsing the id returns that one principal. Gun souls are derived from it one way (§3.6). |
-| `LegacyObjectId` | s3r.ch spellings in §3.4 (`s3rch:room`, `s3rch:chat`, `s3rch:forum-msg`, `s3rch:post`, `s3rch:forum-group`, `s3rch:bot`, `s3rch:forum`) | Not minted | SociACL has not launched, so there is no deployed object in this spelling. The ids grammar still parses it. It is not an object record. `docs/s3rch-check.md` lists the forms for deletion. The wallet and timestamp are never read out. |
+| `LegacyObjectId` | Removed. The seven `s3rch:room` / `chat` / `forum-msg` / `post` / `forum-group` / `bot` / `forum` spellings are not object ids. | — | `post` is a reserved kind. `s3rch:forum:<owner>` has no nonce, so a forum id needs a random part before s3r.ch can adopt it. Network ids `s3rch:https://...` stay. |
 | `DerivedObjectId` | `sha256` of a canonical external id (held claim, external feed item) | Deterministic | Used for ids whose source alphabet isn't path-safe (`ens:alice.eth`, `rss3:act/1#x`). |
 | `NetworkId` | `s3rch:https://<host>:<port>;key=<64hex>` or one of `atproto`, `farcaster`, `nostr`, `activitypub`, `rss` | The deployment's permitted key / the protocol | Same grammar as s3r.ch `lib/views-source-ref.ts:94-116`. |
 | `SourceKey` | `formatCanonical(SourceRef)` from s3r.ch `lib/views-source-ref.ts:225-227` (`sr1:` + pct(network) `/` pct(owner) `/` pct(source) `/` kind) | Deterministic | For s3r.ch networks, `owner` becomes a `PrincipalId` (follow-up call site, Appendix B). |
@@ -71,16 +71,12 @@ oidc-key      = "k_" 64HEXL                                     ; sha256(LP("soc
 
 ; 3.4 Objects
 kind          = %x61-7A 1*15( %x61-7A / DIGIT )                 ; 2..16 chars, NOT one of: "claim" "ext" "post" "member" "objset"
-bound-object  = kind "_" principal-key "_" 32HEXL               ; creator's genesis key; 167..180 chars
+bound-object  = kind "_" principal-key "_" 32HEXL               ; creator's genesis key; 166..180 chars
 object-id     = kind "_" 32HEXL                                 ; older unbound form; ≤ 49 chars; not an object record
 derived-id    = ( "claim" / "ext" ) "_" 64HEXL
                 ; claim_ = sha256(LP("sociacl-claim-v1") LP(claimText)); claimText is the existing held-claim id, e.g. "ens:alice.eth"
                 ; ext_   = sha256(LP("sociacl-ext-v1") LP(sourceKey) LP(providerItemId))
-legacy-id     = "s3rch:" ( ( "room" / "chat" / "forum-msg" / "post" ) ":" eip55 ":" 1*12DIGIT ":" 1*64( %x61-7A / DIGIT )
-                         / ( "forum-group" / "bot" ) ":" eip55 ":" 1*64( %x61-7A / DIGIT )
-                         / "forum" ":" eip55 )
-                ; still parsed. Not an object record. Listed for deletion in docs/s3rch-check.md.
-any-object    = bound-object / object-id / derived-id / legacy-id
+any-object    = bound-object / object-id / derived-id
 object-key    = any-object                                      ; already path-safe; the path key is the id itself
 
 ; 3.5 Network / SourceKey

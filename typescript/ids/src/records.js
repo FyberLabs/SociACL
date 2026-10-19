@@ -851,6 +851,73 @@ export function verifySeeGrant(row, rotations, ctx) {
   if (!keyVerify(state.key, grant.sig, bytes)) return fail('bad-signature');
   return ok(Object.freeze({ key: state.key, mode: 'witnessed', grant, bytes }));
 }
+/** Length-prefixed domain for postGrantBytes. */
+export const POST_DOMAIN = 'sociacl-post-grant-v2';
+/** Signing bytes for one already-parsed post row. The domain and stated are inside the bytes.
+ * @param {SeeGrant} grant */
+export function postGrantBytes(grant) {
+  return lp([POST_DOMAIN, grant.owner, grant.object, grant.accessor, String(grant.stated), String(grant.from), String(grant.until), String(grant.hamState), String(grant.issuedAt)]);
+}
+/** One snapshot of a post row. Same fields as a see row. A getter or proxy is `bad-record`.
+ * @param {unknown} row @returns {Result<{ grant: SeeGrant, bytes: Uint8Array }>} */
+export function parsePostGrant(row) {
+  const d = data(row); if (!d.ok) return d;
+  const r = d.value;
+  if (r.domain !== undefined && r.domain !== POST_DOMAIN) return fail('legacy-row');
+  if (!Object.hasOwn(r, 'sig')) return fail('legacy-row');
+  const owner = parsePrincipalId(r.owner); if (!owner.ok) return owner;
+  const object = parseObjectId(r.object); if (!object.ok) return object;
+  const accessor = parsePrincipalId(r.accessor); if (!accessor.ok) return accessor;
+  if (!Object.is(r.stated, 0) && !Object.is(r.stated, 1)) return fail('bad-record');
+  const from = r.from, until = r.until, hamState = r.hamState, issuedAt = r.issuedAt;
+  if (!integer(from) || !integer(until) || !integer(hamState) || !integer(issuedAt) || /** @type {number} */ (until) < /** @type {number} */ (from)) return fail('bad-record');
+  const sig = text(r.sig, 128); if (!sig.ok) return sig;
+  if (Object.hasOwn(r, 'attest')) {
+    const attest = text(r.attest, 16384); if (!attest.ok) return attest;
+  }
+  /** @type {SeeGrant} */
+  const grant = Object.freeze({
+    owner: owner.value,
+    object: object.value,
+    accessor: accessor.value,
+    stated: /** @type {0|1} */ (r.stated),
+    from: /** @type {number} */ (r.from),
+    until: /** @type {number} */ (r.until),
+    hamState: /** @type {number} */ (r.hamState),
+    issuedAt: /** @type {number} */ (r.issuedAt),
+    sig: sig.value,
+    ...(Object.hasOwn(r, 'attest') ? { attest: /** @type {string} */ (r.attest) } : {}),
+  });
+  return ok(Object.freeze({ grant, bytes: postGrantBytes(grant) }));
+}
+/** Post-grant authority. A retired cancel is `stated === 0` on this parsed row.
+ * A retired `stated === 1` row is refused even when witnessed.
+ * @param {unknown} row @param {readonly unknown[]} rotations @param {ResolutionContext} ctx
+ * @returns {Result<SignedAt & { grant: SeeGrant, bytes: Uint8Array }>} */
+export function verifyPostGrant(row, rotations, ctx) {
+  const parsed = parsePostGrant(row); if (!parsed.ok) return parsed;
+  const { grant, bytes } = parsed.value;
+  if (!ctx || !Array.isArray(rotations)) return fail('missing-history');
+  const account = resolveCurrentKey(grant.owner, rotations, ctx);
+  if (!account.ok) return fail(account.reason);
+  const skew = ctx.policy?.clockSkewSeconds ?? 0;
+  const when = time(grant.issuedAt, ctx.now, skew); if (!when.ok) return when;
+  const state = historyState(grant.owner, account.value.rotations, grant.issuedAt, ctx.now);
+  if (state.key === account.value.currentKey) {
+    if (!keyVerify(account.value.currentKey, grant.sig, bytes)) return fail('bad-signature');
+    return ok(Object.freeze({ key: account.value.currentKey, mode: 'present', grant, bytes }));
+  }
+  if (grant.stated !== 0) {
+    if (grant.attest !== undefined) {
+      const seen = seeWitness(grant, bytes, ctx);
+      if (!seen.ok) return seen;
+    }
+    return fail('unwitnessed-retired-key');
+  }
+  const seen = seeWitness(grant, bytes, ctx); if (!seen.ok) return seen;
+  if (!keyVerify(state.key, grant.sig, bytes)) return fail('bad-signature');
+  return ok(Object.freeze({ key: state.key, mode: 'witnessed', grant, bytes }));
+}
 /** Present authority under the resolved current key.
  * Arbitrary bytes stay fail-closed on a retired key. A see cancel is
  * `verifySeeGrant`: the signed `stated` field is `0`.

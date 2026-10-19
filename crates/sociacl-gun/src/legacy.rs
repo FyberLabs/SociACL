@@ -309,7 +309,10 @@ mod tests {
         );
         assert_eq!(crate::legacy::acl_soul("../meta"), None);
         assert_eq!(canonical_accessor_id("a\u{0}b"), None);
-        assert_eq!(crate::post_soul("0xalice", "doc", "a\u{0}b"), None);
+        assert_eq!(
+            crate::post_label::post_soul("0xalice", "doc", "a\u{0}b"),
+            None
+        );
         assert_eq!(canonical_accessor_id("bob~name"), None);
         assert_eq!(canonical_accessor_id("x~1get('s3rch')"), None);
         assert_eq!(canonical_accessor_id("."), None);
@@ -381,13 +384,13 @@ impl GunAclEdge {
         })
     }
 
-    pub fn soul_key(&self) -> String {
+    pub(crate) fn soul_key(&self) -> String {
         self.soul.as_node_id().as_str().to_string()
     }
 
     /// Soul rebuilt from owner, object, and accessor. A peer map
     /// key or a copied soul does not choose where the grant lands.
-    pub fn canonical(self) -> Self {
+    pub(crate) fn canonical(self) -> Self {
         Self::new(self.owner.clone(), self.grant.clone(), self.ham_state).unwrap_or(self)
     }
 
@@ -704,7 +707,7 @@ impl LabelGraph {
         for edge in grants {
             self.merge_edge(edge);
         }
-        let posts: Vec<crate::post::GunPostEdge> = other
+        let posts: Vec<crate::post_label::GunPostEdge> = other
             .posts
             .values()
             .filter(|edge| {

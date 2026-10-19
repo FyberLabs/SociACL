@@ -10,6 +10,7 @@ use std::{fmt, str::FromStr};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
+#[non_exhaustive]
 pub enum Reason {
     NotString,
     Empty,
@@ -49,6 +50,8 @@ pub enum Reason {
     UnwitnessedRetiredKey,
     BadKey,
     LegacyRow,
+    /// No admitted object record for this id.
+    Unknown,
 }
 impl fmt::Display for Reason {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

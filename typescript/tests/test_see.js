@@ -3,6 +3,7 @@ import { test } from "node:test";
 import { readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import * as ids from "../ids/src/index.js";
+import { runPostCase } from "../src/post.js";
 import { admitRow, checkSee, putObject, runSeeCase, seeAccessorEdge, seeObjectEdge } from "../src/see.js";
 
 function contextOf(raw) {
@@ -22,13 +23,17 @@ function contextOf(raw) {
 }
 
 test("see vectors", () => {
-  const file = JSON.parse(readFileSync(new URL("../../vectors/mesh/v2/see.json", import.meta.url), "utf8"));
-  const ctx = contextOf(file.context);
+  const dir = new URL("../../vectors/mesh/v2/", import.meta.url);
   const names = [];
-  for (const side of ["accept", "reject"]) {
-    for (const entry of file[side]) {
-      runSeeCase(entry.steps, { ctx, rotations: (name) => file.context.rotationSets[name] });
-      names.push(`see/${side}/${entry.name}`);
+  for (const fileName of readdirSync(dir).filter((name) => name.endsWith(".json")).sort()) {
+    const file = JSON.parse(readFileSync(new URL(fileName, dir), "utf8"));
+    const ctx = contextOf(file.context);
+    const run = file.family === "post" ? runPostCase : runSeeCase;
+    for (const side of ["accept", "reject"]) {
+      for (const entry of file[side]) {
+        run(entry.steps, { ctx, rotations: (name) => file.context.rotationSets[name] });
+        names.push(`${file.family}/${side}/${entry.name}`);
+      }
     }
   }
   names.sort();
@@ -135,13 +140,11 @@ test("putObject returns a copy of the owner admission", () => {
   const object = placed.record.object;
   const owner = placed.record.owner;
   got.value.owner = "changed";
-  got.value.frozen = true;
   got.value.issuedAt = 1;
   assert.equal(checkSee(graph, object, owner, 10).reason, "owner");
   assert.deepEqual(
-    // admitted owner stays the stored record
     putObject(graph, placed.record, resolver),
-    { ok: true, value: { owner, issuedAt: placed.record.issuedAt, frozen: false }, kept: false },
+    { ok: true, value: { owner, issuedAt: placed.record.issuedAt }, kept: false },
   );
 });
 

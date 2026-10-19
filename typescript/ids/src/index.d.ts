@@ -5,6 +5,7 @@ export { parsePrincipalId, parsePrincipalKey, parsePathKey, principalFromSec1, p
   objectKey, objectSoul, userSoul, aclSoul, grantSoul, postSoul, membershipSoul, objectSetSoul,
   mintObjectId, deriveClaimId, deriveExternalId } from './ids.js';
 export { lengthPrefixed } from './util.js';
-export { signingBytes, linkId, verifyKeySignature, signWithKeyring, verifySignedAt, verifySeeGrant, parseSeeGrant, seeGrantBytes, parseObjectRecord, objectRecordBytes, verifyObjectRecord, verifyAclAttestation, verifyWalletLink, verifyOidcLink, verifyRotate, verifyRotationRequest, verifyGenesisEpubRequest, verifyRevoke, verifyRevokeNow,
+export const POST_DOMAIN: "sociacl-post-grant-v2";
+export { signingBytes, linkId, verifyKeySignature, signWithKeyring, verifySignedAt, verifySeeGrant, parseSeeGrant, seeGrantBytes, verifyPostGrant, parsePostGrant, postGrantBytes, parseObjectRecord, objectRecordBytes, verifyObjectRecord, verifyAclAttestation, verifyWalletLink, verifyOidcLink, verifyRotate, verifyRotationRequest, verifyGenesisEpubRequest, verifyRevoke, verifyRevokeNow,
   resolveCurrentKey, resolveWalletLink, resolveWalletLinkNow, historyState, checkRotationPublish, checkRotationDraft, verifyWalletLinkAtKey, verifyOidcLinkAtKey, verifyRotateAtKey, resolveWalletLinkAtKey } from './records.js';
 export { parseJsonInput } from './json.js';

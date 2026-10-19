@@ -202,7 +202,18 @@ export type SeeGraph = {
   postGrant(
     object: CheckObjectId,
     accessor: AccessorId,
-  ): GunPostEdge | undefined;
+  ): {
+    soul: string | null;
+    owner: string;
+    hamState: number;
+    grant: {
+      object: string;
+      accessor: string;
+      from: number;
+      until: number;
+      stated: 0 | 1;
+    };
+  } | undefined;
   /**
    * Object version this verifier has merged. Absent when the
    * object is missing. Encrypted re-check compares a zookie to
@@ -216,24 +227,6 @@ export type SeeGraph = {
    * snapshotHash(zookie.object), not to a graph-wide hash.
    */
   snapshotHash(object: CheckObjectId): string | undefined;
-};
-
-/** Writable dest ACL for post rows. See rows are admitted separately. */
-export type SeeAcl = SeeGraph & {
-  /**
-   * Owner-only live post row. Does not write a see grant.
-   * `stated` is forced to 1. Omit it.
-   */
-  statePostGrant(owner: AccessorId, grant: PostGrantInput): void;
-  /**
-   * Owner-only privilege-down. Sets stated to 0 and bumps hamState.
-   * The next checkPost after that merge denies. Do not cache an allow.
-   */
-  unstatePostGrant(
-    owner: AccessorId,
-    accessor: AccessorId,
-    object: CheckObjectId,
-  ): void;
 };
 
 /** s3rch/meta — not a Check object. */
@@ -266,11 +259,10 @@ export type ObjectRecord = {
   sig: string;
 };
 
-/** Admitted owner. `frozen` stays false. A mismatched owner does not freeze the object. */
+/** Admitted owner. A mismatched owner is `bad-record` and is not stored. */
 export type ObjectAdmission = {
   owner: PrincipalId;
   issuedAt: number;
-  frozen: boolean;
 };
 
 /**
@@ -295,15 +287,30 @@ export type VerifiedRow = {
 
 /**
  * Admit a signed sociacl-object-v2 record. The owner is the record.
- * The object id embeds that genesis principal. Anything else is
- * bad-record and does not freeze the object. There is no owner-conflict.
+ * The object id embeds that genesis principal. Anything else is bad-record.
  * The same owner later is a no-op while the stored record still verifies.
+ * A stored record is replaced only when the new issuedAt is strictly newer,
+ * the stored record no longer verifies, and the new signer is not a key
+ * the stored history marks retired.
  */
 export function putObject(
   graph: object,
   record: unknown,
   resolver: SeeResolver,
 ): { ok: true; value: ObjectAdmission; kept: boolean } | { ok: false; reason: string };
+
+/**
+ * Admit one sociacl-post-grant-v2 row. The owner is the admitted object
+ * record. Missing history is `missing-history`. No object record is
+ * `unknown`. A row owner that is not that record is `bad-record`.
+ * A retired cancel is `stated` 0 in the signed bytes. A retired
+ * `stated` 1 row is `unwitnessed-retired-key`.
+ */
+export function admitPost(
+  graph: object,
+  row: unknown,
+  resolver: SeeResolver,
+): { ok: true; value: VerifiedRow; kept: boolean } | { ok: false; reason: string };
 
 /** Admit one sociacl-see-grant-v2 row. Missing history is missing-history. */
 export function admitRow(
@@ -340,9 +347,11 @@ export function checkSee(
 
 /**
  * Allow-post for a s3r.ch View.
- * Allowed only when checkSee would allow the same triple.
- * The object owner passes see and may post. Any other accessor
- * also needs a live MeshPostGrant with now in [from, until).
+ * Allowed only when checkSee would allow the same triple on the
+ * admitted see graph. The object owner comes from the admitted
+ * sociacl-object-v2 record and may post. Any other accessor also
+ * needs a live sociacl-post-grant-v2 row with now in [from, until).
+ * A retired-key post cancel is stated 0 inside those signed bytes.
  * A post row alone does not allow. A see row does not allow post.
  * checkGroupSee is not this gate. Hopcap is 1.
  * Hop missing does not fail. Hop alone never allows.
@@ -366,21 +375,6 @@ export function checkPost(
 export function factorGrants(
   kind: "hop" | "hint" | "wrap" | "inbox" | "request",
 ): false;
-
-/** Owner-only live post row. Does not write a see grant. */
-export function applyPostGrant(
-  acl: SeeAcl,
-  owner: AccessorId,
-  grant: PostGrantInput,
-): void;
-
-/** Owner-only privilege-down. The next checkPost denies. */
-export function cancelPost(
-  acl: SeeAcl,
-  owner: AccessorId,
-  accessor: AccessorId,
-  object: CheckObjectId,
-): void;
 
 /* -------------------------------------------------------------------------- */
 /* Mesh — dest ACL + Social Light hop factor                                  */
@@ -449,73 +443,43 @@ export type GunAclEdge = {
  * Cancel is owner-only, sets stated to 0, and bumps hamState.
  * Do not cache an allow after that merge.
  */
+/** Signed sociacl-post-grant-v2 row. `issuedAt` is inside the signed bytes. */
 export type MeshPostGrant = {
-  object: CheckObjectId;
-  accessor: AccessorId;
-  from: number;
-  until: number;
+  owner: PrincipalId;
+  object: ObjectId;
+  accessor: PrincipalId;
   stated: 0 | 1;
-};
-
-/**
- * Live-row writer input. `stated` is optional because the writer
- * forces 1. A stored MeshPostGrant still carries the bit.
- */
-export type PostGrantInput = {
-  object: CheckObjectId;
-  accessor: AccessorId;
   from: number;
   until: number;
-  stated?: 0 | 1;
-};
-
-/**
- * One post-grant node. Soul is postSoul(owner, object, accessor).
- * Not a five-segment see-grant soul. Peers HAM-merge by hamState
- * (higher wins). At an equal hamState a cancellation wins, then
- * the narrower window, then the smaller postGrantSigningBytes.
- * Lookup uses the current object owner. A row whose stated, from,
- * until, or hamState is not a canonical non-negative integer, or
- * is above 9007199254740991, is dropped on merge. A raw id and its
- * item soul share that one row when they already name one object.
- */
-export type GunPostEdge = {
-  soul: string | null;
-  owner: AccessorId;
-  grant: MeshPostGrant;
   hamState: number;
+  issuedAt: number;
+  sig: string;
+  attest?: string;
 };
 
-/** Length-prefixed domain for postGrantSigningBytes. */
-export const POST_GRANT_DOMAIN: "s3rch-post-grant-v1";
-
-/** Scope covered by postGrantSigningBytes. Not a see row. */
-export const POST_GRANT_SCOPE: "post";
+/** Length-prefixed domain for postGrantBytes. */
+export const POST_GRANT_DOMAIN: "sociacl-post-grant-v2";
 
 /**
- * Post grant under the object owner's dest ACL.
- * Does not fork items or users. Not a see-grant soul.
- * gun.get('s3rch').get('acl')
- *   .get(<owner>)
- *   .get('post')
- *   .get(<object>)
- *   .get(<accessor>)
+ * Six-segment post soul. Each principal is `p_` plus 128 lowercase hex.
+ * Not a label soul and not a five-segment see soul.
+ * Throws when owner, object, or accessor is not an already-parsed id.
+ * A parsed triple returns the soul string.
  */
 export function postSoul(
-  owner: AccessorId,
-  object: CheckObjectId,
-  accessor: AccessorId,
-): string | null;
+  owner: PrincipalId,
+  object: ObjectId,
+  accessor: PrincipalId,
+): string;
 
 /**
- * Length-prefixed row encoding a later owner signature can cover.
- * Domain s3rch-post-grant-v1, then the object key,
- * the accessor key, decimal stated, decimal from,
- * decimal until, scope post, and decimal hamState.
+ * Length-prefixed v2 signing bytes. Domain sociacl-post-grant-v2,
+ * then owner, object, accessor, decimal stated, decimal from,
+ * decimal until, decimal hamState, and decimal issuedAt.
  * Lengths are uint32 little-endian. Integers are ASCII decimal
  * with no leading zeros. Check does not verify a signature.
  */
-export function postGrantSigningBytes(edge: GunPostEdge): Uint8Array;
+export function postGrantBytes(grant: MeshPostGrant): Uint8Array;
 
 /**
  * Access request. An untrusted hint. Not a grant.
@@ -561,14 +525,25 @@ export type MembersAutoApprove = {
 
 /**
  * Owner-written rows. Unsigned. post is null for scope read.
- * postSigningBytes is postGrantSigningBytes when a post row was written.
- * A later owner signature can cover those bytes. This check does not verify one.
+ * postSigningBytes is the label writer's encoding until PR 4.
+ * It is not postGrantBytes. This check does not verify a signature.
  */
 export type OwnerGrantRows = {
   requestId: string;
   requestSigningBytes: Uint8Array;
   see: GunAclEdge;
-  post: GunPostEdge | null;
+  post: {
+    soul: string | null;
+    owner: string;
+    hamState: number;
+    grant: {
+      object: string;
+      accessor: string;
+      from: number;
+      until: number;
+      stated: 0 | 1;
+    };
+  } | null;
   postSigningBytes: Uint8Array | null;
 };
 
@@ -668,7 +643,7 @@ export function acceptAccessRequest(request: AccessRequest): AcceptedAccessReque
  * queue are not this function. Grant rows stay unsigned.
  */
 export function grantApprovedRequest(
-  graph: SeeAcl & {
+  graph: SeeGraph & {
     objectRecord(
       object: CheckObjectId,
     ): { id: CheckObjectId; owner: AccessorId } | undefined;

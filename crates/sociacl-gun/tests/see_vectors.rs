@@ -1,6 +1,6 @@
 use serde_json::Value;
 use sociacl_core::IssuerSecret;
-use sociacl_gun::{GroupPredicate, GunError, MeshPostGrant, MeshSeeGraph};
+use sociacl_gun::{GroupPredicate, GunError, MeshSeeGraph};
 use sociacl_ids::{
     history_state, parse_object_id, parse_principal_id, parse_see_grant, verify_see_grant, Jwks,
     ObjectId, PrincipalId, Reason, ResolutionContext, SignedAtMode, SiwePolicy,
@@ -235,9 +235,8 @@ fn run_case(file: &Value, case: &Value) -> MeshSeeGraph {
                 if step["absent"] == true {
                     assert!(got.is_none(), "{name}");
                 } else {
-                    let (owner, issued, frozen) = got.expect(name);
+                    let (owner, issued) = got.expect(name);
                     assert_eq!(owner.as_ref(), step["owner"].as_str().unwrap(), "{name}");
-                    assert_eq!(frozen, step["frozen"] == true, "{name}");
                     if let Some(at) = step.get("issuedAt").and_then(Value::as_u64) {
                         assert_eq!(issued, at, "{name}");
                     }
@@ -288,6 +287,70 @@ fn run_case(file: &Value, case: &Value) -> MeshSeeGraph {
                 assert_eq!(got.allowed, step["allowed"] == true, "{name}");
                 assert_eq!(got.reason, step["reason"].as_str().unwrap(), "{name}");
             }
+            "admit-post" => {
+                let row = patch_row(step.get("row").unwrap_or(&Value::Null), step);
+                let rotations = rotations_of(ctx, step);
+                let got = graph.admit_post(&row, &resolver_for(rotations), &rc);
+                if step["ok"] == true {
+                    let (row, kept) = got.unwrap_or_else(|reason| panic!("{name} {reason}"));
+                    assert_eq!(kept, step["kept"] == true, "{name}");
+                    if let Some(mode) = step.get("mode").and_then(Value::as_str) {
+                        assert_eq!(mode_name(row.mode), mode, "{name}");
+                    }
+                    if let Some(stated) = step.get("stated").and_then(Value::as_u64) {
+                        assert_eq!(u64::from(row.stated), stated, "{name}");
+                    }
+                    if let Some(ham) = step.get("hamState").and_then(Value::as_u64) {
+                        assert_eq!(row.ham_state, ham, "{name}");
+                    }
+                } else {
+                    let reason = got.expect_err(name);
+                    assert_eq!(
+                        reason_name(reason),
+                        step["reason"].as_str().unwrap(),
+                        "{name}"
+                    );
+                }
+            }
+            "view-post" => {
+                let got = graph.admitted_post(
+                    &object_of(&step["object"]),
+                    &principal_of(&step["accessor"]),
+                );
+                if step["absent"] == true {
+                    assert!(got.is_none(), "{name}");
+                } else {
+                    let row = got.expect(name);
+                    assert_eq!(
+                        u64::from(row.stated),
+                        step["stated"].as_u64().unwrap(),
+                        "{name}"
+                    );
+                    assert_eq!(row.ham_state, step["hamState"].as_u64().unwrap(), "{name}");
+                    assert_eq!(
+                        mode_name(row.mode),
+                        step["mode"].as_str().unwrap(),
+                        "{name}"
+                    );
+                    if let Some(from) = step.get("from").and_then(Value::as_u64) {
+                        assert_eq!(row.from, from, "{name}");
+                    }
+                    if let Some(until) = step.get("until").and_then(Value::as_u64) {
+                        assert_eq!(row.until, until, "{name}");
+                    }
+                }
+            }
+            "check-post" => {
+                let got = graph.check_post(
+                    &object_of(&step["object"]),
+                    &principal_of(&step["accessor"]),
+                    step["now"].as_u64().unwrap(),
+                    None,
+                    None,
+                );
+                assert_eq!(got.allowed, step["allowed"] == true, "{name}");
+                assert_eq!(got.reason, step["reason"].as_str().unwrap(), "{name}");
+            }
             other => panic!("{name} unknown {other}"),
         }
     }
@@ -296,13 +359,25 @@ fn run_case(file: &Value, case: &Value) -> MeshSeeGraph {
 
 #[test]
 fn see_vectors() {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../vectors/mesh/v2/see.json");
-    let file: Value = serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap();
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../vectors/mesh/v2");
+    let mut paths: Vec<PathBuf> = fs::read_dir(&dir)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| path.extension().is_some_and(|ext| ext == "json"))
+        .collect();
+    paths.sort();
     let mut names = Vec::new();
-    for side in ["accept", "reject"] {
-        for case in file[side].as_array().unwrap() {
-            let _ = run_case(&file, case);
-            names.push(format!("see/{side}/{}", case["name"].as_str().unwrap()));
+    for path in paths {
+        let file: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        let family = file["family"].as_str().unwrap();
+        for side in ["accept", "reject"] {
+            for case in file[side].as_array().unwrap() {
+                let _ = run_case(&file, case);
+                names.push(format!(
+                    "{family}/{side}/{}",
+                    case["name"].as_str().unwrap()
+                ));
+            }
         }
     }
     names.sort();
@@ -545,11 +620,9 @@ fn signed_owner_reaches_post_and_group_until_history_drops_it() {
     let mut graph = run_case(&file, case);
     let object = case["steps"][0]["record"]["object"].as_str().unwrap();
     let owner = case["steps"][0]["record"]["owner"].as_str().unwrap();
-    let post = MeshPostGrant::live(object, owner, 0, 10);
-    match graph.state_post_grant(owner, post.clone()) {
-        Ok(()) => {}
-        Err(err) => not_missing(err),
-    }
+    assert!(graph
+        .admitted_owner(&object_of(&Value::String(object.into())))
+        .is_some());
     let secret = IssuerSecret::generate();
     match graph.name_object_set(
         owner,
@@ -582,10 +655,9 @@ fn signed_owner_reaches_post_and_group_until_history_drops_it() {
     assert!(graph
         .reverify_principal(&principal, &|_| None, &rc)
         .is_err());
-    assert_eq!(
-        graph.state_post_grant(owner, post).unwrap_err(),
-        GunError::ObjectNotInGraph
-    );
+    assert!(graph
+        .admitted_owner(&object_of(&Value::String(object.into())))
+        .is_none());
     assert_eq!(
         graph
             .name_object_set(
