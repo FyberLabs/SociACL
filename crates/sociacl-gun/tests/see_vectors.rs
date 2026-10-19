@@ -501,6 +501,15 @@ fn run_case(file: &Value, case: &Value) -> MeshSeeGraph {
                     );
                 }
             }
+            "label" => {
+                let object = step["object"].as_str().unwrap();
+                let got = graph.vector_label_owner_of(object);
+                if step["absent"] == true {
+                    assert!(got.is_none(), "{name}");
+                } else {
+                    assert_eq!(got, Some(step["owner"].as_str().unwrap()), "{name}");
+                }
+            }
             "factor" => {
                 assert_eq!(
                     sociacl_gun::factor_grants(step["kind"].as_str().unwrap()),

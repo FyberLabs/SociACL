@@ -1,10 +1,7 @@
 /**
- * Admitted see rows. see.js reads this map. The package ships this file.
+ * Admitted see rows. see.js reads this map. The seal set stays in see.js.
  * Test-only edits live in row-test.js, which the package does not ship.
  */
-
-/** @type {WeakSet<object>} */
-export const verified = new WeakSet();
 
 /** @type {WeakMap<object, { owners: Map<string, any>, rows: Map<string, any> }>} */
 const stores = new WeakMap();

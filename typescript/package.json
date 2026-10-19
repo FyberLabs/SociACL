@@ -16,6 +16,7 @@
   },
   "files": [
     "src",
+    "ids/src",
     "!src/internal/label-test.js",
     "!src/internal/row-test.js"
   ],

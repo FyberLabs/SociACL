@@ -56,6 +56,12 @@
   not membership. A peer `putObject` or `mergeFrom` does not replace
   that signed owner.
 - Rust `grant_approved_request` and `request_owner` return `Reason`.
+- A packed `sociacl` install ships `ids/src`, which `gun` and `group`
+  load. The see and post seal sets stay in those modules. Internal
+  modules export only the row maps. `reverifyPrincipal` removes the
+  group label with the owner record. `admitGrantPair`, `postKeeps`,
+  and `admitResolvedPost` take a resolver. Approval copies the resolver
+  context once before either row is written.
 
 ## Encrypted discovery — unreleased
 

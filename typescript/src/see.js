@@ -40,8 +40,10 @@ import {
   verifyObjectRecord,
   verifySeeGrant,
 } from '../ids/src/index.js';
-import { seeStore, verified } from './internal/see-rows.js';
+import { seeStore } from './internal/see-rows.js';
 import { admitResolvedPost, postKeeps, reverifyPosts } from './post.js';
+
+const verified = new WeakSet();
 
 /** @param {object} graph @returns {SeeStore} */
 function store(graph) {
@@ -59,6 +61,40 @@ function graphObject(graph) {
 function bindLabel(graph, object, owner) {
   const target = /** @type {{ bindSignedOwner?: (object: string, owner: string) => void }} */ (graph);
   if (typeof target.bindSignedOwner === 'function') target.bindSignedOwner(object, owner);
+}
+
+/** Drop the label putObject copied from an admitted record.
+ * A plain graph has no label map, and that is not an error.
+ * @param {object} graph @param {string} object */
+function unbindLabel(graph, object) {
+  const target = /** @type {{ unbindSignedOwner?: (object: string) => void }} */ (graph);
+  if (typeof target.unbindSignedOwner === 'function') target.unbindSignedOwner(object);
+}
+
+/**
+ * One plain copy of the context. Later reads do not touch the caller's object.
+ * @param {ResolutionContext} ctx
+ * @returns {ResolutionContext}
+ */
+export function snapshotContext(ctx) {
+  const now = ctx.now;
+  const jwks = ctx.jwks;
+  const links = ctx.links;
+  const policy = ctx.policy;
+  const pinnedIss = ctx.pinnedIss;
+  const history = ctx.history;
+  const revocations = ctx.revocations;
+  const genesisEpubBindings = ctx.genesisEpubBindings;
+  return Object.freeze({
+    now,
+    jwks,
+    links,
+    policy,
+    pinnedIss,
+    history,
+    ...(revocations !== undefined ? { revocations } : {}),
+    ...(genesisEpubBindings !== undefined ? { genesisEpubBindings } : {}),
+  });
 }
 
 /** @param {unknown} now */
@@ -327,43 +363,86 @@ function admitResolvedSee(graph, row, rotations, ctx) {
 }
 
 /**
+ * Put the previous see row back when the post write does not finish.
+ * @param {object} graph
+ * @param {{ ok: true, wrote: SealedRow | null, prev: SealedRow | null } | { ok: false, reason: string } | null} seeWrote
+ */
+function rollbackSee(graph, seeWrote) {
+  if (!seeWrote || !seeWrote.ok || !seeWrote.wrote) return;
+  const held = store(graph);
+  const grant = seeWrote.wrote.grant;
+  const key = grantSoul(grant.owner, grant.object, grant.accessor);
+  if (held.rows.get(key) !== seeWrote.wrote) return;
+  if (seeWrote.prev) held.rows.set(key, seeWrote.prev);
+  else held.rows.delete(key);
+}
+
+/**
  * Verify the see row and the post row, then write both.
  * A null row is left as stored. A row that would not replace writes neither.
- * The caller passes no kept flag, soul key, or ticket.
+ * History comes from the resolver. The context is copied once before either write.
+ * The caller passes no kept flag, soul key, ticket, or history array.
  * @param {object} graph
  * @param {unknown} seeRow
  * @param {unknown} postRow
- * @param {readonly unknown[]} rotations
- * @param {ResolutionContext} ctx
+ * @param {SeeResolver} resolver
  * @returns {{ ok: true, see: unknown, post: unknown } | { ok: false, reason: string }}
  */
-export function admitGrantPair(graph, seeRow, postRow, rotations, ctx) {
-  const see = seeRow == null ? null : evaluateSee(graph, seeRow, rotations, ctx);
+export function admitGrantPair(graph, seeRow, postRow, resolver) {
+  if (!resolverReady(resolver)) return { ok: false, reason: 'missing-history' };
+  const ctx = snapshotContext(resolver.ctx);
+  /** @type {Map<string, readonly unknown[] | undefined>} */
+  const cache = new Map();
+  const rotationsOf = (/** @type {PrincipalId} */ owner) => {
+    if (cache.has(owner)) return cache.get(owner);
+    const rows = resolver.rotations(owner);
+    cache.set(owner, rows);
+    return rows;
+  };
+  const stable = { rotations: rotationsOf, ctx };
+  const seeReady = seeRow == null ? null : openSee(seeRow, stable);
+  if (seeReady && !seeReady.ok) return seeReady;
+  const see = seeReady && seeReady.ok ? evaluateSee(graph, seeRow, seeReady.rotations, ctx) : null;
   if (see && !see.ok) return { ok: false, reason: see.reason };
-  const post = postRow == null ? null : postKeeps(graph, postRow, rotations, ctx);
+  const post = postRow == null ? null : postKeeps(graph, postRow, stable);
   if (post && !post.ok) return { ok: false, reason: post.reason };
   if ((see && !see.kept) || (post && !post.kept)) return { ok: false, reason: 'not-kept' };
   const seeWrote = see ? commitEvaluatedSee(see) : null;
   if (seeWrote && !seeWrote.ok) return seeWrote;
-  if (seeWrote && !seeWrote.kept) return { ok: false, reason: 'not-kept' };
-  const postWrote = postRow == null ? null : admitResolvedPost(graph, postRow, rotations, ctx);
-  if (postWrote && (!postWrote.ok || !postWrote.kept)) {
-    if (seeWrote && seeWrote.wrote) {
-      const held = store(graph);
-      const key = grantSoul(seeWrote.wrote.grant.owner, seeWrote.wrote.grant.object, seeWrote.wrote.grant.accessor);
-      if (held.rows.get(key) === seeWrote.wrote) {
-        if (seeWrote.prev) held.rows.set(key, seeWrote.prev);
-        else held.rows.delete(key);
-      }
-    }
-    if (postWrote && !postWrote.ok) return postWrote;
+  if (seeWrote && !seeWrote.kept) {
+    rollbackSee(graph, seeWrote);
     return { ok: false, reason: 'not-kept' };
   }
-  return {
-    ok: true,
-    see: seeWrote ? seeWrote.value : null,
-    post: postWrote ? postWrote.value : null,
-  };
+  try {
+    const postWrote = postRow == null ? null : admitResolvedPost(graph, postRow, stable);
+    if (postWrote && (!postWrote.ok || !postWrote.kept)) {
+      rollbackSee(graph, seeWrote);
+      if (postWrote && !postWrote.ok) return postWrote;
+      return { ok: false, reason: 'not-kept' };
+    }
+    return {
+      ok: true,
+      see: seeWrote ? seeWrote.value : null,
+      post: postWrote ? postWrote.value : null,
+    };
+  } catch (error) {
+    rollbackSee(graph, seeWrote);
+    throw error;
+  }
+}
+
+/**
+ * Parse a see row and resolve its owner once. A bare array is `missing-history`.
+ * @param {unknown} row
+ * @param {SeeResolver} resolver
+ * @returns {{ ok: true, rotations: readonly unknown[] } | { ok: false, reason: string }}
+ */
+function openSee(row, resolver) {
+  const parsed = parseSeeGrant(row);
+  if (!parsed.ok) return parsed;
+  const rotations = resolver.rotations(parsed.value.grant.owner);
+  if (!Array.isArray(rotations)) return { ok: false, reason: 'missing-history' };
+  return { ok: true, rotations };
 }
 
 /**
@@ -398,7 +477,10 @@ export function reverifyPrincipal(graph, principal, resolver) {
       if (row.grant.owner === who.value) held.rows.delete(key);
     }
     for (const [id, row] of [...held.owners]) {
-      if (row.owner === who.value) held.owners.delete(id);
+      if (row.owner === who.value) {
+        held.owners.delete(id);
+        unbindLabel(graph, id);
+      }
     }
     reverifyPosts(graph, who.value, rotations, resolver.ctx);
     return { ok: false, reason: 'missing-history' };
@@ -419,6 +501,7 @@ export function reverifyPrincipal(graph, principal, resolver) {
     const again = verifyObjectRecord(row.record, rotations, resolver.ctx);
     if (!again.ok) {
       held.owners.delete(id);
+      unbindLabel(graph, id);
       dropped += 1;
     }
   }
@@ -524,7 +607,22 @@ export function checkSee(graph, object, accessor, now, hint, hop) {
  * @param {{ ctx: ResolutionContext, rotations: (name: string) => readonly unknown[] }} options
  */
 export function runSeeCase(steps, options) {
-  const graph = {};
+  /** @type {Map<string, string>} */
+  const labels = new Map();
+  const graph = {
+    /** @param {string} object @param {string} owner */
+    bindSignedOwner(object, owner) {
+      labels.set(object, owner);
+    },
+    /** @param {string} object */
+    unbindSignedOwner(object) {
+      labels.delete(object);
+    },
+    /** @param {string} object */
+    ownerOf(object) {
+      return labels.get(object);
+    },
+  };
   const resolverFor = (/** @type {Record<string, any>} */ step) => ({
     rotations: () => (step.history === 'unavailable' ? undefined : options.rotations(step.rotations)),
     ctx: step.revocations ? { ...options.ctx, revocations: step.revocations } : options.ctx,
@@ -596,6 +694,15 @@ export function runSeeCase(steps, options) {
       if (step.from !== undefined && got.from !== step.from) failStep(step, got);
       if (step.until !== undefined && got.until !== step.until) failStep(step, got);
       if (step.attest !== undefined && got.attest !== step.attest) failStep(step, got);
+      continue;
+    }
+    if (step.op === 'label') {
+      const got = graph.ownerOf(step.object);
+      if (step.absent) {
+        if (got !== undefined) failStep(step, got);
+        continue;
+      }
+      if (got !== step.owner) failStep(step, got);
       continue;
     }
     if (step.op === 'check') {

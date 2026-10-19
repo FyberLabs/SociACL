@@ -326,7 +326,7 @@ test("a grant verified on one graph cannot replace a cancel on another", () => {
   assert.equal(postApi.admitPost(open, postLive, resolver).ok, true);
   assert.equal(admitRow(closed, signGrant(ids.seeGrantBytes, { stated: 0, hamState: 2 }), resolver).kept, true);
   assert.equal(postApi.admitPost(closed, signGrant(ids.postGrantBytes, { stated: 0, hamState: 2 }), resolver).kept, true);
-  const paired = seeApi.admitGrantPair(closed, seeLive, postLive, [], resolver.ctx);
+  const paired = seeApi.admitGrantPair(closed, seeLive, postLive, resolver);
   assert.equal(paired.ok, false);
   assert.equal(paired.reason, "not-kept");
   assert.equal(checkSee(closed, chat.value, p2, now).allowed, false);
@@ -349,7 +349,7 @@ test("a caller cannot flip kept to write over a cancel", () => {
   const again = admitRow(graph, flipped, resolver);
   assert.equal(again.ok && again.kept, false);
   const ticket = { kept: true, key: ids.grantSoul(p, chat.value, p2), sealed: live, used: false };
-  const planted = seeApi.admitGrantPair(graph, ticket, { ...postLive, kept: true }, [], resolver.ctx);
+  const planted = seeApi.admitGrantPair(graph, ticket, { ...postLive, kept: true }, resolver);
   assert.equal(planted.ok, false);
   assert.equal(checkSee(graph, chat.value, p2, now).allowed, false);
   assert.equal(checkPost(graph, chat.value, p2, now).allowed, false);
@@ -443,8 +443,7 @@ test("one row that would not replace writes neither grant", () => {
     graph,
     signGrant(ids.seeGrantBytes, { hamState: 1 }),
     signGrant(ids.postGrantBytes, { hamState: 1 }),
-    [],
-    resolver.ctx,
+    resolver,
   );
   assert.equal(paired.ok, false);
   assert.equal(paired.reason, "not-kept");
@@ -463,19 +462,19 @@ test("postKeeps does not write and a presented row is not a ticket", () => {
   const see = admitRow(graph, signGrant(ids.seeGrantBytes, { hamState: 1 }), resolver);
   assert.equal(see.ok, true);
   const live = signGrant(ids.postGrantBytes, { hamState: 1 });
-  const seen = postApi.postKeeps(graph, live, [], resolver.ctx);
+  const seen = postApi.postKeeps(graph, live, resolver);
   assert.equal(seen.ok && seen.kept, true);
   assert.equal(postApi.admittedPost(graph, chat.value, p2), undefined);
-  const wrote = postApi.admitResolvedPost(graph, { ...live, kept: true, key: ids.postSoul(p, chat.value, p3) }, [], resolver.ctx);
+  const wrote = postApi.admitResolvedPost(graph, { ...live, kept: true, key: ids.postSoul(p, chat.value, p3) }, resolver);
   assert.equal(wrote.ok && wrote.kept, true);
   assert.equal(checkPost(graph, chat.value, p2, now).allowed, true);
   assert.equal(checkPost(graph, chat.value, p3, now).allowed, false);
   assert.equal(isVerifiedRow(see.value), false);
-  assert.equal(seeApi.admitGrantPair(other, see.value, wrote.value, [], resolver.ctx).ok, false);
+  assert.equal(seeApi.admitGrantPair(other, see.value, wrote.value, resolver).ok, false);
   assert.equal(checkSee(other, chat.value, p2, now).allowed, false);
   assert.equal(checkPost(other, chat.value, p2, now).allowed, false);
   assert.equal(postApi.admitPost(other, signGrant(ids.postGrantBytes, { stated: 0, hamState: 4 }), resolver).kept, true);
-  const replay = postApi.admitResolvedPost(other, live, [], resolver.ctx);
+  const replay = postApi.admitResolvedPost(other, live, resolver);
   assert.equal(replay.ok && replay.kept, false);
   assert.equal(postApi.admittedPost(other, chat.value, p2)?.hamState, 4);
 });
@@ -536,4 +535,108 @@ test("no public path seals an unverified see or post row", () => {
   assert.equal(putObject(graph, objectRecord(), resolver).ok, true);
   assert.equal(checkSee(graph, chat.value, p2, now).allowed, false);
   assert.equal(checkSee(graph, chat.value, p2, now).reason, "delegate");
+});
+
+test("a bare history array is missing-history and writes nothing", () => {
+  const graph = {};
+  const resolver = { rotations: () => [], ctx: context() };
+  assert.equal(putObject(graph, objectRecord(), resolver).ok, true);
+  const see = signGrant(ids.seeGrantBytes, { hamState: 1 });
+  const post = signGrant(ids.postGrantBytes, { hamState: 1 });
+  for (const got of [
+    seeApi.admitGrantPair(graph, see, post, []),
+    postApi.postKeeps(graph, post, []),
+    postApi.admitResolvedPost(graph, post, []),
+  ]) {
+    assert.equal(got.ok, false);
+    assert.equal(got.reason, "missing-history");
+  }
+  assert.equal(admittedView(graph, chat.value, p2), undefined);
+  assert.equal(admittedPost(graph, chat.value, p2), undefined);
+  assert.equal(checkSee(graph, chat.value, p2, now).allowed, false);
+  assert.equal(checkPost(graph, chat.value, p2, now).allowed, false);
+});
+
+test("reverify drops the group label with the owner", () => {
+  const graph = new MemoryGroupGraph();
+  const resolver = { rotations: () => [], ctx: context() };
+  assert.equal(putObject(graph, objectRecord(), resolver).ok, true);
+  assert.equal(graph.ownerOf(chat.value), p);
+  const dropped = seeApi.reverifyPrincipal(graph, p, { rotations: () => undefined, ctx: context() });
+  assert.equal(dropped.ok, false);
+  assert.equal(dropped.reason, "missing-history");
+  assert.equal(graph.ownerOf(chat.value), undefined);
+  assert.equal(seeApi.admittedOwner(graph, chat.value), undefined);
+  assert.equal(checkSee(graph, chat.value, p2, now).reason, "unknown");
+});
+
+function throwingContext(failAt) {
+  const base = context();
+  let reads = 0;
+  return new Proxy(base, {
+    get(target, prop, receiver) {
+      reads += 1;
+      if (reads === failAt) throw new Error("injected");
+      return Reflect.get(target, prop, receiver);
+    },
+  });
+}
+
+test("a throw while reading the resolver context writes neither grant", () => {
+  const request = signRequest({
+    requester: p2,
+    object: chat.value,
+    scope: "read+post",
+    status: "pending",
+    message: "",
+    issuedAt: now,
+  }, 2);
+  const window = { from: at, until: now + 100 };
+  const see = signGrant(ids.seeGrantBytes, { hamState: 1 });
+  const post = signGrant(ids.postGrantBytes, { hamState: 1 });
+  for (const failAt of [1, 2, 3, 4, 5, 6, 7, 8, 9, 12, 16, 24, 10000]) {
+    const graph = {};
+    assert.equal(putObject(graph, objectRecord(), { rotations: () => [], ctx: context() }).ok, true);
+    const resolver = { rotations: () => [], ctx: throwingContext(failAt) };
+    let thrown = null;
+    let result;
+    try {
+      result = grantApprovedRequest(graph, p, request, window, null, { scalar: secret(1), resolver });
+    } catch (error) {
+      thrown = error;
+    }
+    const seeRow = admittedView(graph, chat.value, p2);
+    const postRow = admittedPost(graph, chat.value, p2);
+    if (thrown) {
+      assert.equal(thrown instanceof Error ? thrown.message : "", "injected");
+      assert.equal(seeRow, undefined);
+      assert.equal(postRow, undefined);
+    } else {
+      assert.equal(result.granted, true);
+      assert.equal(checkSee(graph, chat.value, p2, now).allowed, true);
+      assert.equal(checkPost(graph, chat.value, p2, now).allowed, true);
+    }
+    assert.equal(Boolean(seeRow), Boolean(postRow));
+    const direct = {};
+    assert.equal(putObject(direct, objectRecord(), { rotations: () => [], ctx: context() }).ok, true);
+    let directThrown = null;
+    let paired;
+    try {
+      paired = seeApi.admitGrantPair(direct, see, post, { rotations: () => [], ctx: throwingContext(failAt) });
+    } catch (error) {
+      directThrown = error;
+    }
+    const directSee = admittedView(direct, chat.value, p2);
+    const directPost = admittedPost(direct, chat.value, p2);
+    if (directThrown) {
+      assert.equal(directThrown instanceof Error ? directThrown.message : "", "injected");
+      assert.equal(directSee, undefined);
+      assert.equal(directPost, undefined);
+    } else {
+      assert.equal(paired.ok, true);
+      assert.equal(checkSee(direct, chat.value, p2, now).allowed, true);
+      assert.equal(checkPost(direct, chat.value, p2, now).allowed, true);
+    }
+    assert.equal(Boolean(directSee), Boolean(directPost));
+  }
 });

@@ -49,6 +49,28 @@ jobs:
           npm ci --omit=dev
           node --input-type=module -e "await import('./src/gun.js')"
 
+      - name: Packed install loads every export
+        working-directory: typescript
+        run: |
+          version="$(node -p "JSON.parse(require('fs').readFileSync('package.json','utf8')).version")"
+          npm pack --ignore-scripts --pack-destination "$RUNNER_TEMP"
+          pack="$(mktemp -d "$RUNNER_TEMP/sociacl-pack.XXXXXX")"
+          npm install --ignore-scripts --prefix "$pack" "$RUNNER_TEMP/sociacl-$version.tgz"
+          cd "$pack"
+          node --input-type=module -e "
+            const root = await import('sociacl');
+            const gun = await import('sociacl/gun');
+            const group = await import('sociacl/group');
+            const ir = await import('sociacl/ir');
+            if (typeof root.HOPCAP !== 'number') throw new Error('root');
+            if (typeof gun.admitRow !== 'function') throw new Error('admitRow');
+            if (typeof gun.checkSee !== 'function') throw new Error('checkSee');
+            if (typeof gun.admitPost !== 'function') throw new Error('admitPost');
+            if (typeof gun.checkPost !== 'function') throw new Error('checkPost');
+            if (typeof group.MemoryGroupGraph !== 'function') throw new Error('MemoryGroupGraph');
+            if (typeof ir.mapAction !== 'function') throw new Error('ir');
+          "
+
       - name: Coverage
         run: ./scripts/coverage.sh
 

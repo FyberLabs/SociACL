@@ -24,7 +24,7 @@ import {
   verifyAclAttestation,
   verifyPostGrant,
 } from '../ids/src/index.js';
-import { postMap, postTables, sealedPosts } from './internal/post-rows.js';
+import { postMap, postTables } from './internal/post-rows.js';
 import {
   admitRow,
   admittedOwner,
@@ -34,7 +34,10 @@ import {
   reverifyPrincipal,
   seeAccessorEdge,
   seeObjectEdge,
+  snapshotContext,
 } from './see.js';
+
+const sealedPosts = new WeakSet();
 
 /** A copy of the admitted post rows. Mutating it does not change Check.
  * @param {object} graph */
@@ -189,16 +192,37 @@ function commitEvaluatedPost(evaluated) {
 }
 
 /**
+ * History comes from the resolver. A bare array is `missing-history`.
+ * The context is copied once before the row is parsed.
+ * @param {unknown} resolver
+ * @param {unknown} row
+ * @returns {{ ok: true, rotations: readonly unknown[], ctx: ResolutionContext } | { ok: false, reason: string }}
+ */
+function openPost(resolver, row) {
+  if (!resolver || typeof resolver !== 'object' || typeof /** @type {SeeResolver} */ (resolver).rotations !== 'function' || !/** @type {SeeResolver} */ (resolver).ctx) {
+    return { ok: false, reason: 'missing-history' };
+  }
+  const ready = /** @type {SeeResolver} */ (resolver);
+  const ctx = snapshotContext(ready.ctx);
+  const parsed = parsePostGrant(row);
+  if (!parsed.ok) return parsed;
+  const rotations = ready.rotations(parsed.value.grant.owner);
+  if (!Array.isArray(rotations)) return { ok: false, reason: 'missing-history' };
+  return { ok: true, rotations, ctx };
+}
+
+/**
  * Whether this post row would replace the current stored row.
  * Does not write. The sealed row does not leave this function.
  * @param {object} graph
  * @param {unknown} row
- * @param {readonly unknown[]} rotations
- * @param {ResolutionContext} ctx
+ * @param {SeeResolver} resolver
  * @returns {{ ok: true, kept: boolean } | { ok: false, reason: string }}
  */
-export function postKeeps(graph, row, rotations, ctx) {
-  const evaluated = evaluatePost(graph, row, rotations, ctx);
+export function postKeeps(graph, row, resolver) {
+  const ready = openPost(resolver, row);
+  if (!ready.ok) return ready;
+  const evaluated = evaluatePost(graph, row, ready.rotations, ready.ctx);
   if (!evaluated.ok) return evaluated;
   return { ok: true, kept: evaluated.kept };
 }
@@ -207,12 +231,13 @@ export function postKeeps(graph, row, rotations, ctx) {
  * Verify one post row and write it in this call.
  * @param {object} graph
  * @param {unknown} row
- * @param {readonly unknown[]} rotations
- * @param {ResolutionContext} ctx
+ * @param {SeeResolver} resolver
  * @returns {{ ok: true, value: SealedPost, kept: boolean } | { ok: false, reason: string }}
  */
-export function admitResolvedPost(graph, row, rotations, ctx) {
-  const evaluated = evaluatePost(graph, row, rotations, ctx);
+export function admitResolvedPost(graph, row, resolver) {
+  const ready = openPost(resolver, row);
+  if (!ready.ok) return ready;
+  const evaluated = evaluatePost(graph, row, ready.rotations, ready.ctx);
   if (!evaluated.ok) return evaluated;
   return commitEvaluatedPost(evaluated);
 }
@@ -228,14 +253,7 @@ export function admitResolvedPost(graph, row, rotations, ctx) {
  * @returns {{ ok: true, value: SealedPost, kept: boolean } | { ok: false, reason: string }}
  */
 export function admitPost(graph, row, resolver) {
-  if (!resolver || typeof resolver !== 'object' || typeof resolver.rotations !== 'function' || !resolver.ctx) {
-    return { ok: false, reason: 'missing-history' };
-  }
-  const parsed = parsePostGrant(row);
-  if (!parsed.ok) return parsed;
-  const rotations = resolver.rotations(parsed.value.grant.owner);
-  if (!Array.isArray(rotations)) return { ok: false, reason: 'missing-history' };
-  return admitResolvedPost(graph, row, rotations, resolver.ctx);
+  return admitResolvedPost(graph, row, resolver);
 }
 
 /** The stored verified post row, as a caller-facing copy.

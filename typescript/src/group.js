@@ -1031,6 +1031,18 @@ export class MemoryGroupGraph {
   }
 
   /**
+   * Drop the label copied from an admitted signed object record.
+   * Object sets stay. Reverify calls this when the owner record goes.
+   * @param {string} object
+   */
+  unbindSignedOwner(object) {
+    const id = plainObjectId(object);
+    if (id == null) return;
+    this.#signedOwners.delete(id);
+    labelObjects(this).delete(aclKey(id));
+  }
+
+  /**
    * @param {string} object
    * @param {string} owner
    */

@@ -30,7 +30,7 @@ import {
 } from '../ids/src/index.js';
 import { integer } from '../ids/src/util.js';
 import { presentedPost } from './post.js';
-import { admitGrantPair, admittedOwner, presentedSee } from './see.js';
+import { admitGrantPair, admittedOwner, presentedSee, snapshotContext } from './see.js';
 
 export {
   REQUEST_DOMAIN,
@@ -68,18 +68,17 @@ function sameLive(row, owner, object, accessor, window) {
 }
 
 /**
- * Admit the see row and the post row against history already resolved.
- * Both are checked, then both are written, in this one call.
- * A null row is left as stored. Nothing is exported for a caller to replay.
+ * Admit the see row and the post row. Both are checked, then both are
+ * written, in this one call. A null row is left as stored. History comes
+ * from the resolver. Nothing is exported for a caller to replay.
  * @param {object} graph
  * @param {import('../ids/src/types.js').SeeGrant | null} seeRow
  * @param {import('../ids/src/types.js').SeeGrant | null} postRow
- * @param {readonly unknown[]} rotations
- * @param {import('../ids/src/types.js').ResolutionContext} ctx
+ * @param {SeeResolver} resolver
  * @returns {{ ok: true, see: unknown, post: unknown } | { ok: false, reason: string }}
  */
-function admitGrantRows(graph, seeRow, postRow, rotations, ctx) {
-  return admitGrantPair(graph, seeRow, postRow, rotations, ctx);
+function admitGrantRows(graph, seeRow, postRow, resolver) {
+  return admitGrantPair(graph, seeRow, postRow, resolver);
 }
 
 /** @param {unknown} value @returns {value is number} */
@@ -126,7 +125,8 @@ export function grantApprovedRequest(graph, owner, request, window, members, sig
   if (!who.ok) return deny(who.reason);
   if (!signer || !(signer.scalar instanceof Uint8Array) || !signer.resolver) return deny('bad-key');
   const resolver = signer.resolver;
-  if (!resolver.ctx || typeof resolver.rotations !== 'function') return deny('missing-history');
+  if (!resolver.ctx || typeof resolver.ctx !== 'object' || typeof resolver.rotations !== 'function') return deny('missing-history');
+  const ctx = snapshotContext(resolver.ctx);
   /** @type {Map<string, readonly unknown[] | undefined>} */
   const history = new Map();
   /** @param {string} principal */
@@ -142,7 +142,7 @@ export function grantApprovedRequest(graph, owner, request, window, members, sig
   const signed = verifySignedAt(
     req.requester,
     requesterHistory,
-    resolver.ctx,
+    ctx,
     parsed.value.bytes,
     req.sig,
     req.issuedAt,
@@ -169,8 +169,8 @@ export function grantApprovedRequest(graph, owner, request, window, members, sig
     if (seeStored?.grant?.stated === 0) return deny('not-kept');
     if (req.scope === 'read+post' && postStored?.grant?.stated === 0) return deny('not-kept');
   }
-  if (!integer(resolver.ctx.now)) return deny('bad-record');
-  const current = resolveCurrentKey(who.value, ownerHistory, resolver.ctx);
+  if (!integer(ctx.now)) return deny('bad-record');
+  const current = resolveCurrentKey(who.value, ownerHistory, ctx);
   if (!current.ok) return deny(current.reason);
   const seeSame = seeMatch && seeStored?.key === current.value.currentKey;
   const postSame = req.scope !== 'read+post' || (postMatch && postStored?.key === current.value.currentKey);
@@ -187,7 +187,7 @@ export function grantApprovedRequest(graph, owner, request, window, members, sig
     };
   }
   const latest = current.value.rotations.reduce((max, row) => (row.issuedAt > max ? row.issuedAt : max), -1);
-  if (latest === resolver.ctx.now) return deny('rotation-boundary');
+  if (latest === ctx.now) return deny('rotation-boundary');
   const owns = ownsKey();
   if (!owns.ok) return deny(owns.reason);
   const seeHam = (seeStored?.grant?.hamState ?? 0) + 1;
@@ -206,12 +206,12 @@ export function grantApprovedRequest(graph, owner, request, window, members, sig
       from: span.from,
       until: span.until,
       hamState: seeHam,
-      issuedAt: resolver.ctx.now,
+      issuedAt: ctx.now,
       sig: '',
     };
     const signedSee = signRow(seeFields, signer.scalar, current.value.currentKey, seeGrantBytes);
     if (!signedSee.ok) return deny(signedSee.reason);
-    const seeOk = verifySeeGrant(signedSee.value, ownerHistory, resolver.ctx);
+    const seeOk = verifySeeGrant(signedSee.value, ownerHistory, ctx);
     if (!seeOk.ok) return deny(seeOk.reason);
     seeSigned = signedSee.value;
   }
@@ -227,16 +227,16 @@ export function grantApprovedRequest(graph, owner, request, window, members, sig
       from: span.from,
       until: span.until,
       hamState: postHam,
-      issuedAt: resolver.ctx.now,
+      issuedAt: ctx.now,
       sig: '',
     };
     const signedPost = signRow(postFields, signer.scalar, current.value.currentKey, postGrantBytes);
     if (!signedPost.ok) return deny(signedPost.reason);
-    const postOk = verifyPostGrant(signedPost.value, ownerHistory, resolver.ctx);
+    const postOk = verifyPostGrant(signedPost.value, ownerHistory, ctx);
     if (!postOk.ok) return deny(postOk.reason);
     postSigned = signedPost.value;
   }
-  const wrote = admitGrantRows(graph, seeSigned, postSigned, ownerHistory, resolver.ctx);
+  const wrote = admitGrantRows(graph, seeSigned, postSigned, { rotations: rotationsOf, ctx });
   if (!wrote.ok) return deny(wrote.reason);
   return {
     granted: true,

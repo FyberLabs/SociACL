@@ -300,6 +300,13 @@ impl MeshSeeGraph {
         self.labels.put_object(object, owner);
     }
 
+    /// Unstable, test-only hook. The label owner copied from an admitted record.
+    #[cfg(feature = "vectors")]
+    #[doc(hidden)]
+    pub fn vector_label_owner_of(&self, object: &str) -> Option<&str> {
+        self.labels.owner_of(object)
+    }
+
     /// Admit one see row. The row is parsed once; the signature covers that value.
     /// History comes from `resolver` called with the parsed owner.
     /// Missing rotation history is `missing-history`, not an empty history.
