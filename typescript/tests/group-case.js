@@ -16,7 +16,9 @@ function failStep(step, got) {
  * @param {{ ctx: import('../ids/src/types.js').ResolutionContext, rotations: (name: string) => readonly unknown[] }} options
  */
 export function runGroupCase(steps, options) {
-  const graph = new MemoryGroupGraph();
+  const graphs = { local: new MemoryGroupGraph(), side: new MemoryGroupGraph() };
+  /** @type {Record<string, any> | null} */
+  let lastRow = null;
   const resolverFor = (/** @type {Record<string, any>} */ step) => {
     const ctx = { ...options.ctx };
     if (step.revocations) ctx.revocations = step.revocations;
@@ -27,6 +29,19 @@ export function runGroupCase(steps, options) {
     };
   };
   for (const step of steps) {
+    const graph = step.on === 'side' ? graphs.side : graphs.local;
+    if (step.op === 'merge') {
+      const into = step.into === 'side' ? graphs.side : graphs.local;
+      const from = into === graphs.side ? graphs.local : graphs.side;
+      into.mergeFrom(from);
+      continue;
+    }
+    if (step.op === 'mutate-row') {
+      if (!lastRow || typeof step.field !== 'string') failStep(step, 'no-row');
+      if (step.value === null) delete lastRow[step.field];
+      else lastRow[step.field] = step.value;
+      continue;
+    }
     if (step.op === 'put') {
       const got = putObject(graph, step.record, resolverFor(step));
       if (step.ok === false) {
@@ -35,6 +50,7 @@ export function runGroupCase(steps, options) {
       continue;
     }
     if (step.op === 'admit-member' || step.op === 'admit-object-set' || step.op === 'admit-cancel') {
+      lastRow = step.row;
       const got = step.op === 'admit-member'
         ? admitMembership(graph, step.row, resolverFor(step))
         : step.op === 'admit-object-set'

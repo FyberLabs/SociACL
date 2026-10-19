@@ -6,6 +6,7 @@ import { admitMembership, admitObjectSet, membershipAssentBytes, MemoryGroupGrap
 import { admittedPost, checkPost, factorGrants } from "../src/post.js";
 import * as postApi from "../src/post.js";
 import { grantApprovedRequest } from "../src/request.js";
+import { plantLabelOwnerForTest } from "../src/internal/label-test.js";
 import { movePostRowForTest, moveSeeRowForTest, plantPlainPostForTest, plantPlainSeeForTest } from "../src/internal/row-test.js";
 import { admitRow, admittedView, checkSee, isVerifiedRow, putObject } from "../src/see.js";
 import * as seeApi from "../src/see.js";
@@ -154,7 +155,7 @@ test("a peer merge cannot auto-approve a non-member", () => {
   const mallory = new MemoryGroupGraph();
   const resolver = { rotations: () => [], ctx: context() };
   assert.equal(putObject(owner, objectRecord(), resolver).ok, true);
-  mallory.putObject(chat.value, p2);
+  plantLabelOwnerForTest(mallory, chat.value, p2);
   owner.mergeFrom(mallory);
   const request = signRequest({
     requester: p2,
@@ -175,7 +176,7 @@ test("a peer merge cannot auto-approve a non-member", () => {
   assert.equal(result.granted, false);
   assert.equal(result.reason, "not-member");
   assert.equal(admittedView(owner, chat.value, p2), undefined);
-  owner.putObject(chat.value, p2);
+  plantLabelOwnerForTest(owner, chat.value, p2);
   assert.equal(owner.ownerOf(chat.value), p);
 });
 
@@ -478,8 +479,8 @@ test("an alias label put keeps the signed owner spelling", () => {
   const graph = new MemoryGroupGraph();
   const resolver = { rotations: () => [], ctx: context() };
   assert.equal(putObject(graph, objectRecord(), resolver).ok, true);
-  graph.putObject(chat.value, `s3rch/users/${p}`);
-  graph.putObject(chat.value, p);
+  plantLabelOwnerForTest(graph, chat.value, `s3rch/users/${p}`);
+  plantLabelOwnerForTest(graph, chat.value, p);
   assert.equal(graph.ownerOf(chat.value), p);
   const friends = ids.mintObjectId("set", p, () => new Uint8Array(16).fill(0x33));
   if (!friends.ok) throw new Error(friends.reason);

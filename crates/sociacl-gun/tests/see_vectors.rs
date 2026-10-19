@@ -112,12 +112,24 @@ fn run_case(file: &Value, case: &Value) -> MeshSeeGraph {
         }
         Ok(history_state(principal, &[], at, until))
     };
-    let mut graph = MeshSeeGraph::new();
+    let mut graphs = [MeshSeeGraph::new(), MeshSeeGraph::new()];
     let mut last_see: Option<Vec<u8>> = None;
     let mut last_post: Option<Vec<u8>> = None;
     for step in case["steps"].as_array().unwrap() {
         let name = case["name"].as_str().unwrap();
         let op = step["op"].as_str().unwrap();
+        let on_side = step.get("on").and_then(Value::as_str) == Some("side");
+        if op == "merge" {
+            let into_side = step.get("into").and_then(Value::as_str) == Some("side");
+            let (head, tail) = graphs.split_at_mut(1);
+            if into_side {
+                tail[0].vector_merge_groups(&head[0]);
+            } else {
+                head[0].vector_merge_groups(&tail[0]);
+            }
+            continue;
+        }
+        let graph = &mut graphs[usize::from(on_side)];
         let step_revocations = step
             .get("revocations")
             .and_then(Value::as_array)
@@ -532,6 +544,9 @@ fn run_case(file: &Value, case: &Value) -> MeshSeeGraph {
                     step["owner"].as_str().unwrap(),
                 );
             }
+            "mutate-row" => {
+                let _ = step["field"].as_str().expect(name);
+            }
             "grant" => {
                 let rotations = rotations_of(ctx, step);
                 let scalar = scalar_of(step["signer"].as_u64().unwrap_or(1));
@@ -621,6 +636,7 @@ fn run_case(file: &Value, case: &Value) -> MeshSeeGraph {
             other => panic!("{name} unknown {other}"),
         }
     }
+    let [graph, _] = graphs;
     graph
 }
 

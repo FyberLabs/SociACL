@@ -12,6 +12,15 @@
   the group path. `<principal>/<name>` set ids are refused.
   `vectors/mesh/v2/group.json` is the shared group suite, and
   `members-gate-on-stored-id` uses the minted set id.
+- **Breaking:** `MemoryGroupGraph` no longer has `putObject`,
+  `bindSignedOwner`, or `unbindSignedOwner`, and `mergeFrom` does not
+  copy labels. `checkGroupSee` takes the owner from the principal
+  embedded in the object id and requires the admitted signed owner to
+  match. An object-set merge always unions incoming cancels when that
+  admitted owner matches. `reverifyGroup` rechecks the signatures it
+  stored at admission, including object-set cancels. A replacement
+  object-set edge for a different set does not keep the previous set's
+  cancels.
 - **Breaking:** an access request is `sociacl-access-request-v2`. The
   request id is `hex(sha256)` of `sociacl-request-id-v2`, the requester
   `PrincipalId`, and the object `ObjectId`. `grantApprovedRequest` takes

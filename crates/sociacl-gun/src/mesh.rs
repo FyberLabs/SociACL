@@ -294,10 +294,26 @@ impl MeshSeeGraph {
 
     /// Unstable, test-only hook. Plants a label owner without a signed record.
     /// Production builds omit this. Tests enable the `vectors` feature.
+    /// `check_group_see` does not read this label.
     #[cfg(feature = "vectors")]
     #[doc(hidden)]
     pub fn vector_label_owner(&mut self, object: &str, owner: &str) {
         self.labels.put_object(object, owner);
+    }
+
+    /// Unstable, test-only hook. Merges group rows the way a peer merge does.
+    /// An object-set row is copied only when this graph's admitted owner matches.
+    #[cfg(feature = "vectors")]
+    #[doc(hidden)]
+    pub fn vector_merge_groups(&mut self, other: &Self) {
+        let object_owners: HashMap<String, String> = self
+            .owners
+            .iter()
+            .map(|(id, row)| (id.clone(), row.owner.as_ref().to_string()))
+            .collect();
+        self.labels
+            .groups
+            .merge_from(&other.labels.groups, &object_owners);
     }
 
     /// Unstable, test-only hook. The label owner copied from an admitted record.

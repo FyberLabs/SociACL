@@ -5,7 +5,7 @@ import { secp256k1 } from '@noble/curves/secp256k1.js';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { keccak_256 } from '@noble/hashes/sha3.js';
 import * as ids from '../src/index.js';
-import { membershipAssentBytes, objectSetBytes } from '../../src/group.js';
+import { groupCancelBytes, membershipAssentBytes, membershipSoul, objectSetBytes, objectSetSoul } from '../../src/group.js';
 import { runGroupCase } from '../../tests/group-case.js';
 import { b64, hex, utf8 } from './vector-util.mjs';
 
@@ -52,6 +52,8 @@ const policy = { allowedDomains: ['s3r.ch'], allowedUris: ['https://s3r.ch/ident
 const chatA = val(ids.mintObjectId('chat', p, () => new Uint8Array(16).fill(0x11)));
 const chatB = val(ids.mintObjectId('chat', p, () => new Uint8Array(16).fill(0x22)));
 const friends = val(ids.mintObjectId('set', p, () => new Uint8Array(16).fill(0x33)));
+const otherSet = val(ids.mintObjectId('set', p, () => new Uint8Array(16).fill(0x44)));
+const cancelId = 'cd'.repeat(32);
 const unbound = 'set_' + 'ab'.repeat(16);
 const context = {
   jwks,
@@ -97,12 +99,44 @@ const setAssent = () => ({ op: 'admit-member', row: assent('set', 1), rotations:
 const objectEdge = (object = chatA) => ({ op: 'admit-object-set', row: edge(1, { object }), rotations: 'genesis', ok: true, kept: true });
 const live = () => [put(), member(), setAssent(), objectEdge()];
 const check = (object, accessor, allowed, reason, extra) => ({ op: 'check-group', predicate: 'same-group', object, accessor, now, allowed, reason, ...extra });
+function aclAttest(bytes, issuedAt, principalId) {
+  return jws({
+    typ: 'sociacl-acl-attest-v1',
+    principal: principalId,
+    recordId: hex(sha256(bytes)),
+    iat: issuedAt,
+    exp: issuedAt + 600,
+  });
+}
+function cancelRow(kind, signer, extra = {}) {
+  const set = extra.set ?? friends;
+  const object = extra.object ?? chatA;
+  const issuedAt = extra.issuedAt ?? at;
+  const row = {
+    kind,
+    predicate: 'same-group',
+    set,
+    member: p2,
+    setOwner: p,
+    signer: keyFor(signer),
+    rowSoul: kind === 'object-set' ? objectSetSoul(p, object) : membershipSoul(p, 'same-group', set, p2),
+    cancelId: extra.cancelId ?? cancelId,
+    prior: extra.prior ?? [],
+    issuedAt,
+  };
+  if (kind === 'object-set') row.object = object;
+  const bytes = groupCancelBytes(row);
+  const signed = { ...row, sig: sign(bytes, signer) };
+  if (extra.attest) signed.attest = aclAttest(bytes, issuedAt, keyFor(signer));
+  return signed;
+}
+const admitCancel = (row, rotations, extra) => ({ op: 'admit-cancel', row, rotations, ok: true, kept: true, ...extra });
 const payload = { stated: 1, from: at, until: now + 100 };
 const options = { ctx, rotations: (name) => context.rotationSets[name] };
 const accept = [];
 const reject = [];
 function add(bucket, name, steps) {
-  runGroupCase(steps, options);
+  runGroupCase(structuredClone(steps), options);
   (bucket === 'accept' ? accept : reject).push({ name, steps });
 }
 add('reject', 'set-id-must-be-minted', [
@@ -162,7 +196,77 @@ add('accept', 'hop-does-not-grant', [
 add('reject', 'label-owner-mismatch-denies', [
   ...live(),
   { op: 'label-owner', object: chatA, owner: p3 },
+  check(chatA, p3, false, 'missing'),
+  check(chatA, p, true, 'owner'),
+]);
+add('reject', 'unsigned-label-owner-not-owner', [
+  { op: 'label-owner', object: chatA, owner: p },
+  check(chatA, p, false, 'missing'),
+  member(),
+  setAssent(),
+  objectEdge(),
   check(chatA, p2, false, 'missing'),
+  put(),
+  { op: 'label-owner', object: chatA, owner: p3 },
+  check(chatA, p3, false, 'missing'),
+  check(chatA, p, true, 'owner'),
+]);
+const lowEdge = () => ({ op: 'admit-object-set', row: edge(1, { hamState: 1 }), rotations: 'genesis', ok: true, kept: true });
+const highEdge = () => ({ op: 'admit-object-set', row: edge(1, { hamState: 2 }), rotations: 'genesis', ok: true, kept: true });
+const objectCancel = () => admitCancel(cancelRow('object-set', 1), 'genesis');
+function side(step) {
+  return { ...step, on: 'side' };
+}
+add('reject', 'merge-keeps-object-set-cancel-when-local-wins', [
+  put(),
+  member(),
+  setAssent(),
+  highEdge(),
+  side(put()),
+  side(member()),
+  side(setAssent()),
+  side(lowEdge()),
+  side(objectCancel()),
+  { op: 'merge' },
+  check(chatA, p2, false, 'missing'),
+]);
+add('reject', 'merge-keeps-object-set-cancel-when-incoming-wins', [
+  put(),
+  member(),
+  setAssent(),
+  lowEdge(),
+  objectCancel(),
+  side(put()),
+  side(member()),
+  side(setAssent()),
+  side(highEdge()),
+  { op: 'merge' },
+  check(chatA, p2, false, 'missing'),
+]);
+const mutableCancel = cancelRow('membership', 2);
+add('reject', 'reverify-uses-stored-signature', [
+  put(),
+  member(),
+  setAssent(),
+  objectEdge(),
+  admitCancel(mutableCancel, 'genesis'),
+  check(chatA, p2, false, 'missing'),
+  { op: 'mutate-row', field: 'sig', value: 'aa' },
+  { op: 'reverify-group', principal: p2, rotations: 'genesis', ok: true, dropped: 0 },
+  check(chatA, p2, false, 'missing'),
+]);
+add('accept', 'witnessed-retired-cancel-applies', [
+  put(),
+  { op: 'admit-member', row: assent('member', 2, { issuedAt: now }), rotations: 'genesis', ok: true, kept: true },
+  { op: 'admit-member', row: assent('set', 2, { issuedAt: now }), rotations: 'rotated', ok: true, kept: true },
+  { op: 'admit-object-set', row: edge(2, { issuedAt: now }), rotations: 'rotated', ok: true, kept: true },
+  admitCancel(cancelRow('membership', 1, { issuedAt: at, attest: true }), 'rotated'),
+  check(chatA, p2, false, 'missing'),
+]);
+const retiredSet = assent('set', 1, { issuedAt: at });
+retiredSet.attest = aclAttest(membershipAssentBytes({ ...retiredSet, sig: undefined, attest: undefined }), at, p);
+add('reject', 'witnessed-retired-assent-refused', [
+  { op: 'admit-member', row: retiredSet, rotations: 'rotated', ok: false, reason: 'unwitnessed-retired-key' },
 ]);
 const snapEdge = { predicate: 'same-group', setId: friends, stated: 1, hamState: 1 };
 add('accept', 'snapshot-understates-a-newer-edge', [
@@ -170,6 +274,30 @@ add('accept', 'snapshot-understates-a-newer-edge', [
   { op: 'snapshot', object: chatA, members: [], objectSet: { ...snapEdge, hamState: 0 }, understates: true },
   { op: 'snapshot', object: chatA, members: [], objectSet: snapEdge, understates: false },
   { op: 'snapshot', object: chatA, members: [], objectSet: null, understates: true },
+]);
+add('accept', 'reverify-drops-unwitnessed-object-set-cancel', [
+  put(),
+  { op: 'admit-member', row: assent('member', 2, { issuedAt: now }), rotations: 'genesis', ok: true, kept: true },
+  { op: 'admit-member', row: assent('set', 2, { issuedAt: now }), rotations: 'rotated', ok: true, kept: true },
+  { op: 'admit-object-set', row: edge(2, { issuedAt: now, hamState: 2 }), rotations: 'rotated', ok: true, kept: true },
+  admitCancel(cancelRow('object-set', 1, { issuedAt: at }), 'genesis'),
+  check(chatA, p2, false, 'missing'),
+  { op: 'reverify-group', principal: p, rotations: 'rotated', ok: true, dropped: 1 },
+  check(chatA, p2, true, 'same-group'),
+]);
+add('accept', 'object-set-cancel-is-scoped-to-its-set', [
+  put(),
+  member(),
+  setAssent(),
+  objectEdge(),
+  objectCancel(),
+  check(chatA, p2, false, 'missing'),
+  { op: 'admit-object-set', row: edge(1, { hamState: 2 }), rotations: 'genesis', ok: true, kept: true },
+  check(chatA, p2, false, 'missing'),
+  { op: 'admit-member', row: assent('member', 2, { set: otherSet }), rotations: 'genesis', ok: true, kept: true },
+  { op: 'admit-member', row: assent('set', 1, { set: otherSet }), rotations: 'genesis', ok: true, kept: true },
+  { op: 'admit-object-set', row: edge(1, { set: otherSet, hamState: 3 }), rotations: 'genesis', ok: true, kept: true },
+  check(chatA, p2, true, 'same-group'),
 ]);
 add('accept', 'snapshot-without-an-edge', [
   { op: 'snapshot', object: chatA, members: [], objectSet: null, understates: false },

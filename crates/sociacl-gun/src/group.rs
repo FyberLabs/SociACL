@@ -816,18 +816,12 @@ impl MeshSeeGraph {
             mode,
         );
         let id = edge.object.as_ref().to_string();
-        if let Some(prev) = self.labels.groups.object_sets.get(&id) {
-            if !replaces(&prev.assent, &next) {
-                return Ok(false);
-            }
-        }
-        let cancels = self
-            .labels
-            .groups
-            .object_sets
-            .get(&id)
-            .map(|prev| prev.cancels.clone())
-            .unwrap_or_default();
+        // A different set starts empty. The previous set's cancels do not follow the new edge.
+        let cancels = match self.labels.groups.object_sets.get(&id) {
+            Some(prev) if !replaces(&prev.assent, &next) => return Ok(false),
+            Some(prev) if prev.set == edge.set => prev.cancels.clone(),
+            _ => BTreeMap::new(),
+        };
         self.labels.groups.object_sets.insert(
             id,
             ObjectSetRecord {
@@ -1043,6 +1037,42 @@ impl MeshSeeGraph {
             if again.is_err() {
                 self.labels.groups.object_sets.remove(&id);
                 dropped += 1;
+                continue;
+            }
+            let cancel_ids: Vec<String> = self
+                .labels
+                .groups
+                .object_sets
+                .get(&id)
+                .map(|row| {
+                    row.cancels
+                        .iter()
+                        .filter(|(_, cancel)| cancel.signer == *principal)
+                        .map(|(cancel_id, _)| cancel_id.clone())
+                        .collect()
+                })
+                .unwrap_or_default();
+            let Some(row) = self.labels.groups.object_sets.get_mut(&id) else {
+                continue;
+            };
+            for cancel_id in cancel_ids {
+                let Some(cancel) = row.cancels.get(&cancel_id) else {
+                    continue;
+                };
+                let again = verify_party(
+                    &cancel.signer,
+                    &rotations,
+                    ctx,
+                    &cancel.bytes,
+                    &cancel.sig,
+                    cancel.issued_at,
+                    None,
+                    cancel.attest.as_deref(),
+                );
+                if again.is_err() {
+                    row.cancels.remove(&cancel_id);
+                    dropped += 1;
+                }
             }
         }
         Ok(dropped)
@@ -1050,9 +1080,10 @@ impl MeshSeeGraph {
 
     /// `CHECK(see)` when the object names `same-group` or `named-circle`.
     ///
-    /// The owner sees their object. Otherwise both assents must be stated 1
-    /// and every stored cancel must be covered. Hop missing does not fail.
-    /// Hop alone never allows.
+    /// The owner is the principal embedded in the object id, and the admitted
+    /// signed owner must be that same principal. An unsigned label is not
+    /// the owner. Otherwise both assents must be stated 1 and every stored
+    /// cancel must be covered. Hop missing does not fail. Hop alone never allows.
     ///
     /// Stored-id group Check. A raw string is not a parameter.
     ///
@@ -1072,13 +1103,16 @@ impl MeshSeeGraph {
         let _ = now;
         let hint = hint.cloned();
         let hop = hop.cloned();
-        let Some(owner) = self.labels.owner_of(object.as_ref()) else {
+        let Ok(embedded) = object_principal(object) else {
             return deny(MESH_REASON_MISSING, hint, hop);
         };
-        let Ok(parsed_owner) = parse_principal_id(owner) else {
+        let Some(admitted) = self.object_owner(object) else {
             return deny(MESH_REASON_MISSING, hint, hop);
         };
-        if parsed_owner == *accessor {
+        if *admitted != embedded {
+            return deny(MESH_REASON_MISSING, hint, hop);
+        }
+        if embedded == *accessor {
             return MeshCheckResult {
                 allowed: true,
                 reason: MESH_REASON_OWNER.into(),
@@ -1089,7 +1123,7 @@ impl MeshSeeGraph {
         let Some(edge) = self.labels.groups.object_sets.get(object.as_ref()) else {
             return deny(MESH_REASON_MISSING, hint, hop);
         };
-        if !object_set_live(edge) || edge.predicate != predicate || edge.owner != parsed_owner {
+        if !object_set_live(edge) || edge.predicate != predicate || edge.owner != embedded {
             return deny(MESH_REASON_MISSING, hint, hop);
         }
         let Ok(set_owner) = object_principal(&edge.set) else {

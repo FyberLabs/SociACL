@@ -228,7 +228,7 @@ add('reject', 'members-label-owner-is-requester', [
   { op: 'label-owner', object: chatA, owner: p2 },
   grant(pending(), { members: { predicate: 'same-group', now }, granted: false, reason: 'not-member' }),
   { op: 'view', object: chatA, accessor: p2, absent: true },
-], 'The merge attack is TypeScript-only. Rust has no merge path. This vector plants the label through the test hook.');
+], 'An unsigned label is not the owner. The deny is the missing membership.');
 add('reject', 'members-owner-shortcut-is-not-member', [
   put(),
   grant(accessRow({ requester: p, object: chatA, scope: 'read', status: 'pending', message: '', issuedAt: now }, 1), { members: { predicate: 'same-group', now }, granted: false, reason: 'not-member' }),
@@ -323,12 +323,12 @@ add('accept', 'manual-approval-after-post-cancel', [
   { op: 'view-post', object: chatA, accessor: p2, stated: 1, hamState: 2, mode: 'present' },
   { op: 'check-post', object: chatA, accessor: p2, now, allowed: true, reason: 'post' },
 ]);
-add('reject', 'alias-label-owner-is-not-member', [
+add('accept', 'alias-label-does-not-replace-signed-owner', [
   put(),
   join,
   { op: 'label-owner', object: chatA, owner: `s3rch/users/${p}` },
-  grant(pending(), { members, granted: false, reason: 'not-member' }),
-  { op: 'view', object: chatA, accessor: p2, absent: true },
+  grant(pending(), { members, granted: true, hamState: 1, post: false }),
+  { op: 'view', object: chatA, accessor: p2, stated: 1, hamState: 1, mode: 'present' },
 ]);
 const boundary = at + 30;
 add('reject', 'rotation-boundary', [

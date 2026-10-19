@@ -103,7 +103,7 @@ An identical approval is a no-op only after the current key resolves, the owner'
 
 Members auto-approve does not revive an owner cancel. When `members` is set and the see row, or the post row for `read+post`, has `stated` 0, the result is `not-kept` and nothing is written. A manual approval (`members` null) is a new owner decision. It re-grants at `hamState + 1` above that cancel.
 
-Members auto-approve reads the label owner only when that owner parses as the same `PrincipalId` as the admitted signed object-record owner. A non-canonical spelling, including `s3rch/users/<principal>`, is not that id. The owner shortcut (`reason` `owner`) is not membership. Only `same-group` or `named-circle` allows. A peer `putObject` or `mergeFrom` does not replace the owner of an object that has an admitted signed record, and it cannot auto-approve.
+Members auto-approve uses the admitted signed object owner. `checkGroupSee` takes that same owner from the principal embedded in the object id, and the admitted record must match. An unsigned label, including `s3rch/users/<principal>`, is not that owner and does not grant. The owner shortcut (`reason` `owner`) is not membership. Only `same-group` or `named-circle` allows. A peer merge does not copy labels and cannot auto-approve.
 
 Requests have no expiry. Approving an older pending copy grants only the window and the scope on that call. There is no withdraw ordering across copies. Scope is approve or refuse only. The owner cannot downscope. The window is owner-only. The accessor is the parsed requester.
 
@@ -111,7 +111,7 @@ Requests have no expiry. Approving an older pending copy grants only the window 
 
 When `now` equals the latest resolved rotation time, `grantApprovedRequest` writes nothing and returns `rotation-boundary`. Retry on the next second. One second before that rotation, the preceding key still signs. `historyState` stays strictly before the timestamp: the new key signs records issued after the rotation, and a same-second revoke still uses the preceding key.
 
-The merge-attack case `members-label-owner-is-requester` is exercised as a peer merge in TypeScript only. Rust has no merge path. The shared vector plants the label through the test hook.
+`members-label-owner-is-requester` plants an unsigned label and still denies, because there is no live membership. `alias-label-does-not-replace-signed-owner` plants `s3rch/users/<principal>` over a live member and still grants.
 
 ### Objects in scope
 

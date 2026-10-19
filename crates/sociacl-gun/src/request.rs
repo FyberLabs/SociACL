@@ -123,13 +123,10 @@ impl MeshSeeGraph {
                 .as_ref()
                 .is_some_and(|row| same_live(row, owner, &req.object, &req.requester, from, until));
         if let Some((predicate, now)) = members {
-            let Some(label_owner) = self.labels.owner_of(req.object.as_ref()) else {
+            let Some(signed_owner) = self.object_owner(&req.object) else {
                 return Err(Reason::NotMember);
             };
-            let Ok(label) = parse_principal_id(&label_owner) else {
-                return Err(Reason::NotMember);
-            };
-            if label != *owner {
+            if signed_owner != owner {
                 return Err(Reason::NotMember);
             }
             let see = self.check_group_see(predicate, &req.object, &req.requester, now, None, None);

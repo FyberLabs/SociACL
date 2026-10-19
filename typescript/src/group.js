@@ -76,7 +76,7 @@ import {
 } from '../ids/src/index.js';
 import { integer, lp } from '../ids/src/util.js';
 import { labelObjects } from './internal/label-objects.js';
-import { checkSee } from './see.js';
+import { admittedOwner, checkSee } from './see.js';
 
 export { checkPost, factorGrants } from './post.js';
 export { membershipSoul, objectSetSoul };
@@ -100,7 +100,8 @@ const CANCEL_DOMAIN = 'sociacl-cancel-v2';
  *   hamState: number,
  *   issuedAt: number,
  *   bytes: Uint8Array,
- *   source: unknown,
+ *   sig: string,
+ *   attest?: string,
  *   observed: readonly string[],
  *   mode: 'present' | 'witnessed',
  * }} StoredAssent
@@ -110,7 +111,8 @@ const CANCEL_DOMAIN = 'sociacl-cancel-v2';
  *   signer: PrincipalId,
  *   issuedAt: number,
  *   bytes: Uint8Array,
- *   source: unknown,
+ *   sig: string,
+ *   attest?: string,
  *   mode: 'present' | 'witnessed',
  * }} StoredCancel
  * @typedef {{
@@ -421,6 +423,45 @@ function resolverReady(resolver) {
   return !!resolver && typeof resolver === 'object' && typeof resolver.rotations === 'function' && !!resolver.ctx;
 }
 
+/**
+ * Copy the signature that verified. Later reads do not touch the caller's row.
+ * @param {{ stated: 0 | 1, hamState: number, issuedAt: number, cancels: readonly string[], sig: string, attest?: string }} assent
+ * @param {Uint8Array} bytes
+ * @param {'present' | 'witnessed'} mode
+ * @returns {StoredAssent}
+ */
+function storedAssent(assent, bytes, mode) {
+  return {
+    stated: assent.stated,
+    hamState: assent.hamState,
+    issuedAt: assent.issuedAt,
+    bytes,
+    sig: assent.sig,
+    ...(assent.attest !== undefined ? { attest: assent.attest } : {}),
+    observed: assent.cancels,
+    mode,
+  };
+}
+
+/**
+ * @param {GroupCancel} cancel
+ * @param {Uint8Array} bytes
+ * @param {'present' | 'witnessed'} mode
+ * @returns {StoredCancel}
+ */
+function storedCancel(cancel, bytes, mode) {
+  return {
+    id: cancel.cancelId,
+    prior: cancel.prior,
+    signer: cancel.signer,
+    issuedAt: cancel.issuedAt,
+    bytes,
+    sig: cancel.sig,
+    ...(cancel.attest !== undefined ? { attest: cancel.attest } : {}),
+    mode,
+  };
+}
+
 /** @param {StoredAssent | null | undefined} prev @param {StoredAssent} next */
 function replaces(prev, next) {
   if (!prev) return true;
@@ -480,16 +521,7 @@ export function admitMembership(graph, row, resolver) {
     setAssent: null,
     cancels: new Map(),
   };
-  /** @type {StoredAssent} */
-  const next = {
-    stated: assent.stated,
-    hamState: assent.hamState,
-    issuedAt: assent.issuedAt,
-    bytes: parsed.bytes,
-    source: row,
-    observed: assent.cancels,
-    mode: verified.mode,
-  };
+  const next = storedAssent(assent, parsed.bytes, verified.mode);
   const prev = assent.role === 'member' ? held.memberAssent : held.setAssent;
   if (!replaces(prev, next)) return { ok: true, kept: false };
   if (assent.role === 'member') held.memberAssent = next;
@@ -515,24 +547,17 @@ export function admitObjectSet(graph, row, resolver) {
   if (!verified.ok) return verified;
   const table = objectSetTable(graph);
   const prev = table.get(edge.object);
-  /** @type {StoredAssent} */
-  const next = {
-    stated: edge.stated,
-    hamState: edge.hamState,
-    issuedAt: edge.issuedAt,
-    bytes: parsed.bytes,
-    source: row,
-    observed: edge.cancels,
-    mode: verified.mode,
-  };
+  const next = storedAssent(edge, parsed.bytes, verified.mode);
   if (prev && !replaces(prev.assent, next)) return { ok: true, kept: false };
+  // A different set starts with an empty cancel list. The previous set's cancels do not follow the new edge.
+  const cancels = prev && prev.set === edge.set ? prev.cancels : new Map();
   table.set(edge.object, {
     owner: edge.owner,
     object: edge.object,
     predicate: edge.predicate,
     set: edge.set,
     assent: next,
-    cancels: prev?.cancels ?? new Map(),
+    cancels,
   });
   return { ok: true, kept: true };
 }
@@ -558,30 +583,14 @@ export function admitGroupCancel(graph, row, resolver) {
     if (!held) return { ok: false, reason: 'unknown' };
     if (held.cancels.has(cancel.cancelId)) return { ok: true, kept: false };
     for (const id of cancel.prior) if (!held.cancels.has(id)) return { ok: false, reason: 'bad-record' };
-    held.cancels.set(cancel.cancelId, {
-      id: cancel.cancelId,
-      prior: cancel.prior,
-      signer: cancel.signer,
-      issuedAt: cancel.issuedAt,
-      bytes: parsed.bytes,
-      source: row,
-      mode: verified.mode,
-    });
+    held.cancels.set(cancel.cancelId, storedCancel(cancel, parsed.bytes, verified.mode));
     return { ok: true, kept: true };
   }
   const held = objectSetTable(graph).get(/** @type {ObjectId} */ (cancel.object));
   if (!held || held.set !== cancel.set || held.predicate !== cancel.predicate) return { ok: false, reason: 'unknown' };
   if (held.cancels.has(cancel.cancelId)) return { ok: true, kept: false };
   for (const id of cancel.prior) if (!held.cancels.has(id)) return { ok: false, reason: 'bad-record' };
-  held.cancels.set(cancel.cancelId, {
-    id: cancel.cancelId,
-    prior: cancel.prior,
-    signer: cancel.signer,
-    issuedAt: cancel.issuedAt,
-    bytes: parsed.bytes,
-    source: row,
-    mode: verified.mode,
-  });
+  held.cancels.set(cancel.cancelId, storedCancel(cancel, parsed.bytes, verified.mode));
   return { ok: true, kept: true };
 }
 
@@ -606,7 +615,7 @@ export function reverifyGroup(graph, principal, resolver) {
       const assent = role === 'member' ? row.memberAssent : row.setAssent;
       const signer = role === 'member' ? row.member : row.setOwner;
       if (!assent || signer !== who.value) continue;
-      const again = verifyParty(signer, rotations, resolver.ctx, assent.bytes, /** @type {MembershipAssent} */ (assent.source).sig, assent.issuedAt, assent.stated, /** @type {MembershipAssent} */ (assent.source).attest);
+      const again = verifyParty(signer, rotations, resolver.ctx, assent.bytes, assent.sig, assent.issuedAt, assent.stated, assent.attest);
       if (!again.ok) {
         if (role === 'member') row.memberAssent = null;
         else row.setAssent = null;
@@ -615,8 +624,7 @@ export function reverifyGroup(graph, principal, resolver) {
     }
     for (const [id, cancel] of [...row.cancels]) {
       if (cancel.signer !== who.value) continue;
-      const src = /** @type {{ sig?: string, attest?: string }} */ (cancel.source);
-      const again = verifyParty(cancel.signer, rotations, resolver.ctx, cancel.bytes, src.sig ?? '', cancel.issuedAt, null, src.attest);
+      const again = verifyParty(cancel.signer, rotations, resolver.ctx, cancel.bytes, cancel.sig, cancel.issuedAt, null, cancel.attest);
       if (!again.ok) {
         row.cancels.delete(id);
         dropped += 1;
@@ -626,10 +634,19 @@ export function reverifyGroup(graph, principal, resolver) {
   }
   for (const [id, row] of [...objectSetTable(graph)]) {
     if (row.owner !== who.value) continue;
-    const again = verifyParty(row.owner, rotations, resolver.ctx, row.assent.bytes, /** @type {ObjectSetRow} */ (row.assent.source).sig, row.assent.issuedAt, row.assent.stated, /** @type {ObjectSetRow} */ (row.assent.source).attest);
+    const again = verifyParty(row.owner, rotations, resolver.ctx, row.assent.bytes, row.assent.sig, row.assent.issuedAt, row.assent.stated, row.assent.attest);
     if (!again.ok) {
       objectSetTable(graph).delete(id);
       dropped += 1;
+      continue;
+    }
+    for (const [cancelId, cancel] of [...row.cancels]) {
+      if (cancel.signer !== who.value) continue;
+      const cancelAgain = verifyParty(cancel.signer, rotations, resolver.ctx, cancel.bytes, cancel.sig, cancel.issuedAt, null, cancel.attest);
+      if (!cancelAgain.ok) {
+        row.cancels.delete(cancelId);
+        dropped += 1;
+      }
     }
   }
   return { ok: true, value: { dropped } };
@@ -654,13 +671,13 @@ export function checkGroupSee(graph, predicate, object, accessor, now, hint, hop
   if (!id.ok) return deny(id.reason);
   const who = parsePrincipalId(accessor);
   if (!who.ok) return deny(who.reason);
-  const owner = /** @type {{ ownerOf?: (object: string) => string | undefined }} */ (graph).ownerOf?.(id.value);
-  if (typeof owner !== 'string') return deny('missing');
-  const parsedOwner = parsePrincipalId(owner);
-  if (!parsedOwner.ok) return deny('missing');
-  if (parsedOwner.value === who.value) return { allowed: true, reason: 'owner', ...echoed };
+  const embedded = objectPrincipal(id.value);
+  if (!embedded.ok) return deny('missing');
+  const admitted = admittedOwner(graph, id.value);
+  if (!admitted || admitted.owner !== embedded.value) return deny('missing');
+  if (embedded.value === who.value) return { allowed: true, reason: 'owner', ...echoed };
   const edge = objectSetTable(graph).get(id.value);
-  if (!edge || !objectSetLive(edge) || edge.predicate !== predicate || edge.owner !== parsedOwner.value) return deny('missing');
+  if (!edge || !objectSetLive(edge) || edge.predicate !== predicate || edge.owner !== embedded.value) return deny('missing');
   const setOwner = objectPrincipal(edge.set);
   if (!setOwner.ok) return deny('missing');
   const membership = membershipTable(graph).get(membershipSoul(setOwner.value, predicate, edge.set, who.value));
@@ -736,9 +753,6 @@ export function snapshotUnderstatesGroup(graph, object, members, objectSet) {
 }
 
 export class MemoryGroupGraph {
-  /** @type {Map<string, PrincipalId>} */
-  #signedOwners = new Map();
-
   /**
    * @param {string} object
    * @returns {{ id: string, owner: string } | undefined}
@@ -754,9 +768,14 @@ export class MemoryGroupGraph {
     return this.objectRecord(object) !== undefined;
   }
 
-  /** @param {string} object */
+  /**
+   * The admitted signed owner. An unsigned label is not this owner.
+   * @param {string} object
+   */
   ownerOf(object) {
-    return this.objectRecord(object)?.owner;
+    const id = parseObjectId(object);
+    if (!id.ok) return undefined;
+    return admittedOwner(this, id.value)?.owner;
   }
 
   /** @param {string} object */
@@ -775,49 +794,12 @@ export class MemoryGroupGraph {
   }
 
   /**
-   * @param {string} object
-   * @param {string} owner
+   * Union memberships and object-set rows. An object-set row is copied only
+   * when this graph's admitted owner is that row's owner. Incoming cancels
+   * are always kept.
+   * @param {MemoryGroupGraph} other
    */
-  bindSignedOwner(object, owner) {
-    const id = parseObjectId(object);
-    const who = parsePrincipalId(owner);
-    if (!id.ok || !who.ok) return;
-    const signed = this.#signedOwners.get(id.value);
-    if (signed !== undefined && signed !== who.value) return;
-    this.#signedOwners.set(id.value, who.value);
-    labelObjects(this).set(id.value, { id: id.value, owner: who.value });
-  }
-
-  /** @param {string} object */
-  unbindSignedOwner(object) {
-    const id = parseObjectId(object);
-    if (!id.ok) return;
-    this.#signedOwners.delete(id.value);
-    labelObjects(this).delete(id.value);
-  }
-
-  /**
-   * @param {string} object
-   * @param {string} owner
-   */
-  putObject(object, owner) {
-    const id = parseObjectId(object);
-    const who = parsePrincipalId(owner);
-    if (!id.ok || !who.ok) return;
-    const signed = this.#signedOwners.get(id.value);
-    if (signed !== undefined) return;
-    const prev = labelObjects(this).get(id.value);
-    if (prev && prev.owner !== who.value) objectSetTable(this).delete(id.value);
-    labelObjects(this).set(id.value, { id: id.value, owner: who.value });
-  }
-
-  /** @param {MemoryGroupGraph} other */
   mergeFrom(other) {
-    for (const [key, record] of labelObjects(other)) {
-      if (this.#signedOwners.has(record.id)) continue;
-      if (labelObjects(this).has(key)) continue;
-      labelObjects(this).set(key, { id: record.id, owner: record.owner });
-    }
     for (const [soul, incoming] of membershipTable(other)) {
       const local = membershipTable(this).get(soul);
       if (!local) {
@@ -832,12 +814,21 @@ export class MemoryGroupGraph {
       for (const [id, cancel] of incoming.cancels) if (!local.cancels.has(id)) local.cancels.set(id, cancel);
     }
     for (const [id, incoming] of objectSetTable(other)) {
+      const admitted = admittedOwner(this, /** @type {ObjectId} */ (id));
+      if (!admitted || admitted.owner !== incoming.owner) continue;
       const local = objectSetTable(this).get(id);
-      if (!local || replaces(local.assent, incoming.assent)) {
-        objectSetTable(this).set(id, {
-          ...incoming,
-          cancels: new Map([...(local?.cancels ?? []), ...incoming.cancels]),
-        });
+      if (!local) {
+        objectSetTable(this).set(id, { ...incoming, cancels: new Map(incoming.cancels) });
+        continue;
+      }
+      const cancels = new Map(local.cancels);
+      for (const [cancelId, cancel] of incoming.cancels) {
+        if (!cancels.has(cancelId)) cancels.set(cancelId, cancel);
+      }
+      if (replaces(local.assent, incoming.assent)) {
+        objectSetTable(this).set(id, { ...incoming, cancels });
+      } else {
+        local.cancels = cancels;
       }
     }
   }

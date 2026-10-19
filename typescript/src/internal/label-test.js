@@ -1,6 +1,6 @@
 /**
  * Test-only label plant. The package exports do not name this file.
- * Production puts go through MemoryGroupGraph.putObject.
+ * Production owner reads the admitted signed record. This plant does not.
  */
 import { parseObjectId } from '../../ids/src/index.js';
 import { labelObjects } from './label-objects.js';
