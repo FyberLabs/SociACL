@@ -97,15 +97,21 @@ A request is an untrusted hint. It never grants. Check does not read it. The own
 
 Rust `sociacl-gun` and the TypeScript request runner both load `vectors/mesh/v2/request.json`.
 
-History for the owner and the requester is resolved once. Both rows are admitted against that same history, including `kept`, and then both are written or neither is. Nothing runs between the two writes. `snapshotRow`, `restoreRow`, `snapshotPost`, and `restorePost` are not part of the surface. A row that would not replace the stored row is `not-kept`. An owner cancel (`stated` 0) on the see row, or on the post row when the scope is `read+post`, is `not-kept` as well: the approval does not revive the grant.
+History for the owner and the requester is resolved once. Both rows are admitted against that same history, including `kept`, and then both are written or neither is. Nothing runs between the two writes. There is no staged ticket. `snapshotRow`, `restoreRow`, `snapshotPost`, and `restorePost` are not part of the surface. A row that would not replace the stored row is `not-kept`.
 
-Members auto-approve reads the label owner only when it equals the admitted signed object-record owner. The owner shortcut (`reason` `owner`) is not membership. Only `same-group` or `named-circle` allows. A peer `putObject` or `mergeFrom` does not replace the owner of an object that has an admitted signed record, and it cannot auto-approve.
+An identical approval is a no-op. When the stored verified row already has the same owner, object, accessor, `stated` 1, and window, `grantApprovedRequest` returns that row with `unchanged: true`. It does not sign again and it does not bump `hamState`. A different window is a new owner decision and uses `hamState + 1`. For `read+post`, both rows must match. A matching see row with a missing or different post row still writes the post row at `hamState + 1` and leaves the see row.
+
+Members auto-approve does not revive an owner cancel. When `members` is set and the see row, or the post row for `read+post`, has `stated` 0, the result is `not-kept` and nothing is written. A manual approval (`members` null) is a new owner decision. It re-grants at `hamState + 1` above that cancel.
+
+Members auto-approve reads the label owner only when that owner parses as the same `PrincipalId` as the admitted signed object-record owner. A non-canonical spelling, including `s3rch/users/<principal>`, is not that id. The owner shortcut (`reason` `owner`) is not membership. Only `same-group` or `named-circle` allows. A peer `putObject` or `mergeFrom` does not replace the owner of an object that has an admitted signed record, and it cannot auto-approve.
 
 Requests have no expiry. Approving an older pending copy grants only the window and the scope on that call. There is no withdraw ordering across copies. Scope is approve or refuse only. The owner cannot downscope. The window is owner-only. The accessor is the parsed requester.
 
 `members-gate-on-stored-id` uses the set id `alice/friends`. `canonicalSetId` rejects `.`, so a `PrincipalId` cannot be a set-id head. That vector is re-cut with a minted set id once set-id-must-be-minted lands.
 
-A rotation's new key signs see, post, and present-authority records issued at or after that rotation's timestamp. The preceding key signs only earlier records. Same-second revokes still use the preceding key through `historyState` and can block that rotation.
+When `now` equals the latest resolved rotation time, `grantApprovedRequest` writes nothing and returns `rotation-boundary`. Retry on the next second. One second before that rotation, the preceding key still signs. `historyState` stays strictly before the timestamp: the new key signs records issued after the rotation, and a same-second revoke still uses the preceding key.
+
+The merge-attack case `members-label-owner-is-requester` is exercised as a peer merge in TypeScript only. Rust has no merge path. The shared vector plants the label through the test hook.
 
 ### Objects in scope
 

@@ -506,6 +506,8 @@ export type AccessApproval =
       requestId: string;
       see: VerifiedRow;
       post: VerifiedRow | null;
+      /** Set when the stored row already matched. No new signature and no ham bump. */
+      unchanged?: true;
     }
   | {
       granted: false;
@@ -564,7 +566,7 @@ export function verifyAccessRequest(
       ok: true;
       value: {
         key: PrincipalId;
-        mode: "present" | "witnessed";
+        mode: "present";
         request: AccessRequest;
         bytes: Uint8Array;
       };
@@ -578,10 +580,14 @@ export function verifyAccessRequest(
  * those rows is the resolver's now. The requester signature is checked
  * with verifySignedAt. Only a present key counts. Both ham ceilings
  * are checked against one resolved history before either row is written.
- * Both rows are written, or neither is. A row that would not replace,
- * including an approval over an owner cancel, is `not-kept` and writes
- * nothing. members, when supplied, requires the label owner to equal
- * the admitted signed owner and a real membership reason from
+ * Both rows are written, or neither is. There is no staged ticket.
+ * An identical approval returns the stored row with `unchanged: true`
+ * and does not sign or bump ham. A different window is a new decision.
+ * Members auto-approve over an owner cancel is `not-kept` and writes
+ * nothing. A manual approval re-grants above that cancel. When `now`
+ * equals the latest rotation time the result is `rotation-boundary`.
+ * members, when supplied, requires the label owner to parse as the
+ * admitted signed owner and a real membership reason from
  * checkGroupSee. The owner shortcut is not membership. A withdrawn
  * request writes nothing. A caller who is not the admitted object
  * owner writes nothing. A hop, a hint, a wrap, a request, or an inbox

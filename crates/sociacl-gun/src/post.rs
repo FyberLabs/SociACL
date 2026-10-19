@@ -90,6 +90,7 @@ fn view_post(row: &AdmittedPost, grant: &SeeGrant) -> VerifiedRow {
         object: grant.object.clone(),
         accessor: grant.accessor.clone(),
         attest: row.source.get("attest").and_then(Value::as_str).is_some(),
+        bytes: row.bytes.clone(),
         seal: (),
     }
 }
@@ -200,7 +201,8 @@ impl MeshSeeGraph {
         if owner != verified.grant.owner {
             return Err(Reason::BadRecord);
         }
-        let key = id_post_soul(&owner, &verified.grant.object, &verified.grant.accessor).to_string();
+        let key =
+            id_post_soul(&owner, &verified.grant.object, &verified.grant.accessor).to_string();
         let source = snapshot_post(&verified.grant);
         let next = admitted_from(&verified, &source, ctx);
         let kept = match self.post_rows.get(&key) {

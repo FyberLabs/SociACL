@@ -274,72 +274,48 @@ export function putObject(graph, record, resolver) {
   return { ok: true, value: admissionCopy(existing), kept: true };
 }
 
-const stagedSees = new WeakSet();
-
 /**
- * Verify a see row against history the caller already resolved. Does not write.
+ * A resolver looks history up. An array is history the caller already resolved.
+ * `commit: false` reports `kept` and does not write.
  * @param {object} graph
- * @param {unknown} row
- * @param {readonly unknown[]} rotations
- * @param {ResolutionContext} ctx
- * @returns {{ ok: true, value: { sealed: SealedRow, key: string, kept: boolean }, kept: boolean } | { ok: false, reason: string }}
+ * @param {*} resolver
+ * @param {PrincipalId} owner
+ * @returns {{ ok: true, rotations: readonly unknown[], ctx: ResolutionContext, commit: boolean } | { ok: false, reason: string }}
  */
-export function stageSee(graph, row, rotations, ctx) {
-  if (!graphObject(graph) || !ctx || typeof ctx !== 'object' || !Array.isArray(rotations)) {
+function resolvedHistory(graph, resolver, owner) {
+  if (!graphObject(graph) || !resolver || typeof resolver !== 'object' || !('ctx' in resolver) || !resolver.ctx) {
     return { ok: false, reason: 'missing-history' };
   }
+  const ctx = /** @type {ResolutionContext} */ (resolver.ctx);
+  if (Array.isArray(resolver.rotations)) {
+    return { ok: true, rotations: resolver.rotations, ctx, commit: resolver.commit !== false };
+  }
+  if (typeof resolver.rotations !== 'function') return { ok: false, reason: 'missing-history' };
+  const rotations = resolver.rotations(owner);
+  if (!Array.isArray(rotations)) return { ok: false, reason: 'missing-history' };
+  return { ok: true, rotations, ctx, commit: true };
+}
+
+/**
+ * @param {object} graph
+ * @param {unknown} row
+ * @param {SeeResolver | { rotations: readonly unknown[], ctx: ResolutionContext, commit?: boolean }} resolver
+ * @returns {{ ok: true, value?: SealedRow, kept: boolean } | { ok: false, reason: string }}
+ */
+export function admitRow(graph, row, resolver) {
   const parsed = parseSeeGrant(row);
   if (!parsed.ok) return parsed;
-  const verifiedRow = verifySeeGrant(parsed.value.grant, rotations, ctx);
+  const history = resolvedHistory(graph, resolver, parsed.value.grant.owner);
+  if (!history.ok) return history;
+  const verifiedRow = verifySeeGrant(parsed.value.grant, history.rotations, history.ctx);
   if (!verifiedRow.ok) return verifiedRow;
   const grant = verifiedRow.value.grant;
   const key = grantSoul(grant.owner, grant.object, grant.accessor);
-  const sealed = seal(verifiedRow.value, ctx);
-  const prev = store(graph).rows.get(key);
-  const kept = !prev || !verified.has(prev) || replaces(prev, sealed);
-  /** @type {{ sealed: SealedRow, key: string, kept: boolean }} */
-  const ticket = { sealed, key, kept };
-  Object.freeze(ticket);
-  stagedSees.add(ticket);
-  return { ok: true, value: ticket, kept };
-}
-
-/**
- * Write one staged see row. Does not call a resolver.
- * A ticket that was not staged, or that would not replace, writes nothing.
- * @param {object} graph
- * @param {{ sealed: SealedRow, key: string, kept: boolean }} ticket
- * @returns {import('../ids/src/types.js').Result<SealedRow>}
- */
-export function commitStagedSee(graph, ticket) {
-  if (!graphObject(graph) || !ticket || !stagedSees.has(ticket) || !verified.has(ticket.sealed)) {
-    return { ok: false, reason: 'bad-record' };
-  }
-  if (!ticket.kept) return { ok: false, reason: 'not-kept' };
-  store(graph).rows.set(ticket.key, ticket.sealed);
-  return { ok: true, value: present(ticket.sealed) };
-}
-
-/**
- * @param {object} graph
- * @param {unknown} row
- * @param {SeeResolver} resolver
- * @returns {import('../ids/src/types.js').Result<SealedRow> & { kept?: boolean }}
- */
-export function admitRow(graph, row, resolver) {
-  if (!graphObject(graph) || !resolverReady(resolver)) return { ok: false, reason: 'missing-history' };
-  const parsed = parseSeeGrant(row);
-  if (!parsed.ok) return parsed;
-  const rotations = resolver.rotations(parsed.value.grant.owner);
-  if (!Array.isArray(rotations)) return { ok: false, reason: 'missing-history' };
-  const verified = verifySeeGrant(parsed.value.grant, rotations, resolver.ctx);
-  if (!verified.ok) return verified;
-  const grant = verified.value.grant;
-  const key = grantSoul(grant.owner, grant.object, grant.accessor);
   const held = store(graph);
-  const sealed = seal(verified.value, resolver.ctx);
+  const sealed = seal(verifiedRow.value, history.ctx);
   const prev = held.rows.get(key);
-  const kept = !prev || replaces(prev, sealed);
+  const kept = !prev || !verified.has(prev) || replaces(prev, sealed);
+  if (!history.commit) return { ok: true, kept };
   if (kept) held.rows.set(key, sealed);
   const stored = held.rows.get(key) ?? sealed;
   return { ok: true, value: present(stored), kept };
@@ -416,6 +392,24 @@ export function admittedView(graph, object, accessor) {
     issuedAt: row.grant.issuedAt,
     attest: row.grant.attest !== undefined,
   };
+}
+
+/** The stored verified row, as a caller-facing copy. Absent when none is admitted.
+ * @param {object} graph
+ * @param {ObjectId} object
+ * @param {PrincipalId} accessor
+ */
+export function presentedSee(graph, object, accessor) {
+  if (!graphObject(graph)) return undefined;
+  const id = seeObjectEdge(object);
+  const who = seeAccessorEdge(accessor);
+  if (!id.ok || !who.ok) return undefined;
+  const held = store(graph);
+  const owner = held.owners.get(id.value);
+  if (!owner) return undefined;
+  const row = held.rows.get(grantSoul(owner.owner, id.value, who.value));
+  if (!row || !verified.has(row)) return undefined;
+  return present(row);
 }
 
 /** @param {object} graph @param {ObjectId} object */
@@ -499,7 +493,7 @@ export function runSeeCase(steps, options) {
         if (got.ok || got.reason !== step.reason) failStep(step, got.ok ? 'ok' : got.reason);
         continue;
       }
-      if (!got.ok || got.kept !== step.kept) failStep(step, got.ok ? got.kept : got.reason);
+      if (!got.ok || got.value === undefined || got.kept !== step.kept) failStep(step, got.ok ? got.kept : got.reason);
       if (step.mode !== undefined && got.value.mode !== step.mode) failStep(step, got.value.mode);
       if (step.stated !== undefined && got.value.grant.stated !== step.stated) failStep(step, got.value.grant.stated);
       if (step.hamState !== undefined && got.value.grant.hamState !== step.hamState) failStep(step, got.value.grant.hamState);

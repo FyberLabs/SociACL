@@ -10,6 +10,9 @@ description = "GunDB adapter: souls and URL leaves onto SociACL Check and delega
 name = "gun"
 path = "../../examples/gun.rs"
 
+[features]
+vectors = []
+
 [dependencies]
 rand = "0.8"
 serde_json = "1"

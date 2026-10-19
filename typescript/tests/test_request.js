@@ -2,11 +2,11 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { p256 } from "@noble/curves/nist.js";
 import * as ids from "../ids/src/index.js";
-import { MemoryGroupGraph } from "../src/group.js";
-import { admittedPost, factorGrants } from "../src/post.js";
+import { issuerFromSeed, MemoryGroupGraph } from "../src/group.js";
+import { admittedPost, checkPost, factorGrants } from "../src/post.js";
 import * as postApi from "../src/post.js";
 import { grantApprovedRequest } from "../src/request.js";
-import { admittedView, checkSee, isVerifiedRow, putObject } from "../src/see.js";
+import { admitRow, admittedView, checkSee, isVerifiedRow, putObject } from "../src/see.js";
 import * as seeApi from "../src/see.js";
 import { b64 } from "../ids/scripts/vector-util.mjs";
 
@@ -201,11 +201,113 @@ test("missing and non-string request fields are not-string", () => {
   }
 });
 
+function signGrant(bytesOf, extra) {
+  const fields = {
+    owner: p,
+    object: chat.value,
+    accessor: p2,
+    stated: 1,
+    from: at,
+    until: now + 100,
+    hamState: 1,
+    issuedAt: now,
+    sig: "",
+    ...extra,
+  };
+  const sig = ids.signWithKeyring(secret(1), bytesOf(fields), p);
+  if (!sig.ok) throw new Error(sig.reason);
+  return { ...fields, sig: sig.value };
+}
+
+function ed25519Seed(name) {
+  const bytes = new Uint8Array(32);
+  const raw = new TextEncoder().encode(name);
+  for (let i = 0; i < raw.length; i += 1) bytes[i % 32] ^= (raw[i] + ((i * 17) & 255)) & 255;
+  bytes[0] ^= raw.length;
+  bytes[31] |= 1;
+  return bytes;
+}
+
+test("an earlier grant cannot revive a cancel, and another graph stays closed", () => {
+  assert.equal(seeApi.stageSee, undefined);
+  assert.equal(seeApi.commitStagedSee, undefined);
+  assert.equal(postApi.stagePost, undefined);
+  assert.equal(postApi.commitStagedPost, undefined);
+  const graph = {};
+  const resolver = { rotations: () => [], ctx: context() };
+  assert.equal(putObject(graph, objectRecord(), resolver).ok, true);
+  const request = signRequest({
+    requester: p2,
+    object: chat.value,
+    scope: "read+post",
+    status: "pending",
+    message: "",
+    issuedAt: now,
+  }, 2);
+  const window = { from: at, until: now + 100 };
+  const granted = grantApprovedRequest(graph, p, request, window, null, { scalar: secret(1), resolver });
+  assert.equal(granted.granted, true);
+  const seeCancel = admitRow(graph, signGrant(ids.seeGrantBytes, { stated: 0, hamState: 2 }), resolver);
+  const postCancel = postApi.admitPost(graph, signGrant(ids.postGrantBytes, { stated: 0, hamState: 2 }), resolver);
+  assert.equal(seeCancel.ok && seeCancel.kept, true);
+  assert.equal(postCancel.ok && postCancel.kept, true);
+  const seeAgain = admitRow(graph, granted.see.source, resolver);
+  const postAgain = postApi.admitPost(graph, granted.post.source, resolver);
+  assert.equal(seeAgain.ok && seeAgain.kept, false);
+  assert.equal(postAgain.ok && postAgain.kept, false);
+  assert.equal(checkSee(graph, chat.value, p2, now).allowed, false);
+  assert.equal(checkPost(graph, chat.value, p2, now).allowed, false);
+  const other = {};
+  assert.equal(checkSee(other, chat.value, p2, now, granted.see).allowed, false);
+  assert.equal(checkPost(other, chat.value, p2, now, granted.post).allowed, false);
+});
+
+test("an alias label put keeps the signed owner spelling", () => {
+  const graph = new MemoryGroupGraph();
+  const resolver = { rotations: () => [], ctx: context() };
+  assert.equal(putObject(graph, objectRecord(), resolver).ok, true);
+  graph.putObject(chat.value, `s3rch/users/${p}`);
+  graph.putObject(chat.value, p);
+  assert.equal(graph.ownerOf(chat.value), p);
+  const ownerKey = issuerFromSeed(ed25519Seed(p));
+  const memberKey = issuerFromSeed(ed25519Seed(p2));
+  const setKey = issuerFromSeed(ed25519Seed("alice"));
+  graph.enrollSigner(p, ownerKey.publicKey);
+  graph.enrollSigner(p2, memberKey.publicKey);
+  graph.enrollSigner("alice", setKey.publicKey);
+  graph.recordSetOwner("alice", "same-group", "alice/friends");
+  graph.stateMembership(p2, "same-group", "alice/friends", p2, memberKey.privateKey);
+  graph.stateMembership("alice", "same-group", "alice/friends", p2, setKey.privateKey);
+  graph.nameObjectSet(p, chat.value, "same-group", "alice/friends", ownerKey.privateKey);
+  const request = signRequest({
+    requester: p2,
+    object: chat.value,
+    scope: "read",
+    status: "pending",
+    message: "",
+    issuedAt: now,
+  }, 2);
+  const result = grantApprovedRequest(
+    graph,
+    p,
+    request,
+    { from: at, until: now + 100 },
+    { predicate: "same-group", now },
+    { scalar: secret(1), resolver },
+  );
+  assert.equal(result.granted, true);
+  assert.equal(result.see.grant.hamState, 1);
+});
+
 test("no public path seals an unverified see or post row", () => {
   assert.equal(seeApi.snapshotRow, undefined);
   assert.equal(seeApi.restoreRow, undefined);
   assert.equal(postApi.snapshotPost, undefined);
   assert.equal(postApi.restorePost, undefined);
+  assert.equal(seeApi.stageSee, undefined);
+  assert.equal(seeApi.commitStagedSee, undefined);
+  assert.equal(postApi.stagePost, undefined);
+  assert.equal(postApi.commitStagedPost, undefined);
   assert.equal(isVerifiedRow({ mode: "present", grant: { stated: 1, from: 0, until: 1e12 } }), false);
   const graph = {};
   const resolver = { rotations: () => [], ctx: context() };

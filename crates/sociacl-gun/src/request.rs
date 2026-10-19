@@ -19,6 +19,24 @@ pub struct ApprovedRequest {
     pub request_id: String,
     pub see: VerifiedRow,
     pub post: Option<VerifiedRow>,
+    /// The stored row already matched. No new signature and no ham bump.
+    pub unchanged: bool,
+}
+
+fn same_live(
+    row: &VerifiedRow,
+    owner: &PrincipalId,
+    object: &sociacl_ids::ObjectId,
+    accessor: &PrincipalId,
+    from: u64,
+    until: u64,
+) -> bool {
+    row.stated == 1
+        && row.owner == *owner
+        && row.object == *object
+        && row.accessor == *accessor
+        && row.from == from
+        && row.until == until
 }
 
 fn ham_next(current: Option<u64>, ceiling: Reason) -> Result<u64, Reason> {
@@ -92,11 +110,39 @@ impl MeshSeeGraph {
         if admitted_owner != *owner {
             return Err(Reason::OwnerMismatch);
         }
+        let see_stored = self.admitted_view(&req.object, &req.requester);
+        let post_stored = if req.scope == "read+post" {
+            self.admitted_post(&req.object, &req.requester)
+        } else {
+            None
+        };
+        let see_same = see_stored
+            .as_ref()
+            .is_some_and(|row| same_live(row, owner, &req.object, &req.requester, from, until));
+        let post_same = req.scope != "read+post"
+            || post_stored
+                .as_ref()
+                .is_some_and(|row| same_live(row, owner, &req.object, &req.requester, from, until));
+        if see_same && post_same {
+            return Ok(ApprovedRequest {
+                request_id: req.request_id,
+                see: see_stored.expect("matching see"),
+                post: if req.scope == "read+post" {
+                    post_stored
+                } else {
+                    None
+                },
+                unchanged: true,
+            });
+        }
         if let Some((predicate, now)) = members {
             let Some(label_owner) = self.labels.owner_of(req.object.as_ref()) else {
                 return Err(Reason::NotMember);
             };
-            if label_owner != owner.as_ref() {
+            let Ok(label) = parse_principal_id(&label_owner) else {
+                return Err(Reason::NotMember);
+            };
+            if label != *owner {
                 return Err(Reason::NotMember);
             }
             let see = self.check_group_see(
@@ -110,28 +156,24 @@ impl MeshSeeGraph {
             if !see.allowed || see.reason == MESH_REASON_OWNER || see.reason != predicate.as_str() {
                 return Err(Reason::NotMember);
             }
-        }
-        if self
-            .admitted_view(&req.object, &req.requester)
-            .is_some_and(|row| row.stated == 0)
-        {
-            return Err(Reason::NotKept);
-        }
-        let see_ham = ham_next(
-            self.admitted_view(&req.object, &req.requester)
-                .map(|row| row.ham_state),
-            Reason::SeeCeiling,
-        )?;
-        let post_ham = if req.scope == "read+post" {
-            if self
-                .admitted_post(&req.object, &req.requester)
-                .is_some_and(|row| row.stated == 0)
-            {
+            if see_stored.as_ref().is_some_and(|row| row.stated == 0) {
                 return Err(Reason::NotKept);
             }
+            if req.scope == "read+post" && post_stored.as_ref().is_some_and(|row| row.stated == 0) {
+                return Err(Reason::NotKept);
+            }
+        }
+        let see_ham = if see_same {
+            None
+        } else {
             Some(ham_next(
-                self.admitted_post(&req.object, &req.requester)
-                    .map(|row| row.ham_state),
+                see_stored.as_ref().map(|row| row.ham_state),
+                Reason::SeeCeiling,
+            )?)
+        };
+        let post_ham = if req.scope == "read+post" && !post_same {
+            Some(ham_next(
+                post_stored.as_ref().map(|row| row.ham_state),
                 Reason::PostCeiling,
             )?)
         } else {
@@ -141,20 +183,32 @@ impl MeshSeeGraph {
             return Err(Reason::BadRecord);
         }
         let current = resolve_current_key(owner, &owner_history, ctx).result?;
-        let see_fields = SeeGrant {
-            owner: owner.clone(),
-            object: req.object.clone(),
-            accessor: req.requester.clone(),
-            stated: 1,
-            from,
-            until,
-            ham_state: see_ham,
-            issued_at: ctx.now,
-            sig: String::new(),
-            attest: None,
+        if current.rotations.iter().map(|row| row.issued_at).max() == Some(ctx.now) {
+            return Err(Reason::RotationBoundary);
+        }
+        let see_row = if let Some(ham) = see_ham {
+            let row = signed_row(
+                SeeGrant {
+                    owner: owner.clone(),
+                    object: req.object.clone(),
+                    accessor: req.requester.clone(),
+                    stated: 1,
+                    from,
+                    until,
+                    ham_state: ham,
+                    issued_at: ctx.now,
+                    sig: String::new(),
+                    attest: None,
+                },
+                scalar,
+                &current.current_key,
+                see_grant_bytes,
+            )?;
+            verify_see_grant(&row, &owner_history, ctx)?;
+            Some(row)
+        } else {
+            None
         };
-        let see_row = signed_row(see_fields, scalar, &current.current_key, see_grant_bytes)?;
-        verify_see_grant(&see_row, &owner_history, ctx)?;
         let post_row = if let Some(ham) = post_ham {
             let row = signed_row(
                 SeeGrant {
@@ -178,12 +232,25 @@ impl MeshSeeGraph {
         } else {
             None
         };
-        let (see, post) =
-            self.commit_grant_rows(&see_row, post_row.as_ref(), &owner_history, ctx)?;
+        let (wrote_see, wrote_post) =
+            self.commit_grant_rows(see_row.as_ref(), post_row.as_ref(), &owner_history, ctx)?;
         Ok(ApprovedRequest {
             request_id: req.request_id,
-            see,
-            post,
+            see: if see_same {
+                see_stored.expect("matching see")
+            } else {
+                wrote_see.expect("written see")
+            },
+            post: if req.scope == "read+post" {
+                if post_same {
+                    post_stored
+                } else {
+                    wrote_post
+                }
+            } else {
+                None
+            },
+            unchanged: false,
         })
     }
 }

@@ -8,7 +8,7 @@
  * @typedef {import('./see.js').SeeResolver} SeeResolver
  * @typedef {{ scalar: Uint8Array, resolver: SeeResolver }} RequestSigner
  * @typedef {{ predicate: 'same-group' | 'named-circle', now: number }} RequestMembers
- * @typedef {{ granted: true, requestId: string, see: unknown, post: unknown }} GrantedRequest
+ * @typedef {{ granted: true, requestId: string, see: unknown, post: unknown, unchanged?: true }} GrantedRequest
  * @typedef {{ granted: false, reason: string }} DeniedRequest
  */
 
@@ -29,8 +29,8 @@ import {
   verifySignedAt,
 } from '../ids/src/index.js';
 import { integer } from '../ids/src/util.js';
-import { admittedPost, commitStagedPost, stagePost } from './post.js';
-import { admittedOwner, admittedView, commitStagedSee, stageSee } from './see.js';
+import { admitPost, presentedPost } from './post.js';
+import { admittedOwner, admitRow, presentedSee } from './see.js';
 
 export {
   REQUEST_DOMAIN,
@@ -46,6 +46,52 @@ const HAM_MAX = Number.MAX_SAFE_INTEGER;
 /** @param {string} reason @returns {DeniedRequest} */
 function deny(reason) {
   return { granted: false, reason };
+}
+
+/** Stored live row with the same owner, object, accessor, and window.
+ * @param {unknown} row
+ * @param {string} owner
+ * @param {string} object
+ * @param {string} accessor
+ * @param {{ from?: unknown, until?: unknown }} window
+ */
+function sameLive(row, owner, object, accessor, window) {
+  if (!row || typeof row !== 'object' || !('grant' in row)) return false;
+  const grant = /** @type {{ grant?: { owner?: string, object?: string, accessor?: string, stated?: number, from?: number, until?: number } }} */ (row).grant;
+  return !!grant
+    && grant.owner === owner
+    && grant.object === object
+    && grant.accessor === accessor
+    && grant.stated === 1
+    && grant.from === window.from
+    && grant.until === window.until;
+}
+
+/**
+ * Admit the see row and the post row against history already resolved.
+ * Both are checked, then both are written, in this one call.
+ * A null row is left as stored. Nothing is exported for a caller to replay.
+ * @param {object} graph
+ * @param {import('../ids/src/types.js').SeeGrant | null} seeRow
+ * @param {import('../ids/src/types.js').SeeGrant | null} postRow
+ * @param {readonly unknown[]} rotations
+ * @param {import('../ids/src/types.js').ResolutionContext} ctx
+ * @returns {{ ok: true, see: unknown, post: unknown } | { ok: false, reason: string }}
+ */
+function admitGrantRows(graph, seeRow, postRow, rotations, ctx) {
+  const dry = { rotations, ctx, commit: false };
+  const seeDry = seeRow == null ? null : admitRow(graph, seeRow, dry);
+  if (seeDry && !seeDry.ok) return { ok: false, reason: seeDry.reason };
+  const postDry = postRow == null ? null : admitPost(graph, postRow, dry);
+  if (postDry && !postDry.ok) return { ok: false, reason: postDry.reason };
+  if ((seeDry && !seeDry.kept) || (postDry && !postDry.kept)) return { ok: false, reason: 'not-kept' };
+  const write = { rotations, ctx, commit: true };
+  const seeWrote = seeRow == null ? null : admitRow(graph, seeRow, write);
+  if (seeWrote && !seeWrote.ok) return { ok: false, reason: seeWrote.reason };
+  const postWrote = postRow == null ? null : admitPost(graph, postRow, write);
+  if (postWrote && !postWrote.ok) return { ok: false, reason: postWrote.reason };
+  if ((seeWrote && !seeWrote.kept) || (postWrote && !postWrote.kept)) return { ok: false, reason: 'not-kept' };
+  return { ok: true, see: seeWrote ? seeWrote.value : null, post: postWrote ? postWrote.value : null };
 }
 
 /** @param {unknown} value @returns {value is number} */
@@ -114,69 +160,90 @@ export function grantApprovedRequest(graph, owner, request, window, members, sig
   const admission = admittedOwner(graph, req.object);
   if (!admission) return deny('unknown');
   if (admission.owner !== who.value) return deny('owner-mismatch');
+  const seeStored = presentedSee(graph, req.object, req.requester);
+  const postStored = req.scope === 'read+post' ? presentedPost(graph, req.object, req.requester) : null;
+  const seeSame = sameLive(seeStored, who.value, req.object, req.requester, window);
+  const postSame = req.scope !== 'read+post' || sameLive(postStored, who.value, req.object, req.requester, window);
+  if (seeSame && postSame) {
+    return {
+      granted: true,
+      unchanged: true,
+      requestId: req.requestId,
+      see: seeStored,
+      post: req.scope === 'read+post' ? postStored : null,
+    };
+  }
   if (members != null) {
     if (members.predicate !== 'same-group' && members.predicate !== 'named-circle') return deny('bad-record');
     if (!integer(members.now)) return deny('bad-record');
     const group = /** @type {{ ownerOf?: (object: string) => string | undefined, checkGroupSee?: Function }} */ (graph);
     const labelOwner = typeof group.ownerOf === 'function' ? group.ownerOf(req.object) : undefined;
-    if (typeof labelOwner !== 'string' || labelOwner !== admission.owner) return deny('not-member');
+    const parsedLabel = typeof labelOwner === 'string' ? parsePrincipalId(labelOwner) : null;
+    if (!parsedLabel || !parsedLabel.ok || parsedLabel.value !== admission.owner) return deny('not-member');
     const check = group.checkGroupSee;
     if (typeof check !== 'function') return deny('not-member');
     const see = check.call(graph, members.predicate, req.object, req.requester, members.now);
     if (!see || see.allowed !== true || see.reason === 'owner' || see.reason !== members.predicate) return deny('not-member');
+    if (seeStored?.grant?.stated === 0) return deny('not-kept');
+    if (req.scope === 'read+post' && postStored?.grant?.stated === 0) return deny('not-kept');
   }
-  const seeNow = admittedView(graph, req.object, req.requester);
-  if (seeNow?.stated === 0) return deny('not-kept');
-  const seeHam = (seeNow?.hamState ?? 0) + 1;
-  if (!Number.isSafeInteger(seeHam) || seeHam > HAM_MAX) return deny('see-ceiling');
-  /** @type {number} */
-  let postHam = 1;
-  if (req.scope === 'read+post') {
-    const postNow = admittedPost(graph, req.object, req.requester);
-    if (postNow?.stated === 0) return deny('not-kept');
-    postHam = (postNow?.hamState ?? 0) + 1;
-    if (!Number.isSafeInteger(postHam) || postHam > HAM_MAX) return deny('post-ceiling');
-  }
+  const seeHam = (seeStored?.grant?.hamState ?? 0) + 1;
+  if (!seeSame && (!Number.isSafeInteger(seeHam) || seeHam > HAM_MAX)) return deny('see-ceiling');
+  const postHam = (postStored?.grant?.hamState ?? 0) + 1;
+  if (req.scope === 'read+post' && !postSame && (!Number.isSafeInteger(postHam) || postHam > HAM_MAX)) return deny('post-ceiling');
   if (!integer(resolver.ctx.now)) return deny('bad-record');
   const current = resolveCurrentKey(who.value, ownerHistory, resolver.ctx);
   if (!current.ok) return deny(current.reason);
-  /** @type {SeeGrant} */
-  const seeFields = {
-    owner: who.value,
-    object: req.object,
-    accessor: req.requester,
-    stated: 1,
-    from: window.from,
-    until: window.until,
-    hamState: seeHam,
-    issuedAt: resolver.ctx.now,
-    sig: '',
-  };
-  const seeSigned = signRow(seeFields, signer.scalar, current.value.currentKey, seeGrantBytes);
-  if (!seeSigned.ok) return deny(seeSigned.reason);
-  const seeOk = verifySeeGrant(seeSigned.value, ownerHistory, resolver.ctx);
-  if (!seeOk.ok) return deny(seeOk.reason);
+  const latest = current.value.rotations.reduce((max, row) => (row.issuedAt > max ? row.issuedAt : max), -1);
+  if (latest === resolver.ctx.now) return deny('rotation-boundary');
+  /** @type {SeeGrant | null} */
+  let seeSigned = null;
+  if (!seeSame) {
+    /** @type {SeeGrant} */
+    const seeFields = {
+      owner: who.value,
+      object: req.object,
+      accessor: req.requester,
+      stated: 1,
+      from: window.from,
+      until: window.until,
+      hamState: seeHam,
+      issuedAt: resolver.ctx.now,
+      sig: '',
+    };
+    const signedSee = signRow(seeFields, signer.scalar, current.value.currentKey, seeGrantBytes);
+    if (!signedSee.ok) return deny(signedSee.reason);
+    const seeOk = verifySeeGrant(signedSee.value, ownerHistory, resolver.ctx);
+    if (!seeOk.ok) return deny(seeOk.reason);
+    seeSigned = signedSee.value;
+  }
   /** @type {SeeGrant | null} */
   let postSigned = null;
-  if (req.scope === 'read+post') {
-    const postFields = { ...seeFields, hamState: postHam, sig: '' };
+  if (req.scope === 'read+post' && !postSame) {
+    /** @type {SeeGrant} */
+    const postFields = {
+      owner: who.value,
+      object: req.object,
+      accessor: req.requester,
+      stated: 1,
+      from: window.from,
+      until: window.until,
+      hamState: postHam,
+      issuedAt: resolver.ctx.now,
+      sig: '',
+    };
     const signedPost = signRow(postFields, signer.scalar, current.value.currentKey, postGrantBytes);
     if (!signedPost.ok) return deny(signedPost.reason);
     const postOk = verifyPostGrant(signedPost.value, ownerHistory, resolver.ctx);
     if (!postOk.ok) return deny(postOk.reason);
     postSigned = signedPost.value;
   }
-  const seeStaged = stageSee(graph, seeSigned.value, ownerHistory, resolver.ctx);
-  if (!seeStaged.ok) return deny(seeStaged.reason);
-  const postStaged = postSigned ? stagePost(graph, postSigned, ownerHistory, resolver.ctx) : null;
-  if (postStaged && !postStaged.ok) return deny(postStaged.reason);
-  if (!seeStaged.kept || (postStaged && !postStaged.kept)) return deny('not-kept');
-  const seeWrote = commitStagedSee(graph, seeStaged.value);
-  if (!seeWrote.ok) return deny(seeWrote.reason);
-  if (postStaged && postStaged.ok) {
-    const postWrote = commitStagedPost(graph, postStaged.value);
-    if (!postWrote.ok) return deny(postWrote.reason);
-    return { granted: true, requestId: req.requestId, see: seeWrote.value, post: postWrote.value };
-  }
-  return { granted: true, requestId: req.requestId, see: seeWrote.value, post: null };
+  const wrote = admitGrantRows(graph, seeSigned, postSigned, ownerHistory, resolver.ctx);
+  if (!wrote.ok) return deny(wrote.reason);
+  return {
+    granted: true,
+    requestId: req.requestId,
+    see: seeSame ? seeStored : wrote.see,
+    post: req.scope === 'read+post' ? (postSame ? postStored : wrote.post) : null,
+  };
 }

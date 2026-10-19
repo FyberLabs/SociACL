@@ -192,6 +192,8 @@ pub struct VerifiedRow {
     pub object: ObjectId,
     pub accessor: PrincipalId,
     pub attest: bool,
+    /// Canonical signing bytes of the stored row.
+    pub bytes: Vec<u8>,
     #[allow(dead_code)]
     pub(crate) seal: (),
 }
@@ -288,7 +290,8 @@ impl MeshSeeGraph {
     }
 
     /// Test hook. Plants a label owner without a signed record.
-    /// Production peers do not get a setter that disagrees with `put_object`.
+    /// Production builds omit this. Tests enable the `vectors` feature.
+    #[cfg(feature = "vectors")]
     #[doc(hidden)]
     pub fn vector_label_owner(&mut self, object: &str, owner: &str) {
         self.labels.put_object(object, owner);
@@ -328,37 +331,50 @@ impl MeshSeeGraph {
 
     /// Write a see row and, when present, a post row.
     /// Both are verified against `rotations` before either insert.
-    /// A row that would not replace writes neither.
+    /// A missing see row is left as stored. A row that would not replace writes neither.
     pub(crate) fn commit_grant_rows(
         &mut self,
-        see: &Value,
+        see: Option<&Value>,
         post: Option<&Value>,
         rotations: &[Value],
         ctx: &ResolutionContext<'_>,
-    ) -> Result<(VerifiedRow, Option<VerifiedRow>), Reason> {
-        let (parsed, _) = parse_see_grant(see)?;
-        let verified = verify_see_grant(&snapshot_see(&parsed), rotations, ctx)?;
-        let see_key = id_grant_soul(&parsed.owner, &parsed.object, &parsed.accessor).to_string();
-        let see_next = admitted_from(&verified, &snapshot_see(&parsed), ctx);
-        let see_kept = match self.admitted.get(&see_key) {
-            Some(prev) => replaces(prev, &see_next),
-            None => true,
+    ) -> Result<(Option<VerifiedRow>, Option<VerifiedRow>), Reason> {
+        let see_prepared = if let Some(row) = see {
+            let (parsed, _) = parse_see_grant(row)?;
+            let verified = verify_see_grant(&snapshot_see(&parsed), rotations, ctx)?;
+            let see_key =
+                id_grant_soul(&parsed.owner, &parsed.object, &parsed.accessor).to_string();
+            let see_next = admitted_from(&verified, &snapshot_see(&parsed), ctx);
+            let see_kept = match self.admitted.get(&see_key) {
+                Some(prev) => replaces(prev, &see_next),
+                None => true,
+            };
+            Some((see_key, see_next, see_kept))
+        } else {
+            None
         };
         let post_prepared = match post {
             Some(row) => Some(self.prepare_post(row, rotations, ctx)?),
             None => None,
         };
-        if !see_kept || post_prepared.as_ref().is_some_and(|prepared| !prepared.3) {
+        if see_prepared.as_ref().is_some_and(|prepared| !prepared.2)
+            || post_prepared.as_ref().is_some_and(|prepared| !prepared.3)
+        {
             return Err(Reason::NotKept);
         }
-        self.admitted.insert(see_key, see_next.clone());
+        let see_row = if let Some((key, next, _)) = see_prepared {
+            self.admitted.insert(key, next.clone());
+            Some(view_row(&next))
+        } else {
+            None
+        };
         let post_row = if let Some((key, next, view, _)) = post_prepared {
             self.post_rows.insert(key, next);
             Some(view)
         } else {
             None
         };
-        Ok((view_row(&see_next), post_row))
+        Ok((see_row, post_row))
     }
 
     /// Drop this principal's grants and object records that the new checkpoint
@@ -570,6 +586,7 @@ fn view_row(row: &AdmittedSee) -> VerifiedRow {
         object: row.object.clone(),
         accessor: row.accessor.clone(),
         attest: has_attest(row),
+        bytes: row.bytes.clone(),
         seal: (),
     }
 }

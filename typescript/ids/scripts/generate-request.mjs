@@ -109,9 +109,11 @@ if (idA === idB) throw new Error('distinct objects produced one request id');
 const options = { ctx, rotations: (name) => context.rotationSets[name] };
 const accept = [];
 const reject = [];
-function add(bucket, name, steps) {
+function add(bucket, name, steps, note) {
   runRequestCase(steps, options);
-  (bucket === 'accept' ? accept : reject).push({ name, steps });
+  const row = { name, steps };
+  if (note) row.note = note;
+  (bucket === 'accept' ? accept : reject).push(row);
 }
 const reasonOf = (object) => {
   const got = ids.requestId(p, object);
@@ -215,7 +217,7 @@ add('reject', 'members-label-owner-is-requester', [
   { op: 'label-owner', object: chatA, owner: p2 },
   grant(pending(), { members: { predicate: 'same-group', now }, granted: false, reason: 'not-member' }),
   { op: 'view', object: chatA, accessor: p2, absent: true },
-]);
+], 'The merge attack is TypeScript-only. Rust has no merge path. This vector plants the label through the test hook.');
 add('reject', 'members-owner-shortcut-is-not-member', [
   put(),
   grant(accessRow({ requester: p, object: chatA, scope: 'read', status: 'pending', message: '', issuedAt: now }, 1), { members: { predicate: 'same-group', now }, granted: false, reason: 'not-member' }),
@@ -248,39 +250,81 @@ add('reject', 'missing-or-non-string-request-fields', [
   { op: 'view', object: chatA, accessor: p2, absent: true },
 ]);
 const window2 = { from: now, until: now + 50 };
-add('accept', 'approve-twice-replaces-window', [
+const readPost = () => accessRow({ requester: p2, object: chatA, scope: 'read+post', status: 'pending', message: '', issuedAt: now }, 2);
+add('accept', 'approve-twice-same-window', [
   put(),
   grant(pending(), { granted: true, hamState: 1, post: false }),
-  grant(pending(), { window: window2, granted: true, hamState: 2, post: false }),
+  grant(pending(), { granted: true, hamState: 1, post: false, unchanged: true }),
+  { op: 'view', object: chatA, accessor: p2, stated: 1, hamState: 1, mode: 'present', from: at, until: now + 100 },
+]);
+add('accept', 'approve-twice-new-window', [
+  put(),
+  grant(pending(), { granted: true, hamState: 1, post: false }),
+  grant(pending(), { window: window2, granted: true, hamState: 2, post: false, bytesDiffer: true }),
   { op: 'view', object: chatA, accessor: p2, stated: 1, hamState: 2, mode: 'present', from: now, until: now + 50 },
-  { op: 'check', object: chatA, accessor: p2, now: at, allowed: false, reason: 'delegate' },
   { op: 'check', object: chatA, accessor: p2, now, allowed: true, reason: 'delegate' },
 ]);
-const live = { from: at, until: now + 100 };
-add('reject', 'approval-does-not-revive-cancel', [
+add('accept', 'approve-twice-read-post-same-window', [
   put(),
+  grant(readPost(), { granted: true, hamState: 1, post: true, postHam: 1 }),
+  grant(readPost(), { granted: true, hamState: 1, post: true, postHam: 1, unchanged: true }),
+]);
+add('accept', 'approve-read-then-post-keeps-see', [
+  put(),
+  grant(pending(), { granted: true, hamState: 1, post: false }),
+  grant(readPost(), { granted: true, hamState: 1, post: true, postHam: 1, seeBytesSame: true }),
+  { op: 'view', object: chatA, accessor: p2, stated: 1, hamState: 1, mode: 'present' },
+  { op: 'view-post', object: chatA, accessor: p2, stated: 1, hamState: 1, mode: 'present' },
+]);
+const live = { from: at, until: now + 100 };
+const members = { predicate: 'same-group', now };
+const join = { op: 'join', owner: p, member: p2, setOwner: 'alice', setId: 'alice/friends', object: chatA, predicate: 'same-group' };
+add('reject', 'members-approval-does-not-revive-cancel', [
+  put(),
+  join,
   { op: 'admit', row: seeRow({ stated: 0, hamState: 1, ...live }), rotations: 'genesis', ok: true, kept: true, mode: 'present', stated: 0, hamState: 1 },
-  grant(pending(), { granted: false, reason: 'not-kept' }),
+  grant(pending(), { members, granted: false, reason: 'not-kept' }),
   { op: 'view', object: chatA, accessor: p2, stated: 0, hamState: 1, mode: 'present' },
   { op: 'check', object: chatA, accessor: p2, now, allowed: false, reason: 'delegate' },
 ]);
-add('reject', 'approval-does-not-revive-post-cancel', [
+add('accept', 'manual-approval-after-cancel', [
+  put(),
+  { op: 'admit', row: seeRow({ stated: 0, hamState: 1, ...live }), rotations: 'genesis', ok: true, kept: true, mode: 'present', stated: 0, hamState: 1 },
+  grant(pending(), { granted: true, hamState: 2, post: false }),
+  { op: 'view', object: chatA, accessor: p2, stated: 1, hamState: 2, mode: 'present', from: at, until: now + 100 },
+  { op: 'check', object: chatA, accessor: p2, now, allowed: true, reason: 'delegate' },
+]);
+add('reject', 'members-approval-does-not-revive-post-cancel', [
+  put(),
+  join,
+  { op: 'admit', row: seeRow({ ...live }), rotations: 'genesis', ok: true, kept: true, mode: 'present', stated: 1, hamState: 1 },
+  { op: 'admit-post', row: postRow({ stated: 0, hamState: 1, ...live }), rotations: 'genesis', ok: true, kept: true, mode: 'present', stated: 0, hamState: 1 },
+  grant(readPost(), { members, granted: false, reason: 'not-kept' }),
+  { op: 'view', object: chatA, accessor: p2, stated: 1, hamState: 1, mode: 'present' },
+  { op: 'view-post', object: chatA, accessor: p2, stated: 0, hamState: 1, mode: 'present' },
+  { op: 'check-post', object: chatA, accessor: p2, now, allowed: false, reason: 'cancelled' },
+]);
+add('accept', 'manual-approval-after-post-cancel', [
   put(),
   { op: 'admit', row: seeRow({ ...live }), rotations: 'genesis', ok: true, kept: true, mode: 'present', stated: 1, hamState: 1 },
   { op: 'admit-post', row: postRow({ stated: 0, hamState: 1, ...live }), rotations: 'genesis', ok: true, kept: true, mode: 'present', stated: 0, hamState: 1 },
-  grant(accessRow({ requester: p2, object: chatA, scope: 'read+post', status: 'pending', message: '', issuedAt: now }, 2), { granted: false, reason: 'not-kept' }),
+  grant(readPost(), { granted: true, hamState: 1, post: true, postHam: 2 }),
   { op: 'view', object: chatA, accessor: p2, stated: 1, hamState: 1, mode: 'present' },
-  { op: 'view-post', object: chatA, accessor: p2, stated: 0, hamState: 1, mode: 'present' },
+  { op: 'view-post', object: chatA, accessor: p2, stated: 1, hamState: 2, mode: 'present' },
+  { op: 'check-post', object: chatA, accessor: p2, now, allowed: true, reason: 'post' },
+]);
+add('reject', 'alias-label-owner-is-not-member', [
+  put(),
+  join,
+  { op: 'label-owner', object: chatA, owner: `s3rch/users/${p}` },
+  grant(pending(), { members, granted: false, reason: 'not-member' }),
+  { op: 'view', object: chatA, accessor: p2, absent: true },
 ]);
 const boundary = at + 30;
-add('accept', 'rotation-boundary-new-key', [
+add('reject', 'rotation-boundary', [
   put(),
-  { op: 'grant', owner: p, signer: 2, rotations: 'rotated', now: boundary, request: accessRow({ requester: p2, object: chatA, scope: 'read', status: 'pending', message: '', issuedAt: boundary }, 2), window, granted: true, hamState: 1, post: false },
-  { op: 'view', object: chatA, accessor: p2, stated: 1, hamState: 1, mode: 'present', issuedAt: boundary },
-]);
-add('reject', 'rotation-boundary-old-key', [
-  put(),
-  { op: 'grant', owner: p, signer: 1, rotations: 'rotated', now: boundary, request: accessRow({ requester: p2, object: chatA, scope: 'read', status: 'pending', message: '', issuedAt: boundary }, 2), window, granted: false, reason: 'bad-key' },
+  { op: 'grant', owner: p, signer: 2, rotations: 'rotated', now: boundary, request: accessRow({ requester: p2, object: chatA, scope: 'read', status: 'pending', message: '', issuedAt: boundary }, 2), window, granted: false, reason: 'rotation-boundary' },
+  { op: 'grant', owner: p, signer: 1, rotations: 'rotated', now: boundary, request: accessRow({ requester: p2, object: chatA, scope: 'read', status: 'pending', message: '', issuedAt: boundary }, 2), window, granted: false, reason: 'rotation-boundary' },
   { op: 'view', object: chatA, accessor: p2, absent: true },
 ]);
 add('accept', 'rotation-boundary-old-key-before', [

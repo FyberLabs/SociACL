@@ -121,6 +121,8 @@ fn run_case(file: &Value, case: &Value) -> MeshSeeGraph {
         Ok(history_state(principal, &[], at, until))
     };
     let mut graph = MeshSeeGraph::new();
+    let mut last_see: Option<Vec<u8>> = None;
+    let mut last_post: Option<Vec<u8>> = None;
     for step in case["steps"].as_array().unwrap() {
         let name = case["name"].as_str().unwrap();
         let op = step["op"].as_str().unwrap();
@@ -373,8 +375,9 @@ fn run_case(file: &Value, case: &Value) -> MeshSeeGraph {
                     step.get("requester").and_then(Value::as_str),
                     step.get("object").and_then(Value::as_str),
                 ) {
-                    (Some(requester), Some(object)) => sociacl_ids::request_id(requester, object)
-                        .map_err(reason_name),
+                    (Some(requester), Some(object)) => {
+                        sociacl_ids::request_id(requester, object).map_err(reason_name)
+                    }
                     _ => Err("not-string".to_string()),
                 };
                 if let Some(id) = step.get("id").and_then(Value::as_str) {
@@ -431,13 +434,16 @@ fn run_case(file: &Value, case: &Value) -> MeshSeeGraph {
             "grant" => {
                 let rotations = rotations_of(ctx, step);
                 let scalar = scalar_of(step["signer"].as_u64().unwrap_or(1));
-                let members = step.get("members").filter(|value| !value.is_null()).map(|members| {
-                    let predicate = match members["predicate"].as_str().unwrap() {
-                        "named-circle" => GroupPredicate::NamedCircle,
-                        _ => GroupPredicate::SameGroup,
-                    };
-                    (predicate, members["now"].as_u64().unwrap())
-                });
+                let members = step
+                    .get("members")
+                    .filter(|value| !value.is_null())
+                    .map(|members| {
+                        let predicate = match members["predicate"].as_str().unwrap() {
+                            "named-circle" => GroupPredicate::NamedCircle,
+                            _ => GroupPredicate::SameGroup,
+                        };
+                        (predicate, members["now"].as_u64().unwrap())
+                    });
                 let from = step["window"]["from"].as_u64().unwrap_or(0);
                 let until = step["window"]["until"].as_u64().unwrap_or(0);
                 let got = match sociacl_gun::request_owner(&step["owner"]) {
@@ -465,9 +471,28 @@ fn run_case(file: &Value, case: &Value) -> MeshSeeGraph {
                         assert!(row.post.is_none(), "{name}");
                     }
                     if step["post"] == true {
-                        let post = row.post.expect(name);
+                        let post = row.post.as_ref().expect(name);
                         assert_eq!(post.ham_state, step["postHam"].as_u64().unwrap(), "{name}");
                     }
+                    if step.get("unchanged") == Some(&Value::Bool(true)) {
+                        assert!(row.unchanged, "{name}");
+                        assert_eq!(row.see.bytes, last_see.clone().expect(name), "{name}");
+                        assert_eq!(
+                            row.post.as_ref().map(|post| post.bytes.clone()),
+                            last_post,
+                            "{name}"
+                        );
+                    } else {
+                        assert!(!row.unchanged, "{name}");
+                    }
+                    if step.get("seeBytesSame") == Some(&Value::Bool(true)) {
+                        assert_eq!(row.see.bytes, last_see.clone().expect(name), "{name}");
+                    }
+                    if step.get("bytesDiffer") == Some(&Value::Bool(true)) {
+                        assert_ne!(row.see.bytes, last_see.clone().expect(name), "{name}");
+                    }
+                    last_see = Some(row.see.bytes.clone());
+                    last_post = row.post.as_ref().map(|post| post.bytes.clone());
                 } else {
                     assert_eq!(
                         reason_name(got.expect_err(name)),

@@ -153,11 +153,26 @@ function present(row) {
   });
 }
 
-/** @param {unknown} graph @param {unknown} resolver */
-function ready(graph, resolver) {
-  return !!graph && typeof graph === 'object' && !!resolver && typeof resolver === 'object'
-    && typeof /** @type {SeeResolver} */ (resolver).rotations === 'function'
-    && !!/** @type {SeeResolver} */ (resolver).ctx;
+/**
+ * A resolver looks history up. An array is history the caller already resolved.
+ * `commit: false` reports `kept` and does not write.
+ * @param {unknown} graph
+ * @param {*} resolver
+ * @param {PrincipalId} owner
+ * @returns {{ ok: true, rotations: readonly unknown[], ctx: ResolutionContext, commit: boolean } | { ok: false, reason: string }}
+ */
+function resolvedHistory(graph, resolver, owner) {
+  if (!graph || typeof graph !== 'object' || !resolver || typeof resolver !== 'object' || !resolver.ctx) {
+    return { ok: false, reason: 'missing-history' };
+  }
+  const ctx = /** @type {ResolutionContext} */ (resolver.ctx);
+  if (Array.isArray(resolver.rotations)) {
+    return { ok: true, rotations: resolver.rotations, ctx, commit: resolver.commit !== false };
+  }
+  if (typeof resolver.rotations !== 'function') return { ok: false, reason: 'missing-history' };
+  const rotations = resolver.rotations(owner);
+  if (!Array.isArray(rotations)) return { ok: false, reason: 'missing-history' };
+  return { ok: true, rotations, ctx, commit: true };
 }
 
 /**
@@ -167,16 +182,15 @@ function ready(graph, resolver) {
  * signed bytes.
  * @param {object} graph
  * @param {unknown} row
- * @param {SeeResolver} resolver
- * @returns {{ ok: true, value: { mode: 'present' | 'witnessed', grant: PostGrant }, kept: boolean } | { ok: false, reason: string }}
+ * @param {SeeResolver | { rotations: readonly unknown[], ctx: ResolutionContext, commit?: boolean }} resolver
+ * @returns {{ ok: true, value?: SealedPost, kept: boolean } | { ok: false, reason: string }}
  */
 export function admitPost(graph, row, resolver) {
-  if (!ready(graph, resolver)) return { ok: false, reason: 'missing-history' };
   const parsed = parsePostGrant(row);
   if (!parsed.ok) return parsed;
-  const rotations = resolver.rotations(parsed.value.grant.owner);
-  if (!Array.isArray(rotations)) return { ok: false, reason: 'missing-history' };
-  const verified = verifyPostGrant(parsed.value.grant, rotations, resolver.ctx);
+  const history = resolvedHistory(graph, resolver, parsed.value.grant.owner);
+  if (!history.ok) return history;
+  const verified = verifyPostGrant(parsed.value.grant, history.rotations, history.ctx);
   if (!verified.ok) return verified;
   const grant = verified.value.grant;
   const admission = admittedOwner(graph, grant.object);
@@ -184,60 +198,30 @@ export function admitPost(graph, row, resolver) {
   if (admission.owner !== grant.owner) return { ok: false, reason: 'bad-record' };
   const held = postMap(graph);
   const key = postSoul(admission.owner, grant.object, grant.accessor);
-  const sealed = seal(verified.value, resolver.ctx);
+  const sealed = seal(verified.value, history.ctx);
   const prev = held.get(key);
   const kept = !prev || !sealedPosts.has(prev) || replaces(prev, sealed);
+  if (!history.commit) return { ok: true, kept };
   if (kept) held.set(key, sealed);
   const stored = held.get(key) ?? sealed;
   return { ok: true, value: present(stored), kept };
 }
 
-const stagedPosts = new WeakSet();
-
-/**
- * Verify a post row against history the caller already resolved. Does not write.
+/** The stored verified post row, as a caller-facing copy.
  * @param {object} graph
- * @param {unknown} row
- * @param {readonly unknown[]} rotations
- * @param {ResolutionContext} ctx
- * @returns {{ ok: true, value: { sealed: SealedPost, key: string, kept: boolean }, kept: boolean } | { ok: false, reason: string }}
+ * @param {ObjectId} object
+ * @param {PrincipalId} accessor
  */
-export function stagePost(graph, row, rotations, ctx) {
-  if (!graph || typeof graph !== 'object' || !ctx || typeof ctx !== 'object' || !Array.isArray(rotations)) {
-    return { ok: false, reason: 'missing-history' };
-  }
-  const parsed = parsePostGrant(row);
-  if (!parsed.ok) return parsed;
-  const verifiedRow = verifyPostGrant(parsed.value.grant, rotations, ctx);
-  if (!verifiedRow.ok) return verifiedRow;
-  const grant = verifiedRow.value.grant;
-  const admission = admittedOwner(graph, grant.object);
-  if (!admission) return { ok: false, reason: 'unknown' };
-  if (admission.owner !== grant.owner) return { ok: false, reason: 'bad-record' };
-  const key = postSoul(admission.owner, grant.object, grant.accessor);
-  const sealed = seal(verifiedRow.value, ctx);
-  const prev = postTables.get(graph)?.get(key);
-  const kept = !prev || !sealedPosts.has(prev) || replaces(prev, sealed);
-  /** @type {{ sealed: SealedPost, key: string, kept: boolean }} */
-  const ticket = { sealed, key, kept };
-  Object.freeze(ticket);
-  stagedPosts.add(ticket);
-  return { ok: true, value: ticket, kept };
-}
-
-/**
- * Write one staged post row. Does not call a resolver.
- * @param {object} graph
- * @param {{ sealed: SealedPost, key: string, kept: boolean }} ticket
- * @returns {{ ok: true, value: { mode: 'present' | 'witnessed', grant: PostGrant } } | { ok: false, reason: string }}
- */
-export function commitStagedPost(graph, ticket) {
-  if (!graph || typeof graph !== 'object' || !ticket || !stagedPosts.has(ticket) || !sealedPosts.has(ticket.sealed)) {
-    return { ok: false, reason: 'bad-record' };
-  }
-  if (!ticket.kept) return { ok: false, reason: 'not-kept' };
-  postMap(graph).set(ticket.key, ticket.sealed);
-  return { ok: true, value: present(ticket.sealed) };
+export function presentedPost(graph, object, accessor) {
+  const id = seeObjectEdge(object);
+  const who = seeAccessorEdge(accessor);
+  if (!id.ok || !who.ok) return undefined;
+  const admission = admittedOwner(graph, id.value);
+  const held = postTables.get(graph);
+  if (!admission || !held) return undefined;
+  const row = held.get(postSoul(admission.owner, id.value, who.value));
+  if (!row || !sealedPosts.has(row)) return undefined;
+  return present(row);
 }
 
 /** @param {object} graph @param {ObjectId} object @param {PrincipalId} accessor */
@@ -371,8 +355,7 @@ export function runPostCase(steps, options) {
         if (got.ok || got.reason !== step.reason) failStep(step, got.ok ? 'ok' : got.reason);
         continue;
       }
-      if (!got.ok || got.kept !== step.kept) failStep(step, got.ok ? got.kept : got.reason);
-      if (!got.ok) continue;
+      if (!got.ok || got.value === undefined || got.kept !== step.kept) failStep(step, got.ok ? got.kept : got.reason);
       if (step.mode !== undefined && got.value.mode !== step.mode) failStep(step, got.value.mode);
       if (step.stated !== undefined && got.value.grant.stated !== step.stated) failStep(step, got.value.grant.stated);
       if (step.hamState !== undefined && got.value.grant.hamState !== step.hamState) failStep(step, got.value.grant.hamState);

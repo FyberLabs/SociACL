@@ -112,6 +112,7 @@ import {
   sign,
   verify,
 } from "node:crypto";
+import { parsePrincipalId } from "../ids/src/index.js";
 import { canonicalAccessorId, objectIdRejected, sameObjectId } from "./legacy/gun-legacy.js";
 
 export { checkPost, factorGrants } from "./post.js";
@@ -947,9 +948,11 @@ export class MemoryGroupGraph {
    * @type {Map<string, string>} */
   #signedOwners = new Map();
 
+  /** Label objects. Vectors plant a disagreeing owner through the test method.
+   * @type {Map<string, { id: string, owner: string }>} */
+  #objects = new Map();
+
   constructor() {
-    /** @type {Map<string, { id: string, owner: string }>} */
-    this.objects = new Map();
     /** @type {Map<string, SeeGrant>} */
     this.grants = new Map();
     /** @type {Map<string, string>} */
@@ -973,9 +976,9 @@ export class MemoryGroupGraph {
   objectRecord(object) {
     const text = plainObjectId(object);
     if (text == null) return undefined;
-    const direct = this.objects.get(aclKey(text));
+    const direct = this.#objects.get(aclKey(text));
     if (direct) return { id: direct.id, owner: direct.owner };
-    for (const stored of this.objects.values()) {
+    for (const stored of this.#objects.values()) {
       if (itemSoulAlias(stored.id, text)) return { id: stored.id, owner: stored.owner };
     }
     return undefined;
@@ -1027,7 +1030,7 @@ export class MemoryGroupGraph {
     const signed = this.#signedOwners.get(id);
     if (signed !== undefined && !samePrincipal(signed, owner)) return;
     this.#signedOwners.set(id, owner);
-    this.objects.set(aclKey(id), { id, owner });
+    this.#objects.set(aclKey(id), { id, owner });
   }
 
   /**
@@ -1039,17 +1042,33 @@ export class MemoryGroupGraph {
     if (id == null) return;
     const next = asciiTrim(String(owner));
     const signed = this.#signedOwners.get(id);
-    if (signed !== undefined && !samePrincipal(signed, next)) return;
+    if (signed !== undefined) {
+      const parsed = parsePrincipalId(next);
+      if (!parsed.ok || parsed.value !== next || parsed.value !== signed) return;
+      return;
+    }
     const directKey = aclKey(id);
-    if (this.objects.has(directKey)) {
-      const prev = this.objects.get(directKey);
+    if (this.#objects.has(directKey)) {
+      const prev = this.#objects.get(directKey);
       if (prev && prev.id !== id) return;
       if (prev && !samePrincipal(prev.owner, next)) this.objectSets.delete(directKey);
-      this.objects.set(directKey, { id, owner: next });
+      this.#objects.set(directKey, { id, owner: next });
       return;
     }
     if (this.objectRecord(id)) return;
-    this.objects.set(directKey, { id, owner: next });
+    this.#objects.set(directKey, { id, owner: next });
+  }
+
+  /**
+   * Test hook. Plants a label owner without the signed-owner guard.
+   * Request vectors use this. Production puts go through putObject.
+   * @param {string} object
+   * @param {string} owner
+   */
+  plantLabelOwnerForTest(object, owner) {
+    const id = plainObjectId(object);
+    if (id == null || typeof owner !== 'string') return;
+    this.#objects.set(aclKey(id), { id, owner });
   }
 
   /** @param {string} object */
@@ -1476,11 +1495,17 @@ export class MemoryGroupGraph {
 
   /** @param {MemoryGroupGraph} other */
   mergeFrom(other) {
-    for (const [key, record] of other.objects) {
+    for (const [key, record] of other.#objects) {
       const signed = this.#signedOwners.get(record.id);
-      if (signed !== undefined && !samePrincipal(signed, record.owner)) continue;
-      if (this.objects.has(key) || this.objectRecord(record.id)) continue;
-      this.objects.set(key, { id: record.id, owner: record.owner });
+      if (signed !== undefined) {
+        const parsed = parsePrincipalId(record.owner);
+        if (!parsed.ok || parsed.value !== signed) continue;
+        if (this.#objects.has(key) || this.objectRecord(record.id)) continue;
+        this.#objects.set(key, { id: record.id, owner: signed });
+        continue;
+      }
+      if (this.#objects.has(key) || this.objectRecord(record.id)) continue;
+      this.#objects.set(key, { id: record.id, owner: record.owner });
     }
     for (const incoming of other.grants.values()) {
       const query = grantObject(incoming);

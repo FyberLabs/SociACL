@@ -1111,15 +1111,6 @@ pub fn history_state(genesis: &PrincipalId, history: &[Rotate], at: u64, until: 
         }),
     }
 }
-/// Signing key for a record at `at`. A rotation counts from its issuedAt inclusive.
-/// The preceding key signs only earlier records. Same-second revokes still use [`history_state`].
-fn key_in_force(genesis: &PrincipalId, history: &[Rotate], at: u64) -> PrincipalId {
-    history
-        .iter()
-        .rev()
-        .find(|row| row.issued_at <= at)
-        .map_or_else(|| genesis.clone(), |row| row.next_key.clone())
-}
 fn historical_link(
     r: &IdentityRecord,
     ctx: &ResolutionContext<'_>,
@@ -2338,8 +2329,7 @@ pub fn verify_see_grant(
     let account = resolve_current_key(&grant.owner, rotations, ctx).result?;
     proof_time(grant.issued_at, ctx.now, ctx.policy.clock_skew_seconds)?;
     let state = history_state(&grant.owner, &account.rotations, grant.issued_at, ctx.now);
-    let in_force = key_in_force(&grant.owner, &account.rotations, grant.issued_at);
-    if in_force == account.current_key {
+    if state.key == account.current_key {
         if !key_verify(&account.current_key, &grant.sig, &bytes) {
             return Err(Reason::BadSignature);
         }
@@ -2385,8 +2375,8 @@ pub fn verify_signed_at(
         return Err(Reason::BadRecord);
     }
     proof_time(issued_at, ctx.now, ctx.policy.clock_skew_seconds)?;
-    let in_force = key_in_force(principal, &account.rotations, issued_at);
-    if in_force != account.current_key {
+    let state = history_state(principal, &account.rotations, issued_at, ctx.now);
+    if state.key != account.current_key {
         return Err(Reason::UnwitnessedRetiredKey);
     }
     let Ok(sig) = text(sig, 128) else {
@@ -2447,11 +2437,7 @@ fn request_message(value: &str) -> Result<&str, Reason> {
 }
 /// Signing bytes for a request id. Scope, message, and status are not inputs.
 pub fn request_id_bytes(requester: &PrincipalId, object: &ObjectId) -> Vec<u8> {
-    lp(&[
-        REQUEST_ID_DOMAIN,
-        requester.as_ref(),
-        object.as_ref(),
-    ])
+    lp(&[REQUEST_ID_DOMAIN, requester.as_ref(), object.as_ref()])
 }
 /// Lowercase hex SHA-256 of [`request_id_bytes`]. A non-string never reaches this function.
 pub fn request_id(requester: &str, object: &str) -> Result<String, Reason> {
@@ -2613,8 +2599,7 @@ pub fn verify_post_grant(
     let account = resolve_current_key(&grant.owner, rotations, ctx).result?;
     proof_time(grant.issued_at, ctx.now, ctx.policy.clock_skew_seconds)?;
     let state = history_state(&grant.owner, &account.rotations, grant.issued_at, ctx.now);
-    let in_force = key_in_force(&grant.owner, &account.rotations, grant.issued_at);
-    if in_force == account.current_key {
+    if state.key == account.current_key {
         if !key_verify(&account.current_key, &grant.sig, &bytes) {
             return Err(Reason::BadSignature);
         }

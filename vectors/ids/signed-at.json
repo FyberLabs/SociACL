@@ -238,20 +238,6 @@
       }
     },
     {
-      "name": "rotation-boundary-new-key",
-      "operation": "verify-signed-at",
-      "input": {
-        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
-        "sig": "CZ7nW6_NGChsJHIe1pmnhoosgP3PCOwV-ZmXnGS7dTBW-jGGVwV8YtJIHNB4i1Del7n8Hf5504YEndDYGOuAOg",
-        "bytes": "726f746174696f6e2d626f756e646172792d6e65772d6b6579",
-        "issuedAt": 1700000030
-      },
-      "canonical": {
-        "key": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
-        "mode": "present"
-      }
-    },
-    {
       "name": "present-label-hop",
       "operation": "verify-signed-at",
       "input": {
@@ -366,7 +352,7 @@
         "bytes": "69737375656441742d657175616c732d726f746174696f6e2d74696d65",
         "issuedAt": 1700000030
       },
-      "reason": "bad-signature"
+      "reason": "unwitnessed-retired-key"
     },
     {
       "name": "acl-attest-expired",
@@ -542,7 +528,7 @@
         "bytes": "73616d652d7365636f6e642d6772616e74",
         "issuedAt": 1700000030
       },
-      "reason": "bad-signature"
+      "reason": "unwitnessed-retired-key"
     },
     {
       "name": "missing-history",

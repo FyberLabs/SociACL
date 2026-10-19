@@ -301,14 +301,6 @@ export function historyState(genesis, history, at, until) {
     currentKey: past.at(-1)?.nextKey ?? genesis,
     retainedLinks: later.length ? later[0].retainedLinks.filter(id => later.every(r => r.retainedLinks.includes(id))) : null };
 }
-/** Signing key for a record at `at`. A rotation counts from its issuedAt inclusive.
- * The preceding key signs only earlier records. Same-second revokes still use `historyState`.
- * @param {PrincipalId} genesis @param {readonly { issuedAt: number, nextKey: PrincipalId }[]} history @param {number} at */
-function keyInForce(genesis, history, at) {
-  let key = genesis;
-  for (const row of history) if (row.issuedAt <= at) key = row.nextKey;
-  return key;
-}
 /** @param {HistoryResolver} history @param {PrincipalId} principal @param {number} at @param {number} until @returns {Result<KeyState>} */
 function state(history, principal, at, until) {
   if (typeof history !== 'function') return fail('missing-history');
@@ -844,8 +836,7 @@ export function verifySeeGrant(row, rotations, ctx) {
   const skew = ctx.policy?.clockSkewSeconds ?? 0;
   const when = time(grant.issuedAt, ctx.now, skew); if (!when.ok) return when;
   const state = historyState(grant.owner, account.value.rotations, grant.issuedAt, ctx.now);
-  const inForce = keyInForce(grant.owner, account.value.rotations, grant.issuedAt);
-  if (inForce === account.value.currentKey) {
+  if (state.key === account.value.currentKey) {
     if (!keyVerify(account.value.currentKey, grant.sig, bytes)) return fail('bad-signature');
     return ok(Object.freeze({ key: account.value.currentKey, mode: 'present', grant, bytes }));
   }
@@ -912,8 +903,7 @@ export function verifyPostGrant(row, rotations, ctx) {
   const skew = ctx.policy?.clockSkewSeconds ?? 0;
   const when = time(grant.issuedAt, ctx.now, skew); if (!when.ok) return when;
   const state = historyState(grant.owner, account.value.rotations, grant.issuedAt, ctx.now);
-  const inForce = keyInForce(grant.owner, account.value.rotations, grant.issuedAt);
-  if (inForce === account.value.currentKey) {
+  if (state.key === account.value.currentKey) {
     if (!keyVerify(account.value.currentKey, grant.sig, bytes)) return fail('bad-signature');
     return ok(Object.freeze({ key: account.value.currentKey, mode: 'present', grant, bytes }));
   }
@@ -943,8 +933,8 @@ export function verifySignedAt(principal, rotations, ctx, bytes, sig, issuedAt) 
   if (!integer(issuedAt)) return fail('bad-record');
   const skew = ctx.policy?.clockSkewSeconds ?? 0;
   const when = time(issuedAt, ctx.now, skew); if (!when.ok) return when;
-  const inForce = keyInForce(p.value, account.value.rotations, issuedAt);
-  if (inForce !== account.value.currentKey) return fail('unwitnessed-retired-key');
+  const state = historyState(p.value, account.value.rotations, issuedAt, ctx.now);
+  if (state.key !== account.value.currentKey) return fail('unwitnessed-retired-key');
   const s = text(sig, 128);
   if (!(bytes instanceof Uint8Array) || !s.ok || !keyVerify(account.value.currentKey, s.value, bytes)) return fail('bad-signature');
   return ok(Object.freeze({ key: account.value.currentKey, mode: 'present' }));

@@ -62,8 +62,11 @@ pub enum Reason {
     SeeCeiling,
     /// The next post ham state is not a safe integer.
     PostCeiling,
-    /// The new row would not replace the stored row, or a cancel would be revived.
+    /// The new row would not replace the stored row.
+    /// Members auto-approve also returns this over an owner cancel.
     NotKept,
+    /// `now` equals the latest resolved rotation time. Retry on the next second.
+    RotationBoundary,
 }
 impl fmt::Display for Reason {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

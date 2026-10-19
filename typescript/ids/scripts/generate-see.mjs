@@ -452,11 +452,11 @@ function compareBytes(left, right) {
     { op: 'verify', row: seeRow(base({ stated: 0, issuedAt: retiredAt }), 1, 'not-a-jws').row, rotations: 'rotated', ok: false, reason: 'bad-attestation' },
   ]);
   const atRotation = seeRow(base({ stated: 0, issuedAt: at + 30 }), 1, {}).row;
-  add('reject', 'cancel-at-rotation-time-old-key', [
-    { op: 'verify', row: atRotation, rotations: 'rotated', ok: false, reason: 'bad-signature' },
+  add('accept', 'cancel-at-rotation-time-witnessed', [
+    { op: 'verify', row: atRotation, rotations: 'rotated', ok: true, mode: 'witnessed' },
   ]);
-  add('accept', 'cancel-at-rotation-time-new-key', [
-    { op: 'verify', row: seeRow(base({ stated: 0, issuedAt: at + 30 }), 2, {}).row, rotations: 'rotated', ok: true, mode: 'present' },
+  add('reject', 'cancel-at-rotation-time-newkey', [
+    { op: 'verify', row: seeRow(base({ stated: 0, issuedAt: at + 30 }), 2, {}).row, rotations: 'rotated', ok: false, reason: 'bad-signature' },
   ]);
   add('reject', 'backdated-next-key-cancel', [
     { op: 'verify', row: seeRow(base({ stated: 0, issuedAt: retiredAt }), 2, {}).row, rotations: 'rotated', ok: false, reason: 'bad-signature' },

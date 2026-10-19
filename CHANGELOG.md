@@ -31,13 +31,20 @@
 - `reverifyPosts` takes the rotations `reverifyPrincipal` already
   resolved and does not look them up again.
 - **Breaking:** `snapshotRow`, `restoreRow`, `snapshotPost`, and
-  `restorePost` are removed. An approved request resolves owner and
-  requester history once, admits both rows against that history, and
-  writes both or neither. A row that would not replace, including an
-  approval over an owner cancel, is `not-kept`.
-- Members auto-approve requires the label owner to equal the admitted
-  signed object owner. The owner shortcut is not membership. A peer
-  `putObject` or `mergeFrom` does not replace that signed owner.
+  `restorePost` are removed. Staged see and post tickets are not
+  exported. An approved request resolves owner and requester history
+  once, admits both rows against that history, and writes both or
+  neither. A row that would not replace is `not-kept`.
+- An identical approval returns the stored row with `unchanged: true`
+  and does not sign or bump `hamState`. A different window is
+  `hamState + 1`. Members auto-approve over an owner cancel is
+  `not-kept`. A manual approval re-grants above that cancel.
+- When `now` equals the latest rotation time, approval returns
+  `rotation-boundary` and writes nothing.
+- Members auto-approve compares parsed `PrincipalId`s. A signed
+  object's label keeps that canonical spelling. The owner shortcut is
+  not membership. A peer `putObject` or `mergeFrom` does not replace
+  that signed owner.
 - Rust `grant_approved_request` and `request_owner` return `Reason`.
 
 ## Encrypted discovery — unreleased
@@ -193,12 +200,11 @@ is `ids-v0.10.0`.
   / `verify_access_request` uses `verifySignedAt` / `verify_signed_at`.
   A retired key is refused. A missing or non-string `scope`, `status`,
   `message`, `requester`, or `object` is `not-string` in both languages.
-  A rotation's new key signs see, post, and present-authority records
-  issued at or after the rotation timestamp. The preceding key signs
-  only earlier records. `historyState` still uses the preceding key for
-  a same-second revoke. `Reason` adds `withdrawn`, `owner-mismatch`,
-  `not-member`, `see-ceiling`, `post-ceiling`, and `not-kept`. The
-  package version stays 0.10.0.
+  `historyState` still uses the preceding key for a same-second revoke.
+  The new key signs records strictly after the rotation timestamp.
+  `Reason` adds `withdrawn`, `owner-mismatch`, `not-member`,
+  `see-ceiling`, `post-ceiling`, `not-kept`, and `rotation-boundary`.
+  The package version stays 0.10.0.
 
 ## sociacl-ids 0.9.0 — unreleased
 

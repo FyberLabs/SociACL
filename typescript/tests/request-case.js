@@ -3,7 +3,6 @@
  * because the members gate still enrolls through the label group graph.
  */
 import { requestId } from '../ids/src/index.js';
-import { aclKey } from '../src/legacy/gun-legacy.js';
 import { MemoryGroupGraph, issuerFromSeed } from '../src/group.js';
 import { admitPost, admittedPost, checkPost, factorGrants } from '../src/post.js';
 import { grantApprovedRequest } from '../src/request.js';
@@ -36,8 +35,20 @@ function failStep(step, got) {
  * @param {readonly Record<string, any>[]} steps
  * @param {{ ctx: import('../ids/src/types.js').ResolutionContext, rotations: (name: string) => readonly unknown[] }} options
  */
+/** @param {unknown} left @param {unknown} right */
+function sameBytes(left, right) {
+  if (left == null && right == null) return true;
+  if (!(left instanceof Uint8Array) || !(right instanceof Uint8Array) || left.length !== right.length) return false;
+  for (let i = 0; i < left.length; i += 1) if (left[i] !== right[i]) return false;
+  return true;
+}
+
 export function runRequestCase(steps, options) {
   const graph = new MemoryGroupGraph();
+  /** @type {Uint8Array | null} */
+  let lastSee = null;
+  /** @type {Uint8Array | null} */
+  let lastPost = null;
   const resolverFor = (/** @type {Record<string, any>} */ step) => {
     const ctx = { ...options.ctx };
     if (step.revocations) ctx.revocations = step.revocations;
@@ -86,7 +97,7 @@ export function runRequestCase(steps, options) {
       continue;
     }
     if (step.op === 'label-owner') {
-      graph.objects.set(aclKey(step.object), { id: step.object, owner: step.owner });
+      graph.plantLabelOwnerForTest(step.object, step.owner);
       continue;
     }
     if (step.op === 'grant') {
@@ -104,6 +115,15 @@ export function runRequestCase(steps, options) {
         if (step.hamState != null && got.see?.grant?.hamState !== step.hamState) failStep(step, got.see);
         if (step.post === false && got.post != null) failStep(step, got.post);
         if (step.post === true && (got.post == null || got.post.grant?.hamState !== step.postHam)) failStep(step, got.post);
+        if (step.unchanged === true) {
+          if (got.unchanged !== true || !sameBytes(got.see?.bytes, lastSee) || !sameBytes(got.post?.bytes ?? null, lastPost)) {
+            failStep(step, got.unchanged);
+          }
+        } else if (got.unchanged === true) failStep(step, 'unchanged');
+        if (step.seeBytesSame === true && !sameBytes(got.see?.bytes, lastSee)) failStep(step, got.see);
+        if (step.bytesDiffer === true && sameBytes(got.see?.bytes, lastSee)) failStep(step, got.see);
+        lastSee = got.see?.bytes ?? null;
+        lastPost = got.post?.bytes ?? null;
       } else if (got.granted || got.reason !== step.reason) failStep(step, got.granted ? 'granted' : got.reason);
       continue;
     }
@@ -127,7 +147,7 @@ export function runRequestCase(steps, options) {
       const got = admittedPost(graph, step.object, step.accessor);
       if (step.absent === true) {
         if (got) failStep(step, got);
-      } else if (!got || got.hamState !== step.hamState) failStep(step, got);
+      } else if (!got || got.hamState !== step.hamState || (step.stated != null && got.stated !== step.stated)) failStep(step, got);
       continue;
     }
     if (step.op === 'check') {
