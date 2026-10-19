@@ -13,7 +13,7 @@ use sociacl_core::{
 };
 use sociacl_gun::{
     accept_hint_bytes, cancel as gun_cancel, check as gun_check,
-    check_see_grant as gun_check_see_grant, elect_from_hint, encode_key, remint as gun_remint,
+    check_see_grant as gun_check_see_grant, elect_from_hint, remint as gun_remint,
     GunSoul, HandoffHint, IdentitySeeGrant, UrlLeaf,
 };
 
@@ -1906,6 +1906,24 @@ pub extern "C" fn sociacl_gun_item_soul(
     }
     let soul = GunSoul::s3rch_item(id).as_node_id();
     write_exact(dst, dst_len, soul.as_str())
+}
+
+/// Slash-preserving Gun key escape. This C export is not the see path.
+/// It stays until the C surface drops the helper.
+fn encode_key(id: &str) -> String {
+    let mut out = String::with_capacity(id.len());
+    for ch in id.chars() {
+        match ch {
+            '~' => out.push_str("~0"),
+            '.' => out.push_str("~1"),
+            '#' => out.push_str("~2"),
+            '$' => out.push_str("~3"),
+            '[' => out.push_str("~4"),
+            ']' => out.push_str("~5"),
+            _ => out.push(ch),
+        }
+    }
+    out
 }
 
 #[no_mangle]
