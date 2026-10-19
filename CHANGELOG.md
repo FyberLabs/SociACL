@@ -103,9 +103,10 @@ recorded here. The release tag is `ids-v0.9.0`.
 - Export the shared length-prefix encoder `lengthPrefixed` / `length_prefixed`.
   Integer fields are decimal strings. The public encoder accepts only real
   strings, rejects lone surrogates, and rejects a field of 4 GiB or more
-  instead of truncating its length. It copies the input once and validates
-  only that copy. A throwing getter or iterator is `bad-record`. Valid strings
-  stay byte-identical to the post and request copies.
+  instead of truncating its length. It reads `length` once and validates each
+  element as it goes, so a sparse array stops at the first hole. A throwing
+  length or element access is `bad-record`. Valid strings stay byte-identical
+  to the post and request copies.
 - `verifyKeySignature` / `verify_key_signature` checks a SEA P-256 signature
   over SHA-256. The signature is raw r||s, base64url. High-S and low-S both
   verify. `signWithKeyring` / `sign_with_keyring` signs a 32-byte SEA scalar

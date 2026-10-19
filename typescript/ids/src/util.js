@@ -59,20 +59,24 @@ export function lp(fields) {
   }
   return bytes;
 }
+const loneSurrogate = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/;
 /** Public encoder. Only real, well-formed strings. No coercion.
- * The input is copied once; validation and encoding read only that copy.
+ * `length` is read once. Each element is read and validated once, and the
+ * first bad element returns before the rest of the array is touched.
  * @param {unknown} fields @returns {Result<Uint8Array>} */
 export function lengthPrefixed(fields) {
-  /** @type {unknown[] | undefined} */
-  let copy;
+  /** @type {string[]} */
+  const copy = [];
   try {
     if (!Array.isArray(fields)) return fail('bad-record');
-    copy = Array.from(fields);
+    const n = fields.length;
+    if (typeof n !== 'number' || !Number.isSafeInteger(n) || n < 0) return fail('bad-record');
+    for (let i = 0; i < n; i++) {
+      const field = fields[i];
+      if (typeof field !== 'string') return fail('not-string');
+      if (loneSurrogate.test(field)) return fail('unpaired-surrogate');
+      copy.push(field);
+    }
   } catch { return fail('bad-record'); }
-  if (!Array.isArray(copy)) return fail('bad-record');
-  for (const field of copy) {
-    if (typeof field !== 'string') return fail('not-string');
-    if (/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/.test(field)) return fail('unpaired-surrogate');
-  }
-  return ok(lp(/** @type {readonly string[]} */ (copy)));
+  return ok(lp(copy));
 }

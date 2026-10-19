@@ -147,7 +147,19 @@ test('lengthPrefixed reads each field once', () => {
   assert.deepEqual(ids.lengthPrefixed(throwing), { ok: false, reason: 'bad-record' });
   const iterating = ['ok'];
   iterating[Symbol.iterator] = () => { throw new Error('iterator'); };
-  assert.deepEqual(ids.lengthPrefixed(iterating), { ok: false, reason: 'bad-record' });
+  assert.deepEqual(ids.lengthPrefixed(iterating), good);
+  const throwingLength = new Proxy(['ok'], {
+    get(target, prop, receiver) {
+      if (prop === 'length') throw new Error('length');
+      return Reflect.get(target, prop, receiver);
+    },
+  });
+  assert.deepEqual(ids.lengthPrefixed(throwingLength), { ok: false, reason: 'bad-record' });
+  const sparse = [];
+  sparse.length = 1e8;
+  const started = Date.now();
+  assert.deepEqual(ids.lengthPrefixed(sparse), { ok: false, reason: 'not-string' });
+  assert.ok(Date.now() - started < 1000, 'sparse length must fail on the first hole');
   let proxyReads = 0;
   const proxy = new Proxy(['ok'], {
     get(target, prop, receiver) {

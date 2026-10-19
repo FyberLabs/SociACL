@@ -94,7 +94,7 @@ reads the `sociacl-cancel-v2` domain from the signed bytes. `mode: "witnessed"` 
 or non-numeric skew is `bad-record`. `issuedAt` past `now` plus that skew is
 `future-record`. `signWithKeyring(scalar, bytes, expectedKey)` signs only when
 the scalar's public key is `expectedKey`, and it wipes its copy of the scalar.
-Bad key material is `bad-key`. `lengthPrefixed` copies its input once and accepts only well-formed strings from that copy. A throwing getter or iterator is `bad-record`.
+Bad key material is `bad-key`. `lengthPrefixed` reads `length` once, then reads and validates each element once, returning on the first bad field. A throwing length or element access is `bad-record`.
 
 Wallet proofs are EIP-4361 messages signed with EIP-191 `personal_sign`. The
 statement is exactly `SociACL link: <signing-byte sha256>`, the address must
