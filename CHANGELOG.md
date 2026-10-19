@@ -2,6 +2,20 @@
 
 ## sociacl/gun — unreleased
 
+- **Breaking:** an access request is `sociacl-access-request-v2`. The
+  request id is `hex(sha256)` of `sociacl-request-id-v2`, the requester
+  `PrincipalId`, and the object `ObjectId`. `grantApprovedRequest` takes
+  `(graph, owner, request, window, members, signer)`. The owner signs
+  the v2 see row and, for `read+post`, the v2 post row. Both ceilings
+  are checked before either row is written. Ed25519 request signatures,
+  `node:crypto` in `request.js`, and the alias helpers in `request.js`
+  and `request.rs` are gone. `vectors/mesh/access-request.json` is
+  replaced by `vectors/mesh/v2/request.json`.
+- **Breaking:** `typescript/src/legacy/post-label.js` and
+  `crates/sociacl-gun/src/post_label.rs` are deleted, along with
+  `cancelLabelPost`, the group post WeakMap, and `LabelGraph`'s post map.
+  Rust `LabelGraph::merge_from` no longer copies post rows. A typed post
+  row is `admitPost` / `admit_post` only.
 - **Breaking (TypeScript):** `sociacl/group` no longer exports
   `POST_GRANT_DOMAIN`, `POST_GRANT_SCOPE`, `postGrantSigningBytes`, or the
   label `postSoul`. `sociacl/gun` still exports `POST_GRANT_DOMAIN`. Its
@@ -12,23 +26,53 @@
 - **Breaking (Rust):** `sociacl_gun` no longer exports
   `post_grant_signing_bytes`, `post_soul`, `GunPostEdge`, `MeshPostGrant`,
   `POST_GRANT_DOMAIN`, or `POST_GRANT_SCOPE`. `post_grants`, `post_edge`,
-  `state_post_grant`, `unstate_post_grant`, and `merge_post_edge` are
-  `pub(crate)`. `OwnerGrantRows.post` is `pub(crate)`.
-- The label post writer stays inside the request and group modules until
-  PR 4. It is not a method on `MemoryGroupGraph`. `mergeFrom` does not
-  copy label post rows. A `read+post` approval with no label post writer
-  writes nothing.
+  `state_post_grant`, `unstate_post_grant`, `merge_post_edge`,
+  `GunPostEdge`, and `OwnerGrantRows` are removed with `post_label.rs`.
+- `reverifyPosts` takes the rotations `reverifyPrincipal` already
+  resolved and does not look them up again.
+- **Breaking:** `snapshotRow`, `restoreRow`, `snapshotPost`, and
+  `restorePost` are removed. Staged see and post tickets are not
+  exported. An approved request resolves owner and requester history
+  once, admits both rows against that history, and writes both or
+  neither. A row that would not replace is `not-kept`.
+- An identical approval returns the stored row with `unchanged: true`
+  only after the current key resolves, the scalar owns that key, and
+  members allow. The stored row must be signed by that current key.
+  A retired-key row is signed again at `hamState + 1`. A different
+  window is `hamState + 1`. The window is copied once before it is
+  checked. Members auto-approve over an owner cancel is `not-kept`.
+  A manual approval re-grants above that cancel.
+- `admitRow` and `admitPost` take a resolver function and always return
+  the admitted row. An approved request verifies both rows, then writes
+  both in that same call. There is no prepare or commit ticket.
+  `checkSee` and `checkPost` allow a row only when its signed object
+  and accessor are the ones that were queried.
+- **Breaking (TypeScript):** `MemoryGroupGraph` no longer has
+  `plantLabelOwnerForTest`. The label map is module-private.
+- When `now` equals the latest rotation time, approval returns
+  `rotation-boundary` and writes nothing.
+- Members auto-approve compares parsed `PrincipalId`s. A signed
+  object's label keeps that canonical spelling. The owner shortcut is
+  not membership. A peer `putObject` or `mergeFrom` does not replace
+  that signed owner.
+- Rust `grant_approved_request` and `request_owner` return `Reason`.
+- A packed `sociacl` install ships `ids/src`, which `gun` and `group`
+  load. The see and post seal sets stay in those modules. Internal
+  modules export only the row maps. `reverifyPrincipal` removes the
+  group label with the owner record. `admitGrantPair`, `postKeeps`,
+  and `admitResolvedPost` take a resolver. Approval copies the resolver
+  context once before either row is written.
 
 ## Encrypted discovery — unreleased
 
 - The see path takes stored ids only. `checkSee` / `check_see` have no string
   parameter and no label fallback. A string is the edge parser's reject.
   `CheckObjectId` is `ObjectId` and `AccessorId` is `PrincipalId`. Helpers
-  that post, request, group, feed, and the contract migration path still
+  that group, feed, and the contract migration path still
   call live in `typescript/src/legacy/gun-legacy.js` and
-  `crates/sociacl-gun/src/legacy.rs`. The see path does not import them.
-  Post's copy is deleted in PR 3, request's in PR 4, group's in PR 5, and
-  the feed, encrypted-discovery, and contract copies in PR 6. The #55
+  `crates/sociacl-gun/src/legacy.rs`. The see, post, and request paths do
+  not import them. Group's copy is deleted in PR 5, and the feed,
+  encrypted-discovery, and contract copies in PR 6. The #55
   rebuild spec is not in this repo; that schedule is also in
   `docs/s3rch-check.md`. `vectors/mesh/forbidden-names.json` scopes the
   banned names to the see-path files. Later pull requests append their
@@ -164,6 +208,19 @@ is `ids-v0.10.0`.
   `verify_post_grant` cover `sociacl-post-grant-v2`. A retired cancel
   is `stated` 0 in those signed bytes. A retired `stated` 1 row is
   refused. An uppercase `P_` tag on a bound object id is `non-canonical`.
+- `requestId` / `request_id` and `parseAccessRequest` /
+  `parse_access_request` cover `sociacl-request-id-v2` and
+  `sociacl-access-request-v2`. The request id is the hash of the
+  requester and the object. An empty message is allowed. A wrong
+  domain or a missing signature is `legacy-row`. `verifyAccessRequest`
+  / `verify_access_request` uses `verifySignedAt` / `verify_signed_at`.
+  A retired key is refused. A missing or non-string `scope`, `status`,
+  `message`, `requester`, or `object` is `not-string` in both languages.
+  `historyState` still uses the preceding key for a same-second revoke.
+  The new key signs records strictly after the rotation timestamp.
+  `Reason` adds `withdrawn`, `owner-mismatch`, `not-member`,
+  `see-ceiling`, `post-ceiling`, `not-kept`, and `rotation-boundary`.
+  The package version stays 0.10.0.
 
 ## sociacl-ids 0.9.0 — unreleased
 

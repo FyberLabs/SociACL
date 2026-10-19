@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { MemorySeeAcl, checkSeeLabel, grantSoul } from "../src/legacy/gun-legacy.js";
-import { canonicalAccessorId } from "../src/legacy/post-label.js";
+import { canonicalAccessorId } from "../src/legacy/gun-legacy.js";
 
 const vectors = JSON.parse(
   readFileSync(new URL("../../vectors/mesh/principals.json", import.meta.url), "utf8"),

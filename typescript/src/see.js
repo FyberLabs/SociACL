@@ -40,25 +40,61 @@ import {
   verifyObjectRecord,
   verifySeeGrant,
 } from '../ids/src/index.js';
-import { reverifyPosts } from './post.js';
+import { seeStore } from './internal/see-rows.js';
+import { admitResolvedPost, postKeeps, reverifyPosts } from './post.js';
 
 const verified = new WeakSet();
-/** @type {WeakMap<object, SeeStore>} */
-const stores = new WeakMap();
 
 /** @param {object} graph @returns {SeeStore} */
 function store(graph) {
-  let held = stores.get(graph);
-  if (!held) {
-    held = { owners: new Map(), rows: new Map() };
-    stores.set(graph, held);
-  }
-  return held;
+  return /** @type {SeeStore} */ (seeStore(graph));
 }
 
 /** @param {unknown} graph */
 function graphObject(graph) {
   return typeof graph === 'object' && graph !== null;
+}
+
+/** Copy the admitted signed owner onto a group graph that records one.
+ * A plain graph has no label map, and that is not an error.
+ * @param {object} graph @param {string} object @param {string} owner */
+function bindLabel(graph, object, owner) {
+  const target = /** @type {{ bindSignedOwner?: (object: string, owner: string) => void }} */ (graph);
+  if (typeof target.bindSignedOwner === 'function') target.bindSignedOwner(object, owner);
+}
+
+/** Drop the label putObject copied from an admitted record.
+ * A plain graph has no label map, and that is not an error.
+ * @param {object} graph @param {string} object */
+function unbindLabel(graph, object) {
+  const target = /** @type {{ unbindSignedOwner?: (object: string) => void }} */ (graph);
+  if (typeof target.unbindSignedOwner === 'function') target.unbindSignedOwner(object);
+}
+
+/**
+ * One plain copy of the context. Later reads do not touch the caller's object.
+ * @param {ResolutionContext} ctx
+ * @returns {ResolutionContext}
+ */
+export function snapshotContext(ctx) {
+  const now = ctx.now;
+  const jwks = ctx.jwks;
+  const links = ctx.links;
+  const policy = ctx.policy;
+  const pinnedIss = ctx.pinnedIss;
+  const history = ctx.history;
+  const revocations = ctx.revocations;
+  const genesisEpubBindings = ctx.genesisEpubBindings;
+  return Object.freeze({
+    now,
+    jwks,
+    links,
+    policy,
+    pinnedIss,
+    history,
+    ...(revocations !== undefined ? { revocations } : {}),
+    ...(genesisEpubBindings !== undefined ? { genesisEpubBindings } : {}),
+  });
 }
 
 /** @param {unknown} now */
@@ -166,7 +202,6 @@ function present(row) {
     witness: row.witness,
   };
   Object.freeze(copy);
-  verified.add(copy);
   return copy;
 }
 
@@ -243,43 +278,186 @@ export function putObject(graph, record, resolver) {
   if (!existing) {
     const admitted = { owner, issuedAt, record: verified.value.record, history: history.slice() };
     held.owners.set(id, admitted);
+    bindLabel(graph, id, owner);
     return { ok: true, value: admissionCopy(admitted), kept: true };
   }
-  if (issuedAt <= existing.issuedAt) return { ok: true, value: admissionCopy(existing), kept: false };
+  if (issuedAt <= existing.issuedAt) {
+    bindLabel(graph, id, existing.owner);
+    return { ok: true, value: admissionCopy(existing), kept: false };
+  }
   const still = verifyObjectRecord(existing.record, history, resolver.ctx);
-  if (still.ok) return { ok: true, value: admissionCopy(existing), kept: false };
+  if (still.ok) {
+    bindLabel(graph, id, existing.owner);
+    return { ok: true, value: admissionCopy(existing), kept: false };
+  }
   if (signerRetired(existing.history, verified.value.key, issuedAt, owner, resolver.ctx)) {
+    bindLabel(graph, id, existing.owner);
     return { ok: true, value: admissionCopy(existing), kept: false };
   }
   existing.issuedAt = issuedAt;
   existing.record = verified.value.record;
   existing.history = history.slice();
+  bindLabel(graph, id, owner);
   return { ok: true, value: admissionCopy(existing), kept: true };
+}
+
+/**
+ * Verify one see row against history the caller already resolved.
+ * Does not write. The result stays inside this module.
+ * @param {object} graph
+ * @param {unknown} row
+ * @param {readonly unknown[]} rotations
+ * @param {ResolutionContext} ctx
+ * @returns {{ ok: true, graph: object, sealed: SealedRow, kept: boolean, used: boolean } | { ok: false, reason: string }}
+ */
+function evaluateSee(graph, row, rotations, ctx) {
+  const parsed = parseSeeGrant(row);
+  if (!parsed.ok) return parsed;
+  if (!graphObject(graph) || !ctx) return { ok: false, reason: 'missing-history' };
+  const verifiedRow = verifySeeGrant(parsed.value.grant, rotations, ctx);
+  if (!verifiedRow.ok) return verifiedRow;
+  const grant = verifiedRow.value.grant;
+  const key = grantSoul(grant.owner, grant.object, grant.accessor);
+  const held = store(graph);
+  const sealed = seal(verifiedRow.value, ctx);
+  const prev = held.rows.get(key);
+  const kept = !prev || !verified.has(prev) || replaces(prev, sealed);
+  return { ok: true, graph, sealed, kept, used: false };
+}
+
+/**
+ * Write a row this module just verified. Kept is computed again from the
+ * current stored row. The soul key comes from the signed grant.
+ * @param {{ ok: true, graph: object, sealed: SealedRow, kept: boolean, used: boolean }} evaluated
+ * @returns {{ ok: true, value: SealedRow, kept: boolean, prev: SealedRow | null, wrote: SealedRow | null } | { ok: false, reason: string }}
+ */
+function commitEvaluatedSee(evaluated) {
+  if (!evaluated || evaluated.used || !graphObject(evaluated.graph) || !verified.has(evaluated.sealed)) {
+    return { ok: false, reason: 'not-kept' };
+  }
+  evaluated.used = true;
+  const grant = evaluated.sealed.grant;
+  const key = grantSoul(grant.owner, grant.object, grant.accessor);
+  const held = store(evaluated.graph);
+  const prev = held.rows.get(key) ?? null;
+  const kept = !prev || !verified.has(prev) || replaces(prev, evaluated.sealed);
+  if (kept) held.rows.set(key, evaluated.sealed);
+  const stored = held.rows.get(key) ?? evaluated.sealed;
+  return { ok: true, value: present(stored), kept, prev, wrote: kept ? evaluated.sealed : null };
+}
+
+/**
+ * Verify one see row and write it in this call.
+ * @param {object} graph
+ * @param {unknown} row
+ * @param {readonly unknown[]} rotations
+ * @param {ResolutionContext} ctx
+ * @returns {{ ok: true, value: SealedRow, kept: boolean } | { ok: false, reason: string }}
+ */
+function admitResolvedSee(graph, row, rotations, ctx) {
+  const evaluated = evaluateSee(graph, row, rotations, ctx);
+  if (!evaluated.ok) return evaluated;
+  const wrote = commitEvaluatedSee(evaluated);
+  if (!wrote.ok) return wrote;
+  return { ok: true, value: wrote.value, kept: wrote.kept };
+}
+
+/**
+ * Put the previous see row back when the post write does not finish.
+ * @param {object} graph
+ * @param {{ ok: true, wrote: SealedRow | null, prev: SealedRow | null } | { ok: false, reason: string } | null} seeWrote
+ */
+function rollbackSee(graph, seeWrote) {
+  if (!seeWrote || !seeWrote.ok || !seeWrote.wrote) return;
+  const held = store(graph);
+  const grant = seeWrote.wrote.grant;
+  const key = grantSoul(grant.owner, grant.object, grant.accessor);
+  if (held.rows.get(key) !== seeWrote.wrote) return;
+  if (seeWrote.prev) held.rows.set(key, seeWrote.prev);
+  else held.rows.delete(key);
+}
+
+/**
+ * Verify the see row and the post row, then write both.
+ * A null row is left as stored. A row that would not replace writes neither.
+ * History comes from the resolver. The context is copied once before either write.
+ * The caller passes no kept flag, soul key, ticket, or history array.
+ * @param {object} graph
+ * @param {unknown} seeRow
+ * @param {unknown} postRow
+ * @param {SeeResolver} resolver
+ * @returns {{ ok: true, see: unknown, post: unknown } | { ok: false, reason: string }}
+ */
+export function admitGrantPair(graph, seeRow, postRow, resolver) {
+  if (!resolverReady(resolver)) return { ok: false, reason: 'missing-history' };
+  const ctx = snapshotContext(resolver.ctx);
+  /** @type {Map<string, readonly unknown[] | undefined>} */
+  const cache = new Map();
+  const rotationsOf = (/** @type {PrincipalId} */ owner) => {
+    if (cache.has(owner)) return cache.get(owner);
+    const rows = resolver.rotations(owner);
+    cache.set(owner, rows);
+    return rows;
+  };
+  const stable = { rotations: rotationsOf, ctx };
+  const seeReady = seeRow == null ? null : openSee(seeRow, stable);
+  if (seeReady && !seeReady.ok) return seeReady;
+  const see = seeReady && seeReady.ok ? evaluateSee(graph, seeRow, seeReady.rotations, ctx) : null;
+  if (see && !see.ok) return { ok: false, reason: see.reason };
+  const post = postRow == null ? null : postKeeps(graph, postRow, stable);
+  if (post && !post.ok) return { ok: false, reason: post.reason };
+  if ((see && !see.kept) || (post && !post.kept)) return { ok: false, reason: 'not-kept' };
+  const seeWrote = see ? commitEvaluatedSee(see) : null;
+  if (seeWrote && !seeWrote.ok) return seeWrote;
+  if (seeWrote && !seeWrote.kept) {
+    rollbackSee(graph, seeWrote);
+    return { ok: false, reason: 'not-kept' };
+  }
+  try {
+    const postWrote = postRow == null ? null : admitResolvedPost(graph, postRow, stable);
+    if (postWrote && (!postWrote.ok || !postWrote.kept)) {
+      rollbackSee(graph, seeWrote);
+      if (postWrote && !postWrote.ok) return postWrote;
+      return { ok: false, reason: 'not-kept' };
+    }
+    return {
+      ok: true,
+      see: seeWrote ? seeWrote.value : null,
+      post: postWrote ? postWrote.value : null,
+    };
+  } catch (error) {
+    rollbackSee(graph, seeWrote);
+    throw error;
+  }
+}
+
+/**
+ * Parse a see row and resolve its owner once. A bare array is `missing-history`.
+ * @param {unknown} row
+ * @param {SeeResolver} resolver
+ * @returns {{ ok: true, rotations: readonly unknown[] } | { ok: false, reason: string }}
+ */
+function openSee(row, resolver) {
+  const parsed = parseSeeGrant(row);
+  if (!parsed.ok) return parsed;
+  const rotations = resolver.rotations(parsed.value.grant.owner);
+  if (!Array.isArray(rotations)) return { ok: false, reason: 'missing-history' };
+  return { ok: true, rotations };
 }
 
 /**
  * @param {object} graph
  * @param {unknown} row
  * @param {SeeResolver} resolver
- * @returns {import('../ids/src/types.js').Result<SealedRow> & { kept?: boolean }}
+ * @returns {{ ok: true, value: SealedRow, kept: boolean } | { ok: false, reason: string }}
  */
 export function admitRow(graph, row, resolver) {
-  if (!graphObject(graph) || !resolverReady(resolver)) return { ok: false, reason: 'missing-history' };
+  if (!resolverReady(resolver)) return { ok: false, reason: 'missing-history' };
   const parsed = parseSeeGrant(row);
   if (!parsed.ok) return parsed;
   const rotations = resolver.rotations(parsed.value.grant.owner);
   if (!Array.isArray(rotations)) return { ok: false, reason: 'missing-history' };
-  const verified = verifySeeGrant(parsed.value.grant, rotations, resolver.ctx);
-  if (!verified.ok) return verified;
-  const grant = verified.value.grant;
-  const key = grantSoul(grant.owner, grant.object, grant.accessor);
-  const held = store(graph);
-  const sealed = seal(verified.value, resolver.ctx);
-  const prev = held.rows.get(key);
-  const kept = !prev || replaces(prev, sealed);
-  if (kept) held.rows.set(key, sealed);
-  const stored = held.rows.get(key) ?? sealed;
-  return { ok: true, value: present(stored), kept };
+  return admitResolvedSee(graph, row, rotations, resolver.ctx);
 }
 
 /**
@@ -299,9 +477,12 @@ export function reverifyPrincipal(graph, principal, resolver) {
       if (row.grant.owner === who.value) held.rows.delete(key);
     }
     for (const [id, row] of [...held.owners]) {
-      if (row.owner === who.value) held.owners.delete(id);
+      if (row.owner === who.value) {
+        held.owners.delete(id);
+        unbindLabel(graph, id);
+      }
     }
-    reverifyPosts(graph, who.value, resolver);
+    reverifyPosts(graph, who.value, rotations, resolver.ctx);
     return { ok: false, reason: 'missing-history' };
   }
   let dropped = 0;
@@ -320,10 +501,11 @@ export function reverifyPrincipal(graph, principal, resolver) {
     const again = verifyObjectRecord(row.record, rotations, resolver.ctx);
     if (!again.ok) {
       held.owners.delete(id);
+      unbindLabel(graph, id);
       dropped += 1;
     }
   }
-  const posts = reverifyPosts(graph, who.value, resolver);
+  const posts = reverifyPosts(graph, who.value, rotations, resolver.ctx);
   if (!posts.ok) return posts;
   dropped += posts.value.dropped;
   return { ok: true, value: { dropped } };
@@ -343,7 +525,8 @@ export function admittedView(graph, object, accessor) {
   const owner = held.owners.get(id.value);
   if (!owner) return undefined;
   const row = held.rows.get(grantSoul(owner.owner, id.value, who.value));
-  if (!row) return undefined;
+  if (!row || !verified.has(row)) return undefined;
+  if (row.grant.owner !== owner.owner || row.grant.object !== id.value || row.grant.accessor !== who.value) return undefined;
   return {
     stated: row.grant.stated,
     hamState: row.grant.hamState,
@@ -353,6 +536,25 @@ export function admittedView(graph, object, accessor) {
     issuedAt: row.grant.issuedAt,
     attest: row.grant.attest !== undefined,
   };
+}
+
+/** The stored verified row, as a caller-facing copy. Absent when none is admitted.
+ * @param {object} graph
+ * @param {ObjectId} object
+ * @param {PrincipalId} accessor
+ */
+export function presentedSee(graph, object, accessor) {
+  if (!graphObject(graph)) return undefined;
+  const id = seeObjectEdge(object);
+  const who = seeAccessorEdge(accessor);
+  if (!id.ok || !who.ok) return undefined;
+  const held = store(graph);
+  const owner = held.owners.get(id.value);
+  if (!owner) return undefined;
+  const row = held.rows.get(grantSoul(owner.owner, id.value, who.value));
+  if (!row || !verified.has(row)) return undefined;
+  if (row.grant.owner !== owner.owner || row.grant.object !== id.value || row.grant.accessor !== who.value) return undefined;
+  return present(row);
 }
 
 /** @param {object} graph @param {ObjectId} object */
@@ -389,7 +591,11 @@ export function checkSee(graph, object, accessor, now, hint, hop) {
   if (!admission) return { allowed: false, reason: 'unknown' };
   if (admission.owner === who.value) return { allowed: true, reason: 'owner' };
   const row = store(graph).rows.get(grantSoul(admission.owner, id.value, who.value));
-  if (row && row.grant.stated === 1 && now >= row.grant.from && now < row.grant.until) {
+  const signedToQuery = !!row
+    && row.grant.owner === admission.owner
+    && row.grant.object === id.value
+    && row.grant.accessor === who.value;
+  if (row && verified.has(row) && signedToQuery && row.grant.stated === 1 && now >= row.grant.from && now < row.grant.until) {
     return { allowed: true, reason: 'delegate' };
   }
   return { allowed: false, reason: 'delegate' };
@@ -401,7 +607,22 @@ export function checkSee(graph, object, accessor, now, hint, hop) {
  * @param {{ ctx: ResolutionContext, rotations: (name: string) => readonly unknown[] }} options
  */
 export function runSeeCase(steps, options) {
-  const graph = {};
+  /** @type {Map<string, string>} */
+  const labels = new Map();
+  const graph = {
+    /** @param {string} object @param {string} owner */
+    bindSignedOwner(object, owner) {
+      labels.set(object, owner);
+    },
+    /** @param {string} object */
+    unbindSignedOwner(object) {
+      labels.delete(object);
+    },
+    /** @param {string} object */
+    ownerOf(object) {
+      return labels.get(object);
+    },
+  };
   const resolverFor = (/** @type {Record<string, any>} */ step) => ({
     rotations: () => (step.history === 'unavailable' ? undefined : options.rotations(step.rotations)),
     ctx: step.revocations ? { ...options.ctx, revocations: step.revocations } : options.ctx,
@@ -436,7 +657,7 @@ export function runSeeCase(steps, options) {
         if (got.ok || got.reason !== step.reason) failStep(step, got.ok ? 'ok' : got.reason);
         continue;
       }
-      if (!got.ok || got.kept !== step.kept) failStep(step, got.ok ? got.kept : got.reason);
+      if (!got.ok || got.value === undefined || got.kept !== step.kept) failStep(step, got.ok ? got.kept : got.reason);
       if (step.mode !== undefined && got.value.mode !== step.mode) failStep(step, got.value.mode);
       if (step.stated !== undefined && got.value.grant.stated !== step.stated) failStep(step, got.value.grant.stated);
       if (step.hamState !== undefined && got.value.grant.hamState !== step.hamState) failStep(step, got.value.grant.hamState);
@@ -475,6 +696,15 @@ export function runSeeCase(steps, options) {
       if (step.attest !== undefined && got.attest !== step.attest) failStep(step, got);
       continue;
     }
+    if (step.op === 'label') {
+      const got = graph.ownerOf(step.object);
+      if (step.absent) {
+        if (got !== undefined) failStep(step, got);
+        continue;
+      }
+      if (got !== step.owner) failStep(step, got);
+      continue;
+    }
     if (step.op === 'check') {
       const got = checkSee(graph, step.object, step.accessor, step.now, step.hint ? { principal: step.accessor } : undefined, step.hop ? { channel: 'convention-badge' } : undefined);
       if (got.allowed !== step.allowed || got.reason !== step.reason) failStep(step, got);
@@ -500,3 +730,4 @@ function patchRow(row, patch) {
 function failStep(step, got) {
   throw Error(JSON.stringify({ step, got }));
 }
+

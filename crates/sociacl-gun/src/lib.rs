@@ -38,7 +38,6 @@ mod leaf;
 mod legacy;
 mod mesh;
 mod post;
-mod post_label;
 mod request;
 mod soul;
 
@@ -67,13 +66,7 @@ pub use mesh::{
     MESH_REASON_OWNER, MESH_REASON_URL_LEAF,
 };
 pub use post::MESH_REASON_POST;
-pub use request::{
-    accept_access_request, access_request_id, access_request_signing_bytes,
-    canonical_request_accessor, canonical_request_object, sign_access_request,
-    AcceptedAccessRequest, AccessRequest, MembersAutoApprove, OwnerGrantRows, ACCESS_MESSAGE_MAX,
-    ACCESS_REQUEST_DOMAIN, ACCESS_REQUEST_ID_DOMAIN, ACCESS_SCOPE_READ, ACCESS_SCOPE_READ_POST,
-    ACCESS_STATUS_PENDING, ACCESS_STATUS_WITHDRAWN,
-};
+pub use request::{request_owner, ApprovedRequest};
 pub use soul::{
     GunNode, GunNodeKind, GunSoul, S3RCH_ACL, S3RCH_ITEMS, S3RCH_META, S3RCH_ROOT, S3RCH_USERS,
 };
@@ -84,8 +77,6 @@ pub use soul::{
 /// post/room id. Mapped onto Check `read`. Hop is an optional factor.
 pub const SEE: &str = "see";
 
-#[cfg(test)]
-mod access_request_tests;
 #[cfg(test)]
 mod group_label_tests;
 #[cfg(test)]

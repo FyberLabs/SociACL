@@ -52,6 +52,22 @@ fn rotations_of(ctx: &Value, step: &Value) -> Option<Vec<Value>> {
     )
 }
 
+fn scalar_of(n: u64) -> [u8; 32] {
+    let mut bytes = [0u8; 32];
+    bytes[31] = u8::try_from(n).unwrap_or(0);
+    bytes
+}
+
+fn ed25519(name: &str) -> IssuerSecret {
+    let mut bytes = [0u8; 32];
+    for (i, b) in name.as_bytes().iter().enumerate() {
+        bytes[i % 32] ^= b.wrapping_add((i as u8).wrapping_mul(17));
+    }
+    bytes[0] ^= name.len() as u8;
+    bytes[31] |= 1;
+    IssuerSecret::from_bytes(bytes)
+}
+
 fn patch_row(row: &Value, step: &Value) -> Value {
     let Some(patch) = step.get("patch").and_then(Value::as_object) else {
         return row.clone();
@@ -105,6 +121,8 @@ fn run_case(file: &Value, case: &Value) -> MeshSeeGraph {
         Ok(history_state(principal, &[], at, until))
     };
     let mut graph = MeshSeeGraph::new();
+    let mut last_see: Option<Vec<u8>> = None;
+    let mut last_post: Option<Vec<u8>> = None;
     for step in case["steps"].as_array().unwrap() {
         let name = case["name"].as_str().unwrap();
         let op = step["op"].as_str().unwrap();
@@ -113,11 +131,12 @@ fn run_case(file: &Value, case: &Value) -> MeshSeeGraph {
             .and_then(Value::as_array)
             .cloned()
             .unwrap_or_else(|| file_revocations.clone());
+        let step_now = step.get("now").and_then(Value::as_u64).unwrap_or(now);
         let rc = ResolutionContext {
             jwks: &jwks,
             links: &links,
             revocations: &step_revocations,
-            now,
+            now: step_now,
             policy: &policy,
             pinned_iss: &pinned,
             history: &history,
@@ -350,6 +369,153 @@ fn run_case(file: &Value, case: &Value) -> MeshSeeGraph {
                 );
                 assert_eq!(got.allowed, step["allowed"] == true, "{name}");
                 assert_eq!(got.reason, step["reason"].as_str().unwrap(), "{name}");
+            }
+            "request-id" => {
+                let got = match (
+                    step.get("requester").and_then(Value::as_str),
+                    step.get("object").and_then(Value::as_str),
+                ) {
+                    (Some(requester), Some(object)) => {
+                        sociacl_ids::request_id(requester, object).map_err(reason_name)
+                    }
+                    _ => Err("not-string".to_string()),
+                };
+                if let Some(id) = step.get("id").and_then(Value::as_str) {
+                    assert_eq!(got.expect(name), id, "{name}");
+                } else {
+                    assert_eq!(
+                        got.expect_err(name),
+                        step["reason"].as_str().unwrap(),
+                        "{name}"
+                    );
+                }
+            }
+            "join" => {
+                let owner = step["owner"].as_str().unwrap();
+                let member = step["member"].as_str().unwrap();
+                let set_owner = step["setOwner"].as_str().unwrap();
+                let set_id = step["setId"].as_str().unwrap();
+                let object = step["object"].as_str().unwrap();
+                let predicate = match step["predicate"].as_str().unwrap() {
+                    "named-circle" => GroupPredicate::NamedCircle,
+                    _ => GroupPredicate::SameGroup,
+                };
+                let owner_key = ed25519(owner);
+                let member_key = ed25519(member);
+                let set_key = ed25519(set_owner);
+                graph
+                    .enroll_signer(owner, owner_key.verify_key())
+                    .expect(name);
+                graph
+                    .enroll_signer(member, member_key.verify_key())
+                    .expect(name);
+                graph
+                    .enroll_signer(set_owner, set_key.verify_key())
+                    .expect(name);
+                graph
+                    .record_set_owner(set_owner, predicate, set_id)
+                    .expect(name);
+                graph
+                    .state_membership(member, predicate, set_id, member, &member_key)
+                    .expect(name);
+                graph
+                    .state_membership(set_owner, predicate, set_id, member, &set_key)
+                    .expect(name);
+                graph
+                    .name_object_set(owner, object, predicate, set_id, &owner_key)
+                    .expect(name);
+            }
+            "label-owner" => {
+                graph.vector_label_owner(
+                    step["object"].as_str().unwrap(),
+                    step["owner"].as_str().unwrap(),
+                );
+            }
+            "grant" => {
+                let rotations = rotations_of(ctx, step);
+                let scalar = scalar_of(step["signer"].as_u64().unwrap_or(1));
+                let members = step
+                    .get("members")
+                    .filter(|value| !value.is_null())
+                    .map(|members| {
+                        let predicate = match members["predicate"].as_str().unwrap() {
+                            "named-circle" => GroupPredicate::NamedCircle,
+                            _ => GroupPredicate::SameGroup,
+                        };
+                        (predicate, members["now"].as_u64().unwrap())
+                    });
+                let from = step["window"]["from"].as_u64().unwrap_or(0);
+                let until = step["window"]["until"].as_u64().unwrap_or(0);
+                let got = match sociacl_gun::request_owner(&step["owner"]) {
+                    Ok(owner) => graph.grant_approved_request(
+                        &owner,
+                        &step["request"],
+                        from,
+                        until,
+                        members,
+                        &scalar,
+                        &resolver_for(rotations),
+                        &rc,
+                    ),
+                    Err(reason) => Err(reason),
+                };
+                if step["granted"] == true {
+                    let row = got.unwrap_or_else(|reason| panic!("{name} {reason}"));
+                    if let Some(id) = step.get("requestId").and_then(Value::as_str) {
+                        assert_eq!(row.request_id, id, "{name}");
+                    }
+                    if let Some(ham) = step.get("hamState").and_then(Value::as_u64) {
+                        assert_eq!(row.see.ham_state, ham, "{name}");
+                    }
+                    if step["post"] == false {
+                        assert!(row.post.is_none(), "{name}");
+                    }
+                    if step["post"] == true {
+                        let post = row.post.as_ref().expect(name);
+                        assert_eq!(post.ham_state, step["postHam"].as_u64().unwrap(), "{name}");
+                    }
+                    if step.get("unchanged") == Some(&Value::Bool(true)) {
+                        assert!(row.unchanged, "{name}");
+                        assert_eq!(row.see.bytes, last_see.clone().expect(name), "{name}");
+                        assert_eq!(
+                            row.post.as_ref().map(|post| post.bytes.clone()),
+                            last_post,
+                            "{name}"
+                        );
+                    } else {
+                        assert!(!row.unchanged, "{name}");
+                    }
+                    if step.get("seeBytesSame") == Some(&Value::Bool(true)) {
+                        assert_eq!(row.see.bytes, last_see.clone().expect(name), "{name}");
+                    }
+                    if step.get("bytesDiffer") == Some(&Value::Bool(true)) {
+                        assert_ne!(row.see.bytes, last_see.clone().expect(name), "{name}");
+                    }
+                    last_see = Some(row.see.bytes.clone());
+                    last_post = row.post.as_ref().map(|post| post.bytes.clone());
+                } else {
+                    assert_eq!(
+                        reason_name(got.expect_err(name)),
+                        step["reason"].as_str().unwrap(),
+                        "{name}"
+                    );
+                }
+            }
+            "label" => {
+                let object = step["object"].as_str().unwrap();
+                let got = graph.vector_label_owner_of(object);
+                if step["absent"] == true {
+                    assert!(got.is_none(), "{name}");
+                } else {
+                    assert_eq!(got, Some(step["owner"].as_str().unwrap()), "{name}");
+                }
+            }
+            "factor" => {
+                assert_eq!(
+                    sociacl_gun::factor_grants(step["kind"].as_str().unwrap()),
+                    step["grants"] == true,
+                    "{name}"
+                );
             }
             other => panic!("{name} unknown {other}"),
         }

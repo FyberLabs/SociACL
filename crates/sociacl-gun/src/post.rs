@@ -24,6 +24,7 @@ pub const MESH_REASON_POST: &str = "post";
 /// Admitted post row. The private fields stay on the graph.
 #[derive(Clone, Debug)]
 pub(crate) struct AdmittedPost {
+    pub(crate) key: PrincipalId,
     pub(crate) mode: SignedAtMode,
     pub(crate) stated: u8,
     pub(crate) ham_state: u64,
@@ -66,6 +67,7 @@ fn admitted_from(
     ctx: &ResolutionContext<'_>,
 ) -> AdmittedPost {
     AdmittedPost {
+        key: verified.key.clone(),
         mode: verified.mode,
         stated: verified.grant.stated,
         ham_state: verified.grant.ham_state,
@@ -81,6 +83,7 @@ fn admitted_from(
 fn view_post(row: &AdmittedPost, grant: &SeeGrant) -> VerifiedRow {
     VerifiedRow {
         mode: row.mode,
+        key: row.key.clone(),
         stated: row.stated,
         ham_state: row.ham_state,
         from: row.from,
@@ -90,6 +93,7 @@ fn view_post(row: &AdmittedPost, grant: &SeeGrant) -> VerifiedRow {
         object: grant.object.clone(),
         accessor: grant.accessor.clone(),
         attest: row.source.get("attest").and_then(Value::as_str).is_some(),
+        bytes: row.bytes.clone(),
         seal: (),
     }
 }
@@ -183,6 +187,33 @@ impl MeshSeeGraph {
         let stored = self.post_rows.get(&key).expect("admitted post");
         let (stored_grant, _) = sociacl_ids::parse_post_grant(&stored.source)?;
         Ok((view_post(stored, &stored_grant), kept))
+    }
+
+    /// Verify a post row against history the caller already resolved. Does not write.
+    pub(crate) fn prepare_post(
+        &self,
+        row: &Value,
+        rotations: &[Value],
+        ctx: &ResolutionContext<'_>,
+    ) -> Result<(String, AdmittedPost, VerifiedRow, bool), Reason> {
+        let (grant, _) = sociacl_ids::parse_post_grant(row)?;
+        let verified = verify_post_grant(&snapshot_post(&grant), rotations, ctx)?;
+        let Some(owner) = self.object_owner(&verified.grant.object).cloned() else {
+            return Err(Reason::Unknown);
+        };
+        if owner != verified.grant.owner {
+            return Err(Reason::BadRecord);
+        }
+        let key =
+            id_post_soul(&owner, &verified.grant.object, &verified.grant.accessor).to_string();
+        let source = snapshot_post(&verified.grant);
+        let next = admitted_from(&verified, &source, ctx);
+        let kept = match self.post_rows.get(&key) {
+            Some(prev) => replaces(prev, &next),
+            None => true,
+        };
+        let view = view_post(&next, &verified.grant);
+        Ok((key, next, view, kept))
     }
 
     /// The admitted post row for this object and accessor, under the admitted owner.

@@ -1,563 +1,247 @@
 /**
- * Signed access-request encoding and the owner-client approval helper.
- * A request is an untrusted hint. Accepting one does not write a grant.
- * grantApprovedRequest runs on the owner's client. Members auto-approve
- * calls checkGroupSee on that client. There is no hosted evaluator.
- * Explicit deny and the policy queue are not this module.
- * The requester signs the request. The owner's client verifies that
- * signature against the enrolled key before any write. Grant rows
- * stay unsigned. A hop, a hint, a wrap, a request, or an inbox
- * delivery never grants. Hopcap stays 1.
- *
- * @typedef {{
- *   requester: string,
- *   source: string,
- *   scope: string,
- *   message: string,
- *   status: string,
- *   signature?: Uint8Array,
- * }} AccessRequestInput
- * @typedef {{
- *   requester: string,
- *   source: string,
- *   scope: "read" | "read+post",
- *   message: string,
- *   status: "pending" | "withdrawn",
- *   id: string,
- *   signingBytes: Uint8Array,
- * }} AcceptedAccessRequest
- * @typedef {{ predicate: "same-group" | "named-circle", now: number }} MembersAutoApprove
- * @typedef {{
- *   objectRecord(source: string): { id: string, owner: string } | undefined,
- *   stateSeeGrant(owner: string, grant: { object: string, accessor: string, from: number, until: number }): void,
- *   seeGrant(object: string, accessor: string): { soul?: string, owner?: string, hamState?: number, grant?: { object?: string, accessor?: string, from?: number, until?: number, stated?: number } } | undefined,
- *   postGrant(object: string, accessor: string): { soul?: string, owner?: string, hamState?: number, grant?: { object?: string, accessor?: string, from?: number, until?: number, stated?: number } } | undefined,
- *   enrolledKey(principal: string): Uint8Array | undefined,
- *   checkGroupSee?: (predicate: string, object: string, accessor: string, now: number) => { allowed: boolean, reason: string },
- * }} RequestGraph
- * @typedef {{
- *   granted: true,
- *   requestId: string,
- *   requestSigningBytes: Uint8Array,
- *   see: NonNullable<ReturnType<RequestGraph["seeGrant"]>>,
- *   post: NonNullable<ReturnType<RequestGraph["postGrant"]>> | null,
- *   postSigningBytes: Uint8Array | null,
- * } | {
- *   granted: false,
- *   reason: "withdrawn" | "owner" | "missing" | "not-member" | "signature",
- * }} AccessApproval
+ * Access requests are hints. Approving one writes owner-signed v2 see
+ * and post rows, and only after both rows have been checked.
+ * A hop, a hint, a wrap, a request, or an inbox delivery never grants.
+ * @typedef {import('../ids/src/types.js').ObjectId} ObjectId
+ * @typedef {import('../ids/src/types.js').PrincipalId} PrincipalId
+ * @typedef {import('../ids/src/types.js').SeeGrant} SeeGrant
+ * @typedef {import('./see.js').SeeResolver} SeeResolver
+ * @typedef {{ scalar: Uint8Array, resolver: SeeResolver }} RequestSigner
+ * @typedef {{ predicate: 'same-group' | 'named-circle', now: number }} RequestMembers
+ * @typedef {{ granted: true, requestId: string, see: unknown, post: unknown, unchanged?: true }} GrantedRequest
+ * @typedef {{ granted: false, reason: string }} DeniedRequest
  */
 
-import { createHash, createPrivateKey, createPublicKey, sign, verify } from "node:crypto";
-import { canonicalAccessorId, hasLabelPostWriter, nextPostHam, postGrantSigningBytes, stateLabelPost } from "./legacy/post-label.js";
+import {
+  accessRequestBytes,
+  parseAccessRequest,
+  parsePrincipalId,
+  postGrantBytes,
+  REQUEST_DOMAIN,
+  REQUEST_ID_DOMAIN,
+  requestId,
+  resolveCurrentKey,
+  seeGrantBytes,
+  signWithKeyring,
+  verifyAccessRequest,
+  verifyPostGrant,
+  verifySeeGrant,
+  verifySignedAt,
+} from '../ids/src/index.js';
+import { integer } from '../ids/src/util.js';
+import { presentedPost } from './post.js';
+import { admitGrantPair, admittedOwner, presentedSee, snapshotContext } from './see.js';
 
-const PKCS8_PREFIX = Uint8Array.from([
-  0x30, 0x2e, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x04, 0x22, 0x04, 0x20,
-]);
-const SPKI_PREFIX = Uint8Array.from([
-  0x30, 0x2a, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x03, 0x21, 0x00,
-]);
+export {
+  REQUEST_DOMAIN,
+  REQUEST_ID_DOMAIN,
+  accessRequestBytes,
+  parseAccessRequest,
+  requestId,
+  verifyAccessRequest,
+};
 
-export const ACCESS_REQUEST_DOMAIN = "s3rch-access-request-v1";
-export const ACCESS_REQUEST_ID_DOMAIN = "s3rch-request";
-export const ACCESS_SCOPE_READ = "read";
-export const ACCESS_SCOPE_READ_POST = "read+post";
-export const ACCESS_STATUS_PENDING = "pending";
-export const ACCESS_STATUS_WITHDRAWN = "withdrawn";
-export const ACCESS_MESSAGE_MAX = 280;
+const HAM_MAX = Number.MAX_SAFE_INTEGER;
 
-const FIELD = "access request field is not canonical";
-const HELD_CLAIM_PREFIXES = ["ens:", "unstoppable:", "fc:", "lens:", "rss3:"];
-
-/**
- * Same injective escape as post.js. `/` is escaped only by aclKey.
- * @param {string} id
- * @param {boolean} slash
- */
-function escapeKey(id, slash) {
-  return String(id).replace(slash ? /[~.#$[\]/]/g : /[~.#$[\]]/g, (ch) => {
-    switch (ch) {
-      case "~":
-        return "~0";
-      case ".":
-        return "~1";
-      case "#":
-        return "~2";
-      case "$":
-        return "~3";
-      case "[":
-        return "~4";
-      case "]":
-        return "~5";
-      case "/":
-        return "~6";
-      default:
-        return ch;
-    }
-  });
+/** @param {string} reason @returns {DeniedRequest} */
+function deny(reason) {
+  return { granted: false, reason };
 }
 
-/** @param {string} id */
-function encodeKey(id) {
-  return escapeKey(id, false);
-}
-
-/** @param {string} id */
-function aclKey(id) {
-  return escapeKey(String(id).trim(), true);
-}
-
-/** @param {string} id */
-function isItemShaped(id) {
-  const parts = String(id).trim().split("/");
-  return parts.length === 3 && parts[0] === "s3rch" && parts[1] === "items" && parts[2] !== "";
-}
-
-/** @param {string} id */
-function mayAliasToItemSoul(id) {
-  const text = String(id).trim();
-  if (isItemShaped(text)) return true;
-  if (!text.includes("/") && HELD_CLAIM_PREFIXES.some((prefix) => text.startsWith(prefix))) return false;
-  return true;
-}
-
-/** @param {string} id */
-function closedSource(id) {
-  const text = String(id).trim();
-  if (isHttpUrlLeaf(text)) return true;
-  if (text === "meta" || text === "s3rch/meta" || isMetaSoul(text)) return true;
-  if (text === "acl" || text.startsWith("s3rch/acl") || isAclSoul(text)) return true;
-  return false;
-}
-
-/** @param {string} text */
-function isMetaSoul(text) {
-  const segments = soulSegments(text);
-  return segments != null && segments.length === 2 && segments[0] === "s3rch" && segments[1] === "meta";
-}
-
-/** @param {string} text */
-function isAclSoul(text) {
-  const segments = soulSegments(text);
-  return segments != null && segments.length >= 2 && segments[0] === "s3rch" && segments[1] === "acl";
-}
-
-/**
- * Slash souls trim each segment and drop empty ones.
- * A string containing `.get(` is not a soul.
- * @param {string} text
- * @returns {string[] | null}
- */
-function soulSegments(text) {
-  if (text.includes(".get(")) return null;
-  const segments = text
-    .split("/")
-    .map((part) => part.trim())
-    .filter((part) => part !== "");
-  return segments.length === 0 ? null : segments;
-}
-
-/** Same HTTP(S) leaf predicate as the Rust encoder. The scheme is folded first. `ipfs://` is not one. @param {string} id */
-function isHttpUrlLeaf(id) {
-  const hash = id.indexOf("#");
-  const body = hash === -1 ? id : id.slice(0, hash);
-  const mark = body.indexOf("://");
-  if (mark < 0) return false;
-  const scheme = body.slice(0, mark).toLowerCase();
-  if (scheme !== "http" && scheme !== "https") return false;
-  const rest = body.slice(mark + 3);
-  if (!rest) return false;
-  const slash = rest.indexOf("/");
-  const hostport = slash === -1 ? rest : rest.slice(0, slash);
-  return hostport.length > 0;
-}
-
-/**
- * Canonical accessor id from the see/post path. Empty is rejected.
- * The raw string must be Unicode scalar values. U+0085 and U+FEFF are
- * rejected so this trim matches Rust.
- * @param {string} requester
- */
-export function canonicalRequestAccessor(requester) {
-  if (typeof requester !== "string" || requester.includes(".get(")) throw new Error(FIELD);
-  const raw = requester;
-  requireUnicodeScalars(raw);
-  rejectTrimMismatch(raw);
-  const id = canonicalAccessorId(raw);
-  if (!id) throw new Error(FIELD);
-  return id;
-}
-
-/**
- * Object key for a request id. aclKey, with an aliasable item soul
- * reduced to the raw id's aclKey. An underscore in that raw id stays.
- * A held claim does not alias. The raw string must be Unicode scalar
- * values. U+0085 and U+FEFF are rejected so this trim matches Rust.
- * @param {string} source
- */
-export function canonicalRequestObject(source) {
-  if (typeof source !== "string" || source.includes(".get(")) throw new Error(FIELD);
-  const raw = source;
-  requireUnicodeScalars(raw);
-  rejectTrimMismatch(raw);
-  const id = raw.trim();
-  if (!id || closedSource(id)) throw new Error(FIELD);
-  const inner = reducibleItemInner(id);
-  if (inner) {
-    const key = aclKey(inner);
-    if (!key) throw new Error(FIELD);
-    return key;
-  }
-  const key = aclKey(id);
-  if (!key) throw new Error(FIELD);
-  return key;
-}
-
-/**
- * Reverse of encodeKey. A bad escape is not an item id.
- * @param {string} encoded
- * @returns {string | null}
- */
-function unescapeEncodeKey(encoded) {
-  let out = "";
-  for (let i = 0; i < encoded.length; i += 1) {
-    if (encoded[i] !== "~") {
-      out += encoded[i];
-      continue;
-    }
-    const decoded = { 0: "~", 1: ".", 2: "#", 3: "$", 4: "[", 5: "]", 6: "/" }[encoded[i + 1]];
-    if (decoded == null) return null;
-    out += decoded;
-    i += 1;
-  }
-  return out;
-}
-
-/**
- * Item soul whose reconstructed form equals the trimmed source.
- * The inner segment is encodeKey(raw), decoded once before aclKey.
- * A spaced segment such as `s3rch/items/ foo` is not the raw id `foo`.
- * `s3rch/items/a_b` is the item soul of `a_b` and shares that request
- * key. It is not the request key of `a/b`.
- * @param {string} id
- * @returns {string | null}
- */
-function reducibleItemInner(id) {
-  const segments = soulSegments(id);
-  if (!segments || segments.length !== 3 || segments[0] !== "s3rch" || segments[1] !== "items") return null;
-  const encoded = segments[2] ?? "";
-  if (!encoded || encoded.includes("/")) return null;
-  const raw = unescapeEncodeKey(encoded);
-  if (raw == null || !raw || raw.includes("/")) return null;
-  if (encodeKey(raw) !== encoded) return null;
-  if (!mayAliasToItemSoul(raw) || isItemShaped(raw)) return null;
-  const soul = `s3rch/items/${encodeKey(raw)}`;
-  if (soul !== id.trim()) return null;
-  return raw;
-}
-
-/** Unpaired UTF-16 is not a Unicode scalar value. @param {string} text */
-function requireUnicodeScalars(text) {
-  for (let i = 0; i < text.length; i += 1) {
-    const unit = text.charCodeAt(i);
-    if (unit >= 0xd800 && unit <= 0xdbff) {
-      const next = text.charCodeAt(i + 1);
-      if (!(next >= 0xdc00 && next <= 0xdfff)) throw new Error(FIELD);
-      i += 1;
-      continue;
-    }
-    if (unit >= 0xdc00 && unit <= 0xdfff) throw new Error(FIELD);
-  }
-}
-
-/**
- * Rust `trim` strips U+0085 and keeps U+FEFF. JavaScript `trim` does
- * the opposite. Either character in a requester or source is rejected.
- * @param {string} text
- */
-function rejectTrimMismatch(text) {
-  for (let i = 0; i < text.length; i += 1) {
-    const unit = text.charCodeAt(i);
-    if (unit === 0x0085 || unit === 0xfeff) throw new Error(FIELD);
-  }
-}
-
-/** @param {Uint8Array} bytes */
-function sha256Hex(bytes) {
-  const digest = createHash("sha256").update(bytes).digest();
-  let hex = "";
-  for (const byte of digest) hex += byte.toString(16).padStart(2, "0");
-  return hex;
-}
-
-/** @param {readonly string[]} fields */
-function lengthPrefixed(fields) {
-  /** @type {Uint8Array[]} */
-  const parts = [];
-  const encoder = new TextEncoder();
-  for (const field of fields) {
-    const bytes = encoder.encode(field);
-    const len = new Uint8Array(4);
-    new DataView(len.buffer).setUint32(0, bytes.length, true);
-    parts.push(len, bytes);
-  }
-  const size = parts.reduce((sum, part) => sum + part.length, 0);
-  const out = new Uint8Array(size);
-  let offset = 0;
-  for (const part of parts) {
-    out.set(part, offset);
-    offset += part.length;
-  }
-  return out;
-}
-
-/**
- * SHA-256 lowercase hex. Scope, message, and status are not inputs.
- * @param {string} requester
- * @param {string} source
- * @returns {string}
- */
-export function accessRequestId(requester, source) {
-  const bytes = lengthPrefixed([
-    ACCESS_REQUEST_ID_DOMAIN,
-    canonicalRequestAccessor(requester),
-    canonicalRequestObject(source),
-  ]);
-  return sha256Hex(bytes);
-}
-
-/** @param {string} scope */
-function canonicalScope(scope) {
-  if (scope !== ACCESS_SCOPE_READ && scope !== ACCESS_SCOPE_READ_POST) throw new Error(FIELD);
-  return scope;
-}
-
-/** @param {string} status */
-function canonicalStatus(status) {
-  if (status !== ACCESS_STATUS_PENDING && status !== ACCESS_STATUS_WITHDRAWN) throw new Error(FIELD);
-  return status;
-}
-
-/** @param {string} message */
-function canonicalMessage(message) {
-  if (typeof message !== "string") throw new Error(FIELD);
-  requireUnicodeScalars(message);
-  if (Array.from(message).length > ACCESS_MESSAGE_MAX) throw new Error(FIELD);
-  return message;
-}
-
-/** @param {Uint8Array} raw */
-function publicKeyFromRaw(raw) {
-  const bytes = new Uint8Array(raw);
-  const spki = new Uint8Array(SPKI_PREFIX.length + bytes.length);
-  spki.set(SPKI_PREFIX, 0);
-  spki.set(bytes, SPKI_PREFIX.length);
-  return createPublicKey({ key: spki, format: "der", type: "spki" });
-}
-
-/**
- * Ed25519 signature over accessRequestSigningBytes. Does not grant.
- * @param {import("node:crypto").KeyObject} privateKey
- * @param {AccessRequestInput} request
- */
-export function signAccessRequest(privateKey, request) {
-  return new Uint8Array(sign(null, accessRequestSigningBytes(request), privateKey));
-}
-
-/**
- * @param {Uint8Array | undefined} publicKey
- * @param {Uint8Array} signingBytes
- * @param {Uint8Array | undefined} signature
- */
-function requestSignatureOk(publicKey, signingBytes, signature) {
-  if (!publicKey || publicKey.length !== 32 || !(signature instanceof Uint8Array) || signature.length !== 64) {
-    return false;
-  }
-  try {
-    return verify(null, signingBytes, publicKeyFromRaw(publicKey), signature);
-  } catch {
-    return false;
-  }
-}
-
-/** @param {Uint8Array} seed */
-export function requestIssuerFromSeed(seed) {
-  const seedBytes = new Uint8Array(seed);
-  const pkcs8 = new Uint8Array(PKCS8_PREFIX.length + seedBytes.length);
-  pkcs8.set(PKCS8_PREFIX, 0);
-  pkcs8.set(seedBytes, PKCS8_PREFIX.length);
-  const privateKey = createPrivateKey({ key: pkcs8, format: "der", type: "pkcs8" });
-  const spki = new Uint8Array(createPublicKey(privateKey).export({ type: "spki", format: "der" }));
-  return { privateKey, publicKey: spki.slice(spki.length - 32) };
-}
-
-/**
- * Length-prefixed bytes a later signature can cover. Does not grant.
- * @param {AccessRequestInput} request
- */
-export function accessRequestSigningBytes(request) {
-  const captured = captureRequest(request);
-  const id = accessRequestId(captured.requester, captured.source);
-  return lengthPrefixed([
-    ACCESS_REQUEST_DOMAIN,
-    id,
-    canonicalScope(captured.scope),
-    canonicalMessage(captured.message),
-    canonicalStatus(captured.status),
-  ]);
-}
-
-/**
- * Canonicalize a request. Does not read a graph and does not grant.
- * @param {AccessRequestInput} request
- * @returns {AcceptedAccessRequest}
- */
-export function acceptAccessRequest(request) {
-  const captured = captureRequest(request);
-  const requester = canonicalRequestAccessor(captured.requester);
-  const source = canonicalRequestObject(captured.source);
-  const scope = canonicalScope(captured.scope);
-  const status = canonicalStatus(captured.status);
-  const message = canonicalMessage(captured.message);
-  const signingBytes = accessRequestSigningBytes(captured);
-  const id = accessRequestId(captured.requester, captured.source);
-  return { requester, source, scope, message, status, id, signingBytes };
-}
-
-/** @param {unknown} value */
-function snapshotString(value) {
-  if (typeof value !== "string") throw new Error(FIELD);
-  return value;
-}
-
-/**
- * One plain string copy of the request fields. A non-string is rejected,
- * so a stateful toString cannot change the source after signing.
- * @param {AccessRequestInput} request
- * @returns {AccessRequestInput}
- */
-function captureRequest(request) {
-  const signature = request?.signature;
-  return {
-    requester: snapshotString(request?.requester),
-    source: snapshotString(request?.source),
-    scope: snapshotString(request?.scope),
-    message: snapshotString(request?.message),
-    status: snapshotString(request?.status),
-    signature: signature instanceof Uint8Array ? Uint8Array.from(signature) : signature,
-  };
-}
-
-/** @param {{ hamState?: number } | undefined} edge */
-function seeCanAdvance(edge) {
-  if (!edge) return true;
-  const ham = edge.hamState ?? 0;
-  if (typeof ham !== "number" || !Number.isFinite(ham) || ham < 0) return false;
-  const next = ham + 1;
-  return next > ham && Number.isSafeInteger(next);
-}
-
-/**
- * @param {{ from: number, until: number }} window
- */
-function canonicalWindow(window) {
-  const from = window?.from;
-  const until = window?.until;
-  return Number.isSafeInteger(from) && Number.isSafeInteger(until) && from >= 0 && until >= 0 && from < until;
-}
-
-/**
- * Owner's client. Writes see, and post for read+post.
- * members runs checkGroupSee and writes only when that allows.
- * @param {RequestGraph} graph
+/** Stored live row with the same owner, object, accessor, and window.
+ * @param {unknown} row
  * @param {string} owner
- * @param {AccessRequestInput} request
- * @param {{ from: number, until: number }} window
- * @param {MembersAutoApprove | null | undefined} members
- * @returns {AccessApproval}
+ * @param {string} object
+ * @param {string} accessor
+ * @param {{ from?: unknown, until?: unknown }} window
  */
-export function grantApprovedRequest(graph, owner, request, window, members) {
-  const captured = captureRequest(request);
-  const accepted = acceptAccessRequest(captured);
-  const key = typeof graph.enrolledKey === "function" ? graph.enrolledKey(accepted.requester) : undefined;
-  if (!requestSignatureOk(key, accepted.signingBytes, captured.signature)) return { granted: false, reason: "signature" };
-  if (accepted.status !== ACCESS_STATUS_PENDING) return { granted: false, reason: "withdrawn" };
-  if (!canonicalWindow(window)) throw new Error(FIELD);
-  const record = typeof graph.objectRecord === "function" ? graph.objectRecord(captured.source) : undefined;
-  if (!record?.id || record.owner == null || record.owner === "") return { granted: false, reason: "missing" };
-  if (canonicalRequestAccessor(record.owner) !== canonicalRequestAccessor(owner)) {
-    return { granted: false, reason: "owner" };
+function sameLive(row, owner, object, accessor, window) {
+  if (!row || typeof row !== 'object' || !('grant' in row)) return false;
+  const grant = /** @type {{ grant?: { owner?: string, object?: string, accessor?: string, stated?: number, from?: number, until?: number } }} */ (row).grant;
+  return !!grant
+    && grant.owner === owner
+    && grant.object === object
+    && grant.accessor === accessor
+    && grant.stated === 1
+    && grant.from === window.from
+    && grant.until === window.until;
+}
+
+/**
+ * Admit the see row and the post row. Both are checked, then both are
+ * written, in this one call. A null row is left as stored. History comes
+ * from the resolver. Nothing is exported for a caller to replay.
+ * @param {object} graph
+ * @param {import('../ids/src/types.js').SeeGrant | null} seeRow
+ * @param {import('../ids/src/types.js').SeeGrant | null} postRow
+ * @param {SeeResolver} resolver
+ * @returns {{ ok: true, see: unknown, post: unknown } | { ok: false, reason: string }}
+ */
+function admitGrantRows(graph, seeRow, postRow, resolver) {
+  return admitGrantPair(graph, seeRow, postRow, resolver);
+}
+
+/** @param {unknown} value @returns {value is number} */
+function whole(value) {
+  return integer(value);
+}
+
+/**
+ * @param {SeeGrant} fields
+ * @param {Uint8Array} scalar
+ * @param {PrincipalId} key
+ * @param {(grant: SeeGrant) => Uint8Array} bytesOf
+ * @returns {{ ok: true, value: SeeGrant } | { ok: false, reason: string }}
+ */
+function signRow(fields, scalar, key, bytesOf) {
+  const sig = signWithKeyring(scalar, bytesOf(fields), key);
+  if (!sig.ok) return { ok: false, reason: sig.reason };
+  return { ok: true, value: { ...fields, sig: sig.value } };
+}
+
+/**
+ * Owner's client. The requester signature is present authority only.
+ * History is resolved once. Both rows are checked against that history,
+ * then both are written, or neither is. `issuedAt` is the resolver's `now`.
+ * @param {object} graph
+ * @param {unknown} owner
+ * @param {unknown} request
+ * @param {{ from?: unknown, until?: unknown } | null | undefined} window
+ * @param {RequestMembers | null | undefined} members
+ * @param {RequestSigner | null | undefined} signer
+ * @returns {GrantedRequest | DeniedRequest}
+ */
+export function grantApprovedRequest(graph, owner, request, window, members, signer) {
+  const parsed = parseAccessRequest(request);
+  if (!parsed.ok) return deny(parsed.reason);
+  const req = parsed.value.request;
+  if (req.status === 'withdrawn') return deny('withdrawn');
+  if (!window || typeof window !== 'object') return deny('bad-record');
+  const from = window.from;
+  const until = window.until;
+  if (!whole(from) || !whole(until) || until <= from) return deny('bad-record');
+  const span = { from, until };
+  const who = parsePrincipalId(owner);
+  if (!who.ok) return deny(who.reason);
+  if (!signer || !(signer.scalar instanceof Uint8Array) || !signer.resolver) return deny('bad-key');
+  const resolver = signer.resolver;
+  if (!resolver.ctx || typeof resolver.ctx !== 'object' || typeof resolver.rotations !== 'function') return deny('missing-history');
+  const ctx = snapshotContext(resolver.ctx);
+  /** @type {Map<string, readonly unknown[] | undefined>} */
+  const history = new Map();
+  /** @param {string} principal */
+  const rotationsOf = (principal) => {
+    if (history.has(principal)) return history.get(principal);
+    const rows = resolver.rotations(/** @type {PrincipalId} */ (principal));
+    history.set(principal, rows);
+    return rows;
+  };
+  const ownerHistory = rotationsOf(who.value);
+  const requesterHistory = rotationsOf(req.requester);
+  if (!Array.isArray(ownerHistory) || !Array.isArray(requesterHistory)) return deny('missing-history');
+  const signed = verifySignedAt(
+    req.requester,
+    requesterHistory,
+    ctx,
+    parsed.value.bytes,
+    req.sig,
+    req.issuedAt,
+  );
+  if (!signed.ok) return deny(signed.reason);
+  const admission = admittedOwner(graph, req.object);
+  if (!admission) return deny('unknown');
+  if (admission.owner !== who.value) return deny('owner-mismatch');
+  const seeStored = presentedSee(graph, req.object, req.requester);
+  const postStored = req.scope === 'read+post' ? presentedPost(graph, req.object, req.requester) : null;
+  const seeMatch = sameLive(seeStored, who.value, req.object, req.requester, span);
+  const postMatch = req.scope !== 'read+post' || sameLive(postStored, who.value, req.object, req.requester, span);
+  if (members != null) {
+    if (members.predicate !== 'same-group' && members.predicate !== 'named-circle') return deny('bad-record');
+    if (!integer(members.now)) return deny('bad-record');
+    const group = /** @type {{ ownerOf?: (object: string) => string | undefined, checkGroupSee?: Function }} */ (graph);
+    const labelOwner = typeof group.ownerOf === 'function' ? group.ownerOf(req.object) : undefined;
+    const parsedLabel = typeof labelOwner === 'string' ? parsePrincipalId(labelOwner) : null;
+    if (!parsedLabel || !parsedLabel.ok || parsedLabel.value !== admission.owner) return deny('not-member');
+    const check = group.checkGroupSee;
+    if (typeof check !== 'function') return deny('not-member');
+    const see = check.call(graph, members.predicate, req.object, req.requester, members.now);
+    if (!see || see.allowed !== true || see.reason === 'owner' || see.reason !== members.predicate) return deny('not-member');
+    if (seeStored?.grant?.stated === 0) return deny('not-kept');
+    if (req.scope === 'read+post' && postStored?.grant?.stated === 0) return deny('not-kept');
   }
-  if (members) {
-    if (members.predicate !== "same-group" && members.predicate !== "named-circle") throw new Error(FIELD);
-    if (!Number.isSafeInteger(members.now) || members.now < 0) throw new Error(FIELD);
-    if (typeof graph.checkGroupSee !== "function") return { granted: false, reason: "not-member" };
-    const see = graph.checkGroupSee(members.predicate, record.id, accepted.requester, members.now);
-    if (!see || see.allowed !== true) return { granted: false, reason: "not-member" };
+  if (!integer(ctx.now)) return deny('bad-record');
+  const current = resolveCurrentKey(who.value, ownerHistory, ctx);
+  if (!current.ok) return deny(current.reason);
+  const seeSame = seeMatch && seeStored?.key === current.value.currentKey;
+  const postSame = req.scope !== 'read+post' || (postMatch && postStored?.key === current.value.currentKey);
+  const ownsKey = () => signWithKeyring(signer.scalar, new Uint8Array([0]), current.value.currentKey);
+  if (seeSame && postSame) {
+    const owns = ownsKey();
+    if (!owns.ok) return deny(owns.reason);
+    return {
+      granted: true,
+      unchanged: true,
+      requestId: req.requestId,
+      see: seeStored,
+      post: req.scope === 'read+post' ? postStored : null,
+    };
   }
-  const accessor = accepted.requester;
-  const prevSee = graph.seeGrant(record.id, accessor);
-  if (!seeCanAdvance(prevSee)) throw new Error("see grant cannot advance");
-  if (accepted.scope === ACCESS_SCOPE_READ_POST) {
-    const prev = graph.postGrant(record.id, accessor);
-    if (nextPostHam(prev?.hamState, false) === undefined) {
-      throw new Error("post grant field is not a canonical integer");
-    }
-    if (!hasLabelPostWriter(graph)) return { granted: false, reason: "missing" };
+  const latest = current.value.rotations.reduce((max, row) => (row.issuedAt > max ? row.issuedAt : max), -1);
+  if (latest === ctx.now) return deny('rotation-boundary');
+  const owns = ownsKey();
+  if (!owns.ok) return deny(owns.reason);
+  const seeHam = (seeStored?.grant?.hamState ?? 0) + 1;
+  if (!seeSame && (!Number.isSafeInteger(seeHam) || seeHam > HAM_MAX)) return deny('see-ceiling');
+  const postHam = (postStored?.grant?.hamState ?? 0) + 1;
+  if (req.scope === 'read+post' && !postSame && (!Number.isSafeInteger(postHam) || postHam > HAM_MAX)) return deny('post-ceiling');
+  /** @type {SeeGrant | null} */
+  let seeSigned = null;
+  if (!seeSame) {
+    /** @type {SeeGrant} */
+    const seeFields = {
+      owner: who.value,
+      object: req.object,
+      accessor: req.requester,
+      stated: 1,
+      from: span.from,
+      until: span.until,
+      hamState: seeHam,
+      issuedAt: ctx.now,
+      sig: '',
+    };
+    const signedSee = signRow(seeFields, signer.scalar, current.value.currentKey, seeGrantBytes);
+    if (!signedSee.ok) return deny(signedSee.reason);
+    const seeOk = verifySeeGrant(signedSee.value, ownerHistory, ctx);
+    if (!seeOk.ok) return deny(seeOk.reason);
+    seeSigned = signedSee.value;
   }
-  graph.stateSeeGrant(record.owner, {
-    object: record.id,
-    accessor,
-    from: window.from,
-    until: window.until,
-  });
-  const seeNow = graph.seeGrant(record.id, accessor);
-  if (!seeNow?.grant || seeNow.grant.stated !== 1) throw new Error("see grant cannot advance");
-  /** @type {NonNullable<ReturnType<RequestGraph["postGrant"]>> | null} */
-  let postEdge = null;
-  /** @type {Uint8Array | null} */
-  let postSigningBytes = null;
-  if (accepted.scope === ACCESS_SCOPE_READ_POST) {
-    stateLabelPost(graph, record.owner, {
-      object: record.id,
-      accessor,
-      from: window.from,
-      until: window.until,
-    });
-    const edge = graph.postGrant(record.id, accessor);
-    const grant = edge?.grant;
-    if (
-      !edge ||
-      edge.hamState == null ||
-      !grant ||
-      grant.object == null ||
-      grant.accessor == null ||
-      grant.stated == null ||
-      grant.from == null ||
-      grant.until == null
-    ) {
-      return { granted: false, reason: "missing" };
-    }
-    postEdge = edge;
-    postSigningBytes = postGrantSigningBytes({
-      hamState: edge.hamState,
-      grant: {
-        object: grant.object,
-        accessor: grant.accessor,
-        stated: grant.stated,
-        from: grant.from,
-        until: grant.until,
-      },
-    });
+  /** @type {SeeGrant | null} */
+  let postSigned = null;
+  if (req.scope === 'read+post' && !postSame) {
+    /** @type {SeeGrant} */
+    const postFields = {
+      owner: who.value,
+      object: req.object,
+      accessor: req.requester,
+      stated: 1,
+      from: span.from,
+      until: span.until,
+      hamState: postHam,
+      issuedAt: ctx.now,
+      sig: '',
+    };
+    const signedPost = signRow(postFields, signer.scalar, current.value.currentKey, postGrantBytes);
+    if (!signedPost.ok) return deny(signedPost.reason);
+    const postOk = verifyPostGrant(signedPost.value, ownerHistory, ctx);
+    if (!postOk.ok) return deny(postOk.reason);
+    postSigned = signedPost.value;
   }
-  const see = seeNow;
-  if (!see?.grant) return { granted: false, reason: "missing" };
+  const wrote = admitGrantRows(graph, seeSigned, postSigned, { rotations: rotationsOf, ctx });
+  if (!wrote.ok) return deny(wrote.reason);
   return {
     granted: true,
-    requestId: accepted.id,
-    requestSigningBytes: accepted.signingBytes,
-    see,
-    post: postEdge,
-    postSigningBytes,
+    requestId: req.requestId,
+    see: seeSame ? seeStored : wrote.see,
+    post: req.scope === 'read+post' ? (postSame ? postStored : wrote.post) : null,
   };
 }

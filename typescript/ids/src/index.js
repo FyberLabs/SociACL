@@ -6,6 +6,6 @@ export {
   mintObjectId, deriveClaimId, deriveExternalId,
 } from './ids.js';
 export { lengthPrefixed } from './util.js';
-export { POST_DOMAIN, signingBytes, linkId, verifyKeySignature, signWithKeyring, verifySignedAt, verifySeeGrant, parseSeeGrant, seeGrantBytes, verifyPostGrant, parsePostGrant, postGrantBytes, parseObjectRecord, objectRecordBytes, verifyObjectRecord, verifyAclAttestation, verifyWalletLink, verifyOidcLink, verifyRotate, verifyRotationRequest, verifyGenesisEpubRequest, verifyRevoke, verifyRevokeNow,
+export { POST_DOMAIN, REQUEST_DOMAIN, REQUEST_ID_DOMAIN, signingBytes, linkId, verifyKeySignature, signWithKeyring, verifySignedAt, verifySeeGrant, parseSeeGrant, seeGrantBytes, verifyPostGrant, parsePostGrant, postGrantBytes, requestId, requestIdBytes, parseAccessRequest, accessRequestBytes, verifyAccessRequest, parseObjectRecord, objectRecordBytes, verifyObjectRecord, verifyAclAttestation, verifyWalletLink, verifyOidcLink, verifyRotate, verifyRotationRequest, verifyGenesisEpubRequest, verifyRevoke, verifyRevokeNow,
   resolveCurrentKey, resolveWalletLink, resolveWalletLinkNow, historyState, checkRotationPublish, checkRotationDraft, verifyWalletLinkAtKey, verifyOidcLinkAtKey, verifyRotateAtKey, resolveWalletLinkAtKey } from './records.js';
 export { parseJsonInput } from './json.js';

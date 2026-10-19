@@ -40,11 +40,13 @@ fn consume_contract_covers_light_check() {
         "`p_` plus 128 lowercase hex",
         "sociacl-post-grant-v2",
         "Throws when owner, object, or accessor is not an already-parsed id",
-        "accessRequestId",
-        "accessRequestSigningBytes",
+        "requestId",
+        "accessRequestBytes",
+        "parseAccessRequest",
+        "verifyAccessRequest",
         "grantApprovedRequest",
-        "s3rch-access-request-v1",
-        "s3rch-request",
+        "sociacl-access-request-v2",
+        "sociacl-request-id-v2",
         "read+post",
         "A present request never makes this a grant",
         "inbox delivery never grants",
@@ -226,7 +228,7 @@ fn consume_doc_says_browser_not_a_package() {
         "consume doc must name the post grant and its vectors"
     );
     assert!(
-        md.contains("grantApprovedRequest") && md.contains("vectors/mesh/access-request.json"),
+        md.contains("grantApprovedRequest") && md.contains("vectors/mesh/v2/request.json"),
         "consume doc must name the access request and its vectors"
     );
     assert!(

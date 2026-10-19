@@ -1,702 +1,642 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { createHash } from "node:crypto";
-import {
-  ACCESS_MESSAGE_MAX,
-  ACCESS_REQUEST_DOMAIN,
-  ACCESS_REQUEST_ID_DOMAIN,
-  ACCESS_SCOPE_READ,
-  ACCESS_SCOPE_READ_POST,
-  ACCESS_STATUS_PENDING,
-  ACCESS_STATUS_WITHDRAWN,
-  MemoryGroupGraph,
-  acceptAccessRequest,
-  accessRequestId,
-  accessRequestSigningBytes,
-  canonicalRequestAccessor,
-  factorGrants,
-  aclKey,
-  grantApprovedRequest,
-  issuerFromSeed,
-  requestIssuerFromSeed,
-  signAccessRequest,
-} from "../src/group.js";
-import { canonicalAccessorId, postGrantSigningBytes } from "../src/legacy/post-label.js";
-import { checkSee } from "../src/gun.js";
+import { p256 } from "@noble/curves/nist.js";
+import * as ids from "../ids/src/index.js";
+import { issuerFromSeed, MemoryGroupGraph } from "../src/group.js";
+import { admittedPost, checkPost, factorGrants } from "../src/post.js";
+import * as postApi from "../src/post.js";
+import { grantApprovedRequest } from "../src/request.js";
+import { movePostRowForTest, moveSeeRowForTest, plantPlainPostForTest, plantPlainSeeForTest } from "../src/internal/row-test.js";
+import { admitRow, admittedView, checkSee, isVerifiedRow, putObject } from "../src/see.js";
+import * as seeApi from "../src/see.js";
+import * as gunApi from "../src/gun.js";
+import { b64 } from "../ids/scripts/vector-util.mjs";
 
-const fixture = JSON.parse(
-  readFileSync(new URL("../../vectors/mesh/access-request.json", import.meta.url), "utf8"),
-);
+const secret = (n) => { const b = new Uint8Array(32); b[31] = n; return b; };
+const principal = (n) => {
+  const pub = p256.getPublicKey(secret(n), false);
+  const id = ids.parsePrincipalId(b64(pub.slice(1, 33)) + "." + b64(pub.slice(33)));
+  if (!id.ok) throw new Error(id.reason);
+  return id.value;
+};
+const p = principal(1);
+const p2 = principal(2);
+const p3 = principal(3);
+const at = 1700000000;
+const now = at + 60;
+const chat = ids.mintObjectId("chat", p, () => new Uint8Array(16).fill(0x11));
+if (!chat.ok) throw new Error(chat.reason);
 
-function hex(bytes) {
-  return [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
-}
-
-function messageOf(row) {
-  if (row.messageRepeat != null) return String(row.messageUnit ?? "").repeat(row.messageRepeat);
-  return row.message ?? "";
-}
-
-function requestOf(row) {
+function context() {
+  const history = (principalId, issued, until) => principalId === p || principalId === p2
+    ? { ok: true, value: ids.historyState(principalId, [], issued, until) }
+    : { ok: false, reason: "missing-history" };
   return {
-    requester: row.requester,
-    source: row.source,
-    scope: row.scope,
-    message: messageOf(row),
-    status: row.status,
+    jwks: { keys: [] },
+    links: new Map(),
+    revocations: [],
+    now,
+    policy: { allowedDomains: ["s3r.ch"], allowedUris: ["https://s3r.ch/identity/link"], allowedChainIds: ["1"] },
+    pinnedIss: new Set(),
+    history,
+    genesisEpubBindings: [],
   };
 }
 
-function signer(name) {
-  return issuerFromSeed(createHash("sha256").update("sociacl-test-signer-v1").update(name).digest());
-}
-
-function seeResult(graph, object, accessor, now) {
-  const owner = graph.ownerOf(object);
-  if (!owner) return { allowed: false, reason: "missing" };
-  const ownerKey = canonicalAccessorId(owner);
-  const accessorKey = canonicalAccessorId(accessor);
-  if (ownerKey != null && ownerKey === accessorKey) {
-    return { allowed: true, reason: "owner" };
-  }
-  const live = graph.seeGrants(object).some((grant) => {
-    return (
-      canonicalAccessorId(grant.accessor) != null &&
-      canonicalAccessorId(grant.accessor) === accessorKey &&
-      grant.stated !== 0 &&
-      now >= grant.from &&
-      now < grant.until
-    );
-  });
-  return live ? { allowed: true, reason: "delegate" } : { allowed: false, reason: "missing" };
-}
-
-function prepare(graph, row) {
-  if (!row.object) return;
-  graph.putObject(row.object, row.owner);
-  if (row.mode !== "members") return;
-  const predicate = row.predicate;
-  const setId = row.setId;
-  const alice = signer("0xalice");
-  const bob = signer("0xbob");
-  graph.enrollSigner("0xalice", alice.publicKey);
-  graph.enrollSigner("0xbob", bob.publicKey);
-  graph.recordSetOwner(row.owner, predicate, setId);
-  graph.nameObjectSet(row.owner, row.object, predicate, setId, alice.privateKey);
-  if (row.member) {
-    graph.stateMembership("0xbob", predicate, setId, "0xbob", bob.privateKey);
-    graph.stateMembership(row.owner, predicate, setId, "0xbob", alice.privateKey);
-  }
-  if (row.cancelled) {
-    graph.cancelMembership(row.owner, predicate, setId, "0xbob", alice.privateKey);
-  }
-}
-
-function attachSignature(graph, row, request) {
-  const mode = row.signature ?? "ok";
-  if (mode === "missing") return request;
-  const bob = signer("0xbob");
-  if (mode !== "unenrolled") graph.enrollSigner("0xbob", bob.publicKey);
-  let signature;
-  try {
-    signature = signAccessRequest(bob.privateKey, request);
-  } catch (err) {
-    if (err instanceof Error && err.message === "access request field is not canonical") return request;
-    throw err;
-  }
-  if (mode === "bad") signature[0] ^= 0xff;
-  return { ...request, signature };
-}
-
-function approve(graph, row) {
-  const members =
-    row.mode === "members"
-      ? { predicate: row.queryPredicate ?? row.predicate, now: row.now }
-      : undefined;
-  const request = attachSignature(graph, row, requestOf(row));
-  try {
-    return grantApprovedRequest(graph, row.caller ?? row.owner, request, { from: row.from, until: row.until }, members);
-  } catch (err) {
-    if (err instanceof Error && err.message === "access request field is not canonical") {
-      return { granted: false, reason: "field" };
-    }
-    if (err instanceof Error && err.message === "see grant cannot advance") {
-      return { granted: false, reason: "see" };
-    }
-    throw err;
-  }
-}
-
-function assertNoRows(graph, row) {
-  assert.equal(graph.seeGrant(row.object, row.requester), undefined, row.name);
-  assert.equal(graph.postGrant(row.object, row.requester), undefined, row.name);
-}
-
-function assertGranted(graph, row, result, ham) {
-  assert.equal(result.granted, true, row.name);
-  const accessor = canonicalRequestAccessor(row.requester);
-  assert.equal(result.requestId, accessRequestId(row.requester, row.source));
-  assert.equal(result.see.grant.object, row.object);
-  assert.equal(result.see.grant.accessor, accessor);
-  assert.equal(result.see.grant.stated, 1);
-  assert.equal(result.see.hamState, ham);
-  assert.equal(result.see.owner, row.owner);
-  assert.equal(
-    result.see.soul,
-    `s3rch/acl/${canonicalRequestAccessor(row.owner)}/${aclKey(row.object)}/${accessor}`,
-  );
-  const see = seeResult(graph, row.source, row.requester, row.now);
-  assert.equal(see.allowed, true, row.name);
-  assert.equal(see.reason, "delegate");
-  const label = graph.postGrant(row.object, accessor);
-  if (row.expect === "both") {
-    assert.ok(result.post, row.name);
-    assert.equal(result.post.grant.object, row.object);
-    assert.equal(result.post.grant.accessor, accessor);
-    assert.equal(result.post.hamState, ham);
-    assert.equal(hex(result.postSigningBytes), hex(postGrantSigningBytes(result.post)));
-    assert.ok(label, row.name);
-    assert.equal(label.grant.stated, 1, row.name);
-  } else {
-    assert.equal(result.post, null, row.name);
-    assert.equal(result.postSigningBytes, null, row.name);
-    assert.equal(label, undefined, row.name);
-  }
-  const bySource = graph.seeGrant(row.source, row.requester);
-  const byObject = graph.seeGrant(row.object, accessor);
-  assert.equal(bySource.soul, byObject.soul, row.name);
-}
-
-test("vectors name the request encoding", () => {
-  assert.equal(fixture.domain, ACCESS_REQUEST_DOMAIN);
-  assert.equal(fixture.idDomain, ACCESS_REQUEST_ID_DOMAIN);
-  assert.deepEqual(fixture.scopes, [ACCESS_SCOPE_READ, ACCESS_SCOPE_READ_POST]);
-  assert.deepEqual(fixture.statuses, [ACCESS_STATUS_PENDING, ACCESS_STATUS_WITHDRAWN]);
-  assert.equal(fixture.messageMax, ACCESS_MESSAGE_MAX);
-  assert.deepEqual(fixture.factors, ["hop", "hint", "wrap", "inbox", "request"]);
-  for (const factor of fixture.factors) assert.equal(factorGrants(factor), false, factor);
-});
-
-test("shared ids have no spelling variant", () => {
-  for (const row of fixture.ids) {
-    const id = accessRequestId(row.requester, row.source);
-    assert.equal(id.length, 64, row.name);
-    assert.equal(id, row.id, row.name);
-  }
-});
-
-test("shared signing bytes match", () => {
-  for (const row of fixture.signing) {
-    const request = requestOf(row);
-    const bytes = accessRequestSigningBytes(request);
-    const accepted = acceptAccessRequest(request);
-    assert.equal(hex(accepted.signingBytes), hex(bytes), row.name);
-    if (row.id) assert.equal(accepted.id, row.id, row.name);
-    if (row.hex) assert.equal(hex(bytes), row.hex, row.name);
-    assert.equal(accepted.id.length, 64);
-  }
-});
-
-test("rejected spellings do not encode", () => {
-  for (const row of fixture.rejected) {
-    assert.throws(() => accessRequestSigningBytes(requestOf(row)), /access request field is not canonical/, row.name);
-    assert.throws(() => acceptAccessRequest(requestOf(row)), /access request field is not canonical/, row.name);
-  }
-});
-
-test("user soul segments and a non-http uri share one id", () => {
-  const bob = accessRequestId("bob", "room:alpha");
-  assert.equal(accessRequestId("s3rch/users/ bob ", "room:alpha"), bob);
-  assert.equal(accessRequestId("s3rch/users//bob", "room:alpha"), bob);
-  const ipfs = accessRequestId("0xbob", "ipfs://cid");
-  assert.equal(ipfs.length, 64);
-  assert.notEqual(ipfs, accessRequestId("0xbob", "room:alpha"));
-  assert.throws(
-    () => accessRequestId("0xbob", "https://gi.rss3.io/decentralized/0xalice"),
-    /access request field is not canonical/,
-  );
-});
-
-test("a surrogate pair is one scalar and an unpaired surrogate is rejected", () => {
-  const pair = accessRequestSigningBytes({
-    requester: "0xbob",
-    source: "room:alpha",
-    scope: "read",
-    message: "hi\u{1F600}!",
-    status: "pending",
-  });
-  assert.ok(pair.length > 0);
-  for (const message of ["\ud800", "\udc00", "\ud83d\ud83d", "\udc00\ud83d", "a\ud800"]) {
-    assert.throws(
-      () =>
-        accessRequestSigningBytes({
-          requester: "0xbob",
-          source: "room:alpha",
-          scope: "read",
-          message,
-          status: "pending",
-        }),
-      /access request field is not canonical/,
-      message,
-    );
-  }
-});
-
-test("a slash id does not share a request with the underscore item soul", () => {
-  const slash = accessRequestId("0xbob", "a/b");
-  const flat = accessRequestId("0xbob", "a_b");
-  const soul = accessRequestId("0xbob", "s3rch/items/a_b");
-  const dotted = accessRequestId("0xbob", "room.alpha");
-  const under = accessRequestId("0xbob", "room_alpha");
-  const underSoul = accessRequestId("0xbob", "s3rch/items/room_alpha");
-  assert.notEqual(slash, flat);
-  assert.equal(flat, soul);
-  assert.notEqual(slash, soul);
-  assert.equal(under, underSoul);
-  assert.notEqual(under, dotted);
-  const graph = new MemoryGroupGraph();
-  graph.putObject("a/b", "0xalice");
-  graph.putObject("s3rch/items/a_b", "0xalice");
-  const bob = signer("0xbob");
-  graph.enrollSigner("0xbob", bob.publicKey);
-  const signed = {
-    requester: "0xbob",
-    source: "a/b",
-    scope: "read",
-    message: "",
-    status: "pending",
-  };
-  signed.signature = signAccessRequest(bob.privateKey, signed);
-  const swapped = { ...signed, source: "s3rch/items/a_b" };
-  const denied = grantApprovedRequest(graph, "0xalice", swapped, { from: 0, until: 80 }, null);
-  assert.equal(denied.granted, false);
-  assert.equal(denied.reason, "signature");
-  assert.equal(graph.seeGrant("a/b", "0xbob"), undefined);
-  assert.equal(graph.seeGrant("s3rch/items/a_b", "0xbob"), undefined);
-  const granted = grantApprovedRequest(graph, "0xalice", signed, { from: 0, until: 80 }, null);
-  assert.equal(granted.granted, true);
-  assert.ok(graph.seeGrant("a/b", "0xbob"));
-  assert.equal(graph.seeGrant("s3rch/items/a_b", "0xbob"), undefined);
-});
-
-test("an unpaired surrogate in the requester or source is rejected", () => {
-  const graph = new MemoryGroupGraph();
-  graph.putObject("room\uFFFD", "0xalice");
-  graph.putObject("room\ud800", "0xalice");
-  const bob = signer("0xbob");
-  graph.enrollSigner("0xbob", bob.publicKey);
-  const signed = {
-    requester: "0xbob",
-    source: "room\uFFFD",
-    scope: "read",
-    message: "",
-    status: "pending",
-  };
-  signed.signature = signAccessRequest(bob.privateKey, signed);
-  assert.notEqual(accessRequestId("0xbob", "room\uFFFD"), "");
-  for (const request of [
-    { ...signed, source: "room\ud800" },
-    { ...signed, requester: "\ud800" },
-    { ...signed, requester: "s3rch/users/\ud800" },
-  ]) {
-    assert.throws(
-      () => grantApprovedRequest(graph, "0xalice", request, { from: 0, until: 80 }, null),
-      /access request field is not canonical/,
-    );
-  }
-  assert.equal(graph.seeGrant("room\uFFFD", "0xbob"), undefined);
-  assert.equal(graph.seeGrant("room\ud800", "0xbob"), undefined);
-});
-
-test("a spaced item soul does not authorize the trimmed object", () => {
-  const spaced = accessRequestId("0xbob", "s3rch/items/ foo");
-  const raw = accessRequestId("0xbob", "foo");
-  assert.notEqual(spaced, raw);
-  const graph = new MemoryGroupGraph();
-  graph.putObject("foo", "0xalice");
-  graph.putObject("s3rch/items/ foo", "0xalice");
-  const bob = signer("0xbob");
-  graph.enrollSigner("0xbob", bob.publicKey);
-  const signed = {
-    requester: "0xbob",
-    source: "foo",
-    scope: "read",
-    message: "",
-    status: "pending",
-  };
-  const signature = signAccessRequest(bob.privateKey, signed);
-  const swapped = grantApprovedRequest(
-    graph,
-    "0xalice",
-    { ...signed, source: "s3rch/items/ foo", signature },
-    { from: 0, until: 80 },
-  );
-  assert.equal(swapped.granted, false);
-  assert.equal(swapped.reason, "signature");
-  assert.equal(graph.seeGrant("foo", "0xbob"), undefined);
-  assert.equal(graph.seeGrant("s3rch/items/ foo", "0xbob"), undefined);
-});
-
-test("approval keeps the source captured before verification", () => {
-  const graph = new MemoryGroupGraph();
-  graph.putObject("doc-a", "0xalice");
-  graph.putObject("doc-b", "0xalice");
-  const bob = signer("0xbob");
-  graph.enrollSigner("0xbob", bob.publicKey);
-  const plain = {
-    requester: "0xbob",
-    source: "doc-a",
-    scope: "read",
-    message: "",
-    status: "pending",
-  };
-  const signature = signAccessRequest(bob.privateKey, plain);
-  let sourceReads = 0;
-  const request = {
-    get requester() {
-      return "0xbob";
-    },
-    get source() {
-      sourceReads += 1;
-      return sourceReads === 1 ? "doc-a" : "doc-b";
-    },
-    get scope() {
-      return "read";
-    },
-    get message() {
-      return "";
-    },
-    get status() {
-      return "pending";
-    },
-    get signature() {
-      return signature;
-    },
-  };
-  const result = grantApprovedRequest(graph, "0xalice", request, { from: 0, until: 80 });
-  assert.equal(result.granted, true);
-  assert.equal(result.see.grant.object, "doc-a");
-  assert.equal(graph.seeGrant("doc-b", "0xbob"), undefined);
-});
-
-test("a cancelled see at the ham ceiling does not grow a post", () => {
-  const graph = new MemoryGroupGraph();
-  graph.putObject("room:alpha", "0xalice");
-  const bob = signer("0xbob");
-  graph.enrollSigner("0xbob", bob.publicKey);
-  graph.grants.set("0xalice\0room:alpha\0bob", {
-    object: "room:alpha",
-    accessor: "0xbob",
-    from: 0,
-    until: 80,
-    stated: 0,
-    hamState: Number.MAX_VALUE,
-    owner: "0xalice",
-  });
-  const request = {
-    requester: "0xbob",
-    source: "room:alpha",
-    scope: "read+post",
-    message: "",
-    status: "pending",
-    signature: signAccessRequest(bob.privateKey, {
-      requester: "0xbob",
-      source: "room:alpha",
-      scope: "read+post",
-      message: "",
-      status: "pending",
-    }),
-  };
-  assert.throws(
-    () => grantApprovedRequest(graph, "0xalice", request, { from: 0, until: 80 }),
-    /see grant cannot advance/,
-  );
-  assert.equal(graph.postGrant("room:alpha", "0xbob"), undefined);
-  assert.equal(graph.seeGrant("room:alpha", "0xbob").grant.stated, 0);
-});
-
-test("a see row at the safe integer ceiling does not grow a post", () => {
-  const graph = new MemoryGroupGraph();
-  graph.putObject("room:alpha", "0xalice");
-  const bob = signer("0xbob");
-  graph.enrollSigner("0xbob", bob.publicKey);
-  graph.grants.set(`0xalice\0room:alpha\0${"0xbob"}`, {
-    object: "room:alpha",
-    accessor: "0xbob",
-    from: 0,
-    until: 80,
-    stated: 1,
-    hamState: Number.MAX_SAFE_INTEGER,
-    owner: "0xalice",
-  });
-  const request = {
-    requester: "0xbob",
-    source: "room:alpha",
-    scope: "read+post",
-    message: "",
-    status: "pending",
-    signature: signAccessRequest(bob.privateKey, {
-      requester: "0xbob",
-      source: "room:alpha",
-      scope: "read+post",
-      message: "",
-      status: "pending",
-    }),
-  };
-  assert.throws(
-    () => grantApprovedRequest(graph, "0xalice", request, { from: 0, until: 80 }),
-    /see grant cannot advance/,
-  );
-  assert.equal(graph.postGrant("room:alpha", "0xbob"), undefined);
-  const see = graph.seeGrant("room:alpha", "0xbob");
-  assert.equal(see.grant.stated, 1);
-  assert.equal(see.hamState, Number.MAX_SAFE_INTEGER);
-});
-
-test("requester signature matches the enrolled key", () => {
-  for (const row of fixture.signatures) {
-    const seed = Uint8Array.from(row.seed.match(/../g).map((byte) => Number.parseInt(byte, 16)));
-    const issuer = requestIssuerFromSeed(seed);
-    assert.equal(hex(issuer.publicKey), row.publicKey, row.name);
-    const request = {
-      requester: row.requester,
-      source: row.source,
-      scope: row.scope,
-      message: row.message,
-      status: row.status,
-    };
-    const signature = signAccessRequest(issuer.privateKey, request);
-    assert.equal(hex(signature), row.signature, row.name);
-    const graph = new MemoryGroupGraph();
-    graph.putObject(row.source, "0xalice");
-    graph.enrollSigner(row.requester, issuer.publicKey);
-    const granted = grantApprovedRequest(graph, "0xalice", { ...request, signature }, { from: 0, until: 80 });
-    assert.equal(granted.granted, true, row.name);
-    const bad = new Uint8Array(signature);
-    bad[0] ^= 0xff;
-    const fresh = new MemoryGroupGraph();
-    fresh.putObject(row.source, "0xalice");
-    fresh.enrollSigner(row.requester, issuer.publicKey);
-    const denied = grantApprovedRequest(fresh, "0xalice", { ...request, signature: bad }, { from: 0, until: 80 });
-    assert.equal(denied.granted, false, row.name);
-    assert.equal(denied.reason, "signature");
-    const unsigned = grantApprovedRequest(fresh, "0xalice", request, { from: 0, until: 80 });
-    assert.equal(unsigned.reason, "signature");
-    assert.equal(fresh.seeGrant(row.source, row.requester), undefined);
-    assert.equal(fresh.postGrant(row.source, row.requester), undefined);
-  }
-});
-
-test("a read+post graph without a post writer writes nothing", () => {
-  const bob = signer("0xbob");
-  const request = {
-    requester: "0xbob",
-    source: "room:alpha",
-    scope: "read+post",
-    message: "",
-    status: "pending",
-  };
-  request.signature = signAccessRequest(bob.privateKey, request);
-  let seeWrites = 0;
-  const graph = {
-    enrolledKey(principal) {
-      return principal === "0xbob" ? bob.publicKey : undefined;
-    },
-    objectRecord() {
-      return { id: "room:alpha", owner: "0xalice" };
-    },
-    seeGrant() {
-      return undefined;
-    },
-    postGrant() {
-      return undefined;
-    },
-    stateSeeGrant() {
-      seeWrites += 1;
-    },
-  };
-  const result = grantApprovedRequest(graph, "0xalice", request, { from: 0, until: 80 });
-  assert.equal(result.granted, false);
-  assert.equal(result.reason, "missing");
-  assert.equal(seeWrites, 0);
-  assert.equal(graph.seeGrant(), undefined);
-});
-
-test("mergeFrom does not copy label post rows and writers stay off the prototype", () => {
-  const row = fixture.approvals.find((item) => item.name === "owner-read-post");
-  const source = new MemoryGroupGraph();
-  prepare(source, row);
-  assert.equal(approve(source, row).granted, true);
-  assert.ok(source.postGrant(row.object, row.requester));
-  const dest = new MemoryGroupGraph();
-  prepare(dest, row);
-  dest.mergeFrom(source);
-  assert.equal(dest.postGrant(row.object, row.requester), undefined);
-  assert.ok(source.postGrant(row.object, row.requester));
-  const symbols = [
-    ...Object.getOwnPropertySymbols(MemoryGroupGraph.prototype),
-    ...Object.getOwnPropertySymbols(source),
-  ].map((item) => String(item));
-  assert.equal(symbols.some((name) => name.toLowerCase().includes("post")), false);
-  assert.equal(source.posts, undefined);
-});
-
-test("owner client writes rows and a request does not", () => {
-  for (const row of fixture.approvals) {
-    const graph = new MemoryGroupGraph();
-    prepare(graph, row);
-    if (row.expect === "accept") {
-      const accepted = acceptAccessRequest(requestOf(row));
-      assert.equal(accepted.id.length, 64);
-      const see = checkSee(
-        graph,
-        row.source,
-        row.requester,
-        row.now,
-        row.hint ? { principal: row.requester } : undefined,
-        row.hop ? { channel: "convention-badge" } : undefined,
-      );
-      assert.equal(see.allowed, false, row.name);
-      for (const factor of fixture.factors) assert.equal(factorGrants(factor), false);
-      assertNoRows(graph, row);
-      continue;
-    }
-    const first = approve(graph, row);
-    if (row.expect === "see" || row.expect === "both") {
-      assertGranted(graph, row, first, 1);
-      if (row.repeat) assertGranted(graph, row, approve(graph, row), 2);
-    } else {
-      assert.equal(first.granted, false, row.name);
-      assert.equal(first.reason, row.expect, row.name);
-      assertNoRows(graph, row);
-    }
-  }
-});
-
-test("an encoded item soul shares the raw object's request id", () => {
-  const raw = accessRequestId("0xbob", "room.alpha");
-  const soul = accessRequestId("0xbob", "s3rch/items/room~1alpha");
-  assert.equal(soul, raw);
-  assert.notEqual(aclKey(aclKey("room.alpha")), aclKey("room.alpha"));
-});
-
-test("a dotted principal round-trips through enroll and approval", () => {
-  const graph = new MemoryGroupGraph();
-  graph.putObject("room:alpha", "0xalice");
-  const bob = signer("bob.name");
-  graph.enrollSigner("bob.name", bob.publicKey);
-  const canonical = canonicalRequestAccessor("bob.name");
-  assert.equal(canonical, "bob.name");
-  assert.ok(graph.enrolledKey(canonical));
-  const request = {
-    requester: "bob.name",
-    source: "room:alpha",
-    scope: "read",
-    message: "",
-    status: "pending",
-  };
-  assert.equal(accessRequestId(canonical, request.source), accessRequestId(request.requester, request.source));
-  request.signature = signAccessRequest(bob.privateKey, request);
-  const granted = grantApprovedRequest(graph, "0xalice", request, { from: 0, until: 80 });
-  assert.equal(granted.granted, true);
-  assert.equal(granted.see.grant.accessor, "bob.name");
-  assert.equal(graph.seeGrant("room:alpha", "bob.name").grant.stated, 1);
-  assert.equal(graph.seeGrant("room:alpha", canonical).grant.stated, 1);
-});
-
-test("a gun chain does not canonicalize to the inner wallet", () => {
-  const spoof = "0xattacker.get('s3rch').get('users').get('0xvictim')";
-  assert.notEqual(canonicalAccessorId(spoof), "0xvictim");
-  assert.throws(() => canonicalRequestAccessor(spoof), /access request field is not canonical/);
-});
-
-test("a stateful toString source is rejected before any grant", () => {
-  const graph = new MemoryGroupGraph();
-  graph.putObject("doc-a", "0xalice");
-  graph.putObject("doc-b", "0xalice");
-  let calls = 0;
+test("stateful toString on the object is not-string and writes nothing", () => {
+  const graph = {};
+  const ctx = context();
+  const resolver = { rotations: () => [], ctx };
+  const record = { object: chat.value, owner: p, issuedAt: at, sig: "" };
+  record.sig = ids.signWithKeyring(secret(1), ids.objectRecordBytes(record), p).value;
+  const put = putObject(graph, record, resolver);
+  assert.equal(put.ok, true);
+  let n = 0;
   const source = {
     toString() {
-      calls += 1;
-      return calls < 3 ? "doc-a" : "doc-b";
+      n += 1;
+      return n === 1 ? "doc-a" : "doc-b";
     },
   };
-  const bob = signer("0xbob");
-  graph.enrollSigner("0xbob", bob.publicKey);
-  assert.throws(
-    () =>
-      grantApprovedRequest(
-        graph,
-        "0xalice",
-        { requester: "0xbob", source, scope: "read", message: "", status: "pending" },
-        { from: 0, until: 80 },
-      ),
-    /access request field is not canonical/,
-  );
-  assert.equal(graph.seeGrant("doc-a", "0xbob"), undefined);
-  assert.equal(graph.seeGrant("doc-b", "0xbob"), undefined);
-});
-
-test("folded see rows at the ham ceiling do not grow a post", () => {
-  const graph = new MemoryGroupGraph();
-  const row = (object, hamState) => ({
-    object,
-    accessor: "0xbob",
-    from: 0,
-    until: 80,
-    stated: 1,
-    hamState,
-    owner: "0xalice",
-  });
-  graph.grants.set("low", row("room", 1));
-  graph.grants.set("high", row("s3rch/items/room", Number.MAX_SAFE_INTEGER));
-  graph.putObject("room", "0xalice");
-  const bob = signer("0xbob");
-  graph.enrollSigner("0xbob", bob.publicKey);
-  const request = {
-    requester: "0xbob",
-    source: "room",
-    scope: "read+post",
-    message: "",
-    status: "pending",
-    signature: undefined,
-  };
-  request.signature = signAccessRequest(bob.privateKey, request);
-  assert.throws(
-    () => grantApprovedRequest(graph, "0xalice", request, { from: 0, until: 80 }),
-    /see grant cannot advance/,
-  );
-  assert.equal(graph.postGrant("room", "0xbob"), undefined);
-  assert.equal(graph.seeGrant("room", "0xbob").hamState, Number.MAX_SAFE_INTEGER);
-});
-
-test("members auto-approve uses the stored object id", () => {
-  const graph = new MemoryGroupGraph();
-  graph.putObject("room", "0xalice");
-  const alice = signer("0xalice");
-  const bob = signer("0xbob");
-  graph.enrollSigner("0xalice", alice.publicKey);
-  graph.enrollSigner("0xbob", bob.publicKey);
-  graph.recordSetOwner("0xalice", "same-group", "0xalice/ops");
-  graph.nameObjectSet("0xalice", "room", "same-group", "0xalice/ops", alice.privateKey);
-  graph.stateMembership("0xbob", "same-group", "0xalice/ops", "0xbob", bob.privateKey);
-  graph.stateMembership("0xalice", "same-group", "0xalice/ops", "0xbob", alice.privateKey);
-  const request = {
-    requester: "0xbob",
-    source: "s3rch/items/room",
-    scope: "read",
-    message: "",
-    status: "pending",
-  };
-  request.signature = signAccessRequest(bob.privateKey, request);
-  const granted = grantApprovedRequest(
+  const requestId = ids.requestId(p2, chat.value);
+  assert.equal(requestId.ok, true);
+  const result = grantApprovedRequest(
     graph,
-    "0xalice",
-    request,
-    { from: 0, until: 80 },
-    { predicate: "same-group", now: 10 },
+    p,
+    {
+      requestId: requestId.value,
+      requester: p2,
+      object: source,
+      scope: "read",
+      status: "pending",
+      message: "",
+      issuedAt: now,
+      sig: "aa",
+    },
+    { from: 0, until: 100 },
+    null,
+    { scalar: secret(1), resolver },
   );
+  assert.equal(result.granted, false);
+  assert.equal(result.reason, "not-string");
+  assert.equal(admittedView(graph, chat.value, p2), undefined);
+});
+
+test("factorGrants stays false for a request", () => {
+  assert.equal(factorGrants("request"), false);
+  assert.equal(factorGrants("hop"), false);
+  assert.equal(factorGrants("inbox"), false);
+});
+
+function objectRecord() {
+  const record = { object: chat.value, owner: p, issuedAt: at, sig: "" };
+  const sig = ids.signWithKeyring(secret(1), ids.objectRecordBytes(record), p);
+  if (!sig.ok) throw new Error(sig.reason);
+  record.sig = sig.value;
+  return record;
+}
+
+function signRequest(fields, signer) {
+  const id = ids.requestId(fields.requester, fields.object);
+  if (!id.ok) throw new Error(id.reason);
+  const bare = { ...fields, requestId: id.value, sig: "" };
+  const sig = ids.signWithKeyring(secret(signer), ids.accessRequestBytes(bare), principal(signer));
+  if (!sig.ok) throw new Error(sig.reason);
+  return { ...bare, sig: sig.value };
+}
+
+test("resolver lookups stop at two and a later throw still writes both rows", () => {
+  const request = signRequest({
+    requester: p2,
+    object: chat.value,
+    scope: "read+post",
+    status: "pending",
+    message: "",
+    issuedAt: now,
+  }, 2);
+  const window = { from: at, until: now + 100 };
+  for (const throwAt of [0, 1, 2]) {
+    const graph = {};
+    let calls = 0;
+    const resolver = {
+      rotations() {
+        if (calls >= throwAt) throw new Error("resolver");
+        calls += 1;
+        return [];
+      },
+      ctx: context(),
+    };
+    assert.equal(putObject(graph, objectRecord(), { rotations: () => [], ctx: context() }).ok, true);
+    let thrown = false;
+    let result;
+    try {
+      result = grantApprovedRequest(graph, p, request, window, null, { scalar: secret(1), resolver });
+    } catch (error) {
+      thrown = true;
+      assert.equal(error instanceof Error ? error.message : "", "resolver");
+    }
+    if (throwAt < 2) {
+      assert.equal(thrown, true);
+      assert.equal(admittedView(graph, chat.value, p2), undefined);
+      assert.equal(admittedPost(graph, chat.value, p2), undefined);
+    } else {
+      assert.equal(thrown, false);
+      assert.equal(result.granted, true);
+      assert.equal(calls, 2);
+      assert.equal(admittedView(graph, chat.value, p2)?.stated, 1);
+      assert.equal(admittedPost(graph, chat.value, p2)?.stated, 1);
+    }
+  }
+});
+
+test("a peer merge cannot auto-approve a non-member", () => {
+  const owner = new MemoryGroupGraph();
+  const mallory = new MemoryGroupGraph();
+  const resolver = { rotations: () => [], ctx: context() };
+  assert.equal(putObject(owner, objectRecord(), resolver).ok, true);
+  mallory.putObject(chat.value, p2);
+  owner.mergeFrom(mallory);
+  const request = signRequest({
+    requester: p2,
+    object: chat.value,
+    scope: "read",
+    status: "pending",
+    message: "",
+    issuedAt: now,
+  }, 2);
+  const result = grantApprovedRequest(
+    owner,
+    p,
+    request,
+    { from: at, until: now + 100 },
+    { predicate: "same-group", now },
+    { scalar: secret(1), resolver },
+  );
+  assert.equal(result.granted, false);
+  assert.equal(result.reason, "not-member");
+  assert.equal(admittedView(owner, chat.value, p2), undefined);
+  owner.putObject(chat.value, p2);
+  assert.equal(owner.ownerOf(chat.value), p);
+});
+
+test("missing and non-string request fields are not-string", () => {
+  const id = ids.requestId(p2, chat.value);
+  assert.equal(id.ok, true);
+  const base = {
+    requestId: id.value,
+    requester: p2,
+    object: chat.value,
+    scope: "read",
+    status: "pending",
+    message: "",
+    issuedAt: now,
+    sig: "aa",
+  };
+  for (const field of ["scope", "status", "message", "requester", "object"]) {
+    for (const value of [undefined, null, 1, {}]) {
+      const row = { ...base };
+      if (value === undefined) delete row[field];
+      else row[field] = value;
+      const got = ids.parseAccessRequest(row);
+      assert.equal(got.ok, false, field);
+      assert.equal(got.reason, "not-string");
+    }
+  }
+});
+
+function signGrant(bytesOf, extra) {
+  const fields = {
+    owner: p,
+    object: chat.value,
+    accessor: p2,
+    stated: 1,
+    from: at,
+    until: now + 100,
+    hamState: 1,
+    issuedAt: now,
+    sig: "",
+    ...extra,
+  };
+  const sig = ids.signWithKeyring(secret(1), bytesOf(fields), p);
+  if (!sig.ok) throw new Error(sig.reason);
+  return { ...fields, sig: sig.value };
+}
+
+function ed25519Seed(name) {
+  const bytes = new Uint8Array(32);
+  const raw = new TextEncoder().encode(name);
+  for (let i = 0; i < raw.length; i += 1) bytes[i % 32] ^= (raw[i] + ((i * 17) & 255)) & 255;
+  bytes[0] ^= raw.length;
+  bytes[31] |= 1;
+  return bytes;
+}
+
+test("an earlier grant cannot revive a cancel, and another graph stays closed", () => {
+  assert.equal(seeApi.stageSee, undefined);
+  assert.equal(seeApi.commitStagedSee, undefined);
+  assert.equal(seeApi.prepareSee, undefined);
+  assert.equal(seeApi.commitPreparedSee, undefined);
+  assert.equal(seeApi.evaluateSee, undefined);
+  assert.equal(seeApi.commitEvaluatedSee, undefined);
+  assert.equal(postApi.stagePost, undefined);
+  assert.equal(postApi.commitStagedPost, undefined);
+  assert.equal(postApi.preparePost, undefined);
+  assert.equal(postApi.commitPreparedPost, undefined);
+  assert.equal(postApi.evaluatePost, undefined);
+  assert.equal(postApi.commitEvaluatedPost, undefined);
+  assert.equal(gunApi.prepareSee, undefined);
+  assert.equal(gunApi.commitPreparedSee, undefined);
+  assert.equal(gunApi.preparePost, undefined);
+  assert.equal(gunApi.commitPreparedPost, undefined);
+  assert.equal(gunApi.admitGrantPair, undefined);
+  assert.equal(gunApi.admitResolvedPost, undefined);
+  assert.equal(gunApi.postKeeps, undefined);
+  assert.equal(gunApi.installPostGrant, undefined);
+  const graph = {};
+  const resolver = { rotations: () => [], ctx: context() };
+  assert.equal(putObject(graph, objectRecord(), resolver).ok, true);
+  const request = signRequest({
+    requester: p2,
+    object: chat.value,
+    scope: "read+post",
+    status: "pending",
+    message: "",
+    issuedAt: now,
+  }, 2);
+  const window = { from: at, until: now + 100 };
+  const granted = grantApprovedRequest(graph, p, request, window, null, { scalar: secret(1), resolver });
   assert.equal(granted.granted, true);
-  assert.equal(granted.see.grant.object, "room");
+  const seeCancel = admitRow(graph, signGrant(ids.seeGrantBytes, { stated: 0, hamState: 2 }), resolver);
+  const postCancel = postApi.admitPost(graph, signGrant(ids.postGrantBytes, { stated: 0, hamState: 2 }), resolver);
+  assert.equal(seeCancel.ok && seeCancel.kept, true);
+  assert.equal(postCancel.ok && postCancel.kept, true);
+  const seeAgain = admitRow(graph, granted.see.source, resolver);
+  const postAgain = postApi.admitPost(graph, granted.post.source, resolver);
+  assert.equal(seeAgain.ok && seeAgain.kept, false);
+  assert.equal(postAgain.ok && postAgain.kept, false);
+  assert.equal(checkSee(graph, chat.value, p2, now).allowed, false);
+  assert.equal(checkPost(graph, chat.value, p2, now).allowed, false);
+  const other = {};
+  assert.equal(checkSee(other, chat.value, p2, now, granted.see).allowed, false);
+  assert.equal(checkPost(other, chat.value, p2, now, granted.post).allowed, false);
+});
+
+test("a see grant cannot revive a cancel on its own graph", () => {
+  const graph = {};
+  const resolver = { rotations: () => [], ctx: context() };
+  assert.equal(putObject(graph, objectRecord(), resolver).ok, true);
+  const live = signGrant(ids.seeGrantBytes, { hamState: 1 });
+  assert.equal(admitRow(graph, live, resolver).ok, true);
+  assert.equal(checkSee(graph, chat.value, p2, now).allowed, true);
+  const cancel = admitRow(graph, signGrant(ids.seeGrantBytes, { stated: 0, hamState: 2 }), resolver);
+  assert.equal(cancel.ok && cancel.kept, true);
+  const again = admitRow(graph, live, resolver);
+  assert.equal(again.ok && again.kept, false);
+  assert.equal(checkSee(graph, chat.value, p2, now).allowed, false);
+  assert.equal(admittedView(graph, chat.value, p2)?.stated, 0);
+  assert.equal(admittedView(graph, chat.value, p2)?.hamState, 2);
+});
+
+test("a post grant cannot revive a cancel on its own graph", () => {
+  const graph = {};
+  const resolver = { rotations: () => [], ctx: context() };
+  assert.equal(putObject(graph, objectRecord(), resolver).ok, true);
+  assert.equal(admitRow(graph, signGrant(ids.seeGrantBytes, { hamState: 1 }), resolver).ok, true);
+  const live = signGrant(ids.postGrantBytes, { hamState: 1 });
+  assert.equal(postApi.admitPost(graph, live, resolver).ok, true);
+  assert.equal(checkPost(graph, chat.value, p2, now).allowed, true);
+  const cancel = postApi.admitPost(graph, signGrant(ids.postGrantBytes, { stated: 0, hamState: 2 }), resolver);
+  assert.equal(cancel.ok && cancel.kept, true);
+  const again = postApi.admitPost(graph, live, resolver);
+  assert.equal(again.ok && again.kept, false);
+  assert.equal(checkPost(graph, chat.value, p2, now).allowed, false);
+  assert.equal(postApi.admittedPost(graph, chat.value, p2)?.stated, 0);
+  assert.equal(postApi.admittedPost(graph, chat.value, p2)?.hamState, 2);
+});
+
+test("a grant verified on one graph cannot replace a cancel on another", () => {
+  const resolver = { rotations: () => [], ctx: context() };
+  const open = {};
+  const closed = {};
+  assert.equal(putObject(open, objectRecord(), resolver).ok, true);
+  assert.equal(putObject(closed, objectRecord(), resolver).ok, true);
+  const seeLive = signGrant(ids.seeGrantBytes, { hamState: 1 });
+  const postLive = signGrant(ids.postGrantBytes, { hamState: 1 });
+  assert.equal(admitRow(open, seeLive, resolver).ok, true);
+  assert.equal(postApi.admitPost(open, postLive, resolver).ok, true);
+  assert.equal(admitRow(closed, signGrant(ids.seeGrantBytes, { stated: 0, hamState: 2 }), resolver).kept, true);
+  assert.equal(postApi.admitPost(closed, signGrant(ids.postGrantBytes, { stated: 0, hamState: 2 }), resolver).kept, true);
+  const paired = seeApi.admitGrantPair(closed, seeLive, postLive, resolver);
+  assert.equal(paired.ok, false);
+  assert.equal(paired.reason, "not-kept");
+  assert.equal(checkSee(closed, chat.value, p2, now).allowed, false);
+  assert.equal(checkPost(closed, chat.value, p2, now).allowed, false);
+  assert.equal(admittedView(closed, chat.value, p2)?.hamState, 2);
+  assert.equal(postApi.admittedPost(closed, chat.value, p2)?.hamState, 2);
+  assert.equal(checkSee(open, chat.value, p2, now).allowed, true);
+  assert.equal(checkPost(open, chat.value, p2, now).allowed, true);
+});
+
+test("a caller cannot flip kept to write over a cancel", () => {
+  const graph = {};
+  const resolver = { rotations: () => [], ctx: context() };
+  assert.equal(putObject(graph, objectRecord(), resolver).ok, true);
+  const live = signGrant(ids.seeGrantBytes, { hamState: 1 });
+  const postLive = signGrant(ids.postGrantBytes, { hamState: 1 });
+  assert.equal(admitRow(graph, signGrant(ids.seeGrantBytes, { stated: 0, hamState: 2 }), resolver).kept, true);
+  assert.equal(postApi.admitPost(graph, signGrant(ids.postGrantBytes, { stated: 0, hamState: 2 }), resolver).kept, true);
+  const flipped = { ...live, kept: true, key: ids.grantSoul(p, chat.value, p3) };
+  const again = admitRow(graph, flipped, resolver);
+  assert.equal(again.ok && again.kept, false);
+  const ticket = { kept: true, key: ids.grantSoul(p, chat.value, p2), sealed: live, used: false };
+  const planted = seeApi.admitGrantPair(graph, ticket, { ...postLive, kept: true }, resolver);
+  assert.equal(planted.ok, false);
+  assert.equal(checkSee(graph, chat.value, p2, now).allowed, false);
+  assert.equal(checkPost(graph, chat.value, p2, now).allowed, false);
+  assert.equal(admittedView(graph, chat.value, p2)?.stated, 0);
+  assert.equal(checkSee(graph, chat.value, p3, now).allowed, false);
+});
+
+test("a see row moved under another accessor does not allow", () => {
+  const graph = {};
+  const resolver = { rotations: () => [], ctx: context() };
+  assert.equal(putObject(graph, objectRecord(), resolver).ok, true);
+  assert.equal(admitRow(graph, signGrant(ids.seeGrantBytes, { hamState: 1 }), resolver).kept, true);
+  const from = ids.grantSoul(p, chat.value, p2);
+  const to = ids.grantSoul(p, chat.value, p3);
+  assert.equal(moveSeeRowForTest(graph, from, to), true);
+  assert.equal(checkSee(graph, chat.value, p2, now).allowed, false);
+  assert.equal(checkSee(graph, chat.value, p3, now).allowed, false);
+  assert.equal(admittedView(graph, chat.value, p2), undefined);
+  assert.equal(admittedView(graph, chat.value, p3), undefined);
+});
+
+test("a post row moved under another accessor does not allow", () => {
+  const graph = {};
+  const resolver = { rotations: () => [], ctx: context() };
+  assert.equal(putObject(graph, objectRecord(), resolver).ok, true);
+  assert.equal(admitRow(graph, signGrant(ids.seeGrantBytes, { hamState: 1 }), resolver).kept, true);
+  assert.equal(admitRow(graph, signGrant(ids.seeGrantBytes, { accessor: p3, hamState: 1 }), resolver).kept, true);
+  assert.equal(postApi.admitPost(graph, signGrant(ids.postGrantBytes, { hamState: 1 }), resolver).kept, true);
+  assert.equal(checkSee(graph, chat.value, p3, now).allowed, true);
+  const from = ids.postSoul(p, chat.value, p2);
+  const to = ids.postSoul(p, chat.value, p3);
+  assert.equal(movePostRowForTest(graph, from, to), true);
+  const moved = checkPost(graph, chat.value, p3, now);
+  assert.equal(moved.allowed, false);
+  assert.equal(moved.reason, "missing");
+  assert.equal(checkPost(graph, chat.value, p2, now).allowed, false);
+  assert.equal(postApi.admittedPost(graph, chat.value, p3), undefined);
+  assert.equal(checkSee(graph, chat.value, p3, now).allowed, true);
+});
+
+test("a plain see object stored under the soul key does not allow", () => {
+  const graph = {};
+  const resolver = { rotations: () => [], ctx: context() };
+  assert.equal(putObject(graph, objectRecord(), resolver).ok, true);
+  plantPlainSeeForTest(graph, ids.grantSoul(p, chat.value, p2), {
+    owner: p,
+    object: chat.value,
+    accessor: p2,
+    stated: 1,
+    from: at,
+    until: now + 100,
+    hamState: 1,
+    issuedAt: now,
+    sig: "",
+  });
+  const see = checkSee(graph, chat.value, p2, now);
+  assert.equal(see.allowed, false);
+  assert.equal(see.reason, "delegate");
+  assert.equal(admittedView(graph, chat.value, p2), undefined);
+});
+
+test("a plain post object stored under the soul key does not allow", () => {
+  const graph = {};
+  const resolver = { rotations: () => [], ctx: context() };
+  assert.equal(putObject(graph, objectRecord(), resolver).ok, true);
+  assert.equal(admitRow(graph, signGrant(ids.seeGrantBytes, { hamState: 1 }), resolver).kept, true);
+  plantPlainPostForTest(graph, ids.postSoul(p, chat.value, p2), {
+    owner: p,
+    object: chat.value,
+    accessor: p2,
+    stated: 1,
+    from: at,
+    until: now + 100,
+    hamState: 1,
+    issuedAt: now,
+    sig: "",
+  });
+  const post = checkPost(graph, chat.value, p2, now);
+  assert.equal(post.allowed, false);
+  assert.equal(post.reason, "missing");
+  assert.equal(postApi.admittedPost(graph, chat.value, p2), undefined);
+  assert.equal(checkSee(graph, chat.value, p2, now).allowed, true);
+});
+
+test("one row that would not replace writes neither grant", () => {
+  const resolver = { rotations: () => [], ctx: context() };
+  const graph = {};
+  assert.equal(putObject(graph, objectRecord(), resolver).ok, true);
+  assert.equal(postApi.admitPost(graph, signGrant(ids.postGrantBytes, { stated: 0, hamState: 2 }), resolver).kept, true);
+  const paired = seeApi.admitGrantPair(
+    graph,
+    signGrant(ids.seeGrantBytes, { hamState: 1 }),
+    signGrant(ids.postGrantBytes, { hamState: 1 }),
+    resolver,
+  );
+  assert.equal(paired.ok, false);
+  assert.equal(paired.reason, "not-kept");
+  assert.equal(admittedView(graph, chat.value, p2), undefined);
+  assert.equal(checkSee(graph, chat.value, p2, now).allowed, false);
+  assert.equal(postApi.admittedPost(graph, chat.value, p2)?.stated, 0);
+  assert.equal(postApi.admittedPost(graph, chat.value, p2)?.hamState, 2);
+});
+
+test("postKeeps does not write and a presented row is not a ticket", () => {
+  const resolver = { rotations: () => [], ctx: context() };
+  const graph = {};
+  const other = {};
+  assert.equal(putObject(graph, objectRecord(), resolver).ok, true);
+  assert.equal(putObject(other, objectRecord(), resolver).ok, true);
+  const see = admitRow(graph, signGrant(ids.seeGrantBytes, { hamState: 1 }), resolver);
+  assert.equal(see.ok, true);
+  const live = signGrant(ids.postGrantBytes, { hamState: 1 });
+  const seen = postApi.postKeeps(graph, live, resolver);
+  assert.equal(seen.ok && seen.kept, true);
+  assert.equal(postApi.admittedPost(graph, chat.value, p2), undefined);
+  const wrote = postApi.admitResolvedPost(graph, { ...live, kept: true, key: ids.postSoul(p, chat.value, p3) }, resolver);
+  assert.equal(wrote.ok && wrote.kept, true);
+  assert.equal(checkPost(graph, chat.value, p2, now).allowed, true);
+  assert.equal(checkPost(graph, chat.value, p3, now).allowed, false);
+  assert.equal(isVerifiedRow(see.value), false);
+  assert.equal(seeApi.admitGrantPair(other, see.value, wrote.value, resolver).ok, false);
+  assert.equal(checkSee(other, chat.value, p2, now).allowed, false);
+  assert.equal(checkPost(other, chat.value, p2, now).allowed, false);
+  assert.equal(postApi.admitPost(other, signGrant(ids.postGrantBytes, { stated: 0, hamState: 4 }), resolver).kept, true);
+  const replay = postApi.admitResolvedPost(other, live, resolver);
+  assert.equal(replay.ok && replay.kept, false);
+  assert.equal(postApi.admittedPost(other, chat.value, p2)?.hamState, 4);
+});
+
+test("the label plant setter is not on the published class", () => {
+  assert.equal(MemoryGroupGraph.prototype.plantLabelOwnerForTest, undefined);
+});
+
+test("an alias label put keeps the signed owner spelling", () => {
+  const graph = new MemoryGroupGraph();
+  const resolver = { rotations: () => [], ctx: context() };
+  assert.equal(putObject(graph, objectRecord(), resolver).ok, true);
+  graph.putObject(chat.value, `s3rch/users/${p}`);
+  graph.putObject(chat.value, p);
+  assert.equal(graph.ownerOf(chat.value), p);
+  const ownerKey = issuerFromSeed(ed25519Seed(p));
+  const memberKey = issuerFromSeed(ed25519Seed(p2));
+  const setKey = issuerFromSeed(ed25519Seed("alice"));
+  graph.enrollSigner(p, ownerKey.publicKey);
+  graph.enrollSigner(p2, memberKey.publicKey);
+  graph.enrollSigner("alice", setKey.publicKey);
+  graph.recordSetOwner("alice", "same-group", "alice/friends");
+  graph.stateMembership(p2, "same-group", "alice/friends", p2, memberKey.privateKey);
+  graph.stateMembership("alice", "same-group", "alice/friends", p2, setKey.privateKey);
+  graph.nameObjectSet(p, chat.value, "same-group", "alice/friends", ownerKey.privateKey);
+  const request = signRequest({
+    requester: p2,
+    object: chat.value,
+    scope: "read",
+    status: "pending",
+    message: "",
+    issuedAt: now,
+  }, 2);
+  const result = grantApprovedRequest(
+    graph,
+    p,
+    request,
+    { from: at, until: now + 100 },
+    { predicate: "same-group", now },
+    { scalar: secret(1), resolver },
+  );
+  assert.equal(result.granted, true);
+  assert.equal(result.see.grant.hamState, 1);
+});
+
+test("no public path seals an unverified see or post row", () => {
+  assert.equal(seeApi.snapshotRow, undefined);
+  assert.equal(seeApi.restoreRow, undefined);
+  assert.equal(postApi.snapshotPost, undefined);
+  assert.equal(postApi.restorePost, undefined);
+  assert.equal(seeApi.stageSee, undefined);
+  assert.equal(seeApi.commitStagedSee, undefined);
+  assert.equal(postApi.stagePost, undefined);
+  assert.equal(postApi.commitStagedPost, undefined);
+  assert.equal(isVerifiedRow({ mode: "present", grant: { stated: 1, from: 0, until: 1e12 } }), false);
+  const graph = {};
+  const resolver = { rotations: () => [], ctx: context() };
+  assert.equal(putObject(graph, objectRecord(), resolver).ok, true);
+  assert.equal(checkSee(graph, chat.value, p2, now).allowed, false);
+  assert.equal(checkSee(graph, chat.value, p2, now).reason, "delegate");
+});
+
+test("a bare history array is missing-history and writes nothing", () => {
+  const graph = {};
+  const resolver = { rotations: () => [], ctx: context() };
+  assert.equal(putObject(graph, objectRecord(), resolver).ok, true);
+  const see = signGrant(ids.seeGrantBytes, { hamState: 1 });
+  const post = signGrant(ids.postGrantBytes, { hamState: 1 });
+  for (const got of [
+    seeApi.admitGrantPair(graph, see, post, []),
+    postApi.postKeeps(graph, post, []),
+    postApi.admitResolvedPost(graph, post, []),
+  ]) {
+    assert.equal(got.ok, false);
+    assert.equal(got.reason, "missing-history");
+  }
+  assert.equal(admittedView(graph, chat.value, p2), undefined);
+  assert.equal(admittedPost(graph, chat.value, p2), undefined);
+  assert.equal(checkSee(graph, chat.value, p2, now).allowed, false);
+  assert.equal(checkPost(graph, chat.value, p2, now).allowed, false);
+});
+
+test("reverify drops the group label with the owner", () => {
+  const graph = new MemoryGroupGraph();
+  const resolver = { rotations: () => [], ctx: context() };
+  assert.equal(putObject(graph, objectRecord(), resolver).ok, true);
+  assert.equal(graph.ownerOf(chat.value), p);
+  const dropped = seeApi.reverifyPrincipal(graph, p, { rotations: () => undefined, ctx: context() });
+  assert.equal(dropped.ok, false);
+  assert.equal(dropped.reason, "missing-history");
+  assert.equal(graph.ownerOf(chat.value), undefined);
+  assert.equal(seeApi.admittedOwner(graph, chat.value), undefined);
+  assert.equal(checkSee(graph, chat.value, p2, now).reason, "unknown");
+});
+
+function throwingContext(failAt) {
+  const base = context();
+  let reads = 0;
+  return new Proxy(base, {
+    get(target, prop, receiver) {
+      reads += 1;
+      if (reads === failAt) throw new Error("injected");
+      return Reflect.get(target, prop, receiver);
+    },
+  });
+}
+
+test("a throw while reading the resolver context writes neither grant", () => {
+  const request = signRequest({
+    requester: p2,
+    object: chat.value,
+    scope: "read+post",
+    status: "pending",
+    message: "",
+    issuedAt: now,
+  }, 2);
+  const window = { from: at, until: now + 100 };
+  const see = signGrant(ids.seeGrantBytes, { hamState: 1 });
+  const post = signGrant(ids.postGrantBytes, { hamState: 1 });
+  for (const failAt of [1, 2, 3, 4, 5, 6, 7, 8, 9, 12, 16, 24, 10000]) {
+    const graph = {};
+    assert.equal(putObject(graph, objectRecord(), { rotations: () => [], ctx: context() }).ok, true);
+    const resolver = { rotations: () => [], ctx: throwingContext(failAt) };
+    let thrown = null;
+    let result;
+    try {
+      result = grantApprovedRequest(graph, p, request, window, null, { scalar: secret(1), resolver });
+    } catch (error) {
+      thrown = error;
+    }
+    const seeRow = admittedView(graph, chat.value, p2);
+    const postRow = admittedPost(graph, chat.value, p2);
+    if (thrown) {
+      assert.equal(thrown instanceof Error ? thrown.message : "", "injected");
+      assert.equal(seeRow, undefined);
+      assert.equal(postRow, undefined);
+    } else {
+      assert.equal(result.granted, true);
+      assert.equal(checkSee(graph, chat.value, p2, now).allowed, true);
+      assert.equal(checkPost(graph, chat.value, p2, now).allowed, true);
+    }
+    assert.equal(Boolean(seeRow), Boolean(postRow));
+    const direct = {};
+    assert.equal(putObject(direct, objectRecord(), { rotations: () => [], ctx: context() }).ok, true);
+    let directThrown = null;
+    let paired;
+    try {
+      paired = seeApi.admitGrantPair(direct, see, post, { rotations: () => [], ctx: throwingContext(failAt) });
+    } catch (error) {
+      directThrown = error;
+    }
+    const directSee = admittedView(direct, chat.value, p2);
+    const directPost = admittedPost(direct, chat.value, p2);
+    if (directThrown) {
+      assert.equal(directThrown instanceof Error ? directThrown.message : "", "injected");
+      assert.equal(directSee, undefined);
+      assert.equal(directPost, undefined);
+    } else {
+      assert.equal(paired.ok, true);
+      assert.equal(checkSee(direct, chat.value, p2, now).allowed, true);
+      assert.equal(checkPost(direct, chat.value, p2, now).allowed, true);
+    }
+    assert.equal(Boolean(directSee), Boolean(directPost));
+  }
 });

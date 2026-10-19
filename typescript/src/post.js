@@ -24,6 +24,7 @@ import {
   verifyAclAttestation,
   verifyPostGrant,
 } from '../ids/src/index.js';
+import { postMap, postTables } from './internal/post-rows.js';
 import {
   admitRow,
   admittedOwner,
@@ -33,21 +34,10 @@ import {
   reverifyPrincipal,
   seeAccessorEdge,
   seeObjectEdge,
+  snapshotContext,
 } from './see.js';
 
 const sealedPosts = new WeakSet();
-/** @type {WeakMap<object, Map<string, SealedPost>>} */
-const postTables = new WeakMap();
-
-/** @param {object} graph */
-function postMap(graph) {
-  let held = postTables.get(graph);
-  if (!held) {
-    held = new Map();
-    postTables.set(graph, held);
-  }
-  return held;
-}
 
 /** A copy of the admitted post rows. Mutating it does not change Check.
  * @param {object} graph */
@@ -153,30 +143,20 @@ function present(row) {
   });
 }
 
-/** @param {unknown} graph @param {unknown} resolver */
-function ready(graph, resolver) {
-  return !!graph && typeof graph === 'object' && !!resolver && typeof resolver === 'object'
-    && typeof /** @type {SeeResolver} */ (resolver).rotations === 'function'
-    && !!/** @type {SeeResolver} */ (resolver).ctx;
-}
-
 /**
- * Admit one sociacl-post-grant-v2 row. The owner is the admitted object
- * record. A missing object is `unknown`. A row owner that is not that
- * record is `bad-record`. Retired-key cancels are `stated === 0` in the
- * signed bytes.
+ * Verify one post row against history the caller already resolved.
+ * Does not write. The result stays inside this module.
  * @param {object} graph
  * @param {unknown} row
- * @param {SeeResolver} resolver
- * @returns {{ ok: true, value: { mode: 'present' | 'witnessed', grant: PostGrant }, kept: boolean } | { ok: false, reason: string }}
+ * @param {readonly unknown[]} rotations
+ * @param {ResolutionContext} ctx
+ * @returns {{ ok: true, graph: object, sealed: SealedPost, kept: boolean, used: boolean } | { ok: false, reason: string }}
  */
-export function admitPost(graph, row, resolver) {
-  if (!ready(graph, resolver)) return { ok: false, reason: 'missing-history' };
+function evaluatePost(graph, row, rotations, ctx) {
   const parsed = parsePostGrant(row);
   if (!parsed.ok) return parsed;
-  const rotations = resolver.rotations(parsed.value.grant.owner);
-  if (!Array.isArray(rotations)) return { ok: false, reason: 'missing-history' };
-  const verified = verifyPostGrant(parsed.value.grant, rotations, resolver.ctx);
+  if (!graph || typeof graph !== 'object' || !ctx) return { ok: false, reason: 'missing-history' };
+  const verified = verifyPostGrant(parsed.value.grant, rotations, ctx);
   if (!verified.ok) return verified;
   const grant = verified.value.grant;
   const admission = admittedOwner(graph, grant.object);
@@ -184,12 +164,114 @@ export function admitPost(graph, row, resolver) {
   if (admission.owner !== grant.owner) return { ok: false, reason: 'bad-record' };
   const held = postMap(graph);
   const key = postSoul(admission.owner, grant.object, grant.accessor);
-  const sealed = seal(verified.value, resolver.ctx);
+  const sealed = seal(verified.value, ctx);
   const prev = held.get(key);
   const kept = !prev || !sealedPosts.has(prev) || replaces(prev, sealed);
-  if (kept) held.set(key, sealed);
-  const stored = held.get(key) ?? sealed;
+  return { ok: true, graph, sealed, kept, used: false };
+}
+
+/**
+ * Write a row this module just verified. Kept is computed again from the
+ * current stored row. The soul key comes from the signed grant.
+ * @param {{ ok: true, graph: object, sealed: SealedPost, kept: boolean, used: boolean }} evaluated
+ * @returns {{ ok: true, value: SealedPost, kept: boolean } | { ok: false, reason: string }}
+ */
+function commitEvaluatedPost(evaluated) {
+  if (!evaluated || evaluated.used || !evaluated.graph || !sealedPosts.has(evaluated.sealed)) {
+    return { ok: false, reason: 'not-kept' };
+  }
+  evaluated.used = true;
+  const grant = evaluated.sealed.grant;
+  const key = postSoul(grant.owner, grant.object, grant.accessor);
+  const held = postMap(evaluated.graph);
+  const prev = held.get(key);
+  const kept = !prev || !sealedPosts.has(prev) || replaces(prev, evaluated.sealed);
+  if (kept) held.set(key, evaluated.sealed);
+  const stored = held.get(key) ?? evaluated.sealed;
   return { ok: true, value: present(stored), kept };
+}
+
+/**
+ * History comes from the resolver. A bare array is `missing-history`.
+ * The context is copied once before the row is parsed.
+ * @param {unknown} resolver
+ * @param {unknown} row
+ * @returns {{ ok: true, rotations: readonly unknown[], ctx: ResolutionContext } | { ok: false, reason: string }}
+ */
+function openPost(resolver, row) {
+  if (!resolver || typeof resolver !== 'object' || typeof /** @type {SeeResolver} */ (resolver).rotations !== 'function' || !/** @type {SeeResolver} */ (resolver).ctx) {
+    return { ok: false, reason: 'missing-history' };
+  }
+  const ready = /** @type {SeeResolver} */ (resolver);
+  const ctx = snapshotContext(ready.ctx);
+  const parsed = parsePostGrant(row);
+  if (!parsed.ok) return parsed;
+  const rotations = ready.rotations(parsed.value.grant.owner);
+  if (!Array.isArray(rotations)) return { ok: false, reason: 'missing-history' };
+  return { ok: true, rotations, ctx };
+}
+
+/**
+ * Whether this post row would replace the current stored row.
+ * Does not write. The sealed row does not leave this function.
+ * @param {object} graph
+ * @param {unknown} row
+ * @param {SeeResolver} resolver
+ * @returns {{ ok: true, kept: boolean } | { ok: false, reason: string }}
+ */
+export function postKeeps(graph, row, resolver) {
+  const ready = openPost(resolver, row);
+  if (!ready.ok) return ready;
+  const evaluated = evaluatePost(graph, row, ready.rotations, ready.ctx);
+  if (!evaluated.ok) return evaluated;
+  return { ok: true, kept: evaluated.kept };
+}
+
+/**
+ * Verify one post row and write it in this call.
+ * @param {object} graph
+ * @param {unknown} row
+ * @param {SeeResolver} resolver
+ * @returns {{ ok: true, value: SealedPost, kept: boolean } | { ok: false, reason: string }}
+ */
+export function admitResolvedPost(graph, row, resolver) {
+  const ready = openPost(resolver, row);
+  if (!ready.ok) return ready;
+  const evaluated = evaluatePost(graph, row, ready.rotations, ready.ctx);
+  if (!evaluated.ok) return evaluated;
+  return commitEvaluatedPost(evaluated);
+}
+
+/**
+ * Admit one sociacl-post-grant-v2 row. The owner is the admitted object
+ * record. A missing object is `unknown`. A row owner that is not that
+ * record is `bad-record`. Retired-key cancels are `stated === 0` in the
+ * signed bytes. `rotations` is a function. The result always includes the row.
+ * @param {object} graph
+ * @param {unknown} row
+ * @param {SeeResolver} resolver
+ * @returns {{ ok: true, value: SealedPost, kept: boolean } | { ok: false, reason: string }}
+ */
+export function admitPost(graph, row, resolver) {
+  return admitResolvedPost(graph, row, resolver);
+}
+
+/** The stored verified post row, as a caller-facing copy.
+ * @param {object} graph
+ * @param {ObjectId} object
+ * @param {PrincipalId} accessor
+ */
+export function presentedPost(graph, object, accessor) {
+  const id = seeObjectEdge(object);
+  const who = seeAccessorEdge(accessor);
+  if (!id.ok || !who.ok) return undefined;
+  const admission = admittedOwner(graph, id.value);
+  const held = postTables.get(graph);
+  if (!admission || !held) return undefined;
+  const row = held.get(postSoul(admission.owner, id.value, who.value));
+  if (!row || !sealedPosts.has(row)) return undefined;
+  if (row.grant.owner !== admission.owner || row.grant.object !== id.value || row.grant.accessor !== who.value) return undefined;
+  return present(row);
 }
 
 /** @param {object} graph @param {ObjectId} object @param {PrincipalId} accessor */
@@ -202,6 +284,7 @@ export function admittedPost(graph, object, accessor) {
   if (!admission || !held) return undefined;
   const row = held.get(postSoul(admission.owner, id.value, who.value));
   if (!row || !sealedPosts.has(row)) return undefined;
+  if (row.grant.owner !== admission.owner || row.grant.object !== id.value || row.grant.accessor !== who.value) return undefined;
   return {
     stated: row.grant.stated,
     hamState: row.grant.hamState,
@@ -237,23 +320,26 @@ export function checkPost(graph, object, accessor, now, hint, hop) {
   if (!held) return { allowed: false, reason: 'missing', ...echoed };
   const row = held.get(postSoul(admission.owner, id.value, who.value));
   if (!row || !sealedPosts.has(row)) return { allowed: false, reason: 'missing', ...echoed };
+  if (row.grant.owner !== admission.owner || row.grant.object !== id.value || row.grant.accessor !== who.value) {
+    return { allowed: false, reason: 'missing', ...echoed };
+  }
   if (row.grant.stated !== 1) return { allowed: false, reason: 'cancelled', ...echoed };
   if (now >= row.grant.from && now < row.grant.until) return { allowed: true, reason: 'post', ...echoed };
   return { allowed: false, reason: 'missing', ...echoed };
 }
 
 /**
- * Recheck post rows for one principal. see.js calls this. The seal stays here.
+ * Recheck post rows for one principal. see.js passes the rotations it already resolved.
  * @param {object} graph
  * @param {PrincipalId} principal
- * @param {SeeResolver} resolver
+ * @param {readonly unknown[] | undefined} rotations
+ * @param {ResolutionContext | undefined} ctx
  * @returns {import('../ids/src/types.js').Result<{ dropped: number }>}
  */
-export function reverifyPosts(graph, principal, resolver) {
+export function reverifyPosts(graph, principal, rotations, ctx) {
   const held = graph && typeof graph === 'object' ? postTables.get(graph) : undefined;
   if (!held) return { ok: true, value: { dropped: 0 } };
-  if (!ready(graph, resolver)) return { ok: false, reason: 'missing-history' };
-  const rotations = resolver.rotations(principal);
+  if (!graph || typeof graph !== 'object' || !ctx) return { ok: false, reason: 'missing-history' };
   if (!Array.isArray(rotations)) {
     for (const [key, row] of [...held]) {
       if (row.grant.owner === principal) held.delete(key);
@@ -263,13 +349,13 @@ export function reverifyPosts(graph, principal, resolver) {
   let dropped = 0;
   for (const [key, row] of [...held]) {
     if (row.grant.owner !== principal) continue;
-    const again = verifyPostGrant(row.source, rotations, resolver.ctx);
+    const again = verifyPostGrant(row.source, rotations, ctx);
     if (!again.ok) {
       held.delete(key);
       dropped += 1;
       continue;
     }
-    held.set(key, seal(again.value, resolver.ctx));
+    held.set(key, seal(again.value, ctx));
   }
   return { ok: true, value: { dropped } };
 }
@@ -323,8 +409,7 @@ export function runPostCase(steps, options) {
         if (got.ok || got.reason !== step.reason) failStep(step, got.ok ? 'ok' : got.reason);
         continue;
       }
-      if (!got.ok || got.kept !== step.kept) failStep(step, got.ok ? got.kept : got.reason);
-      if (!got.ok) continue;
+      if (!got.ok || got.value === undefined || got.kept !== step.kept) failStep(step, got.ok ? got.kept : got.reason);
       if (step.mode !== undefined && got.value.mode !== step.mode) failStep(step, got.value.mode);
       if (step.stated !== undefined && got.value.grant.stated !== step.stated) failStep(step, got.value.grant.stated);
       if (step.hamState !== undefined && got.value.grant.hamState !== step.hamState) failStep(step, got.value.grant.hamState);
@@ -392,3 +477,4 @@ function patchRow(row, patch) {
 function failStep(step, got) {
   throw Error(JSON.stringify({ step, got }));
 }
+

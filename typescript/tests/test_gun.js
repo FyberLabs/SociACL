@@ -7,18 +7,17 @@ import {
   aclKey,
   aclSoul,
   applySeeGrant,
-  applyPostGrant,
-  cancelPost,
   cancelSee,
+  canonicalAccessorId,
   checkSeeGrant,
   checkSeeLabel,
   encodeKey,
   grantSoul,
   itemSoul,
+  postGrantKey,
+  sameObjectId,
   userSoul,
 } from "../src/legacy/gun-legacy.js";
-import { canonicalAccessorId, postGrantKey, postSoul, sameObjectId } from "../src/legacy/post-label.js";
-
 test("souls match the s3r.ch consume contract", () => {
   assert.equal(encodeKey("rss3:act/1#x"), "rss3:act/1~2x");
   assert.equal(itemSoul("rss3:act/1#x"), "s3rch/items/rss3:act/1~2x");
@@ -55,18 +54,6 @@ test("checkSeeGrant ANDs the window; cancel is immediate", () => {
   assert.equal(checkSeeGrant(acl, grant, object, "0xbob", 10).allowed, true);
   cancelSee(acl, "0xalice", "0xbob", object);
   assert.equal(checkSeeLabel(acl, object, "0xbob", 10).allowed, false);
-});
-
-test("label post rows stay on the label graph until request migrates", () => {
-  const acl = new MemorySeeAcl();
-  const object = itemSoul("room:alpha");
-  acl.putObject(object, "0xalice");
-  applyPostGrant(acl, "0xalice", { object, accessor: "0xbob", from: 0, until: 80 });
-  assert.equal(acl.postGrant(object, "0xbob").grant.stated, 1);
-  applySeeGrant(acl, "0xalice", { claimId: object, accessor: "0xbob", from: 0, until: 80 });
-  cancelPost(acl, "0xalice", "0xbob", object);
-  assert.equal(acl.postGrant(object, "0xbob").grant.stated, 0);
-  assert.equal(checkSeeLabel(acl, object, "0xbob", 10).allowed, true);
 });
 
 test("acl keys for dot, underscore, and slash stay distinct", () => {
@@ -111,7 +98,6 @@ test("a rejected principal is not a grant path", () => {
   assert.equal(canonicalAccessorId("a\u0000b"), null);
   assert.equal(postGrantKey("0xalice", "doc", "a\u0000b"), null);
   assert.notEqual(postGrantKey("0xalice", "doc", "a\u0000b"), "0xalice\0doc\0a\u0000b");
-  assert.equal(postSoul("0xalice", "doc", "a\u0000b"), null);
   assert.equal(canonicalAccessorId("bob~name"), null);
   assert.equal(canonicalAccessorId("x~1get('s3rch')"), null);
   assert.equal(grantSoul("0xalice", "doc", "x~1get('s3rch')"), null);

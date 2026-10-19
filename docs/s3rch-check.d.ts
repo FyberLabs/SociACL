@@ -196,25 +196,6 @@ export type SeeGraph = {
   hasObject(object: CheckObjectId): boolean;
   ownerOf(object: CheckObjectId): AccessorId | undefined;
   /**
-   * Merged post row for this pair, including stated 0.
-   * Absent when no row has been merged. A see row is not this row.
-   */
-  postGrant(
-    object: CheckObjectId,
-    accessor: AccessorId,
-  ): {
-    soul: string | null;
-    owner: string;
-    hamState: number;
-    grant: {
-      object: string;
-      accessor: string;
-      from: number;
-      until: number;
-      stated: 0 | 1;
-    };
-  } | undefined;
-  /**
    * Object version this verifier has merged. Absent when the
    * object is missing. Encrypted re-check compares a zookie to
    * this value. A presenter-supplied version is not a substitute.
@@ -486,36 +467,27 @@ export function postGrantBytes(grant: MeshPostGrant): Uint8Array;
  * scope is only `read` or `read+post`. status is only `pending`
  * or `withdrawn`. Any other spelling is rejected.
  * message is at most 280 Unicode scalar values and may be empty.
+ * A non-string field is `not-string` before coercion.
  */
 export type AccessRequest = {
-  requester: AccessorId;
-  source: CheckObjectId;
-  scope: string;
-  message: string;
-  status: string;
-  /**
-   * Ed25519 signature over accessRequestSigningBytes.
-   * 64 bytes. The owner's client checks it against the
-   * requester's enrolled key. Absent is not a grant.
-   * This is not an owner signature on a grant row.
-   */
-  signature?: Uint8Array;
-};
-
-/** Canonical request. requester is the accessor id. source is the object key. id is 64 lowercase hex. */
-export type AcceptedAccessRequest = {
-  requester: AccessorId;
-  source: string;
+  requestId: string;
+  requester: PrincipalId;
+  object: ObjectId;
   scope: "read" | "read+post";
-  message: string;
   status: "pending" | "withdrawn";
-  id: string;
-  signingBytes: Uint8Array;
+  message: string;
+  issuedAt: number;
+  /**
+   * P-256 signature over accessRequestBytes. Raw r||s, base64url.
+   * Present authority only. A retired key does not count.
+   * An Ed25519 signature does not verify.
+   */
+  sig: string;
 };
 
 /**
  * Members auto-approve on the owner's client.
- * grantApprovedRequest evaluates checkGroupSee.
+ * grantApprovedRequest evaluates checkGroupSee on the stored object id.
  * Hop and hint are not inputs. There is no hosted evaluator.
  */
 export type MembersAutoApprove = {
@@ -524,141 +496,120 @@ export type MembersAutoApprove = {
 };
 
 /**
- * Owner-written rows. Unsigned. post is null for scope read.
- * postSigningBytes is the label writer's encoding until PR 4.
- * It is not postGrantBytes. This check does not verify a signature.
+ * Owner-signed rows. post is null for scope read.
+ * Both rows are sociacl-see-grant-v2 and sociacl-post-grant-v2.
+ * Nothing is written unless both checks pass.
  */
-export type OwnerGrantRows = {
-  requestId: string;
-  requestSigningBytes: Uint8Array;
-  see: GunAclEdge;
-  post: {
-    soul: string | null;
-    owner: string;
-    hamState: number;
-    grant: {
-      object: string;
-      accessor: string;
-      from: number;
-      until: number;
-      stated: 0 | 1;
-    };
-  } | null;
-  postSigningBytes: Uint8Array | null;
-};
-
-/** No rows were written. not-member is not a standing deny. */
 export type AccessApproval =
-  | ({ granted: true } & OwnerGrantRows)
+  | {
+      granted: true;
+      requestId: string;
+      see: VerifiedRow;
+      post: VerifiedRow | null;
+      /** Set when the stored row already matched. No new signature and no ham bump. */
+      unchanged?: true;
+    }
   | {
       granted: false;
-      reason: "withdrawn" | "owner" | "missing" | "not-member" | "signature";
+      reason: string;
     };
 
-/** Length-prefixed domain for accessRequestSigningBytes. */
-export const ACCESS_REQUEST_DOMAIN: "s3rch-access-request-v1";
+/** Length-prefixed domain for accessRequestBytes. */
+export const REQUEST_DOMAIN: "sociacl-access-request-v2";
 
-/** Length-prefixed domain for accessRequestId. */
-export const ACCESS_REQUEST_ID_DOMAIN: "s3rch-request";
-
-/** Scope that writes a see grant only. */
-export const ACCESS_SCOPE_READ: "read";
-
-/** Scope that writes a see grant and a post grant. */
-export const ACCESS_SCOPE_READ_POST: "read+post";
-
-/** Requester status that the owner client may approve. */
-export const ACCESS_STATUS_PENDING: "pending";
-
-/** Requester status. A withdrawal writes no grant. */
-export const ACCESS_STATUS_WITHDRAWN: "withdrawn";
-
-/** Maximum message length in Unicode scalar values. A surrogate pair is one scalar. An unpaired surrogate is rejected. */
-export const ACCESS_MESSAGE_MAX: 280;
+/** Length-prefixed domain for requestId. */
+export const REQUEST_ID_DOMAIN: "sociacl-request-id-v2";
 
 /**
- * Canonical accessor id for a request.
- * `s3rch/users/<wallet>` and the wallet are this id. Each segment
- * is trimmed and an empty segment is dropped. Empty is rejected.
- * The raw string is Unicode scalar values. U+0085 and U+FEFF are
- * rejected so this trim matches Rust.
+ * SHA-256 lowercase hex of domain sociacl-request-id-v2, the requester,
+ * and the object. Scope, message, and status are not inputs.
+ * The request id and the object are the same parsed id.
+ * A non-string argument is `not-string`.
  */
-export function canonicalRequestAccessor(requester: AccessorId): string;
+export function requestId(
+  requester: unknown,
+  object: unknown,
+): { ok: true; value: string } | { ok: false; reason: string };
 
 /**
- * Object key for a request id. An aliasable item soul
- * reduces to the raw id. An underscore in that raw id stays.
- * A held claim id does not alias to an item soul.
- * `s3rch/items/ foo` does not alias to `foo`. `a_b` and
- * `s3rch/items/a_b` are one source. `a/b` is not. The raw string is
- * Unicode scalar values.
- * U+0085 and U+FEFF are rejected. meta, acl, a dest-ACL soul,
- * gun.get('s3rch').get('meta'), gun.get('s3rch').get('acl'), and an
- * HTTP leaf in any scheme case are rejected.
- * Grant rows still store the in-graph object id.
+ * Length-prefixed bytes the requester signs.
+ * Domain sociacl-access-request-v2, the request id, requester, object,
+ * scope, status, message, and decimal issuedAt. Lengths are uint32
+ * little-endian. Does not verify a signature and does not grant.
  */
-export function canonicalRequestObject(source: CheckObjectId): string;
+export function accessRequestBytes(request: AccessRequest): Uint8Array;
 
 /**
- * SHA-256 lowercase hex of the length-prefixed id domain, the
- * canonical accessor, and the canonical object key. Scope, message,
- * and status are not inputs. Spelling variants of one pair share this id.
+ * Snapshot one access request. Scope is `read` or `read+post`.
+ * Status is `pending` or `withdrawn`. The message is at most 280
+ * Unicode scalar values and may be empty. A missing or non-string
+ * scope, status, message, requester, or object is `not-string`.
+ * A missing request id is `bad-record`. A wrong domain or a missing
+ * signature is `legacy-row`.
  */
-export function accessRequestId(
-  requester: AccessorId,
-  source: CheckObjectId,
-): string;
+export function parseAccessRequest(
+  row: unknown,
+):
+  | { ok: true; value: { request: AccessRequest; bytes: Uint8Array } }
+  | { ok: false; reason: string };
 
 /**
- * Length-prefixed bytes a later signature can cover.
- * Domain s3rch-access-request-v1, the request id, scope, message,
- * and status. Lengths are uint32 little-endian. Does not verify a
- * signature and does not grant.
+ * Present authority for the requester. A retired key is refused.
+ * Kind is not a parameter.
  */
-export function accessRequestSigningBytes(request: AccessRequest): Uint8Array;
+export function verifyAccessRequest(
+  row: unknown,
+  rotations: readonly unknown[],
+  ctx: object,
+):
+  | {
+      ok: true;
+      value: {
+        key: PrincipalId;
+        mode: "present";
+        request: AccessRequest;
+        bytes: Uint8Array;
+      };
+    }
+  | { ok: false; reason: string };
 
 /**
- * Canonicalize a request. Does not read a graph and does not grant.
- * A non-canonical scope, status, message, accessor, or source throws.
- */
-export function acceptAccessRequest(request: AccessRequest): AcceptedAccessRequest;
-
-/**
- * Owner's client. Writes a see grant for an approved pending request,
- * and a post grant when the scope is read+post. Rows use the in-graph
- * object id and the canonical accessor id. Before any write, the
- * requester signature over accessRequestSigningBytes must verify
- * under the enrolled key for that requester. An unsigned or badly
- * signed request writes nothing. members, when supplied, runs
- * checkGroupSee on the canonical accessor and writes only when that
- * allows. A later check with the original user-soul spelling finds
- * that row. Each request field is read once, and verification and
- * the graph lookup use that snapshot. A see row whose next hamState
- * is above 9007199254740991 does not advance and writes no post row.
- * checkGroupSee is optional when members is omitted.
- * A withdrawn request writes
- * nothing. A caller who is not the object owner writes nothing.
- * A hop, a hint, a wrap, a request, or an inbox delivery is not an
- * approval. There is no hosted evaluator. Explicit deny and the policy
- * queue are not this function. Grant rows stay unsigned.
+ * Owner's client. Writes a sociacl-see-grant-v2 row for an approved
+ * pending request, and a sociacl-post-grant-v2 row when the scope is
+ * read+post. The owner signs both under the current key. issuedAt on
+ * those rows is the resolver's now. The requester signature is checked
+ * with verifySignedAt. Only a present key counts. Both ham ceilings
+ * are checked against one resolved history before either row is written.
+ * Both rows are written, or neither is. There is no staged ticket.
+ * An identical approval returns the stored row with `unchanged: true`
+ * only after the current key resolves, the scalar owns that key, and
+ * members allow, and only when the stored row is signed by that key.
+ * It does not sign or bump ham. A retired-key row is signed again.
+ * A different window is a new decision. The window is copied once.
+ * Members auto-approve over an owner cancel is `not-kept` and writes
+ * nothing. A manual approval re-grants above that cancel. When `now`
+ * equals the latest rotation time the result is `rotation-boundary`.
+ * members, when supplied, requires the label owner to parse as the
+ * admitted signed owner and a real membership reason from
+ * checkGroupSee. The owner shortcut is not membership. A withdrawn
+ * request writes nothing. A caller who is not the admitted object
+ * owner writes nothing. A hop, a hint, a wrap, a request, or an inbox
+ * delivery is not an approval. There is no hosted evaluator.
  */
 export function grantApprovedRequest(
   graph: SeeGraph & {
-    objectRecord(
-      object: CheckObjectId,
-    ): { id: CheckObjectId; owner: AccessorId } | undefined;
-    enrolledKey(principal: AccessorId): Uint8Array | undefined;
     checkGroupSee?(
       predicate: "same-group" | "named-circle",
-      object: CheckObjectId,
-      accessor: AccessorId,
+      object: ObjectId,
+      accessor: PrincipalId,
       now: number,
     ): CheckResult;
   },
-  owner: AccessorId,
+  owner: PrincipalId,
   request: AccessRequest,
   window: { from: number; until: number },
-  members?: MembersAutoApprove,
+  members: MembersAutoApprove | null,
+  signer: { scalar: Uint8Array; resolver: SeeResolver },
 ): AccessApproval;
 
 /** Named Social Light channels. Same as sociacl-core. Hop is not a grant. */

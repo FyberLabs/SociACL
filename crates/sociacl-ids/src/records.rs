@@ -2390,6 +2390,139 @@ pub fn verify_signed_at(
         mode: SignedAtMode::Present,
     })
 }
+/// Length-prefixed domain for [`request_id`].
+pub const REQUEST_ID_DOMAIN: &str = "sociacl-request-id-v2";
+/// Length-prefixed domain for an access request.
+pub const REQUEST_DOMAIN: &str = "sociacl-access-request-v2";
+const REQUEST_MESSAGE_MAX: usize = 280;
+/// One parsed access request. The request id is the hash of the requester and object.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AccessRequest {
+    pub request_id: String,
+    pub requester: PrincipalId,
+    pub object: ObjectId,
+    pub scope: String,
+    pub status: String,
+    pub message: String,
+    pub issued_at: u64,
+    pub sig: String,
+}
+/// Present-authority check over a parsed access request.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct VerifiedAccessRequest {
+    pub key: PrincipalId,
+    pub mode: SignedAtMode,
+    pub request: AccessRequest,
+    pub bytes: Vec<u8>,
+}
+fn request_field<'a>(value: Option<&'a Value>) -> Result<&'a str, Reason> {
+    match value {
+        Some(Value::String(text)) => Ok(text),
+        Some(_) => Err(Reason::NotString),
+        None => Err(Reason::BadRecord),
+    }
+}
+/// Missing and non-string are the same reason for scope, status, message, requester, and object.
+fn request_text<'a>(value: Option<&'a Value>) -> Result<&'a str, Reason> {
+    match value {
+        Some(Value::String(text)) => Ok(text),
+        _ => Err(Reason::NotString),
+    }
+}
+fn request_message(value: &str) -> Result<&str, Reason> {
+    if value.chars().count() > REQUEST_MESSAGE_MAX {
+        return Err(Reason::TooLong);
+    }
+    Ok(value)
+}
+/// Signing bytes for a request id. Scope, message, and status are not inputs.
+pub fn request_id_bytes(requester: &PrincipalId, object: &ObjectId) -> Vec<u8> {
+    lp(&[REQUEST_ID_DOMAIN, requester.as_ref(), object.as_ref()])
+}
+/// Lowercase hex SHA-256 of [`request_id_bytes`]. A non-string never reaches this function.
+pub fn request_id(requester: &str, object: &str) -> Result<String, Reason> {
+    let who = parse_principal_id(requester)?;
+    let id = parse_object_id(object)?;
+    Ok(hex(&Sha256::digest(request_id_bytes(&who, &id))))
+}
+/// Signing bytes for one parsed access request.
+pub fn access_request_bytes(request: &AccessRequest) -> Vec<u8> {
+    lp(&[
+        REQUEST_DOMAIN,
+        &request.request_id,
+        request.requester.as_ref(),
+        request.object.as_ref(),
+        &request.scope,
+        &request.status,
+        &request.message,
+        &request.issued_at.to_string(),
+    ])
+}
+/// Snapshot an access request. The request id is computed from the requester and object.
+/// A wrong domain or a missing signature is [`Reason::LegacyRow`]. An empty message is allowed.
+pub fn parse_access_request(row: &Value) -> Result<(AccessRequest, Vec<u8>), Reason> {
+    let map = row.as_object().ok_or(Reason::BadRecord)?;
+    if let Some(domain) = map.get("domain") {
+        if domain.as_str() != Some(REQUEST_DOMAIN) {
+            return Err(Reason::LegacyRow);
+        }
+    }
+    if !map.contains_key("sig") {
+        return Err(Reason::LegacyRow);
+    }
+    let requester = parse_principal_id(request_text(map.get("requester"))?)?;
+    let object = parse_object_id(request_text(map.get("object"))?)?;
+    let request_id = hex(&Sha256::digest(request_id_bytes(&requester, &object)));
+    let stated_id = request_field(map.get("requestId"))?;
+    if stated_id != request_id {
+        return Err(Reason::BadRecord);
+    }
+    let scope = request_text(map.get("scope"))?;
+    if scope != "read" && scope != "read+post" {
+        return Err(Reason::BadRecord);
+    }
+    let status = request_text(map.get("status"))?;
+    if status != "pending" && status != "withdrawn" {
+        return Err(Reason::BadRecord);
+    }
+    let message = request_message(request_text(map.get("message"))?)?.to_string();
+    let issued_at = see_u64(map.get("issuedAt"))?;
+    let sig = text(request_field(map.get("sig"))?, 128)?.to_string();
+    let request = AccessRequest {
+        request_id,
+        requester,
+        object,
+        scope: scope.to_string(),
+        status: status.to_string(),
+        message,
+        issued_at,
+        sig,
+    };
+    let bytes = access_request_bytes(&request);
+    Ok((request, bytes))
+}
+/// Present authority for the requester. A retired key is refused. Kind is not a parameter.
+pub fn verify_access_request(
+    row: &Value,
+    rotations: &[Value],
+    ctx: &ResolutionContext<'_>,
+) -> Result<VerifiedAccessRequest, Reason> {
+    let (request, bytes) = parse_access_request(row)?;
+    let signed = verify_signed_at(
+        &request.requester,
+        rotations,
+        ctx,
+        &bytes,
+        &request.sig,
+        request.issued_at,
+    )?;
+    Ok(VerifiedAccessRequest {
+        key: signed.key,
+        mode: signed.mode,
+        request,
+        bytes,
+    })
+}
 const POST_DOMAIN: &str = "sociacl-post-grant-v2";
 /// Signing bytes for one parsed post row. Domain and `stated` are inside the bytes.
 pub fn post_grant_bytes(grant: &SeeGrant) -> Vec<u8> {

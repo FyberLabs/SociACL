@@ -4,6 +4,8 @@ import { readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import * as ids from "../ids/src/index.js";
 import { runPostCase } from "../src/post.js";
+import { runRequestCase } from "./request-case.js";
+import { admitPost } from "../src/post.js";
 import { admitRow, checkSee, putObject, runSeeCase, seeAccessorEdge, seeObjectEdge } from "../src/see.js";
 
 function contextOf(raw) {
@@ -28,7 +30,7 @@ test("see vectors", () => {
   for (const fileName of readdirSync(dir).filter((name) => name.endsWith(".json")).sort()) {
     const file = JSON.parse(readFileSync(new URL(fileName, dir), "utf8"));
     const ctx = contextOf(file.context);
-    const run = file.family === "post" ? runPostCase : runSeeCase;
+    const run = file.family === "post" ? runPostCase : file.family === "request" ? runRequestCase : runSeeCase;
     for (const side of ["accept", "reject"]) {
       for (const entry of file[side]) {
         run(entry.steps, { ctx, rotations: (name) => file.context.rotationSets[name] });
@@ -127,6 +129,22 @@ test("admitRow returns a copy of the tie-break bytes", () => {
   const again = admitRow(graph, admitted.row, resolver);
   assert.equal(again.ok, true);
   assert.equal(again.kept, false);
+});
+
+test("admitRow and admitPost reject a history array", () => {
+  const file = JSON.parse(readFileSync(new URL("../../vectors/mesh/v2/see.json", import.meta.url), "utf8"));
+  const entry = file.accept.find((row) => row.name === "grant-on-chat_a-does-not-allow-chat_b");
+  const admitted = entry.steps.find((step) => step.op === "admit");
+  const graph = {};
+  const ctx = contextOf(file.context);
+  const array = { rotations: file.context.rotationSets.genesis, ctx, commit: false };
+  const see = admitRow(graph, admitted.row, array);
+  assert.equal(see.ok, false);
+  assert.equal(see.reason, "missing-history");
+  const post = admitPost(graph, admitted.row, array);
+  assert.equal(post.ok, false);
+  assert.equal(post.reason, "missing-history");
+  assert.equal(checkSee(graph, admitted.row.object, admitted.row.accessor, 10).allowed, false);
 });
 
 test("putObject returns a copy of the owner admission", () => {

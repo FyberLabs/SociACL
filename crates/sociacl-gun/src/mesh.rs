@@ -149,12 +149,11 @@ pub(crate) struct MeshObject {
 ///
 /// Group and circle rows live on this same graph. They do not fork
 /// items or users, and they are not see-grant souls.
-/// Label graph still used by post, group, and request. It is not the typed see API.
+/// Label graph still used by group. It is not the typed see, post, or request API.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct LabelGraph {
     pub(crate) objects: HashMap<String, MeshObject>,
     pub(crate) grants: HashMap<String, GunAclEdge>,
-    pub(crate) posts: HashMap<String, crate::post_label::GunPostEdge>,
     pub(crate) friends: HashSet<(String, String)>,
     pub(crate) groups: crate::group::GroupRows,
 }
@@ -184,6 +183,8 @@ pub struct MeshSeeGraph {
 #[derive(Clone, Debug)]
 pub struct VerifiedRow {
     pub mode: SignedAtMode,
+    /// Signing key that admitted this row.
+    pub key: PrincipalId,
     pub stated: u8,
     pub ham_state: u64,
     pub from: u64,
@@ -193,12 +194,15 @@ pub struct VerifiedRow {
     pub object: ObjectId,
     pub accessor: PrincipalId,
     pub attest: bool,
+    /// Canonical signing bytes of the stored row.
+    pub bytes: Vec<u8>,
     #[allow(dead_code)]
     pub(crate) seal: (),
 }
 
 #[derive(Clone, Debug)]
 struct AdmittedSee {
+    key: PrincipalId,
     mode: SignedAtMode,
     stated: u8,
     ham_state: u64,
@@ -288,6 +292,21 @@ impl MeshSeeGraph {
         Ok(true)
     }
 
+    /// Unstable, test-only hook. Plants a label owner without a signed record.
+    /// Production builds omit this. Tests enable the `vectors` feature.
+    #[cfg(feature = "vectors")]
+    #[doc(hidden)]
+    pub fn vector_label_owner(&mut self, object: &str, owner: &str) {
+        self.labels.put_object(object, owner);
+    }
+
+    /// Unstable, test-only hook. The label owner copied from an admitted record.
+    #[cfg(feature = "vectors")]
+    #[doc(hidden)]
+    pub fn vector_label_owner_of(&self, object: &str) -> Option<&str> {
+        self.labels.owner_of(object)
+    }
+
     /// Admit one see row. The row is parsed once; the signature covers that value.
     /// History comes from `resolver` called with the parsed owner.
     /// Missing rotation history is `missing-history`, not an empty history.
@@ -318,6 +337,54 @@ impl MeshSeeGraph {
         }
         let stored = self.admitted.get(&key).expect("admitted row");
         Ok((view_row(stored), kept))
+    }
+
+    /// Write a see row and, when present, a post row.
+    /// Both are verified against `rotations` before either insert.
+    /// A missing see row is left as stored. A row that would not replace writes neither.
+    pub(crate) fn commit_grant_rows(
+        &mut self,
+        see: Option<&Value>,
+        post: Option<&Value>,
+        rotations: &[Value],
+        ctx: &ResolutionContext<'_>,
+    ) -> Result<(Option<VerifiedRow>, Option<VerifiedRow>), Reason> {
+        let see_prepared = if let Some(row) = see {
+            let (parsed, _) = parse_see_grant(row)?;
+            let verified = verify_see_grant(&snapshot_see(&parsed), rotations, ctx)?;
+            let see_key =
+                id_grant_soul(&parsed.owner, &parsed.object, &parsed.accessor).to_string();
+            let see_next = admitted_from(&verified, &snapshot_see(&parsed), ctx);
+            let see_kept = match self.admitted.get(&see_key) {
+                Some(prev) => replaces(prev, &see_next),
+                None => true,
+            };
+            Some((see_key, see_next, see_kept))
+        } else {
+            None
+        };
+        let post_prepared = match post {
+            Some(row) => Some(self.prepare_post(row, rotations, ctx)?),
+            None => None,
+        };
+        if see_prepared.as_ref().is_some_and(|prepared| !prepared.2)
+            || post_prepared.as_ref().is_some_and(|prepared| !prepared.3)
+        {
+            return Err(Reason::NotKept);
+        }
+        let see_row = if let Some((key, next, _)) = see_prepared {
+            self.admitted.insert(key, next.clone());
+            Some(view_row(&next))
+        } else {
+            None
+        };
+        let post_row = if let Some((key, next, view, _)) = post_prepared {
+            self.post_rows.insert(key, next);
+            Some(view)
+        } else {
+            None
+        };
+        Ok((see_row, post_row))
     }
 
     /// Drop this principal's grants and object records that the new checkpoint
@@ -502,6 +569,7 @@ fn admitted_from(
     ctx: &ResolutionContext<'_>,
 ) -> AdmittedSee {
     AdmittedSee {
+        key: verified.key.clone(),
         mode: verified.mode,
         stated: verified.grant.stated,
         ham_state: verified.grant.ham_state,
@@ -520,6 +588,7 @@ fn admitted_from(
 fn view_row(row: &AdmittedSee) -> VerifiedRow {
     VerifiedRow {
         mode: row.mode,
+        key: row.key.clone(),
         stated: row.stated,
         ham_state: row.ham_state,
         from: row.from,
@@ -529,6 +598,7 @@ fn view_row(row: &AdmittedSee) -> VerifiedRow {
         object: row.object.clone(),
         accessor: row.accessor.clone(),
         attest: has_attest(row),
+        bytes: row.bytes.clone(),
         seal: (),
     }
 }
