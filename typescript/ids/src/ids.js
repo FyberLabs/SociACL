@@ -190,7 +190,11 @@ export function parseSoul(x) {
     if (a[4] !== 'same-group' && a[4] !== 'named-circle') return fail('bad-template');
     const owner = keyPrincipal(a[2]); if (!owner.ok) return owner;
     const set = parseObjectId(a[5]); if (!set.ok) return set;
+    const setBound = boundParts(set.value);
+    if (!setBound || setBound[1] !== 'set') return fail('bad-template');
     const object = parseObjectId(a[6]); if (!object.ok) return object;
+    const embedded = objectPrincipal(object.value); if (!embedded.ok) return embedded;
+    if (embedded.value !== owner.value) return fail('bad-template');
     return ok({ template: 'objset', ids: [owner.value, a[4], set.value, object.value] });
   }
   if (a[1] === 'acl' && a.length === 7 && a[3] === 'member') {

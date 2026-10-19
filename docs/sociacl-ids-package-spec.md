@@ -38,7 +38,7 @@ Rules. Each rule is normative.
 | `NetworkId` | `s3rch:https://<host>:<port>;key=<64hex>` or one of `atproto`, `farcaster`, `nostr`, `activitypub`, `rss` | The deployment's permitted key / the protocol | Same grammar as s3r.ch `lib/views-source-ref.ts:94-116`. |
 | `SourceKey` | `formatCanonical(SourceRef)` from s3r.ch `lib/views-source-ref.ts:225-227` (`sr1:` + pct(network) `/` pct(owner) `/` pct(source) `/` kind) | Deterministic | For s3r.ch networks, `owner` becomes a `PrincipalId` (follow-up call site, Appendix B). |
 
-Why the bound `ObjectId` uses the principal key: the 87-character principal contains `.`, and `.` is reserved in a path key. `p_` + lowercase hex is the path form that already exists, it is canonical, and it decodes to exactly one on-curve principal. The id is `<kind>_<principal-key>_<32 lowercase hex>`. Kind is 2–16 characters, the principal key is 130 characters, and the nonce is 32 hex digits, so the longest id is 180 characters. A path key may be 180 characters. A membership soul that carries a longest id is 472 characters. An object-set soul that carries two longest ids is 522 characters. The soul parser accepts 522 characters. `claim`, `ext`, `post`, `member`, and `objset` stay reserved and cannot be the kind. The older `<kind>_<32 lowercase hex>` form still parses. It has no embedded principal, and an object record cannot use it.
+Why the bound `ObjectId` uses the principal key: the 87-character principal contains `.`, and `.` is reserved in a path key. `p_` + lowercase hex is the path form that already exists, it is canonical, and it decodes to exactly one on-curve principal. The id is `<kind>_<principal-key>_<32 lowercase hex>`. Kind is 2–16 characters, the principal key is 130 characters, and the nonce is 32 hex digits, so the longest id is 180 characters. A path key may be 180 characters. A membership soul that carries a longest id is 472 characters. An object-set soul's set segment is a minted set id, and its owner key is the principal embedded in the object. The longest such soul is 509 characters. The soul parser accepts 522 characters, so 523 is `too-long`. `claim`, `ext`, `post`, `member`, and `objset` stay reserved and cannot be the kind. The older `<kind>_<32 lowercase hex>` form still parses. It has no embedded principal, and an object record cannot use it.
 
 Why the original random form was `<kind>_<32 lowercase hex>` with 128 bits from a CSPRNG.
 - **Hex, not base32:** hex has exactly one encoding per value. Base32 needs a rule about unused trailing bits.
@@ -106,7 +106,8 @@ membershipSoul(setOwner, predicate, set, member)
                         ; predicate ∈ {"same-group","named-circle"}; exactly 7 segments
 objectSetSoul(owner, object, predicate, set)
                         = "s3rch/acl/" pk(owner) "/objset/" predicate "/" objectKey(set) "/" objectKey(object)
-                        ; predicate ∈ {"same-group","named-circle"}; exactly 7 segments
+                        ; predicate ∈ {"same-group","named-circle"}; set is a minted set id
+                        ; pk(owner) = pk(objectPrincipal(object)); exactly 7 segments
 ```
 Debug builds must assert the segment count. **No function parses a soul back** into ids, except `parseSoul(text)`, which accepts exactly these templates and returns `{template, ids}`, or rejects.
 

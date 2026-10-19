@@ -757,8 +757,8 @@ impl MeshSeeGraph {
             mode,
         );
         let held = self
-            .labels
-            .groups
+            .group
+            .rows
             .memberships
             .entry(soul)
             .or_insert_with(|| MembershipRecord {
@@ -819,12 +819,12 @@ impl MeshSeeGraph {
         );
         let id = edge.object.as_ref().to_string();
         // A different set starts empty. The previous set's cancels do not follow the new edge.
-        let cancels = match self.labels.groups.object_sets.get(&id) {
+        let cancels = match self.group.rows.object_sets.get(&id) {
             Some(prev) if !replaces(&prev.assent, &next) => return Ok(false),
             Some(prev) if prev.set == edge.set => prev.cancels.clone(),
             _ => BTreeMap::new(),
         };
-        self.labels.groups.object_sets.insert(
+        self.group.rows.object_sets.insert(
             id,
             ObjectSetRecord {
                 owner: edge.owner,
@@ -881,7 +881,7 @@ impl MeshSeeGraph {
         soul: String,
         cancel: StoredCancel,
     ) -> Result<bool, Reason> {
-        let Some(held) = self.labels.groups.memberships.get_mut(&soul) else {
+        let Some(held) = self.group.rows.memberships.get_mut(&soul) else {
             return Err(Reason::Unknown);
         };
         if held.cancels.contains_key(&cancel.id) {
@@ -900,7 +900,7 @@ impl MeshSeeGraph {
         cancel: &GroupCancel,
         stored: StoredCancel,
     ) -> Result<bool, Reason> {
-        let Some(held) = self.labels.groups.object_sets.get_mut(object) else {
+        let Some(held) = self.group.rows.object_sets.get_mut(object) else {
             return Err(Reason::Unknown);
         };
         if held.set != cancel.set || held.predicate != cancel.predicate {
@@ -929,10 +929,10 @@ impl MeshSeeGraph {
             return Err(Reason::MissingHistory);
         };
         let mut dropped = 0;
-        let souls: Vec<String> = self.labels.groups.memberships.keys().cloned().collect();
+        let souls: Vec<String> = self.group.rows.memberships.keys().cloned().collect();
         for soul in souls {
             let empty = {
-                let Some(row) = self.labels.groups.memberships.get_mut(&soul) else {
+                let Some(row) = self.group.rows.memberships.get_mut(&soul) else {
                     continue;
                 };
                 for role in ["member", "set"] {
@@ -1012,19 +1012,19 @@ impl MeshSeeGraph {
                 row.member_assent.is_none() && row.set_assent.is_none() && row.cancels.is_empty()
             };
             if empty {
-                self.labels.groups.memberships.remove(&soul);
+                self.group.rows.memberships.remove(&soul);
             }
         }
         let objects: Vec<String> = self
-            .labels
-            .groups
+            .group
+            .rows
             .object_sets
             .iter()
             .filter(|(_, row)| row.owner == *principal)
             .map(|(id, _)| id.clone())
             .collect();
         for id in objects {
-            let Some(row) = self.labels.groups.object_sets.get(&id) else {
+            let Some(row) = self.group.rows.object_sets.get(&id) else {
                 continue;
             };
             let again = verify_party(
@@ -1038,13 +1038,13 @@ impl MeshSeeGraph {
                 row.assent.attest.as_deref(),
             );
             if again.is_err() {
-                self.labels.groups.object_sets.remove(&id);
+                self.group.rows.object_sets.remove(&id);
                 dropped += 1;
                 continue;
             }
             let cancel_ids: Vec<String> = self
-                .labels
-                .groups
+                .group
+                .rows
                 .object_sets
                 .get(&id)
                 .map(|row| {
@@ -1055,7 +1055,7 @@ impl MeshSeeGraph {
                         .collect()
                 })
                 .unwrap_or_default();
-            let Some(row) = self.labels.groups.object_sets.get_mut(&id) else {
+            let Some(row) = self.group.rows.object_sets.get_mut(&id) else {
                 continue;
             };
             for cancel_id in cancel_ids {
@@ -1123,7 +1123,7 @@ impl MeshSeeGraph {
                 hop,
             };
         }
-        let Some(edge) = self.labels.groups.object_sets.get(object.as_ref()) else {
+        let Some(edge) = self.group.rows.object_sets.get(object.as_ref()) else {
             return deny(MESH_REASON_MISSING, hint, hop);
         };
         if !object_set_live(edge) || edge.predicate != predicate || edge.owner != embedded {
@@ -1133,7 +1133,7 @@ impl MeshSeeGraph {
             return deny(MESH_REASON_MISSING, hint, hop);
         };
         let soul = membership_soul(&set_owner, predicate.ids(), &edge.set, accessor).to_string();
-        let Some(membership) = self.labels.groups.memberships.get(&soul) else {
+        let Some(membership) = self.group.rows.memberships.get(&soul) else {
             return deny(MESH_REASON_MISSING, hint, hop);
         };
         if !membership_live(membership)
@@ -1174,8 +1174,8 @@ impl MeshSeeGraph {
             store_cancel,
         };
         let named = self
-            .labels
-            .groups
+            .group
+            .rows
             .object_sets
             .get(object.as_ref())
             .is_some_and(object_set_live);
@@ -1196,8 +1196,8 @@ impl MeshSeeGraph {
         };
         let presented = set.as_ref().starts_with("set_") && object_principal(set).is_ok();
         let matched = self
-            .labels
-            .groups
+            .group
+            .rows
             .object_sets
             .get(object.as_ref())
             .is_some_and(|edge| presented && object_set_live(edge) && edge.set == *set);
@@ -1205,8 +1205,8 @@ impl MeshSeeGraph {
             return finish(false, MESH_REASON_MISSING.into());
         }
         let predicate = self
-            .labels
-            .groups
+            .group
+            .rows
             .object_sets
             .get(object.as_ref())
             .map(|edge| edge.predicate)
@@ -1224,6 +1224,8 @@ impl MeshSeeGraph {
     }
 
     /// True when the snapshot hides a removal or a newer object-set edge.
+    /// An edge that is not live is a removal unless the snapshot is stated 0
+    /// at a ham_state at least as high as the stored assent.
     /// Member ham does not stand in for the object-set edge.
     pub fn snapshot_understates_group(
         &self,
@@ -1231,20 +1233,28 @@ impl MeshSeeGraph {
         members: &[GroupSnapshotMember],
         object_set: Option<&GroupSnapshotObjectSet>,
     ) -> bool {
-        let Some(current) = self.labels.groups.object_sets.get(object.as_ref()) else {
+        let Some(current) = self.group.rows.object_sets.get(object.as_ref()) else {
             return object_set.is_some();
         };
         let Some(snap) = object_set else {
             return true;
         };
-        if snap.ham_state < current.assent.ham_state
+        if !object_set_live(current) {
+            if snap.stated != 0
+                || snap.ham_state < current.assent.ham_state
+                || snap.predicate != current.predicate
+                || snap.set_id != current.set.as_ref()
+            {
+                return true;
+            }
+        } else if snap.ham_state < current.assent.ham_state
             || snap.predicate != current.predicate
             || snap.set_id != current.set.as_ref()
             || snap.stated != current.assent.stated
         {
             return true;
         }
-        self.labels.groups.memberships.values().any(|row| {
+        self.group.rows.memberships.values().any(|row| {
             if row.predicate != current.predicate || row.set != current.set || membership_live(row)
             {
                 return false;

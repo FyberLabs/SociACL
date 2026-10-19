@@ -719,6 +719,8 @@ export function checkGroupPresentation(graph, set, object, accessor, payload, no
 
 /**
  * True when the snapshot hides a removal or a newer object-set edge.
+ * An edge that is not live is a removal unless the snapshot is stated 0
+ * at a hamState at least as high as the stored assent.
  * Member ham does not stand in for the object-set edge.
  * @param {object} graph
  * @param {string} object
@@ -731,7 +733,14 @@ export function snapshotUnderstatesGroup(graph, object, members, objectSet) {
   const current = id.ok ? objectSetTable(graph).get(id.value) : undefined;
   if (!current) return objectSet != null;
   if (!objectSet) return true;
-  if (
+  if (!objectSetLive(current)) {
+    if (
+      objectSet.stated !== 0
+      || objectSet.hamState < current.assent.hamState
+      || objectSet.predicate !== current.predicate
+      || objectSet.setId !== current.set
+    ) return true;
+  } else if (
     objectSet.hamState < current.assent.hamState
     || objectSet.predicate !== current.predicate
     || objectSet.setId !== current.set

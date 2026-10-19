@@ -290,7 +290,20 @@ add('reject', 'object-set-cancel-cannot-move-to-another-set', [
   check(chatA, p2, true, 'same-group'),
 ]);
 add('reject', 'object-set-cancel-cannot-move-to-another-predicate', [
+  put(),
+  member(),
+  setAssent(),
+  objectEdge(),
   { op: 'admit-cancel', row: { ...capturedCancel, predicate: 'named-circle' }, rotations: 'genesis', ok: false, reason: 'bad-record' },
+  check(chatA, p2, true, 'same-group'),
+]);
+add('reject', 'object-set-cancel-recomputed-soul-is-bad-signature', [
+  put(),
+  { op: 'admit-member', row: assent('member', 2, { set: otherSet }), rotations: 'genesis', ok: true, kept: true },
+  { op: 'admit-member', row: assent('set', 1, { set: otherSet }), rotations: 'genesis', ok: true, kept: true },
+  { op: 'admit-object-set', row: edge(1, { set: otherSet }), rotations: 'genesis', ok: true, kept: true },
+  { op: 'admit-cancel', row: { ...capturedCancel, set: otherSet, rowSoul: objectSetSoul(p, chatA, 'same-group', otherSet) }, rotations: 'genesis', ok: false, reason: 'bad-signature' },
+  check(chatA, p2, true, 'same-group'),
 ]);
 const mutableCancel = cancelRow('membership', 2);
 add('reject', 'reverify-uses-stored-signature', [
@@ -323,6 +336,13 @@ add('accept', 'snapshot-understates-a-newer-edge', [
   { op: 'snapshot', object: chatA, members: [], objectSet: { ...snapEdge, hamState: 0 }, understates: true },
   { op: 'snapshot', object: chatA, members: [], objectSet: snapEdge, understates: false },
   { op: 'snapshot', object: chatA, members: [], objectSet: null, understates: true },
+]);
+add('accept', 'snapshot-understates-a-cancelled-object-set', [
+  ...live(),
+  objectCancel(),
+  check(chatA, p2, false, 'missing'),
+  { op: 'snapshot', object: chatA, members: [], objectSet: snapEdge, understates: true },
+  { op: 'snapshot', object: chatA, members: [], objectSet: { ...snapEdge, stated: 0 }, understates: false },
 ]);
 add('accept', 'reverify-drops-unwitnessed-object-set-cancel', [
   put(),

@@ -130,7 +130,7 @@ fn mesh_check_treats_held_claims_like_feed_items() {
     let mut graph = MeshSeeGraph::new();
     let item = sample_feed_item();
     let item_soul = item.as_node_id().unwrap();
-    graph.labels.put_object(item_soul.as_str(), "0xalice");
+    graph.group.put_object(item_soul.as_str(), "0xalice");
 
     let claims = [
         "ens:alice.eth",
@@ -140,12 +140,12 @@ fn mesh_check_treats_held_claims_like_feed_items() {
         "rss3:0xalice",
     ];
     for claim in claims {
-        graph.labels.put_object(claim, "0xalice");
+        graph.group.put_object(claim, "0xalice");
     }
 
     let now = Timestamp(10);
     graph
-        .labels
+        .group
         .state_see_grant(
             "0xalice",
             MeshSeeGrant::live(item_soul.as_str(), "0xbob", 0, 80),
@@ -153,51 +153,49 @@ fn mesh_check_treats_held_claims_like_feed_items() {
         .unwrap();
     for claim in claims {
         graph
-            .labels
+            .group
             .state_see_grant("0xalice", MeshSeeGrant::live(claim, "0xbob", 0, 80))
             .unwrap();
     }
 
     let feed = graph
-        .labels
+        .group
         .check_see_label(item_soul.as_str(), "0xbob", now, None, None);
     assert!(feed.allowed);
     assert_eq!(feed.reason, MESH_REASON_DELEGATE);
 
     for claim in claims {
-        let see = graph
-            .labels
-            .check_see_label(claim, "0xbob", now, None, None);
+        let see = graph.group.check_see_label(claim, "0xbob", now, None, None);
         assert!(see.allowed, "{claim} mesh see");
         assert_eq!(see.reason, feed.reason, "{claim} same Check path as feed");
         assert!(!see.hop_is_grant());
         assert!(
             !graph
-                .labels
+                .group
                 .has_object(&format!("s3rch/users/0xalice/claims/{claim}")),
             "{claim} is not nested under users/…/claims/"
         );
         assert!(
             !graph
-                .labels
+                .group
                 .has_object(&format!("s3rch/items/{}", encode_key(claim))),
             "{claim} must not rewrite into an item soul"
         );
     }
 
     graph
-        .labels
+        .group
         .unstate_see_grant("0xalice", "0xbob", "ens:alice.eth")
         .unwrap();
     assert!(
         !graph
-            .labels
+            .group
             .check_see_label("ens:alice.eth", "0xbob", now, None, None)
             .allowed
     );
     assert!(
         graph
-            .labels
+            .group
             .check_see_label(item_soul.as_str(), "0xbob", now, None, None)
             .allowed,
         "cancel one claim does not drop the feed grant"
@@ -214,29 +212,29 @@ fn overlay_held_claims_stay_off_mesh_until_share() {
     };
     let mut graph = MeshSeeGraph::new();
     assert!(
-        !graph.labels.has_object("ens:alice.eth"),
+        !graph.group.has_object("ens:alice.eth"),
         "overlay indicators are not in-graph until share"
     );
-    graph.labels.put_object("ens:alice.eth", &user.id);
-    assert!(graph.labels.has_object("ens:alice.eth"));
-    assert_eq!(graph.labels.owner_of("ens:alice.eth"), Some("0xalice"));
+    graph.group.put_object("ens:alice.eth", &user.id);
+    assert!(graph.group.has_object("ens:alice.eth"));
+    assert_eq!(graph.group.owner_of("ens:alice.eth"), Some("0xalice"));
 }
 
 #[test]
 fn hop_factors_held_claim_id_the_same_as_a_feed_item() {
     let mut graph = MeshSeeGraph::new();
     let item_soul = sample_feed_item().as_node_id().unwrap();
-    graph.labels.put_object(item_soul.as_str(), "0xalice");
-    graph.labels.put_object("ens:alice.eth", "0xalice");
+    graph.group.put_object(item_soul.as_str(), "0xalice");
+    graph.group.put_object("ens:alice.eth", "0xalice");
     graph
-        .labels
+        .group
         .state_see_grant(
             "0xalice",
             MeshSeeGrant::live(item_soul.as_str(), "0xbob", 0, 80),
         )
         .unwrap();
     graph
-        .labels
+        .group
         .state_see_grant(
             "0xalice",
             MeshSeeGrant::live("ens:alice.eth", "0xbob", 0, 80),
@@ -253,17 +251,17 @@ fn hop_factors_held_claim_id_the_same_as_a_feed_item() {
     );
     let now = Timestamp(1);
     let feed = graph
-        .labels
+        .group
         .check_see_label(item_soul.as_str(), "0xbob", now, None, Some(&hop));
     let claim = graph
-        .labels
+        .group
         .check_see_label("ens:alice.eth", "0xbob", now, None, Some(&hop));
     assert!(feed.allowed && claim.allowed);
     assert_eq!(feed.reason, claim.reason);
     assert!(feed.hop_factored() && claim.hop_factored());
     assert!(!claim.hop_is_grant());
     assert!(!graph
-        .labels
+        .group
         .has_object("s3rch/users/0xalice/claims/ens:alice.eth"));
 }
 
@@ -272,36 +270,36 @@ fn mesh_grant_allows_gun_shaped_objects() {
     let mut graph = MeshSeeGraph::new();
     let item = sample_feed_item();
     let item_soul = item.as_node_id().unwrap();
-    graph.labels.put_object(item_soul.as_str(), "0xalice");
-    graph.labels.put_object("claim-1", "0xalice");
-    graph.labels.put_object("room:alpha", "0xalice");
+    graph.group.put_object(item_soul.as_str(), "0xalice");
+    graph.group.put_object("claim-1", "0xalice");
+    graph.group.put_object("room:alpha", "0xalice");
 
     graph
-        .labels
+        .group
         .state_see_grant(
             "0xalice",
             MeshSeeGrant::live(item_soul.as_str(), "0xbob", 0, 80),
         )
         .unwrap();
     graph
-        .labels
+        .group
         .state_see_grant("0xalice", MeshSeeGrant::live("claim-1", "0xbob", 0, 80))
         .unwrap();
     graph
-        .labels
+        .group
         .state_see_grant("0xalice", MeshSeeGrant::live("room:alpha", "0xbob", 0, 80))
         .unwrap();
 
     let now = Timestamp(10);
     for object in [item_soul.as_str(), "claim-1", "room:alpha"] {
         let owner = graph
-            .labels
+            .group
             .check_see_label(object, "0xalice", now, None, None);
         assert!(owner.allowed, "{object} owner");
         assert_eq!(owner.reason, MESH_REASON_OWNER);
 
         let bob = graph
-            .labels
+            .group
             .check_see_label(object, "0xbob", now, None, None);
         assert!(bob.allowed, "{object} mesh grant");
         assert_eq!(bob.reason, MESH_REASON_DELEGATE);
@@ -310,7 +308,7 @@ fn mesh_grant_allows_gun_shaped_objects() {
 
     assert!(
         !graph
-            .labels
+            .group
             .check_see_label("room:alpha", "0xcarol", now, None, None)
             .allowed
     );
@@ -321,19 +319,19 @@ fn mine_overlay_stays_off_mesh_until_share() {
     let mut graph = MeshSeeGraph::new();
     let grant = MeshSeeGrant::live("rss3:act/1#x", "0xbob", 0, 80);
     assert_eq!(
-        graph.labels.state_see_grant("0xalice", grant).unwrap_err(),
+        graph.group.state_see_grant("0xalice", grant).unwrap_err(),
         GunError::ObjectNotInGraph
     );
     assert!(
         !graph
-            .labels
+            .group
             .check_see_label("rss3:act/1#x", "0xbob", Timestamp(1), None, None)
             .allowed
     );
 
-    graph.labels.put_object("rss3:act/1#x", "0xalice");
+    graph.group.put_object("rss3:act/1#x", "0xalice");
     graph
-        .labels
+        .group
         .state_see_grant(
             "0xalice",
             MeshSeeGrant::live("rss3:act/1#x", "0xbob", 0, 80),
@@ -341,7 +339,7 @@ fn mine_overlay_stays_off_mesh_until_share() {
         .unwrap();
     assert!(
         graph
-            .labels
+            .group
             .check_see_label("rss3:act/1#x", "0xbob", Timestamp(1), None, None)
             .allowed,
         "share-into-mesh put then dest ACL grant"
@@ -352,35 +350,35 @@ fn mine_overlay_stays_off_mesh_until_share() {
 fn cancel_denies_next_check_after_merge() {
     let mut alice_peer = MeshSeeGraph::new();
     let mut bob_peer = MeshSeeGraph::new();
-    alice_peer.labels.put_object("claim-1", "0xalice");
-    bob_peer.labels.merge_from(&alice_peer.labels);
+    alice_peer.group.put_object("claim-1", "0xalice");
+    bob_peer.group.merge_from(&alice_peer.group);
 
     alice_peer
-        .labels
+        .group
         .state_see_grant("0xalice", MeshSeeGrant::live("claim-1", "0xbob", 0, 80))
         .unwrap();
     assert!(
         !bob_peer
-            .labels
+            .group
             .check_see_label("claim-1", "0xbob", Timestamp(1), None, None)
             .allowed,
         "bob has not merged yet"
     );
 
-    bob_peer.labels.merge_from(&alice_peer.labels);
+    bob_peer.group.merge_from(&alice_peer.group);
     let allowed = bob_peer
-        .labels
+        .group
         .check_see_label("claim-1", "0xbob", Timestamp(1), None, None);
     assert!(allowed.allowed);
     assert_eq!(allowed.reason, MESH_REASON_DELEGATE);
 
     alice_peer
-        .labels
+        .group
         .unstate_see_grant("0xalice", "0xbob", "claim-1")
         .unwrap();
-    bob_peer.labels.merge_from(&alice_peer.labels);
+    bob_peer.group.merge_from(&alice_peer.group);
     let denied = bob_peer
-        .labels
+        .group
         .check_see_label("claim-1", "0xbob", Timestamp(1), None, None);
     assert!(
         !denied.allowed,
@@ -394,21 +392,21 @@ fn cancel_denies_next_check_after_merge() {
 #[test]
 fn cancel_is_owner_only() {
     let mut graph = MeshSeeGraph::new();
-    graph.labels.put_object("claim-1", "0xalice");
+    graph.group.put_object("claim-1", "0xalice");
     graph
-        .labels
+        .group
         .state_see_grant("0xalice", MeshSeeGrant::live("claim-1", "0xbob", 0, 80))
         .unwrap();
     assert_eq!(
         graph
-            .labels
+            .group
             .unstate_see_grant("0xbob", "0xbob", "claim-1")
             .unwrap_err(),
         GunError::AclOwnerOnly
     );
     assert!(
         graph
-            .labels
+            .group
             .check_see_label("claim-1", "0xbob", Timestamp(1), None, None)
             .allowed
     );
@@ -417,7 +415,7 @@ fn cancel_is_owner_only() {
 #[test]
 fn hop_factors_but_does_not_mint() {
     let mut graph = MeshSeeGraph::new();
-    graph.labels.put_object("claim-1", "0xalice");
+    graph.group.put_object("claim-1", "0xalice");
     let bytes = slhp(
         AttestationChannel::ConventionBadge,
         b"opaque-attestation",
@@ -430,19 +428,19 @@ fn hop_factors_but_does_not_mint() {
     let hinted = HandoffHint::parse("0xbob", "claim-1", Some(SEE), None).unwrap();
     let closed =
         graph
-            .labels
+            .group
             .check_see_label("claim-1", "0xbob", Timestamp(1), Some(&hinted), Some(&hop));
     assert!(!closed.allowed, "hint+hop fail closed without dest ACL");
     assert!(!closed.hop_is_grant());
     assert!(!closed.hop_factored());
 
     graph
-        .labels
+        .group
         .state_see_grant("0xalice", MeshSeeGrant::live("claim-1", "0xbob", 0, 80))
         .unwrap();
     let factored =
         graph
-            .labels
+            .group
             .check_see_label("claim-1", "0xbob", Timestamp(1), Some(&hinted), Some(&hop));
     assert!(factored.allowed);
     assert!(factored.hop_factored(), "hop factors a named grant");
@@ -453,13 +451,13 @@ fn hop_factors_but_does_not_mint() {
 #[test]
 fn hop_missing_does_not_fail_and_decode_does_not_verify() {
     let mut graph = MeshSeeGraph::new();
-    graph.labels.put_object("claim-1", "0xalice");
+    graph.group.put_object("claim-1", "0xalice");
     graph
-        .labels
+        .group
         .state_see_grant("0xalice", MeshSeeGrant::live("claim-1", "0xbob", 0, 80))
         .unwrap();
     let missing = graph
-        .labels
+        .group
         .check_see_label("claim-1", "0xbob", Timestamp(1), None, None);
     assert!(missing.allowed);
     assert!(missing.hop.is_none());
@@ -479,27 +477,27 @@ fn hop_missing_does_not_fail_and_decode_does_not_verify() {
 #[test]
 fn hopcap_1_friend_of_friend_is_not_see() {
     let mut graph = MeshSeeGraph::new();
-    graph.labels.put_object("claim-1", "0xalice");
-    graph.labels.state_friend("0xalice", "0xbob");
-    graph.labels.state_friend("0xbob", "0xcarol");
-    assert!(graph.labels.has_friend("0xalice", "0xbob"));
+    graph.group.put_object("claim-1", "0xalice");
+    graph.group.state_friend("0xalice", "0xbob");
+    graph.group.state_friend("0xbob", "0xcarol");
+    assert!(graph.group.has_friend("0xalice", "0xbob"));
 
     assert!(
         graph
-            .labels
+            .group
             .check_see_label("claim-1", "0xalice", Timestamp(1), None, None)
             .allowed
     );
     assert!(
         !graph
-            .labels
+            .group
             .check_see_label("claim-1", "0xbob", Timestamp(1), None, None)
             .allowed,
         "a friend edge is not a see grant"
     );
     assert!(
         !graph
-            .labels
+            .group
             .check_see_label("claim-1", "0xcarol", Timestamp(1), None, None)
             .allowed,
         "hopcap 1: no friend-of-friend"
@@ -509,25 +507,25 @@ fn hopcap_1_friend_of_friend_is_not_see() {
 #[test]
 fn meta_acl_and_url_fail_closed() {
     let mut graph = MeshSeeGraph::new();
-    graph.labels.put_object("claim-1", "0xalice");
+    graph.group.put_object("claim-1", "0xalice");
     let now = Timestamp(1);
     assert_eq!(
         graph
-            .labels
+            .group
             .check_see_label("s3rch/meta", "0xalice", now, None, None)
             .reason,
         MESH_REASON_META
     );
     assert_eq!(
         graph
-            .labels
+            .group
             .check_see_label("s3rch/acl/0xalice", "0xalice", now, None, None)
             .reason,
         MESH_REASON_ACL
     );
     assert_eq!(
         graph
-            .labels
+            .group
             .check_see_label(
                 "https://gi.rss3.io/decentralized/0xalice",
                 "0xalice",
@@ -540,7 +538,7 @@ fn meta_acl_and_url_fail_closed() {
     );
     assert!(
         !graph
-            .labels
+            .group
             .check_see_label("s3rch/meta", "0xalice", now, None, None)
             .allowed
     );
@@ -570,36 +568,36 @@ fn ham_merge_higher_state_wins() {
 #[test]
 fn equal_ham_see_grants_keep_the_narrower_window() {
     let mut wide = MeshSeeGraph::new();
-    wide.labels.put_object("doc", "0xalice");
-    wide.labels
+    wide.group.put_object("doc", "0xalice");
+    wide.group
         .state_see_grant("0xalice", MeshSeeGrant::live("doc", "0xbob", 0, 100))
         .unwrap();
     let mut narrow = MeshSeeGraph::new();
-    narrow.labels.put_object("doc", "0xalice");
+    narrow.group.put_object("doc", "0xalice");
     narrow
-        .labels
+        .group
         .state_see_grant("0xalice", MeshSeeGrant::live("doc", "0xbob", 0, 5))
         .unwrap();
 
     let mut from_wide = wide.clone();
-    from_wide.labels.merge_from(&narrow.labels);
+    from_wide.group.merge_from(&narrow.group);
     let mut from_narrow = narrow.clone();
-    from_narrow.labels.merge_from(&wide.labels);
+    from_narrow.group.merge_from(&wide.group);
     for graph in [&from_wide, &from_narrow] {
         assert!(
             !graph
-                .labels
+                .group
                 .check_see_label("doc", "0xbob", Timestamp(10), None, None)
                 .allowed
         );
         assert!(
             graph
-                .labels
+                .group
                 .check_see_label("doc", "0xbob", Timestamp(1), None, None)
                 .allowed
         );
         assert_eq!(
-            graph.labels.grant_edge("doc", "0xbob").unwrap().grant.until,
+            graph.group.grant_edge("doc", "0xbob").unwrap().grant.until,
             Timestamp(5)
         );
     }
@@ -611,12 +609,12 @@ fn merge_edge_uses_the_grant_identity_not_the_soul() {
         GunAclEdge::new("0xalice", MeshSeeGrant::live("doc", "0xbob", 0, 80), 1).unwrap();
     edge.soul = GunSoul::s3rch_acl_grant("0xalice", "doc", "0xcarol");
     let mut graph = MeshSeeGraph::new();
-    graph.labels.put_object("doc", "0xalice");
-    graph.labels.merge_edge(edge);
-    assert!(graph.labels.grant_edge("doc", "0xcarol").is_none());
+    graph.group.put_object("doc", "0xalice");
+    graph.group.merge_edge(edge);
+    assert!(graph.group.grant_edge("doc", "0xcarol").is_none());
     assert!(
         graph
-            .labels
+            .group
             .check_see_label("doc", "0xbob", Timestamp(1), None, None)
             .allowed
     );
@@ -711,21 +709,21 @@ fn mesh_grant_on_plane_feed_item_matches_claim() {
 #[test]
 fn check_see_grant_ands_the_window() {
     let mut graph = MeshSeeGraph::new();
-    graph.labels.put_object("claim-1", "0xalice");
+    graph.group.put_object("claim-1", "0xalice");
     let grant = MeshSeeGrant::live("claim-1", "0xbob", 40, 80);
     graph
-        .labels
+        .group
         .state_see_grant("0xalice", grant.clone())
         .unwrap();
     assert!(
         !graph
-            .labels
+            .group
             .check_see_grant(&grant, "claim-1", "0xbob", Timestamp(10), None, None)
             .allowed
     );
     assert!(
         graph
-            .labels
+            .group
             .check_see_grant(&grant, "claim-1", "0xbob", Timestamp(40), None, None)
             .allowed
     );
@@ -750,7 +748,7 @@ fn missing_object_reason() {
     let graph = MeshSeeGraph::new();
     assert_eq!(
         graph
-            .labels
+            .group
             .check_see_label("nope", "0xalice", Timestamp(1), None, None)
             .reason,
         MESH_REASON_MISSING

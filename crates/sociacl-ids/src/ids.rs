@@ -577,6 +577,14 @@ pub struct ParsedSoul {
     pub template: &'static str,
     pub ids: Vec<String>,
 }
+fn minted_set_id(s: &str) -> Result<ObjectId, Reason> {
+    let id = parse_object_id(s)?;
+    if !id.as_ref().starts_with("set_") {
+        return Err(Reason::BadTemplate);
+    }
+    object_principal(&id)?;
+    Ok(id)
+}
 pub fn parse_soul(s: &str) -> Result<ParsedSoul, Reason> {
     text(s, 522)?;
     if let Some(p) = s.strip_prefix('~') {
@@ -598,13 +606,20 @@ pub fn parse_soul(s: &str) -> Result<ParsedSoul, Reason> {
         ["s3rch", "acl", a, "objset", predicate, set_id, o]
             if matches!(*predicate, "same-group" | "named-circle") =>
         {
+            let owner = key_principal(a)?;
+            let set = minted_set_id(set_id)?;
+            let object = parse_object_id(o)?;
+            let embedded = object_principal(&object)?;
+            if embedded != owner {
+                return Err(Reason::BadTemplate);
+            }
             Ok(ParsedSoul {
                 template: "objset",
                 ids: vec![
-                    key_principal(a)?.to_string(),
+                    owner.to_string(),
                     (*predicate).to_string(),
-                    parse_object_id(set_id)?.to_string(),
-                    parse_object_id(o)?.to_string(),
+                    set.to_string(),
+                    object.to_string(),
                 ],
             })
         }

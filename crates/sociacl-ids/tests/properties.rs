@@ -26,6 +26,7 @@ proptest! {
         let w=parse_wallet_input(&format!("0x{}",hex(&wallet))).unwrap();
         let t=parse_tenant_id(&format!("{}-{}-{}-{}-{}",hex(&object[..4]),hex(&object[4..6]),hex(&object[6..8]),hex(&object[8..10]),hex(&object[10..]))).unwrap();
         let o=mint_object_id_with("room",&p,|out|{*out=object;Ok(())}).unwrap();let o=o.object_id();
+        let set=mint_object_id_with("set",&p,|out|{*out=object;Ok(())}).unwrap();let set=set.object_id();
         prop_assert_eq!(object_principal(o).unwrap(),p.clone());
         let net=parse_network_id(&format!("s3rch:https://node{n}.s3r.ch:443;key={}",hex(&seed))).unwrap();
         let source=parse_source_key(&format!("sr1:{}/{}/{}/chat",pct(net.as_ref()),pct(p.as_ref()),o)).unwrap();
@@ -61,7 +62,7 @@ proptest! {
         let other=parse_object_id(&format!("chat_{}",hex(&object))).unwrap();
         prop_assert_ne!(object_key(o),object_key(&other));
         prop_assert_ne!(grant_soul(&p,o,&p),grant_soul(&p,&other,&p));
-        for(s,count)in[(object_soul(Collection::Items,o),3),(acl_soul(&p),3),(grant_soul(&p,o,&p),5),(post_soul(&p,o,&p),6),(membership_soul(&p,MembershipPredicate::SameGroup,o,&p),7),(object_set_soul(&p,o,MembershipPredicate::SameGroup,o),7)]{
+        for(s,count)in[(object_soul(Collection::Items,o),3),(acl_soul(&p),3),(grant_soul(&p,o,&p),5),(post_soul(&p,o,&p),6),(membership_soul(&p,MembershipPredicate::SameGroup,o,&p),7),(object_set_soul(&p,o,MembershipPredicate::SameGroup,set),7)]{
             prop_assert_eq!(s.as_ref().split('/').count(),count);
             for seg in s.as_ref().split('/'){prop_assert!(seg.bytes().all(|c|c.is_ascii_alphanumeric()||b"_:-".contains(&c)));}
             prop_assert_eq!(s.as_ref().parse::<Soul>().unwrap(),s);

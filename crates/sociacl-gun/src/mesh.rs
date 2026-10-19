@@ -149,13 +149,14 @@ pub(crate) struct MeshObject {
 ///
 /// Group and circle rows live on this same graph. They do not fork
 /// items or users, and they are not see-grant souls.
-/// Label graph still used by group. It is not the typed see, post, or request API.
+/// `rows` is the group store. The object, grant, and friend maps are
+/// the legacy label harness. They are not the typed see, post, or request API.
 #[derive(Clone, Debug, Default)]
-pub(crate) struct LabelGraph {
+pub(crate) struct GroupGraph {
     pub(crate) objects: HashMap<String, MeshObject>,
     pub(crate) grants: HashMap<String, GunAclEdge>,
     pub(crate) friends: HashSet<(String, String)>,
-    pub(crate) groups: crate::group::GroupRows,
+    pub(crate) rows: crate::group::GroupRows,
 }
 
 /// Admitted object owner. `record` is the canonical signed snapshot,
@@ -173,7 +174,7 @@ struct ObjectAdmission {
 
 #[derive(Clone, Debug, Default)]
 pub struct MeshSeeGraph {
-    pub(crate) labels: LabelGraph,
+    pub(crate) group: GroupGraph,
     owners: HashMap<String, ObjectAdmission>,
     admitted: HashMap<String, AdmittedSee>,
     pub(crate) post_rows: HashMap<String, crate::post::AdmittedPost>,
@@ -300,9 +301,9 @@ impl MeshSeeGraph {
             .iter()
             .map(|(id, row)| (id.clone(), row.owner.as_ref().to_string()))
             .collect();
-        self.labels
-            .groups
-            .merge_from(&other.labels.groups, &object_owners);
+        self.group
+            .rows
+            .merge_from(&other.group.rows, &object_owners);
     }
 
     /// Admit one see row. The row is parsed once; the signature covers that value.

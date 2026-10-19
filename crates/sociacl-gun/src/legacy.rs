@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use sociacl_core::{NodeId, Timestamp};
 
 use crate::mesh::{
-    GunAclEdge, LabelGraph, MeshCheckResult, MeshObject, MeshSeeGrant, MESH_REASON_ACL,
+    GroupGraph, GunAclEdge, MeshCheckResult, MeshObject, MeshSeeGrant, MESH_REASON_ACL,
     MESH_REASON_CANCELLED, MESH_REASON_DELEGATE, MESH_REASON_META, MESH_REASON_MISSING,
     MESH_REASON_OWNER, MESH_REASON_URL_LEAF,
 };
@@ -475,7 +475,7 @@ fn push_grant_str(buf: &mut Vec<u8>, value: &str) {
     buf.extend_from_slice(&bytes[..usize::try_from(len).unwrap_or(bytes.len())]);
 }
 
-impl LabelGraph {
+impl GroupGraph {
     pub(crate) fn put_object(&mut self, object: impl AsRef<str>, owner: impl AsRef<str>) {
         let raw = object.as_ref();
         if object_id_rejected(raw) {
@@ -489,7 +489,7 @@ impl LabelGraph {
                 return;
             }
             if !principals_are(existing.owner.as_str(), owner.as_str()) {
-                self.groups.drop_object_set(&id);
+                self.rows.drop_object_set(&id);
             }
             self.objects.insert(direct_key, MeshObject { id, owner });
             return;
@@ -708,7 +708,7 @@ impl LabelGraph {
             .values()
             .map(|object| (object.id.clone(), object.owner.clone()))
             .collect();
-        self.groups.merge_from(&other.groups, &object_owners);
+        self.rows.merge_from(&other.rows, &object_owners);
     }
 
     /// `CHECK(see, object, accessor)` at `now` on the locally merged
@@ -974,7 +974,7 @@ mod label_tests {
 
     #[test]
     fn a_grant_names_one_object_and_a_gun_chain_is_not_a_record() {
-        let mut graph = LabelGraph::default();
+        let mut graph = GroupGraph::default();
         for object in [
             "room.alpha",
             "room_alpha",
@@ -1057,7 +1057,7 @@ mod label_tests {
 
     #[test]
     fn rejected_principals_do_not_match_as_the_owner() {
-        let mut graph = LabelGraph::default();
+        let mut graph = GroupGraph::default();
         graph.put_object("doc", "../meta");
         let now = Timestamp(10);
         assert!(

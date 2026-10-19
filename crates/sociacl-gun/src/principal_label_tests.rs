@@ -99,22 +99,22 @@ fn shared_principal_and_object_vectors() {
     }
     for row in &fixture.objects {
         let mut graph = MeshSeeGraph::new();
-        graph.labels.put_object(&row.stored, &row.owner);
+        graph.group.put_object(&row.stored, &row.owner);
         if let Some(put) = &row.put {
             graph
-                .labels
+                .group
                 .put_object(put, row.put_owner.as_deref().unwrap_or(""));
         }
         if let Some(has_put) = row.has_put_id {
             assert_eq!(
-                graph.labels.has_object(row.put.as_deref().unwrap_or("")),
+                graph.group.has_object(row.put.as_deref().unwrap_or("")),
                 has_put,
                 "{}",
                 row.name
             );
         }
         assert_eq!(
-            graph.labels.owner_of(&row.stored),
+            graph.group.owner_of(&row.stored),
             Some(row.owner_after.as_str()),
             "{}",
             row.name
@@ -124,7 +124,7 @@ fn shared_principal_and_object_vectors() {
         {
             assert_eq!(
                 graph
-                    .labels
+                    .group
                     .check_see_label(query, accessor, Timestamp(10), None, None)
                     .allowed,
                 allowed,
@@ -135,9 +135,9 @@ fn shared_principal_and_object_vectors() {
     }
     for row in &fixture.null_keys {
         let mut graph = MeshSeeGraph::new();
-        graph.labels.put_object(&row.other, "0xmallory");
-        graph.labels.put_object(&row.secret, "0xalice");
-        let rejected = graph.labels.state_see_grant(
+        graph.group.put_object(&row.other, "0xmallory");
+        graph.group.put_object(&row.secret, "0xalice");
+        let rejected = graph.group.state_see_grant(
             "0xmallory",
             MeshSeeGrant::live(&row.other, &row.accessor, 0, 80),
         );
@@ -146,14 +146,11 @@ fn shared_principal_and_object_vectors() {
             "{}",
             row.accessor
         );
-        assert!(graph
-            .labels
-            .grant_edge(&row.secret, &row.accessor)
-            .is_none());
-        assert!(graph.labels.grant_edge(&row.other, &row.accessor).is_none());
+        assert!(graph.group.grant_edge(&row.secret, &row.accessor).is_none());
+        assert!(graph.group.grant_edge(&row.other, &row.accessor).is_none());
         assert!(
             !graph
-                .labels
+                .group
                 .check_see_label(&row.secret, &row.accessor, Timestamp(10), None, None)
                 .allowed
         );
