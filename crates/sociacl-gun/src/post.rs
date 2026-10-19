@@ -24,6 +24,7 @@ pub const MESH_REASON_POST: &str = "post";
 /// Admitted post row. The private fields stay on the graph.
 #[derive(Clone, Debug)]
 pub(crate) struct AdmittedPost {
+    pub(crate) key: PrincipalId,
     pub(crate) mode: SignedAtMode,
     pub(crate) stated: u8,
     pub(crate) ham_state: u64,
@@ -66,6 +67,7 @@ fn admitted_from(
     ctx: &ResolutionContext<'_>,
 ) -> AdmittedPost {
     AdmittedPost {
+        key: verified.key.clone(),
         mode: verified.mode,
         stated: verified.grant.stated,
         ham_state: verified.grant.ham_state,
@@ -81,6 +83,7 @@ fn admitted_from(
 fn view_post(row: &AdmittedPost, grant: &SeeGrant) -> VerifiedRow {
     VerifiedRow {
         mode: row.mode,
+        key: row.key.clone(),
         stated: row.stated,
         ham_state: row.ham_state,
         from: row.from,

@@ -582,7 +582,10 @@ export function verifyAccessRequest(
  * are checked against one resolved history before either row is written.
  * Both rows are written, or neither is. There is no staged ticket.
  * An identical approval returns the stored row with `unchanged: true`
- * and does not sign or bump ham. A different window is a new decision.
+ * only after the current key resolves, the scalar owns that key, and
+ * members allow, and only when the stored row is signed by that key.
+ * It does not sign or bump ham. A retired-key row is signed again.
+ * A different window is a new decision. The window is copied once.
  * Members auto-approve over an owner cancel is `not-kept` and writes
  * nothing. A manual approval re-grants above that cancel. When `now`
  * equals the latest rotation time the result is `rotation-boundary`.

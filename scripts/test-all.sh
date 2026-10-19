@@ -15,7 +15,7 @@ fi
 cargo build --workspace --locked
 mkdir -p target/ids
 mkdir -p target/mesh
-IDS_VECTOR_REPORT="${root}/target/ids/rust-vectors.txt" MESH_VECTOR_REPORT="${root}/target/mesh/rust-vectors.txt" cargo test --workspace --locked --features sociacl-gun/vectors
+IDS_VECTOR_REPORT="${root}/target/ids/rust-vectors.txt" MESH_VECTOR_REPORT="${root}/target/mesh/rust-vectors.txt" cargo test --workspace --locked
 
 cargo run --locked -p sociacl-core --example check
 cargo run --locked -p sociacl-core --example wills

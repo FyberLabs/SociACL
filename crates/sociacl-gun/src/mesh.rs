@@ -183,6 +183,8 @@ pub struct MeshSeeGraph {
 #[derive(Clone, Debug)]
 pub struct VerifiedRow {
     pub mode: SignedAtMode,
+    /// Signing key that admitted this row.
+    pub key: PrincipalId,
     pub stated: u8,
     pub ham_state: u64,
     pub from: u64,
@@ -200,6 +202,7 @@ pub struct VerifiedRow {
 
 #[derive(Clone, Debug)]
 struct AdmittedSee {
+    key: PrincipalId,
     mode: SignedAtMode,
     stated: u8,
     ham_state: u64,
@@ -289,7 +292,7 @@ impl MeshSeeGraph {
         Ok(true)
     }
 
-    /// Test hook. Plants a label owner without a signed record.
+    /// Unstable, test-only hook. Plants a label owner without a signed record.
     /// Production builds omit this. Tests enable the `vectors` feature.
     #[cfg(feature = "vectors")]
     #[doc(hidden)]
@@ -559,6 +562,7 @@ fn admitted_from(
     ctx: &ResolutionContext<'_>,
 ) -> AdmittedSee {
     AdmittedSee {
+        key: verified.key.clone(),
         mode: verified.mode,
         stated: verified.grant.stated,
         ham_state: verified.grant.ham_state,
@@ -577,6 +581,7 @@ fn admitted_from(
 fn view_row(row: &AdmittedSee) -> VerifiedRow {
     VerifiedRow {
         mode: row.mode,
+        key: row.key.clone(),
         stated: row.stated,
         ham_state: row.ham_state,
         from: row.from,

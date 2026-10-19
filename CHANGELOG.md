@@ -36,9 +36,17 @@
   once, admits both rows against that history, and writes both or
   neither. A row that would not replace is `not-kept`.
 - An identical approval returns the stored row with `unchanged: true`
-  and does not sign or bump `hamState`. A different window is
-  `hamState + 1`. Members auto-approve over an owner cancel is
-  `not-kept`. A manual approval re-grants above that cancel.
+  only after the current key resolves, the scalar owns that key, and
+  members allow. The stored row must be signed by that current key.
+  A retired-key row is signed again at `hamState + 1`. A different
+  window is `hamState + 1`. The window is copied once before it is
+  checked. Members auto-approve over an owner cancel is `not-kept`.
+  A manual approval re-grants above that cancel.
+- `admitRow` and `admitPost` take a resolver function and always return
+  the admitted row. An approved request verifies both rows, then writes
+  those already-verified rows.
+- **Breaking (TypeScript):** `MemoryGroupGraph` no longer has
+  `plantLabelOwnerForTest`. The label map is module-private.
 - When `now` equals the latest rotation time, approval returns
   `rotation-boundary` and writes nothing.
 - Members auto-approve compares parsed `PrincipalId`s. A signed

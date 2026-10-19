@@ -20,8 +20,8 @@ if ! command -v cargo-llvm-cov >/dev/null; then
   cargo install cargo-llvm-cov --locked
 fi
 rustup component add llvm-tools-preview >/dev/null
-cargo test --workspace --locked --features sociacl-gun/vectors -- --list > target/coverage/rust-test-list.txt
-cargo llvm-cov --workspace --locked --features sociacl-gun/vectors --lcov --output-path target/coverage/rust.lcov \
+cargo test --workspace --locked -- --list > target/coverage/rust-test-list.txt
+cargo llvm-cov --workspace --locked --lcov --output-path target/coverage/rust.lcov \
   > target/coverage/rust-tests.txt
 cargo llvm-cov report --summary-only > target/coverage/rust-summary.txt
 

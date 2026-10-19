@@ -332,6 +332,24 @@ add('accept', 'rotation-boundary-old-key-before', [
   { op: 'grant', owner: p, signer: 1, rotations: 'rotated', now: boundary - 1, request: accessRow({ requester: p2, object: chatA, scope: 'read', status: 'pending', message: '', issuedAt: boundary - 1 }, 2), window, granted: true, hamState: 1, post: false },
   { op: 'view', object: chatA, accessor: p2, stated: 1, hamState: 1, mode: 'present', issuedAt: boundary - 1 },
 ]);
+add('reject', 'unchanged-wrong-scalar', [
+  put(),
+  grant(pending(), { granted: true, hamState: 1, post: false }),
+  grant(pending(), { signer: 2, granted: false, reason: 'bad-key' }),
+  { op: 'view', object: chatA, accessor: p2, stated: 1, hamState: 1, mode: 'present', from: at, until: now + 100 },
+]);
+add('reject', 'unchanged-non-member', [
+  put(),
+  grant(pending(), { granted: true, hamState: 1, post: false }),
+  grant(pending(), { members, granted: false, reason: 'not-member' }),
+  { op: 'view', object: chatA, accessor: p2, stated: 1, hamState: 1, mode: 'present', from: at, until: now + 100 },
+]);
+add('accept', 'unchanged-after-rotation-resigns', [
+  put(),
+  { op: 'grant', owner: p, signer: 1, rotations: 'rotated', now: boundary - 1, request: accessRow({ requester: p2, object: chatA, scope: 'read', status: 'pending', message: '', issuedAt: boundary - 1 }, 2), window, granted: true, hamState: 1, post: false },
+  { op: 'grant', owner: p, signer: 2, rotations: 'rotated', now, request: accessRow({ requester: p2, object: chatA, scope: 'read', status: 'pending', message: '', issuedAt: now }, 2), window, granted: true, hamState: 2, post: false, bytesDiffer: true },
+  { op: 'view', object: chatA, accessor: p2, stated: 1, hamState: 2, mode: 'present', issuedAt: now },
+]);
 const body = { v: 1, family: 'request', context, accept, reject };
 const path = new URL('../../../vectors/mesh/v2/request.json', import.meta.url);
 writeFileSync(path, JSON.stringify(body, null, 2) + '\n');

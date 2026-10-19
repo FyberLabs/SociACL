@@ -76,7 +76,7 @@ The same steps, expanded:
 
 ```bash
 cargo build --workspace --locked
-cargo test --workspace --locked --features sociacl-gun/vectors
+cargo test --workspace --locked
 cargo run --locked -p sociacl-core --example check
 cargo run --locked -p sociacl-core --example wills
 cargo run --locked -p sociacl-core --example network

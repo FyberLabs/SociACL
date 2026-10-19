@@ -154,43 +154,19 @@ function present(row) {
 }
 
 /**
- * A resolver looks history up. An array is history the caller already resolved.
- * `commit: false` reports `kept` and does not write.
- * @param {unknown} graph
- * @param {*} resolver
- * @param {PrincipalId} owner
- * @returns {{ ok: true, rotations: readonly unknown[], ctx: ResolutionContext, commit: boolean } | { ok: false, reason: string }}
- */
-function resolvedHistory(graph, resolver, owner) {
-  if (!graph || typeof graph !== 'object' || !resolver || typeof resolver !== 'object' || !resolver.ctx) {
-    return { ok: false, reason: 'missing-history' };
-  }
-  const ctx = /** @type {ResolutionContext} */ (resolver.ctx);
-  if (Array.isArray(resolver.rotations)) {
-    return { ok: true, rotations: resolver.rotations, ctx, commit: resolver.commit !== false };
-  }
-  if (typeof resolver.rotations !== 'function') return { ok: false, reason: 'missing-history' };
-  const rotations = resolver.rotations(owner);
-  if (!Array.isArray(rotations)) return { ok: false, reason: 'missing-history' };
-  return { ok: true, rotations, ctx, commit: true };
-}
-
-/**
- * Admit one sociacl-post-grant-v2 row. The owner is the admitted object
- * record. A missing object is `unknown`. A row owner that is not that
- * record is `bad-record`. Retired-key cancels are `stated === 0` in the
- * signed bytes.
+ * Verify one post row against history the caller already resolved.
+ * Does not write. The request path commits the sealed row afterwards.
  * @param {object} graph
  * @param {unknown} row
- * @param {SeeResolver | { rotations: readonly unknown[], ctx: ResolutionContext, commit?: boolean }} resolver
- * @returns {{ ok: true, value?: SealedPost, kept: boolean } | { ok: false, reason: string }}
+ * @param {readonly unknown[]} rotations
+ * @param {ResolutionContext} ctx
+ * @returns {{ ok: true, key: string, sealed: SealedPost, kept: boolean } | { ok: false, reason: string }}
  */
-export function admitPost(graph, row, resolver) {
+export function preparePost(graph, row, rotations, ctx) {
   const parsed = parsePostGrant(row);
   if (!parsed.ok) return parsed;
-  const history = resolvedHistory(graph, resolver, parsed.value.grant.owner);
-  if (!history.ok) return history;
-  const verified = verifyPostGrant(parsed.value.grant, history.rotations, history.ctx);
+  if (!graph || typeof graph !== 'object' || !ctx) return { ok: false, reason: 'missing-history' };
+  const verified = verifyPostGrant(parsed.value.grant, rotations, ctx);
   if (!verified.ok) return verified;
   const grant = verified.value.grant;
   const admission = admittedOwner(graph, grant.object);
@@ -198,13 +174,46 @@ export function admitPost(graph, row, resolver) {
   if (admission.owner !== grant.owner) return { ok: false, reason: 'bad-record' };
   const held = postMap(graph);
   const key = postSoul(admission.owner, grant.object, grant.accessor);
-  const sealed = seal(verified.value, history.ctx);
+  const sealed = seal(verified.value, ctx);
   const prev = held.get(key);
   const kept = !prev || !sealedPosts.has(prev) || replaces(prev, sealed);
-  if (!history.commit) return { ok: true, kept };
-  if (kept) held.set(key, sealed);
-  const stored = held.get(key) ?? sealed;
-  return { ok: true, value: present(stored), kept };
+  return { ok: true, key, sealed, kept };
+}
+
+/**
+ * Store a row `preparePost` already verified. Does not verify again.
+ * @param {object} graph
+ * @param {{ key: string, sealed: SealedPost, kept: boolean }} prepared
+ * @returns {{ ok: true, value: SealedPost, kept: boolean }}
+ */
+export function commitPreparedPost(graph, prepared) {
+  const held = postMap(graph);
+  if (prepared.kept) held.set(prepared.key, prepared.sealed);
+  const stored = held.get(prepared.key) ?? prepared.sealed;
+  return { ok: true, value: present(stored), kept: prepared.kept };
+}
+
+/**
+ * Admit one sociacl-post-grant-v2 row. The owner is the admitted object
+ * record. A missing object is `unknown`. A row owner that is not that
+ * record is `bad-record`. Retired-key cancels are `stated === 0` in the
+ * signed bytes. `rotations` is a function. The result always includes the row.
+ * @param {object} graph
+ * @param {unknown} row
+ * @param {SeeResolver} resolver
+ * @returns {{ ok: true, value: SealedPost, kept: boolean } | { ok: false, reason: string }}
+ */
+export function admitPost(graph, row, resolver) {
+  if (!resolver || typeof resolver !== 'object' || typeof resolver.rotations !== 'function' || !resolver.ctx) {
+    return { ok: false, reason: 'missing-history' };
+  }
+  const parsed = parsePostGrant(row);
+  if (!parsed.ok) return parsed;
+  const rotations = resolver.rotations(parsed.value.grant.owner);
+  if (!Array.isArray(rotations)) return { ok: false, reason: 'missing-history' };
+  const prepared = preparePost(graph, row, rotations, resolver.ctx);
+  if (!prepared.ok) return prepared;
+  return commitPreparedPost(graph, prepared);
 }
 
 /** The stored verified post row, as a caller-facing copy.

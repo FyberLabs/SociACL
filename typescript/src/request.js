@@ -29,8 +29,8 @@ import {
   verifySignedAt,
 } from '../ids/src/index.js';
 import { integer } from '../ids/src/util.js';
-import { admitPost, presentedPost } from './post.js';
-import { admittedOwner, admitRow, presentedSee } from './see.js';
+import { commitPreparedPost, preparePost, presentedPost } from './post.js';
+import { admittedOwner, commitPreparedSee, prepareSee, presentedSee } from './see.js';
 
 export {
   REQUEST_DOMAIN,
@@ -79,18 +79,13 @@ function sameLive(row, owner, object, accessor, window) {
  * @returns {{ ok: true, see: unknown, post: unknown } | { ok: false, reason: string }}
  */
 function admitGrantRows(graph, seeRow, postRow, rotations, ctx) {
-  const dry = { rotations, ctx, commit: false };
-  const seeDry = seeRow == null ? null : admitRow(graph, seeRow, dry);
-  if (seeDry && !seeDry.ok) return { ok: false, reason: seeDry.reason };
-  const postDry = postRow == null ? null : admitPost(graph, postRow, dry);
-  if (postDry && !postDry.ok) return { ok: false, reason: postDry.reason };
-  if ((seeDry && !seeDry.kept) || (postDry && !postDry.kept)) return { ok: false, reason: 'not-kept' };
-  const write = { rotations, ctx, commit: true };
-  const seeWrote = seeRow == null ? null : admitRow(graph, seeRow, write);
-  if (seeWrote && !seeWrote.ok) return { ok: false, reason: seeWrote.reason };
-  const postWrote = postRow == null ? null : admitPost(graph, postRow, write);
-  if (postWrote && !postWrote.ok) return { ok: false, reason: postWrote.reason };
-  if ((seeWrote && !seeWrote.kept) || (postWrote && !postWrote.kept)) return { ok: false, reason: 'not-kept' };
+  const seePrep = seeRow == null ? null : prepareSee(graph, seeRow, rotations, ctx);
+  if (seePrep && !seePrep.ok) return { ok: false, reason: seePrep.reason };
+  const postPrep = postRow == null ? null : preparePost(graph, postRow, rotations, ctx);
+  if (postPrep && !postPrep.ok) return { ok: false, reason: postPrep.reason };
+  if ((seePrep && !seePrep.kept) || (postPrep && !postPrep.kept)) return { ok: false, reason: 'not-kept' };
+  const seeWrote = seePrep && seePrep.ok ? commitPreparedSee(graph, seePrep) : null;
+  const postWrote = postPrep && postPrep.ok ? commitPreparedPost(graph, postPrep) : null;
   return { ok: true, see: seeWrote ? seeWrote.value : null, post: postWrote ? postWrote.value : null };
 }
 
@@ -130,7 +125,10 @@ export function grantApprovedRequest(graph, owner, request, window, members, sig
   const req = parsed.value.request;
   if (req.status === 'withdrawn') return deny('withdrawn');
   if (!window || typeof window !== 'object') return deny('bad-record');
-  if (!whole(window.from) || !whole(window.until) || window.until <= window.from) return deny('bad-record');
+  const from = window.from;
+  const until = window.until;
+  if (!whole(from) || !whole(until) || until <= from) return deny('bad-record');
+  const span = { from, until };
   const who = parsePrincipalId(owner);
   if (!who.ok) return deny(who.reason);
   if (!signer || !(signer.scalar instanceof Uint8Array) || !signer.resolver) return deny('bad-key');
@@ -162,17 +160,8 @@ export function grantApprovedRequest(graph, owner, request, window, members, sig
   if (admission.owner !== who.value) return deny('owner-mismatch');
   const seeStored = presentedSee(graph, req.object, req.requester);
   const postStored = req.scope === 'read+post' ? presentedPost(graph, req.object, req.requester) : null;
-  const seeSame = sameLive(seeStored, who.value, req.object, req.requester, window);
-  const postSame = req.scope !== 'read+post' || sameLive(postStored, who.value, req.object, req.requester, window);
-  if (seeSame && postSame) {
-    return {
-      granted: true,
-      unchanged: true,
-      requestId: req.requestId,
-      see: seeStored,
-      post: req.scope === 'read+post' ? postStored : null,
-    };
-  }
+  const seeMatch = sameLive(seeStored, who.value, req.object, req.requester, span);
+  const postMatch = req.scope !== 'read+post' || sameLive(postStored, who.value, req.object, req.requester, span);
   if (members != null) {
     if (members.predicate !== 'same-group' && members.predicate !== 'named-circle') return deny('bad-record');
     if (!integer(members.now)) return deny('bad-record');
@@ -187,15 +176,31 @@ export function grantApprovedRequest(graph, owner, request, window, members, sig
     if (seeStored?.grant?.stated === 0) return deny('not-kept');
     if (req.scope === 'read+post' && postStored?.grant?.stated === 0) return deny('not-kept');
   }
+  if (!integer(resolver.ctx.now)) return deny('bad-record');
+  const current = resolveCurrentKey(who.value, ownerHistory, resolver.ctx);
+  if (!current.ok) return deny(current.reason);
+  const seeSame = seeMatch && seeStored?.key === current.value.currentKey;
+  const postSame = req.scope !== 'read+post' || (postMatch && postStored?.key === current.value.currentKey);
+  const ownsKey = () => signWithKeyring(signer.scalar, new Uint8Array([0]), current.value.currentKey);
+  if (seeSame && postSame) {
+    const owns = ownsKey();
+    if (!owns.ok) return deny(owns.reason);
+    return {
+      granted: true,
+      unchanged: true,
+      requestId: req.requestId,
+      see: seeStored,
+      post: req.scope === 'read+post' ? postStored : null,
+    };
+  }
+  const latest = current.value.rotations.reduce((max, row) => (row.issuedAt > max ? row.issuedAt : max), -1);
+  if (latest === resolver.ctx.now) return deny('rotation-boundary');
+  const owns = ownsKey();
+  if (!owns.ok) return deny(owns.reason);
   const seeHam = (seeStored?.grant?.hamState ?? 0) + 1;
   if (!seeSame && (!Number.isSafeInteger(seeHam) || seeHam > HAM_MAX)) return deny('see-ceiling');
   const postHam = (postStored?.grant?.hamState ?? 0) + 1;
   if (req.scope === 'read+post' && !postSame && (!Number.isSafeInteger(postHam) || postHam > HAM_MAX)) return deny('post-ceiling');
-  if (!integer(resolver.ctx.now)) return deny('bad-record');
-  const current = resolveCurrentKey(who.value, ownerHistory, resolver.ctx);
-  if (!current.ok) return deny(current.reason);
-  const latest = current.value.rotations.reduce((max, row) => (row.issuedAt > max ? row.issuedAt : max), -1);
-  if (latest === resolver.ctx.now) return deny('rotation-boundary');
   /** @type {SeeGrant | null} */
   let seeSigned = null;
   if (!seeSame) {
@@ -205,8 +210,8 @@ export function grantApprovedRequest(graph, owner, request, window, members, sig
       object: req.object,
       accessor: req.requester,
       stated: 1,
-      from: window.from,
-      until: window.until,
+      from: span.from,
+      until: span.until,
       hamState: seeHam,
       issuedAt: resolver.ctx.now,
       sig: '',
@@ -226,8 +231,8 @@ export function grantApprovedRequest(graph, owner, request, window, members, sig
       object: req.object,
       accessor: req.requester,
       stated: 1,
-      from: window.from,
-      until: window.until,
+      from: span.from,
+      until: span.until,
       hamState: postHam,
       issuedAt: resolver.ctx.now,
       sig: '',

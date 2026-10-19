@@ -262,6 +262,10 @@ test("an earlier grant cannot revive a cancel, and another graph stays closed", 
   assert.equal(checkPost(other, chat.value, p2, now, granted.post).allowed, false);
 });
 
+test("the label plant setter is not on the published class", () => {
+  assert.equal(MemoryGroupGraph.prototype.plantLabelOwnerForTest, undefined);
+});
+
 test("an alias label put keeps the signed owner spelling", () => {
   const graph = new MemoryGroupGraph();
   const resolver = { rotations: () => [], ctx: context() };

@@ -4,6 +4,7 @@
  */
 import { requestId } from '../ids/src/index.js';
 import { MemoryGroupGraph, issuerFromSeed } from '../src/group.js';
+import { plantLabelOwnerForTest } from '../src/internal/label-test.js';
 import { admitPost, admittedPost, checkPost, factorGrants } from '../src/post.js';
 import { grantApprovedRequest } from '../src/request.js';
 import { admitRow, admittedView, checkSee, putObject } from '../src/see.js';
@@ -97,7 +98,7 @@ export function runRequestCase(steps, options) {
       continue;
     }
     if (step.op === 'label-owner') {
-      graph.plantLabelOwnerForTest(step.object, step.owner);
+      plantLabelOwnerForTest(graph, step.object, step.owner);
       continue;
     }
     if (step.op === 'grant') {

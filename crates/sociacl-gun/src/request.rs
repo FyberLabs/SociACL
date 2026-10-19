@@ -116,25 +116,13 @@ impl MeshSeeGraph {
         } else {
             None
         };
-        let see_same = see_stored
+        let see_match = see_stored
             .as_ref()
             .is_some_and(|row| same_live(row, owner, &req.object, &req.requester, from, until));
-        let post_same = req.scope != "read+post"
+        let post_match = req.scope != "read+post"
             || post_stored
                 .as_ref()
                 .is_some_and(|row| same_live(row, owner, &req.object, &req.requester, from, until));
-        if see_same && post_same {
-            return Ok(ApprovedRequest {
-                request_id: req.request_id,
-                see: see_stored.expect("matching see"),
-                post: if req.scope == "read+post" {
-                    post_stored
-                } else {
-                    None
-                },
-                unchanged: true,
-            });
-        }
         if let Some((predicate, now)) = members {
             let Some(label_owner) = self.labels.owner_of(req.object.as_ref()) else {
                 return Err(Reason::NotMember);
@@ -163,6 +151,36 @@ impl MeshSeeGraph {
                 return Err(Reason::NotKept);
             }
         }
+        if ctx.now > 9_007_199_254_740_991 {
+            return Err(Reason::BadRecord);
+        }
+        let current = resolve_current_key(owner, &owner_history, ctx).result?;
+        let see_same = see_match
+            && see_stored
+                .as_ref()
+                .is_some_and(|row| row.key == current.current_key);
+        let post_same = req.scope != "read+post"
+            || (post_match
+                && post_stored
+                    .as_ref()
+                    .is_some_and(|row| row.key == current.current_key));
+        if see_same && post_same {
+            sign_with_keyring(scalar, &[0], &current.current_key)?;
+            return Ok(ApprovedRequest {
+                request_id: req.request_id,
+                see: see_stored.expect("matching see"),
+                post: if req.scope == "read+post" {
+                    post_stored
+                } else {
+                    None
+                },
+                unchanged: true,
+            });
+        }
+        if current.rotations.iter().map(|row| row.issued_at).max() == Some(ctx.now) {
+            return Err(Reason::RotationBoundary);
+        }
+        sign_with_keyring(scalar, &[0], &current.current_key)?;
         let see_ham = if see_same {
             None
         } else {
@@ -179,13 +197,6 @@ impl MeshSeeGraph {
         } else {
             None
         };
-        if ctx.now > 9_007_199_254_740_991 {
-            return Err(Reason::BadRecord);
-        }
-        let current = resolve_current_key(owner, &owner_history, ctx).result?;
-        if current.rotations.iter().map(|row| row.issued_at).max() == Some(ctx.now) {
-            return Err(Reason::RotationBoundary);
-        }
         let see_row = if let Some(ham) = see_ham {
             let row = signed_row(
                 SeeGrant {
