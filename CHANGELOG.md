@@ -119,9 +119,12 @@ recorded here. The release tag is `ids-v0.9.0`.
   Clock skew must be an integer from 0 through 300. `issuedAt` past `now`
   plus that skew is `future-record`. A present key returns
   `{key, mode: "present"}`, or `bad-signature` when the signature fails.
-  Every retired-key row is `unwitnessed-retired-key`, including a witnessed
-  cancel. PR 2 of the #55 rebuild is what reads `sociacl-cancel-v2` from the
-  signed bytes. `mode: "witnessed"` is reserved for that check.
+  Every retired-key row passed to `verifySignedAt` is
+  `unwitnessed-retired-key`. That function stays kind-free. A see cancel is
+  `verifySeeGrant` / `verify_see_grant`: one parse, then the signing bytes,
+  and a retired row counts only when those bytes are `sociacl-see-grant-v2`
+  with `stated` 0 and the attestation matches them. `sociacl-cancel-v2` is
+  the later group-cancel domain. `mode: "witnessed"` is that see-cancel result.
 - `verifyAclAttestation` / `verify_acl_attestation` checks claim type
   `sociacl-acl-attest-v1`. The token is capped at 16384 characters before it
   is parsed. The claim is exactly `{typ, principal, recordId, iat, exp}`,

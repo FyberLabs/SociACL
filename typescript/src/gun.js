@@ -16,6 +16,10 @@ export {
 } from "./post.js";
 
 import { canonicalAccessorId, nextPostHam, objectIdRejected, postGrantKey, postRowEncodable, postSoul, sameObjectId } from "./post.js";
+import { parseObjectId, parsePrincipalId } from "../ids/src/index.js";
+import { admitRow, checkSee as checkSeeId, putObject as putStoredObject, reverifyPrincipal } from "./see.js";
+
+export { admitRow, putStoredObject as putObject, reverifyPrincipal };
 
 /** @param {string | null | undefined} left @param {string | null | undefined} right */
 function samePrincipal(left, right) {
@@ -185,6 +189,13 @@ function liveGrants(graph, object, now) {
 }
 
 export function checkSee(graph, object, accessor, now, hint, hop) {
+  const objectId = parseObjectId(object);
+  const accessorId = parsePrincipalId(accessor);
+  if (objectId.ok && accessorId.ok) return checkSeeId(graph, objectId.value, accessorId.value, now, hint, hop);
+  return checkSeeLabel(graph, object, accessor, now, hint, hop);
+}
+
+function checkSeeLabel(graph, object, accessor, now, hint, hop) {
   void hint;
   void hop;
   if (!object || isMetaOrAcl(object) || String(object).includes("://")) {

@@ -15,7 +15,7 @@
     "./ir": "./src/ir.js"
   },
   "scripts": {
-    "typecheck": "tsc --strict --noEmit -p tsconfig.json"
+    "typecheck": "tsc --strict --noEmit -p tsconfig.json && tsc --strict --noEmit -p tsconfig.see.json"
   },
   "devDependencies": {
     "@noble/curves": "2.0.1",

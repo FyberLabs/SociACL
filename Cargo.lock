@@ -1004,6 +1004,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "sociacl-core",
+ "sociacl-ids",
  "thiserror",
 ]
 

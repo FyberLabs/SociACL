@@ -9,7 +9,13 @@
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 
+use serde_json::Value;
 use sociacl_core::{NodeId, Timestamp};
+use sociacl_ids::{
+    grant_soul as id_grant_soul, parse_see_grant, verify_see_grant, ObjectId, PrincipalId, Reason,
+    ResolutionContext,
+    SignedAtMode,
+};
 
 use crate::soul::{
     acl_key, acl_principal_key, ascii_trim, canonical_accessor_id, object_id_rejected, GunSoul,
@@ -294,6 +300,39 @@ pub struct MeshSeeGraph {
     pub(crate) posts: HashMap<String, crate::post::GunPostEdge>,
     friends: HashSet<(String, String)>,
     pub(crate) groups: crate::group::GroupRows,
+    id_owners: HashMap<String, PrincipalId>,
+    admitted: HashMap<String, AdmittedSee>,
+}
+
+/// Admitted see row. The private seal keeps an unverified row out of Check.
+#[derive(Clone, Debug)]
+pub struct VerifiedRow {
+    pub mode: SignedAtMode,
+    pub stated: u8,
+    pub ham_state: u64,
+    pub from: u64,
+    pub until: u64,
+    pub issued_at: u64,
+    pub owner: PrincipalId,
+    pub object: ObjectId,
+    pub accessor: PrincipalId,
+    #[allow(dead_code)]
+    seal: (),
+}
+
+#[derive(Clone, Debug)]
+struct AdmittedSee {
+    mode: SignedAtMode,
+    stated: u8,
+    ham_state: u64,
+    from: u64,
+    until: u64,
+    issued_at: u64,
+    owner: PrincipalId,
+    object: ObjectId,
+    accessor: PrincipalId,
+    bytes: Vec<u8>,
+    source: Value,
 }
 
 impl MeshSeeGraph {
@@ -695,6 +734,210 @@ impl MeshSeeGraph {
             o.id == object || acl_key(&o.id) == acl_key(object) || item_soul_alias(&o.id, object)
         })
     }
+
+    /// Store an object owner. The id is the parsed `ObjectId`, with no alias.
+    pub fn put_object_id(&mut self, object: &ObjectId, owner: &PrincipalId) {
+        self.id_owners
+            .insert(object.as_ref().to_string(), owner.clone());
+    }
+
+    /// Admit one see row. The row is parsed once; the signature covers that value.
+    pub fn admit_row(
+        &mut self,
+        row: &Value,
+        rotations: &[Value],
+        ctx: &ResolutionContext<'_>,
+    ) -> Result<(VerifiedRow, bool), Reason> {
+        let (grant, _) = parse_see_grant(row)?;
+        let verified = verify_see_grant(&snapshot_see(&grant), rotations, ctx)?;
+        let key = id_grant_soul(
+            &verified.grant.owner,
+            &verified.grant.object,
+            &verified.grant.accessor,
+        )
+        .to_string();
+        let next = admitted_from(&verified, &snapshot_see(&grant));
+        let kept = match self.admitted.get(&key) {
+            Some(prev) => replaces(prev, &next),
+            None => true,
+        };
+        if kept {
+            self.admitted.insert(key.clone(), next);
+        }
+        let stored = self.admitted.get(&key).expect("admitted row");
+        Ok((view_row(stored), kept))
+    }
+
+    /// Drop this principal's grants that the new checkpoint no longer accepts.
+    /// A cancel stays only when it is present or witnessed under that checkpoint.
+    pub fn reverify_principal(
+        &mut self,
+        principal: &PrincipalId,
+        rotations: &[Value],
+        ctx: &ResolutionContext<'_>,
+    ) -> usize {
+        let keys: Vec<String> = self
+            .admitted
+            .iter()
+            .filter(|(_, row)| row.owner == *principal)
+            .map(|(key, _)| key.clone())
+            .collect();
+        let mut dropped = 0;
+        for key in keys {
+            let Some(row) = self.admitted.get(&key) else {
+                continue;
+            };
+            match verify_see_grant(&row.source, rotations, ctx) {
+                Ok(verified) => {
+                    self.admitted
+                        .insert(key, admitted_from(&verified, &row.source));
+                }
+                Err(_) => {
+                    self.admitted.remove(&key);
+                    dropped += 1;
+                }
+            }
+        }
+        dropped
+    }
+
+    /// The admitted row for the current owner, object, and accessor.
+    pub fn admitted_view(
+        &self,
+        object: &ObjectId,
+        accessor: &PrincipalId,
+    ) -> Option<VerifiedRow> {
+        let owner = self.id_owners.get(object.as_ref())?;
+        let key = id_grant_soul(owner, object, accessor).to_string();
+        self.admitted.get(&key).map(view_row)
+    }
+
+    /// Stored-id Check. A raw string is not a parameter.
+    ///
+    /// ```compile_fail
+    /// let graph = sociacl_gun::MeshSeeGraph::new();
+    /// graph.check_see_id("room", "0xbob", 0, None, None);
+    /// ```
+    pub fn check_see_id(
+        &self,
+        object: &ObjectId,
+        accessor: &PrincipalId,
+        now: u64,
+        hint: Option<&HandoffHint>,
+        hop: Option<&HopFactor>,
+    ) -> MeshCheckResult {
+        let hint = hint.cloned();
+        let hop = hop.cloned();
+        let text = object.as_ref();
+        if text == "s3rch/meta"
+            || text == "s3rch/acl"
+            || text.starts_with("s3rch/acl/")
+            || text.contains("://")
+        {
+            return MeshCheckResult {
+                allowed: false,
+                reason: "unknown".into(),
+                hint,
+                hop,
+            };
+        }
+        let Some(owner) = self.id_owners.get(text) else {
+            return MeshCheckResult {
+                allowed: false,
+                reason: "unknown".into(),
+                hint,
+                hop,
+            };
+        };
+        if owner == accessor {
+            return MeshCheckResult {
+                allowed: true,
+                reason: MESH_REASON_OWNER.into(),
+                hint,
+                hop,
+            };
+        }
+        let key = id_grant_soul(owner, object, accessor).to_string();
+        if let Some(row) = self.admitted.get(&key) {
+            if row.stated == 1 && now >= row.from && now < row.until {
+                return MeshCheckResult {
+                    allowed: true,
+                    reason: MESH_REASON_DELEGATE.into(),
+                    hint,
+                    hop,
+                };
+            }
+        }
+        MeshCheckResult {
+            allowed: false,
+            reason: MESH_REASON_DELEGATE.into(),
+            hint,
+            hop,
+        }
+    }
+}
+
+fn snapshot_see(grant: &sociacl_ids::SeeGrant) -> Value {
+    let mut map = serde_json::Map::new();
+    map.insert("owner".into(), Value::String(grant.owner.to_string()));
+    map.insert("object".into(), Value::String(grant.object.to_string()));
+    map.insert("accessor".into(), Value::String(grant.accessor.to_string()));
+    map.insert("stated".into(), Value::from(u64::from(grant.stated)));
+    map.insert("from".into(), Value::from(grant.from));
+    map.insert("until".into(), Value::from(grant.until));
+    map.insert("hamState".into(), Value::from(grant.ham_state));
+    map.insert("issuedAt".into(), Value::from(grant.issued_at));
+    map.insert("sig".into(), Value::String(grant.sig.clone()));
+    if let Some(attest) = &grant.attest {
+        map.insert("attest".into(), Value::String(attest.clone()));
+    }
+    Value::Object(map)
+}
+
+fn admitted_from(verified: &sociacl_ids::VerifiedSee, source: &Value) -> AdmittedSee {
+    AdmittedSee {
+        mode: verified.mode,
+        stated: verified.grant.stated,
+        ham_state: verified.grant.ham_state,
+        from: verified.grant.from,
+        until: verified.grant.until,
+        issued_at: verified.grant.issued_at,
+        owner: verified.grant.owner.clone(),
+        object: verified.grant.object.clone(),
+        accessor: verified.grant.accessor.clone(),
+        bytes: verified.bytes.clone(),
+        source: source.clone(),
+    }
+}
+
+fn view_row(row: &AdmittedSee) -> VerifiedRow {
+    VerifiedRow {
+        mode: row.mode,
+        stated: row.stated,
+        ham_state: row.ham_state,
+        from: row.from,
+        until: row.until,
+        issued_at: row.issued_at,
+        owner: row.owner.clone(),
+        object: row.object.clone(),
+        accessor: row.accessor.clone(),
+        seal: (),
+    }
+}
+
+fn replaces(prev: &AdmittedSee, next: &AdmittedSee) -> bool {
+    if next.ham_state != prev.ham_state {
+        return next.ham_state > prev.ham_state;
+    }
+    if (next.stated == 0) != (prev.stated == 0) {
+        return next.stated == 0;
+    }
+    let prev_width = prev.until - prev.from;
+    let next_width = next.until - next.from;
+    if prev_width != next_width {
+        return next_width < prev_width;
+    }
+    next.bytes < prev.bytes
 }
 
 fn object_store_key(id: &str) -> String {

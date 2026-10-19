@@ -113,7 +113,7 @@ Rust `sociacl-gun` and `typescript/src/request.js` both load `vectors/mesh/acces
 
 ### Hop factor
 
-`checkSee(graph, object, accessor, now, hint?, hop?)`.
+`checkSee(graph, object, accessor, now, hint?, hop?)`. The stored-id see path takes an `ObjectId` and a `PrincipalId` and allows only a row admitted from `sociacl-see-grant-v2`. A retired key counts only when the signed `stated` field is `0` and the attestation binds those bytes. Hint and hop never grant. The contract aliases on this page stay strings while post, group, and epoch rows are still labels.
 
 - hop missing does not fail.
 - hop alone never allows.

@@ -88,8 +88,12 @@ base64url; both high-S and low-S verify. SEA envelopes are not accepted.
 `verifySignedAt(principal, rotations, ctx, bytes, sig, issuedAt)`
 does not take a kind or an attestation. It resolves the current key first. A present key returns
 `{key, mode: "present"}` or `bad-signature`. Every retired-key row is
-`unwitnessed-retired-key`, including a witnessed cancel, until PR 2 of the #55 rebuild
-reads the `sociacl-cancel-v2` domain from the signed bytes. `mode: "witnessed"` is reserved for that check. A negative or fractional `issuedAt` is `bad-record`.
+`unwitnessed-retired-key`. `verifySeeGrant(row, rotations, ctx)` is the see-row
+check: it parses once, encodes `sociacl-see-grant-v2` from that value, and
+accepts a retired key only when `stated` is 0 and the attestation binds those
+bytes. A retired `stated` 1 row is refused even when witnessed.
+`mode: "witnessed"` is that result. `sociacl-cancel-v2` is not a see cancel.
+A negative or fractional `issuedAt` is `bad-record`.
 `clockSkewSeconds` must be an integer from 0 through 300; a larger, non-finite,
 or non-numeric skew is `bad-record`. `issuedAt` past `now` plus that skew is
 `future-record`. `signWithKeyring(scalar, bytes, expectedKey)` signs only when

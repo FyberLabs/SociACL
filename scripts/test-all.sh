@@ -14,7 +14,8 @@ fi
 
 cargo build --workspace --locked
 mkdir -p target/ids
-IDS_VECTOR_REPORT="${root}/target/ids/rust-vectors.txt" cargo test --workspace --locked
+mkdir -p target/mesh
+IDS_VECTOR_REPORT="${root}/target/ids/rust-vectors.txt" MESH_VECTOR_REPORT="${root}/target/mesh/rust-vectors.txt" cargo test --workspace --locked
 
 cargo run --locked -p sociacl-core --example check
 cargo run --locked -p sociacl-core --example wills
@@ -46,7 +47,7 @@ PYTHONPATH=python python3 python/tests/test_network.py
 
 npm ci --prefix typescript
 npx --prefix typescript tsc --strict --noEmit -p typescript/contract
-node --test typescript/tests/*.js
+MESH_VECTOR_REPORT="${root}/target/mesh/ts-vectors.txt" node --test typescript/tests/*.js
 node --experimental-strip-types --test typescript/tests/test_encdisc_vectors.ts typescript/tests/test_presentation.ts typescript/tests/test_inbox.ts typescript/tests/test_epoch.ts typescript/tests/test_migration.ts typescript/tests/test_account_key.ts typescript/tests/test_account_keyring.ts typescript/tests/test_recovery.ts typescript/tests/test_contact_lane.ts
 npm run --prefix typescript typecheck
 
@@ -56,4 +57,5 @@ IDS_VECTOR_REPORT="${root}/target/ids/ts-vectors.txt" node --test typescript/ids
 npm run --prefix typescript/ids typecheck
 npm run --prefix typescript/ids browser
 npm run --prefix typescript/ids consumer
-node typescript/ids/scripts/compare-vectors.mjs target/ids/rust-vectors.txt target/ids/ts-vectors.txt
+node typescript/ids/scripts/compare-vectors.mjs "${root}/vectors/ids" target/ids/rust-vectors.txt target/ids/ts-vectors.txt
+node typescript/ids/scripts/compare-vectors.mjs "${root}/vectors/mesh/v2" target/mesh/rust-vectors.txt target/mesh/ts-vectors.txt

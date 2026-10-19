@@ -2207,11 +2207,145 @@ pub fn verify_acl_attestation(
         exp,
     })
 }
+const SEE_DOMAIN: &str = "sociacl-see-grant-v2";
+/// One parsed see grant. `stated` is `0` (cancel) or `1` (grant). The kind is this field.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SeeGrant {
+    pub owner: PrincipalId,
+    pub object: ObjectId,
+    pub accessor: PrincipalId,
+    pub stated: u8,
+    pub from: u64,
+    pub until: u64,
+    pub ham_state: u64,
+    pub issued_at: u64,
+    pub sig: String,
+    pub attest: Option<String>,
+}
+/// Signature check over a parsed see row. `bytes` are the v2 signing bytes.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct VerifiedSee {
+    pub key: PrincipalId,
+    pub mode: SignedAtMode,
+    pub grant: SeeGrant,
+    pub bytes: Vec<u8>,
+}
+fn see_u64(v: Option<&Value>) -> Result<u64, Reason> {
+    number(v.ok_or(Reason::BadRecord)?)
+}
+/// Signing bytes for one parsed see row. Domain and `stated` are inside the bytes.
+pub fn see_grant_bytes(grant: &SeeGrant) -> Vec<u8> {
+    lp(&[
+        SEE_DOMAIN,
+        grant.owner.as_ref(),
+        grant.object.as_ref(),
+        grant.accessor.as_ref(),
+        &grant.stated.to_string(),
+        &grant.from.to_string(),
+        &grant.until.to_string(),
+        &grant.ham_state.to_string(),
+        &grant.issued_at.to_string(),
+    ])
+}
+/// Snapshot a see row from already-parsed JSON. `kind` is not read.
+pub fn parse_see_grant(row: &Value) -> Result<(SeeGrant, Vec<u8>), Reason> {
+    let map = row.as_object().ok_or(Reason::BadRecord)?;
+    if let Some(domain) = map.get("domain") {
+        if domain.as_str() != Some(SEE_DOMAIN) {
+            return Err(Reason::LegacyRow);
+        }
+    }
+    if !map.contains_key("sig") {
+        return Err(Reason::LegacyRow);
+    }
+    let owner = parse_principal_id(map.get("owner").and_then(Value::as_str).ok_or(Reason::BadRecord)?)?;
+    let object = parse_object_id(map.get("object").and_then(Value::as_str).ok_or(Reason::BadRecord)?)?;
+    let accessor = parse_principal_id(map.get("accessor").and_then(Value::as_str).ok_or(Reason::BadRecord)?)?;
+    let stated = see_u64(map.get("stated"))?;
+    if stated > 1 {
+        return Err(Reason::BadRecord);
+    }
+    let from = see_u64(map.get("from"))?;
+    let until = see_u64(map.get("until"))?;
+    let ham_state = see_u64(map.get("hamState"))?;
+    let issued_at = see_u64(map.get("issuedAt"))?;
+    if until < from {
+        return Err(Reason::BadRecord);
+    }
+    let sig = text(map.get("sig").and_then(Value::as_str).ok_or(Reason::BadRecord)?, 128)?.to_owned();
+    let attest = match map.get("attest") {
+        None => None,
+        Some(Value::String(s)) => Some(s.clone()),
+        Some(_) => return Err(Reason::NotString),
+    };
+    let grant = SeeGrant {
+        owner,
+        object,
+        accessor,
+        stated: stated as u8,
+        from,
+        until,
+        ham_state,
+        issued_at,
+        sig,
+        attest,
+    };
+    let bytes = see_grant_bytes(&grant);
+    Ok((grant, bytes))
+}
+fn see_witness(grant: &SeeGrant, bytes: &[u8], ctx: &ResolutionContext<'_>) -> Result<AclAttestation, Reason> {
+    let Some(token) = grant.attest.as_deref() else {
+        return Err(Reason::UnwitnessedRetiredKey);
+    };
+    let attest = verify_acl_attestation(token, ctx.jwks, grant.issued_at, bytes)?;
+    if attest.principal != grant.owner {
+        return Err(Reason::BadAttestation);
+    }
+    Ok(attest)
+}
+/// See-grant authority. A retired cancel is `stated == 0` on the parsed row.
+/// There is no kind argument. A retired `stated == 1` row is refused even when witnessed.
+pub fn verify_see_grant(
+    row: &Value,
+    rotations: &[Value],
+    ctx: &ResolutionContext<'_>,
+) -> Result<VerifiedSee, Reason> {
+    let (grant, bytes) = parse_see_grant(row)?;
+    let account = resolve_current_key(&grant.owner, rotations, ctx).result?;
+    proof_time(grant.issued_at, ctx.now, ctx.policy.clock_skew_seconds)?;
+    let state = history_state(&grant.owner, &account.rotations, grant.issued_at, ctx.now);
+    if state.key == account.current_key {
+        if !key_verify(&account.current_key, &grant.sig, &bytes) {
+            return Err(Reason::BadSignature);
+        }
+        return Ok(VerifiedSee {
+            key: account.current_key,
+            mode: SignedAtMode::Present,
+            grant,
+            bytes,
+        });
+    }
+    if grant.stated != 0 {
+        if grant.attest.is_some() {
+            see_witness(&grant, &bytes, ctx)?;
+        }
+        return Err(Reason::UnwitnessedRetiredKey);
+    }
+    see_witness(&grant, &bytes, ctx)?;
+    if !key_verify(&state.key, &grant.sig, &bytes) {
+        return Err(Reason::BadSignature);
+    }
+    Ok(VerifiedSee {
+        key: state.key,
+        mode: SignedAtMode::Witnessed,
+        grant,
+        bytes,
+    })
+}
 /// Present authority under the resolved current key.
-/// A retired key is [`Reason::UnwitnessedRetiredKey`] until PR 2 of the #55 rebuild
-/// reads the `sociacl-cancel-v2` domain from the signed bytes.
-/// Kind is not a parameter, and there is no attestation argument until that PR.
-/// [`SignedAtMode::Witnessed`] is reserved for that check.
+/// Arbitrary bytes stay fail-closed on a retired key. A see cancel is
+/// [`verify_see_grant`]: the signed `stated` field is `0`.
+/// Kind is not a parameter, and this function does not take an attestation.
 /// A resolver failure is returned unchanged.
 pub fn verify_signed_at(
     principal: &PrincipalId,
@@ -2245,8 +2379,9 @@ pub fn verify_signed_at(
 #[serde(rename_all = "kebab-case")]
 pub enum SignedAtMode {
     Present,
-    /// Reserved for PR 2 of the #55 rebuild. Nothing returns this until the
-    /// signed bytes name `sociacl-cancel-v2`.
+    /// Returned by [`verify_see_grant`] for a retired see cancel.
+    /// Eligibility is `stated == 0` inside `sociacl-see-grant-v2`.
+    /// `sociacl-cancel-v2` is the group-cancel domain, not this one.
     Witnessed,
 }
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]

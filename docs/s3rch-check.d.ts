@@ -166,7 +166,7 @@ export type FeedMeta = {
  */
 export type CheckObjectId = string;
 
-/** Wallet or s3rch/users/{wallet}. */
+/** Wallet, user path, or, on the stored-id see path, a `PrincipalId`. */
 export type AccessorId = string;
 
 export type CheckResult = {
