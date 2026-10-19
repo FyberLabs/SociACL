@@ -11,8 +11,9 @@ use std::collections::{HashMap, HashSet};
 use serde_json::Value;
 use sociacl_core::Timestamp;
 use sociacl_ids::{
-    grant_soul as id_grant_soul, parse_see_grant, verify_object_record, verify_see_grant, ObjectId,
-    PrincipalId, Reason, ResolutionContext, SignedAtMode,
+    grant_soul as id_grant_soul, parse_object_record, parse_see_grant, verify_acl_attestation,
+    verify_object_record, verify_see_grant, ObjectId, PrincipalId, Reason, ResolutionContext,
+    SignedAtMode,
 };
 
 use crate::soul::GunSoul;
@@ -158,12 +159,15 @@ pub(crate) struct LabelGraph {
     pub(crate) groups: crate::group::GroupRows,
 }
 
-/// Admitted object owner. A conflicting second record sets `frozen`.
-#[derive(Clone, Debug, Eq, PartialEq)]
+/// Admitted object owner. `frozen` stays false: a mismatched owner is
+/// `bad-record` and never freezes the object. `record` is the canonical
+/// signed snapshot, rechecked when the owner rotates.
+#[derive(Clone, Debug)]
 struct ObjectAdmission {
     owner: PrincipalId,
     issued_at: u64,
     frozen: bool,
+    record: Value,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -203,6 +207,7 @@ struct AdmittedSee {
     accessor: PrincipalId,
     bytes: Vec<u8>,
     source: Value,
+    witness: bool,
 }
 
 impl MeshSeeGraph {
@@ -211,61 +216,67 @@ impl MeshSeeGraph {
     }
 
     /// Admit a signed object record. The owner is the record, never an argument.
-    /// The same owner later is a no-op. A different owner freezes the object.
+    /// History comes from `resolver` called with the parsed owner.
+    /// The same owner later is a no-op while the stored record still verifies.
+    /// A stored record the current key no longer signs is replaced.
     pub fn put_object(
         &mut self,
         record: &Value,
-        rotations: Option<&[Value]>,
+        resolver: &dyn Fn(&PrincipalId) -> Option<Vec<Value>>,
         ctx: &ResolutionContext<'_>,
-    ) -> Result<bool, PutObjectError> {
-        let Some(rotations) = rotations else {
-            sociacl_ids::parse_object_record(record).map_err(PutObjectError::Record)?;
-            return Err(PutObjectError::Record(Reason::MissingHistory));
+    ) -> Result<bool, Reason> {
+        let (parsed, _) = parse_object_record(record)?;
+        let Some(rotations) = resolver(&parsed.owner) else {
+            return Err(Reason::MissingHistory);
         };
-        let verified =
-            verify_object_record(record, rotations, ctx).map_err(PutObjectError::Record)?;
+        let verified = verify_object_record(record, &rotations, ctx)?;
         let id = verified.record.object.as_ref().to_string();
-        if let Some(existing) = self.owners.get_mut(&id) {
-            if existing.frozen {
-                return Err(PutObjectError::OwnerConflict);
+        let snapshot = snapshot_object(&verified.record);
+        if let Some(existing) = self.owners.get(&id) {
+            if existing.owner != verified.record.owner {
+                return Err(Reason::BadRecord);
             }
-            if existing.owner == verified.record.owner {
+            if verify_object_record(&existing.record, &rotations, ctx).is_ok() {
                 return Ok(false);
             }
-            existing.frozen = true;
-            return Err(PutObjectError::OwnerConflict);
         }
+        self.labels.put_object(
+            verified.record.object.as_ref(),
+            verified.record.owner.as_ref(),
+        );
         self.owners.insert(
             id,
             ObjectAdmission {
                 owner: verified.record.owner,
                 issued_at: verified.record.issued_at,
                 frozen: false,
+                record: snapshot,
             },
         );
         Ok(true)
     }
 
     /// Admit one see row. The row is parsed once; the signature covers that value.
+    /// History comes from `resolver` called with the parsed owner.
     /// Missing rotation history is `missing-history`, not an empty history.
     pub fn admit_row(
         &mut self,
         row: &Value,
-        rotations: Option<&[Value]>,
+        resolver: &dyn Fn(&PrincipalId) -> Option<Vec<Value>>,
         ctx: &ResolutionContext<'_>,
     ) -> Result<(VerifiedRow, bool), Reason> {
         let (grant, _) = parse_see_grant(row)?;
-        let Some(rotations) = rotations else {
+        let Some(rotations) = resolver(&grant.owner) else {
             return Err(Reason::MissingHistory);
         };
-        let verified = verify_see_grant(&snapshot_see(&grant), rotations, ctx)?;
+        let verified = verify_see_grant(&snapshot_see(&grant), &rotations, ctx)?;
         let key = id_grant_soul(
             &verified.grant.owner,
             &verified.grant.object,
             &verified.grant.accessor,
         )
         .to_string();
-        let next = admitted_from(&verified, &snapshot_see(&grant));
+        let next = admitted_from(&verified, &snapshot_see(&grant), ctx);
         let kept = match self.admitted.get(&key) {
             Some(prev) => replaces(prev, &next),
             None => true,
@@ -277,17 +288,19 @@ impl MeshSeeGraph {
         Ok((view_row(stored), kept))
     }
 
-    /// Drop this principal's grants that the new checkpoint no longer accepts.
-    /// A cancel stays only when it is present or witnessed under that checkpoint.
-    /// Missing history drops that principal's rows and returns `missing-history`.
+    /// Drop this principal's grants and object records that the new checkpoint
+    /// no longer accepts. A cancel stays only when it is present or witnessed
+    /// under that checkpoint. An object record stays only when the current key
+    /// still signs it. Missing history drops both and returns `missing-history`.
     pub fn reverify_principal(
         &mut self,
         principal: &PrincipalId,
-        rotations: Option<&[Value]>,
+        resolver: &dyn Fn(&PrincipalId) -> Option<Vec<Value>>,
         ctx: &ResolutionContext<'_>,
     ) -> Result<usize, Reason> {
-        let Some(rotations) = rotations else {
+        let Some(rotations) = resolver(principal) else {
             self.admitted.retain(|_, row| row.owner != *principal);
+            self.drop_owner_records(principal);
             return Err(Reason::MissingHistory);
         };
         let keys: Vec<String> = self
@@ -301,10 +314,10 @@ impl MeshSeeGraph {
             let Some(row) = self.admitted.get(&key) else {
                 continue;
             };
-            match verify_see_grant(&row.source, rotations, ctx) {
+            match verify_see_grant(&row.source, &rotations, ctx) {
                 Ok(verified) => {
                     self.admitted
-                        .insert(key, admitted_from(&verified, &row.source));
+                        .insert(key, admitted_from(&verified, &row.source, ctx));
                 }
                 Err(_) => {
                     self.admitted.remove(&key);
@@ -312,7 +325,36 @@ impl MeshSeeGraph {
                 }
             }
         }
+        let object_ids: Vec<String> = self
+            .owners
+            .iter()
+            .filter(|(_, row)| row.owner == *principal)
+            .map(|(id, _)| id.clone())
+            .collect();
+        for id in object_ids {
+            let Some(row) = self.owners.get(&id) else {
+                continue;
+            };
+            if verify_object_record(&row.record, &rotations, ctx).is_err() {
+                self.owners.remove(&id);
+                self.labels.remove_object(&id);
+                dropped += 1;
+            }
+        }
         Ok(dropped)
+    }
+
+    fn drop_owner_records(&mut self, principal: &PrincipalId) {
+        let ids: Vec<String> = self
+            .owners
+            .iter()
+            .filter(|(_, row)| row.owner == *principal)
+            .map(|(id, _)| id.clone())
+            .collect();
+        for id in ids {
+            self.owners.remove(&id);
+            self.labels.remove_object(&id);
+        }
     }
 
     /// The admitted owner record, when one has been verified.
@@ -325,9 +367,6 @@ impl MeshSeeGraph {
     /// The admitted row for the current owner, object, and accessor.
     pub fn admitted_view(&self, object: &ObjectId, accessor: &PrincipalId) -> Option<VerifiedRow> {
         let owner = self.owners.get(object.as_ref())?;
-        if owner.frozen {
-            return None;
-        }
         let key = id_grant_soul(&owner.owner, object, accessor).to_string();
         self.admitted.get(&key).map(view_row)
     }
@@ -356,14 +395,6 @@ impl MeshSeeGraph {
                 hop,
             };
         };
-        if admission.frozen {
-            return MeshCheckResult {
-                allowed: false,
-                reason: "owner-conflict".into(),
-                hint,
-                hop,
-            };
-        }
         if admission.owner == *accessor {
             return MeshCheckResult {
                 allowed: true,
@@ -409,7 +440,28 @@ fn snapshot_see(grant: &sociacl_ids::SeeGrant) -> Value {
     Value::Object(map)
 }
 
-fn admitted_from(verified: &sociacl_ids::VerifiedSee, source: &Value) -> AdmittedSee {
+fn snapshot_object(record: &sociacl_ids::ObjectRecord) -> Value {
+    serde_json::json!({
+        "object": record.object.as_ref(),
+        "owner": record.owner.as_ref(),
+        "issuedAt": record.issued_at,
+        "sig": record.sig,
+    })
+}
+
+fn witness_ok(grant: &sociacl_ids::SeeGrant, bytes: &[u8], ctx: &ResolutionContext<'_>) -> bool {
+    let Some(token) = grant.attest.as_deref() else {
+        return false;
+    };
+    verify_acl_attestation(token, ctx.jwks, grant.issued_at, bytes)
+        .is_ok_and(|attest| attest.principal == grant.owner)
+}
+
+fn admitted_from(
+    verified: &sociacl_ids::VerifiedSee,
+    source: &Value,
+    ctx: &ResolutionContext<'_>,
+) -> AdmittedSee {
     AdmittedSee {
         mode: verified.mode,
         stated: verified.grant.stated,
@@ -422,6 +474,7 @@ fn admitted_from(verified: &sociacl_ids::VerifiedSee, source: &Value) -> Admitte
         accessor: verified.grant.accessor.clone(),
         bytes: verified.bytes.clone(),
         source: source.clone(),
+        witness: witness_ok(&verified.grant, &verified.bytes, ctx),
     }
 }
 
@@ -439,13 +492,6 @@ fn view_row(row: &AdmittedSee) -> VerifiedRow {
         attest: has_attest(row),
         seal: (),
     }
-}
-
-/// Why `put_object` refused a record. `owner-conflict` freezes the object.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum PutObjectError {
-    Record(Reason),
-    OwnerConflict,
 }
 
 fn has_attest(row: &AdmittedSee) -> bool {
@@ -473,5 +519,5 @@ fn replaces(prev: &AdmittedSee, next: &AdmittedSee) -> bool {
     if next.bytes != prev.bytes {
         return next.bytes < prev.bytes;
     }
-    has_attest(next) && !has_attest(prev)
+    next.witness && !prev.witness
 }

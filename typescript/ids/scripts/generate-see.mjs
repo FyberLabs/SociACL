@@ -49,8 +49,9 @@ const rotation = (next = p2, n = 2, seq = 1, prev = p, issuedAt = at + 30) => {
 };
 const rot = rotation();
 const policy = { allowedDomains: ['s3r.ch'], allowedUris: ['https://s3r.ch/identity/link'], allowedChainIds: ['1'] };
-const chatA = val(ids.parseObjectId('chat_' + '11'.repeat(16)));
-const chatB = val(ids.parseObjectId('chat_' + '22'.repeat(16)));
+const chatA = val(ids.mintObjectId('chat', p, () => new Uint8Array(16).fill(0x11)));
+const chatB = val(ids.mintObjectId('chat', p, () => new Uint8Array(16).fill(0x22)));
+const unbound = val(ids.parseObjectId('chat_' + '33'.repeat(16)));
 const legacy = val(ids.parseObjectId(`s3rch:room:${wallet}:1700000000:ab`));
 const context = {
   jwks,
@@ -102,6 +103,9 @@ function objectRecord(object, owner, signer, issuedAt = at) {
 function put(object, owner, signer, issuedAt = at) {
   return { op: 'put', record: objectRecord(object, owner, signer, issuedAt), rotations: 'genesis', ok: true, kept: true };
 }
+function putCurrent(object = chatA) {
+  return { op: 'put', record: objectRecord(object, p, 2, at + 40), rotations: 'rotated', ok: true, kept: true };
+}
 const options = { ctx, rotations: (name) => context.rotationSets[name] };
 const accept = [];
 const reject = [];
@@ -140,10 +144,12 @@ add('reject', 'fold-user-soul', [edge('principal', 's3rch/users/0xbob')]);
     { op: 'check', object: chatB, accessor: p2, now: 10, allowed: false, reason: 'delegate', hint: true, hop: true },
   ]);
 }
-add('accept', 'legacy-id-wallet-is-not-owner', [
-  put(legacy, p2, 2),
-  { op: 'check', object: legacy, accessor: p, now: 10, allowed: false, reason: 'delegate' },
-  { op: 'check', object: legacy, accessor: p2, now: 10, allowed: true, reason: 'owner' },
+add('reject', 'object-without-embedded-principal', [
+  { op: 'put', record: objectRecord(unbound, p, 1), rotations: 'genesis', ok: false, reason: 'bad-record' },
+  { op: 'owner', object: unbound, absent: true },
+  { op: 'put', record: objectRecord(legacy, p, 1), rotations: 'genesis', ok: false, reason: 'bad-record' },
+  { op: 'owner', object: legacy, absent: true },
+  { op: 'check', object: unbound, accessor: p, now: 10, allowed: false, reason: 'unknown' },
 ]);
 {
   const unsigned = base({});
@@ -170,15 +176,16 @@ add('accept', 'legacy-id-wallet-is-not-owner', [
   add('reject', 'rotation-drops-old-key-grant', [
     put(chatA, p, 1),
     { op: 'admit', row: oldGrant, rotations: 'genesis', ok: true, kept: true, mode: 'present', stated: 1, hamState: 1 },
-    { op: 'reverify', principal: p, rotations: 'rotated', dropped: 1 },
+    { op: 'reverify', principal: p, rotations: 'rotated', dropped: 2 },
     { op: 'view', object: chatA, accessor: p2, absent: true },
-    { op: 'check', object: chatA, accessor: p2, now: 10, allowed: false, reason: 'delegate' },
+    { op: 'check', object: chatA, accessor: p2, now: 10, allowed: false, reason: 'unknown' },
   ]);
   const resigned = seeRow(base({ issuedAt: at + 40, hamState: 2 }), 2).row;
   add('accept', 'resigned-row-allows', [
     put(chatA, p, 1),
     { op: 'admit', row: oldGrant, rotations: 'genesis', ok: true, kept: true, mode: 'present', stated: 1, hamState: 1 },
-    { op: 'reverify', principal: p, rotations: 'rotated', dropped: 1 },
+    { op: 'reverify', principal: p, rotations: 'rotated', dropped: 2 },
+    putCurrent(),
     { op: 'admit', row: resigned, rotations: 'rotated', ok: true, kept: true, mode: 'present', stated: 1, hamState: 2 },
     { op: 'check', object: chatA, accessor: p2, now: 10, allowed: true, reason: 'delegate' },
   ]);
@@ -186,7 +193,7 @@ add('accept', 'legacy-id-wallet-is-not-owner', [
 {
   const cancel = seeRow(base({ stated: 0, issuedAt: retiredAt }), 1, {}).row;
   add('accept', 'retired-witnessed-cancel-kept', [
-    put(chatA, p, 1),
+    putCurrent(),
     { op: 'verify', row: cancel, rotations: 'rotated', ok: true, mode: 'witnessed' },
     { op: 'admit', row: cancel, rotations: 'rotated', ok: true, kept: true, mode: 'witnessed', stated: 0, hamState: 1 },
     { op: 'reverify', principal: p, rotations: 'rotated', dropped: 0 },
@@ -297,7 +304,7 @@ function compareBytes(left, right) {
     { op: 'admit', row: grant, rotations: 'genesis', ok: true, kept: true, mode: 'present', stated: 1, hamState: 1 },
     { op: 'reverify', principal: p, history: 'unavailable', ok: false, reason: 'missing-history' },
     { op: 'view', object: chatA, accessor: p2, absent: true },
-    { op: 'check', object: chatA, accessor: p2, now: 10, allowed: false, reason: 'delegate' },
+    { op: 'check', object: chatA, accessor: p2, now: 10, allowed: false, reason: 'unknown' },
   ]);
 }
 {
@@ -320,20 +327,60 @@ function compareBytes(left, right) {
   const self = seeRow(base({ owner: p2, accessor: p3 }), 2).row;
   add('reject', 'preadmitted-see-row-is-not-an-object-record', [
     { op: 'admit', row: self, rotations: 'genesis', ok: true, kept: true, mode: 'present', stated: 1, hamState: 1 },
-    { op: 'put', record: self, rotations: 'genesis', ok: false, reason: 'bad-signature' },
+    { op: 'put', record: self, rotations: 'genesis', ok: false, reason: 'bad-record' },
     { op: 'owner', object: chatA, absent: true },
     { op: 'check', object: chatA, accessor: p2, now: 10, allowed: false, reason: 'unknown' },
   ]);
   const grant = seeRow(base({}), 1).row;
-  add('reject', 'object-owner-conflict-freezes', [
+  add('reject', 'stranger-record-does-not-freeze', [
     put(chatA, p, 1),
     { op: 'admit', row: grant, rotations: 'genesis', ok: true, kept: true, mode: 'present', stated: 1, hamState: 1 },
-    { op: 'put', record: objectRecord(chatA, p2, 2), rotations: 'genesis', ok: false, reason: 'owner-conflict' },
-    { op: 'owner', object: chatA, owner: p, frozen: true, issuedAt: at },
-    { op: 'check', object: chatA, accessor: p, now: 10, allowed: false, reason: 'owner-conflict' },
-    { op: 'check', object: chatA, accessor: p2, now: 10, allowed: false, reason: 'owner-conflict' },
-    { op: 'view', object: chatA, accessor: p2, absent: true },
-    { op: 'put', record: objectRecord(chatA, p, 1, at + 5), rotations: 'genesis', ok: false, reason: 'owner-conflict' },
+    { op: 'put', record: objectRecord(chatA, p2, 2), rotations: 'genesis', ok: false, reason: 'bad-record' },
+    { op: 'owner', object: chatA, owner: p, frozen: false, issuedAt: at },
+    { op: 'check', object: chatA, accessor: p, now: 10, allowed: true, reason: 'owner' },
+    { op: 'check', object: chatA, accessor: p2, now: 10, allowed: true, reason: 'delegate' },
+    { op: 'view', object: chatA, accessor: p2, stated: 1, hamState: 1, mode: 'present' },
+  ]);
+  add('reject', 'object-domain-v1', [
+    { op: 'put', record: { ...objectRecord(chatA, p, 1), domain: 'sociacl-object-v1' }, rotations: 'genesis', ok: false, reason: 'bad-record' },
+    { op: 'owner', object: chatA, absent: true },
+  ]);
+  add('reject', 'object-issued-at-negative-zero', [
+    { op: 'put', record: objectRecord(chatA, p, 1), rotations: 'genesis', patch: { issuedAt: '-0' }, ok: false, reason: 'bad-record' },
+    { op: 'owner', object: chatA, absent: true },
+  ]);
+  add('reject', 'object-wrong-signer', [
+    { op: 'put', record: objectRecord(chatA, p, 2), rotations: 'genesis', ok: false, reason: 'bad-signature' },
+    { op: 'owner', object: chatA, absent: true },
+  ]);
+  add('reject', 'object-future-record', [
+    { op: 'put', record: objectRecord(chatA, p, 1, now + 1), rotations: 'genesis', ok: false, reason: 'future-record' },
+    { op: 'owner', object: chatA, absent: true },
+  ]);
+  add('reject', 'object-put-without-history', [
+    { op: 'put', record: { object: chatA, owner: p, issuedAt: at }, history: 'unavailable', ok: false, reason: 'bad-signature' },
+    { op: 'put', record: objectRecord(chatA, p, 1), history: 'unavailable', ok: false, reason: 'missing-history' },
+    { op: 'owner', object: chatA, absent: true },
+  ]);
+  {
+    const retired = objectRecord(chatA, p, 1, at);
+    retired.attest = attest(ids.objectRecordBytes(retired), at, p);
+    add('reject', 'retired-object-record-ignores-witness', [
+      { op: 'put', record: retired, rotations: 'rotated', ok: false, reason: 'unwitnessed-retired-key' },
+      { op: 'owner', object: chatA, absent: true },
+    ]);
+  }
+  add('accept', 'object-resigned-after-rotation', [
+    put(chatA, p, 1),
+    { op: 'put', record: objectRecord(chatA, p, 2, at + 40), rotations: 'rotated', ok: true, kept: true },
+    { op: 'reverify', principal: p, rotations: 'rotated', dropped: 0 },
+    { op: 'owner', object: chatA, owner: p, frozen: false, issuedAt: at + 40 },
+    { op: 'check', object: chatA, accessor: p, now: at + 50, allowed: true, reason: 'owner' },
+  ]);
+  add('accept', 'object-resigned-on-a-fresh-peer', [
+    putCurrent(),
+    { op: 'owner', object: chatA, owner: p, frozen: false, issuedAt: at + 40 },
+    { op: 'check', object: chatA, accessor: p, now: at + 50, allowed: true, reason: 'owner' },
   ]);
   add('reject', 'unsigned-object-record', [
     { op: 'put', record: { object: chatA, owner: p, issuedAt: at }, rotations: 'genesis', ok: false, reason: 'bad-signature' },
@@ -355,14 +402,30 @@ function compareBytes(left, right) {
   const bare = seeRow(base({ stated: 0, issuedAt: retiredAt }), 1).row;
   const witnessed = seeRow(base({ stated: 0, issuedAt: retiredAt }), 1, {}).row;
   add('accept', 'equal-bytes-keep-witness', [
-    put(chatA, p, 1),
+    putCurrent(),
     { op: 'admit', row: bare, rotations: 'genesis', ok: true, kept: true, mode: 'present', stated: 0, hamState: 1, attest: false },
     { op: 'admit', row: witnessed, rotations: 'genesis', ok: true, kept: true, mode: 'present', stated: 0, hamState: 1, attest: true },
     { op: 'reverify', principal: p, rotations: 'rotated', dropped: 0 },
     { op: 'view', object: chatA, accessor: p2, stated: 0, hamState: 1, mode: 'witnessed', attest: true },
   ]);
+  const junk = seeRow(base({ stated: 0, issuedAt: retiredAt }), 1, 'not-a-jws').row;
+  const good = seeRow(base({ stated: 0, issuedAt: retiredAt }), 1, {}).row;
+  add('accept', 'equal-bytes-valid-witness-wins', [
+    putCurrent(),
+    { op: 'admit', row: junk, rotations: 'genesis', ok: true, kept: true, mode: 'present', stated: 0, hamState: 1, attest: true },
+    { op: 'admit', row: good, rotations: 'genesis', ok: true, kept: true, mode: 'present', stated: 0, hamState: 1, attest: true },
+    { op: 'reverify', principal: p, rotations: 'rotated', dropped: 0 },
+    { op: 'view', object: chatA, accessor: p2, stated: 0, hamState: 1, mode: 'witnessed', attest: true },
+  ]);
+  add('accept', 'equal-bytes-junk-does-not-replace-witness', [
+    putCurrent(),
+    { op: 'admit', row: good, rotations: 'genesis', ok: true, kept: true, mode: 'present', stated: 0, hamState: 1, attest: true },
+    { op: 'admit', row: junk, rotations: 'genesis', ok: true, kept: false, mode: 'present', stated: 0, hamState: 1, attest: true },
+    { op: 'reverify', principal: p, rotations: 'rotated', dropped: 0 },
+    { op: 'view', object: chatA, accessor: p2, stated: 0, hamState: 1, mode: 'witnessed', attest: true },
+  ]);
   add('accept', 'equal-bytes-witness-stays', [
-    put(chatA, p, 1),
+    putCurrent(),
     { op: 'admit', row: witnessed, rotations: 'genesis', ok: true, kept: true, mode: 'present', stated: 0, hamState: 1, attest: true },
     { op: 'admit', row: bare, rotations: 'genesis', ok: true, kept: false, mode: 'present', stated: 0, hamState: 1, attest: true },
   ]);
@@ -403,9 +466,9 @@ function compareBytes(left, right) {
   add('accept', 'reverify-drops-revoked-authorizer', [
     put(chatA, p, 1),
     { op: 'admit', row: grant, rotations: 'genesis', ok: true, kept: true, mode: 'present', stated: 1, hamState: 1 },
-    { op: 'reverify', principal: p, rotations: 'rotated', revocations: [rev], dropped: 1 },
+    { op: 'reverify', principal: p, rotations: 'rotated', revocations: [rev], dropped: 2 },
     { op: 'view', object: chatA, accessor: p2, absent: true },
-    { op: 'check', object: chatA, accessor: p2, now: 10, allowed: false, reason: 'delegate' },
+    { op: 'check', object: chatA, accessor: p2, now: 10, allowed: false, reason: 'unknown' },
   ]);
 }
 {

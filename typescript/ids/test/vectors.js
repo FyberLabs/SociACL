@@ -121,7 +121,8 @@ function run(f, c) {
   }
   if(c.operation === 'claim') return ids.deriveClaimId(c.input);
   if(c.operation === 'external') return ids.deriveExternalId(c.input.source,c.input.providerItemId);
-  if(c.operation === 'mint') return ids.mintObjectId(c.input.kind,()=>new Uint8Array(c.input.bytes));
+  if(c.operation === 'mint') return ids.mintObjectId(c.input.kind,c.input.creator,()=>new Uint8Array(c.input.bytes));
+  if(c.operation === 'object-principal') return ids.objectPrincipal(c.input);
   return (c.parser === 'wallet-input' ? ids.parseWalletInput : parsers[f.family])(c.input);
 }
 test('verifySignedAt does not take a kind or an attestation', () => {

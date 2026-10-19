@@ -8,9 +8,11 @@ import type {
   EpochReplicaView,
   EpochRotation,
   EpochStatusProof,
+  ObjectId,
+  PrincipalId,
 } from "../../docs/s3rch-check.js";
 import { lengthPrefixed, sha256Hex } from "../contract/canonical.ts";
-import { parseObjectId, parsePrincipalId, type ObjectId, type PrincipalId } from "../ids/src/index.js";
+import { parseObjectId, parsePrincipalId } from "../ids/src/index.js";
 import {
   aclSnapshotBytes,
   aclSnapshotId,
@@ -40,13 +42,13 @@ const FAR = 4_000_000_000_000;
 function mustObject(value: string): ObjectId {
   const parsed = parseObjectId(value);
   if (!parsed.ok) throw new Error(parsed.reason);
-  return parsed.value;
+  return parsed.value as ObjectId;
 }
 
 function mustPrincipal(value: string): PrincipalId {
   const parsed = parsePrincipalId(value);
   if (!parsed.ok) throw new Error(parsed.reason);
-  return parsed.value;
+  return parsed.value as PrincipalId;
 }
 
 const OBJECT = mustObject("chat_" + "11".repeat(16));

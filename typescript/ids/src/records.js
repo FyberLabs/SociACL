@@ -4,7 +4,7 @@ import { secp256k1 } from '@noble/curves/secp256k1.js';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { keccak_256 } from '@noble/hashes/sha3.js';
 import { ok, fail, text, data, integer, b64, unb64, hex, unhex, utf8, lp } from './util.js';
-import { parsePrincipalId, parseObjectId, parseEip55, parseOidcCredential, checksum } from './ids.js';
+import { parsePrincipalId, parseObjectId, objectPrincipal, parseEip55, parseOidcCredential, checksum } from './ids.js';
 import { uniqueJson } from './json.js';
 /** @import {PrincipalId, Eip55, Result, WalletLink, OidcLink, Rotate, Revoke, GenesisEpub, IdentityRecord, UnsignedRecord, Jwks, Siwe, ResolutionContext, SiwePolicy, HistoryResolver, KeyState, Diagnostic, Resolution, ResolvedAccount, SignedAt, AclAttestation, SeeGrant} from './types.js' */
 
@@ -887,6 +887,8 @@ export function parseObjectRecord(row) {
   const object = parseObjectId(r.object); if (!object.ok) return object;
   const owner = parsePrincipalId(r.owner); if (!owner.ok) return owner;
   if (!integer(r.issuedAt)) return fail('bad-record');
+  const creator = objectPrincipal(object.value);
+  if (!creator.ok || creator.value !== owner.value) return fail('bad-record');
   if (!Object.hasOwn(r, 'sig')) return fail('bad-signature');
   const sig = text(r.sig, 128); if (!sig.ok) return sig;
   /** @type {import('./types.js').ObjectRecord} */

@@ -1,6 +1,6 @@
 export type * from './types.js';
 export { parsePrincipalId, parsePrincipalKey, parsePathKey, principalFromSec1, parseEip55, parseWalletInput, parseTenantId, parseOidcCredential,
-  parseObjectId, parseNetworkId, parseSourceKey, parseSoul,
+  parseObjectId, objectPrincipal, parseNetworkId, parseSourceKey, parseSoul,
   formatPrincipalKey, formatWalletKey, formatOidcKey, formatNetworkKey, formatSourcePathKey,
   objectKey, objectSoul, userSoul, aclSoul, grantSoul, postSoul, membershipSoul, objectSetSoul,
   mintObjectId, deriveClaimId, deriveExternalId } from './ids.js';

@@ -118,8 +118,18 @@ reject('object','legacy-post-empty-ts',`s3rch:post:${wallet}::abcd`,'bad-alphabe
 reject('object','uppercase-hex','room_'+'AB'.repeat(16),'non-canonical');
 reject('object','reserved-kind','claim_'+'01'.repeat(16),'reserved-kind');
 for (const kind of ['post', 'member', 'objset']) reject('object', 'reserved-kind-' + kind, kind + '_' + '01'.repeat(16), 'reserved-kind');
-reject('object','mint-kind-post',{kind:'post',bytes:Array(16).fill(1)},'reserved-kind',{operation:'mint'});
-accept('object','deterministic-mint',{kind:'room',bytes:Array(16).fill(7)},'room_'+'07'.repeat(16),{operation:'mint'});
+reject('object','mint-kind-post',{kind:'post',creator:p,bytes:Array(16).fill(1)},'reserved-kind',{operation:'mint'});
+const minted = val(ids.mintObjectId('room', p, () => new Uint8Array(16).fill(7)));
+accept('object','deterministic-mint',{kind:'room',creator:p,bytes:Array(16).fill(7)},minted,{operation:'mint',pathKey:minted});
+accept('object','bound-creator',minted,minted,{pathKey:minted});
+accept('object','bound-principal',minted,p,{operation:'object-principal'});
+reject('object','unbound-principal',obj,'bad-template',{operation:'object-principal'});
+reject('object','bound-off-curve','room_p_'+'00'.repeat(64)+'_'+'11'.repeat(16),'not-on-curve');
+reject('object','bound-uppercase',minted.slice(0,6)+minted.slice(6).toUpperCase(),'non-canonical');
+reject('object','bound-too-long','a'.repeat(181),'too-long');
+reject('object','bound-reserved-kind','post_'+ids.formatPrincipalKey(p)+'_'+'11'.repeat(16),'reserved-kind');
+const maxBound = 'abcdefghijklmnop_'+ids.formatPrincipalKey(p)+'_'+'22'.repeat(16);
+accept('object','bound-max-length',maxBound,maxBound,{pathKey:maxBound});
 for (const n of ['atproto','farcaster','nostr','activitypub','rss',network]) accept('network',n,n,n,{pathKey:ids.formatNetworkKey(val(ids.parseNetworkId(n)))});
 for (const [label,host] of [['ip','127.0.0.1'],['hex-ip','0x7f.0.0.1'],['private','box.local'],['uppercase','S3R.CH'],['trailing-dot','s3r.ch.']]) reject('network',label,`s3rch:https://${host}:443;key=${'12'.repeat(32)}`,'bad-host');
 for (const port of ['0','65536','0443']) reject('network','port-'+port,network.replace(':443;',':'+port+';'),'bad-port');
@@ -133,6 +143,7 @@ reject('source-key','encoded-control','sr1:rss/https%3A%2F%2Fs3r.ch/a%00b/feed',
 reject('source-key','too-long','x'.repeat(8193),'too-long');
 for (const [name,s] of [['object',ids.objectSoul('items',obj)],['room',ids.objectSoul('rooms',obj)],['legacy-user',ids.objectSoul('users-legacy',obj)],['user',ids.userSoul(p)],['acl',ids.aclSoul(p)],['grant',ids.grantSoul(p,obj,p2)],['distinct-grant',ids.grantSoul(p2,obj,p)],['post',ids.postSoul(p,obj,p2)]]) accept('soul',name,s,val(ids.parseSoul(s)));
 accept('soul','membership-7-segments',ids.membershipSoul(p,'same-group',obj,p2),val(ids.parseSoul(ids.membershipSoul(p,'same-group',obj,p2))));
+accept('soul','bound-max-membership',ids.membershipSoul(p,'named-circle',val(ids.parseObjectId(maxBound)),p2),val(ids.parseSoul(ids.membershipSoul(p,'named-circle',val(ids.parseObjectId(maxBound)),p2))));
 accept('soul','objset-5-segments',ids.objectSetSoul(p,obj),val(ids.parseSoul(ids.objectSetSoul(p,obj))));
 accept('soul','build-membership',[p,'same-group',obj,p2],ids.membershipSoul(p,'same-group',obj,p2),{operation:'build-membership'});
 accept('soul','build-membership-named-circle',[p,'named-circle',obj,p2],ids.membershipSoul(p,'named-circle',obj,p2),{operation:'build-membership'});

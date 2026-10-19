@@ -19,7 +19,11 @@
   domain is `legacy-row`. `stated` is the exact integer 0 or 1. `parseObjectRecord`
   / `parse_object_record`, `objectRecordBytes` / `object_record_bytes`, and
   `verifyObjectRecord` / `verify_object_record` cover domain `sociacl-object-v2`.
-  A conflicting owner on an admitted object is `owner-conflict`.
+  An object record is valid only when the object id embeds that owner.
+  A mismatch is `bad-record` and does not freeze the object. After a
+  rotation, `reverifyPrincipal` drops an object record the current key
+  does not sign. The same owner can replace that stored record with one
+  the current key signs.
 - Derive a per-contact inbox lane with HKDF-SHA256 from a contact-lane
   secret that is not the disclosed base `laneId`. Info is length-prefixed
   `sociacl-contact-lane-v1`, version `1`, the recipient, then the sender.
@@ -113,10 +117,30 @@
 - The recovery plaintext cap does not grow with the salt. `RECOVERY_ENVELOPE_MAX`
   is 262205. The pre-parse ceiling `RECOVERY_ABSOLUTE_MAX` is 262269.
 
+## sociacl-ids 0.10.0 — unreleased
+
+0.10.0 is the next minor after the still-untagged 0.9.0. The release tag
+is `ids-v0.10.0`.
+
+- A new object id embeds its creator's genesis principal:
+  `<kind>_<principal-key>_<32 lowercase hex>`. The principal key is the
+  existing `p_` + 128 lowercase hex form. The 32 hex digits are a fresh
+  128-bit nonce from `mintObjectId(kind, creator)` /
+  `mint_object_id(kind, creator)`. Parsing a bound id returns exactly
+  that principal through `objectPrincipal` / `object_principal`. The
+  longest id is 180 characters, so the path-key maximum is 180. An
+  object record whose owner is not that principal, or whose id has no
+  embedded principal, is `bad-record`. The older `<kind>_<32 hex>` form
+  still parses and is not an object record. The s3r.ch spellings
+  (`s3rch:room`, `s3rch:chat`, `s3rch:forum-msg`, `s3rch:post`,
+  `s3rch:forum-group`, `s3rch:bot`, `s3rch:forum`) are still parsed and
+  are listed for deletion in `docs/s3rch-check.md`. No other package
+  reads them. They are not object records.
+
 ## sociacl-ids 0.9.0 — unreleased
 
-0.9.0 is the next minor after the still-untagged 0.8.0. New ids work is
-recorded here. The release tag is `ids-v0.9.0`.
+0.9.0 was not tagged. New ids work from that cut is recorded here. The
+release tag moved to `ids-v0.10.0`.
 
 - Export the shared length-prefix encoder `lengthPrefixed` / `length_prefixed`.
   Integer fields are decimal strings. The public encoder accepts only real

@@ -495,12 +495,20 @@ fn run(f: &Family, c: &Case, v: &Value) -> Result<Value, Reason> {
                 &parse_source_key(v["source"].as_str().unwrap())?,
                 v["providerItemId"].as_str().unwrap(),
             )?,
-            "mint" => mint_object_id_with(v["kind"].as_str().unwrap(), |b| {
-                for (out, n) in b.iter_mut().zip(v["bytes"].as_array().unwrap()) {
-                    *out = n.as_u64().unwrap() as u8;
-                }
-                Ok(())
-            })?
+            "object-principal" => {
+                let id = parse_object_id(string(v)?)?;
+                return Ok(object_principal(&id)?.to_string().into());
+            }
+            "mint" => mint_object_id_with(
+                v["kind"].as_str().unwrap(),
+                &parse_principal_id(v["creator"].as_str().unwrap()).unwrap(),
+                |b| {
+                    for (out, n) in b.iter_mut().zip(v["bytes"].as_array().unwrap()) {
+                        *out = n.as_u64().unwrap() as u8;
+                    }
+                    Ok(())
+                },
+            )?
             .object_id()
             .clone(),
             _ => panic!("unknown object operation"),

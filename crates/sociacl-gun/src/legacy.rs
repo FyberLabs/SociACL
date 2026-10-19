@@ -336,11 +336,11 @@ mod tests {
 }
 
 impl MeshSeeGrant {
-    pub fn names_object(&self, object: &str) -> bool {
+    pub(crate) fn names_object(&self, object: &str) -> bool {
         object_names(&self.object, object)
     }
 
-    pub fn names_accessor(&self, accessor: &str) -> bool {
+    pub(crate) fn names_accessor(&self, accessor: &str) -> bool {
         accessor_names(&self.accessor, accessor)
     }
 }
@@ -360,7 +360,7 @@ pub(crate) fn accessor_names(stored: &str, query: &str) -> bool {
 }
 
 impl GunAclEdge {
-    pub fn new(
+    pub(crate) fn new(
         owner: impl Into<String>,
         grant: MeshSeeGrant,
         ham_state: u64,
@@ -394,7 +394,7 @@ impl GunAclEdge {
     /// Higher HAM state wins. At the same state a cancellation wins,
     /// then the narrower window, then the smaller canonical bytes.
     /// A row whose owner or accessor does not parse is dropped.
-    pub fn ham_merge(self, incoming: Self) -> Self {
+    pub(crate) fn ham_merge(self, incoming: Self) -> Self {
         let incoming_ok = grant_edge_parsable(&incoming);
         let local_ok = grant_edge_parsable(&self);
         if !incoming_ok {
@@ -499,6 +499,11 @@ impl LabelGraph {
             return;
         }
         self.objects.insert(direct_key, MeshObject { id, owner });
+    }
+
+    pub(crate) fn remove_object(&mut self, object: &str) {
+        let key = object_store_key(object);
+        self.objects.remove(&key);
     }
 
     pub(crate) fn has_object(&self, object: &str) -> bool {

@@ -1,5 +1,6 @@
 use serde_json::Value;
-use sociacl_gun::{MeshSeeGraph, PutObjectError};
+use sociacl_core::IssuerSecret;
+use sociacl_gun::{GroupPredicate, GunError, MeshPostGrant, MeshSeeGraph};
 use sociacl_ids::{
     history_state, parse_object_id, parse_principal_id, parse_see_grant, verify_see_grant, Jwks,
     ObjectId, PrincipalId, Reason, ResolutionContext, SignedAtMode, SiwePolicy,
@@ -69,11 +70,8 @@ fn patch_row(row: &Value, step: &Value) -> Value {
     copy
 }
 
-fn put_reason(err: PutObjectError) -> String {
-    match err {
-        PutObjectError::OwnerConflict => "owner-conflict".into(),
-        PutObjectError::Record(reason) => reason_name(reason),
-    }
+fn resolver_for(rotations: Option<Vec<Value>>) -> impl Fn(&PrincipalId) -> Option<Vec<Value>> {
+    move |_: &PrincipalId| rotations.clone()
 }
 
 fn run_case(file: &Value, case: &Value) -> MeshSeeGraph {
@@ -169,15 +167,15 @@ fn run_case(file: &Value, case: &Value) -> MeshSeeGraph {
             "put" => {
                 let record = patch_row(step.get("record").unwrap_or(&Value::Null), step);
                 let rotations = rotations_of(ctx, step);
-                let got = graph.put_object(&record, rotations.as_deref(), &rc);
+                let got = graph.put_object(&record, &resolver_for(rotations), &rc);
                 if step["ok"] == false {
                     assert_eq!(
-                        put_reason(got.expect_err(name)),
+                        reason_name(got.expect_err(name)),
                         step["reason"].as_str().unwrap(),
                         "{name}"
                     );
                 } else {
-                    let kept = got.unwrap_or_else(|err| panic!("{name} {}", put_reason(err)));
+                    let kept = got.unwrap_or_else(|err| panic!("{name} {err:?}"));
                     if step.get("kept").is_some() {
                         assert_eq!(kept, step["kept"] == true, "{name}");
                     }
@@ -186,7 +184,7 @@ fn run_case(file: &Value, case: &Value) -> MeshSeeGraph {
             "admit" => {
                 let row = patch_row(step.get("row").unwrap_or(&Value::Null), step);
                 let rotations = rotations_of(ctx, step);
-                let got = graph.admit_row(&row, rotations.as_deref(), &rc);
+                let got = graph.admit_row(&row, &resolver_for(rotations), &rc);
                 if step["ok"] == true {
                     let (row, kept) = got.unwrap_or_else(|reason| panic!("{name} {reason:?}"));
                     assert_eq!(kept, step["kept"] == true, "{name}");
@@ -215,7 +213,7 @@ fn run_case(file: &Value, case: &Value) -> MeshSeeGraph {
                 let rotations = rotations_of(ctx, step);
                 let got = graph.reverify_principal(
                     &principal_of(&step["principal"]),
-                    rotations.as_deref(),
+                    &resolver_for(rotations),
                     &rc,
                 );
                 if step["ok"] == false {
@@ -528,6 +526,78 @@ fn walk_glob(root: &Path, dir: &Path, glob: &str, files: &mut Vec<PathBuf>) {
             }
         }
     }
+}
+
+fn not_missing(err: GunError) {
+    assert_ne!(err, GunError::ObjectNotInGraph);
+}
+
+#[test]
+fn signed_owner_reaches_post_and_group_until_history_drops_it() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../vectors/mesh/v2/see.json");
+    let file: Value = serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap();
+    let case = file["accept"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["name"] == "grant-on-chat_a-does-not-allow-chat_b")
+        .unwrap();
+    let mut graph = run_case(&file, case);
+    let object = case["steps"][0]["record"]["object"].as_str().unwrap();
+    let owner = case["steps"][0]["record"]["owner"].as_str().unwrap();
+    let post = MeshPostGrant::live(object, owner, 0, 10);
+    match graph.state_post_grant(owner, post.clone()) {
+        Ok(()) => {}
+        Err(err) => not_missing(err),
+    }
+    let secret = IssuerSecret::generate();
+    match graph.name_object_set(
+        owner,
+        object,
+        GroupPredicate::SameGroup,
+        "0xalice/ops",
+        &secret,
+    ) {
+        Ok(()) => {}
+        Err(err) => not_missing(err),
+    }
+    let ctx = &file["context"];
+    let now = ctx["now"].as_u64().unwrap();
+    let jwks: Jwks = serde_json::from_value(ctx["jwks"].clone()).unwrap();
+    let links: BTreeMap<String, Value> = BTreeMap::new();
+    let policy: SiwePolicy = serde_json::from_value(ctx["policy"].clone()).unwrap();
+    let pinned = std::collections::BTreeSet::new();
+    let history = |principal: &PrincipalId, at, until| Ok(history_state(principal, &[], at, until));
+    let rc = ResolutionContext {
+        jwks: &jwks,
+        links: &links,
+        revocations: &[],
+        now,
+        policy: &policy,
+        pinned_iss: &pinned,
+        history: &history,
+        genesis_epub_bindings: &[],
+    };
+    let principal = principal_of(&case["steps"][0]["record"]["owner"]);
+    assert!(graph
+        .reverify_principal(&principal, &|_| None, &rc)
+        .is_err());
+    assert_eq!(
+        graph.state_post_grant(owner, post).unwrap_err(),
+        GunError::ObjectNotInGraph
+    );
+    assert_eq!(
+        graph
+            .name_object_set(
+                owner,
+                object,
+                GroupPredicate::SameGroup,
+                "0xalice/ops",
+                &secret
+            )
+            .unwrap_err(),
+        GunError::ObjectNotInGraph
+    );
 }
 
 #[test]

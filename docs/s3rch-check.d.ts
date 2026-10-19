@@ -13,9 +13,13 @@
  *      blinded rows, presenter binding, inbox admission,
  *      epoch admission, rotateOnRevoke)
  */
-import type { ObjectId, PrincipalId } from "../typescript/ids/src/types.js";
+declare const sociaclObjectId: unique symbol;
+declare const sociaclPrincipalId: unique symbol;
 
-export type { ObjectId, PrincipalId };
+/** Object id. A copied contract file does not import the ids package. */
+export type ObjectId = string & { readonly [sociaclObjectId]: "ObjectId" };
+/** Genesis principal. A copied contract file does not import the ids package. */
+export type PrincipalId = string & { readonly [sociaclPrincipalId]: "PrincipalId" };
 
 /**
  * CHECK(see, object, accessor) at now.
@@ -262,7 +266,7 @@ export type ObjectRecord = {
   sig: string;
 };
 
-/** Admitted owner. A conflicting second record sets frozen. */
+/** Admitted owner. `frozen` stays false. A mismatched owner does not freeze the object. */
 export type ObjectAdmission = {
   owner: PrincipalId;
   issuedAt: number;
@@ -291,8 +295,9 @@ export type VerifiedRow = {
 
 /**
  * Admit a signed sociacl-object-v2 record. The owner is the record.
- * The same owner later is a no-op. A different owner freezes the
- * object and the reason is owner-conflict.
+ * The object id embeds that genesis principal. Anything else is
+ * bad-record and does not freeze the object. There is no owner-conflict.
+ * The same owner later is a no-op while the stored record still verifies.
  */
 export function putObject(
   graph: object,
@@ -307,7 +312,7 @@ export function admitRow(
   resolver: SeeResolver,
 ): { ok: true; value: VerifiedRow; kept: boolean } | { ok: false; reason: string };
 
-/** Recheck one principal. Missing history drops that principal's rows. */
+/** Recheck one principal. A retired object record stops counting until it is re-signed. Missing history drops that principal's rows and object records. */
 export function reverifyPrincipal(
   graph: object,
   principal: PrincipalId,
@@ -319,7 +324,7 @@ export function reverifyPrincipal(
  * see maps to dest read. Hint is ignored for allowed.
  * Hop missing does not fail. Hop alone never allows.
  * An owner allow comes only from an admitted object record.
- * A frozen object is owner-conflict. A delegate allow is an
+ * A delegate allow is an
  * admitted stated-1 row with now in [from, until).
  * A primitive graph is bad-record. A wrap is not an argument.
  * A hop, a hint, or a wrap never mints.

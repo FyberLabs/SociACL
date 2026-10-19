@@ -124,6 +124,53 @@ test("admitRow returns a copy of the tie-break bytes", () => {
   assert.equal(again.kept, false);
 });
 
+test("putObject returns a copy of the owner admission", () => {
+  const file = JSON.parse(readFileSync(new URL("../../vectors/mesh/v2/see.json", import.meta.url), "utf8"));
+  const entry = file.accept.find((row) => row.name === "grant-on-chat_a-does-not-allow-chat_b");
+  const placed = entry.steps.find((step) => step.op === "put");
+  const graph = {};
+  const resolver = { rotations: () => file.context.rotationSets.genesis, ctx: contextOf(file.context) };
+  const got = putObject(graph, placed.record, resolver);
+  assert.equal(got.ok, true);
+  const object = placed.record.object;
+  const owner = placed.record.owner;
+  got.value.owner = "changed";
+  got.value.frozen = true;
+  got.value.issuedAt = 1;
+  assert.equal(checkSee(graph, object, owner, 10).reason, "owner");
+  assert.deepEqual(
+    // admitted owner stays the stored record
+    putObject(graph, placed.record, resolver),
+    { ok: true, value: { owner, issuedAt: placed.record.issuedAt, frozen: false }, kept: false },
+  );
+});
+
+test("putObject parses the record before reading owner", () => {
+  const file = JSON.parse(readFileSync(new URL("../../vectors/mesh/v2/see.json", import.meta.url), "utf8"));
+  const entry = file.accept.find((row) => row.name === "grant-on-chat_a-does-not-allow-chat_b");
+  const placed = entry.steps.find((step) => step.op === "put");
+  const graph = {};
+  let reads = 0;
+  const resolver = {
+    rotations() {
+      reads += 1;
+      return file.context.rotationSets.genesis;
+    },
+    ctx: contextOf(file.context),
+  };
+  const proxy = new Proxy(placed.record, {
+    getOwnPropertyDescriptor() { throw new Error("descriptor"); },
+  });
+  assert.deepEqual(putObject(graph, proxy, resolver), { ok: false, reason: "bad-record" });
+  const throwing = {};
+  for (const key of Object.keys(placed.record)) {
+    Object.defineProperty(throwing, key, { enumerable: true, get() { throw new Error("getter"); } });
+  }
+  assert.deepEqual(putObject(graph, throwing, resolver), { ok: false, reason: "bad-record" });
+  assert.equal(reads, 0);
+  assert.equal(checkSee(graph, placed.record.object, placed.record.owner, 10).reason, "unknown");
+});
+
 test("checkSee on a primitive graph is bad-record", () => {
   assert.deepEqual(checkSee(1, "chat", "bob", 0), { allowed: false, reason: "bad-record" });
   assert.deepEqual(checkSee(null, "chat", "bob", 0), { allowed: false, reason: "bad-record" });

@@ -2440,6 +2440,10 @@ pub fn parse_object_record(row: &Value) -> Result<(ObjectRecord, Vec<u8>), Reaso
             .ok_or(Reason::BadRecord)?,
     )?;
     let issued_at = see_u64(map.get("issuedAt"))?;
+    let creator = crate::object_principal(&object).map_err(|_| Reason::BadRecord)?;
+    if creator != owner {
+        return Err(Reason::BadRecord);
+    }
     let sig = match map.get("sig") {
         Some(Value::String(s)) => text(s, 128)?.to_owned(),
         Some(_) => return Err(Reason::NotString),

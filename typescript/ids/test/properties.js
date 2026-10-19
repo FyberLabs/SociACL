@@ -17,7 +17,8 @@ test('10k roundtrips, idempotence, injectivity and segment safety across all fam
     const p=val(ids.parsePrincipalId(b64(point.slice(1,33))+'.'+b64(point.slice(33))));
     const w=val(ids.parseWalletInput('0x'+hex(wallet)));
     const t=val(ids.parseTenantId(hex(object.slice(0,4))+'-'+hex(object.slice(4,6))+'-'+hex(object.slice(6,8))+'-'+hex(object.slice(8,10))+'-'+hex(object.slice(10))));
-    const o=val(ids.mintObjectId('room',()=>object));
+    const o=val(ids.mintObjectId('room',p,()=>object));
+    assert.equal(val(ids.objectPrincipal(o)),p);
     const n1=val(ids.parseNetworkId(`s3rch:https://node${n}.s3r.ch:443;key=${hex(seed)}`));
     const s=val(ids.parseSourceKey(`sr1:${pct(n1)}/${pct(p)}/${o}/chat`));
     const c=val(ids.parseOidcCredential({iss:'https://id.s3r.ch',tenant:t,sub:'subject'+n}));
@@ -41,7 +42,7 @@ test('10k roundtrips, idempotence, injectivity and segment safety across all fam
     assert.notEqual(claim,val(ids.deriveClaimId('ens:'+hex(secondSeed))));
     assert.notEqual(ext,val(ids.deriveExternalId(s2,'provider/'+n)));
 
-    all.forEach(k=>assert.match(k,/^[A-Za-z0-9_:-]{1,160}$/));
+    all.forEach(k=>assert.match(k,/^[A-Za-z0-9_:-]{1,180}$/));
     const changed=val(ids.parseObjectId('chat_'+hex(object)));
     assert.notEqual(ids.objectKey(o),ids.objectKey(changed));
     assert.notEqual(ids.formatOidcKey(c),ids.formatOidcKey({...c,sub:c.sub+'x'}));
@@ -60,7 +61,8 @@ test('100k arbitrary values cannot throw in any edge parser or record verifier',
 });
 test('one million CSPRNG mints parse and have no duplicates',()=>{
   const seen=new Set();
-  for(let i=0;i<1_000_000;i++){const id=val(ids.mintObjectId('room'));assert.equal(val(ids.parseObjectId(id)),id);seen.add(id);}
+  const creator=val(ids.parsePrincipalId('axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU'));
+  for(let i=0;i<1_000_000;i++){const id=val(ids.mintObjectId('room',creator));assert.equal(val(ids.parseObjectId(id)),id);assert.equal(val(ids.objectPrincipal(id)),creator);seen.add(id);}
   assert.equal(seen.size,1_000_000);
 });
 test('hostile objects never invoke getters or coercion; RNG failure is closed',()=>{
@@ -69,9 +71,11 @@ test('hostile objects never invoke getters or coercion; RNG failure is closed',(
   assert.deepEqual(ids.verifyWalletLink(hostile,1),{ok:false,reason:'bad-record'});
   assert.deepEqual(ids.parseOidcCredential(new Proxy({},{ownKeys(){throw Error('proxy');}})),{ok:false,reason:'bad-record'});
   assert.equal(reads,0);
-  for(const rng of [()=>new Uint8Array(15),()=>{throw Error('rng');}]) assert.deepEqual(ids.mintObjectId('room',rng),{ok:false,reason:'rng-failure'});
+  const creator=val(ids.parsePrincipalId('axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU'));
+  for(const rng of [()=>new Uint8Array(15),()=>{throw Error('rng');}]) assert.deepEqual(ids.mintObjectId('room',creator,rng),{ok:false,reason:'rng-failure'});
 });
 test('zod adapters preserve parser reasons and return branded values',()=>{
   const r=schemas.objectId.safeParse('room.alpha');assert.equal(r.success,false);assert.equal(r.error.issues[0].message,'bad-alphabet');
-  const id=val(ids.mintObjectId('room'));assert.equal(schemas.objectId.parse(id),id);
+  const creator=val(ids.parsePrincipalId('axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU'));
+  const id=val(ids.mintObjectId('room',creator));assert.equal(schemas.objectId.parse(id),id);
 });

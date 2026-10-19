@@ -61,9 +61,9 @@ pub use hint::{HandoffHint, MAGIC as HINT_MAGIC, VERSION as HINT_VERSION};
 pub use hop::{accept_hop, accept_hop_bytes, decode_hop, HopFactor};
 pub use leaf::{normalize_permalink, normalize_tags, split_tags, ItemShape, UrlLeaf};
 pub use mesh::{
-    factor_grants, GunAclEdge, MeshCheckResult, MeshSeeGrant, MeshSeeGraph, PutObjectError,
-    MESH_REASON_ACL, MESH_REASON_CANCELLED, MESH_REASON_DELEGATE, MESH_REASON_META,
-    MESH_REASON_MISSING, MESH_REASON_OWNER, MESH_REASON_URL_LEAF,
+    factor_grants, GunAclEdge, MeshCheckResult, MeshSeeGrant, MeshSeeGraph, MESH_REASON_ACL,
+    MESH_REASON_CANCELLED, MESH_REASON_DELEGATE, MESH_REASON_META, MESH_REASON_MISSING,
+    MESH_REASON_OWNER, MESH_REASON_URL_LEAF,
 };
 pub use post::{
     post_grant_signing_bytes, post_soul, GunPostEdge, MeshPostGrant, MESH_REASON_POST,

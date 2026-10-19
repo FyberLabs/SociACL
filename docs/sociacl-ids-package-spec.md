@@ -32,13 +32,15 @@ Rules. Each rule is normative.
 | `Eip55` (wallet) | EIP-55 checksummed address | Wallet | A **linked credential** for login and recovery. Never a principal. |
 | OIDC credential | `(iss, tenant, sub)` | Panopticon Keycloak | A linked credential. A Panopticon attestation is required (§4.6). Linked per tenant. |
 | `TenantId` | Panopticon tenant UUID (lowercase, hyphenated) | Panopticon | Panopticon uses `uuid.UUID` (`core/auth-service/src/auth_service/enrollment.py:231`). |
-| `ObjectId` (native object) | Random 128-bit id fixed at creation | The creating client | Stored on the object. Gun souls are derived from it one way (§3.6). |
-| `LegacyObjectId` | Existing s3r.ch ids (`s3rch:room:<wallet>:<ts>:<hex>`, `s3rch:post:<wallet>:<ts>:<hex>`, and the other forms in §3.4) | Already minted | Accepted read-only and never minted again. Opaque: the wallet or timestamp is **never** read out of the id. |
+| `ObjectId` (native object) | `<kind>_<principal-key>_<32 lowercase hex>`. The principal key is the creator's genesis `PrincipalId` in the existing `p_` + 128 hex form. The 32 hex digits are 128 fresh bits. | The creating client | Stored on the object. Parsing the id returns that one principal. Gun souls are derived from it one way (§3.6). |
+| `LegacyObjectId` | s3r.ch spellings in §3.4 (`s3rch:room`, `s3rch:chat`, `s3rch:forum-msg`, `s3rch:post`, `s3rch:forum-group`, `s3rch:bot`, `s3rch:forum`) | Not minted | SociACL has not launched, so there is no deployed object in this spelling. The ids grammar still parses it. It is not an object record. `docs/s3rch-check.md` lists the forms for deletion. The wallet and timestamp are never read out. |
 | `DerivedObjectId` | `sha256` of a canonical external id (held claim, external feed item) | Deterministic | Used for ids whose source alphabet isn't path-safe (`ens:alice.eth`, `rss3:act/1#x`). |
 | `NetworkId` | `s3rch:https://<host>:<port>;key=<64hex>` or one of `atproto`, `farcaster`, `nostr`, `activitypub`, `rss` | The deployment's permitted key / the protocol | Same grammar as s3r.ch `lib/views-source-ref.ts:94-116`. |
 | `SourceKey` | `formatCanonical(SourceRef)` from s3r.ch `lib/views-source-ref.ts:225-227` (`sr1:` + pct(network) `/` pct(owner) `/` pct(source) `/` kind) | Deterministic | For s3r.ch networks, `owner` becomes a `PrincipalId` (follow-up call site, Appendix B). |
 
-Why I chose this `ObjectId` format: `<kind>_<32 lowercase hex>` with 128 bits from a CSPRNG.
+Why the bound `ObjectId` uses the principal key: the 87-character principal contains `.`, and `.` is reserved in a path key. `p_` + lowercase hex is the path form that already exists, it is canonical, and it decodes to exactly one on-curve principal. The id is `<kind>_<principal-key>_<32 lowercase hex>`. Kind is 2–16 characters, the principal key is 130 characters, and the nonce is 32 hex digits, so the longest id is 180 characters. A path key may be 180 characters. A membership soul that carries a longest id is 472 characters and still fits the 512-character soul parser. `claim`, `ext`, `post`, `member`, and `objset` stay reserved and cannot be the kind. The older `<kind>_<32 lowercase hex>` form still parses. It has no embedded principal, and an object record cannot use it.
+
+Why the original random form was `<kind>_<32 lowercase hex>` with 128 bits from a CSPRNG.
 - **Hex, not base32:** hex has exactly one encoding per value. Base32 needs a rule about unused trailing bits.
 - **Not UUIDv7 or ULID:** those leak creation time, and ordering comes from the object's `ts` field.
 - **128 bits:** collision chance is negligible, about 2^64 objects for a 50% birthday bound. Today's ids carry only 32 bits (`lib/rooms.ts:60-64`).
@@ -69,14 +71,16 @@ oidc-key      = "k_" 64HEXL                                     ; sha256(LP("soc
 
 ; 3.4 Objects
 kind          = %x61-7A 1*15( %x61-7A / DIGIT )                 ; 2..16 chars, NOT one of: "claim" "ext" "post" "member" "objset"
-object-id     = kind "_" 32HEXL                                 ; ≤ 49 chars
+bound-object  = kind "_" principal-key "_" 32HEXL               ; creator's genesis key; 167..180 chars
+object-id     = kind "_" 32HEXL                                 ; older unbound form; ≤ 49 chars; not an object record
 derived-id    = ( "claim" / "ext" ) "_" 64HEXL
                 ; claim_ = sha256(LP("sociacl-claim-v1") LP(claimText)); claimText is the existing held-claim id, e.g. "ens:alice.eth"
                 ; ext_   = sha256(LP("sociacl-ext-v1") LP(sourceKey) LP(providerItemId))
 legacy-id     = "s3rch:" ( ( "room" / "chat" / "forum-msg" / "post" ) ":" eip55 ":" 1*12DIGIT ":" 1*64( %x61-7A / DIGIT )
                          / ( "forum-group" / "bot" ) ":" eip55 ":" 1*64( %x61-7A / DIGIT )
                          / "forum" ":" eip55 )
-any-object    = object-id / derived-id / legacy-id
+                ; still parsed. Not an object record. Listed for deletion in docs/s3rch-check.md.
+any-object    = bound-object / object-id / derived-id / legacy-id
 object-key    = any-object                                      ; already path-safe; the path key is the id itself
 
 ; 3.5 Network / SourceKey
@@ -92,7 +96,7 @@ LP(x)         = u32-little-endian(byteLength(utf8(x))) || utf8(x)  ; same encodi
 
 **3.6 Path keys and souls.** The path-key alphabet is `[A-Za-z0-9_:-]`. **Reserved characters are never allowed** in any path key: `/ . # $ [ ] ~ %`, whitespace, control characters and anything outside ASCII.
 - Every path key starts with a type tag (`p_`, `w_`, `k_`, `n_`, `s_`), or is an `any-object` whose kind is at least 2 characters or which starts with `s3rch:`. So keys of different types can never be equal.
-- Max path-key length: 160.
+- Max path-key length: 180. A bound object id is the longest path key. Typed tags (`p_`, `w_`, `k_`, `n_`, `s_`) are shorter.
 
 Soul builders take branded values only, and always produce a fixed number of segments:
 ```
@@ -123,7 +127,7 @@ export type PrincipalKey    = Brand<string, "PrincipalKey">;      // "p_..."
 export type Eip55           = Brand<string, "Eip55">;
 export type TenantId        = Brand<string, "TenantId">;
 export type OidcCredential  = { readonly iss: string; readonly tenant: TenantId; readonly sub: string };
-export type ObjectId        = Brand<string, "ObjectId">;          // object-id | derived-id | legacy-id
+export type ObjectId        = Brand<string, "ObjectId">;          // bound-object | object-id | derived-id | legacy-id
 export type MintedObjectId  = ObjectId & Brand<string, "Minted">;
 export type NetworkId       = Brand<string, "NetworkId">;
 export type SourceKey       = Brand<string, "SourceKey">;
@@ -145,7 +149,8 @@ parseEip55(x: unknown): Result<Eip55>                 // stored data: exact chec
 parseWalletInput(x: unknown): Result<Eip55>           // UI edge only: all-lower or all-upper hex accepted → EIP-55; mixed case must match checksum
 parseTenantId(x: unknown): Result<TenantId>           // lowercase only; uppercase = "non-canonical"
 parseOidcCredential(x: unknown): Result<OidcCredential>   // {iss, tenant, sub}; iss compared later against a pinned issuer, never normalized
-parseObjectId(x: unknown): Result<ObjectId>           // object-id | derived-id | legacy-id
+parseObjectId(x: unknown): Result<ObjectId>           // bound-object | object-id | derived-id | legacy-id
+objectPrincipal(x: unknown): Result<PrincipalId>       // the one genesis principal in a bound-object; bad-template otherwise
 parseNetworkId(x: unknown): Result<NetworkId>
 parseSourceKey(x: unknown): Result<SourceKey>         // port of s3r.ch parseCanonical + validateSourceRef; s3rch owner must be a PrincipalId
 parseSoul(x: unknown): Result<{ template: "object"|"user"|"acl"|"grant"|"post"|"membership"|"objset"; ids: readonly string[] }>
@@ -165,7 +170,7 @@ lengthPrefixed(fields: unknown): Result<Uint8Array>   // u32-le UTF-8 lengths; n
 verifyKeySignature(key: PrincipalId, sig: string, bytes: Uint8Array): Result<true>
 signWithKeyring(scalar: Uint8Array, bytes: Uint8Array, expectedKey: PrincipalId): Result<string>
   // expectedKey is the resolver's current key. The scalar copy is wiped. Bad material or a different pub is "bad-key".
-mintObjectId(kind: string, rng?: (n: number) => Uint8Array): Result<MintedObjectId>   // default rng = crypto.getRandomValues
+mintObjectId(kind: string, creator: PrincipalId, rng?: (n: number) => Uint8Array): Result<MintedObjectId>   // default rng = crypto.getRandomValues
 deriveClaimId(claimText: string): Result<ObjectId>    // claimText validated as non-empty, ≤2048, no controls
 deriveExternalId(source: SourceKey, providerItemId: string): Result<ObjectId>
 ```

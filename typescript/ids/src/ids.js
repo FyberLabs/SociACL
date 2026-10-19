@@ -54,13 +54,26 @@ export function parseOidcCredential(x) {
   if (!/^https:\/\/[\x21-\x7e]{1,2040}$/.test(iss.value) || !/^[\x21-\x7e]+$/.test(sub.value)) return fail('bad-alphabet');
   return ok(Object.freeze({ iss: iss.value, tenant: tenant.value, sub: sub.value }));
 }
+const RESERVED_KINDS = ['claim', 'ext', 'post', 'member', 'objset'];
+/** Bound object id: kind, the creator's principal key, and 128 fresh bits.
+ * @param {string} s @returns {RegExpExecArray | null} */
+function boundParts(s) {
+  return /^([A-Za-z][A-Za-z0-9]{1,15})_(p_[0-9A-Fa-f]{128})_([0-9A-Fa-f]{32})$/.exec(s);
+}
 /** @param {unknown} x @returns {Result<ObjectId>} */
 export function parseObjectId(x) {
-  const t = text(x, 160); if (!t.ok) return t;
+  const t = text(x, 180); if (!t.ok) return t;
   const s = t.value;
+  const bound = boundParts(s);
+  if (bound) {
+    if (s !== s.toLowerCase()) return fail('non-canonical');
+    if (RESERVED_KINDS.includes(bound[1])) return fail('reserved-kind');
+    const who = keyPrincipal(bound[2]); if (!who.ok) return who;
+    return ok(/** @type {ObjectId} */ (s));
+  }
   if (/^(claim|ext)_[0-9a-f]{64}$/.test(s)) return ok(/** @type {ObjectId} */ (s));
   const m = /^([a-z][a-z0-9]{1,15})_([0-9a-f]{32})$/.exec(s);
-  if (m) return ['claim', 'ext', 'post', 'member', 'objset'].includes(m[1]) ? fail('reserved-kind') : ok(/** @type {ObjectId} */ (s));
+  if (m) return RESERVED_KINDS.includes(m[1]) ? fail('reserved-kind') : ok(/** @type {ObjectId} */ (s));
   if (/^[a-z][a-z0-9]{1,15}_[0-9a-f]{32,64}$/i.test(s) && s !== s.toLowerCase()) return fail('non-canonical');
   // Legacy ids, including s3rch:post:<eip55>:<ts>:<hex>, are opaque. The wallet and timestamp are not read out.
   const legacy = /^s3rch:(?:(?:room|chat|forum-msg|post):(0x[0-9a-fA-F]{40}):[0-9]{1,12}:[a-z0-9]{1,64}|(?:forum-group|bot):(0x[0-9a-fA-F]{40}):[a-z0-9]{1,64}|forum:(0x[0-9a-fA-F]{40}))$/.exec(s);
@@ -191,15 +204,25 @@ export function parseSoul(x) {
   const acc = keyPrincipal(a[a.length - 1]); if (!acc.ok) return acc;
   return ok({ template: a.length === 5 ? 'grant' : 'post', ids: [p.value, o.value, acc.value] });
 }
-/** @param {string} kind @param {(n: number) => Uint8Array} [rng] @returns {Result<MintedObjectId>} */
-export function mintObjectId(kind, rng = n => crypto.getRandomValues(new Uint8Array(n))) {
+/** The genesis principal embedded in a bound object id.
+ * An id with no embedded principal is `bad-template`.
+ * @param {unknown} x @returns {Result<PrincipalId>} */
+export function objectPrincipal(x) {
+  const id = parseObjectId(x); if (!id.ok) return id;
+  const bound = boundParts(id.value);
+  if (!bound) return fail('bad-template');
+  return keyPrincipal(bound[2]);
+}
+/** @param {string} kind @param {PrincipalId} creator @param {(n: number) => Uint8Array} [rng] @returns {Result<MintedObjectId>} */
+export function mintObjectId(kind, creator, rng = n => crypto.getRandomValues(new Uint8Array(n))) {
   const k = text(kind, 16); if (!k.ok) return k;
+  const who = parsePrincipalId(creator); if (!who.ok) return who;
   if (!/^[a-z][a-z0-9]{1,15}$/.test(k.value)) return fail('bad-alphabet');
-  if (['claim', 'ext', 'post', 'member', 'objset'].includes(k.value)) return fail('reserved-kind');
+  if (RESERVED_KINDS.includes(k.value)) return fail('reserved-kind');
   try {
     const bytes = rng(16);
     if (!(bytes instanceof Uint8Array) || bytes.length !== 16) return fail('rng-failure');
-    return ok(/** @type {MintedObjectId} */ (kind + '_' + hex(bytes)));
+    return ok(/** @type {MintedObjectId} */ (kind + '_' + formatPrincipalKey(who.value) + '_' + hex(bytes)));
   } catch { return fail('rng-failure'); }
 }
 /** @param {string} claimText @returns {Result<ObjectId>} */
@@ -219,7 +242,7 @@ export function parsePrincipalKey(x) {
 }
 /** @param {unknown} x @returns {Result<PathKey>} */
 export function parsePathKey(x) {
-  const t = text(x, 160); if (!t.ok) return t;
+  const t = text(x, 180); if (!t.ok) return t;
   if (t.value.startsWith('p_')) { const p = parsePrincipalKey(x); return p.ok ? ok(/** @type {PathKey} */ (/** @type {unknown} */ (p.value))) : p; }
   if (/^(?:w_[0-9a-f]{40}|[kns]_[0-9a-f]{64})$/.test(t.value)) return ok(/** @type {PathKey} */ (t.value));
   const o = parseObjectId(x); return o.ok ? ok(objectKey(o.value)) : o;

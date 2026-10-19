@@ -2,6 +2,7 @@
  * Stored-id see path. One parse produces the signing bytes and the cancel bit.
  * Check reads only rows admitted through that parse. Hint and hop never grant.
  * The object owner is a signed `sociacl-object-v2` record, not a caller argument.
+ * The object id embeds that owner's genesis principal. A mismatch is `bad-record`.
  * @typedef {import('../ids/src/types.js').ObjectId} ObjectId
  * @typedef {import('../ids/src/types.js').PrincipalId} PrincipalId
  * @typedef {import('../ids/src/types.js').SeeGrant} SeeGrant
@@ -9,8 +10,9 @@
  * @typedef {import('../ids/src/types.js').ResolutionContext} ResolutionContext
  * @typedef {{ allowed: boolean, reason: string }} SeeCheck
  * @typedef {{ owner: PrincipalId, issuedAt: number, frozen: boolean }} ObjectAdmission
+ * @typedef {ObjectAdmission & { record: ObjectRecord }} StoredOwner
  * @typedef {{
- *   owners: Map<string, ObjectAdmission>,
+ *   owners: Map<string, StoredOwner>,
  *   rows: Map<string, SealedRow>,
  * }} SeeStore
  * @typedef {{
@@ -19,6 +21,7 @@
  *   grant: SeeGrant,
  *   bytes: Uint8Array,
  *   source: SeeGrant,
+ *   witness: boolean,
  * }} SealedRow
  * @typedef {{
  *   rotations: (principal: PrincipalId) => readonly unknown[] | undefined,
@@ -30,7 +33,9 @@ import {
   grantSoul,
   parseObjectId,
   parsePrincipalId,
+  parseObjectRecord,
   parseSeeGrant,
+  verifyAclAttestation,
   verifyObjectRecord,
   verifySeeGrant,
 } from '../ids/src/index.js';
@@ -89,7 +94,7 @@ function inside(inner, outer) {
 }
 
 /** Higher HAM, then a cancel, then a strictly contained window, then the
- * smaller signed bytes. Equal bytes keep the copy that carries an attestation.
+ * smaller signed bytes. Equal bytes keep the copy whose witness validates.
  * That copy only adds the witness. It does not re-open a row.
  * @param {SealedRow} prev @param {SealedRow} next
  */
@@ -100,9 +105,14 @@ function replaces(prev, next) {
   const prevInside = inside(prev.grant, next.grant);
   if (nextInside !== prevInside) return nextInside;
   if (!sameBytes(next.bytes, prev.bytes)) return smallerBytes(next.bytes, prev.bytes);
-  const nextWitness = next.grant.attest !== undefined;
-  const prevWitness = prev.grant.attest !== undefined;
-  return nextWitness && !prevWitness;
+  return next.witness && !prev.witness;
+}
+/** A witness that validates under the retired-cancel rule, even on a present key.
+ * @param {SeeGrant} grant @param {Uint8Array} bytes @param {ResolutionContext} ctx */
+function witnessOk(grant, bytes, ctx) {
+  if (grant.attest === undefined || !ctx) return false;
+  const attest = verifyAclAttestation(grant.attest, ctx.jwks, grant.issuedAt, bytes);
+  return attest.ok && attest.value.principal === grant.owner;
 }
 
 /** @param {SeeGrant} grant @returns {SeeGrant} */
@@ -123,15 +133,18 @@ function sourceOf(grant) {
 
 /**
  * @param {{ key: PrincipalId, mode: 'present' | 'witnessed', grant: SeeGrant, bytes: Uint8Array }} verifiedRow
+ * @param {ResolutionContext} ctx
  * @returns {SealedRow}
  */
-function seal(verifiedRow) {
+function seal(verifiedRow, ctx) {
+  const bytes = new Uint8Array(verifiedRow.bytes);
   const row = {
     key: verifiedRow.key,
     mode: verifiedRow.mode,
     grant: Object.freeze({ ...verifiedRow.grant }),
-    bytes: new Uint8Array(verifiedRow.bytes),
+    bytes,
     source: sourceOf(verifiedRow.grant),
+    witness: witnessOk(verifiedRow.grant, bytes, ctx),
   };
   Object.freeze(row);
   verified.add(row);
@@ -148,6 +161,7 @@ function present(row) {
     grant: row.grant,
     bytes: new Uint8Array(row.bytes),
     source: row.source,
+    witness: row.witness,
   };
   Object.freeze(copy);
   verified.add(copy);
@@ -182,10 +196,16 @@ export function seeAccessorEdge(value) {
   return parsed;
 }
 
+/** Caller-facing admission. Mutating it does not change the store.
+ * @param {StoredOwner} row @returns {ObjectAdmission} */
+function admissionCopy(row) {
+  return { owner: row.owner, issuedAt: row.issuedAt, frozen: false };
+}
 /**
  * Admit a signed object record. The owner is the record, never an argument.
- * The first record sets the owner. The same owner later is a no-op.
- * A second valid record naming a different owner freezes the object.
+ * The object id must embed that owner. The same owner later is a no-op while
+ * the stored record still verifies. A stored record the current key no longer
+ * signs is replaced by the new one. A different owner is `bad-record`.
  * @param {object} graph
  * @param {unknown} record
  * @param {SeeResolver} resolver
@@ -193,24 +213,31 @@ export function seeAccessorEdge(value) {
  */
 export function putObject(graph, record, resolver) {
   if (!graphObject(graph) || !resolverReady(resolver)) return { ok: false, reason: 'missing-history' };
-  const ownerHint = record && typeof record === 'object' ? /** @type {{ owner?: PrincipalId }} */ (record).owner : undefined;
-  const history = resolver.rotations(/** @type {PrincipalId} */ (ownerHint));
-  const verified = verifyObjectRecord(record, /** @type {readonly unknown[]} */ (history), resolver.ctx);
+  const parsed = parseObjectRecord(record);
+  if (!parsed.ok) return parsed;
+  const history = resolver.rotations(parsed.value.record.owner);
+  if (!Array.isArray(history)) return { ok: false, reason: 'missing-history' };
+  const verified = verifyObjectRecord(parsed.value.record, history, resolver.ctx);
   if (!verified.ok) return verified;
   const held = store(graph);
   const id = verified.value.record.object;
   const owner = verified.value.record.owner;
   const issuedAt = verified.value.record.issuedAt;
   const existing = held.owners.get(id);
-  if (existing?.frozen) return { ok: false, reason: 'owner-conflict' };
   if (!existing) {
-    const admitted = { owner, issuedAt, frozen: false };
+    const admitted = { owner, issuedAt, frozen: false, record: verified.value.record };
     held.owners.set(id, admitted);
-    return { ok: true, value: admitted, kept: true };
+    return { ok: true, value: admissionCopy(admitted), kept: true };
   }
-  if (existing.owner === owner) return { ok: true, value: existing, kept: false };
-  existing.frozen = true;
-  return { ok: false, reason: 'owner-conflict' };
+  if (existing.owner === owner) {
+    const still = verifyObjectRecord(existing.record, history, resolver.ctx);
+    if (still.ok) return { ok: true, value: admissionCopy(existing), kept: false };
+    existing.issuedAt = issuedAt;
+    existing.record = verified.value.record;
+    existing.frozen = false;
+    return { ok: true, value: admissionCopy(existing), kept: true };
+  }
+  return { ok: false, reason: 'bad-record' };
 }
 
 /**
@@ -230,7 +257,7 @@ export function admitRow(graph, row, resolver) {
   const grant = verified.value.grant;
   const key = grantSoul(grant.owner, grant.object, grant.accessor);
   const held = store(graph);
-  const sealed = seal(verified.value);
+  const sealed = seal(verified.value, resolver.ctx);
   const prev = held.rows.get(key);
   const kept = !prev || replaces(prev, sealed);
   if (kept) held.rows.set(key, sealed);
@@ -254,6 +281,9 @@ export function reverifyPrincipal(graph, principal, resolver) {
     for (const [key, row] of [...held.rows]) {
       if (row.grant.owner === who.value) held.rows.delete(key);
     }
+    for (const [id, row] of [...held.owners]) {
+      if (row.owner === who.value) held.owners.delete(id);
+    }
     return { ok: false, reason: 'missing-history' };
   }
   let dropped = 0;
@@ -265,7 +295,15 @@ export function reverifyPrincipal(graph, principal, resolver) {
       dropped += 1;
       continue;
     }
-    held.rows.set(key, seal(again.value));
+    held.rows.set(key, seal(again.value, resolver.ctx));
+  }
+  for (const [id, row] of [...held.owners]) {
+    if (row.owner !== who.value) continue;
+    const again = verifyObjectRecord(row.record, rotations, resolver.ctx);
+    if (!again.ok) {
+      held.owners.delete(id);
+      dropped += 1;
+    }
   }
   return { ok: true, value: { dropped } };
 }
@@ -282,7 +320,7 @@ export function admittedView(graph, object, accessor) {
   if (!id.ok || !who.ok) return undefined;
   const held = store(graph);
   const owner = held.owners.get(id.value);
-  if (!owner || owner.frozen) return undefined;
+  if (!owner) return undefined;
   const row = held.rows.get(grantSoul(owner.owner, id.value, who.value));
   if (!row) return undefined;
   return {
@@ -303,7 +341,7 @@ export function admittedOwner(graph, object) {
   if (!id.ok) return undefined;
   const owner = store(graph).owners.get(id.value);
   if (!owner) return undefined;
-  return { owner: owner.owner, issuedAt: owner.issuedAt, frozen: owner.frozen };
+  return admissionCopy(owner);
 }
 
 /**
@@ -328,7 +366,6 @@ export function checkSee(graph, object, accessor, now, hint, hop) {
   if (!safeNow(now)) return { allowed: false, reason: 'unknown' };
   const admission = store(graph).owners.get(id.value);
   if (!admission) return { allowed: false, reason: 'unknown' };
-  if (admission.frozen) return { allowed: false, reason: 'owner-conflict' };
   if (admission.owner === who.value) return { allowed: true, reason: 'owner' };
   const row = store(graph).rows.get(grantSoul(admission.owner, id.value, who.value));
   if (row && row.grant.stated === 1 && now >= row.grant.from && now < row.grant.until) {
