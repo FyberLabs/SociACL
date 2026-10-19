@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import type { EpochManifestBody, InboxEntryBody } from "../../docs/s3rch-check.js";
+import { parseObjectId } from "../ids/src/index.js";
 import {
   accountBindingBytes,
   accountBindingSha256,
@@ -79,8 +80,11 @@ test("canonical vectors match the shared fixture", () => {
       hash = inboxEntryId(entry);
     } else if (row.kind === "epochRevisionId") {
       const body = requireBody(row);
+      const object = parseObjectId(body.object);
+      assert.equal(object.ok, true, row.name);
+      if (!object.ok) throw new Error(row.name);
       const manifest: EpochManifestBody = {
-        object: body.object as string,
+        object: object.value,
         epoch: body.epoch as number,
         previousEpoch: body.previousEpoch as number,
         deviceId: body.deviceId as string,
@@ -92,8 +96,11 @@ test("canonical vectors match the shared fixture", () => {
       hash = epochRevisionId(manifest);
     } else if (row.kind === "itemAuth") {
       const body = requireBody(row);
+      const object = parseObjectId(body.object);
+      assert.equal(object.ok, true, row.name);
+      if (!object.ok) throw new Error(row.name);
       const item: ItemAuthBody = {
-        object: body.object as string,
+        object: object.value,
         epoch: body.epoch as number,
         version: body.version as number,
         plaintextDigest: body.plaintextDigest as string,

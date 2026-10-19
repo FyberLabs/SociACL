@@ -211,7 +211,7 @@ fn check_case(case: &GraphCase, merge: Option<&[MergeEdge]>) {
     );
     assert_eq!(got.allowed, case.allowed, "{}", case.name);
     assert_eq!(got.reason, case.reason, "{}", case.name);
-    let see = graph.check_see(
+    let see = graph.check_see_label(
         check_object,
         check_accessor,
         Timestamp(case.now),
@@ -310,7 +310,7 @@ fn post_row_is_not_a_see_row() {
     assert!(graph.grant_edge("room:alpha", "0xbob").is_none());
     assert!(
         !graph
-            .check_see("room:alpha", "0xbob", Timestamp(1), None, None)
+            .check_see_label("room:alpha", "0xbob", Timestamp(1), None, None)
             .allowed
     );
     let soul = post_soul("0xalice", "room:alpha", "0xbob").unwrap();

@@ -35,6 +35,7 @@ mod group;
 mod hint;
 mod hop;
 mod leaf;
+mod legacy;
 mod mesh;
 mod post;
 mod request;
@@ -59,10 +60,11 @@ pub use group::{
 pub use hint::{HandoffHint, MAGIC as HINT_MAGIC, VERSION as HINT_VERSION};
 pub use hop::{accept_hop, accept_hop_bytes, decode_hop, HopFactor};
 pub use leaf::{normalize_permalink, normalize_tags, split_tags, ItemShape, UrlLeaf};
+pub use legacy::{acl_key, acl_principal_key, acl_soul, encode_key, grant_soul};
 pub use mesh::{
-    acl_soul, factor_grants, grant_soul, GunAclEdge, MeshCheckResult, MeshSeeGrant, MeshSeeGraph,
-    MESH_REASON_ACL, MESH_REASON_CANCELLED, MESH_REASON_DELEGATE, MESH_REASON_META,
-    MESH_REASON_MISSING, MESH_REASON_OWNER, MESH_REASON_URL_LEAF,
+    factor_grants, GunAclEdge, MeshCheckResult, MeshSeeGrant, MeshSeeGraph, MESH_REASON_ACL,
+    MESH_REASON_CANCELLED, MESH_REASON_DELEGATE, MESH_REASON_META, MESH_REASON_MISSING,
+    MESH_REASON_OWNER, MESH_REASON_URL_LEAF,
 };
 pub use post::{
     post_grant_signing_bytes, post_soul, GunPostEdge, MeshPostGrant, MESH_REASON_POST,
@@ -76,8 +78,7 @@ pub use request::{
     ACCESS_STATUS_PENDING, ACCESS_STATUS_WITHDRAWN,
 };
 pub use soul::{
-    acl_key, acl_principal_key, encode_key, GunNode, GunNodeKind, GunSoul, S3RCH_ACL, S3RCH_ITEMS,
-    S3RCH_META, S3RCH_ROOT, S3RCH_USERS,
+    GunNode, GunNodeKind, GunSoul, S3RCH_ACL, S3RCH_ITEMS, S3RCH_META, S3RCH_ROOT, S3RCH_USERS,
 };
 
 /// Lighter s3r.ch Check: `CHECK(see, object, accessor)` at now.

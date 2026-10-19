@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import type {
+  AccessorId,
+  CheckObjectId,
   GrantStorage,
   GunAclEdge,
   MigrationAdmissionInput,
@@ -10,34 +12,20 @@ import type {
 } from "../../docs/s3rch-check.js";
 import { sha256Hex, wrapReceiptBytes, wrapReceiptSha256 } from "../contract/canonical.ts";
 import { applyProtocolMigration } from "../contract/migration.ts";
+import { parseObjectId, parsePrincipalId } from "../ids/src/index.js";
 
-function plainGrant(object: string, accessor: string, soul: string) {
-  return applyProtocolMigration({
-    migration: {
-      object,
-      fromVersion: 1,
-      toVersion: 2,
-      versionGate: 2,
-      readers: [],
-      rewrapped: [],
-    },
-    owner: "0xalice",
-    caller: "0xalice",
-    now: 10,
-    storage: "public-plain",
-    grants: [
-      {
-        soul,
-        owner: "0xalice",
-        hamState: 1,
-        grant: { object, accessor, from: 0, until: 80, stated: 1 },
-      },
-    ],
-    payloads: [],
-    receipts: [],
-    readerVersions: [],
-    soulHamState: 1,
-  });
+function objectId(value: string): CheckObjectId {
+  const parsed = parseObjectId(value);
+  assert.equal(parsed.ok, true, value);
+  if (!parsed.ok) throw new Error(parsed.reason);
+  return parsed.value;
+}
+
+function principalId(value: string): AccessorId {
+  const parsed = parsePrincipalId(value);
+  assert.equal(parsed.ok, true, value);
+  if (!parsed.ok) throw new Error(parsed.reason);
+  return parsed.value;
 }
 
 type GrantJson = {
@@ -89,35 +77,49 @@ const canonical = JSON.parse(
 ) as { cases: { name: string; kind: string; sha256: string; fields?: string[] }[] };
 
 function inputOf(row: Case): MigrationAdmissionInput {
+  const owner = principalId(row.owner);
+  const object = objectId(row.object);
   const grants: GunAclEdge[] = row.grants.map((grant) => ({
     soul: grant.soul ?? `s3rch/acl/${grant.owner}/${grant.object}/${grant.accessor}`,
-    owner: grant.owner,
+    owner: principalId(grant.owner),
     hamState: grant.hamState,
     grant: {
-      object: grant.object,
-      accessor: grant.accessor,
+      object: objectId(grant.object),
+      accessor: principalId(grant.accessor),
       from: grant.from,
       until: grant.until,
       stated: grant.stated,
     },
   }));
+  const payloads: SignedGrantPayload[] = row.payloads.map((payload) => ({
+    ...payload,
+    object: objectId(payload.object),
+    accessor: principalId(payload.accessor),
+    owner: principalId(payload.owner),
+  }));
   return {
     migration: {
-      object: row.object,
+      object,
       fromVersion: row.fromVersion,
       toVersion: row.toVersion,
       versionGate: row.versionGate,
-      readers: row.readers,
-      rewrapped: row.wraps,
-    },
-    owner: row.owner,
-    caller: row.caller,
+      readers: row.readers.map((reader) => ({ ...reader, accessor: principalId(reader.accessor) })),
+      rewrapped: row.wraps.map((wrap) => ({
+        ...wrap,
+        object: wrap.object === undefined ? undefined : objectId(wrap.object),
+      })),
+      },
+    owner,
+    caller: principalId(row.caller),
     now: row.now,
     storage: row.storage,
     grants,
-    payloads: row.payloads,
-    receipts: row.receipts,
-    readerVersions: row.readerVersions,
+    payloads,
+    receipts: row.receipts.map((receipt) => ({ ...receipt, accessor: principalId(receipt.accessor) })),
+    readerVersions: row.readerVersions.map((version) => ({
+      ...version,
+      accessor: principalId(version.accessor),
+    })),
     soulHamState: row.soulHamState,
   };
 }
@@ -173,8 +175,8 @@ test("wrap receipt bytes match the canonical vector", () => {
   assert.ok(row?.fields);
   const fields = row.fields;
   assert.equal(fields[0], "s3rch-wrap-receipt-v1");
-  const object = fields[1] ?? "";
-  const accessor = fields[2] ?? "";
+  const object = objectId(fields[1] ?? "");
+  const accessor = principalId(fields[2] ?? "");
   const version = Number(fields[3]);
   const revisionId = fields[4] ?? "";
   const entryId = fields[5] ?? "";
@@ -183,27 +185,3 @@ test("wrap receipt bytes match the canonical vector", () => {
   assert.equal(wrapReceiptSha256(object, accessor, version, revisionId, entryId), row.sha256);
 });
 
-test("grant souls use the injective key and do not parse a gun chain", () => {
-  assert.equal(plainGrant("room.alpha", "0xbob", "s3rch/acl/0xalice/room~1alpha/0xbob").skippedPublic, true);
-  assert.throws(
-    () => plainGrant("room.alpha", "0xbob", "s3rch/acl/0xalice/room_alpha/0xbob"),
-    /migration rejected/,
-  );
-  assert.equal(plainGrant("room_alpha", "0xbob", "s3rch/acl/0xalice/room_alpha/0xbob").skippedPublic, true);
-  assert.equal(plainGrant("room/alpha", "0xbob", "s3rch/acl/0xalice/room~6alpha/0xbob").skippedPublic, true);
-  const chain = "0xattacker.get('s3rch').get('users').get('0xvictim')";
-  assert.throws(() => plainGrant("room", chain, "s3rch/acl/0xalice/room/0xvictim"), /migration rejected/);
-  for (const accessor of ["0xbob/x", "x~1get('s3rch')", "../meta", "..."]) {
-    assert.throws(() => plainGrant("doc", accessor, ""), /migration rejected/, accessor);
-    assert.throws(
-      () => plainGrant("doc", accessor, `s3rch/acl/0xalice/doc/${accessor}`),
-      /migration rejected/,
-      accessor,
-    );
-  }
-  assert.equal(plainGrant("item-1", "0xbob", "s3rch/acl/0xalice/item-1/0xbob").skippedPublic, true);
-  assert.equal(
-    plainGrant("item-1", "s3rch/users/0xbob", "s3rch/acl/0xalice/item-1/0xbob").skippedPublic,
-    true,
-  );
-});

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { MemorySeeAcl, checkSee, grantSoul } from "../src/gun.js";
+import { MemorySeeAcl, checkSeeLabel, grantSoul } from "../src/legacy/gun-legacy.js";
 import { canonicalAccessorId } from "../src/post.js";
 
 const vectors = JSON.parse(
@@ -40,7 +40,7 @@ test("shared object id vectors", () => {
     if (row.hasPutId != null) assert.equal(acl.hasObject(row.put), row.hasPutId, row.name);
     assert.equal(acl.ownerOf(row.stored), row.ownerAfter, row.name);
     if (row.query != null) {
-      assert.equal(checkSee(acl, row.query, row.accessor, 10).allowed, row.allowed, row.name);
+      assert.equal(checkSeeLabel(acl, row.query, row.accessor, 10).allowed, row.allowed, row.name);
     }
   }
 });
@@ -58,6 +58,6 @@ test("a null grant key does not return another object's grant", () => {
     });
     assert.equal(acl.seeGrant(row.secret, row.accessor), undefined, row.accessor);
     assert.equal(acl.seeGrant(row.other, row.accessor), undefined, row.accessor);
-    assert.equal(checkSee(acl, row.secret, row.accessor, 10).allowed, false);
+    assert.equal(checkSeeLabel(acl, row.secret, row.accessor, 10).allowed, false);
   }
 });

@@ -19,10 +19,10 @@ use std::cmp::Ordering;
 
 use sociacl_core::{NodeId, Timestamp};
 
-use crate::mesh::{accessor_names, object_names};
-use crate::soul::{
-    acl_key, acl_principal_key, ascii_trim, object_id_rejected, S3RCH_ACL, S3RCH_ROOT,
+use crate::legacy::{
+    accessor_names, acl_key, acl_principal_key, ascii_trim, object_id_rejected, object_names,
 };
+use crate::soul::{S3RCH_ACL, S3RCH_ROOT};
 use crate::{
     GunError, MeshCheckResult, MeshSeeGraph, MESH_REASON_CANCELLED, MESH_REASON_MISSING,
     MESH_REASON_OWNER,
@@ -471,7 +471,7 @@ impl MeshSeeGraph {
         hint: Option<&crate::HandoffHint>,
         hop: Option<&crate::HopFactor>,
     ) -> MeshCheckResult {
-        let see = self.check_see(object.as_ref(), accessor.as_ref(), now, hint, hop);
+        let see = self.check_see_label(object.as_ref(), accessor.as_ref(), now, hint, hop);
         if !see.allowed {
             return see;
         }

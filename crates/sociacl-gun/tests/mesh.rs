@@ -156,12 +156,12 @@ fn mesh_check_treats_held_claims_like_feed_items() {
             .unwrap();
     }
 
-    let feed = graph.check_see(item_soul.as_str(), "0xbob", now, None, None);
+    let feed = graph.check_see_label(item_soul.as_str(), "0xbob", now, None, None);
     assert!(feed.allowed);
     assert_eq!(feed.reason, MESH_REASON_DELEGATE);
 
     for claim in claims {
-        let see = graph.check_see(claim, "0xbob", now, None, None);
+        let see = graph.check_see_label(claim, "0xbob", now, None, None);
         assert!(see.allowed, "{claim} mesh see");
         assert_eq!(see.reason, feed.reason, "{claim} same Check path as feed");
         assert!(!see.hop_is_grant());
@@ -180,12 +180,12 @@ fn mesh_check_treats_held_claims_like_feed_items() {
         .unwrap();
     assert!(
         !graph
-            .check_see("ens:alice.eth", "0xbob", now, None, None)
+            .check_see_label("ens:alice.eth", "0xbob", now, None, None)
             .allowed
     );
     assert!(
         graph
-            .check_see(item_soul.as_str(), "0xbob", now, None, None)
+            .check_see_label(item_soul.as_str(), "0xbob", now, None, None)
             .allowed,
         "cancel one claim does not drop the feed grant"
     );
@@ -237,8 +237,8 @@ fn hop_factors_held_claim_id_the_same_as_a_feed_item() {
         .unwrap(),
     );
     let now = Timestamp(1);
-    let feed = graph.check_see(item_soul.as_str(), "0xbob", now, None, Some(&hop));
-    let claim = graph.check_see("ens:alice.eth", "0xbob", now, None, Some(&hop));
+    let feed = graph.check_see_label(item_soul.as_str(), "0xbob", now, None, Some(&hop));
+    let claim = graph.check_see_label("ens:alice.eth", "0xbob", now, None, Some(&hop));
     assert!(feed.allowed && claim.allowed);
     assert_eq!(feed.reason, claim.reason);
     assert!(feed.hop_factored() && claim.hop_factored());
@@ -270,11 +270,11 @@ fn mesh_grant_allows_gun_shaped_objects() {
 
     let now = Timestamp(10);
     for object in [item_soul.as_str(), "claim-1", "room:alpha"] {
-        let owner = graph.check_see(object, "0xalice", now, None, None);
+        let owner = graph.check_see_label(object, "0xalice", now, None, None);
         assert!(owner.allowed, "{object} owner");
         assert_eq!(owner.reason, MESH_REASON_OWNER);
 
-        let bob = graph.check_see(object, "0xbob", now, None, None);
+        let bob = graph.check_see_label(object, "0xbob", now, None, None);
         assert!(bob.allowed, "{object} mesh grant");
         assert_eq!(bob.reason, MESH_REASON_DELEGATE);
         assert!(!bob.hop_is_grant());
@@ -282,7 +282,7 @@ fn mesh_grant_allows_gun_shaped_objects() {
 
     assert!(
         !graph
-            .check_see("room:alpha", "0xcarol", now, None, None)
+            .check_see_label("room:alpha", "0xcarol", now, None, None)
             .allowed
     );
 }
@@ -297,7 +297,7 @@ fn mine_overlay_stays_off_mesh_until_share() {
     );
     assert!(
         !graph
-            .check_see("rss3:act/1#x", "0xbob", Timestamp(1), None, None)
+            .check_see_label("rss3:act/1#x", "0xbob", Timestamp(1), None, None)
             .allowed
     );
 
@@ -310,7 +310,7 @@ fn mine_overlay_stays_off_mesh_until_share() {
         .unwrap();
     assert!(
         graph
-            .check_see("rss3:act/1#x", "0xbob", Timestamp(1), None, None)
+            .check_see_label("rss3:act/1#x", "0xbob", Timestamp(1), None, None)
             .allowed,
         "share-into-mesh put then dest ACL grant"
     );
@@ -328,13 +328,13 @@ fn cancel_denies_next_check_after_merge() {
         .unwrap();
     assert!(
         !bob_peer
-            .check_see("claim-1", "0xbob", Timestamp(1), None, None)
+            .check_see_label("claim-1", "0xbob", Timestamp(1), None, None)
             .allowed,
         "bob has not merged yet"
     );
 
     bob_peer.merge_from(&alice_peer);
-    let allowed = bob_peer.check_see("claim-1", "0xbob", Timestamp(1), None, None);
+    let allowed = bob_peer.check_see_label("claim-1", "0xbob", Timestamp(1), None, None);
     assert!(allowed.allowed);
     assert_eq!(allowed.reason, MESH_REASON_DELEGATE);
 
@@ -342,7 +342,7 @@ fn cancel_denies_next_check_after_merge() {
         .unstate_see_grant("0xalice", "0xbob", "claim-1")
         .unwrap();
     bob_peer.merge_from(&alice_peer);
-    let denied = bob_peer.check_see("claim-1", "0xbob", Timestamp(1), None, None);
+    let denied = bob_peer.check_see_label("claim-1", "0xbob", Timestamp(1), None, None);
     assert!(
         !denied.allowed,
         "privilege-down after merge; no cached allow"
@@ -367,7 +367,7 @@ fn cancel_is_owner_only() {
     );
     assert!(
         graph
-            .check_see("claim-1", "0xbob", Timestamp(1), None, None)
+            .check_see_label("claim-1", "0xbob", Timestamp(1), None, None)
             .allowed
     );
 }
@@ -386,7 +386,7 @@ fn hop_factors_but_does_not_mint() {
     assert_eq!(hop.channel(), Some(AttestationChannel::ConventionBadge));
 
     let hinted = HandoffHint::parse("0xbob", "claim-1", Some(SEE), None).unwrap();
-    let closed = graph.check_see("claim-1", "0xbob", Timestamp(1), Some(&hinted), Some(&hop));
+    let closed = graph.check_see_label("claim-1", "0xbob", Timestamp(1), Some(&hinted), Some(&hop));
     assert!(!closed.allowed, "hint+hop fail closed without dest ACL");
     assert!(!closed.hop_is_grant());
     assert!(!closed.hop_factored());
@@ -394,7 +394,8 @@ fn hop_factors_but_does_not_mint() {
     graph
         .state_see_grant("0xalice", MeshSeeGrant::live("claim-1", "0xbob", 0, 80))
         .unwrap();
-    let factored = graph.check_see("claim-1", "0xbob", Timestamp(1), Some(&hinted), Some(&hop));
+    let factored =
+        graph.check_see_label("claim-1", "0xbob", Timestamp(1), Some(&hinted), Some(&hop));
     assert!(factored.allowed);
     assert!(factored.hop_factored(), "hop factors a named grant");
     assert!(!factored.hop_is_grant());
@@ -408,7 +409,7 @@ fn hop_missing_does_not_fail_and_decode_does_not_verify() {
     graph
         .state_see_grant("0xalice", MeshSeeGrant::live("claim-1", "0xbob", 0, 80))
         .unwrap();
-    let missing = graph.check_see("claim-1", "0xbob", Timestamp(1), None, None);
+    let missing = graph.check_see_label("claim-1", "0xbob", Timestamp(1), None, None);
     assert!(missing.allowed);
     assert!(missing.hop.is_none());
 
@@ -434,18 +435,18 @@ fn hopcap_1_friend_of_friend_is_not_see() {
 
     assert!(
         graph
-            .check_see("claim-1", "0xalice", Timestamp(1), None, None)
+            .check_see_label("claim-1", "0xalice", Timestamp(1), None, None)
             .allowed
     );
     assert!(
         !graph
-            .check_see("claim-1", "0xbob", Timestamp(1), None, None)
+            .check_see_label("claim-1", "0xbob", Timestamp(1), None, None)
             .allowed,
         "a friend edge is not a see grant"
     );
     assert!(
         !graph
-            .check_see("claim-1", "0xcarol", Timestamp(1), None, None)
+            .check_see_label("claim-1", "0xcarol", Timestamp(1), None, None)
             .allowed,
         "hopcap 1: no friend-of-friend"
     );
@@ -458,19 +459,19 @@ fn meta_acl_and_url_fail_closed() {
     let now = Timestamp(1);
     assert_eq!(
         graph
-            .check_see("s3rch/meta", "0xalice", now, None, None)
+            .check_see_label("s3rch/meta", "0xalice", now, None, None)
             .reason,
         MESH_REASON_META
     );
     assert_eq!(
         graph
-            .check_see("s3rch/acl/0xalice", "0xalice", now, None, None)
+            .check_see_label("s3rch/acl/0xalice", "0xalice", now, None, None)
             .reason,
         MESH_REASON_ACL
     );
     assert_eq!(
         graph
-            .check_see(
+            .check_see_label(
                 "https://gi.rss3.io/decentralized/0xalice",
                 "0xalice",
                 now,
@@ -482,7 +483,7 @@ fn meta_acl_and_url_fail_closed() {
     );
     assert!(
         !graph
-            .check_see("s3rch/meta", "0xalice", now, None, None)
+            .check_see_label("s3rch/meta", "0xalice", now, None, None)
             .allowed
     );
 }
@@ -527,12 +528,12 @@ fn equal_ham_see_grants_keep_the_narrower_window() {
     for graph in [&from_wide, &from_narrow] {
         assert!(
             !graph
-                .check_see("doc", "0xbob", Timestamp(10), None, None)
+                .check_see_label("doc", "0xbob", Timestamp(10), None, None)
                 .allowed
         );
         assert!(
             graph
-                .check_see("doc", "0xbob", Timestamp(1), None, None)
+                .check_see_label("doc", "0xbob", Timestamp(1), None, None)
                 .allowed
         );
         assert_eq!(
@@ -553,7 +554,7 @@ fn merge_edge_uses_the_grant_identity_not_the_soul() {
     assert!(graph.grant_edge("doc", "0xcarol").is_none());
     assert!(
         graph
-            .check_see("doc", "0xbob", Timestamp(1), None, None)
+            .check_see_label("doc", "0xbob", Timestamp(1), None, None)
             .allowed
     );
 }
@@ -681,7 +682,7 @@ fn missing_object_reason() {
     let graph = MeshSeeGraph::new();
     assert_eq!(
         graph
-            .check_see("nope", "0xalice", Timestamp(1), None, None)
+            .check_see_label("nope", "0xalice", Timestamp(1), None, None)
             .reason,
         MESH_REASON_MISSING
     );

@@ -10,6 +10,7 @@
  * is open. This module does not decide it.
  */
 import type {
+  AccessorId,
   GrantStorage,
   GunAclEdge,
   MeshSeeGrant,
@@ -170,7 +171,7 @@ function bump(hamState: number): number {
   return hamState + 1;
 }
 
-function names(grants: readonly CurrentGrant[]): string[] {
+function names(grants: readonly CurrentGrant[]): AccessorId[] {
   return grants.map((edge) => edge.grant.accessor).sort((left, right) => left.localeCompare(right));
 }
 
@@ -344,8 +345,8 @@ function alignWraps(input: MigrationAdmissionInput, epoch: number | undefined): 
 }
 
 function finish(input: MigrationAdmissionInput, current: readonly CurrentGrant[]): MigrationAdmission {
-  const dropped: string[] = [];
-  const retained: string[] = [];
+  const dropped: AccessorId[] = [];
+  const retained: AccessorId[] = [];
   for (const reader of input.migration.readers) {
     if (reader.acknowledged) {
       dropped.push(reader.accessor);

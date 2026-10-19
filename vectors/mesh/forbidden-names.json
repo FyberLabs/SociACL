@@ -1,3 +1,54 @@
 {
-  "identifiers": []
+  "notes": [
+    "identifiers are whole tokens. A later PR appends a name only when that PR deletes it.",
+    "scopes are repo-relative globs. The see path is in scope now.",
+    "Legacy modules stay out until the PR that migrates their caller appends that file.",
+    "PR 3 appends the post files. PR 4 appends request. PR 5 appends group. PR 6 appends feed, encrypted discovery, and the contract migration module."
+  ],
+  "identifiers": [
+    "samePrincipal",
+    "sameParsed",
+    "sameObjectId",
+    "canonicalAccessorId",
+    "canonical_accessor_id",
+    "aclPrincipalKey",
+    "acl_principal_key",
+    "aclKey",
+    "acl_key",
+    "encodeKey",
+    "encode_key",
+    "escapeKey",
+    "escape_key",
+    "unescape",
+    "itemSoulAlias",
+    "item_soul_alias",
+    "objectNames",
+    "object_names",
+    "accessor_names",
+    "grantNamesObject",
+    "canonicalStoredObject",
+    "canonical_object_id",
+    "folded_see",
+    "folded_post",
+    "reducibleItemInner",
+    "reducible_item_inner",
+    "mayAliasToItemSoul",
+    "may_alias_to_item_soul",
+    "HELD_CLAIM_PREFIXES",
+    "resolve_wallet_or_soul",
+    "s3rch_user",
+    "enrollSigner",
+    "enroll_signer",
+    "asciiTrim",
+    "ascii_trim",
+    "principals_match",
+    "principals_are"
+  ],
+  "scopes": [
+    "typescript/src/see.js",
+    "typescript/src/gun.js",
+    "crates/sociacl-gun/src/soul.rs",
+    "crates/sociacl-gun/src/mesh.rs",
+    "docs/s3rch-check.d.ts"
+  ]
 }

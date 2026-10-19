@@ -175,7 +175,7 @@ fn a_spaced_object_id_does_not_see_the_stored_group() {
         if !row.allowed {
             assert!(
                 !graph
-                    .check_see(&row.object, accessor, Timestamp(1), None, None)
+                    .check_see_label(&row.object, accessor, Timestamp(1), None, None)
                     .allowed,
                 "{}",
                 row.name
@@ -536,7 +536,7 @@ fn a_see_grant_does_not_satisfy_the_group_predicate() {
         .unwrap();
     assert!(
         graph
-            .check_see("doc", "0xbob", Timestamp(1), None, None)
+            .check_see_label("doc", "0xbob", Timestamp(1), None, None)
             .allowed
     );
     let group = graph.check_group_see(
@@ -635,7 +635,7 @@ fn group_rows_are_not_grant_souls() {
     assert!(!edge_soul.is_s3rch_acl_grant());
     assert_eq!(
         graph
-            .check_see(member, "0xbob", Timestamp(1), None, None)
+            .check_see_label(member, "0xbob", Timestamp(1), None, None)
             .reason,
         MESH_REASON_ACL
     );
@@ -1878,7 +1878,7 @@ fn merge_drops_a_see_grant_from_a_conflicting_object_owner() {
     assert_eq!(alice.owner_of("doc"), Some("0xalice"));
     assert!(
         !alice
-            .check_see("doc", "0xbob", Timestamp(1), None, None)
+            .check_see_label("doc", "0xbob", Timestamp(1), None, None)
             .allowed
     );
     let ordinary = alice.check_group_presentation(

@@ -36,8 +36,11 @@
 use sha2::{Digest, Sha256};
 use sociacl_core::{AttestationSig, IssuerSecret, Timestamp};
 
-use crate::mesh::{closed_reason, is_item_shaped, may_alias_to_item_soul};
-use crate::soul::{acl_key, canonical_accessor_id, encode_key, unescape_acl_key, GunSoul};
+use crate::legacy::{
+    acl_key, canonical_accessor_id, closed_reason, encode_key, is_item_shaped,
+    may_alias_to_item_soul, unescape_acl_key,
+};
+use crate::soul::GunSoul;
 use crate::{
     post_grant_signing_bytes, GroupPredicate, GunAclEdge, GunError, GunPostEdge, MeshPostGrant,
     MeshSeeGrant, MeshSeeGraph,

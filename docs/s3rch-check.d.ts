@@ -12,7 +12,12 @@
  *     (account SEA key, enrollment, wrap edge, canonical ids,
  *      blinded rows, presenter binding, inbox admission,
  *      epoch admission, rotateOnRevoke)
- *
+ */
+import type { ObjectId, PrincipalId } from "../typescript/ids/src/types.js";
+
+export type { ObjectId, PrincipalId };
+
+/**
  * CHECK(see, object, accessor) at now.
  *   object   = GunFeedNode | held claim id | later opaque post/room
  *   claim id = the id itself (ens:… / unstoppable:… / fc:… / lens:… /
@@ -43,7 +48,7 @@ export type FeedSource = "rss3" | "rss" | "atom";
 
 /**
  * In-graph feed node. Native Check object.
- * gun.get('s3rch').get('items').get(encodeKey(id))
+ * gun.get('s3rch').get('items').get(<id>)
  * Gun cannot store arrays: `tags` is a comma-separated string.
  */
 export type GunFeedNode = {
@@ -153,7 +158,7 @@ export type FeedMeta = {
 
 /**
  * Mesh Check / hop `object`. Examples:
- *   s3rch/items/<encodeKey(id)>     GunFeedNode
+ *   s3rch/items/<id>                GunFeedNode
  *   ens:name.eth                    held claim (ENS)
  *   unstoppable:name.crypto         held claim (Unstoppable)
  *   fc:name                         held claim (Farcaster)
@@ -164,10 +169,10 @@ export type FeedMeta = {
  * Do not invent s3rch/users/<wallet>/claims/….
  * Later posts/rooms are opaque — s3r.ch owns those souls.
  */
-export type CheckObjectId = string;
+export type CheckObjectId = ObjectId;
 
-/** Wallet, user path, or, on the stored-id see path, a `PrincipalId`. */
-export type AccessorId = string;
+/** Stored principal. A wallet string is not this id. */
+export type AccessorId = PrincipalId;
 
 export type CheckResult = {
   allowed: boolean;
@@ -248,10 +253,7 @@ export type SeeAcl = SeeGraph & {
   ): void;
 };
 
-/** Injective escape of `~ . # $ [ ]`. `/` is left for aclKey. */
-export function encodeKey(id: string): string;
-
-/** s3rch/items/<encodeKey(id)> */
+/** s3rch/items/<id> */
 export function itemSoul(id: string): string;
 
 /** s3rch/users/<wallet> */
@@ -388,30 +390,8 @@ export function cancelSee(
 export type S3rchAcl = "acl";
 
 /**
- * Dest-ACL path key. encodeKey, then `/` escaped to a form that is
- * not `_`, so a grant soul stays five segments and `room.alpha`,
- * `room_alpha`, and `room/alpha` are three keys. Not a second
- * encodeKey for items or users.
- */
-export function aclKey(id: string): string;
-
-/**
- * Owner / accessor key on dest ACL. An exact `s3rch/users/<wallet>`
- * collapses to that wallet text. A bare id may contain `.` and must
- * not be `.` or `..`. It must not contain `/ # $ [ ] ~`, an inner
- * space, a control, Unicode whitespace, a format character, `.get(`,
- * an unpaired surrogate, or more than 256 scalar values. A failed
- * parse is null and is not a soul segment. Trim is ASCII whitespace
- * only, so U+FEFF and U+0085 are rejected rather than stripped.
- * escapeKey is for object keys, not principals. Each user-soul
- * segment is ASCII-trimmed and an empty segment is dropped, so
- * `s3rch/users/ bob ` and `s3rch/users//bob` are `bob`.
- */
-export function aclPrincipalKey(id: string): string | null;
-
-/**
  * Owner dest-ACL root. Not a Check object.
- * gun.get('s3rch').get('acl').get(aclPrincipalKey(owner))
+ * gun.get('s3rch').get('acl').get(<owner>)
  */
 export function aclSoul(owner: AccessorId): string | null;
 
@@ -419,9 +399,9 @@ export function aclSoul(owner: AccessorId): string | null;
  * Jointly stated see grant under the object owner's dest ACL.
  * Does not fork items or users.
  * gun.get('s3rch').get('acl')
- *   .get(aclPrincipalKey(owner))
- *   .get(aclKey(object))
- *   .get(aclPrincipalKey(accessor))
+ *   .get(<owner>)
+ *   .get(<object>)
+ *   .get(<accessor>)
  */
 export function grantSoul(
   owner: AccessorId,
@@ -510,10 +490,10 @@ export const POST_GRANT_SCOPE: "post";
  * Post grant under the object owner's dest ACL.
  * Does not fork items or users. Not a see-grant soul.
  * gun.get('s3rch').get('acl')
- *   .get(aclPrincipalKey(owner))
+ *   .get(<owner>)
  *   .get('post')
- *   .get(aclKey(object))
- *   .get(aclPrincipalKey(accessor))
+ *   .get(<object>)
+ *   .get(<accessor>)
  */
 export function postSoul(
   owner: AccessorId,
@@ -523,8 +503,8 @@ export function postSoul(
 
 /**
  * Length-prefixed row encoding a later owner signature can cover.
- * Domain s3rch-post-grant-v1, then aclKey(object),
- * aclPrincipalKey(accessor), decimal stated, decimal from,
+ * Domain s3rch-post-grant-v1, then the object key,
+ * the accessor key, decimal stated, decimal from,
  * decimal until, scope post, and decimal hamState.
  * Lengths are uint32 little-endian. Integers are ASCII decimal
  * with no leading zeros. Check does not verify a signature.
@@ -616,7 +596,7 @@ export const ACCESS_STATUS_WITHDRAWN: "withdrawn";
 export const ACCESS_MESSAGE_MAX: 280;
 
 /**
- * Canonical accessor id. Same as aclPrincipalKey.
+ * Canonical accessor id for a request.
  * `s3rch/users/<wallet>` and the wallet are this id. Each segment
  * is trimmed and an empty segment is dropped. Empty is rejected.
  * The raw string is Unicode scalar values. U+0085 and U+FEFF are
@@ -625,8 +605,8 @@ export const ACCESS_MESSAGE_MAX: 280;
 export function canonicalRequestAccessor(requester: AccessorId): string;
 
 /**
- * Object key for a request id. aclKey, with an aliasable item soul
- * reduced to the raw id's aclKey. An underscore in that raw id stays.
+ * Object key for a request id. An aliasable item soul
+ * reduces to the raw id. An underscore in that raw id stays.
  * A held claim id does not alias to an item soul.
  * `s3rch/items/ foo` does not alias to `foo`. `a_b` and
  * `s3rch/items/a_b` are one source. `a/b` is not. The raw string is

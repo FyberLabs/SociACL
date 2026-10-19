@@ -241,7 +241,9 @@ export function checkSee(graph, object, accessor, now, hint, hop) {
   void hop;
   const id = seeObjectEdge(object);
   const who = seeAccessorEdge(accessor);
-  if (!id.ok || !who.ok || !safeNow(now)) return { allowed: false, reason: 'unknown' };
+  if (!id.ok) return { allowed: false, reason: id.reason };
+  if (!who.ok) return { allowed: false, reason: who.reason };
+  if (!safeNow(now)) return { allowed: false, reason: 'unknown' };
   const text = id.value;
   if (text === 's3rch/meta' || text === 's3rch/acl' || text.startsWith('s3rch/acl/') || text.includes('://')) {
     return { allowed: false, reason: 'unknown' };

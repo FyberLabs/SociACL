@@ -95,19 +95,33 @@ fn run_case(file: &Value, case: &Value) {
                     parse_principal_id(value).map(|_| ())
                 };
                 let reason = got.expect_err(name);
-                assert_eq!(reason_name(reason), step["reason"].as_str().unwrap(), "{name}");
+                assert_eq!(
+                    reason_name(reason),
+                    step["reason"].as_str().unwrap(),
+                    "{name}"
+                );
             }
             "verify" => {
                 let got = verify_see_grant(&step["row"], &rotations_of(ctx, step), &rc);
                 if step["ok"] == true {
                     let row = got.unwrap_or_else(|reason| panic!("{name} {reason}"));
-                    assert_eq!(mode_name(row.mode), step["mode"].as_str().unwrap(), "{name}");
+                    assert_eq!(
+                        mode_name(row.mode),
+                        step["mode"].as_str().unwrap(),
+                        "{name}"
+                    );
                 } else {
                     let reason = got.expect_err(name);
-                    assert_eq!(reason_name(reason), step["reason"].as_str().unwrap(), "{name}");
+                    assert_eq!(
+                        reason_name(reason),
+                        step["reason"].as_str().unwrap(),
+                        "{name}"
+                    );
                 }
             }
-            "put" => graph.put_object_id(&object_of(&step["object"]), &principal_of(&step["owner"])),
+            "put" => {
+                graph.put_object_id(&object_of(&step["object"]), &principal_of(&step["owner"]))
+            }
             "admit" => {
                 let got = graph.admit_row(&step["row"], &rotations_of(ctx, step), &rc);
                 if step["ok"] == true {
@@ -124,7 +138,11 @@ fn run_case(file: &Value, case: &Value) {
                     }
                 } else {
                     let reason = got.expect_err(name);
-                    assert_eq!(reason_name(reason), step["reason"].as_str().unwrap(), "{name}");
+                    assert_eq!(
+                        reason_name(reason),
+                        step["reason"].as_str().unwrap(),
+                        "{name}"
+                    );
                 }
             }
             "reverify" => {
@@ -133,24 +151,39 @@ fn run_case(file: &Value, case: &Value) {
                     &rotations_of(ctx, step),
                     &rc,
                 );
-                assert_eq!(dropped, step["dropped"].as_u64().unwrap() as usize, "{name}");
+                assert_eq!(
+                    dropped,
+                    step["dropped"].as_u64().unwrap() as usize,
+                    "{name}"
+                );
             }
             "view" => {
-                let got = graph.admitted_view(&object_of(&step["object"]), &principal_of(&step["accessor"]));
+                let got = graph.admitted_view(
+                    &object_of(&step["object"]),
+                    &principal_of(&step["accessor"]),
+                );
                 if step["absent"] == true {
                     assert!(got.is_none(), "{name}");
                 } else {
                     let row = got.expect(name);
-                    assert_eq!(u64::from(row.stated), step["stated"].as_u64().unwrap(), "{name}");
+                    assert_eq!(
+                        u64::from(row.stated),
+                        step["stated"].as_u64().unwrap(),
+                        "{name}"
+                    );
                     assert_eq!(row.ham_state, step["hamState"].as_u64().unwrap(), "{name}");
-                    assert_eq!(mode_name(row.mode), step["mode"].as_str().unwrap(), "{name}");
+                    assert_eq!(
+                        mode_name(row.mode),
+                        step["mode"].as_str().unwrap(),
+                        "{name}"
+                    );
                     if let Some(issued) = step.get("issuedAt").and_then(Value::as_u64) {
                         assert_eq!(row.issued_at, issued, "{name}");
                     }
                 }
             }
             "check" => {
-                let got = graph.check_see_id(
+                let got = graph.check_see(
                     &object_of(&step["object"]),
                     &principal_of(&step["accessor"]),
                     step["now"].as_u64().unwrap(),
@@ -177,7 +210,13 @@ fn see_vectors() {
         }
     }
     names.sort();
-    assert_eq!(names.len(), names.iter().collect::<std::collections::BTreeSet<_>>().len());
+    assert_eq!(
+        names.len(),
+        names
+            .iter()
+            .collect::<std::collections::BTreeSet<_>>()
+            .len()
+    );
     if let Ok(report) = std::env::var("MESH_VECTOR_REPORT") {
         fs::write(report, names.join("\n") + "\n").unwrap();
     }
@@ -235,20 +274,78 @@ fn ident_present(text: &str, name: &str) -> bool {
     false
 }
 
-fn walk(dir: &Path, files: &mut Vec<PathBuf>) {
-    let skip = ["migration.ts", "acl-migration.ts", "migration.rs", "acl_migration.rs"];
+fn glob_match(glob: &str, path: &str) -> bool {
+    fn rec(glob: &[u8], path: &[u8]) -> bool {
+        if glob.is_empty() {
+            return path.is_empty();
+        }
+        if glob.starts_with(b"**") {
+            let rest = if glob.len() > 2 && glob[2] == b'/' {
+                &glob[3..]
+            } else {
+                &glob[2..]
+            };
+            if rec(rest, path) {
+                return true;
+            }
+            for index in 0..path.len() {
+                if rec(glob, &path[index + 1..]) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        if glob[0] == b'*' {
+            let mut index = 0;
+            loop {
+                if rec(&glob[1..], &path[index..]) {
+                    return true;
+                }
+                if index >= path.len() || path[index] == b'/' {
+                    return false;
+                }
+                index += 1;
+            }
+        }
+        if path.is_empty() || glob[0] != path[0] {
+            return false;
+        }
+        rec(&glob[1..], &path[1..])
+    }
+    rec(glob.as_bytes(), path.as_bytes())
+}
+
+fn files_for_glob(root: &Path, glob: &str) -> Vec<PathBuf> {
+    if !glob.contains('*') {
+        let path = root.join(glob);
+        assert!(path.is_file(), "{glob}");
+        return vec![path];
+    }
+    let mut files = Vec::new();
+    walk_glob(root, root, glob, &mut files);
+    files
+}
+
+fn walk_glob(root: &Path, dir: &Path, glob: &str, files: &mut Vec<PathBuf>) {
     for entry in fs::read_dir(dir).unwrap() {
         let entry = entry.unwrap();
         let name = entry.file_name();
         let name = name.to_string_lossy();
-        if skip.contains(&name.as_ref()) {
+        if name == "node_modules" || name == "target" {
             continue;
         }
         let path = entry.path();
         if path.is_dir() {
-            walk(&path, files);
+            walk_glob(root, &path, glob, files);
         } else if name.ends_with(".js") || name.ends_with(".ts") || name.ends_with(".rs") {
-            files.push(path);
+            let relative = path
+                .strip_prefix(root)
+                .unwrap()
+                .to_string_lossy()
+                .replace('\\', "/");
+            if glob_match(glob, &relative) {
+                files.push(path);
+            }
         }
     }
 }
@@ -261,20 +358,18 @@ fn see_forbidden_names_are_absent() {
     )
     .unwrap();
     let names = list["identifiers"].as_array().unwrap();
-    let mut files = Vec::new();
-    for dir in [
-        "typescript/src",
-        "typescript/contract",
-        "crates/sociacl-gun/src",
-        "crates/sociacl-encdisc/src",
-    ] {
-        walk(&root.join(dir), &mut files);
-    }
-    for name in names {
-        let name = name.as_str().unwrap();
-        for path in &files {
-            let text = fs::read_to_string(path).unwrap();
-            assert!(!ident_present(&text, name), "{name} in {}", path.display());
+    let scopes = list["scopes"].as_array().unwrap();
+    assert!(!scopes.is_empty());
+    for glob in scopes {
+        let glob = glob.as_str().unwrap();
+        let files = files_for_glob(&root, glob);
+        assert!(!files.is_empty(), "{glob}");
+        for name in names {
+            let name = name.as_str().unwrap();
+            for path in &files {
+                let text = fs::read_to_string(path).unwrap();
+                assert!(!ident_present(&text, name), "{name} in {}", path.display());
+            }
         }
     }
 }

@@ -113,7 +113,7 @@ Rust `sociacl-gun` and `typescript/src/request.js` both load `vectors/mesh/acces
 
 ### Hop factor
 
-`checkSee(graph, object, accessor, now, hint?, hop?)`. The stored-id see path takes an `ObjectId` and a `PrincipalId` and allows only a row admitted from `sociacl-see-grant-v2`. A retired key counts only when the signed `stated` field is `0` and the attestation binds those bytes. Hint and hop never grant. The contract aliases on this page stay strings while post, group, and epoch rows are still labels.
+`checkSee(graph, object, accessor, now, hint?, hop?)` takes an `ObjectId` and a `PrincipalId`. A string argument is the edge parser's reject and does not reach a label check. Check allows a delegate only on an admitted, verified `sociacl-see-grant-v2` row. A retired key counts only when the signed `stated` field is `0` and the attestation binds those bytes. Hint and hop never grant. `CheckObjectId` is `ObjectId`. `AccessorId` is `PrincipalId`.
 
 - hop missing does not fail.
 - hop alone never allows.
@@ -122,6 +122,28 @@ Rust `sociacl-gun` and `typescript/src/request.js` both load `vectors/mesh/acces
 - URL handoffs stay untrusted `HandoffHint`. A hint plus a hop still fail closed without dest ACL.
 
 Reuse SociACL Social Light (`convention-badge` / `enrolled-station`, SLHP v1). Do not reimplement the hop frame.
+
+### Legacy helper deletion
+
+The #55 rebuild spec is not in this repository. This section is the deletion schedule.
+
+`checkSee` / `check_see` do not import the alias helpers. Post, request, group, feed, and the contract migration path still call them. Those copies live in private modules:
+
+- `typescript/src/legacy/gun-legacy.js`
+- `crates/sociacl-gun/src/legacy.rs`
+
+Nothing on the see path imports either file. Each copy is deleted in the pull request that migrates its caller:
+
+| Caller | Delete the copy in |
+| --- | --- |
+| post | PR 3 |
+| request | PR 4 |
+| group | PR 5 |
+| feed, encrypted discovery, and the contract migration module | PR 6 |
+
+`vectors/mesh/forbidden-names.json` lists the banned names and the see-path globs. Those later pull requests append their files to `scopes`. The legacy modules stay out of the guard until then.
+
+`acl-snapshot-utf8-order` still names U+E000 and U+10000. Those scalars are not principals, so a typed snapshot entry cannot carry them. The shared field vector and the Rust suite keep that order. Inbox and wrap vectors still use the object string `s3rch/items/post`. That string is the encrypted-discovery fixture. It is not an `ObjectId`, and this pull request does not retarget those hashes.
 
 ## Private rows and group predicates (spec)
 

@@ -2,6 +2,18 @@
 
 ## Encrypted discovery — unreleased
 
+- The see path takes stored ids only. `checkSee` / `check_see` have no string
+  parameter and no label fallback. A string is the edge parser's reject.
+  `CheckObjectId` is `ObjectId` and `AccessorId` is `PrincipalId`. Helpers
+  that post, request, group, feed, and the contract migration path still
+  call live in `typescript/src/legacy/gun-legacy.js` and
+  `crates/sociacl-gun/src/legacy.rs`. The see path does not import them.
+  Post's copy is deleted in PR 3, request's in PR 4, group's in PR 5, and
+  the feed, encrypted-discovery, and contract copies in PR 6. The #55
+  rebuild spec is not in this repo; that schedule is also in
+  `docs/s3rch-check.md`. `vectors/mesh/forbidden-names.json` scopes the
+  banned names to the see-path files. Later pull requests append their
+  files to `scopes`.
 - Derive a per-contact inbox lane with HKDF-SHA256 from a contact-lane
   secret that is not the disclosed base `laneId`. Info is length-prefixed
   `sociacl-contact-lane-v1`, version `1`, the recipient, then the sender.

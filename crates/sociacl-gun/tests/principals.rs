@@ -121,7 +121,7 @@ fn shared_principal_and_object_vectors() {
         {
             assert_eq!(
                 graph
-                    .check_see(query, accessor, Timestamp(10), None, None)
+                    .check_see_label(query, accessor, Timestamp(10), None, None)
                     .allowed,
                 allowed,
                 "{}",
@@ -146,7 +146,7 @@ fn shared_principal_and_object_vectors() {
         assert!(graph.grant_edge(&row.other, &row.accessor).is_none());
         assert!(
             !graph
-                .check_see(&row.secret, &row.accessor, Timestamp(10), None, None)
+                .check_see_label(&row.secret, &row.accessor, Timestamp(10), None, None)
                 .allowed
         );
     }

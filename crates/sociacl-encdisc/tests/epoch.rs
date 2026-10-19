@@ -129,7 +129,7 @@ fn canonical_epoch_bodies_match_the_shared_fixture() {
     let direct = AclSnapshotBody {
         object_set: None,
         entries: vec![AclSnapshotEntry {
-            accessor: "bob".to_string(),
+            accessor: "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E".to_string(),
             grant_revision: 4,
             stated: GrantStated::Cancelled,
             from: 10,
@@ -151,7 +151,7 @@ fn canonical_epoch_bodies_match_the_shared_fixture() {
             ham_state: 3,
         }),
         entries: vec![AclSnapshotEntry {
-            accessor: "ada".to_string(),
+            accessor: "4lNKNTLQj7ugLd5lnuYr0AMf4tt4VZbvUJMCRGsDCFI.4PFXWkxjPMcZ3-5f2oYtdk78lsPzDuAFXELCPxhO2MY".to_string(),
             grant_revision: 2,
             stated: GrantStated::Live,
             from: 0,
@@ -166,7 +166,15 @@ fn canonical_epoch_bodies_match_the_shared_fixture() {
         vector_hash("acl-snapshot-group")
     );
     assert_eq!(
-        epoch_finalization_id("item-1", 3, 2, REV, "", &[REV.to_string()]).unwrap(),
+        epoch_finalization_id(
+            "chat_11111111111111111111111111111111",
+            3,
+            2,
+            REV,
+            "",
+            &[REV.to_string()],
+        )
+        .unwrap(),
         vector_hash("epoch-finalization-body")
     );
     assert_eq!(
@@ -178,12 +186,26 @@ fn canonical_epoch_bodies_match_the_shared_fixture() {
         vector_hash("epoch-finalization-sig")
     );
     assert_eq!(
-        group_epoch_config_digest("alice", "crew", "named-circle", 7_200_000, 2).unwrap(),
+        group_epoch_config_digest(
+            "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+            "crew",
+            "named-circle",
+            7_200_000,
+            2,
+        )
+        .unwrap(),
         vector_hash("group-epoch-config")
     );
     assert_eq!(
         sha256_hex(
-            &group_epoch_config_bytes("alice", "crew", "named-circle", 86_400_000, 2).unwrap()
+            &group_epoch_config_bytes(
+                "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+                "crew",
+                "named-circle",
+                86_400_000,
+                2,
+            )
+            .unwrap()
         ),
         vector_hash("group-epoch-config-tie")
     );

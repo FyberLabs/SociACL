@@ -8,34 +8,70 @@
   "cases": [
     {
       "name": "migration-wrap-receipt",
-      "owner": "alice",
-      "caller": "alice",
+      "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+      "caller": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
       "now": 1000,
       "storage": "private-row",
-      "object": "item-1",
+      "object": "chat_11111111111111111111111111111111",
       "fromVersion": 1,
       "toVersion": 2,
       "versionGate": 2,
       "soulHamState": 4,
       "grants": [
-        {"owner": "alice", "object": "item-1", "accessor": "bob", "from": 0, "until": 5000, "stated": 1, "hamState": 2}
+        {
+          "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "object": "chat_11111111111111111111111111111111",
+          "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "from": 0,
+          "until": 5000,
+          "stated": 1,
+          "hamState": 2
+        }
       ],
       "payloads": [
-        {"object": "item-1", "accessor": "bob", "from": 0, "until": 5000, "stated": 1, "epoch": 1, "owner": "alice", "grantRevision": 1, "itemCiphertextDigest": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"}
+        {
+          "object": "chat_11111111111111111111111111111111",
+          "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "from": 0,
+          "until": 5000,
+          "stated": 1,
+          "epoch": 1,
+          "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "grantRevision": 1,
+          "itemCiphertextDigest": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        }
       ],
       "wraps": [
-        {"scope": "item-dek", "epoch": 1, "target": "reader-epub", "targetId": "epub-bob", "object": "item-1", "revisionId": "abababababababababababababababababababababababababababababababab", "wrappedKey": "aa"}
+        {
+          "scope": "item-dek",
+          "epoch": 1,
+          "target": "reader-epub",
+          "targetId": "epub-bob",
+          "object": "chat_11111111111111111111111111111111",
+          "revisionId": "abababababababababababababababababababababababababababababababab",
+          "wrappedKey": "aa"
+        }
       ],
       "readers": [
-        {"accessor": "bob", "acknowledged": false, "atGate": true}
+        {
+          "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "acknowledged": false,
+          "atGate": true
+        }
       ],
       "readerVersions": [
-        {"accessor": "bob", "version": 2, "epub": "epub-bob"}
+        {
+          "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "version": 2,
+          "epub": "epub-bob"
+        }
       ],
       "receipts": [],
       "expect": {
         "ok": true,
-        "plaintextRetained": ["bob"],
+        "plaintextRetained": [
+          "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E"
+        ],
         "plaintextDropped": [],
         "soulReplaced": false,
         "skippedPublic": false,
@@ -46,42 +82,117 @@
     },
     {
       "name": "migration-per-reader",
-      "owner": "alice",
-      "caller": "alice",
+      "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+      "caller": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
       "now": 1000,
       "storage": "private-row",
-      "object": "item-1",
+      "object": "chat_11111111111111111111111111111111",
       "fromVersion": 1,
       "toVersion": 2,
       "versionGate": 2,
       "soulHamState": 4,
       "grants": [
-        {"owner": "alice", "object": "item-1", "accessor": "bob", "from": 0, "until": 5000, "stated": 1, "hamState": 2},
-        {"owner": "alice", "object": "item-1", "accessor": "carol", "from": 0, "until": 5000, "stated": 1, "hamState": 3}
+        {
+          "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "object": "chat_11111111111111111111111111111111",
+          "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "from": 0,
+          "until": 5000,
+          "stated": 1,
+          "hamState": 2
+        },
+        {
+          "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "object": "chat_11111111111111111111111111111111",
+          "accessor": "4lNKNTLQj7ugLd5lnuYr0AMf4tt4VZbvUJMCRGsDCFI.4PFXWkxjPMcZ3-5f2oYtdk78lsPzDuAFXELCPxhO2MY",
+          "from": 0,
+          "until": 5000,
+          "stated": 1,
+          "hamState": 3
+        }
       ],
       "payloads": [
-        {"object": "item-1", "accessor": "bob", "from": 0, "until": 5000, "stated": 1, "epoch": 1, "owner": "alice", "grantRevision": 1, "itemCiphertextDigest": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"},
-        {"object": "item-1", "accessor": "carol", "from": 0, "until": 5000, "stated": 1, "epoch": 1, "owner": "alice", "grantRevision": 1, "itemCiphertextDigest": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"}
+        {
+          "object": "chat_11111111111111111111111111111111",
+          "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "from": 0,
+          "until": 5000,
+          "stated": 1,
+          "epoch": 1,
+          "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "grantRevision": 1,
+          "itemCiphertextDigest": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        },
+        {
+          "object": "chat_11111111111111111111111111111111",
+          "accessor": "4lNKNTLQj7ugLd5lnuYr0AMf4tt4VZbvUJMCRGsDCFI.4PFXWkxjPMcZ3-5f2oYtdk78lsPzDuAFXELCPxhO2MY",
+          "from": 0,
+          "until": 5000,
+          "stated": 1,
+          "epoch": 1,
+          "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "grantRevision": 1,
+          "itemCiphertextDigest": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        }
       ],
       "wraps": [
-        {"scope": "item-dek", "epoch": 1, "target": "reader-epub", "targetId": "epub-bob", "object": "item-1", "revisionId": "abababababababababababababababababababababababababababababababab", "wrappedKey": "aa"},
-        {"scope": "item-dek", "epoch": 1, "target": "reader-epub", "targetId": "epub-carol", "object": "item-1", "revisionId": "abababababababababababababababababababababababababababababababab", "wrappedKey": "bb"}
+        {
+          "scope": "item-dek",
+          "epoch": 1,
+          "target": "reader-epub",
+          "targetId": "epub-bob",
+          "object": "chat_11111111111111111111111111111111",
+          "revisionId": "abababababababababababababababababababababababababababababababab",
+          "wrappedKey": "aa"
+        },
+        {
+          "scope": "item-dek",
+          "epoch": 1,
+          "target": "reader-epub",
+          "targetId": "epub-carol",
+          "object": "chat_11111111111111111111111111111111",
+          "revisionId": "abababababababababababababababababababababababababababababababab",
+          "wrappedKey": "bb"
+        }
       ],
       "readers": [
-        {"accessor": "bob", "acknowledged": true, "atGate": true},
-        {"accessor": "carol", "acknowledged": false, "atGate": true}
+        {
+          "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "acknowledged": true,
+          "atGate": true
+        },
+        {
+          "accessor": "4lNKNTLQj7ugLd5lnuYr0AMf4tt4VZbvUJMCRGsDCFI.4PFXWkxjPMcZ3-5f2oYtdk78lsPzDuAFXELCPxhO2MY",
+          "acknowledged": false,
+          "atGate": true
+        }
       ],
       "readerVersions": [
-        {"accessor": "bob", "version": 2, "epub": "epub-bob"},
-        {"accessor": "carol", "version": 2, "epub": "epub-carol"}
+        {
+          "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "version": 2,
+          "epub": "epub-bob"
+        },
+        {
+          "accessor": "4lNKNTLQj7ugLd5lnuYr0AMf4tt4VZbvUJMCRGsDCFI.4PFXWkxjPMcZ3-5f2oYtdk78lsPzDuAFXELCPxhO2MY",
+          "version": 2,
+          "epub": "epub-carol"
+        }
       ],
       "receipts": [
-        {"accessor": "bob", "signature": "abababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababab"}
+        {
+          "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "signature": "abababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababab"
+        }
       ],
       "expect": {
         "ok": true,
-        "plaintextRetained": ["carol"],
-        "plaintextDropped": ["bob"],
+        "plaintextRetained": [
+          "4lNKNTLQj7ugLd5lnuYr0AMf4tt4VZbvUJMCRGsDCFI.4PFXWkxjPMcZ3-5f2oYtdk78lsPzDuAFXELCPxhO2MY"
+        ],
+        "plaintextDropped": [
+          "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E"
+        ],
         "soulReplaced": false,
         "skippedPublic": false,
         "ciphertextPublished": true,
@@ -91,175 +202,442 @@
     },
     {
       "name": "migration-soul-replaces",
-      "owner": "alice",
-      "caller": "alice",
+      "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+      "caller": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
       "now": 1000,
       "storage": "private-row",
-      "object": "item-1",
+      "object": "chat_11111111111111111111111111111111",
       "fromVersion": 1,
       "toVersion": 2,
       "versionGate": 2,
       "soulHamState": 7,
       "grants": [
-        {"owner": "alice", "object": "item-1", "accessor": "bob", "from": 0, "until": 5000, "stated": 1, "hamState": 2},
-        {"owner": "alice", "object": "item-1", "accessor": "carol", "from": 0, "until": 5000, "stated": 1, "hamState": 1}
+        {
+          "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "object": "chat_11111111111111111111111111111111",
+          "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "from": 0,
+          "until": 5000,
+          "stated": 1,
+          "hamState": 2
+        },
+        {
+          "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "object": "chat_11111111111111111111111111111111",
+          "accessor": "4lNKNTLQj7ugLd5lnuYr0AMf4tt4VZbvUJMCRGsDCFI.4PFXWkxjPMcZ3-5f2oYtdk78lsPzDuAFXELCPxhO2MY",
+          "from": 0,
+          "until": 5000,
+          "stated": 1,
+          "hamState": 1
+        }
       ],
       "payloads": [
-        {"object": "item-1", "accessor": "bob", "from": 0, "until": 5000, "stated": 1, "epoch": 1, "owner": "alice", "grantRevision": 1, "itemCiphertextDigest": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"},
-        {"object": "item-1", "accessor": "carol", "from": 0, "until": 5000, "stated": 1, "epoch": 1, "owner": "alice", "grantRevision": 1, "itemCiphertextDigest": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"}
+        {
+          "object": "chat_11111111111111111111111111111111",
+          "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "from": 0,
+          "until": 5000,
+          "stated": 1,
+          "epoch": 1,
+          "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "grantRevision": 1,
+          "itemCiphertextDigest": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        },
+        {
+          "object": "chat_11111111111111111111111111111111",
+          "accessor": "4lNKNTLQj7ugLd5lnuYr0AMf4tt4VZbvUJMCRGsDCFI.4PFXWkxjPMcZ3-5f2oYtdk78lsPzDuAFXELCPxhO2MY",
+          "from": 0,
+          "until": 5000,
+          "stated": 1,
+          "epoch": 1,
+          "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "grantRevision": 1,
+          "itemCiphertextDigest": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        }
       ],
       "wraps": [
-        {"scope": "item-dek", "epoch": 1, "target": "reader-epub", "targetId": "epub-bob", "object": "item-1", "revisionId": "abababababababababababababababababababababababababababababababab", "wrappedKey": "aa"},
-        {"scope": "item-dek", "epoch": 1, "target": "reader-epub", "targetId": "epub-carol", "object": "item-1", "revisionId": "abababababababababababababababababababababababababababababababab", "wrappedKey": "bb"}
+        {
+          "scope": "item-dek",
+          "epoch": 1,
+          "target": "reader-epub",
+          "targetId": "epub-bob",
+          "object": "chat_11111111111111111111111111111111",
+          "revisionId": "abababababababababababababababababababababababababababababababab",
+          "wrappedKey": "aa"
+        },
+        {
+          "scope": "item-dek",
+          "epoch": 1,
+          "target": "reader-epub",
+          "targetId": "epub-carol",
+          "object": "chat_11111111111111111111111111111111",
+          "revisionId": "abababababababababababababababababababababababababababababababab",
+          "wrappedKey": "bb"
+        }
       ],
       "readers": [
-        {"accessor": "bob", "acknowledged": true, "atGate": true},
-        {"accessor": "carol", "acknowledged": true, "atGate": false}
+        {
+          "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "acknowledged": true,
+          "atGate": true
+        },
+        {
+          "accessor": "4lNKNTLQj7ugLd5lnuYr0AMf4tt4VZbvUJMCRGsDCFI.4PFXWkxjPMcZ3-5f2oYtdk78lsPzDuAFXELCPxhO2MY",
+          "acknowledged": true,
+          "atGate": false
+        }
       ],
       "readerVersions": [
-        {"accessor": "bob", "version": 2, "epub": "epub-bob"},
-        {"accessor": "carol", "version": 1, "epub": "epub-carol"}
+        {
+          "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "version": 2,
+          "epub": "epub-bob"
+        },
+        {
+          "accessor": "4lNKNTLQj7ugLd5lnuYr0AMf4tt4VZbvUJMCRGsDCFI.4PFXWkxjPMcZ3-5f2oYtdk78lsPzDuAFXELCPxhO2MY",
+          "version": 1,
+          "epub": "epub-carol"
+        }
       ],
       "receipts": [
-        {"accessor": "bob", "signature": "abababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababab"},
-        {"accessor": "carol", "signature": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"}
+        {
+          "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "signature": "abababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababab"
+        },
+        {
+          "accessor": "4lNKNTLQj7ugLd5lnuYr0AMf4tt4VZbvUJMCRGsDCFI.4PFXWkxjPMcZ3-5f2oYtdk78lsPzDuAFXELCPxhO2MY",
+          "signature": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        }
       ],
       "expect": {
         "ok": true,
         "plaintextRetained": [],
-        "plaintextDropped": ["bob", "carol"],
+        "plaintextDropped": [
+          "4lNKNTLQj7ugLd5lnuYr0AMf4tt4VZbvUJMCRGsDCFI.4PFXWkxjPMcZ3-5f2oYtdk78lsPzDuAFXELCPxhO2MY",
+          "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E"
+        ],
         "soulReplaced": true,
         "skippedPublic": false,
         "ciphertextPublished": true,
         "soulHamState": 8,
         "cancelled": [
-          {"accessor": "bob", "hamState": 3, "stated": 0, "from": 0, "until": 5000},
-          {"accessor": "carol", "hamState": 2, "stated": 0, "from": 0, "until": 5000}
+          {
+            "accessor": "4lNKNTLQj7ugLd5lnuYr0AMf4tt4VZbvUJMCRGsDCFI.4PFXWkxjPMcZ3-5f2oYtdk78lsPzDuAFXELCPxhO2MY",
+            "hamState": 2,
+            "stated": 0,
+            "from": 0,
+            "until": 5000
+          },
+          {
+            "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+            "hamState": 3,
+            "stated": 0,
+            "from": 0,
+            "until": 5000
+          }
         ]
       }
     },
     {
       "name": "migration-no-widen",
-      "owner": "alice",
-      "caller": "alice",
+      "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+      "caller": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
       "now": 1000,
       "storage": "private-row",
-      "object": "item-1",
+      "object": "chat_11111111111111111111111111111111",
       "fromVersion": 1,
       "toVersion": 2,
       "versionGate": 2,
       "soulHamState": 4,
       "grants": [
-        {"owner": "alice", "object": "item-1", "accessor": "bob", "from": 0, "until": 5000, "stated": 1, "hamState": 2}
+        {
+          "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "object": "chat_11111111111111111111111111111111",
+          "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "from": 0,
+          "until": 5000,
+          "stated": 1,
+          "hamState": 2
+        }
       ],
       "payloads": [
-        {"object": "item-1", "accessor": "bob", "from": 0, "until": 5000, "stated": 1, "epoch": 1, "owner": "alice", "grantRevision": 1, "itemCiphertextDigest": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"},
-        {"object": "item-1", "accessor": "carol", "from": 0, "until": 5000, "stated": 1, "epoch": 1, "owner": "alice", "grantRevision": 1, "itemCiphertextDigest": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"}
+        {
+          "object": "chat_11111111111111111111111111111111",
+          "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "from": 0,
+          "until": 5000,
+          "stated": 1,
+          "epoch": 1,
+          "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "grantRevision": 1,
+          "itemCiphertextDigest": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        },
+        {
+          "object": "chat_11111111111111111111111111111111",
+          "accessor": "4lNKNTLQj7ugLd5lnuYr0AMf4tt4VZbvUJMCRGsDCFI.4PFXWkxjPMcZ3-5f2oYtdk78lsPzDuAFXELCPxhO2MY",
+          "from": 0,
+          "until": 5000,
+          "stated": 1,
+          "epoch": 1,
+          "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "grantRevision": 1,
+          "itemCiphertextDigest": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        }
       ],
       "wraps": [
-        {"scope": "item-dek", "epoch": 1, "target": "reader-epub", "targetId": "epub-bob", "object": "item-1", "revisionId": "abababababababababababababababababababababababababababababababab", "wrappedKey": "aa"},
-        {"scope": "item-dek", "epoch": 1, "target": "reader-epub", "targetId": "epub-carol", "object": "item-1", "revisionId": "abababababababababababababababababababababababababababababababab", "wrappedKey": "bb"}
+        {
+          "scope": "item-dek",
+          "epoch": 1,
+          "target": "reader-epub",
+          "targetId": "epub-bob",
+          "object": "chat_11111111111111111111111111111111",
+          "revisionId": "abababababababababababababababababababababababababababababababab",
+          "wrappedKey": "aa"
+        },
+        {
+          "scope": "item-dek",
+          "epoch": 1,
+          "target": "reader-epub",
+          "targetId": "epub-carol",
+          "object": "chat_11111111111111111111111111111111",
+          "revisionId": "abababababababababababababababababababababababababababababababab",
+          "wrappedKey": "bb"
+        }
       ],
       "readers": [
-        {"accessor": "bob", "acknowledged": false, "atGate": true},
-        {"accessor": "carol", "acknowledged": false, "atGate": true}
+        {
+          "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "acknowledged": false,
+          "atGate": true
+        },
+        {
+          "accessor": "4lNKNTLQj7ugLd5lnuYr0AMf4tt4VZbvUJMCRGsDCFI.4PFXWkxjPMcZ3-5f2oYtdk78lsPzDuAFXELCPxhO2MY",
+          "acknowledged": false,
+          "atGate": true
+        }
       ],
       "readerVersions": [
-        {"accessor": "bob", "version": 2, "epub": "epub-bob"},
-        {"accessor": "carol", "version": 2, "epub": "epub-carol"}
+        {
+          "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "version": 2,
+          "epub": "epub-bob"
+        },
+        {
+          "accessor": "4lNKNTLQj7ugLd5lnuYr0AMf4tt4VZbvUJMCRGsDCFI.4PFXWkxjPMcZ3-5f2oYtdk78lsPzDuAFXELCPxhO2MY",
+          "version": 2,
+          "epub": "epub-carol"
+        }
       ],
       "receipts": [],
-      "expect": {"ok": false}
+      "expect": {
+        "ok": false
+      }
     },
     {
       "name": "migration-wider-window",
-      "owner": "alice",
-      "caller": "alice",
+      "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+      "caller": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
       "now": 1000,
       "storage": "private-row",
-      "object": "item-1",
+      "object": "chat_11111111111111111111111111111111",
       "fromVersion": 1,
       "toVersion": 2,
       "versionGate": 2,
       "soulHamState": 4,
       "grants": [
-        {"owner": "alice", "object": "item-1", "accessor": "bob", "from": 10, "until": 5000, "stated": 1, "hamState": 2}
+        {
+          "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "object": "chat_11111111111111111111111111111111",
+          "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "from": 10,
+          "until": 5000,
+          "stated": 1,
+          "hamState": 2
+        }
       ],
       "payloads": [
-        {"object": "item-1", "accessor": "bob", "from": 0, "until": 9000, "stated": 1, "epoch": 1, "owner": "alice", "grantRevision": 1, "itemCiphertextDigest": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"}
+        {
+          "object": "chat_11111111111111111111111111111111",
+          "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "from": 0,
+          "until": 9000,
+          "stated": 1,
+          "epoch": 1,
+          "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "grantRevision": 1,
+          "itemCiphertextDigest": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        }
       ],
       "wraps": [
-        {"scope": "item-dek", "epoch": 1, "target": "reader-epub", "targetId": "epub-bob", "object": "item-1", "revisionId": "abababababababababababababababababababababababababababababababab", "wrappedKey": "aa"}
+        {
+          "scope": "item-dek",
+          "epoch": 1,
+          "target": "reader-epub",
+          "targetId": "epub-bob",
+          "object": "chat_11111111111111111111111111111111",
+          "revisionId": "abababababababababababababababababababababababababababababababab",
+          "wrappedKey": "aa"
+        }
       ],
       "readers": [
-        {"accessor": "bob", "acknowledged": false, "atGate": true}
+        {
+          "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "acknowledged": false,
+          "atGate": true
+        }
       ],
       "readerVersions": [
-        {"accessor": "bob", "version": 2, "epub": "epub-bob"}
+        {
+          "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "version": 2,
+          "epub": "epub-bob"
+        }
       ],
       "receipts": [],
-      "expect": {"ok": false}
+      "expect": {
+        "ok": false
+      }
     },
     {
       "name": "migration-revived-cancel",
-      "owner": "alice",
-      "caller": "alice",
+      "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+      "caller": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
       "now": 1000,
       "storage": "private-row",
-      "object": "item-1",
+      "object": "chat_11111111111111111111111111111111",
       "fromVersion": 1,
       "toVersion": 2,
       "versionGate": 2,
       "soulHamState": 4,
       "grants": [
-        {"owner": "alice", "object": "item-1", "accessor": "bob", "from": 0, "until": 5000, "stated": 0, "hamState": 3}
+        {
+          "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "object": "chat_11111111111111111111111111111111",
+          "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "from": 0,
+          "until": 5000,
+          "stated": 0,
+          "hamState": 3
+        }
       ],
       "payloads": [
-        {"object": "item-1", "accessor": "bob", "from": 0, "until": 5000, "stated": 1, "epoch": 1, "owner": "alice", "grantRevision": 4, "itemCiphertextDigest": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"}
+        {
+          "object": "chat_11111111111111111111111111111111",
+          "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "from": 0,
+          "until": 5000,
+          "stated": 1,
+          "epoch": 1,
+          "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "grantRevision": 4,
+          "itemCiphertextDigest": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        }
       ],
       "wraps": [
-        {"scope": "item-dek", "epoch": 1, "target": "reader-epub", "targetId": "epub-bob", "object": "item-1", "revisionId": "abababababababababababababababababababababababababababababababab", "wrappedKey": "aa"}
+        {
+          "scope": "item-dek",
+          "epoch": 1,
+          "target": "reader-epub",
+          "targetId": "epub-bob",
+          "object": "chat_11111111111111111111111111111111",
+          "revisionId": "abababababababababababababababababababababababababababababababab",
+          "wrappedKey": "aa"
+        }
       ],
       "readers": [
-        {"accessor": "bob", "acknowledged": false, "atGate": true}
+        {
+          "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "acknowledged": false,
+          "atGate": true
+        }
       ],
       "readerVersions": [
-        {"accessor": "bob", "version": 2, "epub": "epub-bob"}
+        {
+          "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "version": 2,
+          "epub": "epub-bob"
+        }
       ],
       "receipts": [],
-      "expect": {"ok": false}
+      "expect": {
+        "ok": false
+      }
     },
     {
       "name": "migration-privilege-down",
-      "owner": "alice",
-      "caller": "alice",
+      "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+      "caller": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
       "now": 1000,
       "storage": "private-row",
-      "object": "item-1",
+      "object": "chat_11111111111111111111111111111111",
       "fromVersion": 1,
       "toVersion": 2,
       "versionGate": 2,
       "soulHamState": 4,
       "grants": [
-        {"owner": "alice", "object": "item-1", "accessor": "bob", "from": 0, "until": 5000, "stated": 0, "hamState": 4},
-        {"owner": "alice", "object": "item-1", "accessor": "carol", "from": 0, "until": 5000, "stated": 1, "hamState": 1}
+        {
+          "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "object": "chat_11111111111111111111111111111111",
+          "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "from": 0,
+          "until": 5000,
+          "stated": 0,
+          "hamState": 4
+        },
+        {
+          "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "object": "chat_11111111111111111111111111111111",
+          "accessor": "4lNKNTLQj7ugLd5lnuYr0AMf4tt4VZbvUJMCRGsDCFI.4PFXWkxjPMcZ3-5f2oYtdk78lsPzDuAFXELCPxhO2MY",
+          "from": 0,
+          "until": 5000,
+          "stated": 1,
+          "hamState": 1
+        }
       ],
       "payloads": [
-        {"object": "item-1", "accessor": "carol", "from": 0, "until": 5000, "stated": 1, "epoch": 1, "owner": "alice", "grantRevision": 1, "itemCiphertextDigest": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"}
+        {
+          "object": "chat_11111111111111111111111111111111",
+          "accessor": "4lNKNTLQj7ugLd5lnuYr0AMf4tt4VZbvUJMCRGsDCFI.4PFXWkxjPMcZ3-5f2oYtdk78lsPzDuAFXELCPxhO2MY",
+          "from": 0,
+          "until": 5000,
+          "stated": 1,
+          "epoch": 1,
+          "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "grantRevision": 1,
+          "itemCiphertextDigest": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        }
       ],
       "wraps": [
-        {"scope": "item-dek", "epoch": 1, "target": "reader-epub", "targetId": "epub-carol", "object": "item-1", "revisionId": "abababababababababababababababababababababababababababababababab", "wrappedKey": "bb"}
+        {
+          "scope": "item-dek",
+          "epoch": 1,
+          "target": "reader-epub",
+          "targetId": "epub-carol",
+          "object": "chat_11111111111111111111111111111111",
+          "revisionId": "abababababababababababababababababababababababababababababababab",
+          "wrappedKey": "bb"
+        }
       ],
       "readers": [
-        {"accessor": "carol", "acknowledged": false, "atGate": true}
+        {
+          "accessor": "4lNKNTLQj7ugLd5lnuYr0AMf4tt4VZbvUJMCRGsDCFI.4PFXWkxjPMcZ3-5f2oYtdk78lsPzDuAFXELCPxhO2MY",
+          "acknowledged": false,
+          "atGate": true
+        }
       ],
       "readerVersions": [
-        {"accessor": "carol", "version": 2, "epub": "epub-carol"}
+        {
+          "accessor": "4lNKNTLQj7ugLd5lnuYr0AMf4tt4VZbvUJMCRGsDCFI.4PFXWkxjPMcZ3-5f2oYtdk78lsPzDuAFXELCPxhO2MY",
+          "version": 2,
+          "epub": "epub-carol"
+        }
       ],
       "receipts": [],
       "expect": {
         "ok": true,
-        "plaintextRetained": ["carol"],
+        "plaintextRetained": [
+          "4lNKNTLQj7ugLd5lnuYr0AMf4tt4VZbvUJMCRGsDCFI.4PFXWkxjPMcZ3-5f2oYtdk78lsPzDuAFXELCPxhO2MY"
+        ],
         "plaintextDropped": [],
         "soulReplaced": false,
         "skippedPublic": false,
@@ -270,17 +648,25 @@
     },
     {
       "name": "migration-public-skipped",
-      "owner": "alice",
-      "caller": "alice",
+      "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+      "caller": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
       "now": 1000,
       "storage": "public-plain",
-      "object": "item-1",
+      "object": "chat_11111111111111111111111111111111",
       "fromVersion": 1,
       "toVersion": 2,
       "versionGate": 2,
       "soulHamState": 4,
       "grants": [
-        {"owner": "alice", "object": "item-1", "accessor": "bob", "from": 0, "until": 5000, "stated": 1, "hamState": 2}
+        {
+          "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "object": "chat_11111111111111111111111111111111",
+          "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "from": 0,
+          "until": 5000,
+          "stated": 1,
+          "hamState": 2
+        }
       ],
       "payloads": [],
       "wraps": [],
@@ -289,7 +675,9 @@
       "receipts": [],
       "expect": {
         "ok": true,
-        "plaintextRetained": ["bob"],
+        "plaintextRetained": [
+          "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E"
+        ],
         "plaintextDropped": [],
         "soulReplaced": false,
         "skippedPublic": true,
@@ -300,92 +688,182 @@
     },
     {
       "name": "migration-public-with-wrap",
-      "owner": "alice",
-      "caller": "alice",
+      "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+      "caller": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
       "now": 1000,
       "storage": "public-plain",
-      "object": "item-1",
+      "object": "chat_11111111111111111111111111111111",
       "fromVersion": 1,
       "toVersion": 2,
       "versionGate": 2,
       "soulHamState": 4,
       "grants": [
-        {"owner": "alice", "object": "item-1", "accessor": "bob", "from": 0, "until": 5000, "stated": 1, "hamState": 2}
+        {
+          "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "object": "chat_11111111111111111111111111111111",
+          "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "from": 0,
+          "until": 5000,
+          "stated": 1,
+          "hamState": 2
+        }
       ],
       "payloads": [],
       "wraps": [
-        {"scope": "item-dek", "epoch": 1, "target": "reader-epub", "targetId": "epub-bob", "object": "item-1", "revisionId": "abababababababababababababababababababababababababababababababab", "wrappedKey": "aa"}
+        {
+          "scope": "item-dek",
+          "epoch": 1,
+          "target": "reader-epub",
+          "targetId": "epub-bob",
+          "object": "chat_11111111111111111111111111111111",
+          "revisionId": "abababababababababababababababababababababababababababababababab",
+          "wrappedKey": "aa"
+        }
       ],
       "readers": [],
       "readerVersions": [],
       "receipts": [],
-      "expect": {"ok": false}
+      "expect": {
+        "ok": false
+      }
     },
     {
       "name": "migration-reader-cannot-issue",
-      "owner": "alice",
-      "caller": "bob",
+      "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+      "caller": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
       "now": 1000,
       "storage": "private-row",
-      "object": "item-1",
+      "object": "chat_11111111111111111111111111111111",
       "fromVersion": 1,
       "toVersion": 2,
       "versionGate": 2,
       "soulHamState": 4,
       "grants": [
-        {"owner": "alice", "object": "item-1", "accessor": "bob", "from": 0, "until": 5000, "stated": 1, "hamState": 2}
+        {
+          "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "object": "chat_11111111111111111111111111111111",
+          "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "from": 0,
+          "until": 5000,
+          "stated": 1,
+          "hamState": 2
+        }
       ],
       "payloads": [
-        {"object": "item-1", "accessor": "bob", "from": 0, "until": 5000, "stated": 1, "epoch": 1, "owner": "alice", "grantRevision": 1, "itemCiphertextDigest": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"}
+        {
+          "object": "chat_11111111111111111111111111111111",
+          "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "from": 0,
+          "until": 5000,
+          "stated": 1,
+          "epoch": 1,
+          "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "grantRevision": 1,
+          "itemCiphertextDigest": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        }
       ],
       "wraps": [
-        {"scope": "item-dek", "epoch": 1, "target": "reader-epub", "targetId": "epub-bob", "object": "item-1", "revisionId": "abababababababababababababababababababababababababababababababab", "wrappedKey": "aa"}
+        {
+          "scope": "item-dek",
+          "epoch": 1,
+          "target": "reader-epub",
+          "targetId": "epub-bob",
+          "object": "chat_11111111111111111111111111111111",
+          "revisionId": "abababababababababababababababababababababababababababababababab",
+          "wrappedKey": "aa"
+        }
       ],
       "readers": [
-        {"accessor": "bob", "acknowledged": false, "atGate": true}
+        {
+          "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "acknowledged": false,
+          "atGate": true
+        }
       ],
       "readerVersions": [
-        {"accessor": "bob", "version": 2, "epub": "epub-bob"}
+        {
+          "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "version": 2,
+          "epub": "epub-bob"
+        }
       ],
       "receipts": [],
-      "expect": {"ok": false}
+      "expect": {
+        "ok": false
+      }
     },
     {
       "name": "migration-flag-without-receipt",
-      "owner": "alice",
-      "caller": "alice",
+      "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+      "caller": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
       "now": 1000,
       "storage": "private-row",
-      "object": "item-1",
+      "object": "chat_11111111111111111111111111111111",
       "fromVersion": 1,
       "toVersion": 2,
       "versionGate": 2,
       "soulHamState": 4,
       "grants": [
-        {"owner": "alice", "object": "item-1", "accessor": "bob", "from": 0, "until": 5000, "stated": 1, "hamState": 2}
+        {
+          "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "object": "chat_11111111111111111111111111111111",
+          "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "from": 0,
+          "until": 5000,
+          "stated": 1,
+          "hamState": 2
+        }
       ],
       "payloads": [
-        {"object": "item-1", "accessor": "bob", "from": 0, "until": 5000, "stated": 1, "epoch": 1, "owner": "alice", "grantRevision": 1, "itemCiphertextDigest": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"}
+        {
+          "object": "chat_11111111111111111111111111111111",
+          "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "from": 0,
+          "until": 5000,
+          "stated": 1,
+          "epoch": 1,
+          "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "grantRevision": 1,
+          "itemCiphertextDigest": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        }
       ],
       "wraps": [
-        {"scope": "item-dek", "epoch": 1, "target": "reader-epub", "targetId": "epub-bob", "object": "item-1", "revisionId": "abababababababababababababababababababababababababababababababab", "wrappedKey": "aa"}
+        {
+          "scope": "item-dek",
+          "epoch": 1,
+          "target": "reader-epub",
+          "targetId": "epub-bob",
+          "object": "chat_11111111111111111111111111111111",
+          "revisionId": "abababababababababababababababababababababababababababababababab",
+          "wrappedKey": "aa"
+        }
       ],
       "readers": [
-        {"accessor": "bob", "acknowledged": true, "atGate": true}
+        {
+          "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "acknowledged": true,
+          "atGate": true
+        }
       ],
       "readerVersions": [
-        {"accessor": "bob", "version": 2, "epub": "epub-bob"}
+        {
+          "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "version": 2,
+          "epub": "epub-bob"
+        }
       ],
       "receipts": [],
-      "expect": {"ok": false}
+      "expect": {
+        "ok": false
+      }
     },
     {
       "name": "migration-owner-only",
-      "owner": "alice",
-      "caller": "alice",
+      "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+      "caller": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
       "now": 1000,
       "storage": "private-row",
-      "object": "item-1",
+      "object": "chat_11111111111111111111111111111111",
       "fromVersion": 1,
       "toVersion": 2,
       "versionGate": 2,
@@ -409,42 +887,117 @@
     },
     {
       "name": "migration-future-dated",
-      "owner": "alice",
-      "caller": "alice",
+      "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+      "caller": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
       "now": 1000,
       "storage": "private-row",
-      "object": "item-1",
+      "object": "chat_11111111111111111111111111111111",
       "fromVersion": 1,
       "toVersion": 2,
       "versionGate": 2,
       "soulHamState": 4,
       "grants": [
-        {"owner": "alice", "object": "item-1", "accessor": "bob", "from": 0, "until": 5000, "stated": 1, "hamState": 2},
-        {"owner": "alice", "object": "item-1", "accessor": "carol", "from": 2000, "until": 5000, "stated": 1, "hamState": 1}
+        {
+          "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "object": "chat_11111111111111111111111111111111",
+          "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "from": 0,
+          "until": 5000,
+          "stated": 1,
+          "hamState": 2
+        },
+        {
+          "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "object": "chat_11111111111111111111111111111111",
+          "accessor": "4lNKNTLQj7ugLd5lnuYr0AMf4tt4VZbvUJMCRGsDCFI.4PFXWkxjPMcZ3-5f2oYtdk78lsPzDuAFXELCPxhO2MY",
+          "from": 2000,
+          "until": 5000,
+          "stated": 1,
+          "hamState": 1
+        }
       ],
       "payloads": [
-        {"object": "item-1", "accessor": "bob", "from": 0, "until": 5000, "stated": 1, "epoch": 1, "owner": "alice", "grantRevision": 1, "itemCiphertextDigest": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"},
-        {"object": "item-1", "accessor": "carol", "from": 2000, "until": 5000, "stated": 1, "epoch": 1, "owner": "alice", "grantRevision": 1, "itemCiphertextDigest": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"}
+        {
+          "object": "chat_11111111111111111111111111111111",
+          "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "from": 0,
+          "until": 5000,
+          "stated": 1,
+          "epoch": 1,
+          "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "grantRevision": 1,
+          "itemCiphertextDigest": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        },
+        {
+          "object": "chat_11111111111111111111111111111111",
+          "accessor": "4lNKNTLQj7ugLd5lnuYr0AMf4tt4VZbvUJMCRGsDCFI.4PFXWkxjPMcZ3-5f2oYtdk78lsPzDuAFXELCPxhO2MY",
+          "from": 2000,
+          "until": 5000,
+          "stated": 1,
+          "epoch": 1,
+          "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "grantRevision": 1,
+          "itemCiphertextDigest": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        }
       ],
       "wraps": [
-        {"scope": "item-dek", "epoch": 1, "target": "reader-epub", "targetId": "epub-bob", "object": "item-1", "revisionId": "abababababababababababababababababababababababababababababababab", "wrappedKey": "aa"},
-        {"scope": "item-dek", "epoch": 1, "target": "reader-epub", "targetId": "epub-carol", "object": "item-1", "revisionId": "abababababababababababababababababababababababababababababababab", "wrappedKey": "bb"}
+        {
+          "scope": "item-dek",
+          "epoch": 1,
+          "target": "reader-epub",
+          "targetId": "epub-bob",
+          "object": "chat_11111111111111111111111111111111",
+          "revisionId": "abababababababababababababababababababababababababababababababab",
+          "wrappedKey": "aa"
+        },
+        {
+          "scope": "item-dek",
+          "epoch": 1,
+          "target": "reader-epub",
+          "targetId": "epub-carol",
+          "object": "chat_11111111111111111111111111111111",
+          "revisionId": "abababababababababababababababababababababababababababababababab",
+          "wrappedKey": "bb"
+        }
       ],
       "readers": [
-        {"accessor": "bob", "acknowledged": true, "atGate": true},
-        {"accessor": "carol", "acknowledged": false, "atGate": true}
+        {
+          "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "acknowledged": true,
+          "atGate": true
+        },
+        {
+          "accessor": "4lNKNTLQj7ugLd5lnuYr0AMf4tt4VZbvUJMCRGsDCFI.4PFXWkxjPMcZ3-5f2oYtdk78lsPzDuAFXELCPxhO2MY",
+          "acknowledged": false,
+          "atGate": true
+        }
       ],
       "readerVersions": [
-        {"accessor": "bob", "version": 2, "epub": "epub-bob"},
-        {"accessor": "carol", "version": 2, "epub": "epub-carol"}
+        {
+          "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "version": 2,
+          "epub": "epub-bob"
+        },
+        {
+          "accessor": "4lNKNTLQj7ugLd5lnuYr0AMf4tt4VZbvUJMCRGsDCFI.4PFXWkxjPMcZ3-5f2oYtdk78lsPzDuAFXELCPxhO2MY",
+          "version": 2,
+          "epub": "epub-carol"
+        }
       ],
       "receipts": [
-        {"accessor": "bob", "signature": "abababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababab"}
+        {
+          "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "signature": "abababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababab"
+        }
       ],
       "expect": {
         "ok": true,
-        "plaintextRetained": ["carol"],
-        "plaintextDropped": ["bob"],
+        "plaintextRetained": [
+          "4lNKNTLQj7ugLd5lnuYr0AMf4tt4VZbvUJMCRGsDCFI.4PFXWkxjPMcZ3-5f2oYtdk78lsPzDuAFXELCPxhO2MY"
+        ],
+        "plaintextDropped": [
+          "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E"
+        ],
         "soulReplaced": false,
         "skippedPublic": false,
         "ciphertextPublished": true,
@@ -454,64 +1007,148 @@
     },
     {
       "name": "migration-future-omitted",
-      "owner": "alice",
-      "caller": "alice",
+      "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+      "caller": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
       "now": 1000,
       "storage": "private-row",
-      "object": "item-1",
+      "object": "chat_11111111111111111111111111111111",
       "fromVersion": 1,
       "toVersion": 2,
       "versionGate": 2,
       "soulHamState": 4,
       "grants": [
-        {"owner": "alice", "object": "item-1", "accessor": "bob", "from": 0, "until": 5000, "stated": 1, "hamState": 2},
-        {"owner": "alice", "object": "item-1", "accessor": "carol", "from": 2000, "until": 5000, "stated": 1, "hamState": 1}
+        {
+          "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "object": "chat_11111111111111111111111111111111",
+          "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "from": 0,
+          "until": 5000,
+          "stated": 1,
+          "hamState": 2
+        },
+        {
+          "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "object": "chat_11111111111111111111111111111111",
+          "accessor": "4lNKNTLQj7ugLd5lnuYr0AMf4tt4VZbvUJMCRGsDCFI.4PFXWkxjPMcZ3-5f2oYtdk78lsPzDuAFXELCPxhO2MY",
+          "from": 2000,
+          "until": 5000,
+          "stated": 1,
+          "hamState": 1
+        }
       ],
       "payloads": [
-        {"object": "item-1", "accessor": "bob", "from": 0, "until": 5000, "stated": 1, "epoch": 1, "owner": "alice", "grantRevision": 1, "itemCiphertextDigest": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"}
+        {
+          "object": "chat_11111111111111111111111111111111",
+          "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "from": 0,
+          "until": 5000,
+          "stated": 1,
+          "epoch": 1,
+          "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "grantRevision": 1,
+          "itemCiphertextDigest": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        }
       ],
       "wraps": [
-        {"scope": "item-dek", "epoch": 1, "target": "reader-epub", "targetId": "epub-bob", "object": "item-1", "revisionId": "abababababababababababababababababababababababababababababababab", "wrappedKey": "aa"}
+        {
+          "scope": "item-dek",
+          "epoch": 1,
+          "target": "reader-epub",
+          "targetId": "epub-bob",
+          "object": "chat_11111111111111111111111111111111",
+          "revisionId": "abababababababababababababababababababababababababababababababab",
+          "wrappedKey": "aa"
+        }
       ],
       "readers": [
-        {"accessor": "bob", "acknowledged": true, "atGate": true}
+        {
+          "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "acknowledged": true,
+          "atGate": true
+        }
       ],
       "readerVersions": [
-        {"accessor": "bob", "version": 2, "epub": "epub-bob"}
+        {
+          "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "version": 2,
+          "epub": "epub-bob"
+        }
       ],
       "receipts": [
-        {"accessor": "bob", "signature": "abababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababab"}
+        {
+          "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "signature": "abababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababab"
+        }
       ],
-      "expect": {"ok": false}
+      "expect": {
+        "ok": false
+      }
     },
     {
       "name": "migration-mismatched-soul",
-      "owner": "alice",
-      "caller": "alice",
+      "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+      "caller": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
       "now": 1000,
       "storage": "private-row",
-      "object": "item-1",
+      "object": "chat_11111111111111111111111111111111",
       "fromVersion": 1,
       "toVersion": 2,
       "versionGate": 2,
       "soulHamState": 4,
       "grants": [
-        {"soul": "s3rch/acl/alice/elsewhere/bob", "owner": "alice", "object": "item-1", "accessor": "bob", "from": 0, "until": 5000, "stated": 1, "hamState": 2}
+        {
+          "soul": "s3rch/acl/alice/elsewhere/bob",
+          "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "object": "chat_11111111111111111111111111111111",
+          "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "from": 0,
+          "until": 5000,
+          "stated": 1,
+          "hamState": 2
+        }
       ],
       "payloads": [
-        {"object": "item-1", "accessor": "bob", "from": 0, "until": 5000, "stated": 1, "epoch": 1, "owner": "alice", "grantRevision": 1, "itemCiphertextDigest": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"}
+        {
+          "object": "chat_11111111111111111111111111111111",
+          "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "from": 0,
+          "until": 5000,
+          "stated": 1,
+          "epoch": 1,
+          "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "grantRevision": 1,
+          "itemCiphertextDigest": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        }
       ],
       "wraps": [
-        {"scope": "item-dek", "epoch": 1, "target": "reader-epub", "targetId": "epub-bob", "object": "item-1", "revisionId": "abababababababababababababababababababababababababababababababab", "wrappedKey": "aa"}
+        {
+          "scope": "item-dek",
+          "epoch": 1,
+          "target": "reader-epub",
+          "targetId": "epub-bob",
+          "object": "chat_11111111111111111111111111111111",
+          "revisionId": "abababababababababababababababababababababababababababababababab",
+          "wrappedKey": "aa"
+        }
       ],
       "readers": [
-        {"accessor": "bob", "acknowledged": false, "atGate": true}
+        {
+          "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "acknowledged": false,
+          "atGate": true
+        }
       ],
       "readerVersions": [
-        {"accessor": "bob", "version": 2, "epub": "epub-bob"}
+        {
+          "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "version": 2,
+          "epub": "epub-bob"
+        }
       ],
       "receipts": [],
-      "expect": {"ok": false}
+      "expect": {
+        "ok": false
+      }
     }
   ]
 }

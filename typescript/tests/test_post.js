@@ -15,17 +15,19 @@ import {
 } from "../src/group.js";
 import { postRowEncodable, preferPost } from "../src/post.js";
 import {
-  MemorySeeAcl,
-  applyPostGrant,
-  applySeeGrant,
-  cancelPost,
   checkPost as gunCheckPost,
-  checkSee,
-  checkSeeGrant,
   factorGrants as gunFactorGrants,
   postGrantSigningBytes as gunSigningBytes,
   postSoul as gunPostSoul,
 } from "../src/gun.js";
+import {
+  MemorySeeAcl,
+  applyPostGrant,
+  applySeeGrant,
+  cancelPost,
+  checkSeeGrant,
+  checkSeeLabel,
+} from "../src/legacy/gun-legacy.js";
 
 const fixture = JSON.parse(
   readFileSync(new URL("../../vectors/mesh/post-grant.json", import.meta.url), "utf8"),
@@ -108,7 +110,7 @@ function runCase(row, merge) {
   const got = checkPost(graph, checkObject, checkAccessor, row.now, hint, hop);
   assert.equal(got.allowed, row.allowed, row.name);
   assert.equal(got.reason, row.reason, row.name);
-  const see = checkSee(graph, checkObject, checkAccessor, row.now, hint, hop);
+  const see = checkSeeLabel(graph, checkObject, checkAccessor, row.now, hint, hop);
   if (got.allowed) assert.equal(see.allowed, true, row.name);
   if (row.presentedAccessor) {
     const presented = {
@@ -414,11 +416,11 @@ test("light checkSee uses the same owner principal as checkPost", () => {
   const acl = new MemorySeeAcl();
   const object = "room:alpha";
   acl.putObject(object, "s3rch/users/0xalice");
-  assert.equal(checkSee(acl, object, "0xalice", 10).reason, "owner");
+  assert.equal(checkSeeLabel(acl, object, "0xalice", 10).reason, "owner");
   assert.equal(gunCheckPost(acl, object, "0xalice", 10).reason, "owner");
   applySeeGrant(acl, "s3rch/users/0xalice", { claimId: object, accessor: "s3rch/users/0xbob", from: 0, until: 80 });
   applyPostGrant(acl, "s3rch/users/0xalice", { object, accessor: "s3rch/users/0xbob", from: 0, until: 80 });
-  assert.equal(checkSee(acl, object, "0xbob", 10).allowed, true);
+  assert.equal(checkSeeLabel(acl, object, "0xbob", 10).allowed, true);
   assert.equal(gunCheckPost(acl, object, "0xbob", 10).reason, "post");
 });
 

@@ -1,7 +1,8 @@
 use sociacl_core::{NodeId, Timestamp};
 
 use crate::leaf::{normalize_permalink, split_tags, UrlLeaf};
-use crate::soul::{encode_key, GunSoul};
+use crate::legacy::encode_key;
+use crate::soul::GunSoul;
 use crate::GunError;
 
 /// Locked feed source. `from_gun_node` refuses anything else.

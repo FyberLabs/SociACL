@@ -297,7 +297,7 @@ fn assert_granted(graph: &MeshSeeGraph, case: &ApprovalCase, rows: &OwnerGrantRo
             .unwrap()
             .as_str()
     );
-    let see = graph.check_see(
+    let see = graph.check_see_label(
         &case.source,
         &case.requester,
         Timestamp(case.now),
@@ -431,7 +431,7 @@ fn owner_client_writes_rows_and_a_request_does_not() {
                 attestation_bytes: None,
                 share_token: None,
             });
-            let see = graph.check_see(
+            let see = graph.check_see_label(
                 &case.source,
                 &case.requester,
                 Timestamp(case.now),
@@ -678,7 +678,7 @@ fn dotted_principal_round_trips_through_enroll_and_approval() {
     assert_eq!(rows.see.grant.accessor, "bob.name");
     assert!(
         graph
-            .check_see("room:alpha", "bob.name", Timestamp(10), None, None)
+            .check_see_label("room:alpha", "bob.name", Timestamp(10), None, None)
             .allowed
     );
 }

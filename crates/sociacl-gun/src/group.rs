@@ -22,11 +22,11 @@ use rand::RngCore;
 use sha2::{Digest, Sha256};
 use sociacl_core::{AttestationSig, IssuerSecret, Timestamp, VerifyKey};
 
-use crate::mesh::{closed_reason, MeshCheckResult, MeshSeeGraph};
-use crate::soul::{
-    acl_key, acl_principal_key, ascii_trim, object_id_rejected, unescape_acl_key, S3RCH_ACL,
-    S3RCH_ROOT,
+use crate::legacy::{
+    acl_key, acl_principal_key, ascii_trim, closed_reason, object_id_rejected, unescape_acl_key,
 };
+use crate::mesh::{MeshCheckResult, MeshSeeGraph};
+use crate::soul::{S3RCH_ACL, S3RCH_ROOT};
 use crate::{GunError, HandoffHint, HopFactor};
 
 /// `same-group` or `named-circle`. The accessor does not pick a richer one.
@@ -810,7 +810,7 @@ impl MeshSeeGraph {
             if named {
                 return finish(false, crate::MESH_REASON_MISSING.into());
             }
-            let dest = self.check_see(object, accessor, now, hint, hop);
+            let dest = self.check_see_label(object, accessor, now, hint, hop);
             if dest.allowed && payload.live_at(now.0) {
                 return finish(true, dest.reason);
             }
