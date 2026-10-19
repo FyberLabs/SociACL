@@ -189,19 +189,15 @@ add('reject', 'object-without-embedded-principal', [
 }
 {
   const oldGrant = seeRow(base({ issuedAt: at }), 1).row;
-  add('accept', 'reverify-drops-the-object-label', [
+  add('accept', 'reverify-drops-the-object-record', [
     put(chatA, p, 1),
-    { op: 'label', object: chatA, owner: p },
     { op: 'admit', row: oldGrant, rotations: 'genesis', ok: true, kept: true, mode: 'present', stated: 1, hamState: 1 },
     { op: 'reverify', principal: p, rotations: 'rotated', dropped: 2 },
-    { op: 'label', object: chatA, absent: true },
     { op: 'owner', object: chatA, absent: true },
   ]);
-  add('reject', 'missing-history-drops-the-object-label', [
+  add('reject', 'missing-history-drops-the-object-record', [
     put(chatA, p, 1),
-    { op: 'label', object: chatA, owner: p },
     { op: 'reverify', principal: p, history: 'unavailable', ok: false, reason: 'missing-history' },
-    { op: 'label', object: chatA, absent: true },
     { op: 'owner', object: chatA, absent: true },
   ]);
 }

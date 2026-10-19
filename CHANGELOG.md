@@ -21,6 +21,16 @@
   stored at admission, including object-set cancels. A replacement
   object-set edge for a different set does not keep the previous set's
   cancels.
+- **Breaking:** `objectSetSoul(owner, object, predicate, set)` is seven
+  segments, `s3rch/acl/<pk>/objset/<predicate>/<set>/<object>`. A cancel
+  signed over that soul cannot move to another set or predicate. The
+  soul parser accepts 522 characters, the longest object-set soul.
+- **Breaking:** `MemoryGroupGraph` no longer keeps a label map.
+  `hasObject`, `objectRecord`, `ownerOf`, and `canonicalObjectId` read
+  the admitted signed object record. `see.js` does not copy an owner
+  onto a label. An object-set row that arrives before that record is
+  dropped. `reverifyGroup` drops an unwitnessed retired-key cancel;
+  only a witnessed cancel survives.
 - **Breaking:** an access request is `sociacl-access-request-v2`. The
   request id is `hex(sha256)` of `sociacl-request-id-v2`, the requester
   `PrincipalId`, and the object `ObjectId`. `grantApprovedRequest` takes

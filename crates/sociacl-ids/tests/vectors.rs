@@ -481,7 +481,12 @@ fn run(f: &Family, c: &Case, v: &Value) -> Result<Value, Reason> {
                 "build-objset" => {
                     let owner = parse_principal_id(items[0].as_str().ok_or(Reason::NotString)?)?;
                     let object = parse_object_id(items[1].as_str().ok_or(Reason::NotString)?)?;
-                    Ok(Value::String(object_set_soul(&owner, &object).to_string()))
+                    let predicate: MembershipPredicate =
+                        items[2].as_str().ok_or(Reason::NotString)?.parse()?;
+                    let set = parse_object_id(items[3].as_str().ok_or(Reason::NotString)?)?;
+                    Ok(Value::String(
+                        object_set_soul(&owner, &object, predicate, &set).to_string(),
+                    ))
                 }
                 _ => panic!("unknown soul operation"),
             };

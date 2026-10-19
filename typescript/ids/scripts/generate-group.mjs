@@ -111,15 +111,16 @@ function aclAttest(bytes, issuedAt, principalId) {
 function cancelRow(kind, signer, extra = {}) {
   const set = extra.set ?? friends;
   const object = extra.object ?? chatA;
+  const predicate = extra.predicate ?? 'same-group';
   const issuedAt = extra.issuedAt ?? at;
   const row = {
     kind,
-    predicate: 'same-group',
+    predicate,
     set,
     member: p2,
     setOwner: p,
     signer: keyFor(signer),
-    rowSoul: kind === 'object-set' ? objectSetSoul(p, object) : membershipSoul(p, 'same-group', set, p2),
+    rowSoul: kind === 'object-set' ? objectSetSoul(p, object, predicate, set) : membershipSoul(p, predicate, set, p2),
     cancelId: extra.cancelId ?? cancelId,
     prior: extra.prior ?? [],
     issuedAt,
@@ -135,9 +136,11 @@ const payload = { stated: 1, from: at, until: now + 100 };
 const options = { ctx, rotations: (name) => context.rotationSets[name] };
 const accept = [];
 const reject = [];
-function add(bucket, name, steps) {
+function add(bucket, name, steps, note) {
   runGroupCase(structuredClone(steps), options);
-  (bucket === 'accept' ? accept : reject).push({ name, steps });
+  const row = { name, steps };
+  if (note) row.note = note;
+  (bucket === 'accept' ? accept : reject).push(row);
 }
 add('reject', 'set-id-must-be-minted', [
   { op: 'admit-member', row: assent('member', 2, { set: 'alice/friends' }), rotations: 'genesis', ok: false, reason: 'bad-alphabet' },
@@ -193,23 +196,21 @@ add('accept', 'hop-does-not-grant', [
   objectEdge(),
   check(chatA, p2, true, 'same-group', { hop: true }),
 ]);
-add('reject', 'label-owner-mismatch-denies', [
+add('reject', 'other-principal-is-not-the-owner', [
   ...live(),
-  { op: 'label-owner', object: chatA, owner: p3 },
   check(chatA, p3, false, 'missing'),
   check(chatA, p, true, 'owner'),
 ]);
-add('reject', 'unsigned-label-owner-not-owner', [
-  { op: 'label-owner', object: chatA, owner: p },
-  check(chatA, p, false, 'missing'),
+add('reject', 'missing-signed-owner-is-not-owner', [
   member(),
   setAssent(),
   objectEdge(),
+  check(chatA, p, false, 'missing'),
   check(chatA, p2, false, 'missing'),
   put(),
-  { op: 'label-owner', object: chatA, owner: p3 },
-  check(chatA, p3, false, 'missing'),
   check(chatA, p, true, 'owner'),
+  check(chatA, p3, false, 'missing'),
+  check(chatA, p2, true, 'same-group'),
 ]);
 const lowEdge = () => ({ op: 'admit-object-set', row: edge(1, { hamState: 1 }), rotations: 'genesis', ok: true, kept: true });
 const highEdge = () => ({ op: 'admit-object-set', row: edge(1, { hamState: 2 }), rotations: 'genesis', ok: true, kept: true });
@@ -243,6 +244,54 @@ add('reject', 'merge-keeps-object-set-cancel-when-incoming-wins', [
   { op: 'merge' },
   check(chatA, p2, false, 'missing'),
 ]);
+add('reject', 'merge-into-side-keeps-object-set-cancel-when-local-wins', [
+  put(),
+  member(),
+  setAssent(),
+  highEdge(),
+  side(put()),
+  side(member()),
+  side(setAssent()),
+  side(lowEdge()),
+  side(objectCancel()),
+  { op: 'merge', into: 'side' },
+  side(check(chatA, p2, false, 'missing')),
+]);
+add('reject', 'merge-into-side-keeps-object-set-cancel-when-incoming-wins', [
+  put(),
+  member(),
+  setAssent(),
+  lowEdge(),
+  objectCancel(),
+  side(put()),
+  side(member()),
+  side(setAssent()),
+  side(highEdge()),
+  { op: 'merge', into: 'side' },
+  side(check(chatA, p2, false, 'missing')),
+]);
+add('reject', 'merge-drops-an-object-set-that-arrives-first', [
+  side(put()),
+  side(member()),
+  side(setAssent()),
+  side(objectEdge()),
+  { op: 'merge' },
+  check(chatA, p2, false, 'missing'),
+  put(),
+  check(chatA, p2, false, 'missing'),
+], 'An object-set row merged in before this graph holds the admitted signed object record is dropped. A later record does not revive it.');
+const capturedCancel = cancelRow('object-set', 1);
+add('reject', 'object-set-cancel-cannot-move-to-another-set', [
+  put(),
+  { op: 'admit-member', row: assent('member', 2, { set: otherSet }), rotations: 'genesis', ok: true, kept: true },
+  { op: 'admit-member', row: assent('set', 1, { set: otherSet }), rotations: 'genesis', ok: true, kept: true },
+  { op: 'admit-object-set', row: edge(1, { set: otherSet }), rotations: 'genesis', ok: true, kept: true },
+  { op: 'admit-cancel', row: { ...capturedCancel, set: otherSet }, rotations: 'genesis', ok: false, reason: 'bad-record' },
+  check(chatA, p2, true, 'same-group'),
+]);
+add('reject', 'object-set-cancel-cannot-move-to-another-predicate', [
+  { op: 'admit-cancel', row: { ...capturedCancel, predicate: 'named-circle' }, rotations: 'genesis', ok: false, reason: 'bad-record' },
+]);
 const mutableCancel = cancelRow('membership', 2);
 add('reject', 'reverify-uses-stored-signature', [
   put(),
@@ -254,7 +303,7 @@ add('reject', 'reverify-uses-stored-signature', [
   { op: 'mutate-row', field: 'sig', value: 'aa' },
   { op: 'reverify-group', principal: p2, rotations: 'genesis', ok: true, dropped: 0 },
   check(chatA, p2, false, 'missing'),
-]);
+], 'mutate-row changes the caller row in TypeScript. Rust already stored its own copy, so the step does nothing there.');
 add('accept', 'witnessed-retired-cancel-applies', [
   put(),
   { op: 'admit-member', row: assent('member', 2, { issuedAt: now }), rotations: 'genesis', ok: true, kept: true },
@@ -284,7 +333,7 @@ add('accept', 'reverify-drops-unwitnessed-object-set-cancel', [
   check(chatA, p2, false, 'missing'),
   { op: 'reverify-group', principal: p, rotations: 'rotated', ok: true, dropped: 1 },
   check(chatA, p2, true, 'same-group'),
-]);
+], 'Dropping an unwitnessed retired-key cancel on reverify follows the locked rule: only a witnessed cancel survives.');
 add('accept', 'object-set-cancel-is-scoped-to-its-set', [
   put(),
   member(),

@@ -103,7 +103,7 @@ An identical approval is a no-op only after the current key resolves, the owner'
 
 Members auto-approve does not revive an owner cancel. When `members` is set and the see row, or the post row for `read+post`, has `stated` 0, the result is `not-kept` and nothing is written. A manual approval (`members` null) is a new owner decision. It re-grants at `hamState + 1` above that cancel.
 
-Members auto-approve uses the admitted signed object owner. `checkGroupSee` takes that same owner from the principal embedded in the object id, and the admitted record must match. An unsigned label, including `s3rch/users/<principal>`, is not that owner and does not grant. The owner shortcut (`reason` `owner`) is not membership. Only `same-group` or `named-circle` allows. A peer merge does not copy labels and cannot auto-approve.
+Members auto-approve uses the admitted signed object owner. `checkGroupSee` takes that same owner from the principal embedded in the object id, and the admitted record must match. `hasObject` is true for that signed record. The owner shortcut (`reason` `owner`) is not membership. Only `same-group` or `named-circle` allows. A peer merge cannot auto-approve. An object-set row merged in before the signed record is dropped, and a later record does not revive it.
 
 Requests have no expiry. Approving an older pending copy grants only the window and the scope on that call. There is no withdraw ordering across copies. Scope is approve or refuse only. The owner cannot downscope. The window is owner-only. The accessor is the parsed requester.
 
@@ -111,7 +111,7 @@ Requests have no expiry. Approving an older pending copy grants only the window 
 
 When `now` equals the latest resolved rotation time, `grantApprovedRequest` writes nothing and returns `rotation-boundary`. Retry on the next second. One second before that rotation, the preceding key still signs. `historyState` stays strictly before the timestamp: the new key signs records issued after the rotation, and a same-second revoke still uses the preceding key.
 
-`members-label-owner-is-requester` plants an unsigned label and still denies, because there is no live membership. `alias-label-does-not-replace-signed-owner` plants `s3rch/users/<principal>` over a live member and still grants.
+`members-missing-is-not-member` denies when there is no live membership. `members-grant-uses-the-signed-owner` grants a live member from the admitted signed owner.
 
 ### Objects in scope
 
@@ -165,7 +165,7 @@ PR 6 still mints or parses unbound object ids. Switch these to `mintObjectId(kin
 
 PR 6 also deletes the unbound `<kind>_<32 lowercase hex>` object form from both parsers, flips the `vectors/ids/object.json` native accept to a reject, and adds a guard test that no non-test source builds that form. PR 6 regenerates the encrypted-discovery wrap and delivery vectors after those ids change. Neither of those lands in the post pull request.
 
-A group set id is a minted ObjectId of kind `set`. The owner is the principal embedded in that id and the signed set-owner field. The request path writes owner-signed `sociacl-see-grant-v2` and `sociacl-post-grant-v2` rows. `typescript/src/legacy/post-label.js` and `crates/sociacl-gun/src/post_label.rs` are deleted.
+A group set id is a minted ObjectId of kind `set`. The owner is the principal embedded in that id and the signed set-owner field. An object-set soul is `s3rch/acl/<owner key>/objset/<predicate>/<set>/<object>`. A cancel signed over that soul cannot move to another set or predicate. An object-set row merged in before this graph holds the admitted signed object record is dropped. `reverifyGroup` drops an unwitnessed retired-key cancel. Only a witnessed cancel survives that recheck. The request path writes owner-signed `sociacl-see-grant-v2` and `sociacl-post-grant-v2` rows. `typescript/src/legacy/post-label.js` and `crates/sociacl-gun/src/post_label.rs` are deleted.
 
 These s3r.ch object spellings are deleted from `parseObjectId` / `parse_object_id` and from `vectors/ids/object.json`. Network ids of the form `s3rch:https://...` are a different grammar and stay. `post` is a reserved kind, so a s3r.ch post cannot use kind `post` when that product adopts SociACL. `s3rch:forum:<owner>` has no random part. A forum id needs a nonce, or a derived id, before it can be an object id. The seven deleted forms are:
 

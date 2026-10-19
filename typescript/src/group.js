@@ -75,7 +75,6 @@ import {
   verifySignedAt,
 } from '../ids/src/index.js';
 import { integer, lp } from '../ids/src/util.js';
-import { labelObjects } from './internal/label-objects.js';
 import { admittedOwner, checkSee } from './see.js';
 
 export { checkPost, factorGrants } from './post.js';
@@ -395,7 +394,7 @@ export function parseGroupCancel(row) {
     const embedded = objectPrincipal(id.value);
     if (!embedded.ok) return embedded;
     object = id.value;
-    expected = objectSetSoul(embedded.value, id.value);
+    expected = objectSetSoul(embedded.value, id.value, copy.predicate, set.id);
     if (signer.value !== embedded.value) return { ok: false, reason: 'bad-record' };
   }
   if (copy.rowSoul !== expected) return { ok: false, reason: 'bad-record' };
@@ -596,8 +595,8 @@ export function admitGroupCancel(graph, row, resolver) {
 
 /**
  * Drop this principal's group rows that the new checkpoint rejects.
- * A stated-1 assent signed by a retired key is dropped. A cancel stays
- * when it is present or witnessed.
+ * A stated-1 assent signed by a retired key is dropped. An unwitnessed
+ * retired-key cancel is dropped. Only a witnessed cancel survives.
  * @param {object} graph
  * @param {PrincipalId} principal
  * @param {SeeResolver} resolver
@@ -760,7 +759,9 @@ export class MemoryGroupGraph {
   objectRecord(object) {
     const id = parseObjectId(object);
     if (!id.ok) return undefined;
-    return labelObjects(this).get(id.value);
+    const admitted = admittedOwner(this, id.value);
+    if (!admitted) return undefined;
+    return { id: id.value, owner: admitted.owner };
   }
 
   /** @param {string} object */
@@ -795,7 +796,9 @@ export class MemoryGroupGraph {
 
   /**
    * Union memberships and object-set rows. An object-set row is copied only
-   * when this graph's admitted owner is that row's owner. Incoming cancels
+   * when this graph already holds the admitted signed object record and that
+   * owner is the row's owner. A row that arrives before that record is
+   * dropped, and a later record does not revive it. Cancels on a copied row
    * are always kept.
    * @param {MemoryGroupGraph} other
    */

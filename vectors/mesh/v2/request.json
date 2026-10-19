@@ -865,7 +865,7 @@
       ]
     },
     {
-      "name": "alias-label-does-not-replace-signed-owner",
+      "name": "members-grant-uses-the-signed-owner",
       "steps": [
         {
           "op": "put",
@@ -919,11 +919,6 @@
           }
         },
         {
-          "op": "label-owner",
-          "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
-          "owner": "s3rch/users/axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU"
-        },
-        {
           "op": "grant",
           "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
           "signer": 1,
@@ -958,7 +953,8 @@
           "hamState": 1,
           "mode": "present"
         }
-      ]
+      ],
+      "note": "Members auto-approve uses the admitted signed owner."
     },
     {
       "name": "rotation-boundary-old-key-before",
@@ -1661,61 +1657,6 @@
           "absent": true
         }
       ]
-    },
-    {
-      "name": "members-label-owner-is-requester",
-      "steps": [
-        {
-          "op": "put",
-          "record": {
-            "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
-            "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
-            "issuedAt": 1700000000,
-            "sig": "Z9fYJjtkbVsxBszNe5U5FEdoWWQI_8ZtRxbJk2ALU9PKBqOa-ga7kzgGUrgNHJdQuxiPvJFT7st1iub5IXG10g"
-          },
-          "rotations": "genesis",
-          "ok": true,
-          "kept": true
-        },
-        {
-          "op": "label-owner",
-          "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
-          "owner": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E"
-        },
-        {
-          "op": "grant",
-          "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
-          "signer": 1,
-          "rotations": "genesis",
-          "request": {
-            "requestId": "10b1157f3334fd51052dd7d03bf75e178663064f3c678fe3b31c21a296355c93",
-            "sig": "ggkUBr_xIEs8u68UUtd1_CEX96g7f6-l-7PV0UQo56-bWQOzorLTViuwaYwhwaKFFXYUPa3GgyFpV96qtxaraA",
-            "requester": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
-            "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
-            "scope": "read",
-            "status": "pending",
-            "message": "",
-            "issuedAt": 1700000060
-          },
-          "window": {
-            "from": 1700000000,
-            "until": 1700000160
-          },
-          "members": {
-            "predicate": "same-group",
-            "now": 1700000060
-          },
-          "granted": false,
-          "reason": "not-member"
-        },
-        {
-          "op": "view",
-          "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
-          "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
-          "absent": true
-        }
-      ],
-      "note": "An unsigned label is not the owner. The deny is the missing membership."
     },
     {
       "name": "members-owner-shortcut-is-not-member",

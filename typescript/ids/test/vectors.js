@@ -108,9 +108,12 @@ function run(f, c) {
     const owner = ids.parsePrincipalId(c.input[0]);
     if (!owner.ok) return owner;
     if (c.operation === 'build-objset') {
+      if (c.input[2] !== 'same-group' && c.input[2] !== 'named-circle') return {ok:false, reason:'bad-template'};
       const object = ids.parseObjectId(c.input[1]);
+      const set = ids.parseObjectId(c.input[3]);
       if (!object.ok) return object;
-      return {ok:true, value: ids.objectSetSoul(owner.value, object.value)};
+      if (!set.ok) return set;
+      return {ok:true, value: ids.objectSetSoul(owner.value, object.value, c.input[2], set.value)};
     }
     if (c.input[1] !== 'same-group' && c.input[1] !== 'named-circle') return {ok:false, reason:'bad-template'};
     const set = ids.parseObjectId(c.input[2]);

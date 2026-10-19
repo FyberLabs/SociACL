@@ -538,12 +538,6 @@ fn run_case(file: &Value, case: &Value) -> MeshSeeGraph {
                     "{name}"
                 );
             }
-            "label-owner" => {
-                graph.vector_label_owner(
-                    step["object"].as_str().unwrap(),
-                    step["owner"].as_str().unwrap(),
-                );
-            }
             "mutate-row" => {
                 let _ = step["field"].as_str().expect(name);
             }
@@ -615,15 +609,6 @@ fn run_case(file: &Value, case: &Value) -> MeshSeeGraph {
                         step["reason"].as_str().unwrap(),
                         "{name}"
                     );
-                }
-            }
-            "label" => {
-                let object = step["object"].as_str().unwrap();
-                let got = graph.vector_label_owner_of(object);
-                if step["absent"] == true {
-                    assert!(got.is_none(), "{name}");
-                } else {
-                    assert_eq!(got, Some(step["owner"].as_str().unwrap()), "{name}");
                 }
             }
             "factor" => {

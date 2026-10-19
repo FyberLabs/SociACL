@@ -553,16 +553,23 @@ pub fn membership_soul(
         7,
     )
 }
-pub fn object_set_soul(owner: &PrincipalId, object: &ObjectId) -> Soul {
+pub fn object_set_soul(
+    owner: &PrincipalId,
+    object: &ObjectId,
+    predicate: MembershipPredicate,
+    set: &ObjectId,
+) -> Soul {
     soul(
         &[
             "s3rch",
             "acl",
             format_principal_key(owner).as_ref(),
             "objset",
+            predicate.as_str(),
+            set.as_ref(),
             object.as_ref(),
         ],
-        5,
+        7,
     )
 }
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -571,7 +578,7 @@ pub struct ParsedSoul {
     pub ids: Vec<String>,
 }
 pub fn parse_soul(s: &str) -> Result<ParsedSoul, Reason> {
-    text(s, 512)?;
+    text(s, 522)?;
     if let Some(p) = s.strip_prefix('~') {
         return Ok(ParsedSoul {
             template: "user",
@@ -588,13 +595,19 @@ pub fn parse_soul(s: &str) -> Result<ParsedSoul, Reason> {
             template: "acl",
             ids: vec![key_principal(a)?.to_string()],
         }),
-        ["s3rch", "acl", a, "objset", o] => Ok(ParsedSoul {
-            template: "objset",
-            ids: vec![
-                key_principal(a)?.to_string(),
-                parse_object_id(o)?.to_string(),
-            ],
-        }),
+        ["s3rch", "acl", a, "objset", predicate, set_id, o]
+            if matches!(*predicate, "same-group" | "named-circle") =>
+        {
+            Ok(ParsedSoul {
+                template: "objset",
+                ids: vec![
+                    key_principal(a)?.to_string(),
+                    (*predicate).to_string(),
+                    parse_object_id(set_id)?.to_string(),
+                    parse_object_id(o)?.to_string(),
+                ],
+            })
+        }
         ["s3rch", "acl", a, o, b] => Ok(ParsedSoul {
             template: "grant",
             ids: vec![

@@ -6,7 +6,6 @@ import { admitMembership, admitObjectSet, membershipAssentBytes, MemoryGroupGrap
 import { admittedPost, checkPost, factorGrants } from "../src/post.js";
 import * as postApi from "../src/post.js";
 import { grantApprovedRequest } from "../src/request.js";
-import { plantLabelOwnerForTest } from "../src/internal/label-test.js";
 import { movePostRowForTest, moveSeeRowForTest, plantPlainPostForTest, plantPlainSeeForTest } from "../src/internal/row-test.js";
 import { admitRow, admittedView, checkSee, isVerifiedRow, putObject } from "../src/see.js";
 import * as seeApi from "../src/see.js";
@@ -155,7 +154,7 @@ test("a peer merge cannot auto-approve a non-member", () => {
   const mallory = new MemoryGroupGraph();
   const resolver = { rotations: () => [], ctx: context() };
   assert.equal(putObject(owner, objectRecord(), resolver).ok, true);
-  plantLabelOwnerForTest(mallory, chat.value, p2);
+  assert.equal(owner.hasObject(chat.value), true);
   owner.mergeFrom(mallory);
   const request = signRequest({
     requester: p2,
@@ -176,8 +175,8 @@ test("a peer merge cannot auto-approve a non-member", () => {
   assert.equal(result.granted, false);
   assert.equal(result.reason, "not-member");
   assert.equal(admittedView(owner, chat.value, p2), undefined);
-  plantLabelOwnerForTest(owner, chat.value, p2);
   assert.equal(owner.ownerOf(chat.value), p);
+  assert.equal(owner.objectRecord(chat.value)?.owner, p);
 });
 
 test("missing and non-string request fields are not-string", () => {
@@ -475,13 +474,16 @@ test("the label plant setter is not on the published class", () => {
   assert.equal(MemoryGroupGraph.prototype.plantLabelOwnerForTest, undefined);
 });
 
-test("an alias label put keeps the signed owner spelling", () => {
+test("a signed admitted object is the owner", () => {
   const graph = new MemoryGroupGraph();
   const resolver = { rotations: () => [], ctx: context() };
+  assert.equal(graph.hasObject(chat.value), false);
+  assert.equal(graph.objectRecord(chat.value), undefined);
   assert.equal(putObject(graph, objectRecord(), resolver).ok, true);
-  plantLabelOwnerForTest(graph, chat.value, `s3rch/users/${p}`);
-  plantLabelOwnerForTest(graph, chat.value, p);
+  assert.equal(graph.hasObject(chat.value), true);
   assert.equal(graph.ownerOf(chat.value), p);
+  assert.equal(graph.objectRecord(chat.value)?.owner, p);
+  assert.equal(graph.canonicalObjectId(chat.value), chat.value);
   const friends = ids.mintObjectId("set", p, () => new Uint8Array(16).fill(0x33));
   if (!friends.ok) throw new Error(friends.reason);
   const assent = (role, signer) => {

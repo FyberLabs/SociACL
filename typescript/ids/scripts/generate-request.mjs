@@ -223,12 +223,6 @@ add('reject', 'members-missing-is-not-member', [
 ]);
 const pending = () => accessRow({ requester: p2, object: chatA, scope: 'read', status: 'pending', message: '', issuedAt: now }, 2);
 const grant = (request, extra) => ({ op: 'grant', owner: p, signer: 1, rotations: 'genesis', request, window, ...extra });
-add('reject', 'members-label-owner-is-requester', [
-  put(),
-  { op: 'label-owner', object: chatA, owner: p2 },
-  grant(pending(), { members: { predicate: 'same-group', now }, granted: false, reason: 'not-member' }),
-  { op: 'view', object: chatA, accessor: p2, absent: true },
-], 'An unsigned label is not the owner. The deny is the missing membership.');
 add('reject', 'members-owner-shortcut-is-not-member', [
   put(),
   grant(accessRow({ requester: p, object: chatA, scope: 'read', status: 'pending', message: '', issuedAt: now }, 1), { members: { predicate: 'same-group', now }, granted: false, reason: 'not-member' }),
@@ -323,13 +317,12 @@ add('accept', 'manual-approval-after-post-cancel', [
   { op: 'view-post', object: chatA, accessor: p2, stated: 1, hamState: 2, mode: 'present' },
   { op: 'check-post', object: chatA, accessor: p2, now, allowed: true, reason: 'post' },
 ]);
-add('accept', 'alias-label-does-not-replace-signed-owner', [
+add('accept', 'members-grant-uses-the-signed-owner', [
   put(),
   join,
-  { op: 'label-owner', object: chatA, owner: `s3rch/users/${p}` },
   grant(pending(), { members, granted: true, hamState: 1, post: false }),
   { op: 'view', object: chatA, accessor: p2, stated: 1, hamState: 1, mode: 'present' },
-]);
+], 'Members auto-approve uses the admitted signed owner.');
 const boundary = at + 30;
 add('reject', 'rotation-boundary', [
   put(),

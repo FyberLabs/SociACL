@@ -4,13 +4,16 @@ grantSoul('a', 'b', 'c');
 // @ts-expect-error Unparsed strings cannot cross the core boundary.
 membershipSoul('a', 'same-group', 'b', 'c');
 // @ts-expect-error Unparsed strings cannot cross the core boundary.
-objectSetSoul('a', 'b');
+objectSetSoul('a', 'b', 'same-group', 'c');
 const p = parsePrincipalId('untrusted');
 const o = parseObjectId('untrusted');
 if (p.ok && o.ok) {
   grantSoul(p.value, o.value, p.value);
   // @ts-expect-error Membership predicates are only same-group and named-circle.
   membershipSoul(p.value, 'nope', o.value, p.value);
+  objectSetSoul(p.value, o.value, 'same-group', o.value);
+  // @ts-expect-error Object-set predicates are only same-group and named-circle.
+  objectSetSoul(p.value, o.value, 'nope', o.value);
 }
 const minted = p.ok ? mintObjectId('room', p.value) : p;
 if (p.ok && minted.ok) grantSoul(p.value, minted.value, p.value);

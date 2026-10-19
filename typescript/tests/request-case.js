@@ -4,7 +4,6 @@
  */
 import { requestId } from '../ids/src/index.js';
 import { admitMembership, admitObjectSet, MemoryGroupGraph } from '../src/group.js';
-import { plantLabelOwnerForTest } from '../src/internal/label-test.js';
 import { admitPost, admittedPost, checkPost, factorGrants } from '../src/post.js';
 import { grantApprovedRequest } from '../src/request.js';
 import { admitRow, admittedView, checkSee, putObject } from '../src/see.js';
@@ -81,10 +80,6 @@ export function runRequestCase(steps, options) {
       if (!set.ok) failStep(step, set.reason);
       const edge = admitObjectSet(graph, step.edge, resolver);
       if (!edge.ok) failStep(step, edge.reason);
-      continue;
-    }
-    if (step.op === 'label-owner') {
-      plantLabelOwnerForTest(graph, step.object, step.owner);
       continue;
     }
     if (step.op === 'grant') {

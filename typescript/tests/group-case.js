@@ -3,7 +3,6 @@
  * The runner does not enroll a signer.
  */
 import { admitGroupCancel, admitMembership, admitObjectSet, checkGroupPresentation, checkGroupSee, MemoryGroupGraph, reverifyGroup, snapshotUnderstatesGroup } from '../src/group.js';
-import { plantLabelOwnerForTest } from '../src/internal/label-test.js';
 import { putObject } from '../src/see.js';
 
 /** @param {Record<string, any>} step @param {unknown} got */
@@ -101,10 +100,6 @@ export function runGroupCase(steps, options) {
     if (step.op === 'snapshot') {
       const got = snapshotUnderstatesGroup(graph, step.object, step.members, step.objectSet ?? null);
       if (got !== step.understates) failStep(step, got);
-      continue;
-    }
-    if (step.op === 'label-owner') {
-      plantLabelOwnerForTest(graph, step.object, step.owner);
       continue;
     }
     failStep(step, 'unknown');

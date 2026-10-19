@@ -272,6 +272,8 @@ impl GroupRows {
             }
         }
         for (id, incoming) in &other.object_sets {
+            // No admitted record, or a different owner: drop the edge.
+            // A later record does not revive it.
             if object_owners
                 .get(id)
                 .is_none_or(|owner| owner != incoming.owner.as_ref())
@@ -606,7 +608,7 @@ fn parse_cancel(row: &Value) -> Result<(GroupCancel, Vec<u8>), Reason> {
         if signer != object_owner {
             return Err(Reason::BadRecord);
         }
-        object_set_soul(&object_owner, &object).to_string()
+        object_set_soul(&object_owner, &object, predicate.ids(), &set).to_string()
     };
     if row_soul != expected {
         return Err(Reason::BadRecord);
@@ -915,7 +917,8 @@ impl MeshSeeGraph {
     }
 
     /// Drop this principal's group rows that the new checkpoint rejects.
-    /// A cancel stays when it is present or witnessed.
+    /// A stated-1 assent signed by a retired key is dropped. An unwitnessed
+    /// retired-key cancel is dropped. Only a witnessed cancel survives.
     pub fn reverify_group(
         &mut self,
         principal: &PrincipalId,
