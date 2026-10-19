@@ -586,7 +586,7 @@ fn minted_set_id(s: &str) -> Result<ObjectId, Reason> {
     Ok(id)
 }
 pub fn parse_soul(s: &str) -> Result<ParsedSoul, Reason> {
-    text(s, 522)?;
+    text(s, 509)?;
     if let Some(p) = s.strip_prefix('~') {
         return Ok(ParsedSoul {
             template: "user",
@@ -647,7 +647,7 @@ pub fn parse_soul(s: &str) -> Result<ParsedSoul, Reason> {
                 ids: vec![
                     key_principal(a)?.to_string(),
                     (*predicate).to_string(),
-                    parse_object_id(set_id)?.to_string(),
+                    minted_set_id(set_id)?.to_string(),
                     key_principal(b)?.to_string(),
                 ],
             })

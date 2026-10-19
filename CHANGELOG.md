@@ -16,22 +16,25 @@
   `bindSignedOwner`, or `unbindSignedOwner`, and `mergeFrom` does not
   copy labels. `checkGroupSee` takes the owner from the principal
   embedded in the object id and requires the admitted signed owner to
-  match. An object-set merge always unions incoming cancels when that
-  admitted owner matches. `reverifyGroup` rechecks the signatures it
+  match. An object-set merge unions incoming cancels when that
+  admitted owner matches and both edges name the same set and predicate.
+  A different set or predicate keeps only the winning edge's cancels.
+  `reverifyGroup` rechecks the signatures it
   stored at admission, including object-set cancels. A replacement
   object-set edge for a different set does not keep the previous set's
   cancels.
 - **Breaking:** `objectSetSoul(owner, object, predicate, set)` is seven
   segments, `s3rch/acl/<pk>/objset/<predicate>/<set>/<object>`. A cancel
   signed over that soul cannot move to another set or predicate. The
-  soul parser accepts 522 characters, the longest object-set soul.
+  soul parser accepts 509 characters, the longest object-set soul.
 - **Breaking:** `snapshotUnderstatesGroup` treats an object-set edge
   that is not live as a removal. A stated-1 snapshot understates that
   cancel. A stated-0 snapshot at a hamState at least as high as the
   stored assent does not.
 - `parseSoul` accepts an object-set soul only when the set segment is a
   minted set id and the owner key is the principal embedded in the
-  object. A 523-character soul is `too-long`.
+  object. A membership soul's set segment must also be a minted set id.
+  A 510-character soul is `too-long`.
 - Group rows live on `GroupGraph.rows` (`MeshSeeGraph.group.rows`).
 - **Breaking:** `MemoryGroupGraph` no longer keeps a label map.
   `hasObject`, `objectRecord`, `ownerOf`, and `canonicalObjectId` read

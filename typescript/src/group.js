@@ -807,8 +807,9 @@ export class MemoryGroupGraph {
    * Union memberships and object-set rows. An object-set row is copied only
    * when this graph already holds the admitted signed object record and that
    * owner is the row's owner. A row that arrives before that record is
-   * dropped, and a later record does not revive it. Cancels on a copied row
-   * are always kept.
+   * dropped, and a later record does not revive it. Object-set cancels are
+   * unioned only when both edges name the same set and predicate. Otherwise
+   * only the winning edge's cancels are kept.
    * @param {MemoryGroupGraph} other
    */
   mergeFrom(other) {
@@ -833,14 +834,19 @@ export class MemoryGroupGraph {
         objectSetTable(this).set(id, { ...incoming, cancels: new Map(incoming.cancels) });
         continue;
       }
-      const cancels = new Map(local.cancels);
-      for (const [cancelId, cancel] of incoming.cancels) {
-        if (!cancels.has(cancelId)) cancels.set(cancelId, cancel);
-      }
+      const sameEdge = local.set === incoming.set && local.predicate === incoming.predicate;
       if (replaces(local.assent, incoming.assent)) {
+        const cancels = new Map(sameEdge ? local.cancels : incoming.cancels);
+        if (sameEdge) {
+          for (const [cancelId, cancel] of incoming.cancels) {
+            if (!cancels.has(cancelId)) cancels.set(cancelId, cancel);
+          }
+        }
         objectSetTable(this).set(id, { ...incoming, cancels });
-      } else {
-        local.cancels = cancels;
+      } else if (sameEdge) {
+        for (const [cancelId, cancel] of incoming.cancels) {
+          if (!local.cancels.has(cancelId)) local.cancels.set(cancelId, cancel);
+        }
       }
     }
   }

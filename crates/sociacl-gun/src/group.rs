@@ -284,16 +284,27 @@ impl GroupRows {
                 self.object_sets.insert(id.clone(), incoming.clone());
                 continue;
             };
-            let mut cancels = local.cancels.clone();
-            for (cid, cancel) in &incoming.cancels {
-                cancels.entry(cid.clone()).or_insert_with(|| cancel.clone());
-            }
+            // A different set or predicate keeps only the winner's cancels.
+            let same_edge = local.set == incoming.set && local.predicate == incoming.predicate;
             if replaces(&local.assent, &incoming.assent) {
                 let mut next = incoming.clone();
-                next.cancels = cancels;
+                if same_edge {
+                    let mut cancels = local.cancels.clone();
+                    for (cid, cancel) in &incoming.cancels {
+                        cancels.entry(cid.clone()).or_insert_with(|| cancel.clone());
+                    }
+                    next.cancels = cancels;
+                }
                 self.object_sets.insert(id.clone(), next);
-            } else if let Some(local) = self.object_sets.get_mut(id) {
-                local.cancels = cancels;
+            } else if same_edge {
+                if let Some(local) = self.object_sets.get_mut(id) {
+                    for (cid, cancel) in &incoming.cancels {
+                        local
+                            .cancels
+                            .entry(cid.clone())
+                            .or_insert_with(|| cancel.clone());
+                    }
+                }
             }
         }
     }
