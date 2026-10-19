@@ -24,6 +24,7 @@ import {
   verifyAclAttestation,
   verifyPostGrant,
 } from '../ids/src/index.js';
+import { bindRowTest } from './internal/row-test.js';
 import {
   admitRow,
   admittedOwner,
@@ -155,14 +156,14 @@ function present(row) {
 
 /**
  * Verify one post row against history the caller already resolved.
- * Does not write. The request path commits the sealed row afterwards.
+ * Does not write. The result stays inside this module.
  * @param {object} graph
  * @param {unknown} row
  * @param {readonly unknown[]} rotations
  * @param {ResolutionContext} ctx
- * @returns {{ ok: true, key: string, sealed: SealedPost, kept: boolean } | { ok: false, reason: string }}
+ * @returns {{ ok: true, graph: object, sealed: SealedPost, kept: boolean, used: boolean } | { ok: false, reason: string }}
  */
-export function preparePost(graph, row, rotations, ctx) {
+function evaluatePost(graph, row, rotations, ctx) {
   const parsed = parsePostGrant(row);
   if (!parsed.ok) return parsed;
   if (!graph || typeof graph !== 'object' || !ctx) return { ok: false, reason: 'missing-history' };
@@ -177,20 +178,57 @@ export function preparePost(graph, row, rotations, ctx) {
   const sealed = seal(verified.value, ctx);
   const prev = held.get(key);
   const kept = !prev || !sealedPosts.has(prev) || replaces(prev, sealed);
-  return { ok: true, key, sealed, kept };
+  return { ok: true, graph, sealed, kept, used: false };
 }
 
 /**
- * Store a row `preparePost` already verified. Does not verify again.
- * @param {object} graph
- * @param {{ key: string, sealed: SealedPost, kept: boolean }} prepared
- * @returns {{ ok: true, value: SealedPost, kept: boolean }}
+ * Write a row this module just verified. Kept is computed again from the
+ * current stored row. The soul key comes from the signed grant.
+ * @param {{ ok: true, graph: object, sealed: SealedPost, kept: boolean, used: boolean }} evaluated
+ * @returns {{ ok: true, value: SealedPost, kept: boolean } | { ok: false, reason: string }}
  */
-export function commitPreparedPost(graph, prepared) {
-  const held = postMap(graph);
-  if (prepared.kept) held.set(prepared.key, prepared.sealed);
-  const stored = held.get(prepared.key) ?? prepared.sealed;
-  return { ok: true, value: present(stored), kept: prepared.kept };
+function commitEvaluatedPost(evaluated) {
+  if (!evaluated || evaluated.used || !evaluated.graph || !sealedPosts.has(evaluated.sealed)) {
+    return { ok: false, reason: 'not-kept' };
+  }
+  evaluated.used = true;
+  const grant = evaluated.sealed.grant;
+  const key = postSoul(grant.owner, grant.object, grant.accessor);
+  const held = postMap(evaluated.graph);
+  const prev = held.get(key);
+  const kept = !prev || !sealedPosts.has(prev) || replaces(prev, evaluated.sealed);
+  if (kept) held.set(key, evaluated.sealed);
+  const stored = held.get(key) ?? evaluated.sealed;
+  return { ok: true, value: present(stored), kept };
+}
+
+/**
+ * Whether this post row would replace the current stored row.
+ * Does not write. The sealed row does not leave this function.
+ * @param {object} graph
+ * @param {unknown} row
+ * @param {readonly unknown[]} rotations
+ * @param {ResolutionContext} ctx
+ * @returns {{ ok: true, kept: boolean } | { ok: false, reason: string }}
+ */
+export function postKeeps(graph, row, rotations, ctx) {
+  const evaluated = evaluatePost(graph, row, rotations, ctx);
+  if (!evaluated.ok) return evaluated;
+  return { ok: true, kept: evaluated.kept };
+}
+
+/**
+ * Verify one post row and write it in this call.
+ * @param {object} graph
+ * @param {unknown} row
+ * @param {readonly unknown[]} rotations
+ * @param {ResolutionContext} ctx
+ * @returns {{ ok: true, value: SealedPost, kept: boolean } | { ok: false, reason: string }}
+ */
+export function admitResolvedPost(graph, row, rotations, ctx) {
+  const evaluated = evaluatePost(graph, row, rotations, ctx);
+  if (!evaluated.ok) return evaluated;
+  return commitEvaluatedPost(evaluated);
 }
 
 /**
@@ -211,9 +249,7 @@ export function admitPost(graph, row, resolver) {
   if (!parsed.ok) return parsed;
   const rotations = resolver.rotations(parsed.value.grant.owner);
   if (!Array.isArray(rotations)) return { ok: false, reason: 'missing-history' };
-  const prepared = preparePost(graph, row, rotations, resolver.ctx);
-  if (!prepared.ok) return prepared;
-  return commitPreparedPost(graph, prepared);
+  return admitResolvedPost(graph, row, rotations, resolver.ctx);
 }
 
 /** The stored verified post row, as a caller-facing copy.
@@ -230,6 +266,7 @@ export function presentedPost(graph, object, accessor) {
   if (!admission || !held) return undefined;
   const row = held.get(postSoul(admission.owner, id.value, who.value));
   if (!row || !sealedPosts.has(row)) return undefined;
+  if (row.grant.owner !== admission.owner || row.grant.object !== id.value || row.grant.accessor !== who.value) return undefined;
   return present(row);
 }
 
@@ -243,6 +280,7 @@ export function admittedPost(graph, object, accessor) {
   if (!admission || !held) return undefined;
   const row = held.get(postSoul(admission.owner, id.value, who.value));
   if (!row || !sealedPosts.has(row)) return undefined;
+  if (row.grant.owner !== admission.owner || row.grant.object !== id.value || row.grant.accessor !== who.value) return undefined;
   return {
     stated: row.grant.stated,
     hamState: row.grant.hamState,
@@ -278,6 +316,9 @@ export function checkPost(graph, object, accessor, now, hint, hop) {
   if (!held) return { allowed: false, reason: 'missing', ...echoed };
   const row = held.get(postSoul(admission.owner, id.value, who.value));
   if (!row || !sealedPosts.has(row)) return { allowed: false, reason: 'missing', ...echoed };
+  if (row.grant.owner !== admission.owner || row.grant.object !== id.value || row.grant.accessor !== who.value) {
+    return { allowed: false, reason: 'missing', ...echoed };
+  }
   if (row.grant.stated !== 1) return { allowed: false, reason: 'cancelled', ...echoed };
   if (now >= row.grant.from && now < row.grant.until) return { allowed: true, reason: 'post', ...echoed };
   return { allowed: false, reason: 'missing', ...echoed };
@@ -432,3 +473,24 @@ function patchRow(row, patch) {
 function failStep(step, got) {
   throw Error(JSON.stringify({ step, got }));
 }
+
+bindRowTest({
+  movePost(graph, fromKey, toKey) {
+    const held = postTables.get(graph);
+    if (!held) return false;
+    const row = held.get(fromKey);
+    if (!row) return false;
+    held.delete(fromKey);
+    held.set(toKey, row);
+    return true;
+  },
+  plantPlainPost(graph, key, grant) {
+    const row = /** @type {SealedPost} */ (/** @type {unknown} */ ({
+      grant,
+      mode: 'present',
+      bytes: new Uint8Array(),
+      witness: false,
+    }));
+    postMap(graph).set(key, row);
+  },
+});

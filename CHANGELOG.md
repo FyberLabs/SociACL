@@ -44,7 +44,9 @@
   A manual approval re-grants above that cancel.
 - `admitRow` and `admitPost` take a resolver function and always return
   the admitted row. An approved request verifies both rows, then writes
-  those already-verified rows.
+  both in that same call. There is no prepare or commit ticket.
+  `checkSee` and `checkPost` allow a row only when its signed object
+  and accessor are the ones that were queried.
 - **Breaking (TypeScript):** `MemoryGroupGraph` no longer has
   `plantLabelOwnerForTest`. The label map is module-private.
 - When `now` equals the latest rotation time, approval returns

@@ -40,7 +40,8 @@ import {
   verifyObjectRecord,
   verifySeeGrant,
 } from '../ids/src/index.js';
-import { reverifyPosts } from './post.js';
+import { bindRowTest } from './internal/row-test.js';
+import { admitResolvedPost, postKeeps, reverifyPosts } from './post.js';
 
 const verified = new WeakSet();
 /** @type {WeakMap<object, SeeStore>} */
@@ -174,7 +175,6 @@ function present(row) {
     witness: row.witness,
   };
   Object.freeze(copy);
-  verified.add(copy);
   return copy;
 }
 
@@ -276,14 +276,14 @@ export function putObject(graph, record, resolver) {
 
 /**
  * Verify one see row against history the caller already resolved.
- * Does not write. The request path commits the sealed row afterwards.
+ * Does not write. The result stays inside this module.
  * @param {object} graph
  * @param {unknown} row
  * @param {readonly unknown[]} rotations
  * @param {ResolutionContext} ctx
- * @returns {{ ok: true, key: string, sealed: SealedRow, kept: boolean } | { ok: false, reason: string }}
+ * @returns {{ ok: true, graph: object, sealed: SealedRow, kept: boolean, used: boolean } | { ok: false, reason: string }}
  */
-export function prepareSee(graph, row, rotations, ctx) {
+function evaluateSee(graph, row, rotations, ctx) {
   const parsed = parseSeeGrant(row);
   if (!parsed.ok) return parsed;
   if (!graphObject(graph) || !ctx) return { ok: false, reason: 'missing-history' };
@@ -295,20 +295,84 @@ export function prepareSee(graph, row, rotations, ctx) {
   const sealed = seal(verifiedRow.value, ctx);
   const prev = held.rows.get(key);
   const kept = !prev || !verified.has(prev) || replaces(prev, sealed);
-  return { ok: true, key, sealed, kept };
+  return { ok: true, graph, sealed, kept, used: false };
 }
 
 /**
- * Store a row `prepareSee` already verified. Does not verify again.
- * @param {object} graph
- * @param {{ key: string, sealed: SealedRow, kept: boolean }} prepared
- * @returns {{ ok: true, value: SealedRow, kept: boolean }}
+ * Write a row this module just verified. Kept is computed again from the
+ * current stored row. The soul key comes from the signed grant.
+ * @param {{ ok: true, graph: object, sealed: SealedRow, kept: boolean, used: boolean }} evaluated
+ * @returns {{ ok: true, value: SealedRow, kept: boolean, prev: SealedRow | null, wrote: SealedRow | null } | { ok: false, reason: string }}
  */
-export function commitPreparedSee(graph, prepared) {
-  const held = store(graph);
-  if (prepared.kept) held.rows.set(prepared.key, prepared.sealed);
-  const stored = held.rows.get(prepared.key) ?? prepared.sealed;
-  return { ok: true, value: present(stored), kept: prepared.kept };
+function commitEvaluatedSee(evaluated) {
+  if (!evaluated || evaluated.used || !graphObject(evaluated.graph) || !verified.has(evaluated.sealed)) {
+    return { ok: false, reason: 'not-kept' };
+  }
+  evaluated.used = true;
+  const grant = evaluated.sealed.grant;
+  const key = grantSoul(grant.owner, grant.object, grant.accessor);
+  const held = store(evaluated.graph);
+  const prev = held.rows.get(key) ?? null;
+  const kept = !prev || !verified.has(prev) || replaces(prev, evaluated.sealed);
+  if (kept) held.rows.set(key, evaluated.sealed);
+  const stored = held.rows.get(key) ?? evaluated.sealed;
+  return { ok: true, value: present(stored), kept, prev, wrote: kept ? evaluated.sealed : null };
+}
+
+/**
+ * Verify one see row and write it in this call.
+ * @param {object} graph
+ * @param {unknown} row
+ * @param {readonly unknown[]} rotations
+ * @param {ResolutionContext} ctx
+ * @returns {{ ok: true, value: SealedRow, kept: boolean } | { ok: false, reason: string }}
+ */
+function admitResolvedSee(graph, row, rotations, ctx) {
+  const evaluated = evaluateSee(graph, row, rotations, ctx);
+  if (!evaluated.ok) return evaluated;
+  const wrote = commitEvaluatedSee(evaluated);
+  if (!wrote.ok) return wrote;
+  return { ok: true, value: wrote.value, kept: wrote.kept };
+}
+
+/**
+ * Verify the see row and the post row, then write both.
+ * A null row is left as stored. A row that would not replace writes neither.
+ * The caller passes no kept flag, soul key, or ticket.
+ * @param {object} graph
+ * @param {unknown} seeRow
+ * @param {unknown} postRow
+ * @param {readonly unknown[]} rotations
+ * @param {ResolutionContext} ctx
+ * @returns {{ ok: true, see: unknown, post: unknown } | { ok: false, reason: string }}
+ */
+export function admitGrantPair(graph, seeRow, postRow, rotations, ctx) {
+  const see = seeRow == null ? null : evaluateSee(graph, seeRow, rotations, ctx);
+  if (see && !see.ok) return { ok: false, reason: see.reason };
+  const post = postRow == null ? null : postKeeps(graph, postRow, rotations, ctx);
+  if (post && !post.ok) return { ok: false, reason: post.reason };
+  if ((see && !see.kept) || (post && !post.kept)) return { ok: false, reason: 'not-kept' };
+  const seeWrote = see ? commitEvaluatedSee(see) : null;
+  if (seeWrote && !seeWrote.ok) return seeWrote;
+  if (seeWrote && !seeWrote.kept) return { ok: false, reason: 'not-kept' };
+  const postWrote = postRow == null ? null : admitResolvedPost(graph, postRow, rotations, ctx);
+  if (postWrote && (!postWrote.ok || !postWrote.kept)) {
+    if (seeWrote && seeWrote.wrote) {
+      const held = store(graph);
+      const key = grantSoul(seeWrote.wrote.grant.owner, seeWrote.wrote.grant.object, seeWrote.wrote.grant.accessor);
+      if (held.rows.get(key) === seeWrote.wrote) {
+        if (seeWrote.prev) held.rows.set(key, seeWrote.prev);
+        else held.rows.delete(key);
+      }
+    }
+    if (postWrote && !postWrote.ok) return postWrote;
+    return { ok: false, reason: 'not-kept' };
+  }
+  return {
+    ok: true,
+    see: seeWrote ? seeWrote.value : null,
+    post: postWrote ? postWrote.value : null,
+  };
 }
 
 /**
@@ -323,9 +387,7 @@ export function admitRow(graph, row, resolver) {
   if (!parsed.ok) return parsed;
   const rotations = resolver.rotations(parsed.value.grant.owner);
   if (!Array.isArray(rotations)) return { ok: false, reason: 'missing-history' };
-  const prepared = prepareSee(graph, row, rotations, resolver.ctx);
-  if (!prepared.ok) return prepared;
-  return commitPreparedSee(graph, prepared);
+  return admitResolvedSee(graph, row, rotations, resolver.ctx);
 }
 
 /**
@@ -389,7 +451,8 @@ export function admittedView(graph, object, accessor) {
   const owner = held.owners.get(id.value);
   if (!owner) return undefined;
   const row = held.rows.get(grantSoul(owner.owner, id.value, who.value));
-  if (!row) return undefined;
+  if (!row || !verified.has(row)) return undefined;
+  if (row.grant.owner !== owner.owner || row.grant.object !== id.value || row.grant.accessor !== who.value) return undefined;
   return {
     stated: row.grant.stated,
     hamState: row.grant.hamState,
@@ -416,6 +479,7 @@ export function presentedSee(graph, object, accessor) {
   if (!owner) return undefined;
   const row = held.rows.get(grantSoul(owner.owner, id.value, who.value));
   if (!row || !verified.has(row)) return undefined;
+  if (row.grant.owner !== owner.owner || row.grant.object !== id.value || row.grant.accessor !== who.value) return undefined;
   return present(row);
 }
 
@@ -453,7 +517,11 @@ export function checkSee(graph, object, accessor, now, hint, hop) {
   if (!admission) return { allowed: false, reason: 'unknown' };
   if (admission.owner === who.value) return { allowed: true, reason: 'owner' };
   const row = store(graph).rows.get(grantSoul(admission.owner, id.value, who.value));
-  if (row && verified.has(row) && row.grant.stated === 1 && now >= row.grant.from && now < row.grant.until) {
+  const signedToQuery = !!row
+    && row.grant.owner === admission.owner
+    && row.grant.object === id.value
+    && row.grant.accessor === who.value;
+  if (row && verified.has(row) && signedToQuery && row.grant.stated === 1 && now >= row.grant.from && now < row.grant.until) {
     return { allowed: true, reason: 'delegate' };
   }
   return { allowed: false, reason: 'delegate' };
@@ -564,3 +632,23 @@ function patchRow(row, patch) {
 function failStep(step, got) {
   throw Error(JSON.stringify({ step, got }));
 }
+
+bindRowTest({
+  moveSee(graph, fromKey, toKey) {
+    const held = store(graph);
+    const row = held.rows.get(fromKey);
+    if (!row) return false;
+    held.rows.delete(fromKey);
+    held.rows.set(toKey, row);
+    return true;
+  },
+  plantPlainSee(graph, key, grant) {
+    const row = /** @type {SealedRow} */ (/** @type {unknown} */ ({
+      grant,
+      mode: 'present',
+      bytes: new Uint8Array(),
+      witness: false,
+    }));
+    store(graph).rows.set(key, row);
+  },
+});

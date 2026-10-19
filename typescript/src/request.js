@@ -29,8 +29,8 @@ import {
   verifySignedAt,
 } from '../ids/src/index.js';
 import { integer } from '../ids/src/util.js';
-import { commitPreparedPost, preparePost, presentedPost } from './post.js';
-import { admittedOwner, commitPreparedSee, prepareSee, presentedSee } from './see.js';
+import { presentedPost } from './post.js';
+import { admitGrantPair, admittedOwner, presentedSee } from './see.js';
 
 export {
   REQUEST_DOMAIN,
@@ -79,14 +79,7 @@ function sameLive(row, owner, object, accessor, window) {
  * @returns {{ ok: true, see: unknown, post: unknown } | { ok: false, reason: string }}
  */
 function admitGrantRows(graph, seeRow, postRow, rotations, ctx) {
-  const seePrep = seeRow == null ? null : prepareSee(graph, seeRow, rotations, ctx);
-  if (seePrep && !seePrep.ok) return { ok: false, reason: seePrep.reason };
-  const postPrep = postRow == null ? null : preparePost(graph, postRow, rotations, ctx);
-  if (postPrep && !postPrep.ok) return { ok: false, reason: postPrep.reason };
-  if ((seePrep && !seePrep.kept) || (postPrep && !postPrep.kept)) return { ok: false, reason: 'not-kept' };
-  const seeWrote = seePrep && seePrep.ok ? commitPreparedSee(graph, seePrep) : null;
-  const postWrote = postPrep && postPrep.ok ? commitPreparedPost(graph, postPrep) : null;
-  return { ok: true, see: seeWrote ? seeWrote.value : null, post: postWrote ? postWrote.value : null };
+  return admitGrantPair(graph, seeRow, postRow, rotations, ctx);
 }
 
 /** @param {unknown} value @returns {value is number} */

@@ -14,6 +14,10 @@
     "./group": "./src/group.js",
     "./ir": "./src/ir.js"
   },
+  "files": [
+    "src",
+    "!src/internal"
+  ],
   "scripts": {
     "typecheck": "tsc --strict --noEmit -p tsconfig.json && tsc --strict --noEmit -p tsconfig.see.json"
   },

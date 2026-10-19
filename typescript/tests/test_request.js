@@ -6,8 +6,10 @@ import { issuerFromSeed, MemoryGroupGraph } from "../src/group.js";
 import { admittedPost, checkPost, factorGrants } from "../src/post.js";
 import * as postApi from "../src/post.js";
 import { grantApprovedRequest } from "../src/request.js";
+import { movePostRowForTest, moveSeeRowForTest, plantPlainPostForTest, plantPlainSeeForTest } from "../src/internal/row-test.js";
 import { admitRow, admittedView, checkSee, isVerifiedRow, putObject } from "../src/see.js";
 import * as seeApi from "../src/see.js";
+import * as gunApi from "../src/gun.js";
 import { b64 } from "../ids/scripts/vector-util.mjs";
 
 const secret = (n) => { const b = new Uint8Array(32); b[31] = n; return b; };
@@ -19,6 +21,7 @@ const principal = (n) => {
 };
 const p = principal(1);
 const p2 = principal(2);
+const p3 = principal(3);
 const at = 1700000000;
 const now = at + 60;
 const chat = ids.mintObjectId("chat", p, () => new Uint8Array(16).fill(0x11));
@@ -231,8 +234,24 @@ function ed25519Seed(name) {
 test("an earlier grant cannot revive a cancel, and another graph stays closed", () => {
   assert.equal(seeApi.stageSee, undefined);
   assert.equal(seeApi.commitStagedSee, undefined);
+  assert.equal(seeApi.prepareSee, undefined);
+  assert.equal(seeApi.commitPreparedSee, undefined);
+  assert.equal(seeApi.evaluateSee, undefined);
+  assert.equal(seeApi.commitEvaluatedSee, undefined);
   assert.equal(postApi.stagePost, undefined);
   assert.equal(postApi.commitStagedPost, undefined);
+  assert.equal(postApi.preparePost, undefined);
+  assert.equal(postApi.commitPreparedPost, undefined);
+  assert.equal(postApi.evaluatePost, undefined);
+  assert.equal(postApi.commitEvaluatedPost, undefined);
+  assert.equal(gunApi.prepareSee, undefined);
+  assert.equal(gunApi.commitPreparedSee, undefined);
+  assert.equal(gunApi.preparePost, undefined);
+  assert.equal(gunApi.commitPreparedPost, undefined);
+  assert.equal(gunApi.admitGrantPair, undefined);
+  assert.equal(gunApi.admitResolvedPost, undefined);
+  assert.equal(gunApi.postKeeps, undefined);
+  assert.equal(gunApi.installPostGrant, undefined);
   const graph = {};
   const resolver = { rotations: () => [], ctx: context() };
   assert.equal(putObject(graph, objectRecord(), resolver).ok, true);
@@ -260,6 +279,205 @@ test("an earlier grant cannot revive a cancel, and another graph stays closed", 
   const other = {};
   assert.equal(checkSee(other, chat.value, p2, now, granted.see).allowed, false);
   assert.equal(checkPost(other, chat.value, p2, now, granted.post).allowed, false);
+});
+
+test("a see grant cannot revive a cancel on its own graph", () => {
+  const graph = {};
+  const resolver = { rotations: () => [], ctx: context() };
+  assert.equal(putObject(graph, objectRecord(), resolver).ok, true);
+  const live = signGrant(ids.seeGrantBytes, { hamState: 1 });
+  assert.equal(admitRow(graph, live, resolver).ok, true);
+  assert.equal(checkSee(graph, chat.value, p2, now).allowed, true);
+  const cancel = admitRow(graph, signGrant(ids.seeGrantBytes, { stated: 0, hamState: 2 }), resolver);
+  assert.equal(cancel.ok && cancel.kept, true);
+  const again = admitRow(graph, live, resolver);
+  assert.equal(again.ok && again.kept, false);
+  assert.equal(checkSee(graph, chat.value, p2, now).allowed, false);
+  assert.equal(admittedView(graph, chat.value, p2)?.stated, 0);
+  assert.equal(admittedView(graph, chat.value, p2)?.hamState, 2);
+});
+
+test("a post grant cannot revive a cancel on its own graph", () => {
+  const graph = {};
+  const resolver = { rotations: () => [], ctx: context() };
+  assert.equal(putObject(graph, objectRecord(), resolver).ok, true);
+  assert.equal(admitRow(graph, signGrant(ids.seeGrantBytes, { hamState: 1 }), resolver).ok, true);
+  const live = signGrant(ids.postGrantBytes, { hamState: 1 });
+  assert.equal(postApi.admitPost(graph, live, resolver).ok, true);
+  assert.equal(checkPost(graph, chat.value, p2, now).allowed, true);
+  const cancel = postApi.admitPost(graph, signGrant(ids.postGrantBytes, { stated: 0, hamState: 2 }), resolver);
+  assert.equal(cancel.ok && cancel.kept, true);
+  const again = postApi.admitPost(graph, live, resolver);
+  assert.equal(again.ok && again.kept, false);
+  assert.equal(checkPost(graph, chat.value, p2, now).allowed, false);
+  assert.equal(postApi.admittedPost(graph, chat.value, p2)?.stated, 0);
+  assert.equal(postApi.admittedPost(graph, chat.value, p2)?.hamState, 2);
+});
+
+test("a grant verified on one graph cannot replace a cancel on another", () => {
+  const resolver = { rotations: () => [], ctx: context() };
+  const open = {};
+  const closed = {};
+  assert.equal(putObject(open, objectRecord(), resolver).ok, true);
+  assert.equal(putObject(closed, objectRecord(), resolver).ok, true);
+  const seeLive = signGrant(ids.seeGrantBytes, { hamState: 1 });
+  const postLive = signGrant(ids.postGrantBytes, { hamState: 1 });
+  assert.equal(admitRow(open, seeLive, resolver).ok, true);
+  assert.equal(postApi.admitPost(open, postLive, resolver).ok, true);
+  assert.equal(admitRow(closed, signGrant(ids.seeGrantBytes, { stated: 0, hamState: 2 }), resolver).kept, true);
+  assert.equal(postApi.admitPost(closed, signGrant(ids.postGrantBytes, { stated: 0, hamState: 2 }), resolver).kept, true);
+  const paired = seeApi.admitGrantPair(closed, seeLive, postLive, [], resolver.ctx);
+  assert.equal(paired.ok, false);
+  assert.equal(paired.reason, "not-kept");
+  assert.equal(checkSee(closed, chat.value, p2, now).allowed, false);
+  assert.equal(checkPost(closed, chat.value, p2, now).allowed, false);
+  assert.equal(admittedView(closed, chat.value, p2)?.hamState, 2);
+  assert.equal(postApi.admittedPost(closed, chat.value, p2)?.hamState, 2);
+  assert.equal(checkSee(open, chat.value, p2, now).allowed, true);
+  assert.equal(checkPost(open, chat.value, p2, now).allowed, true);
+});
+
+test("a caller cannot flip kept to write over a cancel", () => {
+  const graph = {};
+  const resolver = { rotations: () => [], ctx: context() };
+  assert.equal(putObject(graph, objectRecord(), resolver).ok, true);
+  const live = signGrant(ids.seeGrantBytes, { hamState: 1 });
+  const postLive = signGrant(ids.postGrantBytes, { hamState: 1 });
+  assert.equal(admitRow(graph, signGrant(ids.seeGrantBytes, { stated: 0, hamState: 2 }), resolver).kept, true);
+  assert.equal(postApi.admitPost(graph, signGrant(ids.postGrantBytes, { stated: 0, hamState: 2 }), resolver).kept, true);
+  const flipped = { ...live, kept: true, key: ids.grantSoul(p, chat.value, p3) };
+  const again = admitRow(graph, flipped, resolver);
+  assert.equal(again.ok && again.kept, false);
+  const ticket = { kept: true, key: ids.grantSoul(p, chat.value, p2), sealed: live, used: false };
+  const planted = seeApi.admitGrantPair(graph, ticket, { ...postLive, kept: true }, [], resolver.ctx);
+  assert.equal(planted.ok, false);
+  assert.equal(checkSee(graph, chat.value, p2, now).allowed, false);
+  assert.equal(checkPost(graph, chat.value, p2, now).allowed, false);
+  assert.equal(admittedView(graph, chat.value, p2)?.stated, 0);
+  assert.equal(checkSee(graph, chat.value, p3, now).allowed, false);
+});
+
+test("a see row moved under another accessor does not allow", () => {
+  const graph = {};
+  const resolver = { rotations: () => [], ctx: context() };
+  assert.equal(putObject(graph, objectRecord(), resolver).ok, true);
+  assert.equal(admitRow(graph, signGrant(ids.seeGrantBytes, { hamState: 1 }), resolver).kept, true);
+  const from = ids.grantSoul(p, chat.value, p2);
+  const to = ids.grantSoul(p, chat.value, p3);
+  assert.equal(moveSeeRowForTest(graph, from, to), true);
+  assert.equal(checkSee(graph, chat.value, p2, now).allowed, false);
+  assert.equal(checkSee(graph, chat.value, p3, now).allowed, false);
+  assert.equal(admittedView(graph, chat.value, p2), undefined);
+  assert.equal(admittedView(graph, chat.value, p3), undefined);
+});
+
+test("a post row moved under another accessor does not allow", () => {
+  const graph = {};
+  const resolver = { rotations: () => [], ctx: context() };
+  assert.equal(putObject(graph, objectRecord(), resolver).ok, true);
+  assert.equal(admitRow(graph, signGrant(ids.seeGrantBytes, { hamState: 1 }), resolver).kept, true);
+  assert.equal(admitRow(graph, signGrant(ids.seeGrantBytes, { accessor: p3, hamState: 1 }), resolver).kept, true);
+  assert.equal(postApi.admitPost(graph, signGrant(ids.postGrantBytes, { hamState: 1 }), resolver).kept, true);
+  assert.equal(checkSee(graph, chat.value, p3, now).allowed, true);
+  const from = ids.postSoul(p, chat.value, p2);
+  const to = ids.postSoul(p, chat.value, p3);
+  assert.equal(movePostRowForTest(graph, from, to), true);
+  const moved = checkPost(graph, chat.value, p3, now);
+  assert.equal(moved.allowed, false);
+  assert.equal(moved.reason, "missing");
+  assert.equal(checkPost(graph, chat.value, p2, now).allowed, false);
+  assert.equal(postApi.admittedPost(graph, chat.value, p3), undefined);
+  assert.equal(checkSee(graph, chat.value, p3, now).allowed, true);
+});
+
+test("a plain see object stored under the soul key does not allow", () => {
+  const graph = {};
+  const resolver = { rotations: () => [], ctx: context() };
+  assert.equal(putObject(graph, objectRecord(), resolver).ok, true);
+  plantPlainSeeForTest(graph, ids.grantSoul(p, chat.value, p2), {
+    owner: p,
+    object: chat.value,
+    accessor: p2,
+    stated: 1,
+    from: at,
+    until: now + 100,
+    hamState: 1,
+    issuedAt: now,
+    sig: "",
+  });
+  const see = checkSee(graph, chat.value, p2, now);
+  assert.equal(see.allowed, false);
+  assert.equal(see.reason, "delegate");
+  assert.equal(admittedView(graph, chat.value, p2), undefined);
+});
+
+test("a plain post object stored under the soul key does not allow", () => {
+  const graph = {};
+  const resolver = { rotations: () => [], ctx: context() };
+  assert.equal(putObject(graph, objectRecord(), resolver).ok, true);
+  assert.equal(admitRow(graph, signGrant(ids.seeGrantBytes, { hamState: 1 }), resolver).kept, true);
+  plantPlainPostForTest(graph, ids.postSoul(p, chat.value, p2), {
+    owner: p,
+    object: chat.value,
+    accessor: p2,
+    stated: 1,
+    from: at,
+    until: now + 100,
+    hamState: 1,
+    issuedAt: now,
+    sig: "",
+  });
+  const post = checkPost(graph, chat.value, p2, now);
+  assert.equal(post.allowed, false);
+  assert.equal(post.reason, "missing");
+  assert.equal(postApi.admittedPost(graph, chat.value, p2), undefined);
+  assert.equal(checkSee(graph, chat.value, p2, now).allowed, true);
+});
+
+test("one row that would not replace writes neither grant", () => {
+  const resolver = { rotations: () => [], ctx: context() };
+  const graph = {};
+  assert.equal(putObject(graph, objectRecord(), resolver).ok, true);
+  assert.equal(postApi.admitPost(graph, signGrant(ids.postGrantBytes, { stated: 0, hamState: 2 }), resolver).kept, true);
+  const paired = seeApi.admitGrantPair(
+    graph,
+    signGrant(ids.seeGrantBytes, { hamState: 1 }),
+    signGrant(ids.postGrantBytes, { hamState: 1 }),
+    [],
+    resolver.ctx,
+  );
+  assert.equal(paired.ok, false);
+  assert.equal(paired.reason, "not-kept");
+  assert.equal(admittedView(graph, chat.value, p2), undefined);
+  assert.equal(checkSee(graph, chat.value, p2, now).allowed, false);
+  assert.equal(postApi.admittedPost(graph, chat.value, p2)?.stated, 0);
+  assert.equal(postApi.admittedPost(graph, chat.value, p2)?.hamState, 2);
+});
+
+test("postKeeps does not write and a presented row is not a ticket", () => {
+  const resolver = { rotations: () => [], ctx: context() };
+  const graph = {};
+  const other = {};
+  assert.equal(putObject(graph, objectRecord(), resolver).ok, true);
+  assert.equal(putObject(other, objectRecord(), resolver).ok, true);
+  const see = admitRow(graph, signGrant(ids.seeGrantBytes, { hamState: 1 }), resolver);
+  assert.equal(see.ok, true);
+  const live = signGrant(ids.postGrantBytes, { hamState: 1 });
+  const seen = postApi.postKeeps(graph, live, [], resolver.ctx);
+  assert.equal(seen.ok && seen.kept, true);
+  assert.equal(postApi.admittedPost(graph, chat.value, p2), undefined);
+  const wrote = postApi.admitResolvedPost(graph, { ...live, kept: true, key: ids.postSoul(p, chat.value, p3) }, [], resolver.ctx);
+  assert.equal(wrote.ok && wrote.kept, true);
+  assert.equal(checkPost(graph, chat.value, p2, now).allowed, true);
+  assert.equal(checkPost(graph, chat.value, p3, now).allowed, false);
+  assert.equal(isVerifiedRow(see.value), false);
+  assert.equal(seeApi.admitGrantPair(other, see.value, wrote.value, [], resolver.ctx).ok, false);
+  assert.equal(checkSee(other, chat.value, p2, now).allowed, false);
+  assert.equal(checkPost(other, chat.value, p2, now).allowed, false);
+  assert.equal(postApi.admitPost(other, signGrant(ids.postGrantBytes, { stated: 0, hamState: 4 }), resolver).kept, true);
+  const replay = postApi.admitResolvedPost(other, live, [], resolver.ctx);
+  assert.equal(replay.ok && replay.kept, false);
+  assert.equal(postApi.admittedPost(other, chat.value, p2)?.hamState, 4);
 });
 
 test("the label plant setter is not on the published class", () => {
