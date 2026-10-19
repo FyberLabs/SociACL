@@ -40,21 +40,12 @@ import {
   verifyObjectRecord,
   verifySeeGrant,
 } from '../ids/src/index.js';
-import { bindRowTest } from './internal/row-test.js';
+import { seeStore, verified } from './internal/see-rows.js';
 import { admitResolvedPost, postKeeps, reverifyPosts } from './post.js';
-
-const verified = new WeakSet();
-/** @type {WeakMap<object, SeeStore>} */
-const stores = new WeakMap();
 
 /** @param {object} graph @returns {SeeStore} */
 function store(graph) {
-  let held = stores.get(graph);
-  if (!held) {
-    held = { owners: new Map(), rows: new Map() };
-    stores.set(graph, held);
-  }
-  return held;
+  return /** @type {SeeStore} */ (seeStore(graph));
 }
 
 /** @param {unknown} graph */
@@ -633,22 +624,3 @@ function failStep(step, got) {
   throw Error(JSON.stringify({ step, got }));
 }
 
-bindRowTest({
-  moveSee(graph, fromKey, toKey) {
-    const held = store(graph);
-    const row = held.rows.get(fromKey);
-    if (!row) return false;
-    held.rows.delete(fromKey);
-    held.rows.set(toKey, row);
-    return true;
-  },
-  plantPlainSee(graph, key, grant) {
-    const row = /** @type {SealedRow} */ (/** @type {unknown} */ ({
-      grant,
-      mode: 'present',
-      bytes: new Uint8Array(),
-      witness: false,
-    }));
-    store(graph).rows.set(key, row);
-  },
-});

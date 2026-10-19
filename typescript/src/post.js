@@ -24,7 +24,7 @@ import {
   verifyAclAttestation,
   verifyPostGrant,
 } from '../ids/src/index.js';
-import { bindRowTest } from './internal/row-test.js';
+import { postMap, postTables, sealedPosts } from './internal/post-rows.js';
 import {
   admitRow,
   admittedOwner,
@@ -35,20 +35,6 @@ import {
   seeAccessorEdge,
   seeObjectEdge,
 } from './see.js';
-
-const sealedPosts = new WeakSet();
-/** @type {WeakMap<object, Map<string, SealedPost>>} */
-const postTables = new WeakMap();
-
-/** @param {object} graph */
-function postMap(graph) {
-  let held = postTables.get(graph);
-  if (!held) {
-    held = new Map();
-    postTables.set(graph, held);
-  }
-  return held;
-}
 
 /** A copy of the admitted post rows. Mutating it does not change Check.
  * @param {object} graph */
@@ -474,23 +460,3 @@ function failStep(step, got) {
   throw Error(JSON.stringify({ step, got }));
 }
 
-bindRowTest({
-  movePost(graph, fromKey, toKey) {
-    const held = postTables.get(graph);
-    if (!held) return false;
-    const row = held.get(fromKey);
-    if (!row) return false;
-    held.delete(fromKey);
-    held.set(toKey, row);
-    return true;
-  },
-  plantPlainPost(graph, key, grant) {
-    const row = /** @type {SealedPost} */ (/** @type {unknown} */ ({
-      grant,
-      mode: 'present',
-      bytes: new Uint8Array(),
-      witness: false,
-    }));
-    postMap(graph).set(key, row);
-  },
-});
