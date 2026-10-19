@@ -9,11 +9,12 @@
  * @typedef {import('../ids/src/types.js').ObjectRecord} ObjectRecord
  * @typedef {import('../ids/src/types.js').ResolutionContext} ResolutionContext
  * @typedef {{ allowed: boolean, reason: string }} SeeCheck
- * @typedef {{ owner: PrincipalId, issuedAt: number, frozen: boolean }} ObjectAdmission
+ * @typedef {{ owner: PrincipalId, issuedAt: number }} ObjectAdmission
  * @typedef {ObjectAdmission & { record: ObjectRecord }} StoredOwner
  * @typedef {{
  *   owners: Map<string, StoredOwner>,
  *   rows: Map<string, SealedRow>,
+ *   posts: Map<string, import('./post.js').SealedPost>,
  * }} SeeStore
  * @typedef {{
  *   key: PrincipalId,
@@ -37,6 +38,7 @@ import {
   parseSeeGrant,
   verifyAclAttestation,
   verifyObjectRecord,
+  verifyPostGrant,
   verifySeeGrant,
 } from '../ids/src/index.js';
 
@@ -48,7 +50,7 @@ const stores = new WeakMap();
 function store(graph) {
   let held = stores.get(graph);
   if (!held) {
-    held = { owners: new Map(), rows: new Map() };
+    held = { owners: new Map(), rows: new Map(), posts: new Map() };
     stores.set(graph, held);
   }
   return held;
@@ -199,13 +201,19 @@ export function seeAccessorEdge(value) {
 /** Caller-facing admission. Mutating it does not change the store.
  * @param {StoredOwner} row @returns {ObjectAdmission} */
 function admissionCopy(row) {
-  return { owner: row.owner, issuedAt: row.issuedAt, frozen: false };
+  return { owner: row.owner, issuedAt: row.issuedAt };
+}
+/** Post rows share this graph. post.js admits them. see.js does not import post.js.
+ * @param {object} graph */
+export function postRows(graph) {
+  if (!graphObject(graph)) return undefined;
+  return store(graph).posts;
 }
 /**
  * Admit a signed object record. The owner is the record, never an argument.
  * The object id must embed that owner. The same owner later is a no-op while
- * the stored record still verifies. A stored record the current key no longer
- * signs is replaced by the new one. A different owner is `bad-record`.
+ * the stored record still verifies. A stored record is replaced only when the
+ * new issuedAt is strictly newer and the stored record no longer verifies.
  * @param {object} graph
  * @param {unknown} record
  * @param {SeeResolver} resolver
@@ -225,19 +233,16 @@ export function putObject(graph, record, resolver) {
   const issuedAt = verified.value.record.issuedAt;
   const existing = held.owners.get(id);
   if (!existing) {
-    const admitted = { owner, issuedAt, frozen: false, record: verified.value.record };
+    const admitted = { owner, issuedAt, record: verified.value.record };
     held.owners.set(id, admitted);
     return { ok: true, value: admissionCopy(admitted), kept: true };
   }
-  if (existing.owner === owner) {
-    const still = verifyObjectRecord(existing.record, history, resolver.ctx);
-    if (still.ok) return { ok: true, value: admissionCopy(existing), kept: false };
-    existing.issuedAt = issuedAt;
-    existing.record = verified.value.record;
-    existing.frozen = false;
-    return { ok: true, value: admissionCopy(existing), kept: true };
-  }
-  return { ok: false, reason: 'bad-record' };
+  if (issuedAt <= existing.issuedAt) return { ok: true, value: admissionCopy(existing), kept: false };
+  const still = verifyObjectRecord(existing.record, history, resolver.ctx);
+  if (still.ok) return { ok: true, value: admissionCopy(existing), kept: false };
+  existing.issuedAt = issuedAt;
+  existing.record = verified.value.record;
+  return { ok: true, value: admissionCopy(existing), kept: true };
 }
 
 /**
@@ -284,6 +289,9 @@ export function reverifyPrincipal(graph, principal, resolver) {
     for (const [id, row] of [...held.owners]) {
       if (row.owner === who.value) held.owners.delete(id);
     }
+    for (const [key, row] of [...held.posts]) {
+      if (row.grant.owner === who.value) held.posts.delete(key);
+    }
     return { ok: false, reason: 'missing-history' };
   }
   let dropped = 0;
@@ -304,6 +312,16 @@ export function reverifyPrincipal(graph, principal, resolver) {
       held.owners.delete(id);
       dropped += 1;
     }
+  }
+  for (const [key, row] of [...held.posts]) {
+    if (row.grant.owner !== who.value) continue;
+    const again = verifyPostGrant(row.source, rotations, resolver.ctx);
+    if (!again.ok) {
+      held.posts.delete(key);
+      dropped += 1;
+      continue;
+    }
+    held.posts.set(key, row.reseal(again.value, resolver.ctx));
   }
   return { ok: true, value: { dropped } };
 }
@@ -437,7 +455,7 @@ export function runSeeCase(steps, options) {
         if (got) failStep(step, got);
         continue;
       }
-      if (!got || got.owner !== step.owner || got.frozen !== !!step.frozen) failStep(step, got);
+      if (!got || got.owner !== step.owner) failStep(step, got);
       if (step.issuedAt !== undefined && got.issuedAt !== step.issuedAt) failStep(step, got);
       continue;
     }

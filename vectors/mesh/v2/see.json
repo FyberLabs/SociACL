@@ -692,7 +692,6 @@
           "op": "owner",
           "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
           "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
-          "frozen": false,
           "issuedAt": 1700000040
         },
         {
@@ -724,7 +723,6 @@
           "op": "owner",
           "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
           "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
-          "frozen": false,
           "issuedAt": 1700000040
         },
         {
@@ -768,7 +766,6 @@
           "op": "owner",
           "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
           "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
-          "frozen": false,
           "issuedAt": 1700000000
         },
         {
@@ -776,6 +773,61 @@
           "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
           "accessor": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
           "now": 10,
+          "allowed": true,
+          "reason": "owner"
+        }
+      ]
+    },
+    {
+      "name": "stale-history-does-not-downgrade",
+      "steps": [
+        {
+          "op": "put",
+          "record": {
+            "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+            "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+            "issuedAt": 1700000000,
+            "sig": "Z9fYJjtkbVsxBszNe5U5FEdoWWQI_8ZtRxbJk2ALU9PKBqOa-ga7kzgGUrgNHJdQuxiPvJFT7st1iub5IXG10g"
+          },
+          "rotations": "genesis",
+          "ok": true,
+          "kept": true
+        },
+        {
+          "op": "put",
+          "record": {
+            "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+            "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+            "issuedAt": 1700000040,
+            "sig": "W1qFNjx1srwgzA5hRPCuwoSG1eZesg_fFCtqqOugGoRpD73cBPuzlAaqKtKm-OLp6OBWcPo34TOhjP5wR4i8Fw"
+          },
+          "rotations": "rotated",
+          "ok": true,
+          "kept": true
+        },
+        {
+          "op": "put",
+          "record": {
+            "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+            "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+            "issuedAt": 1700000000,
+            "sig": "Z9fYJjtkbVsxBszNe5U5FEdoWWQI_8ZtRxbJk2ALU9PKBqOa-ga7kzgGUrgNHJdQuxiPvJFT7st1iub5IXG10g"
+          },
+          "rotations": "genesis",
+          "ok": true,
+          "kept": false
+        },
+        {
+          "op": "owner",
+          "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+          "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "issuedAt": 1700000040
+        },
+        {
+          "op": "check",
+          "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+          "accessor": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "now": 1700000050,
           "allowed": true,
           "reason": "owner"
         }
@@ -1335,23 +1387,6 @@
         {
           "op": "owner",
           "object": "chat_33333333333333333333333333333333",
-          "absent": true
-        },
-        {
-          "op": "put",
-          "record": {
-            "object": "s3rch:room:0x1efF47bc3a10a45D4B230B5d10E37751FE6AA718:1700000000:ab",
-            "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
-            "issuedAt": 1700000000,
-            "sig": "2a8w3x06qVfTvlYq4_jP3SOQuWGxoCBhYGgRzFnIEo7ZBoIJcfsyi5K3TtMGXAuyrfdXMGuURCi_VyQ5hYbatw"
-          },
-          "rotations": "genesis",
-          "ok": false,
-          "reason": "bad-record"
-        },
-        {
-          "op": "owner",
-          "object": "s3rch:room:0x1efF47bc3a10a45D4B230B5d10E37751FE6AA718:1700000000:ab",
           "absent": true
         },
         {
@@ -2393,7 +2428,6 @@
           "op": "owner",
           "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
           "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
-          "frozen": false,
           "issuedAt": 1700000000
         },
         {

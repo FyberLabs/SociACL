@@ -2395,6 +2395,122 @@ pub fn verify_signed_at(
         mode: SignedAtMode::Present,
     })
 }
+const POST_DOMAIN: &str = "sociacl-post-grant-v2";
+/// Signing bytes for one parsed post row. Domain and `stated` are inside the bytes.
+pub fn post_grant_bytes(grant: &SeeGrant) -> Vec<u8> {
+    lp(&[
+        POST_DOMAIN,
+        grant.owner.as_ref(),
+        grant.object.as_ref(),
+        grant.accessor.as_ref(),
+        &grant.stated.to_string(),
+        &grant.from.to_string(),
+        &grant.until.to_string(),
+        &grant.ham_state.to_string(),
+        &grant.issued_at.to_string(),
+    ])
+}
+/// Snapshot a post row. Same fields as a see row. `kind` is not read.
+pub fn parse_post_grant(row: &Value) -> Result<(SeeGrant, Vec<u8>), Reason> {
+    let map = row.as_object().ok_or(Reason::BadRecord)?;
+    if let Some(domain) = map.get("domain") {
+        if domain.as_str() != Some(POST_DOMAIN) {
+            return Err(Reason::LegacyRow);
+        }
+    }
+    if !map.contains_key("sig") {
+        return Err(Reason::LegacyRow);
+    }
+    let owner = parse_principal_id(
+        map.get("owner")
+            .and_then(Value::as_str)
+            .ok_or(Reason::BadRecord)?,
+    )?;
+    let object = parse_object_id(
+        map.get("object")
+            .and_then(Value::as_str)
+            .ok_or(Reason::BadRecord)?,
+    )?;
+    let accessor = parse_principal_id(
+        map.get("accessor")
+            .and_then(Value::as_str)
+            .ok_or(Reason::BadRecord)?,
+    )?;
+    let stated = see_u64(map.get("stated"))?;
+    if stated > 1 {
+        return Err(Reason::BadRecord);
+    }
+    let from = see_u64(map.get("from"))?;
+    let until = see_u64(map.get("until"))?;
+    let ham_state = see_u64(map.get("hamState"))?;
+    let issued_at = see_u64(map.get("issuedAt"))?;
+    if until < from {
+        return Err(Reason::BadRecord);
+    }
+    let sig = match map.get("sig") {
+        Some(Value::String(s)) => text(s, 128)?.to_owned(),
+        Some(_) => return Err(Reason::NotString),
+        None => return Err(Reason::LegacyRow),
+    };
+    let attest = match map.get("attest") {
+        None => None,
+        Some(Value::String(s)) => Some(text(s, 16384)?.to_owned()),
+        Some(_) => return Err(Reason::NotString),
+    };
+    let grant = SeeGrant {
+        owner,
+        object,
+        accessor,
+        stated: stated as u8,
+        from,
+        until,
+        ham_state,
+        issued_at,
+        sig,
+        attest,
+    };
+    let bytes = post_grant_bytes(&grant);
+    Ok((grant, bytes))
+}
+/// Post-grant authority. A retired cancel is `stated == 0` on the parsed row.
+/// A retired `stated == 1` row is refused even when witnessed.
+pub fn verify_post_grant(
+    row: &Value,
+    rotations: &[Value],
+    ctx: &ResolutionContext<'_>,
+) -> Result<VerifiedSee, Reason> {
+    let (grant, bytes) = parse_post_grant(row)?;
+    let account = resolve_current_key(&grant.owner, rotations, ctx).result?;
+    proof_time(grant.issued_at, ctx.now, ctx.policy.clock_skew_seconds)?;
+    let state = history_state(&grant.owner, &account.rotations, grant.issued_at, ctx.now);
+    if state.key == account.current_key {
+        if !key_verify(&account.current_key, &grant.sig, &bytes) {
+            return Err(Reason::BadSignature);
+        }
+        return Ok(VerifiedSee {
+            key: account.current_key,
+            mode: SignedAtMode::Present,
+            grant,
+            bytes,
+        });
+    }
+    if grant.stated != 0 {
+        if grant.attest.is_some() {
+            see_witness(&grant, &bytes, ctx)?;
+        }
+        return Err(Reason::UnwitnessedRetiredKey);
+    }
+    see_witness(&grant, &bytes, ctx)?;
+    if !key_verify(&state.key, &grant.sig, &bytes) {
+        return Err(Reason::BadSignature);
+    }
+    Ok(VerifiedSee {
+        key: state.key,
+        mode: SignedAtMode::Witnessed,
+        grant,
+        bytes,
+    })
+}
 const OBJECT_DOMAIN: &str = "sociacl-object-v2";
 /// Signed object owner. The owner is this record, not a caller argument.
 #[derive(Clone, Debug, Eq, PartialEq)]

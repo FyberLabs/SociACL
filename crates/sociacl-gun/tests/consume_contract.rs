@@ -32,12 +32,11 @@ fn consume_contract_covers_light_check() {
         "admitRow",
         "reverifyPrincipal",
         "sociacl-object-v2",
-        "owner-conflict",
         "checkPost",
         "MeshPostGrant",
         "postSoul",
         "postGrantSigningBytes",
-        "s3rch-post-grant-v1",
+        "sociacl-post-grant-v2",
         "accessRequestId",
         "accessRequestSigningBytes",
         "grantApprovedRequest",
@@ -220,7 +219,7 @@ fn consume_doc_says_browser_not_a_package() {
         "consume doc must point at the wrapped-key spec"
     );
     assert!(
-        md.contains("checkPost") && md.contains("vectors/mesh/post-grant.json"),
+        md.contains("checkPost") && md.contains("vectors/mesh/v2/post.json"),
         "consume doc must name the post grant and its vectors"
     );
     assert!(

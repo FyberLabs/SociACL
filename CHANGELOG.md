@@ -131,11 +131,16 @@ is `ids-v0.10.0`.
   longest id is 180 characters, so the path-key maximum is 180. An
   object record whose owner is not that principal, or whose id has no
   embedded principal, is `bad-record`. The older `<kind>_<32 hex>` form
-  still parses and is not an object record. The s3r.ch spellings
-  (`s3rch:room`, `s3rch:chat`, `s3rch:forum-msg`, `s3rch:post`,
-  `s3rch:forum-group`, `s3rch:bot`, `s3rch:forum`) are still parsed and
-  are listed for deletion in `docs/s3rch-check.md`. No other package
-  reads them. They are not object records.
+  still parses and is not an object record. The s3r.ch object
+  spellings (`s3rch:room`, `s3rch:chat`, `s3rch:forum-msg`,
+  `s3rch:post`, `s3rch:forum-group`, `s3rch:bot`, `s3rch:forum`) are
+  removed from the grammar. Network ids `s3rch:https://...` stay.
+  `post` is a reserved kind. `s3rch:forum:<owner>` has no nonce, so a
+  forum id needs a random part when s3r.ch adopts SociACL.
+- `parsePostGrant` / `verifyPostGrant` and `parse_post_grant` /
+  `verify_post_grant` cover `sociacl-post-grant-v2`. A retired cancel
+  is `stated` 0 in those signed bytes. A retired `stated` 1 row is
+  refused. An uppercase `P_` tag on a bound object id is `non-canonical`.
 
 ## sociacl-ids 0.9.0 — unreleased
 

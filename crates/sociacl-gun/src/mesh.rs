@@ -154,19 +154,18 @@ pub(crate) struct MeshObject {
 pub(crate) struct LabelGraph {
     pub(crate) objects: HashMap<String, MeshObject>,
     pub(crate) grants: HashMap<String, GunAclEdge>,
-    pub(crate) posts: HashMap<String, crate::post::GunPostEdge>,
+    pub(crate) posts: HashMap<String, crate::post_label::GunPostEdge>,
     pub(crate) friends: HashSet<(String, String)>,
     pub(crate) groups: crate::group::GroupRows,
 }
 
-/// Admitted object owner. `frozen` stays false: a mismatched owner is
-/// `bad-record` and never freezes the object. `record` is the canonical
-/// signed snapshot, rechecked when the owner rotates.
+/// Admitted object owner. `record` is the canonical signed snapshot,
+/// rechecked when the owner rotates. A later record replaces it only
+/// when `issued_at` is strictly newer and this snapshot no longer verifies.
 #[derive(Clone, Debug)]
 struct ObjectAdmission {
     owner: PrincipalId,
     issued_at: u64,
-    frozen: bool,
     record: Value,
 }
 
@@ -175,6 +174,7 @@ pub struct MeshSeeGraph {
     pub(crate) labels: LabelGraph,
     owners: HashMap<String, ObjectAdmission>,
     admitted: HashMap<String, AdmittedSee>,
+    pub(crate) post_rows: HashMap<String, crate::post::AdmittedPost>,
 }
 
 /// Admitted see row. The private seal keeps an unverified row out of Check.
@@ -191,7 +191,7 @@ pub struct VerifiedRow {
     pub accessor: PrincipalId,
     pub attest: bool,
     #[allow(dead_code)]
-    seal: (),
+    pub(crate) seal: (),
 }
 
 #[derive(Clone, Debug)]
@@ -218,7 +218,8 @@ impl MeshSeeGraph {
     /// Admit a signed object record. The owner is the record, never an argument.
     /// History comes from `resolver` called with the parsed owner.
     /// The same owner later is a no-op while the stored record still verifies.
-    /// A stored record the current key no longer signs is replaced.
+    /// A stored record is replaced only when the new `issued_at` is strictly
+    /// newer and the stored record no longer verifies.
     pub fn put_object(
         &mut self,
         record: &Value,
@@ -233,8 +234,8 @@ impl MeshSeeGraph {
         let id = verified.record.object.as_ref().to_string();
         let snapshot = snapshot_object(&verified.record);
         if let Some(existing) = self.owners.get(&id) {
-            if existing.owner != verified.record.owner {
-                return Err(Reason::BadRecord);
+            if verified.record.issued_at <= existing.issued_at {
+                return Ok(false);
             }
             if verify_object_record(&existing.record, &rotations, ctx).is_ok() {
                 return Ok(false);
@@ -249,7 +250,6 @@ impl MeshSeeGraph {
             ObjectAdmission {
                 owner: verified.record.owner,
                 issued_at: verified.record.issued_at,
-                frozen: false,
                 record: snapshot,
             },
         );
@@ -301,6 +301,7 @@ impl MeshSeeGraph {
         let Some(rotations) = resolver(principal) else {
             self.admitted.retain(|_, row| row.owner != *principal);
             self.drop_owner_records(principal);
+            self.post_rows.retain(|_, row| row.owner != *principal);
             return Err(Reason::MissingHistory);
         };
         let keys: Vec<String> = self
@@ -341,6 +342,7 @@ impl MeshSeeGraph {
                 dropped += 1;
             }
         }
+        dropped += self.reverify_posts(principal, &rotations, ctx);
         Ok(dropped)
     }
 
@@ -358,10 +360,15 @@ impl MeshSeeGraph {
     }
 
     /// The admitted owner record, when one has been verified.
-    pub fn admitted_owner(&self, object: &ObjectId) -> Option<(&PrincipalId, u64, bool)> {
+    pub fn admitted_owner(&self, object: &ObjectId) -> Option<(&PrincipalId, u64)> {
         self.owners
             .get(object.as_ref())
-            .map(|row| (&row.owner, row.issued_at, row.frozen))
+            .map(|row| (&row.owner, row.issued_at))
+    }
+
+    /// The admitted object owner, when check and post admission need it.
+    pub(crate) fn object_owner(&self, object: &ObjectId) -> Option<&PrincipalId> {
+        self.owners.get(object.as_ref()).map(|row| &row.owner)
     }
 
     /// The admitted row for the current owner, object, and accessor.

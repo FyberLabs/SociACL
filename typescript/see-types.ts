@@ -1,3 +1,4 @@
+import { checkPost } from "./src/post.js";
 import { checkSee } from "./src/see.js";
 
 declare const g: {
@@ -7,3 +8,6 @@ declare const g: {
 
 // @ts-expect-error checkSee(g, "room", "0xbob", 0)
 checkSee(g, "room", "0xbob", 0);
+
+// @ts-expect-error checkPost(g, "room", "0xbob", 0)
+checkPost(g, "room", "0xbob", 0);

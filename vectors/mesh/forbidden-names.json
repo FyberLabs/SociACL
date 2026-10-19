@@ -3,7 +3,7 @@
     "identifiers are whole tokens. A later PR appends a name only when that PR deletes it.",
     "scopes are repo-relative globs. The see path is in scope now.",
     "Legacy modules stay out until the PR that migrates their caller appends that file.",
-    "PR 3 appends the post files. PR 4 appends request. PR 5 appends group. PR 6 appends feed, encrypted discovery, and the contract migration module."
+    "The post path is in scope. PR 4 appends request. PR 5 appends group. PR 6 appends feed, encrypted discovery, and the contract migration module."
   ],
   "identifiers": [
     "samePrincipal",
@@ -56,6 +56,8 @@
     "typescript/src/gun.js",
     "crates/sociacl-gun/src/soul.rs",
     "crates/sociacl-gun/src/mesh.rs",
+    "typescript/src/post.js",
+    "crates/sociacl-gun/src/post.rs",
     "docs/s3rch-check.d.ts"
   ]
 }

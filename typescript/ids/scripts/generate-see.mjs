@@ -52,7 +52,6 @@ const policy = { allowedDomains: ['s3r.ch'], allowedUris: ['https://s3r.ch/ident
 const chatA = val(ids.mintObjectId('chat', p, () => new Uint8Array(16).fill(0x11)));
 const chatB = val(ids.mintObjectId('chat', p, () => new Uint8Array(16).fill(0x22)));
 const unbound = val(ids.parseObjectId('chat_' + '33'.repeat(16)));
-const legacy = val(ids.parseObjectId(`s3rch:room:${wallet}:1700000000:ab`));
 const context = {
   jwks,
   links: [[wid, w]],
@@ -147,8 +146,6 @@ add('reject', 'fold-user-soul', [edge('principal', 's3rch/users/0xbob')]);
 add('reject', 'object-without-embedded-principal', [
   { op: 'put', record: objectRecord(unbound, p, 1), rotations: 'genesis', ok: false, reason: 'bad-record' },
   { op: 'owner', object: unbound, absent: true },
-  { op: 'put', record: objectRecord(legacy, p, 1), rotations: 'genesis', ok: false, reason: 'bad-record' },
-  { op: 'owner', object: legacy, absent: true },
   { op: 'check', object: unbound, accessor: p, now: 10, allowed: false, reason: 'unknown' },
 ]);
 {
@@ -336,7 +333,7 @@ function compareBytes(left, right) {
     put(chatA, p, 1),
     { op: 'admit', row: grant, rotations: 'genesis', ok: true, kept: true, mode: 'present', stated: 1, hamState: 1 },
     { op: 'put', record: objectRecord(chatA, p2, 2), rotations: 'genesis', ok: false, reason: 'bad-record' },
-    { op: 'owner', object: chatA, owner: p, frozen: false, issuedAt: at },
+    { op: 'owner', object: chatA, owner: p, issuedAt: at },
     { op: 'check', object: chatA, accessor: p, now: 10, allowed: true, reason: 'owner' },
     { op: 'check', object: chatA, accessor: p2, now: 10, allowed: true, reason: 'delegate' },
     { op: 'view', object: chatA, accessor: p2, stated: 1, hamState: 1, mode: 'present' },
@@ -374,12 +371,12 @@ function compareBytes(left, right) {
     put(chatA, p, 1),
     { op: 'put', record: objectRecord(chatA, p, 2, at + 40), rotations: 'rotated', ok: true, kept: true },
     { op: 'reverify', principal: p, rotations: 'rotated', dropped: 0 },
-    { op: 'owner', object: chatA, owner: p, frozen: false, issuedAt: at + 40 },
+    { op: 'owner', object: chatA, owner: p, issuedAt: at + 40 },
     { op: 'check', object: chatA, accessor: p, now: at + 50, allowed: true, reason: 'owner' },
   ]);
   add('accept', 'object-resigned-on-a-fresh-peer', [
     putCurrent(),
-    { op: 'owner', object: chatA, owner: p, frozen: false, issuedAt: at + 40 },
+    { op: 'owner', object: chatA, owner: p, issuedAt: at + 40 },
     { op: 'check', object: chatA, accessor: p, now: at + 50, allowed: true, reason: 'owner' },
   ]);
   add('reject', 'unsigned-object-record', [
@@ -394,8 +391,15 @@ function compareBytes(left, right) {
   add('accept', 'object-owner-same-is-noop', [
     put(chatA, p, 1),
     { op: 'put', record: objectRecord(chatA, p, 1, at + 5), rotations: 'genesis', ok: true, kept: false },
-    { op: 'owner', object: chatA, owner: p, frozen: false, issuedAt: at },
+    { op: 'owner', object: chatA, owner: p, issuedAt: at },
     { op: 'check', object: chatA, accessor: p, now: 10, allowed: true, reason: 'owner' },
+  ]);
+  add('accept', 'stale-history-does-not-downgrade', [
+    put(chatA, p, 1),
+    { op: 'put', record: objectRecord(chatA, p, 2, at + 40), rotations: 'rotated', ok: true, kept: true },
+    { op: 'put', record: objectRecord(chatA, p, 1, at), rotations: 'genesis', ok: true, kept: false },
+    { op: 'owner', object: chatA, owner: p, issuedAt: at + 40 },
+    { op: 'check', object: chatA, accessor: p, now: at + 50, allowed: true, reason: 'owner' },
   ]);
 }
 {

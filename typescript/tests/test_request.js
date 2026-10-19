@@ -15,7 +15,6 @@ import {
   accessRequestId,
   accessRequestSigningBytes,
   canonicalRequestAccessor,
-  checkPost,
   factorGrants,
   aclKey,
   grantApprovedRequest,
@@ -24,7 +23,7 @@ import {
   requestIssuerFromSeed,
   signAccessRequest,
 } from "../src/group.js";
-import { canonicalAccessorId } from "../src/post.js";
+import { canonicalAccessorId } from "../src/legacy/post-label.js";
 import { checkSee } from "../src/gun.js";
 
 const fixture = JSON.parse(
@@ -151,21 +150,19 @@ function assertGranted(graph, row, result, ham) {
   const see = seeResult(graph, row.source, row.requester, row.now);
   assert.equal(see.allowed, true, row.name);
   assert.equal(see.reason, "delegate");
-  const post = checkPost(graph, row.source, row.requester, row.now);
+  const label = graph.postGrant(row.object, accessor);
   if (row.expect === "both") {
     assert.ok(result.post, row.name);
     assert.equal(result.post.grant.object, row.object);
     assert.equal(result.post.grant.accessor, accessor);
     assert.equal(result.post.hamState, ham);
     assert.equal(hex(result.postSigningBytes), hex(postGrantSigningBytes(result.post)));
-    assert.equal(post.allowed, true, row.name);
-    assert.equal(post.reason, "post");
+    assert.ok(label, row.name);
+    assert.equal(label.grant.stated, 1, row.name);
   } else {
     assert.equal(result.post, null, row.name);
     assert.equal(result.postSigningBytes, null, row.name);
-    assert.equal(post.allowed, false, row.name);
-    assert.equal(post.reason, "missing");
-    assert.equal(graph.postGrant(row.object, accessor), undefined);
+    assert.equal(label, undefined, row.name);
   }
   const bySource = graph.seeGrant(row.source, row.requester);
   const byObject = graph.seeGrant(row.object, accessor);

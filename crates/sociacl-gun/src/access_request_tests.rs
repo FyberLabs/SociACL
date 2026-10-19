@@ -8,7 +8,7 @@ use crate::{
     GunError, HandoffHint, HopFactor, MembersAutoApprove, MeshSeeGrant, MeshSeeGraph,
     OwnerGrantRows, ACCESS_MESSAGE_MAX, ACCESS_REQUEST_DOMAIN, ACCESS_REQUEST_ID_DOMAIN,
     ACCESS_SCOPE_READ, ACCESS_SCOPE_READ_POST, ACCESS_STATUS_PENDING, ACCESS_STATUS_WITHDRAWN,
-    MESH_REASON_DELEGATE, MESH_REASON_MISSING, MESH_REASON_POST,
+    MESH_REASON_DELEGATE, MESH_REASON_MISSING,
 };
 use sociacl_core::{AttestationChannel, IssuerSecret, Timestamp};
 
@@ -311,13 +311,7 @@ fn assert_granted(graph: &MeshSeeGraph, case: &ApprovalCase, rows: &OwnerGrantRo
     assert!(see.allowed, "{}", case.name);
     assert_eq!(see.reason, MESH_REASON_DELEGATE);
     assert!(!see.request_is_grant());
-    let post = graph.check_post(
-        &case.source,
-        &case.requester,
-        Timestamp(case.now),
-        None,
-        None,
-    );
+    let post_label = graph.post_edge(&case.object, &accessor);
     if case.expect == "both" {
         let edge = rows.post.as_ref().expect("post row");
         assert_eq!(edge.grant.object, case.object);
@@ -327,13 +321,11 @@ fn assert_granted(graph: &MeshSeeGraph, case: &ApprovalCase, rows: &OwnerGrantRo
             rows.post_signing_bytes.as_deref(),
             Some(post_grant_signing_bytes(&edge.grant, edge.ham_state).unwrap()).as_deref()
         );
-        assert!(post.allowed, "{}", case.name);
-        assert_eq!(post.reason, MESH_REASON_POST);
+        assert!(post_label.is_some(), "{}", case.name);
     } else {
         assert!(rows.post.is_none(), "{}", case.name);
         assert!(rows.post_signing_bytes.is_none(), "{}", case.name);
-        assert!(!post.allowed, "{}", case.name);
-        assert_eq!(post.reason, MESH_REASON_MISSING);
+        assert!(post_label.is_none(), "{}", case.name);
         assert!(graph.post_edge(&case.object, &accessor).is_none());
     }
     let by_source = graph

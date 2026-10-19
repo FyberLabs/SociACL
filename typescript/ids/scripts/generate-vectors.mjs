@@ -104,17 +104,6 @@ reject('oidc','extra-field',{...cred,alias:'wrong'},'bad-record');
 accept('object','native',obj,obj,{pathKey:obj});
 accept('object','claim', 'ens:alice.eth', val(ids.deriveClaimId('ens:alice.eth')), { operation:'claim', pathKey:val(ids.deriveClaimId('ens:alice.eth')) });
 accept('object','external', {source,providerItemId:'rss3:act/1#x'}, val(ids.deriveExternalId(source,'rss3:act/1#x')), {operation:'external'});
-for (const kind of ['room','chat','forum-msg','post','forum-group','bot','forum']) {
-  const suffix = ['room','chat','forum-msg','post'].includes(kind) ? ':123456789012:abcd' : ['forum-group','bot'].includes(kind) ? ':abcd' : '';
-  const legacy = `s3rch:${kind}:${wallet}${suffix}`; accept('object', 'legacy-'+kind,legacy,legacy,{pathKey:legacy});
-}
-reject('object','legacy-13-digit',`s3rch:room:${wallet}:1700000000000:abcd`,'bad-alphabet');
-reject('object','legacy-post-13-digit',`s3rch:post:${wallet}:1700000000000:abcd`,'bad-alphabet');
-reject('object','legacy-post-missing-tail',`s3rch:post:${wallet}:123456789012`,'bad-alphabet');
-reject('object','legacy-post-uppercase-tail',`s3rch:post:${wallet}:123456789012:ABCD`,'bad-alphabet');
-reject('object','legacy-post-extra',`s3rch:post:${wallet}:123456789012:abcd:extra`,'bad-alphabet');
-reject('object','legacy-post-bad-checksum',`s3rch:post:${wallet.replace(/[a-f]/, c => c.toUpperCase())}:123456789012:abcd`,'bad-checksum');
-reject('object','legacy-post-empty-ts',`s3rch:post:${wallet}::abcd`,'bad-alphabet');
 reject('object','uppercase-hex','room_'+'AB'.repeat(16),'non-canonical');
 reject('object','reserved-kind','claim_'+'01'.repeat(16),'reserved-kind');
 for (const kind of ['post', 'member', 'objset']) reject('object', 'reserved-kind-' + kind, kind + '_' + '01'.repeat(16), 'reserved-kind');
@@ -126,6 +115,7 @@ accept('object','bound-principal',minted,p,{operation:'object-principal'});
 reject('object','unbound-principal',obj,'bad-template',{operation:'object-principal'});
 reject('object','bound-off-curve','room_p_'+'00'.repeat(64)+'_'+'11'.repeat(16),'not-on-curve');
 reject('object','bound-uppercase',minted.slice(0,6)+minted.slice(6).toUpperCase(),'non-canonical');
+reject('object','bound-uppercase-p-tag',minted.replace('_p_','_P_'),'non-canonical');
 reject('object','bound-too-long','a'.repeat(181),'too-long');
 reject('object','bound-reserved-kind','post_'+ids.formatPrincipalKey(p)+'_'+'11'.repeat(16),'reserved-kind');
 const maxBound = 'abcdefghijklmnop_'+ids.formatPrincipalKey(p)+'_'+'22'.repeat(16);

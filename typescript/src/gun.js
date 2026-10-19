@@ -7,14 +7,7 @@
  * Stored-id see Check is see.js. Label rows stay out of this module.
  */
 
-export {
-  POST_GRANT_DOMAIN,
-  POST_GRANT_SCOPE,
-  checkPost,
-  factorGrants,
-  postGrantSigningBytes,
-  postSoul,
-} from "./post.js";
+export { admitPost, checkPost, factorGrants } from "./post.js";
 
 export { admitRow, checkSee, putObject, reverifyPrincipal } from "./see.js";
 

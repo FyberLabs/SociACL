@@ -266,11 +266,10 @@ export type ObjectRecord = {
   sig: string;
 };
 
-/** Admitted owner. `frozen` stays false. A mismatched owner does not freeze the object. */
+/** Admitted owner. A mismatched owner is `bad-record` and is not stored. */
 export type ObjectAdmission = {
   owner: PrincipalId;
   issuedAt: number;
-  frozen: boolean;
 };
 
 /**
@@ -295,9 +294,10 @@ export type VerifiedRow = {
 
 /**
  * Admit a signed sociacl-object-v2 record. The owner is the record.
- * The object id embeds that genesis principal. Anything else is
- * bad-record and does not freeze the object. There is no owner-conflict.
+ * The object id embeds that genesis principal. Anything else is bad-record.
  * The same owner later is a no-op while the stored record still verifies.
+ * A stored record is replaced only when the new issuedAt is strictly newer
+ * and the stored record no longer verifies.
  */
 export function putObject(
   graph: object,
@@ -340,9 +340,11 @@ export function checkSee(
 
 /**
  * Allow-post for a s3r.ch View.
- * Allowed only when checkSee would allow the same triple.
- * The object owner passes see and may post. Any other accessor
- * also needs a live MeshPostGrant with now in [from, until).
+ * Allowed only when checkSee would allow the same triple on the
+ * admitted see graph. The object owner comes from the admitted
+ * sociacl-object-v2 record and may post. Any other accessor also
+ * needs a live sociacl-post-grant-v2 row with now in [from, until).
+ * A retired-key post cancel is stated 0 inside those signed bytes.
  * A post row alone does not allow. A see row does not allow post.
  * checkGroupSee is not this gate. Hopcap is 1.
  * Hop missing does not fail. Hop alone never allows.
@@ -487,7 +489,7 @@ export type GunPostEdge = {
 };
 
 /** Length-prefixed domain for postGrantSigningBytes. */
-export const POST_GRANT_DOMAIN: "s3rch-post-grant-v1";
+export const POST_GRANT_DOMAIN: "sociacl-post-grant-v2";
 
 /** Scope covered by postGrantSigningBytes. Not a see row. */
 export const POST_GRANT_SCOPE: "post";
@@ -509,9 +511,9 @@ export function postSoul(
 
 /**
  * Length-prefixed row encoding a later owner signature can cover.
- * Domain s3rch-post-grant-v1, then the object key,
- * the accessor key, decimal stated, decimal from,
- * decimal until, scope post, and decimal hamState.
+ * Domain sociacl-post-grant-v2, then owner, object, accessor,
+ * decimal stated, decimal from, decimal until, decimal hamState,
+ * and decimal issuedAt.
  * Lengths are uint32 little-endian. Integers are ASCII decimal
  * with no leading zeros. Check does not verify a signature.
  */

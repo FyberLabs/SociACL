@@ -120,16 +120,16 @@ import {
   postRowEncodable,
   preferPost,
   sameObjectId,
-} from "./post.js";
+} from "./legacy/post-label.js";
 
 export {
   POST_GRANT_DOMAIN,
   POST_GRANT_SCOPE,
-  checkPost,
-  factorGrants,
   postGrantSigningBytes,
   postSoul,
-} from "./post.js";
+} from "./legacy/post-label.js";
+
+export { checkPost, factorGrants } from "./post.js";
 
 export {
   ACCESS_MESSAGE_MAX,

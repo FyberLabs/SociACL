@@ -39,7 +39,7 @@ Case C may Check a frozen bundle the way the rest of SociACL does. The client ha
 Gun root: `s3rch`.
 
 ```
-gun.get('s3rch').get('items').get(encodeKey(id))  → GunFeedNode
+gun.get('s3rch').get('items').get(<item key>)  → GunFeedNode
 gun.get('s3rch').get('meta')                     → seed meta (not a Check object)
 gun.get('s3rch').get('users').get(wallet)        → GunUserNode
 gun.get('s3rch').get('acl').get(aclPrincipalKey(owner))
@@ -48,9 +48,7 @@ gun.get('s3rch').get('acl').get(aclPrincipalKey(owner))
      .get('post').get(aclKey(object)).get(aclPrincipalKey(accessor))  → MeshPostGrant
 ```
 
-`aclKey` is `encodeKey` plus an escape of `/` that is not `_`, so dest-ACL souls stay five segments. `room.alpha`, `room_alpha`, and `room/alpha` are three keys. It is not a second `encodeKey` for items or users. `aclPrincipalKey` is not that escape. It accepts an exact `s3rch/users/<wallet>` or a bare id. `.` is allowed inside a principal. `.` and `..` alone are rejected. `/ # $ [ ] ~`, an inner space, a control, Unicode whitespace, a format character, and `.get(` are rejected. Longer than 256 scalar values is rejected. TypeScript also rejects an unpaired surrogate. A failed parse is null, not an empty string, and is not a soul segment. Trim is ASCII whitespace only, so U+FEFF and U+0085 are rejected. `.`, `..`, and `...` are not principals. An object id with leading or trailing whitespace is rejected, including tab, space, U+0085, U+00A0, U+3000, U+2028, and U+FEFF. It does not alias to the inner id, and `putObject` does not replace an existing owner through an alias such as an item soul. Group see and group presentation reject that id before lookup and do not trim it. Those group queries are in `vectors/mesh/principals.json`. Protocol migration uses the same principal rejection, including `...`. Peer merge drops a post row whose owner or accessor does not parse. Shared principal and object-id cases are in `vectors/mesh/principals.json`. `s3rch/acl` is dest ACL, not a Check object.
-
-`encodeKey`: injective escape of `~ . # $ [ ]`. `/` is not folded.
+The item key escapes `~ . # $ [ ]` and leaves `/` alone. That escape is a closed label detail, not a public helper. Dest-ACL keys also escape `/`, so dest-ACL souls stay five segments. `room.alpha`, `room_alpha`, and `room/alpha` are three keys. `aclPrincipalKey` is not that escape. It accepts an exact `s3rch/users/<wallet>` or a bare id. `.` is allowed inside a principal. `.` and `..` alone are rejected. `/ # $ [ ] ~`, an inner space, a control, Unicode whitespace, a format character, and `.get(` are rejected. Longer than 256 scalar values is rejected. TypeScript also rejects an unpaired surrogate. A failed parse is null, not an empty string, and is not a soul segment. Trim is ASCII whitespace only, so U+FEFF and U+0085 are rejected. `.`, `..`, and `...` are not principals. An object id with leading or trailing whitespace is rejected, including tab, space, U+0085, U+00A0, U+3000, U+2028, and U+FEFF. It does not alias to the inner id, and `putObject` does not replace an existing owner through an alias such as an item soul. Group see and group presentation reject that id before lookup and do not trim it. Those group queries are in `vectors/mesh/principals.json`. Protocol migration uses the same principal rejection, including `...`. Peer merge drops a post row whose owner or accessor does not parse. Shared principal and object-id cases are in `vectors/mesh/principals.json`. `s3rch/acl` is dest ACL, not a Check object.
 
 `GunFeedNode` (in-graph = native SociACL object):
 

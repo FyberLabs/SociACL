@@ -25,48 +25,6 @@
       "operation": "external"
     },
     {
-      "name": "legacy-room",
-      "input": "s3rch:room:0x1efF47bc3a10a45D4B230B5d10E37751FE6AA718:123456789012:abcd",
-      "canonical": "s3rch:room:0x1efF47bc3a10a45D4B230B5d10E37751FE6AA718:123456789012:abcd",
-      "pathKey": "s3rch:room:0x1efF47bc3a10a45D4B230B5d10E37751FE6AA718:123456789012:abcd"
-    },
-    {
-      "name": "legacy-chat",
-      "input": "s3rch:chat:0x1efF47bc3a10a45D4B230B5d10E37751FE6AA718:123456789012:abcd",
-      "canonical": "s3rch:chat:0x1efF47bc3a10a45D4B230B5d10E37751FE6AA718:123456789012:abcd",
-      "pathKey": "s3rch:chat:0x1efF47bc3a10a45D4B230B5d10E37751FE6AA718:123456789012:abcd"
-    },
-    {
-      "name": "legacy-forum-msg",
-      "input": "s3rch:forum-msg:0x1efF47bc3a10a45D4B230B5d10E37751FE6AA718:123456789012:abcd",
-      "canonical": "s3rch:forum-msg:0x1efF47bc3a10a45D4B230B5d10E37751FE6AA718:123456789012:abcd",
-      "pathKey": "s3rch:forum-msg:0x1efF47bc3a10a45D4B230B5d10E37751FE6AA718:123456789012:abcd"
-    },
-    {
-      "name": "legacy-post",
-      "input": "s3rch:post:0x1efF47bc3a10a45D4B230B5d10E37751FE6AA718:123456789012:abcd",
-      "canonical": "s3rch:post:0x1efF47bc3a10a45D4B230B5d10E37751FE6AA718:123456789012:abcd",
-      "pathKey": "s3rch:post:0x1efF47bc3a10a45D4B230B5d10E37751FE6AA718:123456789012:abcd"
-    },
-    {
-      "name": "legacy-forum-group",
-      "input": "s3rch:forum-group:0x1efF47bc3a10a45D4B230B5d10E37751FE6AA718:abcd",
-      "canonical": "s3rch:forum-group:0x1efF47bc3a10a45D4B230B5d10E37751FE6AA718:abcd",
-      "pathKey": "s3rch:forum-group:0x1efF47bc3a10a45D4B230B5d10E37751FE6AA718:abcd"
-    },
-    {
-      "name": "legacy-bot",
-      "input": "s3rch:bot:0x1efF47bc3a10a45D4B230B5d10E37751FE6AA718:abcd",
-      "canonical": "s3rch:bot:0x1efF47bc3a10a45D4B230B5d10E37751FE6AA718:abcd",
-      "pathKey": "s3rch:bot:0x1efF47bc3a10a45D4B230B5d10E37751FE6AA718:abcd"
-    },
-    {
-      "name": "legacy-forum",
-      "input": "s3rch:forum:0x1efF47bc3a10a45D4B230B5d10E37751FE6AA718",
-      "canonical": "s3rch:forum:0x1efF47bc3a10a45D4B230B5d10E37751FE6AA718",
-      "pathKey": "s3rch:forum:0x1efF47bc3a10a45D4B230B5d10E37751FE6AA718"
-    },
-    {
       "name": "deterministic-mint",
       "input": {
         "kind": "room",
@@ -307,41 +265,6 @@
       "reason": "not-string"
     },
     {
-      "name": "legacy-13-digit",
-      "input": "s3rch:room:0x1efF47bc3a10a45D4B230B5d10E37751FE6AA718:1700000000000:abcd",
-      "reason": "bad-alphabet"
-    },
-    {
-      "name": "legacy-post-13-digit",
-      "input": "s3rch:post:0x1efF47bc3a10a45D4B230B5d10E37751FE6AA718:1700000000000:abcd",
-      "reason": "bad-alphabet"
-    },
-    {
-      "name": "legacy-post-missing-tail",
-      "input": "s3rch:post:0x1efF47bc3a10a45D4B230B5d10E37751FE6AA718:123456789012",
-      "reason": "bad-alphabet"
-    },
-    {
-      "name": "legacy-post-uppercase-tail",
-      "input": "s3rch:post:0x1efF47bc3a10a45D4B230B5d10E37751FE6AA718:123456789012:ABCD",
-      "reason": "bad-alphabet"
-    },
-    {
-      "name": "legacy-post-extra",
-      "input": "s3rch:post:0x1efF47bc3a10a45D4B230B5d10E37751FE6AA718:123456789012:abcd:extra",
-      "reason": "bad-alphabet"
-    },
-    {
-      "name": "legacy-post-bad-checksum",
-      "input": "s3rch:post:0x1EfF47bc3a10a45D4B230B5d10E37751FE6AA718:123456789012:abcd",
-      "reason": "bad-checksum"
-    },
-    {
-      "name": "legacy-post-empty-ts",
-      "input": "s3rch:post:0x1efF47bc3a10a45D4B230B5d10E37751FE6AA718::abcd",
-      "reason": "bad-alphabet"
-    },
-    {
       "name": "uppercase-hex",
       "input": "room_ABABABABABABABABABABABABABABABAB",
       "reason": "non-canonical"
@@ -407,6 +330,11 @@
     {
       "name": "bound-uppercase",
       "input": "room_p_6B17D1F2E12C4247F8BCE6E563A440F277037D812DEB33A0F4A13945D898C2964FE342E2FE1A7F9B8EE7EB4A7C0F9E162BCE33576B315ECECBB6406837BF51F5_07070707070707070707070707070707",
+      "reason": "non-canonical"
+    },
+    {
+      "name": "bound-uppercase-p-tag",
+      "input": "room_P_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_07070707070707070707070707070707",
       "reason": "non-canonical"
     },
     {
