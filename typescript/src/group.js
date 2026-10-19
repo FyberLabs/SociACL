@@ -971,7 +971,7 @@ export class MemoryGroupGraph {
     this.objects = new Map();
     /** @type {Map<string, SeeGrant>} */
     this.grants = new Map();
-    /** @type {Map<string, import("./post.js").PostEdge>} */
+    /** @type {Map<string, import("./legacy/post-label.js").PostEdge>} */
     this.posts = new Map();
     /** @type {Map<string, string>} */
     this.setOwners = new Map();
@@ -1267,7 +1267,7 @@ export class MemoryGroupGraph {
     this.posts.set(key, edge);
   }
 
-  /** @param {import("./post.js").PostEdge} incoming */
+  /** @param {import("./legacy/post-label.js").PostEdge} incoming */
   mergePost(incoming) {
     if (!postRowEncodable(incoming)) return;
     const query = plainObjectId(incoming.grant?.object ?? "") ?? "";
