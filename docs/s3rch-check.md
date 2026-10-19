@@ -107,7 +107,7 @@ Members auto-approve reads the label owner only when that owner parses as the sa
 
 Requests have no expiry. Approving an older pending copy grants only the window and the scope on that call. There is no withdraw ordering across copies. Scope is approve or refuse only. The owner cannot downscope. The window is owner-only. The accessor is the parsed requester.
 
-`members-gate-on-stored-id` uses the set id `alice/friends`. `canonicalSetId` rejects `.`, so a `PrincipalId` cannot be a set-id head. That vector is re-cut with a minted set id once set-id-must-be-minted lands.
+`members-gate-on-stored-id` uses a minted set id. The set owner is the principal embedded in that id. `alice/friends` is `bad-alphabet`.
 
 When `now` equals the latest resolved rotation time, `grantApprovedRequest` writes nothing and returns `rotation-boundary`. Retry on the next second. One second before that rotation, the preceding key still signs. `historyState` stays strictly before the timestamp: the new key signs records issued after the rotation, and a same-second revoke still uses the preceding key.
 
@@ -165,7 +165,7 @@ PR 6 still mints or parses unbound object ids. Switch these to `mintObjectId(kin
 
 PR 6 also deletes the unbound `<kind>_<32 lowercase hex>` object form from both parsers, flips the `vectors/ids/object.json` native accept to a reject, and adds a guard test that no non-test source builds that form. PR 6 regenerates the encrypted-discovery wrap and delivery vectors after those ids change. Neither of those lands in the post pull request.
 
-Group still takes caller-supplied label ids. That creation site moves in PR 5. The request path writes owner-signed `sociacl-see-grant-v2` and `sociacl-post-grant-v2` rows. `typescript/src/legacy/post-label.js` and `crates/sociacl-gun/src/post_label.rs` are deleted.
+A group set id is a minted ObjectId of kind `set`. The owner is the principal embedded in that id and the signed set-owner field. The request path writes owner-signed `sociacl-see-grant-v2` and `sociacl-post-grant-v2` rows. `typescript/src/legacy/post-label.js` and `crates/sociacl-gun/src/post_label.rs` are deleted.
 
 These s3r.ch object spellings are deleted from `parseObjectId` / `parse_object_id` and from `vectors/ids/object.json`. Network ids of the form `s3rch:https://...` are a different grammar and stay. `post` is a reserved kind, so a s3r.ch post cannot use kind `post` when that product adopts SociACL. `s3rch:forum:<owner>` has no random part. A forum id needs a nonce, or a derived id, before it can be an object id. The seven deleted forms are:
 

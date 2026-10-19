@@ -1,23 +1,13 @@
 /**
- * Shared request-vector runner. Lives outside the forbidden-name scopes
- * because the members gate still enrolls through the label group graph.
+ * Shared request-vector runner. Join steps admit v2 membership and
+ * object-set rows. The runner does not enroll a signer.
  */
 import { requestId } from '../ids/src/index.js';
-import { MemoryGroupGraph, issuerFromSeed } from '../src/group.js';
+import { admitMembership, admitObjectSet, MemoryGroupGraph } from '../src/group.js';
 import { plantLabelOwnerForTest } from '../src/internal/label-test.js';
 import { admitPost, admittedPost, checkPost, factorGrants } from '../src/post.js';
 import { grantApprovedRequest } from '../src/request.js';
 import { admitRow, admittedView, checkSee, putObject } from '../src/see.js';
-
-/** @param {string} name */
-function ed25519Seed(name) {
-  const bytes = new Uint8Array(32);
-  const raw = new TextEncoder().encode(name);
-  for (let i = 0; i < raw.length; i += 1) bytes[i % 32] ^= (raw[i] + ((i * 17) & 255)) & 255;
-  bytes[0] ^= raw.length;
-  bytes[31] |= 1;
-  return bytes;
-}
 
 /** @param {number} n */
 function scalarOf(n) {
@@ -84,17 +74,13 @@ export function runRequestCase(steps, options) {
       continue;
     }
     if (step.op === 'join') {
-      graph.putObject(step.object, step.owner);
-      const ownerKey = issuerFromSeed(ed25519Seed(step.owner));
-      const memberKey = issuerFromSeed(ed25519Seed(step.member));
-      const setKey = issuerFromSeed(ed25519Seed(step.setOwner));
-      graph.enrollSigner(step.owner, ownerKey.publicKey);
-      graph.enrollSigner(step.member, memberKey.publicKey);
-      graph.enrollSigner(step.setOwner, setKey.publicKey);
-      graph.recordSetOwner(step.setOwner, step.predicate, step.setId);
-      graph.stateMembership(step.member, step.predicate, step.setId, step.member, memberKey.privateKey);
-      graph.stateMembership(step.setOwner, step.predicate, step.setId, step.member, setKey.privateKey);
-      graph.nameObjectSet(step.owner, step.object, step.predicate, step.setId, ownerKey.privateKey);
+      const resolver = resolverFor(step);
+      const member = admitMembership(graph, step.member, resolver);
+      if (!member.ok) failStep(step, member.reason);
+      const set = admitMembership(graph, step.set, resolver);
+      if (!set.ok) failStep(step, set.reason);
+      const edge = admitObjectSet(graph, step.edge, resolver);
+      if (!edge.ok) failStep(step, edge.reason);
       continue;
     }
     if (step.op === 'label-owner') {

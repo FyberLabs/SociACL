@@ -3,7 +3,6 @@
 //! A hop, a hint, a wrap, a request, or an inbox delivery never grants.
 
 use serde_json::{json, Value};
-use sociacl_core::Timestamp;
 use sociacl_ids::{
     parse_access_request, parse_principal_id, post_grant_bytes, resolve_current_key,
     see_grant_bytes, sign_with_keyring, verify_post_grant, verify_see_grant, verify_signed_at,
@@ -133,14 +132,7 @@ impl MeshSeeGraph {
             if label != *owner {
                 return Err(Reason::NotMember);
             }
-            let see = self.check_group_see(
-                predicate,
-                req.object.as_ref(),
-                req.requester.as_ref(),
-                Timestamp(now),
-                None,
-                None,
-            );
+            let see = self.check_group_see(predicate, &req.object, &req.requester, now, None, None);
             if !see.allowed || see.reason == MESH_REASON_OWNER || see.reason != predicate.as_str() {
                 return Err(Reason::NotMember);
             }

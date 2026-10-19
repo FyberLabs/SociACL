@@ -1,33 +1,32 @@
-//! Direct `same-group` and `named-circle` rows on the plaintext mesh.
+//! Direct `same-group` and `named-circle` rows.
 //!
-//! Hopcap is 1. Both the object-to-set edge and the membership edge
-//! must be stated 1. One-sided membership is stored and is not a grant.
-//! Nested sets are not walked. A hop, a hint, or a wrap never mints.
-//! Membership has no from/until window on this surface.
+//! Hopcap is 1. Membership is live only when both v2 assents verify
+//! under each party's present key, or a witnessed cancel applies.
+//! One-sided membership is stored and is not a grant. A hop, a hint,
+//! a wrap, a request, or an inbox delivery never grants.
 //!
-//! A lower `hamState` does not replace a removal this peer has merged.
-//! Member `hamState` does not stand in for the object-to-set edge.
-//! Each party's assent is signed by that party. An object-set row is
-//! signed by the object owner's enrolled key. Cancels are a grow-only
-//! set of collision-free ids. Each id is exactly 64 lowercase hex
-//! characters. Prior ids are canonicalized before the signature is
-//! checked. A live assent or edge must list every known cancel in its
-//! observed set. A set id is `<principal>/<name>` with a name that
-//! does not collide under `acl_key`.
-//! Wrapped keys are not read here.
+//! A set id is a minted ObjectId of kind `set`. The set owner is the
+//! signed principal, and it is the principal embedded in that id.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, HashMap};
 
-use rand::RngCore;
-use sha2::{Digest, Sha256};
-use sociacl_core::{AttestationSig, IssuerSecret, Timestamp, VerifyKey};
-
-use crate::legacy::{
-    acl_key, acl_principal_key, ascii_trim, closed_reason, object_id_rejected, unescape_acl_key,
+use serde_json::Value;
+use sociacl_ids::{
+    history_state, length_prefixed, membership_soul, object_principal, object_set_soul,
+    parse_object_id, parse_principal_id, resolve_current_key, verify_acl_attestation,
+    verify_key_signature, verify_signed_at, MembershipPredicate, ObjectId, PrincipalId, Reason,
+    ResolutionContext, SignedAtMode,
 };
+
 use crate::mesh::{MeshCheckResult, MeshSeeGraph};
-use crate::soul::{S3RCH_ACL, S3RCH_ROOT};
-use crate::{GunError, HandoffHint, HopFactor};
+use crate::{
+    HandoffHint, HopFactor, MESH_REASON_CANCELLED, MESH_REASON_MISSING, MESH_REASON_OWNER,
+};
+
+const MEMBER_DOMAIN: &str = "sociacl-membership-assent-v2";
+const OBJECT_SET_DOMAIN: &str = "sociacl-object-set-v2";
+const CANCEL_DOMAIN: &str = "sociacl-cancel-v2";
+const MAX_SAFE: u64 = 9_007_199_254_740_991;
 
 /// `same-group` or `named-circle`. The accessor does not pick a richer one.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
@@ -43,10 +42,16 @@ impl GroupPredicate {
             Self::NamedCircle => "named-circle",
         }
     }
+
+    fn ids(self) -> MembershipPredicate {
+        match self {
+            Self::SameGroup => MembershipPredicate::SameGroup,
+            Self::NamedCircle => MembershipPredicate::NamedCircle,
+        }
+    }
 }
 
 /// Direct membership. Hopcap 1. `stated` 1 is live, 0 is not.
-/// Cancel bumps `ham_state`. One-sided membership stays stated 0.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MeshMembership {
     pub predicate: GroupPredicate,
@@ -62,8 +67,7 @@ impl MeshMembership {
     }
 }
 
-/// The group or circle an object names. One predicate. Its `ham_state`
-/// is not a member `ham_state`.
+/// The group or circle an object names. One predicate.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ObjectSetName {
     pub object: String,
@@ -79,7 +83,8 @@ impl ObjectSetName {
     }
 }
 
-/// Group or circle argument on a presentation. Not a grant by itself.
+/// Group or circle argument kept for callers that name a presentation.
+/// Check takes the minted set id.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PresentedGroup {
     pub predicate: GroupPredicate,
@@ -121,7 +126,6 @@ pub struct GroupSnapshotObjectSet {
 }
 
 /// Result of the group tail of a presentation.
-/// Binding, signatures, and key unwrap stay outside this call.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct GroupPresentation {
     pub allowed: bool,
@@ -147,656 +151,984 @@ impl GroupPresentation {
     }
 }
 
-/// Collision-free cancel id. SHA-256 of this replica, a fresh nonce,
-/// and the cancel ids already on the row.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
-struct CancelId(pub(crate) [u8; 32]);
-
-/// A cancel signed by the party who issued it. The set only grows.
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct SignedCancel {
-    id: CancelId,
-    prior: BTreeSet<CancelId>,
-    signer: String,
-    signature: AttestationSig,
-}
-
-/// One party's assent. `observed` is the cancel ids this assent lists.
-/// It is live only when `stated` is set and `observed` covers every
-/// verified cancel on the row.
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct PartyStatement {
-    stated: bool,
+#[derive(Clone, Debug)]
+struct StoredAssent {
+    stated: u8,
     ham_state: u64,
-    observed: BTreeSet<CancelId>,
-    signature: AttestationSig,
-    spoken: bool,
+    issued_at: u64,
+    bytes: Vec<u8>,
+    sig: String,
+    attest: Option<String>,
+    observed: Vec<String>,
+    mode: SignedAtMode,
 }
-
-impl PartyStatement {
-    fn absent() -> Self {
-        Self {
-            stated: false,
-            ham_state: 0,
-            observed: BTreeSet::new(),
-            signature: AttestationSig::empty(),
-            spoken: false,
-        }
-    }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct MembershipRecord {
-    pub membership: MeshMembership,
-    member: PartyStatement,
-    set_party: PartyStatement,
-    removed: bool,
-    soul: String,
-    set_owner: String,
-    cancels: BTreeMap<CancelId, SignedCancel>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct ObjectSetRecord {
-    name: ObjectSetName,
-    signed_stated: u8,
-    soul: String,
-    object_owner: String,
-    observed: BTreeSet<CancelId>,
-    signature: AttestationSig,
-    cancels: BTreeMap<CancelId, SignedCancel>,
-}
-
-type SetKey = (GroupPredicate, String);
-type MembershipKey = (GroupPredicate, String, String);
 
 #[derive(Clone, Debug)]
-pub(crate) struct GroupRows {
-    replica_id: [u8; 16],
-    memberships: HashMap<MembershipKey, MembershipRecord>,
-    object_sets: HashMap<String, ObjectSetRecord>,
-    set_owners: HashMap<SetKey, String>,
-    enrolled: HashMap<String, VerifyKey>,
+struct StoredCancel {
+    id: String,
+    prior: Vec<String>,
+    signer: PrincipalId,
+    issued_at: u64,
+    bytes: Vec<u8>,
+    sig: String,
+    attest: Option<String>,
+    mode: SignedAtMode,
 }
 
-impl Default for GroupRows {
-    fn default() -> Self {
-        let mut replica_id = [0u8; 16];
-        rand::rngs::OsRng.fill_bytes(&mut replica_id);
-        Self {
-            replica_id,
-            memberships: HashMap::new(),
-            object_sets: HashMap::new(),
-            set_owners: HashMap::new(),
-            enrolled: HashMap::new(),
-        }
-    }
+#[derive(Clone, Debug)]
+struct MembershipRecord {
+    predicate: GroupPredicate,
+    set: ObjectId,
+    member: PrincipalId,
+    set_owner: PrincipalId,
+    member_assent: Option<StoredAssent>,
+    set_assent: Option<StoredAssent>,
+    cancels: BTreeMap<String, StoredCancel>,
+}
+
+#[derive(Clone, Debug)]
+struct ObjectSetRecord {
+    owner: PrincipalId,
+    object: ObjectId,
+    predicate: GroupPredicate,
+    set: ObjectId,
+    assent: StoredAssent,
+    cancels: BTreeMap<String, StoredCancel>,
+}
+
+#[derive(Clone, Debug)]
+struct MembershipAssent {
+    role: &'static str,
+    predicate: GroupPredicate,
+    set: ObjectId,
+    member: PrincipalId,
+    set_owner: PrincipalId,
+    stated: u8,
+    ham_state: u64,
+    issued_at: u64,
+    cancels: Vec<String>,
+    sig: String,
+    attest: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+struct ObjectSetAssent {
+    owner: PrincipalId,
+    object: ObjectId,
+    predicate: GroupPredicate,
+    set: ObjectId,
+    stated: u8,
+    ham_state: u64,
+    issued_at: u64,
+    cancels: Vec<String>,
+    sig: String,
+    attest: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+struct GroupCancel {
+    kind: &'static str,
+    row_soul: String,
+    cancel_id: String,
+    prior: Vec<String>,
+    signer: PrincipalId,
+    predicate: GroupPredicate,
+    set: ObjectId,
+    member: PrincipalId,
+    set_owner: PrincipalId,
+    object: Option<ObjectId>,
+    issued_at: u64,
+    sig: String,
+    attest: Option<String>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub(crate) struct GroupRows {
+    memberships: HashMap<String, MembershipRecord>,
+    object_sets: HashMap<String, ObjectSetRecord>,
 }
 
 impl GroupRows {
     pub(crate) fn drop_object_set(&mut self, object: &str) {
-        self.object_sets.remove(&object_set_key(object));
+        self.object_sets.remove(object);
     }
 
     pub(crate) fn merge_from(&mut self, other: &Self, object_owners: &HashMap<String, String>) {
-        for (key, owner) in &other.set_owners {
-            let Some(set_id) = set_id_from_key(&key.1) else {
+        for (soul, incoming) in &other.memberships {
+            match self.memberships.get_mut(soul) {
+                None => {
+                    self.memberships.insert(soul.clone(), incoming.clone());
+                }
+                Some(local) => {
+                    take_assent(&mut local.member_assent, incoming.member_assent.as_ref());
+                    take_assent(&mut local.set_assent, incoming.set_assent.as_ref());
+                    for (id, cancel) in &incoming.cancels {
+                        local
+                            .cancels
+                            .entry(id.clone())
+                            .or_insert_with(|| cancel.clone());
+                    }
+                }
+            }
+        }
+        for (id, incoming) in &other.object_sets {
+            if object_owners
+                .get(id)
+                .is_none_or(|owner| owner != incoming.owner.as_ref())
+            {
+                continue;
+            }
+            let Some(local) = self.object_sets.get(id) else {
+                self.object_sets.insert(id.clone(), incoming.clone());
                 continue;
             };
-            if !set_id_binds_owner(&set_id, owner) {
-                continue;
+            let mut cancels = local.cancels.clone();
+            for (cid, cancel) in &incoming.cancels {
+                cancels.entry(cid.clone()).or_insert_with(|| cancel.clone());
             }
-            self.set_owners
-                .entry(key.clone())
-                .or_insert_with(|| owner.clone());
-        }
-        for record in other.memberships.values() {
-            self.merge_membership(record.clone());
-        }
-        for record in other.object_sets.values() {
-            self.merge_object_set(record.clone(), object_owners);
-        }
-    }
-
-    fn merge_membership(&mut self, incoming: MembershipRecord) {
-        if canonical_set_id(&incoming.membership.set_id).is_err() {
-            return;
-        }
-        if !set_id_binds_owner(&incoming.membership.set_id, &incoming.set_owner) {
-            return;
-        }
-        let Some(owner) = self.set_owners.get(&(
-            incoming.membership.predicate,
-            set_map_key(&incoming.membership.set_id),
-        )) else {
-            return;
-        };
-        if !principals_match(owner, &incoming.set_owner) {
-            return;
-        }
-        let Some(key) = membership_key(&incoming.membership) else {
-            return;
-        };
-        let enrolled = self.enrolled.clone();
-        let merged = match self.memberships.remove(&key) {
-            Some(local) => merge_membership_records(local, incoming, &enrolled),
-            None => {
-                let mut incoming = incoming;
-                retain_verified_membership(&mut incoming, &enrolled);
-                if !membership_has_authentic_part(&incoming) {
-                    return;
-                }
-                incoming.publish(&enrolled);
-                incoming
+            if replaces(&local.assent, &incoming.assent) {
+                let mut next = incoming.clone();
+                next.cancels = cancels;
+                self.object_sets.insert(id.clone(), next);
+            } else if let Some(local) = self.object_sets.get_mut(id) {
+                local.cancels = cancels;
             }
-        };
-        self.memberships.insert(key, merged);
-    }
-
-    fn merge_object_set(
-        &mut self,
-        incoming: ObjectSetRecord,
-        object_owners: &HashMap<String, String>,
-    ) {
-        let Some(owner) = retained_object_owner(object_owners, &incoming.name.object) else {
-            return;
-        };
-        if !principals_match(owner, &incoming.object_owner) {
-            return;
         }
-        if incoming.signed_stated == 1 && canonical_set_id(&incoming.name.set_id).is_err() {
-            return;
-        }
-        let enrolled = self.enrolled.clone();
-        let key = object_set_key(&incoming.name.object);
-        let merged = match self.object_sets.remove(&key) {
-            Some(local) => merge_object_records(local, incoming, &enrolled),
-            None => {
-                let mut incoming = incoming;
-                retain_verified_object_cancels(&mut incoming, &enrolled);
-                if !object_signature_ok(&incoming, &enrolled) {
-                    if incoming.cancels.is_empty() {
-                        return;
-                    }
-                    incoming.signed_stated = 0;
-                    incoming.signature = AttestationSig::empty();
-                    incoming.observed.clear();
-                }
-                refresh_object(&mut incoming, &enrolled);
-                incoming
-            }
-        };
-        self.object_sets.insert(key, merged);
     }
 }
 
-/// Membership soul under dest ACL. Not a five-segment grant soul
-/// and not a Check object. The set segment is `acl_key` of the
-/// canonical set id, the same key the in-memory map uses.
-pub fn membership_soul(
-    set_owner: &str,
-    predicate: GroupPredicate,
-    set_id: &str,
-    accessor: &str,
-) -> String {
-    let Some(owner) = acl_principal_key(set_owner) else {
-        return String::new();
+fn take_assent(local: &mut Option<StoredAssent>, incoming: Option<&StoredAssent>) {
+    let Some(next) = incoming else {
+        return;
     };
-    let Some(accessor) = acl_principal_key(accessor) else {
-        return String::new();
+    if local.as_ref().is_none_or(|prev| replaces(prev, next)) {
+        *local = Some(next.clone());
+    }
+}
+
+fn replaces(prev: &StoredAssent, next: &StoredAssent) -> bool {
+    if next.ham_state != prev.ham_state {
+        return next.ham_state > prev.ham_state;
+    }
+    if next.stated != prev.stated {
+        return next.stated == 0;
+    }
+    next.bytes < prev.bytes
+}
+
+fn covers(observed: &[String], ids: &BTreeMap<String, StoredCancel>) -> bool {
+    ids.keys().all(|id| observed.iter().any(|have| have == id))
+}
+
+fn membership_live(row: &MembershipRecord) -> bool {
+    let Some(member) = &row.member_assent else {
+        return false;
     };
-    let set_key = canonical_set_id(set_id)
-        .map(|id| acl_key(&id))
-        .unwrap_or_else(|_| acl_key(set_id));
-    format!(
-        "{S3RCH_ROOT}/{S3RCH_ACL}/{owner}/membership/{}/{set_key}/{accessor}",
-        predicate.as_str(),
+    let Some(set) = &row.set_assent else {
+        return false;
+    };
+    member.stated == 1
+        && set.stated == 1
+        && covers(&member.observed, &row.cancels)
+        && covers(&set.observed, &row.cancels)
+}
+
+fn object_set_live(row: &ObjectSetRecord) -> bool {
+    row.assent.stated == 1 && covers(&row.assent.observed, &row.cancels)
+}
+
+fn u64_field(value: Option<&Value>) -> Result<u64, Reason> {
+    let Some(n) = value.and_then(Value::as_u64) else {
+        return Err(Reason::BadRecord);
+    };
+    if n > MAX_SAFE {
+        return Err(Reason::BadRecord);
+    }
+    Ok(n)
+}
+
+fn text_field(value: Option<&Value>) -> Result<&str, Reason> {
+    match value {
+        Some(Value::String(text)) => Ok(text),
+        Some(_) => Err(Reason::NotString),
+        None => Err(Reason::NotString),
+    }
+}
+
+fn predicate_of(value: Option<&Value>) -> Result<GroupPredicate, Reason> {
+    match value.and_then(Value::as_str) {
+        Some("same-group") => Ok(GroupPredicate::SameGroup),
+        Some("named-circle") => Ok(GroupPredicate::NamedCircle),
+        _ => Err(Reason::BadRecord),
+    }
+}
+
+fn cancel_list(value: Option<&Value>) -> Result<Vec<String>, Reason> {
+    let Some(Value::Array(items)) = value else {
+        return Err(Reason::BadRecord);
+    };
+    let mut ids = Vec::new();
+    for item in items {
+        let Some(text) = item.as_str() else {
+            return Err(Reason::BadRecord);
+        };
+        if text.len() != 64
+            || !text
+                .bytes()
+                .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
+        {
+            return Err(Reason::BadRecord);
+        }
+        if ids.iter().any(|id: &String| id == text) {
+            return Err(Reason::BadRecord);
+        }
+        ids.push(text.to_string());
+    }
+    let mut sorted = ids.clone();
+    sorted.sort();
+    if ids != sorted {
+        return Err(Reason::BadRecord);
+    }
+    Ok(ids)
+}
+
+fn parse_set_id(value: Option<&Value>) -> Result<(ObjectId, PrincipalId), Reason> {
+    let id = parse_object_id(text_field(value)?)?;
+    if !id.as_ref().starts_with("set_") {
+        return Err(Reason::BadAlphabet);
+    }
+    let owner = object_principal(&id)?;
+    Ok((id, owner))
+}
+
+fn domain_ok(map: &serde_json::Map<String, Value>, domain: &str) -> Result<(), Reason> {
+    if let Some(found) = map.get("domain") {
+        if found.as_str() != Some(domain) {
+            return Err(Reason::LegacyRow);
+        }
+    }
+    if !map.contains_key("sig") {
+        return Err(Reason::LegacyRow);
+    }
+    Ok(())
+}
+
+fn sig_field(map: &serde_json::Map<String, Value>) -> Result<String, Reason> {
+    match map.get("sig") {
+        Some(Value::String(sig)) => Ok(sig.clone()),
+        _ => Err(Reason::BadRecord),
+    }
+}
+
+fn attest_field(map: &serde_json::Map<String, Value>) -> Result<Option<String>, Reason> {
+    match map.get("attest") {
+        None => Ok(None),
+        Some(Value::String(token)) => Ok(Some(token.clone())),
+        Some(_) => Err(Reason::BadRecord),
+    }
+}
+
+fn stated_field(value: Option<&Value>) -> Result<u8, Reason> {
+    let stated = u64_field(value)?;
+    if stated > 1 {
+        return Err(Reason::BadRecord);
+    }
+    Ok(stated as u8)
+}
+
+fn lp(fields: &[&str]) -> Result<Vec<u8>, Reason> {
+    length_prefixed(fields)
+}
+
+fn bytes_with_cancels(head: &[&str], cancels: &[String]) -> Result<Vec<u8>, Reason> {
+    let count = cancels.len().to_string();
+    let mut fields: Vec<&str> = head.to_vec();
+    fields.push(&count);
+    for id in cancels {
+        fields.push(id);
+    }
+    lp(&fields)
+}
+
+fn membership_bytes(row: &MembershipAssent) -> Result<Vec<u8>, Reason> {
+    let stated = row.stated.to_string();
+    let ham = row.ham_state.to_string();
+    let issued = row.issued_at.to_string();
+    bytes_with_cancels(
+        &[
+            MEMBER_DOMAIN,
+            row.role,
+            row.predicate.as_str(),
+            row.set.as_ref(),
+            row.member.as_ref(),
+            row.set_owner.as_ref(),
+            &stated,
+            &ham,
+            &issued,
+        ],
+        &row.cancels,
     )
 }
 
-/// Object-to-set soul under dest ACL. Six segments, so it is not a
-/// five-segment grant soul and not a Check object. The path stays
-/// on the object; the set id lives in the row, not in the soul.
-pub fn object_set_soul(object_owner: &str, object: &str) -> String {
-    let Some(owner) = acl_principal_key(object_owner) else {
-        return String::new();
-    };
-    format!(
-        "{S3RCH_ROOT}/{S3RCH_ACL}/{owner}/object-set/edge/{}",
-        acl_key(object),
+fn object_set_bytes(row: &ObjectSetAssent) -> Result<Vec<u8>, Reason> {
+    let stated = row.stated.to_string();
+    let ham = row.ham_state.to_string();
+    let issued = row.issued_at.to_string();
+    bytes_with_cancels(
+        &[
+            OBJECT_SET_DOMAIN,
+            row.owner.as_ref(),
+            row.object.as_ref(),
+            row.predicate.as_str(),
+            row.set.as_ref(),
+            &stated,
+            &ham,
+            &issued,
+        ],
+        &row.cancels,
     )
+}
+
+fn cancel_bytes(row: &GroupCancel) -> Result<Vec<u8>, Reason> {
+    let count = row.prior.len().to_string();
+    let mut fields = vec![
+        CANCEL_DOMAIN,
+        row.kind,
+        row.row_soul.as_str(),
+        row.cancel_id.as_str(),
+        count.as_str(),
+    ];
+    for id in &row.prior {
+        fields.push(id);
+    }
+    lp(&fields)
+}
+
+fn parse_membership(row: &Value) -> Result<(MembershipAssent, Vec<u8>), Reason> {
+    let map = row.as_object().ok_or(Reason::BadRecord)?;
+    domain_ok(map, MEMBER_DOMAIN)?;
+    let role = match map.get("role").and_then(Value::as_str) {
+        Some("member") => "member",
+        Some("set") => "set",
+        _ => return Err(Reason::BadRecord),
+    };
+    let predicate = predicate_of(map.get("predicate"))?;
+    let (set, embedded) = parse_set_id(map.get("set"))?;
+    let member = parse_principal_id(text_field(map.get("member"))?)?;
+    let set_owner = parse_principal_id(text_field(map.get("setOwner"))?)?;
+    if set_owner != embedded {
+        return Err(Reason::BadRecord);
+    }
+    let assent = MembershipAssent {
+        role,
+        predicate,
+        set,
+        member,
+        set_owner,
+        stated: stated_field(map.get("stated"))?,
+        ham_state: u64_field(map.get("hamState"))?,
+        issued_at: u64_field(map.get("issuedAt"))?,
+        cancels: cancel_list(map.get("cancels"))?,
+        sig: sig_field(map)?,
+        attest: attest_field(map)?,
+    };
+    let bytes = membership_bytes(&assent)?;
+    Ok((assent, bytes))
+}
+
+fn parse_object_set(row: &Value) -> Result<(ObjectSetAssent, Vec<u8>), Reason> {
+    let map = row.as_object().ok_or(Reason::BadRecord)?;
+    domain_ok(map, OBJECT_SET_DOMAIN)?;
+    let owner = parse_principal_id(text_field(map.get("owner"))?)?;
+    let object = parse_object_id(text_field(map.get("object"))?)?;
+    let embedded = object_principal(&object)?;
+    if embedded != owner {
+        return Err(Reason::BadRecord);
+    }
+    let (set, _) = parse_set_id(map.get("set"))?;
+    let assent = ObjectSetAssent {
+        owner,
+        object,
+        predicate: predicate_of(map.get("predicate"))?,
+        set,
+        stated: stated_field(map.get("stated"))?,
+        ham_state: u64_field(map.get("hamState"))?,
+        issued_at: u64_field(map.get("issuedAt"))?,
+        cancels: cancel_list(map.get("cancels"))?,
+        sig: sig_field(map)?,
+        attest: attest_field(map)?,
+    };
+    let bytes = object_set_bytes(&assent)?;
+    Ok((assent, bytes))
+}
+
+fn parse_cancel(row: &Value) -> Result<(GroupCancel, Vec<u8>), Reason> {
+    let map = row.as_object().ok_or(Reason::BadRecord)?;
+    domain_ok(map, CANCEL_DOMAIN)?;
+    let kind = match map.get("kind").and_then(Value::as_str) {
+        Some("membership") => "membership",
+        Some("object-set") => "object-set",
+        _ => return Err(Reason::BadRecord),
+    };
+    let predicate = predicate_of(map.get("predicate"))?;
+    let (set, embedded) = parse_set_id(map.get("set"))?;
+    let member = parse_principal_id(text_field(map.get("member"))?)?;
+    let set_owner = parse_principal_id(text_field(map.get("setOwner"))?)?;
+    if set_owner != embedded {
+        return Err(Reason::BadRecord);
+    }
+    let signer = parse_principal_id(text_field(map.get("signer"))?)?;
+    let prior = cancel_list(map.get("prior"))?;
+    let cancel_id = text_field(map.get("cancelId"))?.to_string();
+    if cancel_id.len() != 64
+        || !cancel_id
+            .bytes()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
+        || prior.iter().any(|id| id == &cancel_id)
+    {
+        return Err(Reason::BadRecord);
+    }
+    let row_soul = text_field(map.get("rowSoul"))?.to_string();
+    let issued_at = u64_field(map.get("issuedAt"))?;
+    let object = if kind == "object-set" {
+        Some(parse_object_id(text_field(map.get("object"))?)?)
+    } else {
+        None
+    };
+    let expected = if kind == "membership" {
+        if signer != member && signer != set_owner {
+            return Err(Reason::BadRecord);
+        }
+        membership_soul(&set_owner, predicate.ids(), &set, &member).to_string()
+    } else {
+        let object = object.clone().ok_or(Reason::BadRecord)?;
+        let object_owner = object_principal(&object)?;
+        if signer != object_owner {
+            return Err(Reason::BadRecord);
+        }
+        object_set_soul(&object_owner, &object).to_string()
+    };
+    if row_soul != expected {
+        return Err(Reason::BadRecord);
+    }
+    let cancel = GroupCancel {
+        kind,
+        row_soul,
+        cancel_id,
+        prior,
+        signer,
+        predicate,
+        set,
+        member,
+        set_owner,
+        object,
+        issued_at,
+        sig: sig_field(map)?,
+        attest: attest_field(map)?,
+    };
+    let bytes = cancel_bytes(&cancel)?;
+    Ok((cancel, bytes))
+}
+
+fn verify_party(
+    principal: &PrincipalId,
+    rotations: &[Value],
+    ctx: &ResolutionContext<'_>,
+    bytes: &[u8],
+    sig: &str,
+    issued_at: u64,
+    stated: Option<u8>,
+    attest: Option<&str>,
+) -> Result<SignedAtMode, Reason> {
+    match verify_signed_at(principal, rotations, ctx, bytes, sig, issued_at) {
+        Ok(signed) => Ok(signed.mode),
+        Err(Reason::UnwitnessedRetiredKey) => {
+            if stated.is_some_and(|stated| stated != 0) {
+                if let Some(token) = attest {
+                    verify_acl_attestation(token, ctx.jwks, issued_at, bytes)?;
+                }
+                return Err(Reason::UnwitnessedRetiredKey);
+            }
+            let Some(token) = attest else {
+                return Err(Reason::UnwitnessedRetiredKey);
+            };
+            let account = resolve_current_key(principal, rotations, ctx).result?;
+            let seen = verify_acl_attestation(token, ctx.jwks, issued_at, bytes)?;
+            if seen.principal != *principal {
+                return Err(Reason::BadAttestation);
+            }
+            let state = history_state(principal, &account.rotations, issued_at, ctx.now);
+            verify_key_signature(&state.key, sig, bytes)?;
+            Ok(SignedAtMode::Witnessed)
+        }
+        Err(reason) => Err(reason),
+    }
+}
+
+fn stored_assent(
+    stated: u8,
+    ham_state: u64,
+    issued_at: u64,
+    bytes: Vec<u8>,
+    sig: String,
+    attest: Option<String>,
+    observed: Vec<String>,
+    mode: SignedAtMode,
+) -> StoredAssent {
+    StoredAssent {
+        stated,
+        ham_state,
+        issued_at,
+        bytes,
+        sig,
+        attest,
+        observed,
+        mode,
+    }
+}
+
+fn stored_cancel(cancel: &GroupCancel, bytes: Vec<u8>, mode: SignedAtMode) -> StoredCancel {
+    StoredCancel {
+        id: cancel.cancel_id.clone(),
+        prior: cancel.prior.clone(),
+        signer: cancel.signer.clone(),
+        issued_at: cancel.issued_at,
+        bytes,
+        sig: cancel.sig.clone(),
+        attest: cancel.attest.clone(),
+        mode,
+    }
+}
+
+fn deny(reason: &str, hint: Option<HandoffHint>, hop: Option<HopFactor>) -> MeshCheckResult {
+    MeshCheckResult {
+        allowed: false,
+        reason: reason.to_string(),
+        hint,
+        hop,
+    }
 }
 
 impl MeshSeeGraph {
-    /// Record the account that owns a set. A second account does not replace it.
-    pub fn record_set_owner(
+    /// Admit one membership assent. History comes from `resolver`.
+    /// A stated-1 assent signed by a retired key is refused.
+    pub fn admit_membership(
         &mut self,
-        owner: impl AsRef<str>,
-        predicate: GroupPredicate,
-        set_id: impl AsRef<str>,
-    ) -> Result<(), GunError> {
-        let owner = ascii_trim(owner.as_ref());
-        let set_id = ascii_trim(set_id.as_ref());
-        if owner.is_empty() || set_id.is_empty() {
-            return Err(GunError::EmptyGroupName);
-        }
-        let canonical = canonical_set_id(set_id)?;
-        let key = (predicate, set_map_key(&canonical));
-        if acl_principal_key(owner).is_none() {
-            return Err(GunError::UnboundSetOwner);
-        }
-        if let Some(existing) = self.labels.groups.set_owners.get(&key) {
-            if !principals_match(existing, owner) {
-                return Err(GunError::SetOwnerConflict);
-            }
-            return Ok(());
-        }
-        if !set_id_binds_owner(&canonical, owner) {
-            return Err(GunError::UnboundSetOwner);
-        }
-        self.labels.groups.set_owners.insert(key, owner.to_string());
-        Ok(())
-    }
-
-    pub fn owner_of_set(&self, predicate: GroupPredicate, set_id: &str) -> Option<&str> {
-        let canonical = canonical_set_id(ascii_trim(set_id)).ok()?;
-        self.labels
-            .groups
-            .set_owners
-            .get(&(predicate, set_map_key(&canonical)))
-            .map(String::as_str)
-    }
-
-    /// Enroll the verify key that signs this principal's group rows.
-    /// The signing key stays with the caller.
-    pub fn enroll_signer(
-        &mut self,
-        principal: impl AsRef<str>,
-        key: VerifyKey,
-    ) -> Result<(), GunError> {
-        let principal = ascii_trim(principal.as_ref());
-        if principal.is_empty() || !key.is_valid() {
-            return Err(GunError::SignerNotEnrolled);
-        }
-        let Some(id) = acl_principal_key(principal) else {
-            return Err(GunError::SignerNotEnrolled);
+        row: &Value,
+        resolver: &dyn Fn(&PrincipalId) -> Option<Vec<Value>>,
+        ctx: &ResolutionContext<'_>,
+    ) -> Result<bool, Reason> {
+        let (assent, bytes) = parse_membership(row)?;
+        let signer = if assent.role == "member" {
+            &assent.member
+        } else {
+            &assent.set_owner
         };
-        if let Some(existing) = self.labels.groups.enrolled.get(&id) {
-            if existing != &key {
-                return Err(GunError::SignerNotEnrolled);
-            }
-            return Ok(());
-        }
-        self.labels.groups.enrolled.insert(id, key);
-        Ok(())
-    }
-
-    /// Verify key enrolled for this principal. Lookup uses the canonical
-    /// accessor id. A missing enrollment is not a key.
-    pub fn enrolled_key(&self, principal: &str) -> Option<VerifyKey> {
-        let id = acl_principal_key(principal)?;
-        self.labels.groups.enrolled.get(&id).copied()
-    }
-
-    /// One side of a direct membership. Live only when both the member
-    /// and the set owner have stated it, and both assents have observed
-    /// every cancel on the row.
-    pub fn state_membership(
-        &mut self,
-        speaker: impl AsRef<str>,
-        predicate: GroupPredicate,
-        set_id: impl AsRef<str>,
-        accessor: impl AsRef<str>,
-        secret: &IssuerSecret,
-    ) -> Result<(), GunError> {
-        let set_id = ascii_trim(set_id.as_ref());
-        let accessor = ascii_trim(accessor.as_ref());
-        if set_id.is_empty() || accessor.is_empty() {
-            return Err(GunError::EmptyGroupName);
-        }
-        let (speaks_member, speaks_set) =
-            self.membership_speaker(speaker.as_ref(), predicate, set_id, accessor)?;
-        let canonical = canonical_set_id(set_id)?;
-        self.require_secret(speaker.as_ref(), secret)?;
-        let key = membership_key_parts(predicate, &canonical, accessor)
-            .ok_or(GunError::EmptyPrincipal)?;
-        let owner = self
-            .owner_of_set(predicate, &canonical)
-            .ok_or(GunError::SetUnknown)?
-            .to_string();
-        let soul = membership_soul(&owner, predicate, &canonical, accessor);
-        let mut record = self
-            .labels
-            .groups
-            .memberships
-            .remove(&key)
-            .unwrap_or_else(|| blank_membership(predicate, &canonical, accessor, &soul, &owner));
-        record.soul = soul;
-        record.set_owner = owner;
-        record.membership.ham_state = record.membership.ham_state.saturating_add(1);
-        let observed = cancel_ids(&record.cancels);
-        if speaks_member {
-            let ham = record.member.ham_state.saturating_add(1);
-            let Some(message) = party_message("member", &record, true, ham, &observed) else {
-                self.labels.groups.memberships.insert(key, record);
-                return Err(GunError::EmptyPrincipal);
-            };
-            sign_party(&mut record.member, true, observed.clone(), secret, &message);
-        }
-        if speaks_set {
-            let ham = record.set_party.ham_state.saturating_add(1);
-            let Some(message) = party_message("set", &record, true, ham, &observed) else {
-                self.labels.groups.memberships.insert(key, record);
-                return Err(GunError::EmptyPrincipal);
-            };
-            sign_party(
-                &mut record.set_party,
-                true,
-                observed.clone(),
-                secret,
-                &message,
-            );
-        }
-        let enrolled = self.labels.groups.enrolled.clone();
-        record.publish(&enrolled);
-        self.labels.groups.memberships.insert(key, record);
-        Ok(())
-    }
-
-    /// Privilege-down. Adds a cancel id this replica has not used before.
-    /// A later assent is live only after it lists that id.
-    pub fn cancel_membership(
-        &mut self,
-        speaker: impl AsRef<str>,
-        predicate: GroupPredicate,
-        set_id: impl AsRef<str>,
-        accessor: impl AsRef<str>,
-        secret: &IssuerSecret,
-    ) -> Result<(), GunError> {
-        let set_id = ascii_trim(set_id.as_ref());
-        let accessor = ascii_trim(accessor.as_ref());
-        if set_id.is_empty() || accessor.is_empty() {
-            return Err(GunError::EmptyGroupName);
-        }
-        let (speaks_member, speaks_set) =
-            self.membership_speaker(speaker.as_ref(), predicate, set_id, accessor)?;
-        let canonical = canonical_set_id(set_id)?;
-        self.require_secret(speaker.as_ref(), secret)?;
-        let key = membership_key_parts(predicate, &canonical, accessor)
-            .ok_or(GunError::EmptyPrincipal)?;
-        let owner = self
-            .owner_of_set(predicate, &canonical)
-            .ok_or(GunError::SetUnknown)?
-            .to_string();
-        let soul = membership_soul(&owner, predicate, &canonical, accessor);
-        let mut record = self
-            .labels
-            .groups
-            .memberships
-            .remove(&key)
-            .unwrap_or_else(|| blank_membership(predicate, &canonical, accessor, &soul, &owner));
-        record.soul = soul;
-        record.set_owner = owner;
-        let Some(row_key) = membership_row_key(&record) else {
-            self.labels.groups.memberships.insert(key, record);
-            return Err(GunError::EmptyPrincipal);
+        let Some(rotations) = resolver(signer) else {
+            return Err(Reason::MissingHistory);
         };
-        self.labels.groups.push_cancel(
-            &mut record.cancels,
-            "membership",
-            &row_key,
-            speaker.as_ref(),
-            secret,
+        let mode = verify_party(
+            signer,
+            &rotations,
+            ctx,
+            &bytes,
+            &assent.sig,
+            assent.issued_at,
+            Some(assent.stated),
+            assent.attest.as_deref(),
+        )?;
+        let soul = membership_soul(
+            &assent.set_owner,
+            assent.predicate.ids(),
+            &assent.set,
+            &assent.member,
+        )
+        .to_string();
+        let next = stored_assent(
+            assent.stated,
+            assent.ham_state,
+            assent.issued_at,
+            bytes,
+            assent.sig,
+            assent.attest,
+            assent.cancels,
+            mode,
         );
-        let observed = cancel_ids(&record.cancels);
-        if speaks_member {
-            let ham = record.member.ham_state.saturating_add(1);
-            let Some(message) = party_message("member", &record, false, ham, &observed) else {
-                self.labels.groups.memberships.insert(key, record);
-                return Err(GunError::EmptyPrincipal);
-            };
-            sign_party(
-                &mut record.member,
-                false,
-                observed.clone(),
-                secret,
-                &message,
-            );
-        }
-        if speaks_set {
-            let ham = record.set_party.ham_state.saturating_add(1);
-            let Some(message) = party_message("set", &record, false, ham, &observed) else {
-                self.labels.groups.memberships.insert(key, record);
-                return Err(GunError::EmptyPrincipal);
-            };
-            sign_party(
-                &mut record.set_party,
-                false,
-                observed.clone(),
-                secret,
-                &message,
-            );
-        }
-        record.membership.ham_state = record.membership.ham_state.saturating_add(1);
-        let enrolled = self.labels.groups.enrolled.clone();
-        record.publish(&enrolled);
-        self.labels.groups.memberships.insert(key, record);
-        Ok(())
-    }
-
-    pub fn membership(
-        &self,
-        predicate: GroupPredicate,
-        set_id: &str,
-        accessor: &str,
-    ) -> Option<&MeshMembership> {
-        self.membership_record(predicate, set_id, accessor)
-            .map(|r| &r.membership)
-    }
-
-    pub fn membership_row_soul(
-        &self,
-        predicate: GroupPredicate,
-        set_id: &str,
-        accessor: &str,
-    ) -> Option<&str> {
-        self.membership_record(predicate, set_id, accessor)
-            .map(|r| r.soul.as_str())
-    }
-
-    /// Object owner names the one set this object uses.
-    pub fn name_object_set(
-        &mut self,
-        owner: impl AsRef<str>,
-        object: impl AsRef<str>,
-        predicate: GroupPredicate,
-        set_id: impl AsRef<str>,
-        secret: &IssuerSecret,
-    ) -> Result<(), GunError> {
-        let set_id = ascii_trim(set_id.as_ref());
-        if set_id.is_empty() {
-            return Err(GunError::EmptyGroupName);
-        }
-        let canonical = canonical_set_id(set_id)?;
-        let (object_id, object_owner) =
-            self.write_object_set_auth(owner.as_ref(), object.as_ref())?;
-        if self
-            .owner_of_set(predicate, &canonical)
-            .is_some_and(|set_owner| !set_id_binds_owner(&canonical, set_owner))
-        {
-            return Err(GunError::UnboundSetOwner);
-        }
-        self.require_secret(owner.as_ref(), secret)?;
-        self.write_object_set(&object_id, &object_owner, predicate, &canonical, 1, secret);
-        Ok(())
-    }
-
-    /// Object owner clears the set edge. The clear adds a cancel id,
-    /// including when this replica has not seen the live edge.
-    pub fn clear_object_set(
-        &mut self,
-        owner: impl AsRef<str>,
-        object: impl AsRef<str>,
-        secret: &IssuerSecret,
-    ) -> Result<(), GunError> {
-        let (object_id, object_owner) =
-            self.write_object_set_auth(owner.as_ref(), object.as_ref())?;
-        self.require_secret(owner.as_ref(), secret)?;
-        let existing = self.object_set_record(&object_id);
-        let (predicate, set_id) = match existing {
-            Some(record) => (record.name.predicate, record.name.set_id.clone()),
-            None => (GroupPredicate::SameGroup, String::new()),
+        let held = self
+            .labels
+            .groups
+            .memberships
+            .entry(soul)
+            .or_insert_with(|| MembershipRecord {
+                predicate: assent.predicate,
+                set: assent.set.clone(),
+                member: assent.member.clone(),
+                set_owner: assent.set_owner.clone(),
+                member_assent: None,
+                set_assent: None,
+                cancels: BTreeMap::new(),
+            });
+        let prev = if assent.role == "member" {
+            &held.member_assent
+        } else {
+            &held.set_assent
         };
-        self.write_object_set(&object_id, &object_owner, predicate, &set_id, 0, secret);
-        Ok(())
+        if prev.as_ref().is_some_and(|prev| !replaces(prev, &next)) {
+            return Ok(false);
+        }
+        if assent.role == "member" {
+            held.member_assent = Some(next);
+        } else {
+            held.set_assent = Some(next);
+        }
+        Ok(true)
     }
 
-    pub fn object_set(&self, object: &str) -> Option<&ObjectSetName> {
-        self.object_set_record(object).map(|r| &r.name)
+    /// Admit one object-set row signed by the object owner.
+    pub fn admit_object_set(
+        &mut self,
+        row: &Value,
+        resolver: &dyn Fn(&PrincipalId) -> Option<Vec<Value>>,
+        ctx: &ResolutionContext<'_>,
+    ) -> Result<bool, Reason> {
+        let (edge, bytes) = parse_object_set(row)?;
+        let Some(rotations) = resolver(&edge.owner) else {
+            return Err(Reason::MissingHistory);
+        };
+        let mode = verify_party(
+            &edge.owner,
+            &rotations,
+            ctx,
+            &bytes,
+            &edge.sig,
+            edge.issued_at,
+            Some(edge.stated),
+            edge.attest.as_deref(),
+        )?;
+        let next = stored_assent(
+            edge.stated,
+            edge.ham_state,
+            edge.issued_at,
+            bytes,
+            edge.sig,
+            edge.attest,
+            edge.cancels,
+            mode,
+        );
+        let id = edge.object.as_ref().to_string();
+        if let Some(prev) = self.labels.groups.object_sets.get(&id) {
+            if !replaces(&prev.assent, &next) {
+                return Ok(false);
+            }
+        }
+        let cancels = self
+            .labels
+            .groups
+            .object_sets
+            .get(&id)
+            .map(|prev| prev.cancels.clone())
+            .unwrap_or_default();
+        self.labels.groups.object_sets.insert(
+            id,
+            ObjectSetRecord {
+                owner: edge.owner,
+                object: edge.object,
+                predicate: edge.predicate,
+                set: edge.set,
+                assent: next,
+                cancels,
+            },
+        );
+        Ok(true)
     }
 
-    pub fn object_set_row_soul(&self, object: &str) -> Option<&str> {
-        self.object_set_record(object).map(|r| r.soul.as_str())
+    /// Admit one group cancel. A retired key is accepted only when witnessed.
+    pub fn admit_group_cancel(
+        &mut self,
+        row: &Value,
+        resolver: &dyn Fn(&PrincipalId) -> Option<Vec<Value>>,
+        ctx: &ResolutionContext<'_>,
+    ) -> Result<bool, Reason> {
+        let (cancel, bytes) = parse_cancel(row)?;
+        let Some(rotations) = resolver(&cancel.signer) else {
+            return Err(Reason::MissingHistory);
+        };
+        let mode = verify_party(
+            &cancel.signer,
+            &rotations,
+            ctx,
+            &bytes,
+            &cancel.sig,
+            cancel.issued_at,
+            None,
+            cancel.attest.as_deref(),
+        )?;
+        let stored = stored_cancel(&cancel, bytes, mode);
+        if cancel.kind == "membership" {
+            let soul = membership_soul(
+                &cancel.set_owner,
+                cancel.predicate.ids(),
+                &cancel.set,
+                &cancel.member,
+            )
+            .to_string();
+            return self.insert_membership_cancel(soul, stored);
+        }
+        let Some(object) = &cancel.object else {
+            return Err(Reason::BadRecord);
+        };
+        self.insert_object_cancel(object.as_ref(), &cancel, stored)
+    }
+
+    fn insert_membership_cancel(
+        &mut self,
+        soul: String,
+        cancel: StoredCancel,
+    ) -> Result<bool, Reason> {
+        let Some(held) = self.labels.groups.memberships.get_mut(&soul) else {
+            return Err(Reason::Unknown);
+        };
+        if held.cancels.contains_key(&cancel.id) {
+            return Ok(false);
+        }
+        if cancel.prior.iter().any(|id| !held.cancels.contains_key(id)) {
+            return Err(Reason::BadRecord);
+        }
+        held.cancels.insert(cancel.id.clone(), cancel);
+        Ok(true)
+    }
+
+    fn insert_object_cancel(
+        &mut self,
+        object: &str,
+        cancel: &GroupCancel,
+        stored: StoredCancel,
+    ) -> Result<bool, Reason> {
+        let Some(held) = self.labels.groups.object_sets.get_mut(object) else {
+            return Err(Reason::Unknown);
+        };
+        if held.set != cancel.set || held.predicate != cancel.predicate {
+            return Err(Reason::Unknown);
+        };
+        if held.cancels.contains_key(&stored.id) {
+            return Ok(false);
+        }
+        if stored.prior.iter().any(|id| !held.cancels.contains_key(id)) {
+            return Err(Reason::BadRecord);
+        }
+        held.cancels.insert(stored.id.clone(), stored);
+        Ok(true)
+    }
+
+    /// Drop this principal's group rows that the new checkpoint rejects.
+    /// A cancel stays when it is present or witnessed.
+    pub fn reverify_group(
+        &mut self,
+        principal: &PrincipalId,
+        resolver: &dyn Fn(&PrincipalId) -> Option<Vec<Value>>,
+        ctx: &ResolutionContext<'_>,
+    ) -> Result<usize, Reason> {
+        let Some(rotations) = resolver(principal) else {
+            return Err(Reason::MissingHistory);
+        };
+        let mut dropped = 0;
+        let souls: Vec<String> = self.labels.groups.memberships.keys().cloned().collect();
+        for soul in souls {
+            let empty = {
+                let Some(row) = self.labels.groups.memberships.get_mut(&soul) else {
+                    continue;
+                };
+                for role in ["member", "set"] {
+                    let (signer_matches, stated, issued_at, bytes, sig, attest) = {
+                        let assent = if role == "member" {
+                            row.member_assent.as_ref()
+                        } else {
+                            row.set_assent.as_ref()
+                        };
+                        let signer = if role == "member" {
+                            &row.member
+                        } else {
+                            &row.set_owner
+                        };
+                        let Some(assent) = assent else {
+                            continue;
+                        };
+                        if signer != principal {
+                            continue;
+                        }
+                        (
+                            true,
+                            assent.stated,
+                            assent.issued_at,
+                            assent.bytes.clone(),
+                            assent.sig.clone(),
+                            assent.attest.clone(),
+                        )
+                    };
+                    if !signer_matches {
+                        continue;
+                    }
+                    let again = verify_party(
+                        principal,
+                        &rotations,
+                        ctx,
+                        &bytes,
+                        &sig,
+                        issued_at,
+                        Some(stated),
+                        attest.as_deref(),
+                    );
+                    if again.is_err() {
+                        if role == "member" {
+                            row.member_assent = None;
+                        } else {
+                            row.set_assent = None;
+                        }
+                        dropped += 1;
+                    }
+                }
+                let cancel_ids: Vec<String> = row
+                    .cancels
+                    .iter()
+                    .filter(|(_, cancel)| cancel.signer == *principal)
+                    .map(|(id, _)| id.clone())
+                    .collect();
+                for id in cancel_ids {
+                    let Some(cancel) = row.cancels.get(&id) else {
+                        continue;
+                    };
+                    let again = verify_party(
+                        &cancel.signer,
+                        &rotations,
+                        ctx,
+                        &cancel.bytes,
+                        &cancel.sig,
+                        cancel.issued_at,
+                        None,
+                        cancel.attest.as_deref(),
+                    );
+                    if again.is_err() {
+                        row.cancels.remove(&id);
+                        dropped += 1;
+                    }
+                }
+                row.member_assent.is_none() && row.set_assent.is_none() && row.cancels.is_empty()
+            };
+            if empty {
+                self.labels.groups.memberships.remove(&soul);
+            }
+        }
+        let objects: Vec<String> = self
+            .labels
+            .groups
+            .object_sets
+            .iter()
+            .filter(|(_, row)| row.owner == *principal)
+            .map(|(id, _)| id.clone())
+            .collect();
+        for id in objects {
+            let Some(row) = self.labels.groups.object_sets.get(&id) else {
+                continue;
+            };
+            let again = verify_party(
+                &row.owner,
+                &rotations,
+                ctx,
+                &row.assent.bytes,
+                &row.assent.sig,
+                row.assent.issued_at,
+                Some(row.assent.stated),
+                row.assent.attest.as_deref(),
+            );
+            if again.is_err() {
+                self.labels.groups.object_sets.remove(&id);
+                dropped += 1;
+            }
+        }
+        Ok(dropped)
     }
 
     /// `CHECK(see)` when the object names `same-group` or `named-circle`.
     ///
-    /// The owner sees their object. Otherwise both edges must be stated 1
-    /// and the membership must be jointly stated. Hop missing does not
-    /// fail. Hop alone never allows. `now` is the Check instant;
-    /// membership has no window here.
+    /// The owner sees their object. Otherwise both assents must be stated 1
+    /// and every stored cancel must be covered. Hop missing does not fail.
+    /// Hop alone never allows.
+    ///
+    /// Stored-id group Check. A raw string is not a parameter.
+    ///
+    /// ```compile_fail
+    /// let graph = sociacl_gun::MeshSeeGraph::new();
+    /// graph.check_group_see(sociacl_gun::GroupPredicate::SameGroup, "room", "0xbob", 0, None, None);
+    /// ```
     pub fn check_group_see(
         &self,
         predicate: GroupPredicate,
-        object: impl AsRef<str>,
-        accessor: impl AsRef<str>,
-        now: Timestamp,
+        object: &ObjectId,
+        accessor: &PrincipalId,
+        now: u64,
         hint: Option<&HandoffHint>,
         hop: Option<&HopFactor>,
     ) -> MeshCheckResult {
-        let object = object.as_ref();
-        let accessor = ascii_trim(accessor.as_ref());
+        let _ = now;
         let hint = hint.cloned();
         let hop = hop.cloned();
-        let _ = now;
-
-        let closed =
-            |reason: &str, hint: Option<HandoffHint>, hop: Option<HopFactor>| MeshCheckResult {
-                allowed: false,
-                reason: reason.to_string(),
-                hint,
-                hop,
-            };
-
-        if object_id_rejected(object) {
-            return closed(crate::MESH_REASON_MISSING, hint, hop);
-        }
-        if let Some(reason) = closed_reason(object) {
-            return closed(reason, hint, hop);
-        }
-        let Some((object_id, object_owner)) = self.labels.object_record(object) else {
-            return closed(crate::MESH_REASON_MISSING, hint, hop);
+        let Some(owner) = self.labels.owner_of(object.as_ref()) else {
+            return deny(MESH_REASON_MISSING, hint, hop);
         };
-        let object_id = object_id.to_string();
-        let object_owner = object_owner.to_string();
-        let owner_key = acl_principal_key(&object_owner);
-        let accessor_key = acl_principal_key(accessor);
-        if owner_key.is_some() && owner_key == accessor_key {
+        let Ok(parsed_owner) = parse_principal_id(owner) else {
+            return deny(MESH_REASON_MISSING, hint, hop);
+        };
+        if parsed_owner == *accessor {
             return MeshCheckResult {
                 allowed: true,
-                reason: crate::MESH_REASON_OWNER.into(),
+                reason: MESH_REASON_OWNER.into(),
                 hint,
                 hop,
             };
         }
-        let Some(edge) = self.object_set_record(&object_id) else {
-            return closed(crate::MESH_REASON_MISSING, hint, hop);
+        let Some(edge) = self.labels.groups.object_sets.get(object.as_ref()) else {
+            return deny(MESH_REASON_MISSING, hint, hop);
         };
-        if !principals_match(&edge.object_owner, &object_owner) {
-            return closed(crate::MESH_REASON_MISSING, hint, hop);
+        if !object_set_live(edge) || edge.predicate != predicate || edge.owner != parsed_owner {
+            return deny(MESH_REASON_MISSING, hint, hop);
         }
-        if acl_key(&edge.name.object) != acl_key(&object_id) {
-            return closed(crate::MESH_REASON_MISSING, hint, hop);
-        }
-        let edge_predicate = edge.name.predicate;
-        if edge_predicate != predicate {
-            return closed(crate::MESH_REASON_MISSING, hint, hop);
-        }
-        if !self.object_set_grantable(edge) {
-            let reason = if edge.signed_stated == 0
-                || !verified_cancel_ids(
-                    &edge.cancels,
-                    &self.labels.groups.enrolled,
-                    "object-set",
-                    &object_set_key(&object_id),
-                    |signer| principals_match(signer, &edge.object_owner),
-                )
-                .is_empty()
-            {
-                crate::MESH_REASON_CANCELLED
-            } else {
-                crate::MESH_REASON_MISSING
-            };
-            return closed(reason, hint, hop);
-        }
-        let set_id = edge.name.set_id.clone();
-        if canonical_set_id(&set_id).ok().as_deref() != Some(set_id.as_str()) {
-            return closed(crate::MESH_REASON_MISSING, hint, hop);
-        }
-        let Some(set_owner) = self.owner_of_set(predicate, &set_id) else {
-            return closed(crate::MESH_REASON_MISSING, hint, hop);
+        let Ok(set_owner) = object_principal(&edge.set) else {
+            return deny(MESH_REASON_MISSING, hint, hop);
         };
-        if !set_id_binds_owner(&set_id, set_owner) {
-            return closed(crate::MESH_REASON_MISSING, hint, hop);
-        }
-        let Some(record) = self.membership_record(predicate, &set_id, accessor) else {
-            return closed(crate::MESH_REASON_MISSING, hint, hop);
+        let soul = membership_soul(&set_owner, predicate.ids(), &edge.set, accessor).to_string();
+        let Some(membership) = self.labels.groups.memberships.get(&soul) else {
+            return deny(MESH_REASON_MISSING, hint, hop);
         };
-        if record.membership.predicate != predicate
-            || record.membership.set_id != set_id
-            || !principals_match(&record.membership.accessor, accessor)
-            || !principals_match(&record.set_owner, set_owner)
+        if !membership_live(membership)
+            || membership.member != *accessor
+            || membership.set_owner != set_owner
         {
-            return closed(crate::MESH_REASON_MISSING, hint, hop);
+            return deny(MESH_REASON_MISSING, hint, hop);
         }
-        if self.membership_grantable(record) {
-            return MeshCheckResult {
-                allowed: true,
-                reason: predicate.as_str().into(),
-                hint,
-                hop,
-            };
+        MeshCheckResult {
+            allowed: true,
+            reason: predicate.as_str().into(),
+            hint,
+            hop,
         }
-        let reason = if record.removed {
-            crate::MESH_REASON_CANCELLED
-        } else {
-            crate::MESH_REASON_MISSING
-        };
-        closed(reason, hint, hop)
     }
 
-    /// Group tail of a presentation, after binding and freshness.
-    ///
-    /// Allowed only when [`Self::check_group_see`] allows and the decoded
-    /// payload is stated 1 with `now` in `[from, until)`. A live membership
-    /// does not override a cancel or a closed window. A group object with
-    /// no [`PresentedGroup`] fails closed. An ordinary object omits the
-    /// argument and runs see.
+    /// Group tail of a presentation. `set` is the minted set id.
+    /// No set, and no live object-set, falls through to see.
     pub fn check_group_presentation(
         &self,
-        group: Option<&PresentedGroup>,
-        object: impl AsRef<str>,
-        accessor: impl AsRef<str>,
-        payload: &DecodedGroupPayload,
-        now: Timestamp,
+        set: Option<&ObjectId>,
+        object: &ObjectId,
+        accessor: &PrincipalId,
+        payload: Option<&DecodedGroupPayload>,
+        now: u64,
         hint: Option<&HandoffHint>,
         hop: Option<&HopFactor>,
     ) -> GroupPresentation {
-        let object = object.as_ref();
-        let accessor = ascii_trim(accessor.as_ref());
-        let store_cancel = payload.stated == 0;
+        let store_cancel = payload.is_some_and(|payload| payload.stated == 0);
         let hinted = hint.cloned();
         let hopped = hop.cloned();
+        let live = payload.is_some_and(|payload| payload.live_at(now));
         let finish = |allowed: bool, reason: String| GroupPresentation {
             allowed,
             reason,
@@ -804,1421 +1136,99 @@ impl MeshSeeGraph {
             hop: hopped.clone(),
             store_cancel,
         };
-
-        if object_id_rejected(object) {
-            return finish(false, crate::MESH_REASON_MISSING.into());
-        }
         let named = self
-            .object_set_record(object)
-            .is_some_and(|edge| self.object_set_grantable(edge));
-        let Some(group) = group else {
+            .labels
+            .groups
+            .object_sets
+            .get(object.as_ref())
+            .is_some_and(object_set_live);
+        let Some(set) = set else {
             if named {
-                return finish(false, crate::MESH_REASON_MISSING.into());
+                return finish(false, MESH_REASON_MISSING.into());
             }
-            let dest = self
-                .labels
-                .check_see_label(object, accessor, now, hint, hop);
-            if dest.allowed && payload.live_at(now.0) {
+            let dest = self.check_see(object, accessor, now, hint, hop);
+            if dest.allowed && live {
                 return finish(true, dest.reason);
             }
-            let reason = if payload.live_at(now.0) {
+            let reason = if live {
                 dest.reason
             } else {
-                crate::MESH_REASON_CANCELLED.into()
+                MESH_REASON_CANCELLED.into()
             };
             return finish(false, reason);
         };
-
-        let matched = self.object_set_record(object).is_some_and(|edge| {
-            edge.name.predicate == group.predicate && edge.name.set_id == group.set_id
-        });
+        let presented = set.as_ref().starts_with("set_") && object_principal(set).is_ok();
+        let matched = self
+            .labels
+            .groups
+            .object_sets
+            .get(object.as_ref())
+            .is_some_and(|edge| presented && object_set_live(edge) && edge.set == *set);
         if !matched {
-            return finish(false, crate::MESH_REASON_MISSING.into());
+            return finish(false, MESH_REASON_MISSING.into());
         }
-        let see = self.check_group_see(group.predicate, object, accessor, now, hint, hop);
-        if see.allowed && payload.live_at(now.0) {
+        let predicate = self
+            .labels
+            .groups
+            .object_sets
+            .get(object.as_ref())
+            .map(|edge| edge.predicate)
+            .unwrap_or(GroupPredicate::SameGroup);
+        let see = self.check_group_see(predicate, object, accessor, now, hint, hop);
+        if see.allowed && live {
             return finish(true, see.reason);
         }
-        let reason = if payload.live_at(now.0) {
+        let reason = if live {
             see.reason
         } else {
-            crate::MESH_REASON_CANCELLED.into()
+            MESH_REASON_CANCELLED.into()
         };
         finish(false, reason)
     }
 
-    /// True when `members` and `object_set` would hide a removal or a
-    /// newer object-to-set edge this graph has merged for `object`.
+    /// True when the snapshot hides a removal or a newer object-set edge.
+    /// Member ham does not stand in for the object-set edge.
     pub fn snapshot_understates_group(
         &self,
-        object: &str,
+        object: &ObjectId,
         members: &[GroupSnapshotMember],
         object_set: Option<&GroupSnapshotObjectSet>,
     ) -> bool {
-        let Some(current) = self.object_set_record(object) else {
+        let Some(current) = self.labels.groups.object_sets.get(object.as_ref()) else {
             return object_set.is_some();
         };
-        let current_ham = current.name.ham_state;
-        let current_predicate = current.name.predicate;
-        let current_set = current.name.set_id.clone();
-        let current_stated = current.name.stated;
         let Some(snap) = object_set else {
             return true;
         };
-        if snap.ham_state < current_ham
-            || snap.predicate != current_predicate
-            || snap.set_id != current_set
-            || snap.stated != current_stated
+        if snap.ham_state < current.assent.ham_state
+            || snap.predicate != current.predicate
+            || snap.set_id != current.set.as_ref()
+            || snap.stated != current.assent.stated
         {
             return true;
         }
-        self.labels.groups.memberships.values().any(|record| {
-            record.removed
-                && record.membership.predicate == current_predicate
-                && record.membership.set_id == current_set
-                && membership_hidden(record, members)
-        })
-    }
-
-    fn require_secret(&self, principal: &str, secret: &IssuerSecret) -> Result<(), GunError> {
-        let Some(id) = acl_principal_key(principal) else {
-            return Err(GunError::SignerNotEnrolled);
-        };
-        let Some(key) = self.labels.groups.enrolled.get(&id) else {
-            return Err(GunError::SignerNotEnrolled);
-        };
-        if secret.verify_key() != *key {
-            return Err(GunError::RowSignature);
-        }
-        Ok(())
-    }
-
-    fn membership_speaker(
-        &self,
-        speaker: &str,
-        predicate: GroupPredicate,
-        set_id: &str,
-        accessor: &str,
-    ) -> Result<(bool, bool), GunError> {
-        let owner = self
-            .owner_of_set(predicate, set_id)
-            .ok_or(GunError::SetUnknown)?;
-        let speaker_key = acl_principal_key(speaker);
-        let speaks_member = speaker_key.is_some() && speaker_key == acl_principal_key(accessor);
-        let speaks_set = speaker_key.is_some() && speaker_key == acl_principal_key(owner);
-        if !speaks_member && !speaks_set {
-            return Err(GunError::MembershipSpeaker);
-        }
-        Ok((speaks_member, speaks_set))
-    }
-
-    fn write_object_set_auth(
-        &self,
-        owner: &str,
-        object: &str,
-    ) -> Result<(String, String), GunError> {
-        let (object_id, object_owner) = self
-            .labels
-            .object_record(object)
-            .ok_or(GunError::ObjectNotInGraph)?;
-        if !principals_match(object_owner, owner) {
-            return Err(GunError::AclOwnerOnly);
-        }
-        Ok((object_id.to_string(), object_owner.to_string()))
-    }
-
-    fn write_object_set(
-        &mut self,
-        object_id: &str,
-        object_owner: &str,
-        predicate: GroupPredicate,
-        set_id: &str,
-        stated: u8,
-        secret: &IssuerSecret,
-    ) {
-        let key = object_set_key(object_id);
-        let previous = self.labels.groups.object_sets.get(&key);
-        let ham_state = previous
-            .map(|r| r.name.ham_state.saturating_add(1))
-            .unwrap_or(1);
-        let mut cancels = previous.map(|r| r.cancels.clone()).unwrap_or_default();
-        if stated == 0 {
-            self.labels
-                .groups
-                .push_cancel(&mut cancels, "object-set", &key, object_owner, secret);
-        }
-        let observed = cancel_ids(&cancels);
-        let mut record = ObjectSetRecord {
-            name: ObjectSetName {
-                object: object_id.to_string(),
-                predicate,
-                set_id: set_id.to_string(),
-                stated,
-                ham_state,
-            },
-            signed_stated: stated,
-            soul: object_set_soul(object_owner, object_id),
-            object_owner: object_owner.to_string(),
-            observed: observed.clone(),
-            signature: AttestationSig::empty(),
-            cancels,
-        };
-        let Some(message) = object_message(&record) else {
-            return;
-        };
-        record.signature = secret.sign(&message);
-        let enrolled = self.labels.groups.enrolled.clone();
-        refresh_object(&mut record, &enrolled);
-        self.labels.groups.object_sets.insert(key, record);
-    }
-
-    fn object_set_grantable(&self, record: &ObjectSetRecord) -> bool {
-        object_live(record, &self.labels.groups.enrolled)
-    }
-
-    fn membership_grantable(&self, record: &MembershipRecord) -> bool {
-        record.is_grantable(&self.labels.groups.enrolled)
-    }
-
-    fn object_set_record(&self, object: &str) -> Option<&ObjectSetRecord> {
-        if object_id_rejected(object) {
-            return None;
-        }
-        if let Some((id, _)) = self.labels.object_record(object) {
-            if let Some(found) = self.labels.groups.object_sets.get(&object_set_key(id)) {
-                return Some(found);
+        self.labels.groups.memberships.values().any(|row| {
+            if row.predicate != current.predicate || row.set != current.set || membership_live(row)
+            {
+                return false;
             }
-        }
-        self.labels.groups.object_sets.get(&object_set_key(object))
-    }
-
-    fn membership_record(
-        &self,
-        predicate: GroupPredicate,
-        set_id: &str,
-        accessor: &str,
-    ) -> Option<&MembershipRecord> {
-        let Ok(canonical) = canonical_set_id(ascii_trim(set_id)) else {
-            return None;
-        };
-        self.labels
-            .groups
-            .memberships
-            .get(&membership_key_parts(predicate, &canonical, accessor)?)
-    }
-}
-
-impl GroupRows {
-    fn push_cancel(
-        &self,
-        cancels: &mut BTreeMap<CancelId, SignedCancel>,
-        kind: &str,
-        row_key: &str,
-        signer: &str,
-        secret: &IssuerSecret,
-    ) {
-        let prior = canonical_prior(&cancel_ids(cancels));
-        let id = new_cancel_id(&self.replica_id, &prior);
-        let signature = secret.sign(&cancel_message(kind, row_key, &id, &prior));
-        cancels.insert(
-            id,
-            SignedCancel {
-                id,
-                prior,
-                signer: ascii_trim(signer).to_string(),
-                signature,
-            },
-        );
-    }
-}
-
-impl MembershipRecord {
-    fn publish(&mut self, enrolled: &HashMap<String, VerifyKey>) {
-        if self.is_grantable(enrolled) {
-            self.membership.stated = 1;
-            self.removed = false;
-            return;
-        }
-        self.membership.stated = 0;
-        let retracted =
-            |party: &PartyStatement| party.spoken && !party.stated && party.ham_state > 0;
-        let ids = verified_membership_ids(self, enrolled);
-        self.removed = !ids.is_empty() || retracted(&self.member) || retracted(&self.set_party);
-    }
-
-    fn is_grantable(&self, enrolled: &HashMap<String, VerifyKey>) -> bool {
-        if verified_membership_ids(self, enrolled).len() != self.cancels.len() {
-            return false;
-        }
-        party_live(&self.member, "member", self, enrolled)
-            && party_live(&self.set_party, "set", self, enrolled)
-    }
-}
-
-fn blank_membership(
-    predicate: GroupPredicate,
-    set_id: &str,
-    accessor: &str,
-    soul: &str,
-    owner: &str,
-) -> MembershipRecord {
-    MembershipRecord {
-        membership: MeshMembership {
-            predicate,
-            set_id: set_id.to_string(),
-            accessor: accessor.to_string(),
-            stated: 0,
-            ham_state: 0,
-        },
-        member: PartyStatement::absent(),
-        set_party: PartyStatement::absent(),
-        removed: false,
-        soul: soul.to_string(),
-        set_owner: owner.to_string(),
-        cancels: BTreeMap::new(),
-    }
-}
-
-fn sign_party(
-    party: &mut PartyStatement,
-    stated: bool,
-    observed: BTreeSet<CancelId>,
-    secret: &IssuerSecret,
-    message: &[u8],
-) {
-    party.stated = stated;
-    party.ham_state = party.ham_state.saturating_add(1);
-    party.observed = observed;
-    party.spoken = true;
-    party.signature = secret.sign(message);
-}
-
-fn verified_membership_cancels(
-    record: &MembershipRecord,
-    enrolled: &HashMap<String, VerifyKey>,
-) -> Vec<(CancelId, SignedCancel)> {
-    let Some(row_key) = membership_row_key(record) else {
-        return Vec::new();
-    };
-    record
-        .cancels
-        .iter()
-        .filter(|(_, cancel)| {
-            cancel_verifies(cancel, enrolled, "membership", &row_key, |signer| {
-                membership_cancel_signer(record, signer)
-            })
+            let ham = row
+                .member_assent
+                .as_ref()
+                .map(|assent| assent.ham_state)
+                .unwrap_or(0)
+                .max(
+                    row.set_assent
+                        .as_ref()
+                        .map(|assent| assent.ham_state)
+                        .unwrap_or(0),
+                );
+            let hidden = members.iter().find(|member| {
+                member.accessor == row.member.as_ref()
+                    && member.predicate == row.predicate
+                    && member.set_id == row.set.as_ref()
+            });
+            hidden.is_none_or(|member| member.stated != 0 || member.ham_state < ham)
         })
-        .map(|(id, cancel)| (*id, stored_cancel(cancel)))
-        .collect()
-}
-
-fn retain_verified_membership(
-    record: &mut MembershipRecord,
-    enrolled: &HashMap<String, VerifyKey>,
-) {
-    record.cancels = verified_membership_cancels(record, enrolled)
-        .into_iter()
-        .collect();
-    if record.member.spoken && !party_signature_ok(&record.member, "member", record, enrolled) {
-        record.member = PartyStatement::absent();
-    }
-    if record.set_party.spoken && !party_signature_ok(&record.set_party, "set", record, enrolled) {
-        record.set_party = PartyStatement::absent();
-    }
-}
-
-fn membership_has_authentic_part(record: &MembershipRecord) -> bool {
-    !record.cancels.is_empty() || record.member.spoken || record.set_party.spoken
-}
-
-fn retain_verified_object_cancels(
-    record: &mut ObjectSetRecord,
-    enrolled: &HashMap<String, VerifyKey>,
-) {
-    let row_key = object_set_key(&record.name.object);
-    let owner = acl_principal_key(&record.object_owner);
-    record.cancels.retain(|_, cancel| {
-        let ok = cancel_verifies(cancel, enrolled, "object-set", &row_key, |signer| {
-            owner.is_some() && acl_principal_key(signer) == owner
-        });
-        if ok {
-            *cancel = stored_cancel(cancel);
-        }
-        ok
-    });
-}
-
-fn merge_membership_records(
-    local: MembershipRecord,
-    incoming: MembershipRecord,
-    enrolled: &HashMap<String, VerifyKey>,
-) -> MembershipRecord {
-    let mut cancels = local.cancels.clone();
-    for (id, cancel) in verified_membership_cancels(&incoming, enrolled) {
-        cancels.entry(id).or_insert(cancel);
-    }
-    let ids = cancel_ids(&cancels);
-    let member = pick_party(
-        &local.member,
-        &incoming.member,
-        &ids,
-        "member",
-        &local,
-        &incoming,
-        enrolled,
-    );
-    let set_party = pick_party(
-        &local.set_party,
-        &incoming.set_party,
-        &ids,
-        "set",
-        &local,
-        &incoming,
-        enrolled,
-    );
-    let mut out = local;
-    out.member = member;
-    out.set_party = set_party;
-    out.cancels = cancels;
-    out.membership.ham_state = out.membership.ham_state.max(incoming.membership.ham_state);
-    out.publish(enrolled);
-    out
-}
-
-fn pick_party(
-    local: &PartyStatement,
-    incoming: &PartyStatement,
-    ids: &BTreeSet<CancelId>,
-    role: &str,
-    local_row: &MembershipRecord,
-    incoming_row: &MembershipRecord,
-    enrolled: &HashMap<String, VerifyKey>,
-) -> PartyStatement {
-    let local_ok = party_signature_ok(local, role, local_row, enrolled);
-    let incoming_ok = party_signature_ok(incoming, role, incoming_row, enrolled);
-    if local_ok && !incoming_ok {
-        return local.clone();
-    }
-    if incoming_ok && !local_ok {
-        return incoming.clone();
-    }
-    if !local_ok && !incoming_ok {
-        return PartyStatement::absent();
-    }
-    let local_cov = local.observed.is_superset(ids);
-    let incoming_cov = incoming.observed.is_superset(ids);
-    if local_cov != incoming_cov {
-        return if incoming_cov {
-            incoming.clone()
-        } else {
-            local.clone()
-        };
-    }
-    if incoming.ham_state > local.ham_state {
-        return incoming.clone();
-    }
-    if incoming.ham_state < local.ham_state {
-        return local.clone();
-    }
-    if !incoming.stated && local.stated {
-        return incoming.clone();
-    }
-    local.clone()
-}
-
-fn merge_object_records(
-    local: ObjectSetRecord,
-    incoming: ObjectSetRecord,
-    enrolled: &HashMap<String, VerifyKey>,
-) -> ObjectSetRecord {
-    let mut cancels = local.cancels.clone();
-    let row_key = object_set_key(&incoming.name.object);
-    for (id, cancel) in &incoming.cancels {
-        if cancel_verifies(cancel, enrolled, "object-set", &row_key, |signer| {
-            principals_match(signer, &incoming.object_owner)
-        }) {
-            cancels.entry(*id).or_insert_with(|| stored_cancel(cancel));
-        }
-    }
-    let ids = cancel_ids(&cancels);
-    let mut picked = pick_object(local, incoming, &ids, enrolled);
-    picked.cancels = cancels;
-    refresh_object(&mut picked, enrolled);
-    picked
-}
-
-fn pick_object(
-    local: ObjectSetRecord,
-    incoming: ObjectSetRecord,
-    ids: &BTreeSet<CancelId>,
-    enrolled: &HashMap<String, VerifyKey>,
-) -> ObjectSetRecord {
-    let local_ok = object_signature_ok(&local, enrolled);
-    let incoming_ok = object_signature_ok(&incoming, enrolled);
-    if local_ok && !incoming_ok {
-        return local;
-    }
-    if incoming_ok && !local_ok {
-        return incoming;
-    }
-    if !local_ok && !incoming_ok {
-        return local;
-    }
-    let local_cov = local.observed.is_superset(ids);
-    let incoming_cov = incoming.observed.is_superset(ids);
-    if local_cov != incoming_cov {
-        return if incoming_cov { incoming } else { local };
-    }
-    if incoming.name.ham_state > local.name.ham_state {
-        return incoming;
-    }
-    if incoming.name.ham_state < local.name.ham_state {
-        return local;
-    }
-    if incoming.signed_stated == 0 && local.signed_stated == 1 {
-        return incoming;
-    }
-    if local.signed_stated == 0 && incoming.signed_stated == 1 {
-        return local;
-    }
-    let incoming_key = (
-        incoming.name.predicate.as_str(),
-        incoming.name.set_id.as_str(),
-    );
-    let local_key = (local.name.predicate.as_str(), local.name.set_id.as_str());
-    if incoming_key < local_key {
-        incoming
-    } else {
-        local
-    }
-}
-
-fn refresh_object(record: &mut ObjectSetRecord, enrolled: &HashMap<String, VerifyKey>) {
-    record.name.stated = u8::from(object_live(record, enrolled));
-}
-
-fn object_live(record: &ObjectSetRecord, enrolled: &HashMap<String, VerifyKey>) -> bool {
-    if record.signed_stated != 1 || !object_signature_ok(record, enrolled) {
-        return false;
-    }
-    let ids = verified_cancel_ids(
-        &record.cancels,
-        enrolled,
-        "object-set",
-        &object_set_key(&record.name.object),
-        |signer| principals_match(signer, &record.object_owner),
-    );
-    ids.len() == record.cancels.len() && record.observed.is_superset(&ids)
-}
-
-fn object_signature_ok(record: &ObjectSetRecord, enrolled: &HashMap<String, VerifyKey>) -> bool {
-    let Some(id) = acl_principal_key(&record.object_owner) else {
-        return false;
-    };
-    let Some(key) = enrolled.get(&id) else {
-        return false;
-    };
-    let Some(message) = object_message(record) else {
-        return false;
-    };
-    key.verify(&message, &record.signature)
-}
-
-fn party_live(
-    party: &PartyStatement,
-    role: &str,
-    record: &MembershipRecord,
-    enrolled: &HashMap<String, VerifyKey>,
-) -> bool {
-    let ids = verified_membership_ids(record, enrolled);
-    party.spoken
-        && party.stated
-        && party.observed.is_superset(&ids)
-        && party_signature_ok(party, role, record, enrolled)
-}
-
-fn party_signature_ok(
-    party: &PartyStatement,
-    role: &str,
-    record: &MembershipRecord,
-    enrolled: &HashMap<String, VerifyKey>,
-) -> bool {
-    if !party.spoken {
-        return true;
-    }
-    let principal = if role == "member" {
-        acl_principal_key(&record.membership.accessor)
-    } else {
-        acl_principal_key(&record.set_owner)
-    };
-    let Some(principal) = principal else {
-        return false;
-    };
-    let Some(key) = enrolled.get(&principal) else {
-        return false;
-    };
-    let Some(message) = party_message(role, record, party.stated, party.ham_state, &party.observed)
-    else {
-        return false;
-    };
-    key.verify(&message, &party.signature)
-}
-
-fn verified_membership_ids(
-    record: &MembershipRecord,
-    enrolled: &HashMap<String, VerifyKey>,
-) -> BTreeSet<CancelId> {
-    let Some(row_key) = membership_row_key(record) else {
-        return BTreeSet::new();
-    };
-    verified_cancel_ids(
-        &record.cancels,
-        enrolled,
-        "membership",
-        &row_key,
-        |signer| membership_cancel_signer(record, signer),
-    )
-}
-
-fn membership_cancel_signer(record: &MembershipRecord, signer: &str) -> bool {
-    let signer = acl_principal_key(signer);
-    signer.is_some()
-        && (signer == acl_principal_key(&record.membership.accessor)
-            || signer == acl_principal_key(&record.set_owner))
-}
-
-fn verified_cancel_ids(
-    cancels: &BTreeMap<CancelId, SignedCancel>,
-    enrolled: &HashMap<String, VerifyKey>,
-    kind: &str,
-    row_key: &str,
-    allow: impl Fn(&str) -> bool,
-) -> BTreeSet<CancelId> {
-    cancels
-        .iter()
-        .filter(|(_, cancel)| cancel_verifies(cancel, enrolled, kind, row_key, &allow))
-        .map(|(id, _)| *id)
-        .collect()
-}
-
-fn cancel_verifies(
-    cancel: &SignedCancel,
-    enrolled: &HashMap<String, VerifyKey>,
-    kind: &str,
-    row_key: &str,
-    allow: impl Fn(&str) -> bool,
-) -> bool {
-    if !allow(&cancel.signer) {
-        return false;
-    }
-    let Some(id) = acl_principal_key(&cancel.signer) else {
-        return false;
-    };
-    let Some(key) = enrolled.get(&id) else {
-        return false;
-    };
-    let Some(id) = canonical_cancel_id(&cancel_id_hex(&cancel.id)) else {
-        return false;
-    };
-    let prior = canonical_prior(&cancel.prior);
-    if prior.len() != cancel.prior.len() {
-        return false;
-    }
-    key.verify(
-        &cancel_message(kind, row_key, &id, &prior),
-        &cancel.signature,
-    )
-}
-
-fn hex_nibble(byte: u8) -> Option<u8> {
-    match byte {
-        b'0'..=b'9' => Some(byte - b'0'),
-        b'a'..=b'f' => Some(byte - b'a' + 10),
-        _ => None,
-    }
-}
-
-/// Exactly 64 lowercase hex characters. Uppercase and a trailing
-/// nibble are not a second spelling of the same id.
-fn canonical_cancel_id(text: &str) -> Option<CancelId> {
-    if text.len() != 64 {
-        return None;
-    }
-    let bytes = text.as_bytes();
-    let mut out = [0u8; 32];
-    for index in 0..32 {
-        let hi = hex_nibble(bytes[index * 2])?;
-        let lo = hex_nibble(bytes[index * 2 + 1])?;
-        out[index] = (hi << 4) | lo;
-    }
-    Some(CancelId(out))
-}
-
-fn cancel_id_hex(id: &CancelId) -> String {
-    const HEX: &[u8; 16] = b"0123456789abcdef";
-    let mut out = String::with_capacity(64);
-    for byte in id.0 {
-        out.push(HEX[(byte >> 4) as usize] as char);
-        out.push(HEX[(byte & 0x0f) as usize] as char);
-    }
-    out
-}
-
-/// Prior ids are a set of canonical cancel ids. The signature is
-/// checked against that set, not against a respelling.
-fn canonical_prior(prior: &BTreeSet<CancelId>) -> BTreeSet<CancelId> {
-    prior
-        .iter()
-        .filter_map(|id| canonical_cancel_id(&cancel_id_hex(id)))
-        .collect()
-}
-
-fn stored_cancel(cancel: &SignedCancel) -> SignedCancel {
-    let mut stored = cancel.clone();
-    if let Some(id) = canonical_cancel_id(&cancel_id_hex(&cancel.id)) {
-        stored.id = id;
-    }
-    stored.prior = canonical_prior(&cancel.prior);
-    stored
-}
-
-fn new_cancel_id(replica_id: &[u8; 16], prior: &BTreeSet<CancelId>) -> CancelId {
-    let prior = canonical_prior(prior);
-    let mut nonce = [0u8; 16];
-    rand::rngs::OsRng.fill_bytes(&mut nonce);
-    let mut hasher = Sha256::new();
-    hasher.update(b"sociacl-cancel-id-v1");
-    hasher.update(replica_id);
-    hasher.update(nonce);
-    push_ids_hash(&mut hasher, &prior);
-    CancelId(hasher.finalize().into())
-}
-
-fn push_ids_hash(hasher: &mut Sha256, ids: &BTreeSet<CancelId>) {
-    hasher.update((ids.len() as u64).to_be_bytes());
-    for id in ids {
-        hasher.update(id.0);
-    }
-}
-
-fn cancel_ids(cancels: &BTreeMap<CancelId, SignedCancel>) -> BTreeSet<CancelId> {
-    cancels.keys().copied().collect()
-}
-
-fn party_message(
-    role: &str,
-    record: &MembershipRecord,
-    stated: bool,
-    ham_state: u64,
-    observed: &BTreeSet<CancelId>,
-) -> Option<Vec<u8>> {
-    let accessor = acl_principal_key(&record.membership.accessor)?;
-    let set_owner = acl_principal_key(&record.set_owner)?;
-    let mut buf = b"sociacl-membership-assent-v1\0".to_vec();
-    push_str(&mut buf, role);
-    push_str(&mut buf, record.membership.predicate.as_str());
-    push_str(&mut buf, &record.membership.set_id);
-    push_str(&mut buf, &accessor);
-    push_str(&mut buf, &set_owner);
-    buf.push(u8::from(stated));
-    buf.extend_from_slice(&ham_state.to_be_bytes());
-    push_ids(&mut buf, observed);
-    Some(buf)
-}
-
-fn object_message(record: &ObjectSetRecord) -> Option<Vec<u8>> {
-    let owner = acl_principal_key(&record.object_owner)?;
-    let mut buf = b"sociacl-object-set-v1\0".to_vec();
-    push_str(&mut buf, &acl_key(&record.name.object));
-    push_str(&mut buf, &owner);
-    push_str(&mut buf, record.name.predicate.as_str());
-    push_str(&mut buf, &record.name.set_id);
-    buf.push(record.signed_stated);
-    buf.extend_from_slice(&record.name.ham_state.to_be_bytes());
-    push_ids(&mut buf, &record.observed);
-    Some(buf)
-}
-
-fn cancel_message(kind: &str, row_key: &str, id: &CancelId, prior: &BTreeSet<CancelId>) -> Vec<u8> {
-    let mut buf = b"sociacl-cancel-v1\0".to_vec();
-    push_str(&mut buf, kind);
-    push_str(&mut buf, row_key);
-    buf.extend_from_slice(&id.0);
-    push_ids(&mut buf, prior);
-    buf
-}
-
-fn push_str(buf: &mut Vec<u8>, value: &str) {
-    let bytes = value.as_bytes();
-    let len = u32::try_from(bytes.len()).unwrap_or(u32::MAX);
-    buf.extend_from_slice(&len.to_be_bytes());
-    buf.extend_from_slice(&bytes[..usize::try_from(len).unwrap_or(bytes.len())]);
-}
-
-fn push_ids(buf: &mut Vec<u8>, ids: &BTreeSet<CancelId>) {
-    let len = u32::try_from(ids.len()).unwrap_or(u32::MAX);
-    buf.extend_from_slice(&len.to_be_bytes());
-    for id in ids.iter().take(usize::try_from(len).unwrap_or(ids.len())) {
-        buf.extend_from_slice(&id.0);
-    }
-}
-
-fn membership_row_key(record: &MembershipRecord) -> Option<String> {
-    let accessor = acl_principal_key(&record.membership.accessor)?;
-    Some(format!(
-        "{}\0{}\0{}",
-        record.membership.predicate.as_str(),
-        record.membership.set_id,
-        accessor
-    ))
-}
-
-fn membership_key(membership: &MeshMembership) -> Option<MembershipKey> {
-    membership_key_parts(
-        membership.predicate,
-        &membership.set_id,
-        &membership.accessor,
-    )
-}
-
-fn principals_match(left: &str, right: &str) -> bool {
-    match (acl_principal_key(left), acl_principal_key(right)) {
-        (Some(a), Some(b)) => a == b,
-        _ => false,
-    }
-}
-
-fn membership_key_parts(
-    predicate: GroupPredicate,
-    set_id: &str,
-    accessor: &str,
-) -> Option<MembershipKey> {
-    Some((predicate, set_map_key(set_id), acl_principal_key(accessor)?))
-}
-
-fn object_set_key(object: &str) -> String {
-    acl_key(object)
-}
-
-fn set_map_key(set_id: &str) -> String {
-    acl_key(set_id)
-}
-
-/// `<principal>/<name>`. The name has no `/` or `_`, so `acl_key`
-/// is injective and the soul segment matches the map key.
-fn canonical_set_id(set_id: &str) -> Result<String, GunError> {
-    let set_id = ascii_trim(set_id);
-    if set_id.is_empty() {
-        return Err(GunError::EmptyGroupName);
-    }
-    let Some((head, name)) = set_id.split_once('/') else {
-        return Err(GunError::UnboundSetOwner);
-    };
-    if head.is_empty()
-        || name.is_empty()
-        || head.contains('/')
-        || name.contains('/')
-        || name.contains('_')
-        || name
-            .chars()
-            .any(|c| matches!(c, '.' | '#' | '$' | '[' | ']'))
-        || head
-            .chars()
-            .any(|c| matches!(c, '.' | '#' | '$' | '[' | ']'))
-    {
-        return Err(GunError::UnboundSetOwner);
-    }
-    let Some(principal) = acl_principal_key(head) else {
-        return Err(GunError::UnboundSetOwner);
-    };
-    if principal != head {
-        return Err(GunError::UnboundSetOwner);
-    }
-    Ok(format!("{principal}/{name}"))
-}
-
-fn set_id_from_key(key: &str) -> Option<String> {
-    let set_id = unescape_acl_key(key)?;
-    canonical_set_id(&set_id).ok()
-}
-
-fn set_id_binds_owner(set_id: &str, owner: &str) -> bool {
-    let Ok(canonical) = canonical_set_id(set_id) else {
-        return false;
-    };
-    let Some((head, _)) = canonical.split_once('/') else {
-        return false;
-    };
-    let Some(owner_key) = acl_principal_key(owner) else {
-        return false;
-    };
-    acl_principal_key(head).as_deref() == Some(owner_key.as_str())
-}
-
-fn retained_object_owner<'a>(owners: &'a HashMap<String, String>, object: &str) -> Option<&'a str> {
-    if let Some(owner) = owners.get(object) {
-        return Some(owner.as_str());
-    }
-    let want = object_set_key(object);
-    owners
-        .iter()
-        .find(|(id, _)| object_set_key(id) == want)
-        .map(|(_, owner)| owner.as_str())
-}
-
-#[cfg(test)]
-mod tests {
-    use std::collections::{BTreeMap, BTreeSet};
-
-    use super::*;
-    use crate::mesh::MeshSeeGraph;
-    use sociacl_core::{AttestationSig, IssuerSecret, Timestamp};
-
-    fn pair() -> (IssuerSecret, IssuerSecret) {
-        (IssuerSecret::generate(), IssuerSecret::generate())
-    }
-
-    fn enrolled(alice: &IssuerSecret, bob: &IssuerSecret) -> MeshSeeGraph {
-        let mut graph = MeshSeeGraph::new();
-        graph.enroll_signer("0xalice", alice.verify_key()).unwrap();
-        graph.enroll_signer("0xbob", bob.verify_key()).unwrap();
-        graph.labels.put_object("doc", "0xalice");
-        graph.labels.put_object("other", "0xalice");
-        graph
-            .record_set_owner("0xalice", GroupPredicate::SameGroup, "0xalice/ops")
-            .unwrap();
-        graph
-    }
-
-    fn live(alice: &IssuerSecret, bob: &IssuerSecret) -> MeshSeeGraph {
-        let mut graph = enrolled(alice, bob);
-        graph
-            .name_object_set(
-                "0xalice",
-                "doc",
-                GroupPredicate::SameGroup,
-                "0xalice/ops",
-                alice,
-            )
-            .unwrap();
-        graph
-            .state_membership(
-                "0xbob",
-                GroupPredicate::SameGroup,
-                "0xalice/ops",
-                "0xbob",
-                bob,
-            )
-            .unwrap();
-        graph
-            .state_membership(
-                "0xalice",
-                GroupPredicate::SameGroup,
-                "0xalice/ops",
-                "0xbob",
-                alice,
-            )
-            .unwrap();
-        graph
-    }
-
-    fn see(graph: &MeshSeeGraph, object: &str, accessor: &str) -> crate::MeshCheckResult {
-        graph.check_group_see(
-            GroupPredicate::SameGroup,
-            object,
-            accessor,
-            Timestamp(1),
-            None,
-            None,
-        )
-    }
-
-    #[test]
-    fn merge_rekeys_rows_from_the_signed_fields() {
-        let (alice, bob) = pair();
-        let mut source = live(&alice, &bob);
-        let bob_key =
-            membership_key_parts(GroupPredicate::SameGroup, "0xalice/ops", "0xbob").unwrap();
-        let carol_key =
-            membership_key_parts(GroupPredicate::SameGroup, "0xalice/ops", "0xcarol").unwrap();
-        let membership = source
-            .labels
-            .groups
-            .memberships
-            .get(&bob_key)
-            .unwrap()
-            .clone();
-        source
-            .labels
-            .groups
-            .memberships
-            .insert(carol_key, membership);
-        let edge = source
-            .labels
-            .groups
-            .object_sets
-            .get(&object_set_key("doc"))
-            .unwrap()
-            .clone();
-        source
-            .labels
-            .groups
-            .object_sets
-            .insert(object_set_key("other"), edge);
-
-        assert!(!see(&source, "other", "0xbob").allowed);
-        assert!(!see(&source, "doc", "0xcarol").allowed);
-        assert!(see(&source, "doc", "0xbob").allowed);
-
-        let mut dest = enrolled(&alice, &bob);
-        dest.labels.merge_from(&source.labels);
-        assert!(dest
-            .membership(GroupPredicate::SameGroup, "0xalice/ops", "0xcarol")
-            .is_none());
-        assert_eq!(
-            dest.membership(GroupPredicate::SameGroup, "0xalice/ops", "0xbob")
-                .unwrap()
-                .accessor,
-            "0xbob"
-        );
-        assert!(dest.object_set("other").is_none());
-        assert_eq!(dest.object_set("doc").unwrap().object, "doc");
-        assert!(!see(&dest, "other", "0xbob").allowed);
-        assert!(see(&dest, "doc", "0xbob").allowed);
-    }
-
-    #[test]
-    fn a_corrupt_party_signature_does_not_drop_a_valid_cancel() {
-        let (alice, bob) = pair();
-        let live_row = live(&alice, &bob);
-        let mut cancelled = live_row.clone();
-        cancelled
-            .cancel_membership(
-                "0xalice",
-                GroupPredicate::SameGroup,
-                "0xalice/ops",
-                "0xbob",
-                &alice,
-            )
-            .unwrap();
-        let key = membership_key_parts(GroupPredicate::SameGroup, "0xalice/ops", "0xbob").unwrap();
-        cancelled
-            .labels
-            .groups
-            .memberships
-            .get_mut(&key)
-            .unwrap()
-            .member
-            .signature = AttestationSig::empty();
-
-        let mut from_cancel = enrolled(&alice, &bob);
-        from_cancel.labels.merge_from(&cancelled.labels);
-        from_cancel.labels.merge_from(&live_row.labels);
-        let mut from_live = enrolled(&alice, &bob);
-        from_live.labels.merge_from(&live_row.labels);
-        from_live.labels.merge_from(&cancelled.labels);
-        for graph in [&from_cancel, &from_live] {
-            let result = see(graph, "doc", "0xbob");
-            assert!(!result.allowed);
-            assert_eq!(result.reason, crate::MESH_REASON_CANCELLED);
-        }
-    }
-
-    #[test]
-    fn cancel_ids_require_64_lowercase_hex_and_prior_is_canonical() {
-        assert!(canonical_cancel_id(&"ab".repeat(32)).is_some());
-        assert!(canonical_cancel_id(&"AB".repeat(32)).is_none());
-        assert!(canonical_cancel_id(&format!("{}a", "cd".repeat(32))).is_none());
-        assert!(canonical_cancel_id(&"ab".repeat(31)).is_none());
-        assert!(canonical_cancel_id(&"zz".repeat(32)).is_none());
-
-        let (alice, bob) = pair();
-        let live_row = live(&alice, &bob);
-        let mut cancelled = live_row.clone();
-        cancelled
-            .cancel_membership(
-                "0xalice",
-                GroupPredicate::SameGroup,
-                "0xalice/ops",
-                "0xbob",
-                &alice,
-            )
-            .unwrap();
-        let key = membership_key_parts(GroupPredicate::SameGroup, "0xalice/ops", "0xbob").unwrap();
-        let real = cancelled
-            .labels
-            .groups
-            .memberships
-            .get(&key)
-            .unwrap()
-            .cancels
-            .values()
-            .next()
-            .unwrap()
-            .clone();
-        let hex = cancel_id_hex(&real.id);
-        assert_eq!(hex.len(), 64);
-        assert_eq!(canonical_cancel_id(&hex), Some(real.id));
-        assert!(canonical_cancel_id(&hex.to_uppercase()).is_none());
-        let mut prior = BTreeSet::new();
-        prior.insert(real.id);
-        assert_eq!(
-            cancel_message("membership", "row", &real.id, &prior),
-            cancel_message(
-                "membership",
-                "row",
-                &canonical_cancel_id(&hex).unwrap(),
-                &canonical_prior(&prior),
-            )
-        );
-
-        let mut alias = real.clone();
-        alias.id.0[0] ^= 0xff;
-        let mut attacked = live_row.clone();
-        attacked
-            .labels
-            .groups
-            .memberships
-            .get_mut(&key)
-            .unwrap()
-            .cancels
-            .insert(alias.id, alias);
-        let mut dest = enrolled(&alice, &bob);
-        dest.labels.merge_from(&attacked.labels);
-        assert!(see(&dest, "doc", "0xbob").allowed);
-        assert!(dest
-            .labels
-            .groups
-            .memberships
-            .get(&key)
-            .unwrap()
-            .cancels
-            .is_empty());
-
-        let mut sunk = enrolled(&alice, &bob);
-        sunk.labels.merge_from(&cancelled.labels);
-        let denied = see(&sunk, "doc", "0xbob");
-        assert!(!denied.allowed);
-        assert_eq!(denied.reason, crate::MESH_REASON_CANCELLED);
-
-        let mut orphan = live_row.clone();
-        orphan.labels.groups.set_owners.clear();
-        let missing = see(&orphan, "doc", "0xbob");
-        assert!(!missing.allowed);
-        assert_eq!(missing.reason, crate::MESH_REASON_MISSING);
-    }
-
-    #[test]
-    fn an_unauthenticated_object_set_does_not_force_the_group_path() {
-        let (alice, bob) = pair();
-        let mut graph = enrolled(&alice, &bob);
-        graph
-            .labels
-            .state_see_grant(
-                "0xalice",
-                crate::mesh::MeshSeeGrant::live("doc", "0xbob", 0, 80),
-            )
-            .unwrap();
-        graph.labels.groups.object_sets.insert(
-            object_set_key("doc"),
-            ObjectSetRecord {
-                name: ObjectSetName {
-                    object: "doc".into(),
-                    predicate: GroupPredicate::SameGroup,
-                    set_id: "0xalice/ops".into(),
-                    stated: 1,
-                    ham_state: 1,
-                },
-                signed_stated: 1,
-                soul: String::new(),
-                object_owner: "0xalice".into(),
-                observed: BTreeSet::new(),
-                signature: AttestationSig::empty(),
-                cancels: BTreeMap::new(),
-            },
-        );
-        let payload = DecodedGroupPayload {
-            stated: 1,
-            from: 0,
-            until: 80,
-        };
-        let hop = HopFactor::Structured {
-            channel: sociacl_core::AttestationChannel::ConventionBadge,
-            attestation_bytes: None,
-            share_token: None,
-        };
-        let owner = graph.check_group_presentation(
-            None,
-            "doc",
-            "0xalice",
-            &payload,
-            Timestamp(1),
-            None,
-            Some(&hop),
-        );
-        assert!(owner.allowed);
-        assert_eq!(owner.reason, crate::MESH_REASON_OWNER);
-        assert_eq!(owner.hop, Some(hop.clone()));
-        let delegate = graph.check_group_presentation(
-            None,
-            "doc",
-            "0xbob",
-            &payload,
-            Timestamp(1),
-            None,
-            None,
-        );
-        assert!(delegate.allowed);
-        assert_eq!(delegate.reason, crate::MESH_REASON_DELEGATE);
-        let stranger = graph.check_group_presentation(
-            None,
-            "doc",
-            "0xcarol",
-            &payload,
-            Timestamp(1),
-            None,
-            Some(&hop),
-        );
-        assert!(!stranger.allowed);
-        assert_eq!(stranger.hop, Some(hop));
-
-        let mut named = live(&alice, &bob);
-        named
-            .labels
-            .state_see_grant(
-                "0xalice",
-                crate::mesh::MeshSeeGrant::live("doc", "0xbob", 0, 80),
-            )
-            .unwrap();
-        let blocked = named.check_group_presentation(
-            None,
-            "doc",
-            "0xbob",
-            &payload,
-            Timestamp(1),
-            None,
-            None,
-        );
-        assert!(!blocked.allowed);
-        assert_eq!(blocked.reason, crate::MESH_REASON_MISSING);
-        let blocked_owner = named.check_group_presentation(
-            None,
-            "doc",
-            "0xalice",
-            &payload,
-            Timestamp(1),
-            None,
-            None,
-        );
-        assert!(!blocked_owner.allowed);
-        assert_eq!(blocked_owner.reason, crate::MESH_REASON_MISSING);
-    }
-
-    #[test]
-    fn a_duplicate_cancel_does_not_drop_the_next_cancel() {
-        let (alice, bob) = pair();
-        let mut base = live(&alice, &bob);
-        base.cancel_membership(
-            "0xalice",
-            GroupPredicate::SameGroup,
-            "0xalice/ops",
-            "0xbob",
-            &alice,
-        )
-        .unwrap();
-        let key = membership_key_parts(GroupPredicate::SameGroup, "0xalice/ops", "0xbob").unwrap();
-        let first = *base
-            .labels
-            .groups
-            .memberships
-            .get(&key)
-            .unwrap()
-            .cancels
-            .keys()
-            .next()
-            .unwrap();
-
-        let mut restated = live(&alice, &bob);
-        restated.labels.merge_from(&base.labels);
-        restated
-            .state_membership(
-                "0xbob",
-                GroupPredicate::SameGroup,
-                "0xalice/ops",
-                "0xbob",
-                &bob,
-            )
-            .unwrap();
-        restated
-            .state_membership(
-                "0xalice",
-                GroupPredicate::SameGroup,
-                "0xalice/ops",
-                "0xbob",
-                &alice,
-            )
-            .unwrap();
-        assert_eq!(
-            restated
-                .membership(GroupPredicate::SameGroup, "0xalice/ops", "0xbob")
-                .unwrap()
-                .stated,
-            1
-        );
-
-        let mut newer = live(&alice, &bob);
-        newer.labels.merge_from(&base.labels);
-        {
-            let row = newer.labels.groups.memberships.get_mut(&key).unwrap();
-            let again = row.cancels.get(&first).unwrap().clone();
-            row.cancels.insert(first, again);
-            assert_eq!(row.cancels.len(), 1);
-        }
-        newer
-            .cancel_membership(
-                "0xalice",
-                GroupPredicate::SameGroup,
-                "0xalice/ops",
-                "0xbob",
-                &alice,
-            )
-            .unwrap();
-        let issued = newer.labels.groups.memberships.get(&key).unwrap();
-        assert_eq!(issued.cancels.len(), 2);
-        let next = issued
-            .cancels
-            .values()
-            .find(|cancel| cancel.prior.contains(&first))
-            .unwrap();
-        assert_eq!(next.prior, canonical_prior(&BTreeSet::from([first])));
-        assert!(cancel_verifies(
-            next,
-            &newer.labels.groups.enrolled,
-            "membership",
-            &membership_row_key(issued).expect("membership accessor parses"),
-            |signer| membership_cancel_signer(issued, signer),
-        ));
-
-        let mut from_newer = newer.clone();
-        from_newer.labels.merge_from(&restated.labels);
-        let mut from_restated = restated.clone();
-        from_restated.labels.merge_from(&newer.labels);
-        for graph in [&from_newer, &from_restated] {
-            let denied = see(graph, "doc", "0xbob");
-            assert!(!denied.allowed);
-            assert_eq!(denied.reason, crate::MESH_REASON_CANCELLED);
-            let kept = graph.labels.groups.memberships.get(&key).unwrap();
-            assert_eq!(kept.cancels.len(), 2);
-            assert!(kept.cancels.contains_key(&first));
-            assert_eq!(
-                kept.cancels
-                    .values()
-                    .find(|cancel| cancel.id != first)
-                    .unwrap()
-                    .prior,
-                BTreeSet::from([first])
-            );
-        }
-
-        let mut cleared = live(&alice, &bob);
-        cleared.clear_object_set("0xalice", "doc", &alice).unwrap();
-        let edge_key = object_set_key("doc");
-        let edge_id = *cleared
-            .labels
-            .groups
-            .object_sets
-            .get(&edge_key)
-            .unwrap()
-            .cancels
-            .keys()
-            .next()
-            .unwrap();
-        let mut renamed = live(&alice, &bob);
-        renamed.labels.merge_from(&cleared.labels);
-        renamed
-            .name_object_set(
-                "0xalice",
-                "doc",
-                GroupPredicate::SameGroup,
-                "0xalice/ops",
-                &alice,
-            )
-            .unwrap();
-        assert_eq!(renamed.object_set("doc").unwrap().stated, 1);
-
-        let mut cleared_again = live(&alice, &bob);
-        cleared_again.labels.merge_from(&cleared.labels);
-        {
-            let edge = cleared_again
-                .labels
-                .groups
-                .object_sets
-                .get_mut(&edge_key)
-                .unwrap();
-            let again = edge.cancels.get(&edge_id).unwrap().clone();
-            edge.cancels.insert(edge_id, again);
-            assert_eq!(edge.cancels.len(), 1);
-        }
-        cleared_again
-            .clear_object_set("0xalice", "doc", &alice)
-            .unwrap();
-        let issued_edge = cleared_again
-            .labels
-            .groups
-            .object_sets
-            .get(&edge_key)
-            .unwrap();
-        assert_eq!(issued_edge.cancels.len(), 2);
-        assert_eq!(
-            issued_edge
-                .cancels
-                .values()
-                .find(|cancel| cancel.prior.contains(&edge_id))
-                .unwrap()
-                .prior,
-            BTreeSet::from([edge_id])
-        );
-
-        let mut from_clear = cleared_again.clone();
-        from_clear.labels.merge_from(&renamed.labels);
-        let mut from_rename = renamed.clone();
-        from_rename.labels.merge_from(&cleared_again.labels);
-        for graph in [&from_clear, &from_rename] {
-            assert_eq!(graph.object_set("doc").unwrap().stated, 0);
-            let denied = see(graph, "doc", "0xbob");
-            assert!(!denied.allowed);
-            assert_eq!(denied.reason, crate::MESH_REASON_CANCELLED);
-            let kept = graph.labels.groups.object_sets.get(&edge_key).unwrap();
-            assert_eq!(kept.cancels.len(), 2);
-            assert_eq!(
-                kept.cancels
-                    .values()
-                    .find(|cancel| cancel.id != edge_id)
-                    .unwrap()
-                    .prior,
-                BTreeSet::from([edge_id])
-            );
-        }
-    }
-}
-
-fn membership_hidden(record: &MembershipRecord, members: &[GroupSnapshotMember]) -> bool {
-    let ham = record.membership.ham_state;
-    let Some(accessor) = acl_principal_key(&record.membership.accessor) else {
-        return true;
-    };
-    let best = members
-        .iter()
-        .filter(|row| {
-            row.predicate == record.membership.predicate
-                && row.set_id == record.membership.set_id
-                && acl_principal_key(&row.accessor).as_deref() == Some(accessor.as_str())
-        })
-        .max_by_key(|row| (row.ham_state, u8::from(row.stated == 0)));
-    match best {
-        None => true,
-        Some(row) if row.stated != 0 => true,
-        Some(row) if row.ham_state < ham => true,
-        Some(_) => false,
     }
 }

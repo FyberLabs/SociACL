@@ -2,6 +2,16 @@
 
 ## sociacl/gun — unreleased
 
+- **Breaking:** a group set id is a minted ObjectId of kind `set`. The
+  signed set owner is the principal embedded in that id. Membership
+  assent is `sociacl-membership-assent-v2`, an object-set row is
+  `sociacl-object-set-v2`, and a group cancel is `sociacl-cancel-v2`.
+  `membershipSoul` and `objectSetSoul` are the ids builders.
+  `checkGroupSee` and `checkGroupPresentation` take branded ids.
+  `enrollSigner` / `enroll_signer` and Ed25519 signing are gone from
+  the group path. `<principal>/<name>` set ids are refused.
+  `vectors/mesh/v2/group.json` is the shared group suite, and
+  `members-gate-on-stored-id` uses the minted set id.
 - **Breaking:** an access request is `sociacl-access-request-v2`. The
   request id is `hex(sha256)` of `sociacl-request-id-v2`, the requester
   `PrincipalId`, and the object `ObjectId`. `grantApprovedRequest` takes

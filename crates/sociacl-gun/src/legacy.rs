@@ -968,78 +968,9 @@ pub(crate) fn acl_soul(owner: impl AsRef<str>) -> Option<NodeId> {
 
 #[cfg(test)]
 mod label_tests {
-    use sociacl_core::{IssuerSecret, Timestamp};
+    use sociacl_core::Timestamp;
 
     use super::*;
-    use crate::mesh::MeshSeeGraph;
-    use crate::GroupPredicate;
-
-    fn signer(name: &str) -> IssuerSecret {
-        let mut bytes = [0u8; 32];
-        for (i, b) in name.as_bytes().iter().enumerate() {
-            bytes[i % 32] ^= b.wrapping_add((i as u8).wrapping_mul(17));
-        }
-        bytes[0] ^= name.len() as u8;
-        bytes[31] |= 1;
-        IssuerSecret::from_bytes(bytes)
-    }
-
-    #[test]
-    fn check_rejects_an_edge_whose_owner_is_not_the_current_owner() {
-        let mut graph = MeshSeeGraph::new();
-        let alice = signer("0xalice");
-        let bob = signer("0xbob");
-        graph.enroll_signer("0xalice", alice.verify_key()).unwrap();
-        graph.enroll_signer("0xbob", bob.verify_key()).unwrap();
-        graph.labels.put_object("doc", "0xalice");
-        graph
-            .record_set_owner("0xalice", GroupPredicate::SameGroup, "0xalice/ops")
-            .unwrap();
-        graph
-            .name_object_set(
-                "0xalice",
-                "doc",
-                GroupPredicate::SameGroup,
-                "0xalice/ops",
-                &alice,
-            )
-            .unwrap();
-        graph
-            .state_membership(
-                "0xbob",
-                GroupPredicate::SameGroup,
-                "0xalice/ops",
-                "0xbob",
-                &bob,
-            )
-            .unwrap();
-        graph
-            .state_membership(
-                "0xalice",
-                GroupPredicate::SameGroup,
-                "0xalice/ops",
-                "0xbob",
-                &alice,
-            )
-            .unwrap();
-        graph
-            .labels
-            .objects
-            .get_mut(&object_store_key("doc"))
-            .unwrap()
-            .owner = "0xcarol".into();
-        assert!(graph.object_set("doc").is_some());
-        let denied = graph.check_group_see(
-            GroupPredicate::SameGroup,
-            "doc",
-            "0xbob",
-            Timestamp(1),
-            None,
-            None,
-        );
-        assert!(!denied.allowed);
-        assert_eq!(denied.reason, MESH_REASON_MISSING);
-    }
 
     #[test]
     fn a_grant_names_one_object_and_a_gun_chain_is_not_a_record() {
