@@ -43,6 +43,12 @@ jobs:
       - name: Test all languages
         run: ./scripts/test-all.sh
 
+      - name: Production install can load sociacl/gun
+        working-directory: typescript
+        run: |
+          npm ci --omit=dev
+          node --input-type=module -e "await import('./src/gun.js')"
+
       - name: Coverage
         run: ./scripts/coverage.sh
 

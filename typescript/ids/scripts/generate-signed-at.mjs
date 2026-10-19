@@ -105,9 +105,6 @@ add('present-after-rotation-old-key', 'verify-signed-at', row(retiredAt, 1, 'pre
 add('retired-grant', 'verify-signed-at', row(retiredAt, 1, 'retired-grant'), retired);
 add('retired-request', 'verify-signed-at', row(retiredAt, 1, 'retired-request'), retired);
 add('retired-cancel-unwitnessed', 'verify-signed-at', row(retiredAt, 1, 'retired-cancel'), retired);
-add('retired-grant-copy', 'verify-signed-at', row(retiredAt, 1, 'retired-grant-copy'), retired);
-add('retired-cancel-row', 'verify-signed-at', row(retiredAt, 1, 'retired-cancel-row'), retired);
-add('retired-cancel-span', 'verify-signed-at', row(retiredAt, 1, 'retired-cancel-span'), retired);
 add('issuedAt-equals-rotation-time', 'verify-signed-at', row(rot.issuedAt, 1, 'issuedAt-equals-rotation-time'), retired);
 const directRaw = utf8.encode('acl-attest');
 const direct = { jws: attest(at, directRaw), issuedAt: at, bytes: hex(directRaw), raw: directRaw };
@@ -130,12 +127,6 @@ add('skew-nan', 'verify-signed-at', row(now + 1, 1, 'skew-nan'), { ok: false, re
 add('skew-infinity', 'verify-signed-at', row(now + 1, 1, 'skew-infinity'), { ok: false, reason: 'bad-record' }, { rotations: [], ...skewPolicy('Infinity') });
 add('skew-string', 'verify-signed-at', row(now + 1, 1, 'skew-string'), { ok: false, reason: 'bad-record' }, { rotations: [], ...skewPolicy('x') });
 add('skew-300', 'verify-signed-at', row(now + 300, 1, 'skew-300'), seen(now + 300, p, 'present'), { rotations: [], ...skewPolicy(300) });
-add('retired-cancel-a', 'verify-signed-at', row(retiredAt, 1, 'retired-cancel-a'), retired);
-add('retired-cancel-b', 'verify-signed-at', row(retiredAt, 1, 'retired-cancel-b'), retired);
-add('retired-cancel-c', 'verify-signed-at', row(retiredAt, 1, 'retired-cancel-c'), retired);
-add('retired-cancel-d', 'verify-signed-at', row(retiredAt, 1, 'retired-cancel-d'), retired);
-add('retired-cancel-e', 'verify-signed-at', row(retiredAt, 1, 'retired-cancel-e'), retired);
-add('retired-cancel-f', 'verify-signed-at', row(retiredAt, 1, 'retired-cancel-f'), retired);
 const badSig = row(at, 1, 'bad-signature');
 badSig.sig = b64(new Uint8Array(64));
 add('bad-signature', 'verify-signed-at', badSig, { ok: false, reason: 'bad-signature' }, { rotations: [] });

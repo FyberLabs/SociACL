@@ -14,6 +14,12 @@
   `docs/s3rch-check.md`. `vectors/mesh/forbidden-names.json` scopes the
   banned names to the see-path files. Later pull requests append their
   files to `scopes`.
+- `parseSeeGrant` / `parse_see_grant` and `seeGrantBytes` / `see_grant_bytes`
+  snapshot a `sociacl-see-grant-v2` row. A missing signature or a wrong
+  domain is `legacy-row`. `stated` is the exact integer 0 or 1. `parseObjectRecord`
+  / `parse_object_record`, `objectRecordBytes` / `object_record_bytes`, and
+  `verifyObjectRecord` / `verify_object_record` cover domain `sociacl-object-v2`.
+  A conflicting owner on an admitted object is `owner-conflict`.
 - Derive a per-contact inbox lane with HKDF-SHA256 from a contact-lane
   secret that is not the disclosed base `laneId`. Info is length-prefixed
   `sociacl-contact-lane-v1`, version `1`, the recipient, then the sender.
@@ -137,6 +143,15 @@ recorded here. The release tag is `ids-v0.9.0`.
   and a retired row counts only when those bytes are `sociacl-see-grant-v2`
   with `stated` 0 and the attestation matches them. `sociacl-cancel-v2` is
   the later group-cancel domain. `mode: "witnessed"` is that see-cancel result.
+  `parseSeeGrant` / `parse_see_grant` and `seeGrantBytes` / `see_grant_bytes`
+  are that snapshot. A missing signature or a wrong domain is `legacy-row`.
+  `stated` is the exact integer 0 or 1, so `-0` is `bad-record`. An
+  attestation on a current-key row is capped at 16384 characters.
+  `parseObjectRecord` / `parse_object_record`, `objectRecordBytes` /
+  `object_record_bytes`, and `verifyObjectRecord` / `verify_object_record`
+  are the `sociacl-object-v2` owner record. A retired key is
+  `unwitnessed-retired-key`. A missing signature is `bad-signature`. A null
+  or numeric signature is `not-string`.
 - `verifyAclAttestation` / `verify_acl_attestation` checks claim type
   `sociacl-acl-attest-v1`. The token is capped at 16384 characters before it
   is parsed. The claim is exactly `{typ, principal, recordId, iat, exp}`,

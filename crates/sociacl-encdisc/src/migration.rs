@@ -787,7 +787,7 @@ fn align_wraps(
 }
 
 fn grant_soul(owner: &str, object: &str, accessor: &str) -> Option<String> {
-    sociacl_gun::grant_soul(owner, object, accessor).map(|id| id.as_str().to_string())
+    crate::gun_soul::grant_soul(owner, object, accessor)
 }
 
 fn current_grants(
@@ -1295,37 +1295,41 @@ mod tests {
     use super::*;
 
     #[test]
-    fn grant_soul_matches_the_gun_contract() {
-        for (owner, object, accessor) in [
-            ("0xalice", "item-1", "0xbob"),
-            ("s3rch/users/0xalice", "item-1", "0xbob"),
-            ("0xalice", "rss3:act/1_x", "s3rch/users/0xbob"),
-            ("alice.name", "a.b", "carol"),
-        ] {
-            let expected = sociacl_gun::grant_soul(owner, object, accessor);
-            assert_eq!(
-                grant_soul(owner, object, accessor).as_deref(),
-                expected.as_ref().map(|id| id.as_str())
-            );
-        }
+    fn grant_soul_matches_the_dest_acl_contract() {
+        assert_eq!(
+            grant_soul("0xalice", "item-1", "0xbob").as_deref(),
+            Some("s3rch/acl/0xalice/item-1/0xbob")
+        );
+        assert_eq!(
+            grant_soul("s3rch/users/0xalice", "item-1", "0xbob").as_deref(),
+            Some("s3rch/acl/0xalice/item-1/0xbob")
+        );
+        assert_eq!(
+            grant_soul("0xalice", "rss3:act/1_x", "s3rch/users/0xbob").as_deref(),
+            Some("s3rch/acl/0xalice/rss3:act~61_x/0xbob")
+        );
+        assert_eq!(
+            grant_soul("alice.name", "a.b", "carol").as_deref(),
+            Some("s3rch/acl/alice.name/a~1b/carol")
+        );
     }
 
     #[test]
     fn acl_keys_do_not_fold_and_a_gun_chain_is_not_a_wallet() {
         assert_ne!(
-            sociacl_gun::acl_key("room.alpha"),
-            sociacl_gun::acl_key("room_alpha")
+            crate::gun_soul::acl_key("room.alpha"),
+            crate::gun_soul::acl_key("room_alpha")
         );
         assert_ne!(
-            sociacl_gun::acl_key("room.alpha"),
-            sociacl_gun::acl_key("room/alpha")
+            crate::gun_soul::acl_key("room.alpha"),
+            crate::gun_soul::acl_key("room/alpha")
         );
         assert_ne!(
-            sociacl_gun::acl_key("room_alpha"),
-            sociacl_gun::acl_key("room/alpha")
+            crate::gun_soul::acl_key("room_alpha"),
+            crate::gun_soul::acl_key("room/alpha")
         );
         let chain = "0xattacker.get('s3rch').get('users').get('0xvictim')";
-        assert_eq!(sociacl_gun::acl_principal_key(chain), None);
+        assert_eq!(crate::gun_soul::acl_principal_key(chain), None);
         assert_ne!(
             grant_soul("0xalice", "room", chain),
             grant_soul("0xalice", "room", "0xvictim")

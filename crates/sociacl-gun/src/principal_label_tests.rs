@@ -1,7 +1,8 @@
 //! Shared principal and object-id vectors. TypeScript loads the same file.
 
+use crate::legacy::{acl_principal_key, grant_soul};
+use crate::{GunError, MeshSeeGrant, MeshSeeGraph};
 use sociacl_core::Timestamp;
-use sociacl_gun::{acl_principal_key, grant_soul, GunError, MeshSeeGrant, MeshSeeGraph};
 
 const VECTORS: &str = include_str!("../../../vectors/mesh/principals.json");
 
@@ -98,20 +99,22 @@ fn shared_principal_and_object_vectors() {
     }
     for row in &fixture.objects {
         let mut graph = MeshSeeGraph::new();
-        graph.put_object(&row.stored, &row.owner);
+        graph.labels.put_object(&row.stored, &row.owner);
         if let Some(put) = &row.put {
-            graph.put_object(put, row.put_owner.as_deref().unwrap_or(""));
+            graph
+                .labels
+                .put_object(put, row.put_owner.as_deref().unwrap_or(""));
         }
         if let Some(has_put) = row.has_put_id {
             assert_eq!(
-                graph.has_object(row.put.as_deref().unwrap_or("")),
+                graph.labels.has_object(row.put.as_deref().unwrap_or("")),
                 has_put,
                 "{}",
                 row.name
             );
         }
         assert_eq!(
-            graph.owner_of(&row.stored),
+            graph.labels.owner_of(&row.stored),
             Some(row.owner_after.as_str()),
             "{}",
             row.name
@@ -121,6 +124,7 @@ fn shared_principal_and_object_vectors() {
         {
             assert_eq!(
                 graph
+                    .labels
                     .check_see_label(query, accessor, Timestamp(10), None, None)
                     .allowed,
                 allowed,
@@ -131,9 +135,9 @@ fn shared_principal_and_object_vectors() {
     }
     for row in &fixture.null_keys {
         let mut graph = MeshSeeGraph::new();
-        graph.put_object(&row.other, "0xmallory");
-        graph.put_object(&row.secret, "0xalice");
-        let rejected = graph.state_see_grant(
+        graph.labels.put_object(&row.other, "0xmallory");
+        graph.labels.put_object(&row.secret, "0xalice");
+        let rejected = graph.labels.state_see_grant(
             "0xmallory",
             MeshSeeGrant::live(&row.other, &row.accessor, 0, 80),
         );
@@ -142,10 +146,14 @@ fn shared_principal_and_object_vectors() {
             "{}",
             row.accessor
         );
-        assert!(graph.grant_edge(&row.secret, &row.accessor).is_none());
-        assert!(graph.grant_edge(&row.other, &row.accessor).is_none());
+        assert!(graph
+            .labels
+            .grant_edge(&row.secret, &row.accessor)
+            .is_none());
+        assert!(graph.labels.grant_edge(&row.other, &row.accessor).is_none());
         assert!(
             !graph
+                .labels
                 .check_see_label(&row.secret, &row.accessor, Timestamp(10), None, None)
                 .allowed
         );

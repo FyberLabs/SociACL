@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import * as ids from "../ids/src/index.js";
-import { runSeeCase, seeAccessorEdge, seeObjectEdge } from "../src/see.js";
+import { admitRow, checkSee, putObject, runSeeCase, seeAccessorEdge, seeObjectEdge } from "../src/see.js";
 
 function contextOf(raw) {
   const history = (principal, at, until) => (raw.authenticatedAccounts ?? []).includes(principal)
@@ -37,26 +37,96 @@ test("see vectors", () => {
   assert.equal(new Set(names).size, names.length);
 });
 
-test("see edge matches parse for 10k strings", () => {
-  const alphabet = "abcXYZ./_~:()'\\get0123456789- \u0000";
-  let state = 0x5502;
-  const next = () => {
-    state = (state ^ (state << 13)) >>> 0;
-    state = (state ^ (state >>> 17)) >>> 0;
-    state = (state ^ (state << 5)) >>> 0;
-    return state;
-  };
-  for (let i = 0; i < 10000; i += 1) {
-    const len = next() % 24;
-    let value = "";
-    for (let j = 0; j < len; j += 1) value += alphabet[next() % alphabet.length];
-    const object = seeObjectEdge(value);
-    assert.deepEqual(object, ids.parseObjectId(value));
-    if (object.ok) assert.equal(object.value, value);
-    const accessor = seeAccessorEdge(value);
-    assert.deepEqual(accessor, ids.parsePrincipalId(value));
-    if (accessor.ok) assert.equal(accessor.value, value);
+function xorshift(state) {
+  state = (state ^ (state << 13)) >>> 0;
+  state = (state ^ (state >>> 17)) >>> 0;
+  state = (state ^ (state << 5)) >>> 0;
+  return state;
+}
+
+function mutateId(value, roll, pick) {
+  const kind = roll % 5;
+  if (kind === 0) {
+    const index = pick % value.length;
+    const ch = value[index];
+    const flipped = ch >= "a" && ch <= "z" ? ch.toUpperCase() : ch >= "A" && ch <= "Z" ? ch.toLowerCase() : ch;
+    if (flipped !== ch) return value.slice(0, index) + flipped + value.slice(index + 1);
+    return value + "x";
   }
+  if (kind === 1) {
+    if (value.includes("_")) return value.replace("_", ".");
+    if (value.includes(".")) return value.replace(".", "_");
+    return value + "x";
+  }
+  if (kind === 2) return value + " ";
+  if (kind === 3) return "room.alpha";
+  return "s3rch/items/" + value;
+}
+
+test("see edge mutations call checkSee", () => {
+  const file = JSON.parse(readFileSync(new URL("../../vectors/mesh/v2/see.json", import.meta.url), "utf8"));
+  const entry = file.accept.find((row) => row.name === "grant-on-chat_a-does-not-allow-chat_b");
+  const placed = entry.steps.find((step) => step.op === "put");
+  const admitted = entry.steps.find((step) => step.op === "admit");
+  const graph = {};
+  const resolver = { rotations: () => file.context.rotationSets.genesis, ctx: contextOf(file.context) };
+  assert.equal(putObject(graph, placed.record, resolver).ok, true);
+  assert.equal(admitRow(graph, admitted.row, resolver).ok, true);
+  const object = admitted.row.object;
+  const accessor = admitted.row.accessor;
+  const owner = placed.record.owner;
+  assert.equal(checkSee(graph, object, accessor, 10).allowed, true);
+  assert.equal(checkSee(graph, object, owner, 10).reason, "owner");
+  const bases = [object, accessor, owner];
+  let state = 0x5502;
+  for (let i = 0; i < 10000; i += 1) {
+    state = xorshift(state);
+    const roll = state;
+    state = xorshift(state);
+    const pick = state;
+    state = xorshift(state);
+    const base = bases[state % bases.length];
+    const value = mutateId(base, roll, pick);
+    const parsedObject = seeObjectEdge(value);
+    const parsedPrincipal = seeAccessorEdge(value);
+    assert.deepEqual(parsedObject, ids.parseObjectId(value));
+    assert.deepEqual(parsedPrincipal, ids.parsePrincipalId(value));
+    if (parsedObject.ok) assert.equal(parsedObject.value, value);
+    if (parsedPrincipal.ok) assert.equal(parsedPrincipal.value, value);
+    if (parsedObject.ok) {
+      const got = checkSee(graph, value, accessor, 10);
+      assert.equal(got.allowed, value === object);
+    } else {
+      assert.equal(checkSee(graph, value, accessor, 10).allowed, false);
+    }
+    if (parsedPrincipal.ok) {
+      const got = checkSee(graph, object, value, 10);
+      assert.equal(got.allowed, value === accessor || value === owner);
+    } else {
+      assert.equal(checkSee(graph, object, value, 10).allowed, false);
+    }
+  }
+});
+
+test("admitRow returns a copy of the tie-break bytes", () => {
+  const file = JSON.parse(readFileSync(new URL("../../vectors/mesh/v2/see.json", import.meta.url), "utf8"));
+  const entry = file.accept.find((row) => row.name === "grant-on-chat_a-does-not-allow-chat_b");
+  const placed = entry.steps.find((step) => step.op === "put");
+  const admitted = entry.steps.find((step) => step.op === "admit");
+  const graph = {};
+  const resolver = { rotations: () => file.context.rotationSets.genesis, ctx: contextOf(file.context) };
+  assert.equal(putObject(graph, placed.record, resolver).ok, true);
+  const got = admitRow(graph, admitted.row, resolver);
+  assert.equal(got.ok, true);
+  got.value.bytes.fill(255);
+  const again = admitRow(graph, admitted.row, resolver);
+  assert.equal(again.ok, true);
+  assert.equal(again.kept, false);
+});
+
+test("checkSee on a primitive graph is bad-record", () => {
+  assert.deepEqual(checkSee(1, "chat", "bob", 0), { allowed: false, reason: "bad-record" });
+  assert.deepEqual(checkSee(null, "chat", "bob", 0), { allowed: false, reason: "bad-record" });
 });
 
 test("see forbidden names are absent", () => {

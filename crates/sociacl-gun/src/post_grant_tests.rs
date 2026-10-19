@@ -1,13 +1,12 @@
 //! Shared post-grant vectors. The TypeScript contract loads the same file.
 
-use sociacl_core::{AttestationChannel, IssuerSecret, Timestamp};
-use sociacl_gun::{
+use crate::{
     factor_grants, post_grant_signing_bytes, post_soul, GroupPredicate, GunError, GunPostEdge,
     GunSoul, HandoffHint, HopFactor, MeshPostGrant, MeshSeeGrant, MeshSeeGraph, MESH_REASON_ACL,
     MESH_REASON_CANCELLED, MESH_REASON_META, MESH_REASON_MISSING, MESH_REASON_OWNER,
     MESH_REASON_POST, MESH_REASON_URL_LEAF, POST_GRANT_DOMAIN, POST_GRANT_SCOPE,
 };
-
+use sociacl_core::{AttestationChannel, IssuerSecret, Timestamp};
 const VECTORS: &str = include_str!("../../../vectors/mesh/post-grant.json");
 
 #[derive(serde::Deserialize)]
@@ -112,6 +111,7 @@ fn apply_window_see(
     accessor: &str,
 ) {
     graph
+        .labels
         .state_see_grant(
             &case.owner,
             MeshSeeGrant::live(object, accessor, window.from, window.until),
@@ -119,6 +119,7 @@ fn apply_window_see(
         .unwrap();
     if window.stated == 0 {
         graph
+            .labels
             .unstate_see_grant(&case.owner, accessor, object)
             .unwrap();
     }
@@ -169,7 +170,7 @@ fn check_case(case: &GraphCase, merge: Option<&[MergeEdge]>) {
     let write_accessor = case.write_accessor.as_deref().unwrap_or(&case.accessor);
     let check_object = case.check_object.as_deref().unwrap_or(&case.object);
     let check_accessor = case.check_accessor.as_deref().unwrap_or(&case.accessor);
-    graph.put_object(&case.object, &case.owner);
+    graph.labels.put_object(&case.object, &case.owner);
     if let Some(see) = &case.see {
         apply_window_see(&mut graph, case, see, write_object, write_accessor);
     }
@@ -182,11 +183,12 @@ fn check_case(case: &GraphCase, merge: Option<&[MergeEdge]>) {
             .as_deref()
             .unwrap_or(write_accessor);
         graph
+            .labels
             .unstate_see_grant(&case.owner, cancel_accessor, cancel_object)
             .unwrap();
     }
     if let Some(reassign_object) = &case.reassign_object {
-        graph.put_object(
+        graph.labels.put_object(
             reassign_object,
             case.reassign_owner.as_deref().unwrap_or(&case.owner),
         );
@@ -211,7 +213,7 @@ fn check_case(case: &GraphCase, merge: Option<&[MergeEdge]>) {
     );
     assert_eq!(got.allowed, case.allowed, "{}", case.name);
     assert_eq!(got.reason, case.reason, "{}", case.name);
-    let see = graph.check_see_label(
+    let see = graph.labels.check_see_label(
         check_object,
         check_accessor,
         Timestamp(case.now),
@@ -230,7 +232,7 @@ fn check_case(case: &GraphCase, merge: Option<&[MergeEdge]>) {
             window.from,
             window.until,
         );
-        let grant_check = graph.check_see_grant(
+        let grant_check = graph.labels.check_see_grant(
             &grant,
             check_object,
             check_accessor,
@@ -303,13 +305,14 @@ fn post_grant_vectors_match_the_shared_fixture() {
 #[test]
 fn post_row_is_not_a_see_row() {
     let mut graph = MeshSeeGraph::new();
-    graph.put_object("room:alpha", "0xalice");
+    graph.labels.put_object("room:alpha", "0xalice");
     graph
         .state_post_grant("0xalice", MeshPostGrant::live("room:alpha", "0xbob", 0, 80))
         .unwrap();
-    assert!(graph.grant_edge("room:alpha", "0xbob").is_none());
+    assert!(graph.labels.grant_edge("room:alpha", "0xbob").is_none());
     assert!(
         !graph
+            .labels
             .check_see_label("room:alpha", "0xbob", Timestamp(1), None, None)
             .allowed
     );
@@ -320,7 +323,7 @@ fn post_row_is_not_a_see_row() {
     assert!(!parsed.is_s3rch_acl_grant());
     assert_ne!(
         soul.as_str(),
-        sociacl_gun::grant_soul("0xalice", "room:alpha", "0xbob")
+        crate::legacy::grant_soul("0xalice", "room:alpha", "0xbob")
             .unwrap()
             .as_str()
     );
@@ -329,7 +332,7 @@ fn post_row_is_not_a_see_row() {
 #[test]
 fn foreign_owner_cannot_write_a_post_grant() {
     let mut graph = MeshSeeGraph::new();
-    graph.put_object("room:alpha", "0xalice");
+    graph.labels.put_object("room:alpha", "0xalice");
     assert_eq!(
         graph
             .state_post_grant("0xbob", MeshPostGrant::live("room:alpha", "0xbob", 0, 80))
@@ -341,8 +344,9 @@ fn foreign_owner_cannot_write_a_post_grant() {
 #[test]
 fn cancel_then_restate_and_a_stale_peer_does_not_restore() {
     let mut graph = MeshSeeGraph::new();
-    graph.put_object("room:alpha", "0xalice");
+    graph.labels.put_object("room:alpha", "0xalice");
     graph
+        .labels
         .state_see_grant("0xalice", MeshSeeGrant::live("room:alpha", "0xbob", 0, 80))
         .unwrap();
     graph
@@ -378,8 +382,8 @@ fn cancel_then_restate_and_a_stale_peer_does_not_restore() {
 #[test]
 fn friend_hop_and_closed_objects_do_not_grant_post() {
     let mut graph = MeshSeeGraph::new();
-    graph.put_object("room:alpha", "0xalice");
-    graph.state_friend("0xalice", "0xbob");
+    graph.labels.put_object("room:alpha", "0xalice");
+    graph.labels.state_friend("0xalice", "0xbob");
     let hint = HandoffHint::parse("0xbob", "room:alpha", Some("see"), None).unwrap();
     let hop = HopFactor::Structured {
         channel: AttestationChannel::ConventionBadge,
@@ -429,7 +433,7 @@ fn group_see_does_not_satisfy_check_post() {
     let bob = signer("0xbob");
     graph.enroll_signer("0xalice", alice.verify_key()).unwrap();
     graph.enroll_signer("0xbob", bob.verify_key()).unwrap();
-    graph.put_object("doc", "0xalice");
+    graph.labels.put_object("doc", "0xalice");
     graph
         .record_set_owner("0xalice", GroupPredicate::SameGroup, "0xalice/ops")
         .unwrap();
@@ -483,8 +487,9 @@ fn group_see_does_not_satisfy_check_post() {
 #[test]
 fn post_grant_on_a_feed_id_matches_the_item_soul() {
     let mut graph = MeshSeeGraph::new();
-    graph.put_object("rss3:act/1#x", "0xalice");
+    graph.labels.put_object("rss3:act/1#x", "0xalice");
     graph
+        .labels
         .state_see_grant(
             "0xalice",
             MeshSeeGrant::live("rss3:act/1#x", "0xbob", 0, 80),
@@ -504,8 +509,9 @@ fn post_grant_on_a_feed_id_matches_the_item_soul() {
 #[test]
 fn check_post_uses_the_current_owners_rows() {
     let mut graph = MeshSeeGraph::new();
-    graph.put_object("room:alpha", "0xalice");
+    graph.labels.put_object("room:alpha", "0xalice");
     graph
+        .labels
         .state_see_grant("0xalice", MeshSeeGrant::live("room:alpha", "0xbob", 0, 80))
         .unwrap();
     graph
@@ -514,8 +520,9 @@ fn check_post_uses_the_current_owners_rows() {
             MeshPostGrant::live("room:alpha", "s3rch/users/0xbob", 0, 80),
         )
         .unwrap();
-    graph.put_object("room:alpha", "0xcarol");
+    graph.labels.put_object("room:alpha", "0xcarol");
     graph
+        .labels
         .state_see_grant("0xcarol", MeshSeeGrant::live("room:alpha", "0xbob", 0, 80))
         .unwrap();
     graph
@@ -531,8 +538,9 @@ fn check_post_uses_the_current_owners_rows() {
 #[test]
 fn an_out_of_range_post_integer_does_not_restore_a_cancel() {
     let mut graph = MeshSeeGraph::new();
-    graph.put_object("room:alpha", "0xalice");
+    graph.labels.put_object("room:alpha", "0xalice");
     graph
+        .labels
         .state_see_grant("0xalice", MeshSeeGrant::live("room:alpha", "0xbob", 0, 80))
         .unwrap();
     graph
@@ -574,9 +582,10 @@ fn a_raw_id_and_its_item_soul_share_one_post_row() {
     let mut graph = MeshSeeGraph::new();
     let raw = "room:alpha";
     let soul = "s3rch/items/room:alpha";
-    graph.put_object(raw, "0xalice");
-    assert_eq!(graph.owner_of(soul), Some("0xalice"));
+    graph.labels.put_object(raw, "0xalice");
+    assert_eq!(graph.labels.owner_of(soul), Some("0xalice"));
     graph
+        .labels
         .state_see_grant("0xalice", MeshSeeGrant::live(raw, "0xbob", 0, 80))
         .unwrap();
     graph
@@ -601,8 +610,9 @@ fn a_raw_id_and_its_item_soul_share_one_post_row() {
 #[test]
 fn a_cancel_at_the_ham_ceiling_stays_representable() {
     let mut graph = MeshSeeGraph::new();
-    graph.put_object("room:alpha", "0xalice");
+    graph.labels.put_object("room:alpha", "0xalice");
     graph
+        .labels
         .state_see_grant("0xalice", MeshSeeGrant::live("room:alpha", "0xbob", 0, 80))
         .unwrap();
     let max = (1_u64 << 53) - 1;
@@ -660,8 +670,9 @@ fn a_post_merge_waits_for_the_current_owner() {
         )
         .unwrap(),
     );
-    graph.put_object("room:alpha", "0xalice");
+    graph.labels.put_object("room:alpha", "0xalice");
     graph
+        .labels
         .state_see_grant("0xalice", MeshSeeGrant::live("room:alpha", "0xbob", 0, 80))
         .unwrap();
     let staged = graph.check_post("room:alpha", "0xbob", Timestamp(10), None, None);
@@ -700,7 +711,7 @@ fn a_post_merge_waits_for_the_current_owner() {
 #[test]
 fn a_rejected_accessor_does_not_replace_a_post_row() {
     let mut graph = MeshSeeGraph::new();
-    graph.put_object("doc", "0xalice");
+    graph.labels.put_object("doc", "0xalice");
     graph
         .state_post_grant("0xalice", MeshPostGrant::live("doc", "0xbob", 0, 80))
         .unwrap();

@@ -344,39 +344,6 @@
       "reason": "unwitnessed-retired-key"
     },
     {
-      "name": "retired-grant-copy",
-      "operation": "verify-signed-at",
-      "input": {
-        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
-        "sig": "M3L3CaQLX7M8HjK7swgsFOsn3ao5U1xs9ouEUjCc0fRn_dX_6O55VIEAnwD8yOvSfmrTD6DbETzufbEQ--fXow",
-        "bytes": "726574697265642d6772616e742d636f7079",
-        "issuedAt": 1700000010
-      },
-      "reason": "unwitnessed-retired-key"
-    },
-    {
-      "name": "retired-cancel-row",
-      "operation": "verify-signed-at",
-      "input": {
-        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
-        "sig": "AbQsCnaibSu2uGZtLGCW4QGhFrWVkKzdQzJQc7l7z3SFI3E7GVeWR_QGvhekV1mgSoGl17NG1-2ikeSV37ERcQ",
-        "bytes": "726574697265642d63616e63656c2d726f77",
-        "issuedAt": 1700000010
-      },
-      "reason": "unwitnessed-retired-key"
-    },
-    {
-      "name": "retired-cancel-span",
-      "operation": "verify-signed-at",
-      "input": {
-        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
-        "sig": "4F70xERA0ntVy6lswF0hx0AlIzik5aE4VtSGPWiS2QUOHc9B2iZ4hL-jauw-o7vW5N7VIj13XqRd0mjO6KBdOQ",
-        "bytes": "726574697265642d63616e63656c2d7370616e",
-        "issuedAt": 1700000010
-      },
-      "reason": "unwitnessed-retired-key"
-    },
-    {
       "name": "issuedAt-equals-rotation-time",
       "operation": "verify-signed-at",
       "input": {
@@ -528,72 +495,6 @@
         "clockSkewSeconds": "x"
       },
       "reason": "bad-record"
-    },
-    {
-      "name": "retired-cancel-a",
-      "operation": "verify-signed-at",
-      "input": {
-        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
-        "sig": "L-VGyzx2A51kIAKPV4bJ_W4_CHulQoDljdNq-MeKT9W01uYIJjoj9OgkV36illfcrgayPNHc3FGCnGVBkFyqbg",
-        "bytes": "726574697265642d63616e63656c2d61",
-        "issuedAt": 1700000010
-      },
-      "reason": "unwitnessed-retired-key"
-    },
-    {
-      "name": "retired-cancel-b",
-      "operation": "verify-signed-at",
-      "input": {
-        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
-        "sig": "r4-R2fZjhESAn5pjL5Hm7ixE-rCgKcR8kIYUDKw_UwwaRXHVGPOtMsTTasJmrMaMWXkav_C50YwxvMNA1HVe2A",
-        "bytes": "726574697265642d63616e63656c2d62",
-        "issuedAt": 1700000010
-      },
-      "reason": "unwitnessed-retired-key"
-    },
-    {
-      "name": "retired-cancel-c",
-      "operation": "verify-signed-at",
-      "input": {
-        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
-        "sig": "50J-3uXG0C1UJyg2lOET7SMR3p4pAykjLe0Asmtr0JhDGerAH6ahv5kKl_JNH2GIgJOeGDs4KLgqD3Nci-DNxQ",
-        "bytes": "726574697265642d63616e63656c2d63",
-        "issuedAt": 1700000010
-      },
-      "reason": "unwitnessed-retired-key"
-    },
-    {
-      "name": "retired-cancel-d",
-      "operation": "verify-signed-at",
-      "input": {
-        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
-        "sig": "t2BxAGQ21n1XJ8276G276Jvoh0hI267mn9Jh-xaEEW4R-FU3enN7Hz-0_peBKJiAg5aY3uE7w3ZP1xhfKvf_OA",
-        "bytes": "726574697265642d63616e63656c2d64",
-        "issuedAt": 1700000010
-      },
-      "reason": "unwitnessed-retired-key"
-    },
-    {
-      "name": "retired-cancel-e",
-      "operation": "verify-signed-at",
-      "input": {
-        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
-        "sig": "v2oVlQhUNUuvxhWZ8-j3zWPqlSfMmsxQcXCtN7C6fnuH0lezmXJLKQ8sEttrhfGGL1uh6-n4Jj_U4K2PqVPkVw",
-        "bytes": "726574697265642d63616e63656c2d65",
-        "issuedAt": 1700000010
-      },
-      "reason": "unwitnessed-retired-key"
-    },
-    {
-      "name": "retired-cancel-f",
-      "operation": "verify-signed-at",
-      "input": {
-        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
-        "sig": "EGVo8GDMV_SkLMmoS0eTVaatkq8cWqd8OtNrvSXDwbPHBBkxrXc5Xu7EWePwuWPp-NMF7ITYlx2F5Hkp3k5KZA",
-        "bytes": "726574697265642d63616e63656c2d66",
-        "issuedAt": 1700000010
-      },
-      "reason": "unwitnessed-retired-key"
     },
     {
       "name": "bad-signature",

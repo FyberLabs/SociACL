@@ -60,11 +60,10 @@ pub use group::{
 pub use hint::{HandoffHint, MAGIC as HINT_MAGIC, VERSION as HINT_VERSION};
 pub use hop::{accept_hop, accept_hop_bytes, decode_hop, HopFactor};
 pub use leaf::{normalize_permalink, normalize_tags, split_tags, ItemShape, UrlLeaf};
-pub use legacy::{acl_key, acl_principal_key, acl_soul, encode_key, grant_soul};
 pub use mesh::{
-    factor_grants, GunAclEdge, MeshCheckResult, MeshSeeGrant, MeshSeeGraph, MESH_REASON_ACL,
-    MESH_REASON_CANCELLED, MESH_REASON_DELEGATE, MESH_REASON_META, MESH_REASON_MISSING,
-    MESH_REASON_OWNER, MESH_REASON_URL_LEAF,
+    factor_grants, GunAclEdge, MeshCheckResult, MeshSeeGrant, MeshSeeGraph, PutObjectError,
+    MESH_REASON_ACL, MESH_REASON_CANCELLED, MESH_REASON_DELEGATE, MESH_REASON_META,
+    MESH_REASON_MISSING, MESH_REASON_OWNER, MESH_REASON_URL_LEAF,
 };
 pub use post::{
     post_grant_signing_bytes, post_soul, GunPostEdge, MeshPostGrant, MESH_REASON_POST,
@@ -86,3 +85,14 @@ pub use soul::{
 /// (`ens:…` / `fc:…` / … linked from the user node), or an opaque
 /// post/room id. Mapped onto Check `read`. Hop is an optional factor.
 pub const SEE: &str = "see";
+
+#[cfg(test)]
+mod access_request_tests;
+#[cfg(test)]
+mod group_label_tests;
+#[cfg(test)]
+mod mesh_label_tests;
+#[cfg(test)]
+mod post_grant_tests;
+#[cfg(test)]
+mod principal_label_tests;

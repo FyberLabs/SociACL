@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use sociacl_core::{NodeId, Timestamp};
 
 use crate::mesh::{
-    GunAclEdge, MeshCheckResult, MeshObject, MeshSeeGrant, MeshSeeGraph, MESH_REASON_ACL,
+    GunAclEdge, LabelGraph, MeshCheckResult, MeshObject, MeshSeeGrant, MESH_REASON_ACL,
     MESH_REASON_CANCELLED, MESH_REASON_DELEGATE, MESH_REASON_META, MESH_REASON_MISSING,
     MESH_REASON_OWNER, MESH_REASON_URL_LEAF,
 };
@@ -22,7 +22,7 @@ use crate::{GunError, HandoffHint, HopFactor, UrlLeaf};
 /// Injective path escape. `~` is the escape character.
 /// `. # $ [ ]` each get their own form. `/` stays here so an item
 /// soul does not gain a new spelling of a slash-bearing id.
-pub fn encode_key(id: &str) -> String {
+pub(crate) fn encode_key(id: &str) -> String {
     escape_key(id, false)
 }
 
@@ -151,7 +151,7 @@ impl GunSoul {
 /// Dest-ACL path key. The same escape as [`encode_key`], plus `/`,
 /// so a grant soul stays five segments. `room.alpha`, `room_alpha`,
 /// and `room/alpha` are three keys. Not a second spelling of an item.
-pub fn acl_key(id: &str) -> String {
+pub(crate) fn acl_key(id: &str) -> String {
     escape_key(ascii_trim(id), true)
 }
 
@@ -228,7 +228,7 @@ fn bare_principal(id: &str) -> Option<String> {
 /// Owner / accessor key on dest ACL. An exact `s3rch/users/<wallet>`
 /// collapses to that wallet. Anything else must be a bare principal.
 /// `None` is not a soul segment. [`encode_key`] is for object keys.
-pub fn acl_principal_key(id: &str) -> Option<String> {
+pub(crate) fn acl_principal_key(id: &str) -> Option<String> {
     let id = ascii_trim(id);
     if id.is_empty() || id.contains(".get(") {
         return None;
@@ -249,7 +249,7 @@ pub fn acl_principal_key(id: &str) -> Option<String> {
 
 /// One accessor id. A user soul `s3rch/users/<wallet>` and the wallet
 /// are this key. See and post writes, cancels, and lookups use it.
-pub fn canonical_accessor_id(id: &str) -> Option<String> {
+pub(crate) fn canonical_accessor_id(id: &str) -> Option<String> {
     acl_principal_key(id)
 }
 
@@ -299,15 +299,15 @@ mod tests {
 
     #[test]
     fn a_rejected_principal_is_not_a_grant_path() {
-        assert_eq!(crate::grant_soul("0xalice", "doc", "0xbob/x"), None);
-        assert_eq!(crate::grant_soul("0xalice/doc", "0xbob", "x"), None);
+        assert_eq!(crate::legacy::grant_soul("0xalice", "doc", "0xbob/x"), None);
+        assert_eq!(crate::legacy::grant_soul("0xalice/doc", "0xbob", "x"), None);
         assert_eq!(
-            crate::grant_soul("0xalice", "doc", "0xbob")
+            crate::legacy::grant_soul("0xalice", "doc", "0xbob")
                 .unwrap()
                 .as_str(),
             "s3rch/acl/0xalice/doc/0xbob"
         );
-        assert_eq!(crate::acl_soul("../meta"), None);
+        assert_eq!(crate::legacy::acl_soul("../meta"), None);
         assert_eq!(canonical_accessor_id("a\u{0}b"), None);
         assert_eq!(crate::post_soul("0xalice", "doc", "a\u{0}b"), None);
         assert_eq!(canonical_accessor_id("bob~name"), None);
@@ -476,8 +476,8 @@ fn push_grant_str(buf: &mut Vec<u8>, value: &str) {
     buf.extend_from_slice(&bytes[..usize::try_from(len).unwrap_or(bytes.len())]);
 }
 
-impl MeshSeeGraph {
-    pub fn put_object(&mut self, object: impl AsRef<str>, owner: impl AsRef<str>) {
+impl LabelGraph {
+    pub(crate) fn put_object(&mut self, object: impl AsRef<str>, owner: impl AsRef<str>) {
         let raw = object.as_ref();
         if object_id_rejected(raw) {
             return;
@@ -501,15 +501,15 @@ impl MeshSeeGraph {
         self.objects.insert(direct_key, MeshObject { id, owner });
     }
 
-    pub fn has_object(&self, object: &str) -> bool {
+    pub(crate) fn has_object(&self, object: &str) -> bool {
         self.lookup_object(object).is_some()
     }
 
-    pub fn owner_of(&self, object: &str) -> Option<&str> {
+    pub(crate) fn owner_of(&self, object: &str) -> Option<&str> {
         self.lookup_object(object).map(|o| o.owner.as_str())
     }
 
-    pub fn see_grants(&self, object: &str) -> Vec<&MeshSeeGrant> {
+    pub(crate) fn see_grants(&self, object: &str) -> Vec<&MeshSeeGrant> {
         let canonical = self.canonical_object_id(object);
         self.grants
             .values()
@@ -518,7 +518,7 @@ impl MeshSeeGraph {
             .collect()
     }
 
-    pub fn grant_edge(&self, object: &str, accessor: &str) -> Option<&GunAclEdge> {
+    pub(crate) fn grant_edge(&self, object: &str, accessor: &str) -> Option<&GunAclEdge> {
         let canonical = self.canonical_object_id(object);
         let owner = self.owner_of(&canonical).unwrap_or("");
         self.grants.values().find(|edge| {
@@ -529,7 +529,7 @@ impl MeshSeeGraph {
     }
 
     /// Record a person-to-person edge. Check never walks it.
-    pub fn state_friend(&mut self, a: impl AsRef<str>, b: impl AsRef<str>) {
+    pub(crate) fn state_friend(&mut self, a: impl AsRef<str>, b: impl AsRef<str>) {
         let (Some(a), Some(b)) = (acl_principal_key(a.as_ref()), acl_principal_key(b.as_ref()))
         else {
             return;
@@ -537,7 +537,7 @@ impl MeshSeeGraph {
         self.friends.insert((a, b));
     }
 
-    pub fn has_friend(&self, a: &str, b: &str) -> bool {
+    pub(crate) fn has_friend(&self, a: &str, b: &str) -> bool {
         let (Some(a), Some(b)) = (acl_principal_key(a), acl_principal_key(b)) else {
             return false;
         };
@@ -547,7 +547,7 @@ impl MeshSeeGraph {
     /// Owner-only. Writes a live grant at the dest-ACL soul.
     /// The stored object id is the in-graph id, so a raw id and its
     /// item soul share one row.
-    pub fn state_see_grant(
+    pub(crate) fn state_see_grant(
         &mut self,
         owner: impl AsRef<str>,
         grant: MeshSeeGrant,
@@ -572,7 +572,7 @@ impl MeshSeeGraph {
 
     /// Owner-only privilege-down. Bumps HAM state. Next Check after
     /// merge denies. No cached allow.
-    pub fn unstate_see_grant(
+    pub(crate) fn unstate_see_grant(
         &mut self,
         owner: impl AsRef<str>,
         accessor: impl AsRef<str>,
@@ -615,7 +615,7 @@ impl MeshSeeGraph {
     /// The stored key is rebuilt from the grant's owner, object,
     /// and accessor. When the object is already in the graph, a raw
     /// id and its item soul land on that in-graph id.
-    pub fn merge_edge(&mut self, incoming: GunAclEdge) {
+    pub(crate) fn merge_edge(&mut self, incoming: GunAclEdge) {
         let mut incoming = incoming.canonical();
         if let Some(stored_id) = self
             .object_record(&incoming.grant.object)
@@ -679,7 +679,7 @@ impl MeshSeeGraph {
     /// Merge every dest-ACL node from `other` into this peer.
     /// Object rows are stored under the id on the row, not the
     /// peer's map key.
-    pub fn merge_from(&mut self, other: &Self) {
+    pub(crate) fn merge_from(&mut self, other: &Self) {
         for object in other.objects.values() {
             let key = object_store_key(&object.id);
             if self.objects.contains_key(&key) || self.lookup_object(&object.id).is_some() {
@@ -722,7 +722,7 @@ impl MeshSeeGraph {
     /// `CHECK(see, object, accessor)` at `now` on the locally merged
     /// graph. `hint` and `hop` are ignored for `allowed`. Hop missing
     /// does not fail. Hop alone never allows.
-    pub fn check_see_label(
+    pub(crate) fn check_see_label(
         &self,
         object: impl AsRef<str>,
         accessor: impl AsRef<str>,
@@ -803,7 +803,7 @@ impl MeshSeeGraph {
 
     /// Dest Check AND the presented grant window. Hop / hint do not
     /// mint and do not widen the window.
-    pub fn check_see_grant(
+    pub(crate) fn check_see_grant(
         &self,
         grant: &MeshSeeGrant,
         object: impl AsRef<str>,
@@ -953,7 +953,7 @@ fn is_acl_object(object: &str) -> bool {
 }
 
 /// Grant soul string the TS consume contract names.
-pub fn grant_soul(
+pub(crate) fn grant_soul(
     owner: impl AsRef<str>,
     object: impl AsRef<str>,
     accessor: impl AsRef<str>,
@@ -966,7 +966,7 @@ pub fn grant_soul(
 }
 
 /// Owner dest-ACL root. Not a Check object.
-pub fn acl_soul(owner: impl AsRef<str>) -> Option<NodeId> {
+pub(crate) fn acl_soul(owner: impl AsRef<str>) -> Option<NodeId> {
     let soul = GunSoul::s3rch_acl(owner);
     if soul.segments().len() != 3 {
         return None;
@@ -979,6 +979,7 @@ mod label_tests {
     use sociacl_core::{IssuerSecret, Timestamp};
 
     use super::*;
+    use crate::mesh::MeshSeeGraph;
     use crate::GroupPredicate;
 
     fn signer(name: &str) -> IssuerSecret {
@@ -998,7 +999,7 @@ mod label_tests {
         let bob = signer("0xbob");
         graph.enroll_signer("0xalice", alice.verify_key()).unwrap();
         graph.enroll_signer("0xbob", bob.verify_key()).unwrap();
-        graph.put_object("doc", "0xalice");
+        graph.labels.put_object("doc", "0xalice");
         graph
             .record_set_owner("0xalice", GroupPredicate::SameGroup, "0xalice/ops")
             .unwrap();
@@ -1030,6 +1031,7 @@ mod label_tests {
             )
             .unwrap();
         graph
+            .labels
             .objects
             .get_mut(&object_store_key("doc"))
             .unwrap()
@@ -1049,7 +1051,7 @@ mod label_tests {
 
     #[test]
     fn a_grant_names_one_object_and_a_gun_chain_is_not_a_record() {
-        let mut graph = MeshSeeGraph::new();
+        let mut graph = LabelGraph::default();
         for object in [
             "room.alpha",
             "room_alpha",
@@ -1104,8 +1106,35 @@ mod label_tests {
     }
 
     #[test]
+    fn encode_key_keeps_slash_and_acl_key_escapes_it() {
+        assert_eq!(encode_key("rss3:act/1#x"), "rss3:act/1~2x");
+        assert_eq!(encode_key("a.b#$[c]"), "a~1b~2~3~4c~5");
+        assert_eq!(acl_key("rss3:act/1#x"), "rss3:act~61~2x");
+        assert_ne!(acl_key("room.alpha"), acl_key("room_alpha"));
+        assert_ne!(acl_key("room.alpha"), acl_key("room/alpha"));
+        assert_eq!(
+            acl_principal_key("gun.get('s3rch').get('users').get('0xalice')"),
+            None
+        );
+        assert_eq!(
+            grant_soul("0xalice", "item-1", "0xbob").unwrap().as_str(),
+            "s3rch/acl/0xalice/item-1/0xbob"
+        );
+        assert_eq!(
+            grant_soul("0xalice", "rss3:act/1_x", "s3rch/users/0xbob")
+                .unwrap()
+                .as_str(),
+            "s3rch/acl/0xalice/rss3:act~61_x/0xbob"
+        );
+        assert_eq!(
+            grant_soul("alice.name", "a.b", "carol").unwrap().as_str(),
+            "s3rch/acl/alice.name/a~1b/carol"
+        );
+    }
+
+    #[test]
     fn rejected_principals_do_not_match_as_the_owner() {
-        let mut graph = MeshSeeGraph::new();
+        let mut graph = LabelGraph::default();
         graph.put_object("doc", "../meta");
         let now = Timestamp(10);
         assert!(

@@ -20,6 +20,11 @@ SIGN_PUB = "YP7UuiVanTHJYet0xjVtaMBJuJI7Yfps5mliLmDyn7Y.eQP-EAi4vJmkGunpVii8ZPLx
 SIGN_PRIV_SEA = "ya-p2EW6dRZrXCFXZ7HWk05Qw9s26JsSe4piKxIPZyE"
 EPRIV = "6EXhKuFCyTddo7uvYddNjXON5iKEMV7v8bCol7XOHt8"
 EPUB = "EMvdmXTv89JPyMx5n3blU3L_D70U-6JoVaVzTvSzgYg.B_b0CP3o9X3I7tWrxA_F1VhXpjeMuIJCtQWnOh7LN5c"
+# Parser-produced ids. Inbox and wrap rows stay on s3rch/items/post until PR 6.
+OBJECT = "chat_" + "11" * 16
+ALICE = "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU"
+BOB = "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E"
+ADA = "4lNKNTLQj7ugLd5lnuYr0AMf4tt4VZbvUJMCRGsDCFI.4PFXWkxjPMcZ3-5f2oYtdk78lsPzDuAFXELCPxhO2MY"
 
 # RFC 6979 A.2.5 signs "sample". s in that appendix is high. Low-s is n - s.
 SAMPLE_SIG_HIGH_S = (
@@ -197,7 +202,7 @@ def main() -> None:
     inbox_absent = dict(inbox_base, wrap=None)
 
     epoch = {
-        "object": "s3rch/items/post",
+        "object": OBJECT,
         "epoch": 1,
         "previousEpoch": 0,
         "deviceId": "device-1",
@@ -207,7 +212,7 @@ def main() -> None:
     }
     safe_max = 9007199254740991
     epoch_max = {
-        "object": "s3rch/items/post",
+        "object": OBJECT,
         "epoch": safe_max,
         "previousEpoch": safe_max,
         "deviceId": "device-1",
@@ -216,7 +221,7 @@ def main() -> None:
         "aclSnapshot": acl,
     }
     epoch_zero = {
-        "object": "s3rch/items/post",
+        "object": OBJECT,
         "epoch": 0,
         "previousEpoch": 0,
         "deviceId": "device-1",
@@ -225,14 +230,14 @@ def main() -> None:
         "aclSnapshot": acl,
     }
     item = {
-        "object": "s3rch/items/post",
+        "object": OBJECT,
         "epoch": 1,
         "version": 2,
         "plaintextDigest": hello,
         "revisionId": revision,
     }
     item_zero = {
-        "object": "s3rch/items/post",
+        "object": OBJECT,
         "epoch": 0,
         "version": 0,
         "plaintextDigest": hello,
@@ -285,7 +290,7 @@ def main() -> None:
                 "",
                 "",
                 "",
-                "bob",
+                BOB,
                 "4",
                 "0",
                 "10",
@@ -304,7 +309,7 @@ def main() -> None:
                 "crew",
                 "1",
                 "3",
-                "ada",
+                ADA,
                 "2",
                 "1",
                 "0",
@@ -318,7 +323,7 @@ def main() -> None:
             "epoch-finalization-body",
             [
                 "s3rch-epoch-finalization-v1",
-                "item-1",
+                OBJECT,
                 "3",
                 "2",
                 rev,
@@ -330,11 +335,11 @@ def main() -> None:
         case_fields("epoch-finalization-sig", ["s3rch-epoch-finalization-sig-v1", rev]),
         case_fields(
             "group-epoch-config",
-            ["s3rch-group-epoch-config-v1", "alice", "crew", "named-circle", "7200000", "2"],
+            ["s3rch-group-epoch-config-v1", ALICE, "crew", "named-circle", "7200000", "2"],
         ),
         case_fields(
             "group-epoch-config-tie",
-            ["s3rch-group-epoch-config-v1", "alice", "crew", "named-circle", "86400000", "2"],
+            ["s3rch-group-epoch-config-v1", ALICE, "crew", "named-circle", "86400000", "2"],
         ),
         # U+E000 then U+10000 is bytewise UTF-8 order. UTF-16 sorts them the other way.
         case_fields(
@@ -368,8 +373,8 @@ def main() -> None:
             "wrap-receipt",
             [
                 "s3rch-wrap-receipt-v1",
-                "item-1",
-                "bob",
+                OBJECT,
+                BOB,
                 "2",
                 rev,
                 "cd" * 32,
@@ -411,10 +416,13 @@ def main() -> None:
             "inbox-real-wrap hashes the wrappedKey blob in wrap.json. The short aa and ab wraps are id cases only.",
             "acl-snapshot-utf8-order sorts accessors by UTF-8 bytes. U+E000 precedes U+10000.",
             "wrap-receipt is the length-prefixed reader receipt. It is not a signature.",
+            "Epoch and migration id fixtures are parser-produced ObjectId and PrincipalId values. acl-snapshot-utf8-order keeps U+E000 and U+10000 because those scalars are not principals.",
         ],
         "cases": cases,
     }
-    (HERE / "canonical.json").write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
+    (HERE / "canonical.json").write_text(
+        json.dumps(document, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+    )
 
     fixture = {
         "label": "Public test keys for the encrypted-discovery vectors. Not a live account.",
@@ -436,7 +444,9 @@ def main() -> None:
         "revisionId": revision,
         "plaintextHello": hello,
     }
-    (HERE / "sea-fixture.json").write_text(json.dumps(fixture, indent=2) + "\n", encoding="utf-8")
+    (HERE / "sea-fixture.json").write_text(
+        json.dumps(fixture, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+    )
     print(f"wrote {len(cases)} cases")
 
 

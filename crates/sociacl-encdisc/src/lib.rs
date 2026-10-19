@@ -91,6 +91,7 @@ mod delivery;
 mod epoch;
 mod error;
 mod grant;
+mod gun_soul;
 mod hexutil;
 mod identity;
 mod inbox;

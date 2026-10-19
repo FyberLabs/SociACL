@@ -27,6 +27,12 @@ export type ParsedSoul = { template: 'object' | 'user' | 'acl' | 'grant' | 'post
 export type MembershipPredicate = 'same-group' | 'named-circle';
 /** `witnessed` is returned only for a retired see cancel whose signed `stated` is `0`. */
 export type SignedAtMode = 'present' | 'witnessed';
+export type ObjectRecord = Readonly<{
+  object: ObjectId;
+  owner: PrincipalId;
+  issuedAt: number;
+  sig: string;
+}>;
 export type SeeGrant = Readonly<{
   owner: PrincipalId;
   object: ObjectId;

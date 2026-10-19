@@ -42,7 +42,14 @@
     "asciiTrim",
     "ascii_trim",
     "principals_match",
-    "principals_are"
+    "principals_are",
+    "checkSeeLabel",
+    "check_see_label",
+    "MemorySeeAcl",
+    "stateSeeGrant",
+    "state_see_grant",
+    "gun-legacy",
+    "crate::legacy"
   ],
   "scopes": [
     "typescript/src/see.js",

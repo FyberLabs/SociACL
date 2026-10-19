@@ -2258,9 +2258,21 @@ pub fn parse_see_grant(row: &Value) -> Result<(SeeGrant, Vec<u8>), Reason> {
     if !map.contains_key("sig") {
         return Err(Reason::LegacyRow);
     }
-    let owner = parse_principal_id(map.get("owner").and_then(Value::as_str).ok_or(Reason::BadRecord)?)?;
-    let object = parse_object_id(map.get("object").and_then(Value::as_str).ok_or(Reason::BadRecord)?)?;
-    let accessor = parse_principal_id(map.get("accessor").and_then(Value::as_str).ok_or(Reason::BadRecord)?)?;
+    let owner = parse_principal_id(
+        map.get("owner")
+            .and_then(Value::as_str)
+            .ok_or(Reason::BadRecord)?,
+    )?;
+    let object = parse_object_id(
+        map.get("object")
+            .and_then(Value::as_str)
+            .ok_or(Reason::BadRecord)?,
+    )?;
+    let accessor = parse_principal_id(
+        map.get("accessor")
+            .and_then(Value::as_str)
+            .ok_or(Reason::BadRecord)?,
+    )?;
     let stated = see_u64(map.get("stated"))?;
     if stated > 1 {
         return Err(Reason::BadRecord);
@@ -2272,10 +2284,14 @@ pub fn parse_see_grant(row: &Value) -> Result<(SeeGrant, Vec<u8>), Reason> {
     if until < from {
         return Err(Reason::BadRecord);
     }
-    let sig = text(map.get("sig").and_then(Value::as_str).ok_or(Reason::BadRecord)?, 128)?.to_owned();
+    let sig = match map.get("sig") {
+        Some(Value::String(s)) => text(s, 128)?.to_owned(),
+        Some(_) => return Err(Reason::NotString),
+        None => return Err(Reason::LegacyRow),
+    };
     let attest = match map.get("attest") {
         None => None,
-        Some(Value::String(s)) => Some(s.clone()),
+        Some(Value::String(s)) => Some(text(s, 16384)?.to_owned()),
         Some(_) => return Err(Reason::NotString),
     };
     let grant = SeeGrant {
@@ -2293,7 +2309,11 @@ pub fn parse_see_grant(row: &Value) -> Result<(SeeGrant, Vec<u8>), Reason> {
     let bytes = see_grant_bytes(&grant);
     Ok((grant, bytes))
 }
-fn see_witness(grant: &SeeGrant, bytes: &[u8], ctx: &ResolutionContext<'_>) -> Result<AclAttestation, Reason> {
+fn see_witness(
+    grant: &SeeGrant,
+    bytes: &[u8],
+    ctx: &ResolutionContext<'_>,
+) -> Result<AclAttestation, Reason> {
     let Some(token) = grant.attest.as_deref() else {
         return Err(Reason::UnwitnessedRetiredKey);
     };
@@ -2373,6 +2393,87 @@ pub fn verify_signed_at(
     Ok(SignedAt {
         key: account.current_key,
         mode: SignedAtMode::Present,
+    })
+}
+const OBJECT_DOMAIN: &str = "sociacl-object-v2";
+/// Signed object owner. The owner is this record, not a caller argument.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ObjectRecord {
+    pub object: ObjectId,
+    pub owner: PrincipalId,
+    pub issued_at: u64,
+    pub sig: String,
+}
+/// One parsed object record and the bytes the owner signed.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct VerifiedObject {
+    pub key: PrincipalId,
+    pub mode: SignedAtMode,
+    pub record: ObjectRecord,
+    pub bytes: Vec<u8>,
+}
+/// Signing bytes for an object-owner record. The domain is inside the bytes.
+pub fn object_record_bytes(record: &ObjectRecord) -> Vec<u8> {
+    lp(&[
+        OBJECT_DOMAIN,
+        record.object.as_ref(),
+        record.owner.as_ref(),
+        &record.issued_at.to_string(),
+    ])
+}
+/// Snapshot an object-owner record. A missing signature is unsigned.
+pub fn parse_object_record(row: &Value) -> Result<(ObjectRecord, Vec<u8>), Reason> {
+    let map = row.as_object().ok_or(Reason::BadRecord)?;
+    if let Some(domain) = map.get("domain") {
+        if domain.as_str() != Some(OBJECT_DOMAIN) {
+            return Err(Reason::BadRecord);
+        }
+    }
+    let object = parse_object_id(
+        map.get("object")
+            .and_then(Value::as_str)
+            .ok_or(Reason::BadRecord)?,
+    )?;
+    let owner = parse_principal_id(
+        map.get("owner")
+            .and_then(Value::as_str)
+            .ok_or(Reason::BadRecord)?,
+    )?;
+    let issued_at = see_u64(map.get("issuedAt"))?;
+    let sig = match map.get("sig") {
+        Some(Value::String(s)) => text(s, 128)?.to_owned(),
+        Some(_) => return Err(Reason::NotString),
+        None => return Err(Reason::BadSignature),
+    };
+    let record = ObjectRecord {
+        object,
+        owner,
+        issued_at,
+        sig,
+    };
+    let bytes = object_record_bytes(&record);
+    Ok((record, bytes))
+}
+/// The owner signs `sociacl-object-v2`. A retired key is refused.
+pub fn verify_object_record(
+    row: &Value,
+    rotations: &[Value],
+    ctx: &ResolutionContext<'_>,
+) -> Result<VerifiedObject, Reason> {
+    let (record, bytes) = parse_object_record(row)?;
+    let signed = verify_signed_at(
+        &record.owner,
+        rotations,
+        ctx,
+        &bytes,
+        &record.sig,
+        record.issued_at,
+    )?;
+    Ok(VerifiedObject {
+        key: signed.key,
+        mode: signed.mode,
+        record,
+        bytes,
     })
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]

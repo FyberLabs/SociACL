@@ -94,6 +94,14 @@ function seeRow(fields, signer, patch) {
   return { row, bytes };
 }
 const base = (extra) => ({ owner: p, object: chatA, accessor: p2, stated: 1, from: 0, until: 100, hamState: 1, issuedAt: at, ...extra });
+function objectRecord(object, owner, signer, issuedAt = at) {
+  const bare = { object, owner, issuedAt, sig: '' };
+  const bytes = ids.objectRecordBytes(bare);
+  return { object, owner, issuedAt, sig: val(ids.signWithKeyring(secret(signer), bytes, keyFor(signer))) };
+}
+function put(object, owner, signer, issuedAt = at) {
+  return { op: 'put', record: objectRecord(object, owner, signer, issuedAt), rotations: 'genesis', ok: true, kept: true };
+}
 const options = { ctx, rotations: (name) => context.rotationSets[name] };
 const accept = [];
 const reject = [];
@@ -109,7 +117,7 @@ const edge = (kind, value) => {
 const chain = "0xattacker.get('s3rch').get('users').get('0xvictim')";
 add('reject', 'accessor-gun-chain-spoof', [edge('principal', chain)]);
 add('accept', 'owner-path-needs-exact-principal', [
-  { op: 'put', object: chatA, owner: p },
+  put(chatA, p, 1),
   { op: 'check', object: chatA, accessor: p, now: 10, allowed: true, reason: 'owner' },
   { op: 'check', object: chatA, accessor: p2, now: 10, allowed: false, reason: 'delegate' },
   edge('principal', p + ' '),
@@ -124,8 +132,8 @@ add('reject', 'fold-user-soul', [edge('principal', 's3rch/users/0xbob')]);
 {
   const grant = seeRow(base({}), 1).row;
   add('accept', 'grant-on-chat_a-does-not-allow-chat_b', [
-    { op: 'put', object: chatA, owner: p },
-    { op: 'put', object: chatB, owner: p },
+    put(chatA, p, 1),
+    put(chatB, p, 1),
     { op: 'admit', row: grant, rotations: 'genesis', ok: true, kept: true, mode: 'present', stated: 1, hamState: 1 },
     { op: 'check', object: chatA, accessor: p2, now: 10, allowed: true, reason: 'delegate' },
     { op: 'check', object: chatB, accessor: p2, now: 10, allowed: false, reason: 'delegate' },
@@ -133,26 +141,26 @@ add('reject', 'fold-user-soul', [edge('principal', 's3rch/users/0xbob')]);
   ]);
 }
 add('accept', 'legacy-id-wallet-is-not-owner', [
-  { op: 'put', object: legacy, owner: p2 },
+  put(legacy, p2, 2),
   { op: 'check', object: legacy, accessor: p, now: 10, allowed: false, reason: 'delegate' },
   { op: 'check', object: legacy, accessor: p2, now: 10, allowed: true, reason: 'owner' },
 ]);
 {
   const unsigned = base({});
   add('reject', 'unsigned-row-refused', [
-    { op: 'put', object: chatA, owner: p },
+    put(chatA, p, 1),
     { op: 'admit', row: unsigned, rotations: 'genesis', ok: false, reason: 'legacy-row' },
     { op: 'check', object: chatA, accessor: p2, now: 10, allowed: false, reason: 'delegate' },
   ]);
   const v1 = { ...seeRow(base({}), 1).row, domain: 'sociacl-see-grant-v1' };
   add('reject', 'see-grant-v1-refused', [
-    { op: 'put', object: chatA, owner: p },
+    put(chatA, p, 1),
     { op: 'admit', row: v1, rotations: 'genesis', ok: false, reason: 'legacy-row' },
     { op: 'check', object: chatA, accessor: p2, now: 10, allowed: false, reason: 'delegate' },
   ]);
   const forged = seeRow(base({}), 2).row;
   add('reject', 'row-signed-by-accessor-refused', [
-    { op: 'put', object: chatA, owner: p },
+    put(chatA, p, 1),
     { op: 'admit', row: forged, rotations: 'genesis', ok: false, reason: 'bad-signature' },
     { op: 'check', object: chatA, accessor: p2, now: 10, allowed: false, reason: 'delegate' },
   ]);
@@ -160,7 +168,7 @@ add('accept', 'legacy-id-wallet-is-not-owner', [
 {
   const oldGrant = seeRow(base({ issuedAt: at }), 1).row;
   add('reject', 'rotation-drops-old-key-grant', [
-    { op: 'put', object: chatA, owner: p },
+    put(chatA, p, 1),
     { op: 'admit', row: oldGrant, rotations: 'genesis', ok: true, kept: true, mode: 'present', stated: 1, hamState: 1 },
     { op: 'reverify', principal: p, rotations: 'rotated', dropped: 1 },
     { op: 'view', object: chatA, accessor: p2, absent: true },
@@ -168,7 +176,7 @@ add('accept', 'legacy-id-wallet-is-not-owner', [
   ]);
   const resigned = seeRow(base({ issuedAt: at + 40, hamState: 2 }), 2).row;
   add('accept', 'resigned-row-allows', [
-    { op: 'put', object: chatA, owner: p },
+    put(chatA, p, 1),
     { op: 'admit', row: oldGrant, rotations: 'genesis', ok: true, kept: true, mode: 'present', stated: 1, hamState: 1 },
     { op: 'reverify', principal: p, rotations: 'rotated', dropped: 1 },
     { op: 'admit', row: resigned, rotations: 'rotated', ok: true, kept: true, mode: 'present', stated: 1, hamState: 2 },
@@ -178,7 +186,7 @@ add('accept', 'legacy-id-wallet-is-not-owner', [
 {
   const cancel = seeRow(base({ stated: 0, issuedAt: retiredAt }), 1, {}).row;
   add('accept', 'retired-witnessed-cancel-kept', [
-    { op: 'put', object: chatA, owner: p },
+    put(chatA, p, 1),
     { op: 'verify', row: cancel, rotations: 'rotated', ok: true, mode: 'witnessed' },
     { op: 'admit', row: cancel, rotations: 'rotated', ok: true, kept: true, mode: 'witnessed', stated: 0, hamState: 1 },
     { op: 'reverify', principal: p, rotations: 'rotated', dropped: 0 },
@@ -194,7 +202,7 @@ function retired(name, patch, reason) {
   const made = seeRow(base({ stated: 0, issuedAt: retiredAt }), 1, patch);
   add('reject', name, [
     { op: 'verify', row: made.row, rotations: 'rotated', ok: false, reason },
-    { op: 'put', object: chatA, owner: p },
+    put(chatA, p, 1),
     { op: 'admit', row: made.row, rotations: 'rotated', ok: false, reason },
   ]);
 }
@@ -210,7 +218,7 @@ retired('witness-too-long', 'x'.repeat(16385), 'too-long');
   const flipped = { ...original, stated: 1 };
   add('reject', 'witness-stated-flip', [
     { op: 'verify', row: flipped, rotations: 'rotated', ok: false, reason: 'bad-attestation' },
-    { op: 'put', object: chatA, owner: p },
+    put(chatA, p, 1),
     { op: 'admit', row: original, rotations: 'rotated', ok: true, kept: true, mode: 'witnessed', stated: 0, hamState: 1 },
     { op: 'admit', row: flipped, rotations: 'rotated', ok: false, reason: 'bad-attestation' },
     { op: 'view', object: chatA, accessor: p2, stated: 0, hamState: 1, mode: 'witnessed' },
@@ -224,7 +232,7 @@ retired('witness-too-long', 'x'.repeat(16385), 'too-long');
   const relabel = { ...grant, kind: 'cancel' };
   add('reject', 'witness-kind-relabel', [
     { op: 'verify', row: relabel, rotations: 'rotated', ok: false, reason: 'unwitnessed-retired-key' },
-    { op: 'put', object: chatA, owner: p },
+    put(chatA, p, 1),
     { op: 'admit', row: relabel, rotations: 'rotated', ok: false, reason: 'unwitnessed-retired-key' },
     { op: 'check', object: chatA, accessor: p2, now: 10, allowed: false, reason: 'delegate' },
   ]);
@@ -233,7 +241,7 @@ retired('witness-too-long', 'x'.repeat(16385), 'too-long');
   const low = seeRow(base({ stated: 0, hamState: 1 }), 1).row;
   const high = seeRow(base({ stated: 1, hamState: 2 }), 1).row;
   add('accept', 'ham-higher-wins', [
-    { op: 'put', object: chatA, owner: p },
+    put(chatA, p, 1),
     { op: 'admit', row: high, rotations: 'genesis', ok: true, kept: true, mode: 'present', stated: 1, hamState: 2 },
     { op: 'admit', row: low, rotations: 'genesis', ok: true, kept: false, mode: 'present', stated: 1, hamState: 2 },
     { op: 'check', object: chatA, accessor: p2, now: 10, allowed: true, reason: 'delegate' },
@@ -243,7 +251,7 @@ retired('witness-too-long', 'x'.repeat(16385), 'too-long');
   const grant = seeRow(base({ hamState: 5, stated: 1 }), 1).row;
   const cancel = seeRow(base({ hamState: 5, stated: 0 }), 1).row;
   add('accept', 'equal-ham-cancel-wins', [
-    { op: 'put', object: chatA, owner: p },
+    put(chatA, p, 1),
     { op: 'admit', row: grant, rotations: 'genesis', ok: true, kept: true, mode: 'present', stated: 1, hamState: 5 },
     { op: 'admit', row: cancel, rotations: 'genesis', ok: true, kept: true, mode: 'present', stated: 0, hamState: 5 },
     { op: 'check', object: chatA, accessor: p2, now: 10, allowed: false, reason: 'delegate' },
@@ -253,7 +261,7 @@ retired('witness-too-long', 'x'.repeat(16385), 'too-long');
   const wide = seeRow(base({ hamState: 5, from: 0, until: 100 }), 1).row;
   const narrow = seeRow(base({ hamState: 5, from: 0, until: 10 }), 1).row;
   add('accept', 'equal-ham-narrower-wins', [
-    { op: 'put', object: chatA, owner: p },
+    put(chatA, p, 1),
     { op: 'admit', row: wide, rotations: 'genesis', ok: true, kept: true, mode: 'present', stated: 1, hamState: 5 },
     { op: 'admit', row: narrow, rotations: 'genesis', ok: true, kept: true, mode: 'present', stated: 1, hamState: 5 },
     { op: 'check', object: chatA, accessor: p2, now: 5, allowed: true, reason: 'delegate' },
@@ -268,7 +276,7 @@ retired('witness-too-long', 'x'.repeat(16385), 'too-long');
   const smaller = earlySmaller ? early.row : later.row;
   const smallerAt = earlySmaller ? at : at + 1;
   add('accept', 'equal-ham-smaller-bytes-wins', [
-    { op: 'put', object: chatA, owner: p },
+    put(chatA, p, 1),
     { op: 'admit', row: larger, rotations: 'genesis', ok: true, kept: true, mode: 'present', stated: 1, hamState: 4 },
     { op: 'admit', row: smaller, rotations: 'genesis', ok: true, kept: true, mode: 'present', stated: 1, hamState: 4 },
     { op: 'view', object: chatA, accessor: p2, stated: 1, hamState: 4, mode: 'present', issuedAt: smallerAt },
@@ -278,6 +286,148 @@ function compareBytes(left, right) {
   const n = Math.min(left.length, right.length);
   for (let i = 0; i < n; i += 1) if (left[i] !== right[i]) return left[i] - right[i];
   return left.length - right.length;
+}
+{
+  const grant = seeRow(base({}), 1).row;
+  add('reject', 'resolver-history-unavailable', [
+    put(chatA, p, 1),
+    { op: 'verify', row: grant, history: 'unavailable', ok: false, reason: 'missing-history' },
+    { op: 'admit', row: grant, history: 'unavailable', ok: false, reason: 'missing-history' },
+    { op: 'check', object: chatA, accessor: p2, now: 10, allowed: false, reason: 'delegate' },
+    { op: 'admit', row: grant, rotations: 'genesis', ok: true, kept: true, mode: 'present', stated: 1, hamState: 1 },
+    { op: 'reverify', principal: p, history: 'unavailable', ok: false, reason: 'missing-history' },
+    { op: 'view', object: chatA, accessor: p2, absent: true },
+    { op: 'check', object: chatA, accessor: p2, now: 10, allowed: false, reason: 'delegate' },
+  ]);
+}
+{
+  const row = seeRow(base({}), 1).row;
+  add('reject', 'stated-negative-zero', [
+    { op: 'verify', row, rotations: 'genesis', patch: { stated: '-0' }, ok: false, reason: 'bad-record' },
+    put(chatA, p, 1),
+    { op: 'admit', row, rotations: 'genesis', patch: { stated: '-0' }, ok: false, reason: 'bad-record' },
+  ]);
+  const numeric = { ...row, sig: 1 };
+  const missing = { ...row, sig: null };
+  add('reject', 'sig-numeric', [
+    { op: 'verify', row: numeric, rotations: 'genesis', ok: false, reason: 'not-string' },
+  ]);
+  add('reject', 'sig-null', [
+    { op: 'verify', row: missing, rotations: 'genesis', ok: false, reason: 'not-string' },
+  ]);
+}
+{
+  const self = seeRow(base({ owner: p2, accessor: p3 }), 2).row;
+  add('reject', 'preadmitted-see-row-is-not-an-object-record', [
+    { op: 'admit', row: self, rotations: 'genesis', ok: true, kept: true, mode: 'present', stated: 1, hamState: 1 },
+    { op: 'put', record: self, rotations: 'genesis', ok: false, reason: 'bad-signature' },
+    { op: 'owner', object: chatA, absent: true },
+    { op: 'check', object: chatA, accessor: p2, now: 10, allowed: false, reason: 'unknown' },
+  ]);
+  const grant = seeRow(base({}), 1).row;
+  add('reject', 'object-owner-conflict-freezes', [
+    put(chatA, p, 1),
+    { op: 'admit', row: grant, rotations: 'genesis', ok: true, kept: true, mode: 'present', stated: 1, hamState: 1 },
+    { op: 'put', record: objectRecord(chatA, p2, 2), rotations: 'genesis', ok: false, reason: 'owner-conflict' },
+    { op: 'owner', object: chatA, owner: p, frozen: true, issuedAt: at },
+    { op: 'check', object: chatA, accessor: p, now: 10, allowed: false, reason: 'owner-conflict' },
+    { op: 'check', object: chatA, accessor: p2, now: 10, allowed: false, reason: 'owner-conflict' },
+    { op: 'view', object: chatA, accessor: p2, absent: true },
+    { op: 'put', record: objectRecord(chatA, p, 1, at + 5), rotations: 'genesis', ok: false, reason: 'owner-conflict' },
+  ]);
+  add('reject', 'unsigned-object-record', [
+    { op: 'put', record: { object: chatA, owner: p, issuedAt: at }, rotations: 'genesis', ok: false, reason: 'bad-signature' },
+    { op: 'owner', object: chatA, absent: true },
+    { op: 'check', object: chatA, accessor: p, now: 10, allowed: false, reason: 'unknown' },
+  ]);
+  add('reject', 'retired-object-record', [
+    { op: 'put', record: objectRecord(chatA, p, 1, at), rotations: 'rotated', ok: false, reason: 'unwitnessed-retired-key' },
+    { op: 'owner', object: chatA, absent: true },
+  ]);
+  add('accept', 'object-owner-same-is-noop', [
+    put(chatA, p, 1),
+    { op: 'put', record: objectRecord(chatA, p, 1, at + 5), rotations: 'genesis', ok: true, kept: false },
+    { op: 'owner', object: chatA, owner: p, frozen: false, issuedAt: at },
+    { op: 'check', object: chatA, accessor: p, now: 10, allowed: true, reason: 'owner' },
+  ]);
+}
+{
+  const bare = seeRow(base({ stated: 0, issuedAt: retiredAt }), 1).row;
+  const witnessed = seeRow(base({ stated: 0, issuedAt: retiredAt }), 1, {}).row;
+  add('accept', 'equal-bytes-keep-witness', [
+    put(chatA, p, 1),
+    { op: 'admit', row: bare, rotations: 'genesis', ok: true, kept: true, mode: 'present', stated: 0, hamState: 1, attest: false },
+    { op: 'admit', row: witnessed, rotations: 'genesis', ok: true, kept: true, mode: 'present', stated: 0, hamState: 1, attest: true },
+    { op: 'reverify', principal: p, rotations: 'rotated', dropped: 0 },
+    { op: 'view', object: chatA, accessor: p2, stated: 0, hamState: 1, mode: 'witnessed', attest: true },
+  ]);
+  add('accept', 'equal-bytes-witness-stays', [
+    put(chatA, p, 1),
+    { op: 'admit', row: witnessed, rotations: 'genesis', ok: true, kept: true, mode: 'present', stated: 0, hamState: 1, attest: true },
+    { op: 'admit', row: bare, rotations: 'genesis', ok: true, kept: false, mode: 'present', stated: 0, hamState: 1, attest: true },
+  ]);
+}
+{
+  add('reject', 'retired-cancel-unwitnessed', [
+    { op: 'verify', row: seeRow(base({ stated: 0, issuedAt: retiredAt }), 1).row, rotations: 'rotated', ok: false, reason: 'unwitnessed-retired-key' },
+  ]);
+  add('reject', 'retired-cancel-bad-jws', [
+    { op: 'verify', row: seeRow(base({ stated: 0, issuedAt: retiredAt }), 1, 'not-a-jws').row, rotations: 'rotated', ok: false, reason: 'bad-attestation' },
+  ]);
+  const atRotation = seeRow(base({ stated: 0, issuedAt: at + 30 }), 1, {}).row;
+  add('accept', 'cancel-at-rotation-time-witnessed', [
+    { op: 'verify', row: atRotation, rotations: 'rotated', ok: true, mode: 'witnessed' },
+  ]);
+  add('reject', 'cancel-at-rotation-time-newkey', [
+    { op: 'verify', row: seeRow(base({ stated: 0, issuedAt: at + 30 }), 2, {}).row, rotations: 'rotated', ok: false, reason: 'bad-signature' },
+  ]);
+  add('reject', 'backdated-next-key-cancel', [
+    { op: 'verify', row: seeRow(base({ stated: 0, issuedAt: retiredAt }), 2, {}).row, rotations: 'rotated', ok: false, reason: 'bad-signature' },
+  ]);
+  add('reject', 'oldkey-cancel-after-rotation', [
+    { op: 'verify', row: seeRow(base({ stated: 0, issuedAt: at + 40 }), 1).row, rotations: 'rotated', ok: false, reason: 'bad-signature' },
+  ]);
+}
+{
+  const stampRevoke = (r) => jws({ typ: 'sociacl-revoke-attest-v1', principal: r.principal, recordId: val(ids.linkId(r)), iat: r.issuedAt, exp: r.issuedAt + 600 });
+  const rev = { v: 1, kind: 'revoke', principal: p, linkId: wid, issuedAt: at + 20 };
+  rev.keySig = keySig(rev);
+  rev.attest = stampRevoke(rev);
+  const grant = seeRow(base({}), 1).row;
+  add('reject', 'revoked-authorizer-fails-closed', [
+    { op: 'verify', row: grant, rotations: 'rotated', revocations: [rev], ok: false, reason: 'rotation-conflict' },
+    put(chatA, p, 1),
+    { op: 'admit', row: grant, rotations: 'rotated', revocations: [rev], ok: false, reason: 'rotation-conflict' },
+    { op: 'put', record: objectRecord(chatA, p, 2, at + 40), rotations: 'rotated', revocations: [rev], ok: false, reason: 'rotation-conflict' },
+  ]);
+  add('accept', 'reverify-drops-revoked-authorizer', [
+    put(chatA, p, 1),
+    { op: 'admit', row: grant, rotations: 'genesis', ok: true, kept: true, mode: 'present', stated: 1, hamState: 1 },
+    { op: 'reverify', principal: p, rotations: 'rotated', revocations: [rev], dropped: 1 },
+    { op: 'view', object: chatA, accessor: p2, absent: true },
+    { op: 'check', object: chatA, accessor: p2, now: 10, allowed: false, reason: 'delegate' },
+  ]);
+}
+{
+  add('reject', 'present-attest-too-long', [
+    { op: 'verify', row: seeRow(base({}), 1, 'x'.repeat(16385)).row, rotations: 'genesis', ok: false, reason: 'too-long' },
+  ]);
+  add('accept', 'present-attest-at-cap', [
+    { op: 'verify', row: seeRow(base({}), 1, 'x'.repeat(16384)).row, rotations: 'genesis', ok: true, mode: 'present' },
+  ]);
+}
+{
+  const left = seeRow(base({ hamState: 5, from: 0, until: 30 }), 1);
+  const right = seeRow(base({ hamState: 5, from: 20, until: 80 }), 1);
+  const leftSmaller = compareBytes(left.bytes, right.bytes) < 0;
+  const winner = leftSmaller ? left : right;
+  const loser = leftSmaller ? right : left;
+  add('accept', 'equal-ham-incomparable-smaller-bytes', [
+    put(chatA, p, 1),
+    { op: 'admit', row: loser.row, rotations: 'genesis', ok: true, kept: true, mode: 'present', stated: 1, hamState: 5 },
+    { op: 'admit', row: winner.row, rotations: 'genesis', ok: true, kept: true, mode: 'present', stated: 1, hamState: 5 },
+    { op: 'view', object: chatA, accessor: p2, stated: 1, hamState: 5, mode: 'present', from: winner.row.from, until: winner.row.until },
+  ]);
 }
 const body = { v: 1, family: 'see', context, accept, reject };
 const path = new URL('../../../vectors/mesh/v2/see.json', import.meta.url);

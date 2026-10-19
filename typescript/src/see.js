@@ -1,13 +1,16 @@
 /**
  * Stored-id see path. One parse produces the signing bytes and the cancel bit.
  * Check reads only rows admitted through that parse. Hint and hop never grant.
+ * The object owner is a signed `sociacl-object-v2` record, not a caller argument.
  * @typedef {import('../ids/src/types.js').ObjectId} ObjectId
  * @typedef {import('../ids/src/types.js').PrincipalId} PrincipalId
  * @typedef {import('../ids/src/types.js').SeeGrant} SeeGrant
+ * @typedef {import('../ids/src/types.js').ObjectRecord} ObjectRecord
  * @typedef {import('../ids/src/types.js').ResolutionContext} ResolutionContext
  * @typedef {{ allowed: boolean, reason: string }} SeeCheck
+ * @typedef {{ owner: PrincipalId, issuedAt: number, frozen: boolean }} ObjectAdmission
  * @typedef {{
- *   owners: Map<string, PrincipalId>,
+ *   owners: Map<string, ObjectAdmission>,
  *   rows: Map<string, SealedRow>,
  * }} SeeStore
  * @typedef {{
@@ -18,13 +21,9 @@
  *   source: SeeGrant,
  * }} SealedRow
  * @typedef {{
- *   rotations: (principal: PrincipalId) => readonly unknown[],
+ *   rotations: (principal: PrincipalId) => readonly unknown[] | undefined,
  *   ctx: ResolutionContext,
  * }} SeeResolver
- * @typedef {{
- *   hasObject: (object: ObjectId) => boolean,
- *   ownerOf: (object: ObjectId) => PrincipalId | undefined,
- * }} SeeGraph
  */
 
 import {
@@ -32,6 +31,7 @@ import {
   parseObjectId,
   parsePrincipalId,
   parseSeeGrant,
+  verifyObjectRecord,
   verifySeeGrant,
 } from '../ids/src/index.js';
 
@@ -49,9 +49,19 @@ function store(graph) {
   return held;
 }
 
+/** @param {unknown} graph */
+function graphObject(graph) {
+  return typeof graph === 'object' && graph !== null;
+}
+
 /** @param {unknown} now */
 function safeNow(now) {
   return typeof now === 'number' && Number.isSafeInteger(now) && now >= 0 && !Object.is(now, -0);
+}
+
+/** @param {unknown} resolver @returns {resolver is SeeResolver} */
+function resolverReady(resolver) {
+  return !!resolver && typeof resolver === 'object' && typeof /** @type {SeeResolver} */ (resolver).rotations === 'function' && !!/** @type {SeeResolver} */ (resolver).ctx;
 }
 
 /** @param {Uint8Array} left @param {Uint8Array} right */
@@ -63,17 +73,36 @@ function smallerBytes(left, right) {
   return left.length < right.length;
 }
 
-/** @param {SeeGrant} grant */
-function width(grant) {
-  return grant.until - grant.from;
+/** @param {Uint8Array} left @param {Uint8Array} right */
+function sameBytes(left, right) {
+  if (left.length !== right.length) return false;
+  for (let i = 0; i < left.length; i += 1) if (left[i] !== right[i]) return false;
+  return true;
 }
 
-/** @param {SealedRow} prev @param {SealedRow} next */
+/** Strict containment. Equal windows are not narrower.
+ * @param {{ from: number, until: number }} inner
+ * @param {{ from: number, until: number }} outer
+ */
+function inside(inner, outer) {
+  return inner.from >= outer.from && inner.until <= outer.until && (inner.from > outer.from || inner.until < outer.until);
+}
+
+/** Higher HAM, then a cancel, then a strictly contained window, then the
+ * smaller signed bytes. Equal bytes keep the copy that carries an attestation.
+ * That copy only adds the witness. It does not re-open a row.
+ * @param {SealedRow} prev @param {SealedRow} next
+ */
 function replaces(prev, next) {
   if (next.grant.hamState !== prev.grant.hamState) return next.grant.hamState > prev.grant.hamState;
   if ((next.grant.stated === 0) !== (prev.grant.stated === 0)) return next.grant.stated === 0;
-  if (width(next.grant) !== width(prev.grant)) return width(next.grant) < width(prev.grant);
-  return smallerBytes(next.bytes, prev.bytes);
+  const nextInside = inside(next.grant, prev.grant);
+  const prevInside = inside(prev.grant, next.grant);
+  if (nextInside !== prevInside) return nextInside;
+  if (!sameBytes(next.bytes, prev.bytes)) return smallerBytes(next.bytes, prev.bytes);
+  const nextWitness = next.grant.attest !== undefined;
+  const prevWitness = prev.grant.attest !== undefined;
+  return nextWitness && !prevWitness;
 }
 
 /** @param {SeeGrant} grant @returns {SeeGrant} */
@@ -97,15 +126,32 @@ function sourceOf(grant) {
  * @returns {SealedRow}
  */
 function seal(verifiedRow) {
-  const row = Object.freeze({
+  const row = {
     key: verifiedRow.key,
     mode: verifiedRow.mode,
     grant: Object.freeze({ ...verifiedRow.grant }),
     bytes: new Uint8Array(verifiedRow.bytes),
     source: sourceOf(verifiedRow.grant),
-  });
+  };
+  Object.freeze(row);
   verified.add(row);
   return row;
+}
+
+/** A caller-facing row. Its tie-break bytes are a copy of the stored buffer.
+ * @param {SealedRow} row @returns {SealedRow}
+ */
+function present(row) {
+  const copy = {
+    key: row.key,
+    mode: row.mode,
+    grant: row.grant,
+    bytes: new Uint8Array(row.bytes),
+    source: row.source,
+  };
+  Object.freeze(copy);
+  verified.add(copy);
+  return copy;
 }
 
 /** @param {unknown} row */
@@ -137,15 +183,34 @@ export function seeAccessorEdge(value) {
 }
 
 /**
+ * Admit a signed object record. The owner is the record, never an argument.
+ * The first record sets the owner. The same owner later is a no-op.
+ * A second valid record naming a different owner freezes the object.
  * @param {object} graph
- * @param {ObjectId} object
- * @param {PrincipalId} owner
+ * @param {unknown} record
+ * @param {SeeResolver} resolver
+ * @returns {{ ok: true, value: ObjectAdmission, kept: boolean } | { ok: false, reason: string }}
  */
-export function putObject(graph, object, owner) {
-  const id = seeObjectEdge(object);
-  const who = seeAccessorEdge(owner);
-  if (!id.ok || !who.ok) return;
-  store(graph).owners.set(id.value, who.value);
+export function putObject(graph, record, resolver) {
+  if (!graphObject(graph) || !resolverReady(resolver)) return { ok: false, reason: 'missing-history' };
+  const ownerHint = record && typeof record === 'object' ? /** @type {{ owner?: PrincipalId }} */ (record).owner : undefined;
+  const history = resolver.rotations(/** @type {PrincipalId} */ (ownerHint));
+  const verified = verifyObjectRecord(record, /** @type {readonly unknown[]} */ (history), resolver.ctx);
+  if (!verified.ok) return verified;
+  const held = store(graph);
+  const id = verified.value.record.object;
+  const owner = verified.value.record.owner;
+  const issuedAt = verified.value.record.issuedAt;
+  const existing = held.owners.get(id);
+  if (existing?.frozen) return { ok: false, reason: 'owner-conflict' };
+  if (!existing) {
+    const admitted = { owner, issuedAt, frozen: false };
+    held.owners.set(id, admitted);
+    return { ok: true, value: admitted, kept: true };
+  }
+  if (existing.owner === owner) return { ok: true, value: existing, kept: false };
+  existing.frozen = true;
+  return { ok: false, reason: 'owner-conflict' };
 }
 
 /**
@@ -155,13 +220,12 @@ export function putObject(graph, object, owner) {
  * @returns {import('../ids/src/types.js').Result<SealedRow> & { kept?: boolean }}
  */
 export function admitRow(graph, row, resolver) {
-  if (!graph || !resolver || typeof resolver.rotations !== 'function' || !resolver.ctx) {
-    return { ok: false, reason: 'missing-history' };
-  }
+  if (!graphObject(graph) || !resolverReady(resolver)) return { ok: false, reason: 'missing-history' };
   const parsed = parseSeeGrant(row);
   if (!parsed.ok) return parsed;
   const rotations = resolver.rotations(parsed.value.grant.owner);
-  const verified = verifySeeGrant(parsed.value.grant, Array.isArray(rotations) ? rotations : [], resolver.ctx);
+  if (!Array.isArray(rotations)) return { ok: false, reason: 'missing-history' };
+  const verified = verifySeeGrant(parsed.value.grant, rotations, resolver.ctx);
   if (!verified.ok) return verified;
   const grant = verified.value.grant;
   const key = grantSoul(grant.owner, grant.object, grant.accessor);
@@ -170,8 +234,8 @@ export function admitRow(graph, row, resolver) {
   const prev = held.rows.get(key);
   const kept = !prev || replaces(prev, sealed);
   if (kept) held.rows.set(key, sealed);
-  const stored = held.rows.get(key);
-  return { ok: true, value: stored ?? sealed, kept };
+  const stored = held.rows.get(key) ?? sealed;
+  return { ok: true, value: present(stored), kept };
 }
 
 /**
@@ -183,15 +247,19 @@ export function admitRow(graph, row, resolver) {
 export function reverifyPrincipal(graph, principal, resolver) {
   const who = seeAccessorEdge(principal);
   if (!who.ok) return who;
-  if (!graph || !resolver || typeof resolver.rotations !== 'function' || !resolver.ctx) {
-    return { ok: false, reason: 'missing-history' };
-  }
+  if (!graphObject(graph) || !resolverReady(resolver)) return { ok: false, reason: 'missing-history' };
   const held = store(graph);
   const rotations = resolver.rotations(who.value);
+  if (!Array.isArray(rotations)) {
+    for (const [key, row] of [...held.rows]) {
+      if (row.grant.owner === who.value) held.rows.delete(key);
+    }
+    return { ok: false, reason: 'missing-history' };
+  }
   let dropped = 0;
   for (const [key, row] of [...held.rows]) {
     if (row.grant.owner !== who.value) continue;
-    const again = verifySeeGrant(row.source, Array.isArray(rotations) ? rotations : [], resolver.ctx);
+    const again = verifySeeGrant(row.source, rotations, resolver.ctx);
     if (!again.ok) {
       held.rows.delete(key);
       dropped += 1;
@@ -208,13 +276,14 @@ export function reverifyPrincipal(graph, principal, resolver) {
  * @param {PrincipalId} accessor
  */
 export function admittedView(graph, object, accessor) {
+  if (!graphObject(graph)) return undefined;
   const id = seeObjectEdge(object);
   const who = seeAccessorEdge(accessor);
   if (!id.ok || !who.ok) return undefined;
   const held = store(graph);
   const owner = held.owners.get(id.value);
-  if (!owner) return undefined;
-  const row = held.rows.get(grantSoul(owner, id.value, who.value));
+  if (!owner || owner.frozen) return undefined;
+  const row = held.rows.get(grantSoul(owner.owner, id.value, who.value));
   if (!row) return undefined;
   return {
     stated: row.grant.stated,
@@ -223,11 +292,23 @@ export function admittedView(graph, object, accessor) {
     from: row.grant.from,
     until: row.grant.until,
     issuedAt: row.grant.issuedAt,
+    attest: row.grant.attest !== undefined,
   };
+}
+
+/** @param {object} graph @param {ObjectId} object */
+export function admittedOwner(graph, object) {
+  if (!graphObject(graph)) return undefined;
+  const id = seeObjectEdge(object);
+  if (!id.ok) return undefined;
+  const owner = store(graph).owners.get(id.value);
+  if (!owner) return undefined;
+  return { owner: owner.owner, issuedAt: owner.issuedAt, frozen: owner.frozen };
 }
 
 /**
  * Check on an admitted row. A raw string is not a parameter.
+ * A primitive graph is a bad record, not a throw.
  * @param {object} graph
  * @param {ObjectId} object
  * @param {PrincipalId} accessor
@@ -239,19 +320,17 @@ export function admittedView(graph, object, accessor) {
 export function checkSee(graph, object, accessor, now, hint, hop) {
   void hint;
   void hop;
+  if (!graphObject(graph)) return { allowed: false, reason: 'bad-record' };
   const id = seeObjectEdge(object);
   const who = seeAccessorEdge(accessor);
   if (!id.ok) return { allowed: false, reason: id.reason };
   if (!who.ok) return { allowed: false, reason: who.reason };
   if (!safeNow(now)) return { allowed: false, reason: 'unknown' };
-  const text = id.value;
-  if (text === 's3rch/meta' || text === 's3rch/acl' || text.startsWith('s3rch/acl/') || text.includes('://')) {
-    return { allowed: false, reason: 'unknown' };
-  }
-  const owner = store(graph).owners.get(text);
-  if (!owner) return { allowed: false, reason: 'unknown' };
-  if (owner === who.value) return { allowed: true, reason: 'owner' };
-  const row = store(graph).rows.get(grantSoul(owner, text, who.value));
+  const admission = store(graph).owners.get(id.value);
+  if (!admission) return { allowed: false, reason: 'unknown' };
+  if (admission.frozen) return { allowed: false, reason: 'owner-conflict' };
+  if (admission.owner === who.value) return { allowed: true, reason: 'owner' };
+  const row = store(graph).rows.get(grantSoul(admission.owner, id.value, who.value));
   if (row && row.grant.stated === 1 && now >= row.grant.from && now < row.grant.until) {
     return { allowed: true, reason: 'delegate' };
   }
@@ -265,29 +344,36 @@ export function checkSee(graph, object, accessor, now, hint, hop) {
  */
 export function runSeeCase(steps, options) {
   const graph = {};
-  const resolverFor = (/** @type {string} */ name) => ({
-    rotations: () => options.rotations(name),
-    ctx: options.ctx,
+  const resolverFor = (/** @type {Record<string, any>} */ step) => ({
+    rotations: () => (step.history === 'unavailable' ? undefined : options.rotations(step.rotations)),
+    ctx: step.revocations ? { ...options.ctx, revocations: step.revocations } : options.ctx,
   });
   for (const step of steps) {
+    const row = patchRow(step.row, step.patch);
     if (step.op === 'edge') {
       const got = step.kind === 'object' ? seeObjectEdge(step.value) : seeAccessorEdge(step.value);
       if (got.ok || got.reason !== step.reason) failStep(step, got);
       continue;
     }
     if (step.op === 'verify') {
-      const got = verifySeeGrant(step.row, options.rotations(step.rotations), options.ctx);
+      const got = verifySeeGrant(row, /** @type {readonly unknown[]} */ (resolverFor(step).rotations()), resolverFor(step).ctx);
       if (step.ok) {
         if (!got.ok || got.value.mode !== step.mode) failStep(step, got.ok ? got.value.mode : got.reason);
       } else if (got.ok || got.reason !== step.reason) failStep(step, got.ok ? got.value.mode : got.reason);
       continue;
     }
     if (step.op === 'put') {
-      putObject(graph, step.object, step.owner);
+      const got = putObject(graph, patchRow(step.record, step.patch), resolverFor(step));
+      if (step.ok === false) {
+        if (got.ok || got.reason !== step.reason) failStep(step, got.ok ? 'ok' : got.reason);
+        continue;
+      }
+      if (!got.ok) failStep(step, got.reason);
+      if (step.kept !== undefined && got.kept !== step.kept) failStep(step, got.kept);
       continue;
     }
     if (step.op === 'admit') {
-      const got = admitRow(graph, step.row, resolverFor(step.rotations));
+      const got = admitRow(graph, row, resolverFor(step));
       if (!step.ok) {
         if (got.ok || got.reason !== step.reason) failStep(step, got.ok ? 'ok' : got.reason);
         continue;
@@ -296,11 +382,26 @@ export function runSeeCase(steps, options) {
       if (step.mode !== undefined && got.value.mode !== step.mode) failStep(step, got.value.mode);
       if (step.stated !== undefined && got.value.grant.stated !== step.stated) failStep(step, got.value.grant.stated);
       if (step.hamState !== undefined && got.value.grant.hamState !== step.hamState) failStep(step, got.value.grant.hamState);
+      if (step.attest !== undefined && (got.value.grant.attest !== undefined) !== step.attest) failStep(step, got.value.grant.attest !== undefined);
       continue;
     }
     if (step.op === 'reverify') {
-      const got = reverifyPrincipal(graph, step.principal, resolverFor(step.rotations));
+      const got = reverifyPrincipal(graph, step.principal, resolverFor(step));
+      if (step.ok === false) {
+        if (got.ok || got.reason !== step.reason) failStep(step, got.ok ? 'ok' : got.reason);
+        continue;
+      }
       if (!got.ok || got.value.dropped !== step.dropped) failStep(step, got.ok ? got.value.dropped : got.reason);
+      continue;
+    }
+    if (step.op === 'owner') {
+      const got = admittedOwner(graph, step.object);
+      if (step.absent) {
+        if (got) failStep(step, got);
+        continue;
+      }
+      if (!got || got.owner !== step.owner || got.frozen !== !!step.frozen) failStep(step, got);
+      if (step.issuedAt !== undefined && got.issuedAt !== step.issuedAt) failStep(step, got);
       continue;
     }
     if (step.op === 'view') {
@@ -311,6 +412,9 @@ export function runSeeCase(steps, options) {
       }
       if (!got || got.stated !== step.stated || got.hamState !== step.hamState || got.mode !== step.mode) failStep(step, got);
       if (step.issuedAt !== undefined && got.issuedAt !== step.issuedAt) failStep(step, got);
+      if (step.from !== undefined && got.from !== step.from) failStep(step, got);
+      if (step.until !== undefined && got.until !== step.until) failStep(step, got);
+      if (step.attest !== undefined && got.attest !== step.attest) failStep(step, got);
       continue;
     }
     if (step.op === 'check') {
@@ -320,6 +424,14 @@ export function runSeeCase(steps, options) {
     }
     throw Error('unknown see step ' + step.op);
   }
+}
+
+/** @param {Record<string, any> | undefined} row @param {Record<string, any> | undefined} patch */
+function patchRow(row, patch) {
+  if (!row || !patch) return row;
+  const copy = { ...row };
+  for (const [key, value] of Object.entries(patch)) copy[key] = value === '-0' ? -0 : value;
+  return copy;
 }
 
 /**

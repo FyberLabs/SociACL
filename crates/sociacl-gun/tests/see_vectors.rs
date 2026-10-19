@@ -1,8 +1,8 @@
 use serde_json::Value;
-use sociacl_gun::MeshSeeGraph;
+use sociacl_gun::{MeshSeeGraph, PutObjectError};
 use sociacl_ids::{
-    history_state, parse_object_id, parse_principal_id, verify_see_grant, Jwks, ObjectId,
-    PrincipalId, Reason, ResolutionContext, SignedAtMode, SiwePolicy,
+    history_state, parse_object_id, parse_principal_id, parse_see_grant, verify_see_grant, Jwks,
+    ObjectId, PrincipalId, Reason, ResolutionContext, SignedAtMode, SiwePolicy,
 };
 use std::collections::BTreeMap;
 use std::fs;
@@ -32,17 +32,51 @@ fn principal_of(v: &Value) -> PrincipalId {
     parse_principal_id(v.as_str().expect("principal")).expect("principal id")
 }
 
-fn rotations_of(ctx: &Value, step: &Value) -> Vec<Value> {
-    let Some(name) = step.get("rotations").and_then(Value::as_str) else {
-        return Vec::new();
-    };
-    ctx["rotationSets"][name]
-        .as_array()
-        .cloned()
-        .unwrap_or_default()
+fn history_unavailable(step: &Value) -> bool {
+    step.get("history").and_then(Value::as_str) == Some("unavailable")
 }
 
-fn run_case(file: &Value, case: &Value) {
+fn rotations_of(ctx: &Value, step: &Value) -> Option<Vec<Value>> {
+    if history_unavailable(step) {
+        return None;
+    }
+    let Some(name) = step.get("rotations").and_then(Value::as_str) else {
+        return Some(Vec::new());
+    };
+    Some(
+        ctx["rotationSets"][name]
+            .as_array()
+            .cloned()
+            .unwrap_or_default(),
+    )
+}
+
+fn patch_row(row: &Value, step: &Value) -> Value {
+    let Some(patch) = step.get("patch").and_then(Value::as_object) else {
+        return row.clone();
+    };
+    let mut copy = row.clone();
+    let Some(map) = copy.as_object_mut() else {
+        return copy;
+    };
+    for (key, value) in patch {
+        if value.as_str() == Some("-0") {
+            map.insert(key.clone(), serde_json::json!(-0.0));
+        } else {
+            map.insert(key.clone(), value.clone());
+        }
+    }
+    copy
+}
+
+fn put_reason(err: PutObjectError) -> String {
+    match err {
+        PutObjectError::OwnerConflict => "owner-conflict".into(),
+        PutObjectError::Record(reason) => reason_name(reason),
+    }
+}
+
+fn run_case(file: &Value, case: &Value) -> MeshSeeGraph {
     let ctx = &file["context"];
     let now = ctx["now"].as_u64().unwrap();
     let jwks: Jwks = serde_json::from_value(ctx["jwks"].clone()).unwrap();
@@ -65,27 +99,32 @@ fn run_case(file: &Value, case: &Value) {
         .iter()
         .map(|v| v.as_str().unwrap().to_string())
         .collect();
-    let empty = Vec::new();
+    let file_revocations = ctx["revocations"].as_array().cloned().unwrap_or_default();
     let history = |principal: &PrincipalId, at, until| {
         if !accounts.iter().any(|account| account == principal.as_ref()) {
             return Err(Reason::MissingHistory);
         }
         Ok(history_state(principal, &[], at, until))
     };
-    let rc = ResolutionContext {
-        jwks: &jwks,
-        links: &links,
-        revocations: &empty,
-        now,
-        policy: &policy,
-        pinned_iss: &pinned,
-        history: &history,
-        genesis_epub_bindings: &empty,
-    };
     let mut graph = MeshSeeGraph::new();
     for step in case["steps"].as_array().unwrap() {
         let name = case["name"].as_str().unwrap();
         let op = step["op"].as_str().unwrap();
+        let step_revocations = step
+            .get("revocations")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_else(|| file_revocations.clone());
+        let rc = ResolutionContext {
+            jwks: &jwks,
+            links: &links,
+            revocations: &step_revocations,
+            now,
+            policy: &policy,
+            pinned_iss: &pinned,
+            history: &history,
+            genesis_epub_bindings: &[],
+        };
         match op {
             "edge" => {
                 let value = step["value"].as_str().unwrap();
@@ -102,9 +141,17 @@ fn run_case(file: &Value, case: &Value) {
                 );
             }
             "verify" => {
-                let got = verify_see_grant(&step["row"], &rotations_of(ctx, step), &rc);
+                let row = patch_row(step.get("row").unwrap_or(&Value::Null), step);
+                let rotations = rotations_of(ctx, step);
+                let got = match rotations.as_deref() {
+                    None => match parse_see_grant(&row) {
+                        Ok(_) => Err(Reason::MissingHistory),
+                        Err(reason) => Err(reason),
+                    },
+                    Some(rotations) => verify_see_grant(&row, rotations, &rc),
+                };
                 if step["ok"] == true {
-                    let row = got.unwrap_or_else(|reason| panic!("{name} {reason}"));
+                    let row = got.unwrap_or_else(|reason| panic!("{name} {reason:?}"));
                     assert_eq!(
                         mode_name(row.mode),
                         step["mode"].as_str().unwrap(),
@@ -120,12 +167,28 @@ fn run_case(file: &Value, case: &Value) {
                 }
             }
             "put" => {
-                graph.put_object_id(&object_of(&step["object"]), &principal_of(&step["owner"]))
+                let record = patch_row(step.get("record").unwrap_or(&Value::Null), step);
+                let rotations = rotations_of(ctx, step);
+                let got = graph.put_object(&record, rotations.as_deref(), &rc);
+                if step["ok"] == false {
+                    assert_eq!(
+                        put_reason(got.expect_err(name)),
+                        step["reason"].as_str().unwrap(),
+                        "{name}"
+                    );
+                } else {
+                    let kept = got.unwrap_or_else(|err| panic!("{name} {}", put_reason(err)));
+                    if step.get("kept").is_some() {
+                        assert_eq!(kept, step["kept"] == true, "{name}");
+                    }
+                }
             }
             "admit" => {
-                let got = graph.admit_row(&step["row"], &rotations_of(ctx, step), &rc);
+                let row = patch_row(step.get("row").unwrap_or(&Value::Null), step);
+                let rotations = rotations_of(ctx, step);
+                let got = graph.admit_row(&row, rotations.as_deref(), &rc);
                 if step["ok"] == true {
-                    let (row, kept) = got.unwrap_or_else(|reason| panic!("{name} {reason}"));
+                    let (row, kept) = got.unwrap_or_else(|reason| panic!("{name} {reason:?}"));
                     assert_eq!(kept, step["kept"] == true, "{name}");
                     if let Some(mode) = step.get("mode").and_then(Value::as_str) {
                         assert_eq!(mode_name(row.mode), mode, "{name}");
@@ -135,6 +198,9 @@ fn run_case(file: &Value, case: &Value) {
                     }
                     if let Some(ham) = step.get("hamState").and_then(Value::as_u64) {
                         assert_eq!(row.ham_state, ham, "{name}");
+                    }
+                    if let Some(attest) = step.get("attest") {
+                        assert_eq!(row.attest, attest == true, "{name}");
                     }
                 } else {
                     let reason = got.expect_err(name);
@@ -146,16 +212,38 @@ fn run_case(file: &Value, case: &Value) {
                 }
             }
             "reverify" => {
-                let dropped = graph.reverify_principal(
+                let rotations = rotations_of(ctx, step);
+                let got = graph.reverify_principal(
                     &principal_of(&step["principal"]),
-                    &rotations_of(ctx, step),
+                    rotations.as_deref(),
                     &rc,
                 );
-                assert_eq!(
-                    dropped,
-                    step["dropped"].as_u64().unwrap() as usize,
-                    "{name}"
-                );
+                if step["ok"] == false {
+                    assert_eq!(
+                        reason_name(got.expect_err(name)),
+                        step["reason"].as_str().unwrap(),
+                        "{name}"
+                    );
+                } else {
+                    assert_eq!(
+                        got.unwrap(),
+                        step["dropped"].as_u64().unwrap() as usize,
+                        "{name}"
+                    );
+                }
+            }
+            "owner" => {
+                let got = graph.admitted_owner(&object_of(&step["object"]));
+                if step["absent"] == true {
+                    assert!(got.is_none(), "{name}");
+                } else {
+                    let (owner, issued, frozen) = got.expect(name);
+                    assert_eq!(owner.as_ref(), step["owner"].as_str().unwrap(), "{name}");
+                    assert_eq!(frozen, step["frozen"] == true, "{name}");
+                    if let Some(at) = step.get("issuedAt").and_then(Value::as_u64) {
+                        assert_eq!(issued, at, "{name}");
+                    }
+                }
             }
             "view" => {
                 let got = graph.admitted_view(
@@ -180,6 +268,15 @@ fn run_case(file: &Value, case: &Value) {
                     if let Some(issued) = step.get("issuedAt").and_then(Value::as_u64) {
                         assert_eq!(row.issued_at, issued, "{name}");
                     }
+                    if let Some(from) = step.get("from").and_then(Value::as_u64) {
+                        assert_eq!(row.from, from, "{name}");
+                    }
+                    if let Some(until) = step.get("until").and_then(Value::as_u64) {
+                        assert_eq!(row.until, until, "{name}");
+                    }
+                    if let Some(attest) = step.get("attest") {
+                        assert_eq!(row.attest, attest == true, "{name}");
+                    }
                 }
             }
             "check" => {
@@ -196,6 +293,7 @@ fn run_case(file: &Value, case: &Value) {
             other => panic!("{name} unknown {other}"),
         }
     }
+    graph
 }
 
 #[test]
@@ -205,7 +303,7 @@ fn see_vectors() {
     let mut names = Vec::new();
     for side in ["accept", "reject"] {
         for case in file[side].as_array().unwrap() {
-            run_case(&file, case);
+            let _ = run_case(&file, case);
             names.push(format!("see/{side}/{}", case["name"].as_str().unwrap()));
         }
     }
@@ -229,24 +327,106 @@ fn xorshift(state: &mut u32) -> u32 {
     *state
 }
 
+fn mutate_id(value: &str, roll: u32, pick: u32) -> String {
+    match roll % 5 {
+        0 => {
+            let mut chars: Vec<char> = value.chars().collect();
+            let index = pick as usize % chars.len();
+            let ch = chars[index];
+            let flipped = if ch.is_ascii_lowercase() {
+                ch.to_ascii_uppercase()
+            } else if ch.is_ascii_uppercase() {
+                ch.to_ascii_lowercase()
+            } else {
+                ch
+            };
+            if flipped != ch {
+                chars[index] = flipped;
+                return chars.into_iter().collect();
+            }
+            format!("{value}x")
+        }
+        1 => {
+            if let Some(at) = value.find('_') {
+                let mut copy = value.to_string();
+                copy.replace_range(at..at + 1, ".");
+                copy
+            } else if let Some(at) = value.find('.') {
+                let mut copy = value.to_string();
+                copy.replace_range(at..at + 1, "_");
+                copy
+            } else {
+                format!("{value}x")
+            }
+        }
+        2 => format!("{value} "),
+        3 => "room.alpha".to_string(),
+        _ => format!("s3rch/items/{value}"),
+    }
+}
+
 #[test]
-fn see_edge_matches_parse_for_10k_strings() {
-    let alphabet = "abcXYZ./_~:()'\\get0123456789- \u{0}";
-    let chars: Vec<char> = alphabet.chars().collect();
+fn see_edge_mutations_call_check_see() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../vectors/mesh/v2/see.json");
+    let file: Value = serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap();
+    let entry = file["accept"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["name"] == "grant-on-chat_a-does-not-allow-chat_b")
+        .unwrap();
+    let case = serde_json::json!({
+        "name": "property",
+        "steps": [entry["steps"][0].clone(), entry["steps"][2].clone()]
+    });
+    let graph = run_case(&file, &case);
+    let object = entry["steps"][2]["row"]["object"].as_str().unwrap();
+    let accessor = entry["steps"][2]["row"]["accessor"].as_str().unwrap();
+    let owner = entry["steps"][0]["record"]["owner"].as_str().unwrap();
+    assert!(
+        graph
+            .check_see(
+                &object_of(&Value::String(object.into())),
+                &principal_of(&Value::String(accessor.into())),
+                10,
+                None,
+                None,
+            )
+            .allowed
+    );
+    let bases = [object, accessor, owner];
     let mut state = 0x5502u32;
     for _ in 0..10_000 {
-        let len = xorshift(&mut state) as usize % 24;
-        let mut value = String::new();
-        for _ in 0..len {
-            let index = xorshift(&mut state) as usize % chars.len();
-            value.push(chars[index]);
-        }
+        let roll = xorshift(&mut state);
+        let pick = xorshift(&mut state);
+        let base = bases[xorshift(&mut state) as usize % bases.len()];
+        let value = mutate_id(base, roll, pick);
         match parse_object_id(&value) {
-            Ok(id) => assert_eq!(id.as_ref(), value.as_str()),
+            Ok(id) => {
+                assert_eq!(id.as_ref(), value.as_str());
+                let got = graph.check_see(
+                    &id,
+                    &principal_of(&Value::String(accessor.into())),
+                    10,
+                    None,
+                    None,
+                );
+                assert_eq!(got.allowed, value == object);
+            }
             Err(_) => {}
         }
         match parse_principal_id(&value) {
-            Ok(id) => assert_eq!(id.as_ref(), value.as_str()),
+            Ok(id) => {
+                assert_eq!(id.as_ref(), value.as_str());
+                let got = graph.check_see(
+                    &object_of(&Value::String(object.into())),
+                    &id,
+                    10,
+                    None,
+                    None,
+                );
+                assert_eq!(got.allowed, value == accessor || value == owner);
+            }
             Err(_) => {}
         }
     }

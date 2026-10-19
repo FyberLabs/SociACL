@@ -4,7 +4,7 @@
  * Hint and hop never set allowed. A post grant is a separate row.
  * A hop, a hint, a wrap, a request, or an inbox delivery never grants.
  * Request signing lives in group.js so this module does not load node:crypto.
- * Stored-id see Check is see.js. Label helpers live in legacy/gun-legacy.js.
+ * Stored-id see Check is see.js. Label rows stay out of this module.
  */
 
 export {

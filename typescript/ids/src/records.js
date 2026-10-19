@@ -793,11 +793,13 @@ export function parseSeeGrant(row) {
   const owner = parsePrincipalId(r.owner); if (!owner.ok) return owner;
   const object = parseObjectId(r.object); if (!object.ok) return object;
   const accessor = parsePrincipalId(r.accessor); if (!accessor.ok) return accessor;
-  if (r.stated !== 0 && r.stated !== 1) return fail('bad-record');
+  if (!Object.is(r.stated, 0) && !Object.is(r.stated, 1)) return fail('bad-record');
   const from = r.from, until = r.until, hamState = r.hamState, issuedAt = r.issuedAt;
   if (!integer(from) || !integer(until) || !integer(hamState) || !integer(issuedAt) || /** @type {number} */ (until) < /** @type {number} */ (from)) return fail('bad-record');
   const sig = text(r.sig, 128); if (!sig.ok) return sig;
-  if (Object.hasOwn(r, 'attest') && typeof r.attest !== 'string') return fail('not-string');
+  if (Object.hasOwn(r, 'attest')) {
+    const attest = text(r.attest, 16384); if (!attest.ok) return attest;
+  }
   /** @type {SeeGrant} */
   const grant = Object.freeze({
     owner: owner.value,
@@ -809,7 +811,7 @@ export function parseSeeGrant(row) {
     hamState: /** @type {number} */ (r.hamState),
     issuedAt: /** @type {number} */ (r.issuedAt),
     sig: sig.value,
-    ...(typeof r.attest === 'string' ? { attest: r.attest } : {}),
+    ...(Object.hasOwn(r, 'attest') ? { attest: /** @type {string} */ (r.attest) } : {}),
   });
   return ok(Object.freeze({ grant, bytes: seeGrantBytes(grant) }));
 }
@@ -869,6 +871,41 @@ export function verifySignedAt(principal, rotations, ctx, bytes, sig, issuedAt) 
   const s = text(sig, 128);
   if (!(bytes instanceof Uint8Array) || !s.ok || !keyVerify(account.value.currentKey, s.value, bytes)) return fail('bad-signature');
   return ok(Object.freeze({ key: account.value.currentKey, mode: 'present' }));
+}
+const OBJECT_DOMAIN = 'sociacl-object-v2';
+/** Signing bytes for an object-owner record. The domain is inside the bytes.
+ * @param {{ object: import('./types.js').ObjectId, owner: PrincipalId, issuedAt: number }} record */
+export function objectRecordBytes(record) {
+  return lp([OBJECT_DOMAIN, record.object, record.owner, String(record.issuedAt)]);
+}
+/** Snapshot one object-owner record. A missing signature is unsigned.
+ * @param {unknown} row @returns {Result<{ record: import('./types.js').ObjectRecord, bytes: Uint8Array }>} */
+export function parseObjectRecord(row) {
+  const d = data(row); if (!d.ok) return d;
+  const r = d.value;
+  if (r.domain !== undefined && r.domain !== OBJECT_DOMAIN) return fail('bad-record');
+  const object = parseObjectId(r.object); if (!object.ok) return object;
+  const owner = parsePrincipalId(r.owner); if (!owner.ok) return owner;
+  if (!integer(r.issuedAt)) return fail('bad-record');
+  if (!Object.hasOwn(r, 'sig')) return fail('bad-signature');
+  const sig = text(r.sig, 128); if (!sig.ok) return sig;
+  /** @type {import('./types.js').ObjectRecord} */
+  const record = Object.freeze({
+    object: object.value,
+    owner: owner.value,
+    issuedAt: /** @type {number} */ (r.issuedAt),
+    sig: sig.value,
+  });
+  return ok(Object.freeze({ record, bytes: objectRecordBytes(record) }));
+}
+/** The owner signs `sociacl-object-v2`. A retired key is refused.
+ * @param {unknown} row @param {readonly unknown[]} rotations @param {ResolutionContext} ctx
+ * @returns {Result<SignedAt & { record: import('./types.js').ObjectRecord, bytes: Uint8Array }>} */
+export function verifyObjectRecord(row, rotations, ctx) {
+  const parsed = parseObjectRecord(row); if (!parsed.ok) return parsed;
+  const signed = verifySignedAt(parsed.value.record.owner, rotations, ctx, parsed.value.bytes, parsed.value.record.sig, parsed.value.record.issuedAt);
+  if (!signed.ok) return signed;
+  return ok(Object.freeze({ ...signed.value, record: parsed.value.record, bytes: parsed.value.bytes }));
 }
 /** @deprecated Use verifyWalletLink; this alias retains historical verification semantics. */
 export const verifyWalletLinkAtKey = verifyWalletLink;

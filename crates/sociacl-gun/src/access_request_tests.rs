@@ -1,15 +1,16 @@
 //! Shared access-request vectors. The TypeScript contract loads the same file.
 //! A request is a hint. The helper writes owner rows. Hopcap stays 1.
 
-use sociacl_core::{AttestationChannel, IssuerSecret, Timestamp};
-use sociacl_gun::{
+use crate::legacy::grant_soul;
+use crate::{
     accept_access_request, access_request_id, access_request_signing_bytes, factor_grants,
-    grant_soul, post_grant_signing_bytes, sign_access_request, AccessRequest, GroupPredicate,
-    GunAclEdge, GunError, HandoffHint, HopFactor, MembersAutoApprove, MeshSeeGrant, MeshSeeGraph,
+    post_grant_signing_bytes, sign_access_request, AccessRequest, GroupPredicate, GunAclEdge,
+    GunError, HandoffHint, HopFactor, MembersAutoApprove, MeshSeeGrant, MeshSeeGraph,
     OwnerGrantRows, ACCESS_MESSAGE_MAX, ACCESS_REQUEST_DOMAIN, ACCESS_REQUEST_ID_DOMAIN,
     ACCESS_SCOPE_READ, ACCESS_SCOPE_READ_POST, ACCESS_STATUS_PENDING, ACCESS_STATUS_WITHDRAWN,
     MESH_REASON_DELEGATE, MESH_REASON_MISSING, MESH_REASON_POST,
 };
+use sociacl_core::{AttestationChannel, IssuerSecret, Timestamp};
 
 const VECTORS: &str = include_str!("../../../vectors/mesh/access-request.json");
 
@@ -188,7 +189,7 @@ fn prepare(graph: &mut MeshSeeGraph, case: &ApprovalCase) {
     if case.object.is_empty() {
         return;
     }
-    graph.put_object(&case.object, &case.owner);
+    graph.labels.put_object(&case.object, &case.owner);
     if case.mode != "members" {
         return;
     }
@@ -269,7 +270,10 @@ fn approve(graph: &mut MeshSeeGraph, case: &ApprovalCase) -> Result<OwnerGrantRo
 
 fn assert_no_rows(graph: &MeshSeeGraph, case: &ApprovalCase) {
     assert!(
-        graph.grant_edge(&case.object, &case.requester).is_none(),
+        graph
+            .labels
+            .grant_edge(&case.object, &case.requester)
+            .is_none(),
         "{} wrote a see row",
         case.name
     );
@@ -281,7 +285,7 @@ fn assert_no_rows(graph: &MeshSeeGraph, case: &ApprovalCase) {
 }
 
 fn assert_granted(graph: &MeshSeeGraph, case: &ApprovalCase, rows: &OwnerGrantRows, ham: u64) {
-    let accessor = sociacl_gun::canonical_request_accessor(&case.requester).unwrap();
+    let accessor = crate::canonical_request_accessor(&case.requester).unwrap();
     assert_eq!(
         rows.request_id,
         access_request_id(&case.requester, &case.source).unwrap()
@@ -297,7 +301,7 @@ fn assert_granted(graph: &MeshSeeGraph, case: &ApprovalCase, rows: &OwnerGrantRo
             .unwrap()
             .as_str()
     );
-    let see = graph.check_see_label(
+    let see = graph.labels.check_see_label(
         &case.source,
         &case.requester,
         Timestamp(case.now),
@@ -333,9 +337,11 @@ fn assert_granted(graph: &MeshSeeGraph, case: &ApprovalCase, rows: &OwnerGrantRo
         assert!(graph.post_edge(&case.object, &accessor).is_none());
     }
     let by_source = graph
+        .labels
         .grant_edge(&case.source, &case.requester)
         .expect("source lookup");
     let by_object = graph
+        .labels
         .grant_edge(&case.object, &accessor)
         .expect("object lookup");
     assert_eq!(by_source.soul_key(), by_object.soul_key());
@@ -431,7 +437,7 @@ fn owner_client_writes_rows_and_a_request_does_not() {
                 attestation_bytes: None,
                 share_token: None,
             });
-            let see = graph.check_see_label(
+            let see = graph.labels.check_see_label(
                 &case.source,
                 &case.requester,
                 Timestamp(case.now),
@@ -483,8 +489,8 @@ fn a_slash_id_does_not_share_a_request_with_the_underscore_item_soul() {
     assert_ne!(under, dotted);
     let bob = signer("0xbob");
     let mut graph = MeshSeeGraph::new();
-    graph.put_object("a/b", "0xalice");
-    graph.put_object("s3rch/items/a_b", "0xalice");
+    graph.labels.put_object("a/b", "0xalice");
+    graph.labels.put_object("s3rch/items/a_b", "0xalice");
     graph.enroll_signer("0xbob", bob.verify_key()).unwrap();
     let mut request = request_of("0xbob", "a/b", "read", "", "pending");
     request.signature = sign_access_request(&bob, &request).unwrap();
@@ -493,13 +499,19 @@ fn a_slash_id_does_not_share_a_request_with_the_underscore_item_soul() {
     assert!(graph
         .grant_approved_request("0xalice", &swapped, 0, 80, None)
         .is_err());
-    assert!(graph.grant_edge("a/b", "0xbob").is_none());
-    assert!(graph.grant_edge("s3rch/items/a_b", "0xbob").is_none());
+    assert!(graph.labels.grant_edge("a/b", "0xbob").is_none());
+    assert!(graph
+        .labels
+        .grant_edge("s3rch/items/a_b", "0xbob")
+        .is_none());
     graph
         .grant_approved_request("0xalice", &request, 0, 80, None)
         .unwrap();
-    assert!(graph.grant_edge("a/b", "0xbob").is_some());
-    assert!(graph.grant_edge("s3rch/items/a_b", "0xbob").is_none());
+    assert!(graph.labels.grant_edge("a/b", "0xbob").is_some());
+    assert!(graph
+        .labels
+        .grant_edge("s3rch/items/a_b", "0xbob")
+        .is_none());
 }
 
 #[test]
@@ -549,7 +561,7 @@ fn requester_signature_matches_the_enrolled_key() {
         assert_eq!(hex(&signed), case.signature, "{}", case.name);
         request.signature = signed;
         let mut graph = MeshSeeGraph::new();
-        graph.put_object(&case.source, "0xalice");
+        graph.labels.put_object(&case.source, "0xalice");
         graph
             .enroll_signer(&case.requester, secret.verify_key())
             .unwrap();
@@ -570,24 +582,27 @@ fn requester_signature_matches_the_enrolled_key() {
         );
         unsigned.signature.clear();
         let mut fresh = MeshSeeGraph::new();
-        fresh.put_object(&case.source, "0xalice");
+        fresh.labels.put_object(&case.source, "0xalice");
         fresh
             .enroll_signer(&case.requester, secret.verify_key())
             .unwrap();
         assert!(fresh
             .grant_approved_request("0xalice", &unsigned, 0, 80, None)
             .is_err());
-        assert!(fresh.grant_edge(&case.source, &case.requester).is_none());
+        assert!(fresh
+            .labels
+            .grant_edge(&case.source, &case.requester)
+            .is_none());
     }
 }
 
 #[test]
 fn cancelled_see_at_ham_ceiling_does_not_grow_a_post() {
     let mut graph = MeshSeeGraph::new();
-    graph.put_object("room:alpha", "0xalice");
+    graph.labels.put_object("room:alpha", "0xalice");
     let bob = signer("0xbob");
     graph.enroll_signer("0xbob", bob.verify_key()).unwrap();
-    graph.merge_edge(
+    graph.labels.merge_edge(
         GunAclEdge::new(
             "0xalice",
             MeshSeeGrant {
@@ -608,7 +623,7 @@ fn cancelled_see_at_ham_ceiling_does_not_grow_a_post() {
         .unwrap_err();
     assert_eq!(reason_of(err), "see");
     assert!(graph.post_edge("room:alpha", "0xbob").is_none());
-    let see = graph.grant_edge("room:alpha", "0xbob").unwrap();
+    let see = graph.labels.grant_edge("room:alpha", "0xbob").unwrap();
     assert_eq!(see.grant.stated, 0);
     assert_eq!(see.ham_state, u64::MAX);
 }
@@ -617,10 +632,10 @@ fn cancelled_see_at_ham_ceiling_does_not_grow_a_post() {
 fn see_at_the_js_safe_ceiling_does_not_grow_a_post() {
     const JS_SAFE_INTEGER_MAX: u64 = (1 << 53) - 1;
     let mut graph = MeshSeeGraph::new();
-    graph.put_object("room:alpha", "0xalice");
+    graph.labels.put_object("room:alpha", "0xalice");
     let bob = signer("0xbob");
     graph.enroll_signer("0xbob", bob.verify_key()).unwrap();
-    graph.merge_edge(
+    graph.labels.merge_edge(
         GunAclEdge::new(
             "0xalice",
             MeshSeeGrant {
@@ -641,7 +656,7 @@ fn see_at_the_js_safe_ceiling_does_not_grow_a_post() {
         .unwrap_err();
     assert_eq!(reason_of(err), "see");
     assert!(graph.post_edge("room:alpha", "0xbob").is_none());
-    let see = graph.grant_edge("room:alpha", "0xbob").unwrap();
+    let see = graph.labels.grant_edge("room:alpha", "0xbob").unwrap();
     assert_eq!(see.grant.stated, 1);
     assert_eq!(see.ham_state, JS_SAFE_INTEGER_MAX);
 }
@@ -652,18 +667,18 @@ fn encoded_item_soul_shares_the_raw_object_request_id() {
     let soul = access_request_id("0xbob", "s3rch/items/room~1alpha").unwrap();
     assert_eq!(soul, raw);
     assert_ne!(
-        sociacl_gun::acl_key(&sociacl_gun::acl_key("room.alpha")),
-        sociacl_gun::acl_key("room.alpha")
+        crate::legacy::acl_key(&crate::legacy::acl_key("room.alpha")),
+        crate::legacy::acl_key("room.alpha")
     );
 }
 
 #[test]
 fn dotted_principal_round_trips_through_enroll_and_approval() {
     let mut graph = MeshSeeGraph::new();
-    graph.put_object("room:alpha", "0xalice");
+    graph.labels.put_object("room:alpha", "0xalice");
     let bob = signer("bob.name");
     graph.enroll_signer("bob.name", bob.verify_key()).unwrap();
-    let canonical = sociacl_gun::canonical_request_accessor("bob.name").unwrap();
+    let canonical = crate::canonical_request_accessor("bob.name").unwrap();
     assert_eq!(canonical, "bob.name");
     assert!(graph.enrolled_key(&canonical).is_some());
     let mut request = request_of("bob.name", "room:alpha", "read", "", "pending");
@@ -678,6 +693,7 @@ fn dotted_principal_round_trips_through_enroll_and_approval() {
     assert_eq!(rows.see.grant.accessor, "bob.name");
     assert!(
         graph
+            .labels
             .check_see_label("room:alpha", "bob.name", Timestamp(10), None, None)
             .allowed
     );
@@ -687,10 +703,10 @@ fn dotted_principal_round_trips_through_enroll_and_approval() {
 fn folded_alias_at_the_js_safe_ceiling_does_not_grow_a_post() {
     const JS_SAFE_INTEGER_MAX: u64 = (1 << 53) - 1;
     let mut graph = MeshSeeGraph::new();
-    graph.merge_edge(
+    graph.labels.merge_edge(
         GunAclEdge::new("0xalice", MeshSeeGrant::live("room", "0xbob", 0, 80), 1).unwrap(),
     );
-    graph.merge_edge(
+    graph.labels.merge_edge(
         GunAclEdge::new(
             "0xalice",
             MeshSeeGrant::live("s3rch/items/room", "0xbob", 0, 80),
@@ -698,7 +714,7 @@ fn folded_alias_at_the_js_safe_ceiling_does_not_grow_a_post() {
         )
         .unwrap(),
     );
-    graph.put_object("room", "0xalice");
+    graph.labels.put_object("room", "0xalice");
     let bob = signer("0xbob");
     graph.enroll_signer("0xbob", bob.verify_key()).unwrap();
     let mut request = request_of("0xbob", "room", "read+post", "", "pending");
@@ -708,14 +724,14 @@ fn folded_alias_at_the_js_safe_ceiling_does_not_grow_a_post() {
         .unwrap_err();
     assert_eq!(reason_of(err), "see");
     assert!(graph.post_edge("room", "0xbob").is_none());
-    let see = graph.grant_edge("room", "0xbob").unwrap();
+    let see = graph.labels.grant_edge("room", "0xbob").unwrap();
     assert!(see.ham_state <= JS_SAFE_INTEGER_MAX);
 }
 
 #[test]
 fn members_gate_uses_the_stored_object_id() {
     let mut graph = MeshSeeGraph::new();
-    graph.put_object("room", "0xalice");
+    graph.labels.put_object("room", "0xalice");
     let alice = signer("0xalice");
     let bob = signer("0xbob");
     graph.enroll_signer("0xalice", alice.verify_key()).unwrap();
