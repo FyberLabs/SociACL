@@ -504,8 +504,8 @@ export type AccessApproval =
   | {
       granted: true;
       requestId: string;
-      see: MeshSeeGrant;
-      post: MeshPostGrant | null;
+      see: VerifiedRow;
+      post: VerifiedRow | null;
     }
   | {
       granted: false;
@@ -518,27 +518,16 @@ export const REQUEST_DOMAIN: "sociacl-access-request-v2";
 /** Length-prefixed domain for requestId. */
 export const REQUEST_ID_DOMAIN: "sociacl-request-id-v2";
 
-/** Scope that writes a see grant only. */
-export const ACCESS_SCOPE_READ: "read";
-
-/** Scope that writes a see grant and a post grant. */
-export const ACCESS_SCOPE_READ_POST: "read+post";
-
-/** Status that can be approved. */
-export const ACCESS_STATUS_PENDING: "pending";
-
-/** Status that writes nothing. */
-export const ACCESS_STATUS_WITHDRAWN: "withdrawn";
-
-/** Message cap, in Unicode scalar values. An empty message is allowed. */
-export const ACCESS_MESSAGE_MAX: 280;
-
 /**
  * SHA-256 lowercase hex of domain sociacl-request-id-v2, the requester,
  * and the object. Scope, message, and status are not inputs.
  * The request id and the object are the same parsed id.
+ * A non-string argument is `not-string`.
  */
-export function requestId(requester: PrincipalId, object: ObjectId): string;
+export function requestId(
+  requester: unknown,
+  object: unknown,
+): { ok: true; value: string } | { ok: false; reason: string };
 
 /**
  * Length-prefixed bytes the requester signs.
@@ -549,15 +538,51 @@ export function requestId(requester: PrincipalId, object: ObjectId): string;
 export function accessRequestBytes(request: AccessRequest): Uint8Array;
 
 /**
+ * Snapshot one access request. Scope is `read` or `read+post`.
+ * Status is `pending` or `withdrawn`. The message is at most 280
+ * Unicode scalar values and may be empty. A missing or non-string
+ * scope, status, message, requester, or object is `not-string`.
+ * A missing request id is `bad-record`. A wrong domain or a missing
+ * signature is `legacy-row`.
+ */
+export function parseAccessRequest(
+  row: unknown,
+):
+  | { ok: true; value: { request: AccessRequest; bytes: Uint8Array } }
+  | { ok: false; reason: string };
+
+/**
+ * Present authority for the requester. A retired key is refused.
+ * Kind is not a parameter.
+ */
+export function verifyAccessRequest(
+  row: unknown,
+  rotations: readonly unknown[],
+  ctx: object,
+):
+  | {
+      ok: true;
+      value: {
+        key: PrincipalId;
+        mode: "present" | "witnessed";
+        request: AccessRequest;
+        bytes: Uint8Array;
+      };
+    }
+  | { ok: false; reason: string };
+
+/**
  * Owner's client. Writes a sociacl-see-grant-v2 row for an approved
  * pending request, and a sociacl-post-grant-v2 row when the scope is
  * read+post. The owner signs both under the current key. issuedAt on
  * those rows is the resolver's now. The requester signature is checked
  * with verifySignedAt. Only a present key counts. Both ham ceilings
- * are checked before either row is written. A see row that cannot
- * advance writes nothing. A post row that cannot advance writes no
- * see row either. members, when supplied, runs checkGroupSee on the
- * stored object id and writes only when that allows. A withdrawn
+ * are checked against one resolved history before either row is written.
+ * Both rows are written, or neither is. A row that would not replace,
+ * including an approval over an owner cancel, is `not-kept` and writes
+ * nothing. members, when supplied, requires the label owner to equal
+ * the admitted signed owner and a real membership reason from
+ * checkGroupSee. The owner shortcut is not membership. A withdrawn
  * request writes nothing. A caller who is not the admitted object
  * owner writes nothing. A hop, a hint, a wrap, a request, or an inbox
  * delivery is not an approval. There is no hosted evaluator.

@@ -3,6 +3,7 @@
  * because the members gate still enrolls through the label group graph.
  */
 import { requestId } from '../ids/src/index.js';
+import { aclKey } from '../src/legacy/gun-legacy.js';
 import { MemoryGroupGraph, issuerFromSeed } from '../src/group.js';
 import { admitPost, admittedPost, checkPost, factorGrants } from '../src/post.js';
 import { grantApprovedRequest } from '../src/request.js';
@@ -37,10 +38,15 @@ function failStep(step, got) {
  */
 export function runRequestCase(steps, options) {
   const graph = new MemoryGroupGraph();
-  const resolverFor = (/** @type {Record<string, any>} */ step) => ({
-    rotations: () => (step.history === 'unavailable' ? undefined : options.rotations(step.rotations)),
-    ctx: step.revocations ? { ...options.ctx, revocations: step.revocations } : options.ctx,
-  });
+  const resolverFor = (/** @type {Record<string, any>} */ step) => {
+    const ctx = { ...options.ctx };
+    if (step.revocations) ctx.revocations = step.revocations;
+    if (step.now != null) ctx.now = step.now;
+    return {
+      rotations: () => (step.history === 'unavailable' ? undefined : options.rotations(step.rotations)),
+      ctx,
+    };
+  };
   for (const step of steps) {
     if (step.op === 'request-id') {
       const got = requestId(step.requester, step.object);
@@ -79,6 +85,10 @@ export function runRequestCase(steps, options) {
       graph.nameObjectSet(step.owner, step.object, step.predicate, step.setId, ownerKey.privateKey);
       continue;
     }
+    if (step.op === 'label-owner') {
+      graph.objects.set(aclKey(step.object), { id: step.object, owner: step.owner });
+      continue;
+    }
     if (step.op === 'grant') {
       const got = grantApprovedRequest(
         graph,
@@ -106,6 +116,11 @@ export function runRequestCase(steps, options) {
       if (step.absent === true) {
         if (got) failStep(step, got);
       } else if (!got || got.hamState !== step.hamState || got.stated !== step.stated) failStep(step, got);
+      else {
+        if (step.from != null && got.from !== step.from) failStep(step, got);
+        if (step.until != null && got.until !== step.until) failStep(step, got);
+        if (step.issuedAt != null && got.issuedAt !== step.issuedAt) failStep(step, got);
+      }
       continue;
     }
     if (step.op === 'view-post') {

@@ -2,9 +2,12 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { p256 } from "@noble/curves/nist.js";
 import * as ids from "../ids/src/index.js";
-import { admittedView, putObject } from "../src/see.js";
-import { factorGrants } from "../src/post.js";
+import { MemoryGroupGraph } from "../src/group.js";
+import { admittedPost, factorGrants } from "../src/post.js";
+import * as postApi from "../src/post.js";
 import { grantApprovedRequest } from "../src/request.js";
+import { admittedView, checkSee, isVerifiedRow, putObject } from "../src/see.js";
+import * as seeApi from "../src/see.js";
 import { b64 } from "../ids/scripts/vector-util.mjs";
 
 const secret = (n) => { const b = new Uint8Array(32); b[31] = n; return b; };
@@ -80,4 +83,133 @@ test("factorGrants stays false for a request", () => {
   assert.equal(factorGrants("request"), false);
   assert.equal(factorGrants("hop"), false);
   assert.equal(factorGrants("inbox"), false);
+});
+
+function objectRecord() {
+  const record = { object: chat.value, owner: p, issuedAt: at, sig: "" };
+  const sig = ids.signWithKeyring(secret(1), ids.objectRecordBytes(record), p);
+  if (!sig.ok) throw new Error(sig.reason);
+  record.sig = sig.value;
+  return record;
+}
+
+function signRequest(fields, signer) {
+  const id = ids.requestId(fields.requester, fields.object);
+  if (!id.ok) throw new Error(id.reason);
+  const bare = { ...fields, requestId: id.value, sig: "" };
+  const sig = ids.signWithKeyring(secret(signer), ids.accessRequestBytes(bare), principal(signer));
+  if (!sig.ok) throw new Error(sig.reason);
+  return { ...bare, sig: sig.value };
+}
+
+test("resolver lookups stop at two and a later throw still writes both rows", () => {
+  const request = signRequest({
+    requester: p2,
+    object: chat.value,
+    scope: "read+post",
+    status: "pending",
+    message: "",
+    issuedAt: now,
+  }, 2);
+  const window = { from: at, until: now + 100 };
+  for (const throwAt of [0, 1, 2]) {
+    const graph = {};
+    let calls = 0;
+    const resolver = {
+      rotations() {
+        if (calls >= throwAt) throw new Error("resolver");
+        calls += 1;
+        return [];
+      },
+      ctx: context(),
+    };
+    assert.equal(putObject(graph, objectRecord(), { rotations: () => [], ctx: context() }).ok, true);
+    let thrown = false;
+    let result;
+    try {
+      result = grantApprovedRequest(graph, p, request, window, null, { scalar: secret(1), resolver });
+    } catch (error) {
+      thrown = true;
+      assert.equal(error instanceof Error ? error.message : "", "resolver");
+    }
+    if (throwAt < 2) {
+      assert.equal(thrown, true);
+      assert.equal(admittedView(graph, chat.value, p2), undefined);
+      assert.equal(admittedPost(graph, chat.value, p2), undefined);
+    } else {
+      assert.equal(thrown, false);
+      assert.equal(result.granted, true);
+      assert.equal(calls, 2);
+      assert.equal(admittedView(graph, chat.value, p2)?.stated, 1);
+      assert.equal(admittedPost(graph, chat.value, p2)?.stated, 1);
+    }
+  }
+});
+
+test("a peer merge cannot auto-approve a non-member", () => {
+  const owner = new MemoryGroupGraph();
+  const mallory = new MemoryGroupGraph();
+  const resolver = { rotations: () => [], ctx: context() };
+  assert.equal(putObject(owner, objectRecord(), resolver).ok, true);
+  mallory.putObject(chat.value, p2);
+  owner.mergeFrom(mallory);
+  const request = signRequest({
+    requester: p2,
+    object: chat.value,
+    scope: "read",
+    status: "pending",
+    message: "",
+    issuedAt: now,
+  }, 2);
+  const result = grantApprovedRequest(
+    owner,
+    p,
+    request,
+    { from: at, until: now + 100 },
+    { predicate: "same-group", now },
+    { scalar: secret(1), resolver },
+  );
+  assert.equal(result.granted, false);
+  assert.equal(result.reason, "not-member");
+  assert.equal(admittedView(owner, chat.value, p2), undefined);
+  owner.putObject(chat.value, p2);
+  assert.equal(owner.ownerOf(chat.value), p);
+});
+
+test("missing and non-string request fields are not-string", () => {
+  const id = ids.requestId(p2, chat.value);
+  assert.equal(id.ok, true);
+  const base = {
+    requestId: id.value,
+    requester: p2,
+    object: chat.value,
+    scope: "read",
+    status: "pending",
+    message: "",
+    issuedAt: now,
+    sig: "aa",
+  };
+  for (const field of ["scope", "status", "message", "requester", "object"]) {
+    for (const value of [undefined, null, 1, {}]) {
+      const row = { ...base };
+      if (value === undefined) delete row[field];
+      else row[field] = value;
+      const got = ids.parseAccessRequest(row);
+      assert.equal(got.ok, false, field);
+      assert.equal(got.reason, "not-string");
+    }
+  }
+});
+
+test("no public path seals an unverified see or post row", () => {
+  assert.equal(seeApi.snapshotRow, undefined);
+  assert.equal(seeApi.restoreRow, undefined);
+  assert.equal(postApi.snapshotPost, undefined);
+  assert.equal(postApi.restorePost, undefined);
+  assert.equal(isVerifiedRow({ mode: "present", grant: { stated: 1, from: 0, until: 1e12 } }), false);
+  const graph = {};
+  const resolver = { rotations: () => [], ctx: context() };
+  assert.equal(putObject(graph, objectRecord(), resolver).ok, true);
+  assert.equal(checkSee(graph, chat.value, p2, now).allowed, false);
+  assert.equal(checkSee(graph, chat.value, p2, now).reason, "delegate");
 });

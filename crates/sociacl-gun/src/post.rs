@@ -185,6 +185,32 @@ impl MeshSeeGraph {
         Ok((view_post(stored, &stored_grant), kept))
     }
 
+    /// Verify a post row against history the caller already resolved. Does not write.
+    pub(crate) fn prepare_post(
+        &self,
+        row: &Value,
+        rotations: &[Value],
+        ctx: &ResolutionContext<'_>,
+    ) -> Result<(String, AdmittedPost, VerifiedRow, bool), Reason> {
+        let (grant, _) = sociacl_ids::parse_post_grant(row)?;
+        let verified = verify_post_grant(&snapshot_post(&grant), rotations, ctx)?;
+        let Some(owner) = self.object_owner(&verified.grant.object).cloned() else {
+            return Err(Reason::Unknown);
+        };
+        if owner != verified.grant.owner {
+            return Err(Reason::BadRecord);
+        }
+        let key = id_post_soul(&owner, &verified.grant.object, &verified.grant.accessor).to_string();
+        let source = snapshot_post(&verified.grant);
+        let next = admitted_from(&verified, &source, ctx);
+        let kept = match self.post_rows.get(&key) {
+            Some(prev) => replaces(prev, &next),
+            None => true,
+        };
+        let view = view_post(&next, &verified.grant);
+        Ok((key, next, view, kept))
+    }
+
     /// The admitted post row for this object and accessor, under the admitted owner.
     pub fn admitted_post(&self, object: &ObjectId, accessor: &PrincipalId) -> Option<VerifiedRow> {
         let owner = self.object_owner(object)?;

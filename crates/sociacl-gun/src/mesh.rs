@@ -287,6 +287,13 @@ impl MeshSeeGraph {
         Ok(true)
     }
 
+    /// Test hook. Plants a label owner without a signed record.
+    /// Production peers do not get a setter that disagrees with `put_object`.
+    #[doc(hidden)]
+    pub fn vector_label_owner(&mut self, object: &str, owner: &str) {
+        self.labels.put_object(object, owner);
+    }
+
     /// Admit one see row. The row is parsed once; the signature covers that value.
     /// History comes from `resolver` called with the parsed owner.
     /// Missing rotation history is `missing-history`, not an empty history.
@@ -319,36 +326,39 @@ impl MeshSeeGraph {
         Ok((view_row(stored), kept))
     }
 
-    /// Write a see row and, when present, a post row. A failed post write
-    /// puts the previous see row back, including removing one that was new.
+    /// Write a see row and, when present, a post row.
+    /// Both are verified against `rotations` before either insert.
+    /// A row that would not replace writes neither.
     pub(crate) fn commit_grant_rows(
         &mut self,
         see: &Value,
         post: Option<&Value>,
-        resolver: &dyn Fn(&PrincipalId) -> Option<Vec<Value>>,
+        rotations: &[Value],
         ctx: &ResolutionContext<'_>,
     ) -> Result<(VerifiedRow, Option<VerifiedRow>), Reason> {
         let (parsed, _) = parse_see_grant(see)?;
-        let key = id_grant_soul(&parsed.owner, &parsed.object, &parsed.accessor).to_string();
-        let previous = self.admitted.get(&key).cloned();
-        let (see_row, _) = self.admit_row(see, resolver, ctx)?;
-        let Some(post) = post else {
-            return Ok((see_row, None));
+        let verified = verify_see_grant(&snapshot_see(&parsed), rotations, ctx)?;
+        let see_key = id_grant_soul(&parsed.owner, &parsed.object, &parsed.accessor).to_string();
+        let see_next = admitted_from(&verified, &snapshot_see(&parsed), ctx);
+        let see_kept = match self.admitted.get(&see_key) {
+            Some(prev) => replaces(prev, &see_next),
+            None => true,
         };
-        match self.admit_post(post, resolver, ctx) {
-            Ok((post_row, _)) => Ok((see_row, Some(post_row))),
-            Err(reason) => {
-                match previous {
-                    Some(row) => {
-                        self.admitted.insert(key, row);
-                    }
-                    None => {
-                        self.admitted.remove(&key);
-                    }
-                }
-                Err(reason)
-            }
+        let post_prepared = match post {
+            Some(row) => Some(self.prepare_post(row, rotations, ctx)?),
+            None => None,
+        };
+        if !see_kept || post_prepared.as_ref().is_some_and(|prepared| !prepared.3) {
+            return Err(Reason::NotKept);
         }
+        self.admitted.insert(see_key, see_next.clone());
+        let post_row = if let Some((key, next, view, _)) = post_prepared {
+            self.post_rows.insert(key, next);
+            Some(view)
+        } else {
+            None
+        };
+        Ok((view_row(&see_next), post_row))
     }
 
     /// Drop this principal's grants and object records that the new checkpoint

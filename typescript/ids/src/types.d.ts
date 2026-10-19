@@ -20,7 +20,8 @@ export type Reason = 'not-string' | 'empty' | 'too-long' | 'control-char' | 'inv
   | 'bad-attestation' | 'untrusted-issuer' | 'expired' | 'future-record' | 'bad-sequence'
   | 'rotation-fork' | 'rotation-conflict' | 'unknown-link' | 'revoked-link' | 'ambiguous-link' | 'unsupported-wallet'
   | 'rng-failure' | 'missing-history' | 'unretained-link' | 'wallet-required'
-  | 'unwitnessed-retired-key' | 'bad-key' | 'legacy-row' | 'unknown';
+  | 'unwitnessed-retired-key' | 'bad-key' | 'legacy-row' | 'unknown'
+  | 'withdrawn' | 'owner-mismatch' | 'not-member' | 'see-ceiling' | 'post-ceiling' | 'not-kept';
 export type Result<T> = { ok: true; value: T } | { ok: false; reason: Reason };
 export type Collection = 'items' | 'rooms' | 'users-legacy';
 export type ParsedSoul = { template: 'object' | 'user' | 'acl' | 'grant' | 'post' | 'membership' | 'objset'; ids: readonly string[] };

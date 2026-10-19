@@ -347,6 +347,195 @@
           "grants": false
         }
       ]
+    },
+    {
+      "name": "approve-twice-replaces-window",
+      "steps": [
+        {
+          "op": "put",
+          "record": {
+            "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+            "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+            "issuedAt": 1700000000,
+            "sig": "Z9fYJjtkbVsxBszNe5U5FEdoWWQI_8ZtRxbJk2ALU9PKBqOa-ga7kzgGUrgNHJdQuxiPvJFT7st1iub5IXG10g"
+          },
+          "rotations": "genesis",
+          "ok": true,
+          "kept": true
+        },
+        {
+          "op": "grant",
+          "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "signer": 1,
+          "rotations": "genesis",
+          "request": {
+            "requestId": "10b1157f3334fd51052dd7d03bf75e178663064f3c678fe3b31c21a296355c93",
+            "sig": "ggkUBr_xIEs8u68UUtd1_CEX96g7f6-l-7PV0UQo56-bWQOzorLTViuwaYwhwaKFFXYUPa3GgyFpV96qtxaraA",
+            "requester": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+            "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+            "scope": "read",
+            "status": "pending",
+            "message": "",
+            "issuedAt": 1700000060
+          },
+          "window": {
+            "from": 1700000000,
+            "until": 1700000160
+          },
+          "granted": true,
+          "hamState": 1,
+          "post": false
+        },
+        {
+          "op": "grant",
+          "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "signer": 1,
+          "rotations": "genesis",
+          "request": {
+            "requestId": "10b1157f3334fd51052dd7d03bf75e178663064f3c678fe3b31c21a296355c93",
+            "sig": "ggkUBr_xIEs8u68UUtd1_CEX96g7f6-l-7PV0UQo56-bWQOzorLTViuwaYwhwaKFFXYUPa3GgyFpV96qtxaraA",
+            "requester": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+            "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+            "scope": "read",
+            "status": "pending",
+            "message": "",
+            "issuedAt": 1700000060
+          },
+          "window": {
+            "from": 1700000060,
+            "until": 1700000110
+          },
+          "granted": true,
+          "hamState": 2,
+          "post": false
+        },
+        {
+          "op": "view",
+          "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+          "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "stated": 1,
+          "hamState": 2,
+          "mode": "present",
+          "from": 1700000060,
+          "until": 1700000110
+        },
+        {
+          "op": "check",
+          "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+          "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "now": 1700000000,
+          "allowed": false,
+          "reason": "delegate"
+        },
+        {
+          "op": "check",
+          "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+          "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "now": 1700000060,
+          "allowed": true,
+          "reason": "delegate"
+        }
+      ]
+    },
+    {
+      "name": "rotation-boundary-new-key",
+      "steps": [
+        {
+          "op": "put",
+          "record": {
+            "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+            "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+            "issuedAt": 1700000000,
+            "sig": "Z9fYJjtkbVsxBszNe5U5FEdoWWQI_8ZtRxbJk2ALU9PKBqOa-ga7kzgGUrgNHJdQuxiPvJFT7st1iub5IXG10g"
+          },
+          "rotations": "genesis",
+          "ok": true,
+          "kept": true
+        },
+        {
+          "op": "grant",
+          "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "signer": 2,
+          "rotations": "rotated",
+          "now": 1700000030,
+          "request": {
+            "requestId": "10b1157f3334fd51052dd7d03bf75e178663064f3c678fe3b31c21a296355c93",
+            "sig": "yzRWXAjhy4Za8Uq6ak7lw1RaoePeHb9OIIjoNztQLpyrvl6E5mzQmR9T1im96KmueMFMJAfnPqKvybXXSpaoCw",
+            "requester": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+            "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+            "scope": "read",
+            "status": "pending",
+            "message": "",
+            "issuedAt": 1700000030
+          },
+          "window": {
+            "from": 1700000000,
+            "until": 1700000160
+          },
+          "granted": true,
+          "hamState": 1,
+          "post": false
+        },
+        {
+          "op": "view",
+          "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+          "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "stated": 1,
+          "hamState": 1,
+          "mode": "present",
+          "issuedAt": 1700000030
+        }
+      ]
+    },
+    {
+      "name": "rotation-boundary-old-key-before",
+      "steps": [
+        {
+          "op": "put",
+          "record": {
+            "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+            "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+            "issuedAt": 1700000000,
+            "sig": "Z9fYJjtkbVsxBszNe5U5FEdoWWQI_8ZtRxbJk2ALU9PKBqOa-ga7kzgGUrgNHJdQuxiPvJFT7st1iub5IXG10g"
+          },
+          "rotations": "genesis",
+          "ok": true,
+          "kept": true
+        },
+        {
+          "op": "grant",
+          "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "signer": 1,
+          "rotations": "rotated",
+          "now": 1700000029,
+          "request": {
+            "requestId": "10b1157f3334fd51052dd7d03bf75e178663064f3c678fe3b31c21a296355c93",
+            "sig": "PlAV55Ak2Y58qj1yE0rPSIZ2C-rlbXujoQkv1sZ8vamsHfFfQG81k-bem7hPXz3SjaHiEoh-sAYq4biTjzkJ1Q",
+            "requester": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+            "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+            "scope": "read",
+            "status": "pending",
+            "message": "",
+            "issuedAt": 1700000029
+          },
+          "window": {
+            "from": 1700000000,
+            "until": 1700000160
+          },
+          "granted": true,
+          "hamState": 1,
+          "post": false
+        },
+        {
+          "op": "view",
+          "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+          "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "stated": 1,
+          "hamState": 1,
+          "mode": "present",
+          "issuedAt": 1700000029
+        }
+      ]
     }
   ],
   "reject": [
@@ -886,6 +1075,873 @@
           },
           "granted": false,
           "reason": "not-member"
+        },
+        {
+          "op": "view",
+          "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+          "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "absent": true
+        }
+      ]
+    },
+    {
+      "name": "members-label-owner-is-requester",
+      "steps": [
+        {
+          "op": "put",
+          "record": {
+            "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+            "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+            "issuedAt": 1700000000,
+            "sig": "Z9fYJjtkbVsxBszNe5U5FEdoWWQI_8ZtRxbJk2ALU9PKBqOa-ga7kzgGUrgNHJdQuxiPvJFT7st1iub5IXG10g"
+          },
+          "rotations": "genesis",
+          "ok": true,
+          "kept": true
+        },
+        {
+          "op": "label-owner",
+          "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+          "owner": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E"
+        },
+        {
+          "op": "grant",
+          "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "signer": 1,
+          "rotations": "genesis",
+          "request": {
+            "requestId": "10b1157f3334fd51052dd7d03bf75e178663064f3c678fe3b31c21a296355c93",
+            "sig": "ggkUBr_xIEs8u68UUtd1_CEX96g7f6-l-7PV0UQo56-bWQOzorLTViuwaYwhwaKFFXYUPa3GgyFpV96qtxaraA",
+            "requester": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+            "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+            "scope": "read",
+            "status": "pending",
+            "message": "",
+            "issuedAt": 1700000060
+          },
+          "window": {
+            "from": 1700000000,
+            "until": 1700000160
+          },
+          "members": {
+            "predicate": "same-group",
+            "now": 1700000060
+          },
+          "granted": false,
+          "reason": "not-member"
+        },
+        {
+          "op": "view",
+          "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+          "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "absent": true
+        }
+      ]
+    },
+    {
+      "name": "members-owner-shortcut-is-not-member",
+      "steps": [
+        {
+          "op": "put",
+          "record": {
+            "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+            "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+            "issuedAt": 1700000000,
+            "sig": "Z9fYJjtkbVsxBszNe5U5FEdoWWQI_8ZtRxbJk2ALU9PKBqOa-ga7kzgGUrgNHJdQuxiPvJFT7st1iub5IXG10g"
+          },
+          "rotations": "genesis",
+          "ok": true,
+          "kept": true
+        },
+        {
+          "op": "grant",
+          "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "signer": 1,
+          "rotations": "genesis",
+          "request": {
+            "requestId": "c2965116beabc14c96cc31562957f8e2776beedd7a4e92c1eef1a1bb5053d7de",
+            "sig": "VwitIL0gSIFSWGKWxpuXlyXBEYrGWUOIq2U6zXydO1zjO_UdETaswi1OHemd4jPD6ELLyuDFgKPxYzATEtF3Mw",
+            "requester": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+            "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+            "scope": "read",
+            "status": "pending",
+            "message": "",
+            "issuedAt": 1700000060
+          },
+          "window": {
+            "from": 1700000000,
+            "until": 1700000160
+          },
+          "members": {
+            "predicate": "same-group",
+            "now": 1700000060
+          },
+          "granted": false,
+          "reason": "not-member"
+        },
+        {
+          "op": "view",
+          "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+          "accessor": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "absent": true
+        }
+      ]
+    },
+    {
+      "name": "stated-request-id-mismatch",
+      "steps": [
+        {
+          "op": "put",
+          "record": {
+            "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+            "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+            "issuedAt": 1700000000,
+            "sig": "Z9fYJjtkbVsxBszNe5U5FEdoWWQI_8ZtRxbJk2ALU9PKBqOa-ga7kzgGUrgNHJdQuxiPvJFT7st1iub5IXG10g"
+          },
+          "rotations": "genesis",
+          "ok": true,
+          "kept": true
+        },
+        {
+          "op": "grant",
+          "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "signer": 1,
+          "rotations": "genesis",
+          "request": {
+            "requestId": "0000000000000000000000000000000000000000000000000000000000000000",
+            "sig": "ggkUBr_xIEs8u68UUtd1_CEX96g7f6-l-7PV0UQo56-bWQOzorLTViuwaYwhwaKFFXYUPa3GgyFpV96qtxaraA",
+            "requester": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+            "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+            "scope": "read",
+            "status": "pending",
+            "message": "",
+            "issuedAt": 1700000060
+          },
+          "window": {
+            "from": 1700000000,
+            "until": 1700000160
+          },
+          "granted": false,
+          "reason": "bad-record"
+        },
+        {
+          "op": "view",
+          "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+          "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "absent": true
+        }
+      ]
+    },
+    {
+      "name": "wrong-owner-key",
+      "steps": [
+        {
+          "op": "put",
+          "record": {
+            "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+            "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+            "issuedAt": 1700000000,
+            "sig": "Z9fYJjtkbVsxBszNe5U5FEdoWWQI_8ZtRxbJk2ALU9PKBqOa-ga7kzgGUrgNHJdQuxiPvJFT7st1iub5IXG10g"
+          },
+          "rotations": "genesis",
+          "ok": true,
+          "kept": true
+        },
+        {
+          "op": "grant",
+          "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "signer": 2,
+          "rotations": "genesis",
+          "request": {
+            "requestId": "10b1157f3334fd51052dd7d03bf75e178663064f3c678fe3b31c21a296355c93",
+            "sig": "ggkUBr_xIEs8u68UUtd1_CEX96g7f6-l-7PV0UQo56-bWQOzorLTViuwaYwhwaKFFXYUPa3GgyFpV96qtxaraA",
+            "requester": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+            "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+            "scope": "read",
+            "status": "pending",
+            "message": "",
+            "issuedAt": 1700000060
+          },
+          "window": {
+            "from": 1700000000,
+            "until": 1700000160
+          },
+          "granted": false,
+          "reason": "bad-key"
+        },
+        {
+          "op": "view",
+          "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+          "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "absent": true
+        }
+      ]
+    },
+    {
+      "name": "missing-or-non-string-request-fields",
+      "steps": [
+        {
+          "op": "put",
+          "record": {
+            "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+            "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+            "issuedAt": 1700000000,
+            "sig": "Z9fYJjtkbVsxBszNe5U5FEdoWWQI_8ZtRxbJk2ALU9PKBqOa-ga7kzgGUrgNHJdQuxiPvJFT7st1iub5IXG10g"
+          },
+          "rotations": "genesis",
+          "ok": true,
+          "kept": true
+        },
+        {
+          "op": "grant",
+          "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "signer": 1,
+          "rotations": "genesis",
+          "request": {
+            "requestId": "10b1157f3334fd51052dd7d03bf75e178663064f3c678fe3b31c21a296355c93",
+            "sig": "ggkUBr_xIEs8u68UUtd1_CEX96g7f6-l-7PV0UQo56-bWQOzorLTViuwaYwhwaKFFXYUPa3GgyFpV96qtxaraA",
+            "requester": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+            "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+            "status": "pending",
+            "message": "",
+            "issuedAt": 1700000060
+          },
+          "window": {
+            "from": 1700000000,
+            "until": 1700000160
+          },
+          "granted": false,
+          "reason": "not-string"
+        },
+        {
+          "op": "grant",
+          "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "signer": 1,
+          "rotations": "genesis",
+          "request": {
+            "requestId": "10b1157f3334fd51052dd7d03bf75e178663064f3c678fe3b31c21a296355c93",
+            "sig": "ggkUBr_xIEs8u68UUtd1_CEX96g7f6-l-7PV0UQo56-bWQOzorLTViuwaYwhwaKFFXYUPa3GgyFpV96qtxaraA",
+            "requester": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+            "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+            "scope": null,
+            "status": "pending",
+            "message": "",
+            "issuedAt": 1700000060
+          },
+          "window": {
+            "from": 1700000000,
+            "until": 1700000160
+          },
+          "granted": false,
+          "reason": "not-string"
+        },
+        {
+          "op": "grant",
+          "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "signer": 1,
+          "rotations": "genesis",
+          "request": {
+            "requestId": "10b1157f3334fd51052dd7d03bf75e178663064f3c678fe3b31c21a296355c93",
+            "sig": "ggkUBr_xIEs8u68UUtd1_CEX96g7f6-l-7PV0UQo56-bWQOzorLTViuwaYwhwaKFFXYUPa3GgyFpV96qtxaraA",
+            "requester": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+            "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+            "scope": 1,
+            "status": "pending",
+            "message": "",
+            "issuedAt": 1700000060
+          },
+          "window": {
+            "from": 1700000000,
+            "until": 1700000160
+          },
+          "granted": false,
+          "reason": "not-string"
+        },
+        {
+          "op": "grant",
+          "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "signer": 1,
+          "rotations": "genesis",
+          "request": {
+            "requestId": "10b1157f3334fd51052dd7d03bf75e178663064f3c678fe3b31c21a296355c93",
+            "sig": "ggkUBr_xIEs8u68UUtd1_CEX96g7f6-l-7PV0UQo56-bWQOzorLTViuwaYwhwaKFFXYUPa3GgyFpV96qtxaraA",
+            "requester": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+            "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+            "scope": {},
+            "status": "pending",
+            "message": "",
+            "issuedAt": 1700000060
+          },
+          "window": {
+            "from": 1700000000,
+            "until": 1700000160
+          },
+          "granted": false,
+          "reason": "not-string"
+        },
+        {
+          "op": "grant",
+          "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "signer": 1,
+          "rotations": "genesis",
+          "request": {
+            "requestId": "10b1157f3334fd51052dd7d03bf75e178663064f3c678fe3b31c21a296355c93",
+            "sig": "ggkUBr_xIEs8u68UUtd1_CEX96g7f6-l-7PV0UQo56-bWQOzorLTViuwaYwhwaKFFXYUPa3GgyFpV96qtxaraA",
+            "requester": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+            "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+            "scope": "read",
+            "message": "",
+            "issuedAt": 1700000060
+          },
+          "window": {
+            "from": 1700000000,
+            "until": 1700000160
+          },
+          "granted": false,
+          "reason": "not-string"
+        },
+        {
+          "op": "grant",
+          "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "signer": 1,
+          "rotations": "genesis",
+          "request": {
+            "requestId": "10b1157f3334fd51052dd7d03bf75e178663064f3c678fe3b31c21a296355c93",
+            "sig": "ggkUBr_xIEs8u68UUtd1_CEX96g7f6-l-7PV0UQo56-bWQOzorLTViuwaYwhwaKFFXYUPa3GgyFpV96qtxaraA",
+            "requester": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+            "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+            "scope": "read",
+            "status": null,
+            "message": "",
+            "issuedAt": 1700000060
+          },
+          "window": {
+            "from": 1700000000,
+            "until": 1700000160
+          },
+          "granted": false,
+          "reason": "not-string"
+        },
+        {
+          "op": "grant",
+          "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "signer": 1,
+          "rotations": "genesis",
+          "request": {
+            "requestId": "10b1157f3334fd51052dd7d03bf75e178663064f3c678fe3b31c21a296355c93",
+            "sig": "ggkUBr_xIEs8u68UUtd1_CEX96g7f6-l-7PV0UQo56-bWQOzorLTViuwaYwhwaKFFXYUPa3GgyFpV96qtxaraA",
+            "requester": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+            "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+            "scope": "read",
+            "status": 1,
+            "message": "",
+            "issuedAt": 1700000060
+          },
+          "window": {
+            "from": 1700000000,
+            "until": 1700000160
+          },
+          "granted": false,
+          "reason": "not-string"
+        },
+        {
+          "op": "grant",
+          "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "signer": 1,
+          "rotations": "genesis",
+          "request": {
+            "requestId": "10b1157f3334fd51052dd7d03bf75e178663064f3c678fe3b31c21a296355c93",
+            "sig": "ggkUBr_xIEs8u68UUtd1_CEX96g7f6-l-7PV0UQo56-bWQOzorLTViuwaYwhwaKFFXYUPa3GgyFpV96qtxaraA",
+            "requester": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+            "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+            "scope": "read",
+            "status": {},
+            "message": "",
+            "issuedAt": 1700000060
+          },
+          "window": {
+            "from": 1700000000,
+            "until": 1700000160
+          },
+          "granted": false,
+          "reason": "not-string"
+        },
+        {
+          "op": "grant",
+          "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "signer": 1,
+          "rotations": "genesis",
+          "request": {
+            "requestId": "10b1157f3334fd51052dd7d03bf75e178663064f3c678fe3b31c21a296355c93",
+            "sig": "ggkUBr_xIEs8u68UUtd1_CEX96g7f6-l-7PV0UQo56-bWQOzorLTViuwaYwhwaKFFXYUPa3GgyFpV96qtxaraA",
+            "requester": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+            "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+            "scope": "read",
+            "status": "pending",
+            "issuedAt": 1700000060
+          },
+          "window": {
+            "from": 1700000000,
+            "until": 1700000160
+          },
+          "granted": false,
+          "reason": "not-string"
+        },
+        {
+          "op": "grant",
+          "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "signer": 1,
+          "rotations": "genesis",
+          "request": {
+            "requestId": "10b1157f3334fd51052dd7d03bf75e178663064f3c678fe3b31c21a296355c93",
+            "sig": "ggkUBr_xIEs8u68UUtd1_CEX96g7f6-l-7PV0UQo56-bWQOzorLTViuwaYwhwaKFFXYUPa3GgyFpV96qtxaraA",
+            "requester": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+            "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+            "scope": "read",
+            "status": "pending",
+            "message": null,
+            "issuedAt": 1700000060
+          },
+          "window": {
+            "from": 1700000000,
+            "until": 1700000160
+          },
+          "granted": false,
+          "reason": "not-string"
+        },
+        {
+          "op": "grant",
+          "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "signer": 1,
+          "rotations": "genesis",
+          "request": {
+            "requestId": "10b1157f3334fd51052dd7d03bf75e178663064f3c678fe3b31c21a296355c93",
+            "sig": "ggkUBr_xIEs8u68UUtd1_CEX96g7f6-l-7PV0UQo56-bWQOzorLTViuwaYwhwaKFFXYUPa3GgyFpV96qtxaraA",
+            "requester": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+            "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+            "scope": "read",
+            "status": "pending",
+            "message": 1,
+            "issuedAt": 1700000060
+          },
+          "window": {
+            "from": 1700000000,
+            "until": 1700000160
+          },
+          "granted": false,
+          "reason": "not-string"
+        },
+        {
+          "op": "grant",
+          "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "signer": 1,
+          "rotations": "genesis",
+          "request": {
+            "requestId": "10b1157f3334fd51052dd7d03bf75e178663064f3c678fe3b31c21a296355c93",
+            "sig": "ggkUBr_xIEs8u68UUtd1_CEX96g7f6-l-7PV0UQo56-bWQOzorLTViuwaYwhwaKFFXYUPa3GgyFpV96qtxaraA",
+            "requester": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+            "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+            "scope": "read",
+            "status": "pending",
+            "message": {},
+            "issuedAt": 1700000060
+          },
+          "window": {
+            "from": 1700000000,
+            "until": 1700000160
+          },
+          "granted": false,
+          "reason": "not-string"
+        },
+        {
+          "op": "grant",
+          "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "signer": 1,
+          "rotations": "genesis",
+          "request": {
+            "requestId": "10b1157f3334fd51052dd7d03bf75e178663064f3c678fe3b31c21a296355c93",
+            "sig": "ggkUBr_xIEs8u68UUtd1_CEX96g7f6-l-7PV0UQo56-bWQOzorLTViuwaYwhwaKFFXYUPa3GgyFpV96qtxaraA",
+            "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+            "scope": "read",
+            "status": "pending",
+            "message": "",
+            "issuedAt": 1700000060
+          },
+          "window": {
+            "from": 1700000000,
+            "until": 1700000160
+          },
+          "granted": false,
+          "reason": "not-string"
+        },
+        {
+          "op": "grant",
+          "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "signer": 1,
+          "rotations": "genesis",
+          "request": {
+            "requestId": "10b1157f3334fd51052dd7d03bf75e178663064f3c678fe3b31c21a296355c93",
+            "sig": "ggkUBr_xIEs8u68UUtd1_CEX96g7f6-l-7PV0UQo56-bWQOzorLTViuwaYwhwaKFFXYUPa3GgyFpV96qtxaraA",
+            "requester": null,
+            "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+            "scope": "read",
+            "status": "pending",
+            "message": "",
+            "issuedAt": 1700000060
+          },
+          "window": {
+            "from": 1700000000,
+            "until": 1700000160
+          },
+          "granted": false,
+          "reason": "not-string"
+        },
+        {
+          "op": "grant",
+          "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "signer": 1,
+          "rotations": "genesis",
+          "request": {
+            "requestId": "10b1157f3334fd51052dd7d03bf75e178663064f3c678fe3b31c21a296355c93",
+            "sig": "ggkUBr_xIEs8u68UUtd1_CEX96g7f6-l-7PV0UQo56-bWQOzorLTViuwaYwhwaKFFXYUPa3GgyFpV96qtxaraA",
+            "requester": 1,
+            "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+            "scope": "read",
+            "status": "pending",
+            "message": "",
+            "issuedAt": 1700000060
+          },
+          "window": {
+            "from": 1700000000,
+            "until": 1700000160
+          },
+          "granted": false,
+          "reason": "not-string"
+        },
+        {
+          "op": "grant",
+          "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "signer": 1,
+          "rotations": "genesis",
+          "request": {
+            "requestId": "10b1157f3334fd51052dd7d03bf75e178663064f3c678fe3b31c21a296355c93",
+            "sig": "ggkUBr_xIEs8u68UUtd1_CEX96g7f6-l-7PV0UQo56-bWQOzorLTViuwaYwhwaKFFXYUPa3GgyFpV96qtxaraA",
+            "requester": {},
+            "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+            "scope": "read",
+            "status": "pending",
+            "message": "",
+            "issuedAt": 1700000060
+          },
+          "window": {
+            "from": 1700000000,
+            "until": 1700000160
+          },
+          "granted": false,
+          "reason": "not-string"
+        },
+        {
+          "op": "grant",
+          "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "signer": 1,
+          "rotations": "genesis",
+          "request": {
+            "requestId": "10b1157f3334fd51052dd7d03bf75e178663064f3c678fe3b31c21a296355c93",
+            "sig": "ggkUBr_xIEs8u68UUtd1_CEX96g7f6-l-7PV0UQo56-bWQOzorLTViuwaYwhwaKFFXYUPa3GgyFpV96qtxaraA",
+            "requester": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+            "scope": "read",
+            "status": "pending",
+            "message": "",
+            "issuedAt": 1700000060
+          },
+          "window": {
+            "from": 1700000000,
+            "until": 1700000160
+          },
+          "granted": false,
+          "reason": "not-string"
+        },
+        {
+          "op": "grant",
+          "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "signer": 1,
+          "rotations": "genesis",
+          "request": {
+            "requestId": "10b1157f3334fd51052dd7d03bf75e178663064f3c678fe3b31c21a296355c93",
+            "sig": "ggkUBr_xIEs8u68UUtd1_CEX96g7f6-l-7PV0UQo56-bWQOzorLTViuwaYwhwaKFFXYUPa3GgyFpV96qtxaraA",
+            "requester": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+            "object": null,
+            "scope": "read",
+            "status": "pending",
+            "message": "",
+            "issuedAt": 1700000060
+          },
+          "window": {
+            "from": 1700000000,
+            "until": 1700000160
+          },
+          "granted": false,
+          "reason": "not-string"
+        },
+        {
+          "op": "grant",
+          "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "signer": 1,
+          "rotations": "genesis",
+          "request": {
+            "requestId": "10b1157f3334fd51052dd7d03bf75e178663064f3c678fe3b31c21a296355c93",
+            "sig": "ggkUBr_xIEs8u68UUtd1_CEX96g7f6-l-7PV0UQo56-bWQOzorLTViuwaYwhwaKFFXYUPa3GgyFpV96qtxaraA",
+            "requester": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+            "object": 1,
+            "scope": "read",
+            "status": "pending",
+            "message": "",
+            "issuedAt": 1700000060
+          },
+          "window": {
+            "from": 1700000000,
+            "until": 1700000160
+          },
+          "granted": false,
+          "reason": "not-string"
+        },
+        {
+          "op": "grant",
+          "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "signer": 1,
+          "rotations": "genesis",
+          "request": {
+            "requestId": "10b1157f3334fd51052dd7d03bf75e178663064f3c678fe3b31c21a296355c93",
+            "sig": "ggkUBr_xIEs8u68UUtd1_CEX96g7f6-l-7PV0UQo56-bWQOzorLTViuwaYwhwaKFFXYUPa3GgyFpV96qtxaraA",
+            "requester": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+            "object": {},
+            "scope": "read",
+            "status": "pending",
+            "message": "",
+            "issuedAt": 1700000060
+          },
+          "window": {
+            "from": 1700000000,
+            "until": 1700000160
+          },
+          "granted": false,
+          "reason": "not-string"
+        },
+        {
+          "op": "view",
+          "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+          "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "absent": true
+        }
+      ]
+    },
+    {
+      "name": "approval-does-not-revive-cancel",
+      "steps": [
+        {
+          "op": "put",
+          "record": {
+            "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+            "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+            "issuedAt": 1700000000,
+            "sig": "Z9fYJjtkbVsxBszNe5U5FEdoWWQI_8ZtRxbJk2ALU9PKBqOa-ga7kzgGUrgNHJdQuxiPvJFT7st1iub5IXG10g"
+          },
+          "rotations": "genesis",
+          "ok": true,
+          "kept": true
+        },
+        {
+          "op": "admit",
+          "row": {
+            "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+            "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+            "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+            "stated": 0,
+            "from": 1700000000,
+            "until": 1700000160,
+            "hamState": 1,
+            "issuedAt": 1700000000,
+            "sig": "hYI7bPlGH9LojVNpz0aRpE1S3wUxvDhnza10iLxq9zf2I2mhtHoEUJ6k6fTqvN72iPWw8YtwndE9qkpICtF3yQ"
+          },
+          "rotations": "genesis",
+          "ok": true,
+          "kept": true,
+          "mode": "present",
+          "stated": 0,
+          "hamState": 1
+        },
+        {
+          "op": "grant",
+          "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "signer": 1,
+          "rotations": "genesis",
+          "request": {
+            "requestId": "10b1157f3334fd51052dd7d03bf75e178663064f3c678fe3b31c21a296355c93",
+            "sig": "ggkUBr_xIEs8u68UUtd1_CEX96g7f6-l-7PV0UQo56-bWQOzorLTViuwaYwhwaKFFXYUPa3GgyFpV96qtxaraA",
+            "requester": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+            "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+            "scope": "read",
+            "status": "pending",
+            "message": "",
+            "issuedAt": 1700000060
+          },
+          "window": {
+            "from": 1700000000,
+            "until": 1700000160
+          },
+          "granted": false,
+          "reason": "not-kept"
+        },
+        {
+          "op": "view",
+          "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+          "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "stated": 0,
+          "hamState": 1,
+          "mode": "present"
+        },
+        {
+          "op": "check",
+          "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+          "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "now": 1700000060,
+          "allowed": false,
+          "reason": "delegate"
+        }
+      ]
+    },
+    {
+      "name": "approval-does-not-revive-post-cancel",
+      "steps": [
+        {
+          "op": "put",
+          "record": {
+            "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+            "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+            "issuedAt": 1700000000,
+            "sig": "Z9fYJjtkbVsxBszNe5U5FEdoWWQI_8ZtRxbJk2ALU9PKBqOa-ga7kzgGUrgNHJdQuxiPvJFT7st1iub5IXG10g"
+          },
+          "rotations": "genesis",
+          "ok": true,
+          "kept": true
+        },
+        {
+          "op": "admit",
+          "row": {
+            "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+            "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+            "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+            "stated": 1,
+            "from": 1700000000,
+            "until": 1700000160,
+            "hamState": 1,
+            "issuedAt": 1700000000,
+            "sig": "5EemTfUfiBwpvrddpzryQ6ToGuIIsYAZYatjfjXK5U5z4CguKyue8UTyvhUjHZggsaKbfcratreOq5G3aeGMgQ"
+          },
+          "rotations": "genesis",
+          "ok": true,
+          "kept": true,
+          "mode": "present",
+          "stated": 1,
+          "hamState": 1
+        },
+        {
+          "op": "admit-post",
+          "row": {
+            "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+            "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+            "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+            "stated": 0,
+            "from": 1700000000,
+            "until": 1700000160,
+            "hamState": 1,
+            "issuedAt": 1700000000,
+            "sig": "7OZEOfVZkwWA2qD0cClsrktyFU7oy0QffoVf1x_xbUPWyltUR-loDMLDhjvvPuI2dB0aDFliO5Br_9G6yKd4tA"
+          },
+          "rotations": "genesis",
+          "ok": true,
+          "kept": true,
+          "mode": "present",
+          "stated": 0,
+          "hamState": 1
+        },
+        {
+          "op": "grant",
+          "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "signer": 1,
+          "rotations": "genesis",
+          "request": {
+            "requestId": "10b1157f3334fd51052dd7d03bf75e178663064f3c678fe3b31c21a296355c93",
+            "sig": "0iAbkalUaXSnygX27Pd93yFMRchKMUkqovMPhgA5eEjMq30Zpc6rWr5UCkJdhjTioqXUV4DmJ0qd7YHBR-n6Xw",
+            "requester": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+            "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+            "scope": "read+post",
+            "status": "pending",
+            "message": "",
+            "issuedAt": 1700000060
+          },
+          "window": {
+            "from": 1700000000,
+            "until": 1700000160
+          },
+          "granted": false,
+          "reason": "not-kept"
+        },
+        {
+          "op": "view",
+          "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+          "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "stated": 1,
+          "hamState": 1,
+          "mode": "present"
+        },
+        {
+          "op": "view-post",
+          "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+          "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "stated": 0,
+          "hamState": 1,
+          "mode": "present"
+        }
+      ]
+    },
+    {
+      "name": "rotation-boundary-old-key",
+      "steps": [
+        {
+          "op": "put",
+          "record": {
+            "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+            "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+            "issuedAt": 1700000000,
+            "sig": "Z9fYJjtkbVsxBszNe5U5FEdoWWQI_8ZtRxbJk2ALU9PKBqOa-ga7kzgGUrgNHJdQuxiPvJFT7st1iub5IXG10g"
+          },
+          "rotations": "genesis",
+          "ok": true,
+          "kept": true
+        },
+        {
+          "op": "grant",
+          "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "signer": 1,
+          "rotations": "rotated",
+          "now": 1700000030,
+          "request": {
+            "requestId": "10b1157f3334fd51052dd7d03bf75e178663064f3c678fe3b31c21a296355c93",
+            "sig": "yzRWXAjhy4Za8Uq6ak7lw1RaoePeHb9OIIjoNztQLpyrvl6E5mzQmR9T1im96KmueMFMJAfnPqKvybXXSpaoCw",
+            "requester": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+            "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+            "scope": "read",
+            "status": "pending",
+            "message": "",
+            "issuedAt": 1700000030
+          },
+          "window": {
+            "from": 1700000000,
+            "until": 1700000160
+          },
+          "granted": false,
+          "reason": "bad-key"
         },
         {
           "op": "view",

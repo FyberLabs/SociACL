@@ -271,8 +271,9 @@ transitions at the same sequence freeze resolution with `rotation-fork`.
 
 Historical proofs are checked at issuance; `now` excludes future history.
 An expired enrollment attestation does not retroactively invalidate a completed
-rotation. A rotation's new key signs records issued **after** its timestamp;
-a same-second revoke by the preceding key can block that rotation. Once the
+rotation. A rotation's new key signs records issued at or after its timestamp;
+the preceding key signs only earlier records. A same-second revoke by the
+preceding key can still block that rotation. Once the
 rotation is accepted, its retained set is authoritative at that horizon.
 `verifyRotate(record, currentKey, context)` checks the proof, authorizing link,
 every retained link, and pre-rotation revocations. OIDC authorizers name an

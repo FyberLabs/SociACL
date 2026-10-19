@@ -11,7 +11,7 @@ use sociacl_ids::{
 };
 
 use crate::mesh::{MeshSeeGraph, VerifiedRow};
-use crate::GroupPredicate;
+use crate::{GroupPredicate, MESH_REASON_OWNER};
 
 /// Rows written for one approved request. `post` is absent for scope `read`.
 #[derive(Clone, Debug)]
@@ -21,17 +21,10 @@ pub struct ApprovedRequest {
     pub post: Option<VerifiedRow>,
 }
 
-fn deny(reason: Reason) -> String {
-    serde_json::to_value(reason)
-        .ok()
-        .and_then(|value| value.as_str().map(str::to_string))
-        .unwrap_or_else(|| "bad-record".to_string())
-}
-
-fn ham_next(current: Option<u64>) -> Result<u64, String> {
-    let next = current.unwrap_or(0).checked_add(1).ok_or("see-ceiling")?;
+fn ham_next(current: Option<u64>, ceiling: Reason) -> Result<u64, Reason> {
+    let next = current.unwrap_or(0).checked_add(1).ok_or(ceiling)?;
     if next > 9_007_199_254_740_991 {
-        return Err("see-ceiling".to_string());
+        return Err(ceiling);
     }
     Ok(next)
 }
@@ -41,8 +34,8 @@ fn signed_row(
     scalar: &[u8],
     key: &PrincipalId,
     bytes_of: fn(&SeeGrant) -> Vec<u8>,
-) -> Result<Value, String> {
-    let sig = sign_with_keyring(scalar, &bytes_of(&grant), key).map_err(deny)?;
+) -> Result<Value, Reason> {
+    let sig = sign_with_keyring(scalar, &bytes_of(&grant), key)?;
     grant.sig = sig;
     Ok(json!({
         "owner": grant.owner.as_ref(),
@@ -71,19 +64,19 @@ impl MeshSeeGraph {
         scalar: &[u8],
         resolver: &dyn Fn(&PrincipalId) -> Option<Vec<Value>>,
         ctx: &ResolutionContext<'_>,
-    ) -> Result<ApprovedRequest, String> {
-        let (req, bytes) = parse_access_request(request).map_err(deny)?;
+    ) -> Result<ApprovedRequest, Reason> {
+        let (req, bytes) = parse_access_request(request)?;
         if req.status == "withdrawn" {
-            return Err("withdrawn".to_string());
+            return Err(Reason::Withdrawn);
         }
         if until <= from || from > 9_007_199_254_740_991 || until > 9_007_199_254_740_991 {
-            return Err("bad-record".to_string());
+            return Err(Reason::BadRecord);
         }
         let Some(owner_history) = resolver(owner) else {
-            return Err("missing-history".to_string());
+            return Err(Reason::MissingHistory);
         };
         let Some(requester_history) = resolver(&req.requester) else {
-            return Err("missing-history".to_string());
+            return Err(Reason::MissingHistory);
         };
         verify_signed_at(
             &req.requester,
@@ -92,15 +85,20 @@ impl MeshSeeGraph {
             &bytes,
             &req.sig,
             req.issued_at,
-        )
-        .map_err(deny)?;
+        )?;
         let Some(admitted_owner) = self.object_owner(&req.object).cloned() else {
-            return Err("unknown".to_string());
+            return Err(Reason::Unknown);
         };
         if admitted_owner != *owner {
-            return Err("owner-mismatch".to_string());
+            return Err(Reason::OwnerMismatch);
         }
         if let Some((predicate, now)) = members {
+            let Some(label_owner) = self.labels.owner_of(req.object.as_ref()) else {
+                return Err(Reason::NotMember);
+            };
+            if label_owner != owner.as_ref() {
+                return Err(Reason::NotMember);
+            }
             let see = self.check_group_see(
                 predicate,
                 req.object.as_ref(),
@@ -109,29 +107,40 @@ impl MeshSeeGraph {
                 None,
                 None,
             );
-            if !see.allowed {
-                return Err("not-member".to_string());
+            if !see.allowed || see.reason == MESH_REASON_OWNER || see.reason != predicate.as_str() {
+                return Err(Reason::NotMember);
             }
         }
-        let see_ham = match ham_next(self.admitted_view(&req.object, &req.requester).map(|row| row.ham_state))
+        if self
+            .admitted_view(&req.object, &req.requester)
+            .is_some_and(|row| row.stated == 0)
         {
-            Ok(ham) => ham,
-            Err(_) => return Err("see-ceiling".to_string()),
-        };
+            return Err(Reason::NotKept);
+        }
+        let see_ham = ham_next(
+            self.admitted_view(&req.object, &req.requester)
+                .map(|row| row.ham_state),
+            Reason::SeeCeiling,
+        )?;
         let post_ham = if req.scope == "read+post" {
-            match ham_next(self.admitted_post(&req.object, &req.requester).map(|row| row.ham_state)) {
-                Ok(ham) => Some(ham),
-                Err(_) => return Err("post-ceiling".to_string()),
+            if self
+                .admitted_post(&req.object, &req.requester)
+                .is_some_and(|row| row.stated == 0)
+            {
+                return Err(Reason::NotKept);
             }
+            Some(ham_next(
+                self.admitted_post(&req.object, &req.requester)
+                    .map(|row| row.ham_state),
+                Reason::PostCeiling,
+            )?)
         } else {
             None
         };
         if ctx.now > 9_007_199_254_740_991 {
-            return Err("bad-record".to_string());
+            return Err(Reason::BadRecord);
         }
-        let current = resolve_current_key(owner, &owner_history, ctx)
-            .result
-            .map_err(deny)?;
+        let current = resolve_current_key(owner, &owner_history, ctx).result?;
         let see_fields = SeeGrant {
             owner: owner.clone(),
             object: req.object.clone(),
@@ -145,7 +154,7 @@ impl MeshSeeGraph {
             attest: None,
         };
         let see_row = signed_row(see_fields, scalar, &current.current_key, see_grant_bytes)?;
-        verify_see_grant(&see_row, &owner_history, ctx).map_err(deny)?;
+        verify_see_grant(&see_row, &owner_history, ctx)?;
         let post_row = if let Some(ham) = post_ham {
             let row = signed_row(
                 SeeGrant {
@@ -164,14 +173,13 @@ impl MeshSeeGraph {
                 &current.current_key,
                 post_grant_bytes,
             )?;
-            verify_post_grant(&row, &owner_history, ctx).map_err(deny)?;
+            verify_post_grant(&row, &owner_history, ctx)?;
             Some(row)
         } else {
             None
         };
-        let (see, post) = self
-            .commit_grant_rows(&see_row, post_row.as_ref(), resolver, ctx)
-            .map_err(deny)?;
+        let (see, post) =
+            self.commit_grant_rows(&see_row, post_row.as_ref(), &owner_history, ctx)?;
         Ok(ApprovedRequest {
             request_id: req.request_id,
             see,
@@ -181,9 +189,9 @@ impl MeshSeeGraph {
 }
 
 /// Parse an owner argument the same way the edge does. A non-string is `not-string`.
-pub fn request_owner(value: &Value) -> Result<PrincipalId, String> {
+pub fn request_owner(value: &Value) -> Result<PrincipalId, Reason> {
     match value.as_str() {
-        Some(text) => parse_principal_id(text).map_err(deny),
-        None => Err("not-string".to_string()),
+        Some(text) => parse_principal_id(text),
+        None => Err(Reason::NotString),
     }
 }

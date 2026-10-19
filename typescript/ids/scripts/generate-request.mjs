@@ -208,6 +208,86 @@ add('reject', 'members-missing-is-not-member', [
   { op: 'grant', owner: p, signer: 1, rotations: 'genesis', request: accessRow({ requester: p2, object: chatA, scope: 'read', status: 'pending', message: '', issuedAt: now }, 2), window, members: { predicate: 'same-group', now }, granted: false, reason: 'not-member' },
   { op: 'view', object: chatA, accessor: p2, absent: true },
 ]);
+const pending = () => accessRow({ requester: p2, object: chatA, scope: 'read', status: 'pending', message: '', issuedAt: now }, 2);
+const grant = (request, extra) => ({ op: 'grant', owner: p, signer: 1, rotations: 'genesis', request, window, ...extra });
+add('reject', 'members-label-owner-is-requester', [
+  put(),
+  { op: 'label-owner', object: chatA, owner: p2 },
+  grant(pending(), { members: { predicate: 'same-group', now }, granted: false, reason: 'not-member' }),
+  { op: 'view', object: chatA, accessor: p2, absent: true },
+]);
+add('reject', 'members-owner-shortcut-is-not-member', [
+  put(),
+  grant(accessRow({ requester: p, object: chatA, scope: 'read', status: 'pending', message: '', issuedAt: now }, 1), { members: { predicate: 'same-group', now }, granted: false, reason: 'not-member' }),
+  { op: 'view', object: chatA, accessor: p, absent: true },
+]);
+const mismatched = pending();
+mismatched.requestId = '0'.repeat(64);
+add('reject', 'stated-request-id-mismatch', [
+  put(),
+  grant(mismatched, { granted: false, reason: 'bad-record' }),
+  { op: 'view', object: chatA, accessor: p2, absent: true },
+]);
+add('reject', 'wrong-owner-key', [
+  put(),
+  grant(pending(), { signer: 2, granted: false, reason: 'bad-key' }),
+  { op: 'view', object: chatA, accessor: p2, absent: true },
+]);
+const fieldSteps = [];
+for (const field of ['scope', 'status', 'message', 'requester', 'object']) {
+  for (const value of [undefined, null, 1, {}]) {
+    const row = pending();
+    if (value === undefined) delete row[field];
+    else row[field] = value;
+    fieldSteps.push(grant(row, { granted: false, reason: 'not-string' }));
+  }
+}
+add('reject', 'missing-or-non-string-request-fields', [
+  put(),
+  ...fieldSteps,
+  { op: 'view', object: chatA, accessor: p2, absent: true },
+]);
+const window2 = { from: now, until: now + 50 };
+add('accept', 'approve-twice-replaces-window', [
+  put(),
+  grant(pending(), { granted: true, hamState: 1, post: false }),
+  grant(pending(), { window: window2, granted: true, hamState: 2, post: false }),
+  { op: 'view', object: chatA, accessor: p2, stated: 1, hamState: 2, mode: 'present', from: now, until: now + 50 },
+  { op: 'check', object: chatA, accessor: p2, now: at, allowed: false, reason: 'delegate' },
+  { op: 'check', object: chatA, accessor: p2, now, allowed: true, reason: 'delegate' },
+]);
+const live = { from: at, until: now + 100 };
+add('reject', 'approval-does-not-revive-cancel', [
+  put(),
+  { op: 'admit', row: seeRow({ stated: 0, hamState: 1, ...live }), rotations: 'genesis', ok: true, kept: true, mode: 'present', stated: 0, hamState: 1 },
+  grant(pending(), { granted: false, reason: 'not-kept' }),
+  { op: 'view', object: chatA, accessor: p2, stated: 0, hamState: 1, mode: 'present' },
+  { op: 'check', object: chatA, accessor: p2, now, allowed: false, reason: 'delegate' },
+]);
+add('reject', 'approval-does-not-revive-post-cancel', [
+  put(),
+  { op: 'admit', row: seeRow({ ...live }), rotations: 'genesis', ok: true, kept: true, mode: 'present', stated: 1, hamState: 1 },
+  { op: 'admit-post', row: postRow({ stated: 0, hamState: 1, ...live }), rotations: 'genesis', ok: true, kept: true, mode: 'present', stated: 0, hamState: 1 },
+  grant(accessRow({ requester: p2, object: chatA, scope: 'read+post', status: 'pending', message: '', issuedAt: now }, 2), { granted: false, reason: 'not-kept' }),
+  { op: 'view', object: chatA, accessor: p2, stated: 1, hamState: 1, mode: 'present' },
+  { op: 'view-post', object: chatA, accessor: p2, stated: 0, hamState: 1, mode: 'present' },
+]);
+const boundary = at + 30;
+add('accept', 'rotation-boundary-new-key', [
+  put(),
+  { op: 'grant', owner: p, signer: 2, rotations: 'rotated', now: boundary, request: accessRow({ requester: p2, object: chatA, scope: 'read', status: 'pending', message: '', issuedAt: boundary }, 2), window, granted: true, hamState: 1, post: false },
+  { op: 'view', object: chatA, accessor: p2, stated: 1, hamState: 1, mode: 'present', issuedAt: boundary },
+]);
+add('reject', 'rotation-boundary-old-key', [
+  put(),
+  { op: 'grant', owner: p, signer: 1, rotations: 'rotated', now: boundary, request: accessRow({ requester: p2, object: chatA, scope: 'read', status: 'pending', message: '', issuedAt: boundary }, 2), window, granted: false, reason: 'bad-key' },
+  { op: 'view', object: chatA, accessor: p2, absent: true },
+]);
+add('accept', 'rotation-boundary-old-key-before', [
+  put(),
+  { op: 'grant', owner: p, signer: 1, rotations: 'rotated', now: boundary - 1, request: accessRow({ requester: p2, object: chatA, scope: 'read', status: 'pending', message: '', issuedAt: boundary - 1 }, 2), window, granted: true, hamState: 1, post: false },
+  { op: 'view', object: chatA, accessor: p2, stated: 1, hamState: 1, mode: 'present', issuedAt: boundary - 1 },
+]);
 const body = { v: 1, family: 'request', context, accept, reject };
 const path = new URL('../../../vectors/mesh/v2/request.json', import.meta.url);
 writeFileSync(path, JSON.stringify(body, null, 2) + '\n');

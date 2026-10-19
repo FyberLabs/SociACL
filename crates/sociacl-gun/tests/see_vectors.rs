@@ -129,11 +129,12 @@ fn run_case(file: &Value, case: &Value) -> MeshSeeGraph {
             .and_then(Value::as_array)
             .cloned()
             .unwrap_or_else(|| file_revocations.clone());
+        let step_now = step.get("now").and_then(Value::as_u64).unwrap_or(now);
         let rc = ResolutionContext {
             jwks: &jwks,
             links: &links,
             revocations: &step_revocations,
-            now,
+            now: step_now,
             policy: &policy,
             pinned_iss: &pinned,
             history: &history,
@@ -421,6 +422,12 @@ fn run_case(file: &Value, case: &Value) -> MeshSeeGraph {
                     .name_object_set(owner, object, predicate, set_id, &owner_key)
                     .expect(name);
             }
+            "label-owner" => {
+                graph.vector_label_owner(
+                    step["object"].as_str().unwrap(),
+                    step["owner"].as_str().unwrap(),
+                );
+            }
             "grant" => {
                 let rotations = rotations_of(ctx, step);
                 let scalar = scalar_of(step["signer"].as_u64().unwrap_or(1));
@@ -463,7 +470,7 @@ fn run_case(file: &Value, case: &Value) -> MeshSeeGraph {
                     }
                 } else {
                     assert_eq!(
-                        got.expect_err(name),
+                        reason_name(got.expect_err(name)),
                         step["reason"].as_str().unwrap(),
                         "{name}"
                     );

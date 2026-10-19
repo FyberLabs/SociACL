@@ -943,6 +943,10 @@ function membershipHidden(record, members) {
  * See grants on the same object stay on the delegate path.
  */
 export class MemoryGroupGraph {
+  /** Admitted signed owners. A peer cannot replace one of these.
+   * @type {Map<string, string>} */
+  #signedOwners = new Map();
+
   constructor() {
     /** @type {Map<string, { id: string, owner: string }>} */
     this.objects = new Map();
@@ -1012,6 +1016,21 @@ export class MemoryGroupGraph {
   }
 
   /**
+   * Record the owner from an admitted signed object record.
+   * A later label put or merge cannot replace that owner.
+   * @param {string} object
+   * @param {string} owner
+   */
+  bindSignedOwner(object, owner) {
+    const id = plainObjectId(object);
+    if (id == null || typeof owner !== 'string' || owner.length === 0) return;
+    const signed = this.#signedOwners.get(id);
+    if (signed !== undefined && !samePrincipal(signed, owner)) return;
+    this.#signedOwners.set(id, owner);
+    this.objects.set(aclKey(id), { id, owner });
+  }
+
+  /**
    * @param {string} object
    * @param {string} owner
    */
@@ -1019,6 +1038,8 @@ export class MemoryGroupGraph {
     const id = plainObjectId(object);
     if (id == null) return;
     const next = asciiTrim(String(owner));
+    const signed = this.#signedOwners.get(id);
+    if (signed !== undefined && !samePrincipal(signed, next)) return;
     const directKey = aclKey(id);
     if (this.objects.has(directKey)) {
       const prev = this.objects.get(directKey);
@@ -1456,6 +1477,8 @@ export class MemoryGroupGraph {
   /** @param {MemoryGroupGraph} other */
   mergeFrom(other) {
     for (const [key, record] of other.objects) {
+      const signed = this.#signedOwners.get(record.id);
+      if (signed !== undefined && !samePrincipal(signed, record.owner)) continue;
       if (this.objects.has(key) || this.objectRecord(record.id)) continue;
       this.objects.set(key, { id: record.id, owner: record.owner });
     }

@@ -29,8 +29,8 @@ import {
   verifySignedAt,
 } from '../ids/src/index.js';
 import { integer } from '../ids/src/util.js';
-import { admitPost, admittedPost } from './post.js';
-import { admitRow, admittedOwner, admittedView, restoreRow, snapshotRow } from './see.js';
+import { admittedPost, commitStagedPost, stagePost } from './post.js';
+import { admittedOwner, admittedView, commitStagedSee, stageSee } from './see.js';
 
 export {
   REQUEST_DOMAIN,
@@ -68,8 +68,8 @@ function signRow(fields, scalar, key, bytesOf) {
 
 /**
  * Owner's client. The requester signature is present authority only.
- * See and post ceilings are checked before either row is written.
- * `issuedAt` on the new rows is the resolver's `now`.
+ * History is resolved once. Both rows are checked against that history,
+ * then both are written, or neither is. `issuedAt` is the resolver's `now`.
  * @param {object} graph
  * @param {unknown} owner
  * @param {unknown} request
@@ -90,8 +90,17 @@ export function grantApprovedRequest(graph, owner, request, window, members, sig
   if (!signer || !(signer.scalar instanceof Uint8Array) || !signer.resolver) return deny('bad-key');
   const resolver = signer.resolver;
   if (!resolver.ctx || typeof resolver.rotations !== 'function') return deny('missing-history');
-  const ownerHistory = resolver.rotations(who.value);
-  const requesterHistory = resolver.rotations(req.requester);
+  /** @type {Map<string, readonly unknown[] | undefined>} */
+  const history = new Map();
+  /** @param {string} principal */
+  const rotationsOf = (principal) => {
+    if (history.has(principal)) return history.get(principal);
+    const rows = resolver.rotations(/** @type {PrincipalId} */ (principal));
+    history.set(principal, rows);
+    return rows;
+  };
+  const ownerHistory = rotationsOf(who.value);
+  const requesterHistory = rotationsOf(req.requester);
   if (!Array.isArray(ownerHistory) || !Array.isArray(requesterHistory)) return deny('missing-history');
   const signed = verifySignedAt(
     req.requester,
@@ -108,18 +117,23 @@ export function grantApprovedRequest(graph, owner, request, window, members, sig
   if (members != null) {
     if (members.predicate !== 'same-group' && members.predicate !== 'named-circle') return deny('bad-record');
     if (!integer(members.now)) return deny('bad-record');
-    const check = /** @type {{ checkGroupSee?: Function }} */ (graph).checkGroupSee;
+    const group = /** @type {{ ownerOf?: (object: string) => string | undefined, checkGroupSee?: Function }} */ (graph);
+    const labelOwner = typeof group.ownerOf === 'function' ? group.ownerOf(req.object) : undefined;
+    if (typeof labelOwner !== 'string' || labelOwner !== admission.owner) return deny('not-member');
+    const check = group.checkGroupSee;
     if (typeof check !== 'function') return deny('not-member');
     const see = check.call(graph, members.predicate, req.object, req.requester, members.now);
-    if (!see || see.allowed !== true) return deny('not-member');
+    if (!see || see.allowed !== true || see.reason === 'owner' || see.reason !== members.predicate) return deny('not-member');
   }
   const seeNow = admittedView(graph, req.object, req.requester);
+  if (seeNow?.stated === 0) return deny('not-kept');
   const seeHam = (seeNow?.hamState ?? 0) + 1;
   if (!Number.isSafeInteger(seeHam) || seeHam > HAM_MAX) return deny('see-ceiling');
   /** @type {number} */
   let postHam = 1;
   if (req.scope === 'read+post') {
     const postNow = admittedPost(graph, req.object, req.requester);
+    if (postNow?.stated === 0) return deny('not-kept');
     postHam = (postNow?.hamState ?? 0) + 1;
     if (!Number.isSafeInteger(postHam) || postHam > HAM_MAX) return deny('post-ceiling');
   }
@@ -152,16 +166,17 @@ export function grantApprovedRequest(graph, owner, request, window, members, sig
     if (!postOk.ok) return deny(postOk.reason);
     postSigned = signedPost.value;
   }
-  const previousSee = snapshotRow(graph, who.value, req.object, req.requester);
-  const admitted = admitRow(graph, seeSigned.value, resolver);
-  if (!admitted.ok) return deny(admitted.reason);
-  if (postSigned) {
-    const wrote = admitPost(graph, postSigned, resolver);
-    if (!wrote.ok) {
-      restoreRow(graph, who.value, req.object, req.requester, previousSee);
-      return deny(wrote.reason);
-    }
-    return { granted: true, requestId: req.requestId, see: admitted.value, post: wrote.value };
+  const seeStaged = stageSee(graph, seeSigned.value, ownerHistory, resolver.ctx);
+  if (!seeStaged.ok) return deny(seeStaged.reason);
+  const postStaged = postSigned ? stagePost(graph, postSigned, ownerHistory, resolver.ctx) : null;
+  if (postStaged && !postStaged.ok) return deny(postStaged.reason);
+  if (!seeStaged.kept || (postStaged && !postStaged.kept)) return deny('not-kept');
+  const seeWrote = commitStagedSee(graph, seeStaged.value);
+  if (!seeWrote.ok) return deny(seeWrote.reason);
+  if (postStaged && postStaged.ok) {
+    const postWrote = commitStagedPost(graph, postStaged.value);
+    if (!postWrote.ok) return deny(postWrote.reason);
+    return { granted: true, requestId: req.requestId, see: seeWrote.value, post: postWrote.value };
   }
-  return { granted: true, requestId: req.requestId, see: admitted.value, post: null };
+  return { granted: true, requestId: req.requestId, see: seeWrote.value, post: null };
 }

@@ -1156,7 +1156,7 @@
       ]
     },
     {
-      "name": "cancel-at-rotation-time-witnessed",
+      "name": "cancel-at-rotation-time-new-key",
       "steps": [
         {
           "op": "verify",
@@ -1169,12 +1169,12 @@
             "until": 100,
             "hamState": 1,
             "issuedAt": 1700000030,
-            "sig": "XYSPgSOa1Wf551URlQumxXZtBdb0y9NkSClTnYNKbGtJ1KuC_gmQ_BHCL8irQD1mTz85b6TDCV6Ygxo1kP5UrA",
+            "sig": "fvXWMZKc1-JyIuwsJkPu-zkW15E6wSdQQdmYOFrDAXEUTb84r1vZP4KOMcPTZc5wEllYjdsYXVItOjzDyHNzwg",
             "attest": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImZpeHR1cmUtMSIsInR5cCI6IkpXVCJ9.eyJ0eXAiOiJzb2NpYWNsLWFjbC1hdHRlc3QtdjEiLCJwcmluY2lwYWwiOiJheGZSOHVFc1FrZjR2T2JsWTZSQThuY0RmWUV0NnpPZzlLRTVSZGlZd3BZLlQtTkM0djRhZjV1TzUtdEtmQS1lRml2T00xZHJNVjdPeTdaQWFEZV9VZlUiLCJyZWNvcmRJZCI6IjcxYjA0ZmJlMjZmNzEyYzI3YTBhMWNlNDdjZTZkNWY2MTM4YzMxM2JhNmJiNWRmMWNlMWFjYTEzMmVjZDIyZjMiLCJpYXQiOjE3MDAwMDAwMzAsImV4cCI6MTcwMDAwMDYzMH0.3YExLwzB3pmm8mcTbGtSFdsyTYuKpiFC-ZB8HAljUWIApJTfcJm8bQLwvuG_bTA-Vv5_dzkMU8LsZYFNM5AOCA"
           },
           "rotations": "rotated",
           "ok": true,
-          "mode": "witnessed"
+          "mode": "present"
         }
       ]
     },
@@ -2801,7 +2801,7 @@
       ]
     },
     {
-      "name": "cancel-at-rotation-time-newkey",
+      "name": "cancel-at-rotation-time-old-key",
       "steps": [
         {
           "op": "verify",
@@ -2814,7 +2814,7 @@
             "until": 100,
             "hamState": 1,
             "issuedAt": 1700000030,
-            "sig": "fvXWMZKc1-JyIuwsJkPu-zkW15E6wSdQQdmYOFrDAXEUTb84r1vZP4KOMcPTZc5wEllYjdsYXVItOjzDyHNzwg",
+            "sig": "XYSPgSOa1Wf551URlQumxXZtBdb0y9NkSClTnYNKbGtJ1KuC_gmQ_BHCL8irQD1mTz85b6TDCV6Ygxo1kP5UrA",
             "attest": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImZpeHR1cmUtMSIsInR5cCI6IkpXVCJ9.eyJ0eXAiOiJzb2NpYWNsLWFjbC1hdHRlc3QtdjEiLCJwcmluY2lwYWwiOiJheGZSOHVFc1FrZjR2T2JsWTZSQThuY0RmWUV0NnpPZzlLRTVSZGlZd3BZLlQtTkM0djRhZjV1TzUtdEtmQS1lRml2T00xZHJNVjdPeTdaQWFEZV9VZlUiLCJyZWNvcmRJZCI6IjcxYjA0ZmJlMjZmNzEyYzI3YTBhMWNlNDdjZTZkNWY2MTM4YzMxM2JhNmJiNWRmMWNlMWFjYTEzMmVjZDIyZjMiLCJpYXQiOjE3MDAwMDAwMzAsImV4cCI6MTcwMDAwMDYzMH0.3YExLwzB3pmm8mcTbGtSFdsyTYuKpiFC-ZB8HAljUWIApJTfcJm8bQLwvuG_bTA-Vv5_dzkMU8LsZYFNM5AOCA"
           },
           "rotations": "rotated",

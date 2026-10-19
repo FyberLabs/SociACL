@@ -42,6 +42,8 @@ fn consume_contract_covers_light_check() {
         "Throws when owner, object, or accessor is not an already-parsed id",
         "requestId",
         "accessRequestBytes",
+        "parseAccessRequest",
+        "verifyAccessRequest",
         "grantApprovedRequest",
         "sociacl-access-request-v2",
         "sociacl-request-id-v2",

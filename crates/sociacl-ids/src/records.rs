@@ -1111,6 +1111,15 @@ pub fn history_state(genesis: &PrincipalId, history: &[Rotate], at: u64, until: 
         }),
     }
 }
+/// Signing key for a record at `at`. A rotation counts from its issuedAt inclusive.
+/// The preceding key signs only earlier records. Same-second revokes still use [`history_state`].
+fn key_in_force(genesis: &PrincipalId, history: &[Rotate], at: u64) -> PrincipalId {
+    history
+        .iter()
+        .rev()
+        .find(|row| row.issued_at <= at)
+        .map_or_else(|| genesis.clone(), |row| row.next_key.clone())
+}
 fn historical_link(
     r: &IdentityRecord,
     ctx: &ResolutionContext<'_>,
@@ -2329,7 +2338,8 @@ pub fn verify_see_grant(
     let account = resolve_current_key(&grant.owner, rotations, ctx).result?;
     proof_time(grant.issued_at, ctx.now, ctx.policy.clock_skew_seconds)?;
     let state = history_state(&grant.owner, &account.rotations, grant.issued_at, ctx.now);
-    if state.key == account.current_key {
+    let in_force = key_in_force(&grant.owner, &account.rotations, grant.issued_at);
+    if in_force == account.current_key {
         if !key_verify(&account.current_key, &grant.sig, &bytes) {
             return Err(Reason::BadSignature);
         }
@@ -2375,8 +2385,8 @@ pub fn verify_signed_at(
         return Err(Reason::BadRecord);
     }
     proof_time(issued_at, ctx.now, ctx.policy.clock_skew_seconds)?;
-    let state = history_state(principal, &account.rotations, issued_at, ctx.now);
-    if state.key != account.current_key {
+    let in_force = key_in_force(principal, &account.rotations, issued_at);
+    if in_force != account.current_key {
         return Err(Reason::UnwitnessedRetiredKey);
     }
     let Ok(sig) = text(sig, 128) else {
@@ -2420,6 +2430,13 @@ fn request_field<'a>(value: Option<&'a Value>) -> Result<&'a str, Reason> {
         Some(Value::String(text)) => Ok(text),
         Some(_) => Err(Reason::NotString),
         None => Err(Reason::BadRecord),
+    }
+}
+/// Missing and non-string are the same reason for scope, status, message, requester, and object.
+fn request_text<'a>(value: Option<&'a Value>) -> Result<&'a str, Reason> {
+    match value {
+        Some(Value::String(text)) => Ok(text),
+        _ => Err(Reason::NotString),
     }
 }
 fn request_message(value: &str) -> Result<&str, Reason> {
@@ -2467,22 +2484,22 @@ pub fn parse_access_request(row: &Value) -> Result<(AccessRequest, Vec<u8>), Rea
     if !map.contains_key("sig") {
         return Err(Reason::LegacyRow);
     }
-    let requester = parse_principal_id(request_field(map.get("requester"))?)?;
-    let object = parse_object_id(request_field(map.get("object"))?)?;
+    let requester = parse_principal_id(request_text(map.get("requester"))?)?;
+    let object = parse_object_id(request_text(map.get("object"))?)?;
     let request_id = hex(&Sha256::digest(request_id_bytes(&requester, &object)));
     let stated_id = request_field(map.get("requestId"))?;
     if stated_id != request_id {
         return Err(Reason::BadRecord);
     }
-    let scope = request_field(map.get("scope"))?;
+    let scope = request_text(map.get("scope"))?;
     if scope != "read" && scope != "read+post" {
         return Err(Reason::BadRecord);
     }
-    let status = request_field(map.get("status"))?;
+    let status = request_text(map.get("status"))?;
     if status != "pending" && status != "withdrawn" {
         return Err(Reason::BadRecord);
     }
-    let message = request_message(request_field(map.get("message"))?)?.to_string();
+    let message = request_message(request_text(map.get("message"))?)?.to_string();
     let issued_at = see_u64(map.get("issuedAt"))?;
     let sig = text(request_field(map.get("sig"))?, 128)?.to_string();
     let request = AccessRequest {
@@ -2596,7 +2613,8 @@ pub fn verify_post_grant(
     let account = resolve_current_key(&grant.owner, rotations, ctx).result?;
     proof_time(grant.issued_at, ctx.now, ctx.policy.clock_skew_seconds)?;
     let state = history_state(&grant.owner, &account.rotations, grant.issued_at, ctx.now);
-    if state.key == account.current_key {
+    let in_force = key_in_force(&grant.owner, &account.rotations, grant.issued_at);
+    if in_force == account.current_key {
         if !key_verify(&account.current_key, &grant.sig, &bytes) {
             return Err(Reason::BadSignature);
         }

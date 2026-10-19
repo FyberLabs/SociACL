@@ -61,6 +61,14 @@ function graphObject(graph) {
   return typeof graph === 'object' && graph !== null;
 }
 
+/** Copy the admitted signed owner onto a group graph that records one.
+ * A plain graph has no label map, and that is not an error.
+ * @param {object} graph @param {string} object @param {string} owner */
+function bindLabel(graph, object, owner) {
+  const target = /** @type {{ bindSignedOwner?: (object: string, owner: string) => void }} */ (graph);
+  if (typeof target.bindSignedOwner === 'function') target.bindSignedOwner(object, owner);
+}
+
 /** @param {unknown} now */
 function safeNow(now) {
   return typeof now === 'number' && Number.isSafeInteger(now) && now >= 0 && !Object.is(now, -0);
@@ -243,18 +251,73 @@ export function putObject(graph, record, resolver) {
   if (!existing) {
     const admitted = { owner, issuedAt, record: verified.value.record, history: history.slice() };
     held.owners.set(id, admitted);
+    bindLabel(graph, id, owner);
     return { ok: true, value: admissionCopy(admitted), kept: true };
   }
-  if (issuedAt <= existing.issuedAt) return { ok: true, value: admissionCopy(existing), kept: false };
+  if (issuedAt <= existing.issuedAt) {
+    bindLabel(graph, id, existing.owner);
+    return { ok: true, value: admissionCopy(existing), kept: false };
+  }
   const still = verifyObjectRecord(existing.record, history, resolver.ctx);
-  if (still.ok) return { ok: true, value: admissionCopy(existing), kept: false };
+  if (still.ok) {
+    bindLabel(graph, id, existing.owner);
+    return { ok: true, value: admissionCopy(existing), kept: false };
+  }
   if (signerRetired(existing.history, verified.value.key, issuedAt, owner, resolver.ctx)) {
+    bindLabel(graph, id, existing.owner);
     return { ok: true, value: admissionCopy(existing), kept: false };
   }
   existing.issuedAt = issuedAt;
   existing.record = verified.value.record;
   existing.history = history.slice();
+  bindLabel(graph, id, owner);
   return { ok: true, value: admissionCopy(existing), kept: true };
+}
+
+const stagedSees = new WeakSet();
+
+/**
+ * Verify a see row against history the caller already resolved. Does not write.
+ * @param {object} graph
+ * @param {unknown} row
+ * @param {readonly unknown[]} rotations
+ * @param {ResolutionContext} ctx
+ * @returns {{ ok: true, value: { sealed: SealedRow, key: string, kept: boolean }, kept: boolean } | { ok: false, reason: string }}
+ */
+export function stageSee(graph, row, rotations, ctx) {
+  if (!graphObject(graph) || !ctx || typeof ctx !== 'object' || !Array.isArray(rotations)) {
+    return { ok: false, reason: 'missing-history' };
+  }
+  const parsed = parseSeeGrant(row);
+  if (!parsed.ok) return parsed;
+  const verifiedRow = verifySeeGrant(parsed.value.grant, rotations, ctx);
+  if (!verifiedRow.ok) return verifiedRow;
+  const grant = verifiedRow.value.grant;
+  const key = grantSoul(grant.owner, grant.object, grant.accessor);
+  const sealed = seal(verifiedRow.value, ctx);
+  const prev = store(graph).rows.get(key);
+  const kept = !prev || !verified.has(prev) || replaces(prev, sealed);
+  /** @type {{ sealed: SealedRow, key: string, kept: boolean }} */
+  const ticket = { sealed, key, kept };
+  Object.freeze(ticket);
+  stagedSees.add(ticket);
+  return { ok: true, value: ticket, kept };
+}
+
+/**
+ * Write one staged see row. Does not call a resolver.
+ * A ticket that was not staged, or that would not replace, writes nothing.
+ * @param {object} graph
+ * @param {{ sealed: SealedRow, key: string, kept: boolean }} ticket
+ * @returns {import('../ids/src/types.js').Result<SealedRow>}
+ */
+export function commitStagedSee(graph, ticket) {
+  if (!graphObject(graph) || !ticket || !stagedSees.has(ticket) || !verified.has(ticket.sealed)) {
+    return { ok: false, reason: 'bad-record' };
+  }
+  if (!ticket.kept) return { ok: false, reason: 'not-kept' };
+  store(graph).rows.set(ticket.key, ticket.sealed);
+  return { ok: true, value: present(ticket.sealed) };
 }
 
 /**
@@ -355,32 +418,6 @@ export function admittedView(graph, object, accessor) {
   };
 }
 
-/** The sealed see row, so a later write can be put back. Absent is undefined.
- * @param {object} graph @param {PrincipalId} owner @param {ObjectId} object @param {PrincipalId} accessor */
-export function snapshotRow(graph, owner, object, accessor) {
-  if (!graphObject(graph)) return undefined;
-  const id = seeObjectEdge(object);
-  const who = seeAccessorEdge(owner);
-  const accessorId = seeAccessorEdge(accessor);
-  if (!id.ok || !who.ok || !accessorId.ok) return undefined;
-  return store(graph).rows.get(grantSoul(who.value, id.value, accessorId.value));
-}
-
-/** Put back the row from snapshotRow. `row` undefined removes it.
- * @param {object} graph @param {PrincipalId} owner @param {ObjectId} object @param {PrincipalId} accessor
- * @param {SealedRow | undefined} row */
-export function restoreRow(graph, owner, object, accessor, row) {
-  if (!graphObject(graph)) return;
-  const id = seeObjectEdge(object);
-  const who = seeAccessorEdge(owner);
-  const accessorId = seeAccessorEdge(accessor);
-  if (!id.ok || !who.ok || !accessorId.ok) return;
-  const key = grantSoul(who.value, id.value, accessorId.value);
-  const held = store(graph);
-  if (row) held.rows.set(key, row);
-  else held.rows.delete(key);
-}
-
 /** @param {object} graph @param {ObjectId} object */
 export function admittedOwner(graph, object) {
   if (!graphObject(graph)) return undefined;
@@ -415,7 +452,7 @@ export function checkSee(graph, object, accessor, now, hint, hop) {
   if (!admission) return { allowed: false, reason: 'unknown' };
   if (admission.owner === who.value) return { allowed: true, reason: 'owner' };
   const row = store(graph).rows.get(grantSoul(admission.owner, id.value, who.value));
-  if (row && row.grant.stated === 1 && now >= row.grant.from && now < row.grant.until) {
+  if (row && verified.has(row) && row.grant.stated === 1 && now >= row.grant.from && now < row.grant.until) {
     return { allowed: true, reason: 'delegate' };
   }
   return { allowed: false, reason: 'delegate' };

@@ -97,6 +97,16 @@ A request is an untrusted hint. It never grants. Check does not read it. The own
 
 Rust `sociacl-gun` and the TypeScript request runner both load `vectors/mesh/v2/request.json`.
 
+History for the owner and the requester is resolved once. Both rows are admitted against that same history, including `kept`, and then both are written or neither is. Nothing runs between the two writes. `snapshotRow`, `restoreRow`, `snapshotPost`, and `restorePost` are not part of the surface. A row that would not replace the stored row is `not-kept`. An owner cancel (`stated` 0) on the see row, or on the post row when the scope is `read+post`, is `not-kept` as well: the approval does not revive the grant.
+
+Members auto-approve reads the label owner only when it equals the admitted signed object-record owner. The owner shortcut (`reason` `owner`) is not membership. Only `same-group` or `named-circle` allows. A peer `putObject` or `mergeFrom` does not replace the owner of an object that has an admitted signed record, and it cannot auto-approve.
+
+Requests have no expiry. Approving an older pending copy grants only the window and the scope on that call. There is no withdraw ordering across copies. Scope is approve or refuse only. The owner cannot downscope. The window is owner-only. The accessor is the parsed requester.
+
+`members-gate-on-stored-id` uses the set id `alice/friends`. `canonicalSetId` rejects `.`, so a `PrincipalId` cannot be a set-id head. That vector is re-cut with a minted set id once set-id-must-be-minted lands.
+
+A rotation's new key signs see, post, and present-authority records issued at or after that rotation's timestamp. The preceding key signs only earlier records. Same-second revokes still use the preceding key through `historyState` and can block that rotation.
+
 ### Objects in scope
 
 | Object | Id | In-graph? |

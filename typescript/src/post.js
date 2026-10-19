@@ -192,30 +192,52 @@ export function admitPost(graph, row, resolver) {
   return { ok: true, value: present(stored), kept };
 }
 
-/** The sealed post row, so a later write can be put back.
- * @param {object} graph @param {PrincipalId} owner @param {ObjectId} object @param {PrincipalId} accessor */
-export function snapshotPost(graph, owner, object, accessor) {
-  const held = graph && typeof graph === 'object' ? postTables.get(graph) : undefined;
-  if (!held) return undefined;
-  const id = seeObjectEdge(object);
-  const who = seeAccessorEdge(owner);
-  const accessorId = seeAccessorEdge(accessor);
-  if (!id.ok || !who.ok || !accessorId.ok) return undefined;
-  return held.get(postSoul(who.value, id.value, accessorId.value));
+const stagedPosts = new WeakSet();
+
+/**
+ * Verify a post row against history the caller already resolved. Does not write.
+ * @param {object} graph
+ * @param {unknown} row
+ * @param {readonly unknown[]} rotations
+ * @param {ResolutionContext} ctx
+ * @returns {{ ok: true, value: { sealed: SealedPost, key: string, kept: boolean }, kept: boolean } | { ok: false, reason: string }}
+ */
+export function stagePost(graph, row, rotations, ctx) {
+  if (!graph || typeof graph !== 'object' || !ctx || typeof ctx !== 'object' || !Array.isArray(rotations)) {
+    return { ok: false, reason: 'missing-history' };
+  }
+  const parsed = parsePostGrant(row);
+  if (!parsed.ok) return parsed;
+  const verifiedRow = verifyPostGrant(parsed.value.grant, rotations, ctx);
+  if (!verifiedRow.ok) return verifiedRow;
+  const grant = verifiedRow.value.grant;
+  const admission = admittedOwner(graph, grant.object);
+  if (!admission) return { ok: false, reason: 'unknown' };
+  if (admission.owner !== grant.owner) return { ok: false, reason: 'bad-record' };
+  const key = postSoul(admission.owner, grant.object, grant.accessor);
+  const sealed = seal(verifiedRow.value, ctx);
+  const prev = postTables.get(graph)?.get(key);
+  const kept = !prev || !sealedPosts.has(prev) || replaces(prev, sealed);
+  /** @type {{ sealed: SealedPost, key: string, kept: boolean }} */
+  const ticket = { sealed, key, kept };
+  Object.freeze(ticket);
+  stagedPosts.add(ticket);
+  return { ok: true, value: ticket, kept };
 }
 
-/** Put back the row from snapshotPost. `row` undefined removes it.
- * @param {object} graph @param {PrincipalId} owner @param {ObjectId} object @param {PrincipalId} accessor
- * @param {SealedPost | undefined} row */
-export function restorePost(graph, owner, object, accessor, row) {
-  const id = seeObjectEdge(object);
-  const who = seeAccessorEdge(owner);
-  const accessorId = seeAccessorEdge(accessor);
-  if (!id.ok || !who.ok || !accessorId.ok || !graph || typeof graph !== 'object') return;
-  const held = postMap(graph);
-  const key = postSoul(who.value, id.value, accessorId.value);
-  if (row) held.set(key, row);
-  else held.delete(key);
+/**
+ * Write one staged post row. Does not call a resolver.
+ * @param {object} graph
+ * @param {{ sealed: SealedPost, key: string, kept: boolean }} ticket
+ * @returns {{ ok: true, value: { mode: 'present' | 'witnessed', grant: PostGrant } } | { ok: false, reason: string }}
+ */
+export function commitStagedPost(graph, ticket) {
+  if (!graph || typeof graph !== 'object' || !ticket || !stagedPosts.has(ticket) || !sealedPosts.has(ticket.sealed)) {
+    return { ok: false, reason: 'bad-record' };
+  }
+  if (!ticket.kept) return { ok: false, reason: 'not-kept' };
+  postMap(graph).set(ticket.key, ticket.sealed);
+  return { ok: true, value: present(ticket.sealed) };
 }
 
 /** @param {object} graph @param {ObjectId} object @param {PrincipalId} accessor */

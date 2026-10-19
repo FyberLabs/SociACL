@@ -52,6 +52,18 @@ pub enum Reason {
     LegacyRow,
     /// No admitted object record for this id.
     Unknown,
+    /// The request status is withdrawn.
+    Withdrawn,
+    /// The caller is not the admitted object owner.
+    OwnerMismatch,
+    /// Members auto-approve did not allow this requester.
+    NotMember,
+    /// The next see ham state is not a safe integer.
+    SeeCeiling,
+    /// The next post ham state is not a safe integer.
+    PostCeiling,
+    /// The new row would not replace the stored row, or a cancel would be revived.
+    NotKept,
 }
 impl fmt::Display for Reason {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
