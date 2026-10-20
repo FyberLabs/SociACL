@@ -152,6 +152,7 @@ reject('soul','objset-bad-predicate',`s3rch/acl/${ids.formatPrincipalKey(p)}/obj
 reject('soul','objset-set-not-a-set',ids.objectSetSoul(p,soulObject,'same-group',obj),'bad-template');
 reject('soul','objset-owner-mismatch',ids.objectSetSoul(p,foreignObject,'same-group',soulSet),'bad-template');
 reject('soul','membership-set-not-a-set',ids.membershipSoul(p,'same-group',obj,p2),'bad-template');
+reject('soul','membership-owner-mismatch',ids.membershipSoul(p2,'same-group',soulSet,p),'bad-template');
 reject('soul','soul-510-too-long','s3rch/acl/'+'a'.repeat(500),'too-long');
 reject('soul','build-objset-bad-predicate',[p,soulObject,'nope',soulSet],'bad-template',{operation:'build-objset'});
 reject('soul','extra-segment',ids.grantSoul(p,obj,p2)+'/x','bad-template');

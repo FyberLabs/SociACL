@@ -128,7 +128,7 @@ const CANCEL_DOMAIN = 'sociacl-cancel-v2';
  *   object: ObjectId,
  *   predicate: GroupPredicate,
  *   set: ObjectId,
- *   assent: StoredAssent,
+ *   assent: StoredAssent | null,
  *   cancels: Map<string, StoredCancel>,
  * }} StoredObjectSet
  */
@@ -279,6 +279,7 @@ export function groupCancelBytes(row) {
     row.kind,
     row.rowSoul,
     row.cancelId,
+    String(row.issuedAt),
     String(row.prior.length),
     ...row.prior,
   ]);
@@ -461,6 +462,21 @@ function storedCancel(cancel, bytes, mode) {
   };
 }
 
+/**
+ * A witnessed copy replaces a bare one. A bare copy does not replace a witnessed one.
+ * @param {Map<string, StoredCancel>} cancels
+ * @param {StoredCancel} incoming
+ * @returns {boolean}
+ */
+function keepCancel(cancels, incoming) {
+  const held = cancels.get(incoming.id);
+  if (!held || (held.mode !== 'witnessed' && incoming.mode === 'witnessed')) {
+    cancels.set(incoming.id, incoming);
+    return true;
+  }
+  return false;
+}
+
 /** @param {StoredAssent | null | undefined} prev @param {StoredAssent} next */
 function replaces(prev, next) {
   if (!prev) return true;
@@ -489,8 +505,20 @@ function membershipLive(row) {
 
 /** @param {StoredObjectSet} row */
 function objectSetLive(row) {
+  if (!row.assent) return false;
   const ids = [...row.cancels.keys()].sort();
   return row.assent.stated === 1 && covers(row.assent.observed, ids);
+}
+
+/** A stated-0 assent or an uncovered cancel is a removal. A one-sided stated-1 join is not.
+ * @param {StoredMembership} row */
+function membershipRemoved(row) {
+  if (row.memberAssent?.stated === 0 || row.setAssent?.stated === 0) return true;
+  const ids = [...row.cancels.keys()];
+  if (ids.length === 0) return false;
+  const stated = [row.memberAssent, row.setAssent].filter((assent) => assent && assent.stated === 1);
+  if (stated.length === 0) return true;
+  return stated.some((assent) => !covers(/** @type {StoredAssent} */ (assent).observed, ids));
 }
 
 /**
@@ -547,9 +575,9 @@ export function admitObjectSet(graph, row, resolver) {
   const table = objectSetTable(graph);
   const prev = table.get(edge.object);
   const next = storedAssent(edge, parsed.bytes, verified.mode);
-  if (prev && !replaces(prev.assent, next)) return { ok: true, kept: false };
-  // A different set starts with an empty cancel list. The previous set's cancels do not follow the new edge.
-  const cancels = prev && prev.set === edge.set ? prev.cancels : new Map();
+  if (prev?.assent && !replaces(prev.assent, next)) return { ok: true, kept: false };
+  // A different set or predicate starts empty. The previous edge's cancels do not follow.
+  const cancels = prev && prev.set === edge.set && prev.predicate === edge.predicate ? prev.cancels : new Map();
   table.set(edge.object, {
     owner: edge.owner,
     object: edge.object,
@@ -580,23 +608,27 @@ export function admitGroupCancel(graph, row, resolver) {
     const soul = membershipSoul(cancel.setOwner, cancel.predicate, cancel.set, cancel.member);
     const held = membershipTable(graph).get(soul);
     if (!held) return { ok: false, reason: 'unknown' };
-    if (held.cancels.has(cancel.cancelId)) return { ok: true, kept: false };
+    const next = storedCancel(cancel, parsed.bytes, verified.mode);
+    if (held.cancels.has(cancel.cancelId)) return { ok: true, kept: keepCancel(held.cancels, next) };
     for (const id of cancel.prior) if (!held.cancels.has(id)) return { ok: false, reason: 'bad-record' };
-    held.cancels.set(cancel.cancelId, storedCancel(cancel, parsed.bytes, verified.mode));
+    held.cancels.set(cancel.cancelId, next);
     return { ok: true, kept: true };
   }
   const held = objectSetTable(graph).get(/** @type {ObjectId} */ (cancel.object));
   if (!held || held.set !== cancel.set || held.predicate !== cancel.predicate) return { ok: false, reason: 'unknown' };
-  if (held.cancels.has(cancel.cancelId)) return { ok: true, kept: false };
+  const next = storedCancel(cancel, parsed.bytes, verified.mode);
+  if (held.cancels.has(cancel.cancelId)) return { ok: true, kept: keepCancel(held.cancels, next) };
   for (const id of cancel.prior) if (!held.cancels.has(id)) return { ok: false, reason: 'bad-record' };
-  held.cancels.set(cancel.cancelId, storedCancel(cancel, parsed.bytes, verified.mode));
+  held.cancels.set(cancel.cancelId, next);
   return { ok: true, kept: true };
 }
 
 /**
  * Drop this principal's group rows that the new checkpoint rejects.
- * A stated-1 assent signed by a retired key is dropped. An unwitnessed
- * retired-key cancel is dropped. Only a witnessed cancel survives.
+ * A stated-1 assent signed by a retired key is dropped. A witnessed cancel
+ * on that object-set record stays, so the next edge for the same set and
+ * predicate still sees it. An unwitnessed retired-key cancel is dropped.
+ * Only a witnessed cancel survives.
  * @param {object} graph
  * @param {PrincipalId} principal
  * @param {SeeResolver} resolver
@@ -633,11 +665,12 @@ export function reverifyGroup(graph, principal, resolver) {
   }
   for (const [id, row] of [...objectSetTable(graph)]) {
     if (row.owner !== who.value) continue;
-    const again = verifyParty(row.owner, rotations, resolver.ctx, row.assent.bytes, row.assent.sig, row.assent.issuedAt, row.assent.stated, row.assent.attest);
-    if (!again.ok) {
-      objectSetTable(graph).delete(id);
-      dropped += 1;
-      continue;
+    if (row.assent) {
+      const again = verifyParty(row.owner, rotations, resolver.ctx, row.assent.bytes, row.assent.sig, row.assent.issuedAt, row.assent.stated, row.assent.attest);
+      if (!again.ok) {
+        row.assent = null;
+        dropped += 1;
+      }
     }
     for (const [cancelId, cancel] of [...row.cancels]) {
       if (cancel.signer !== who.value) continue;
@@ -647,6 +680,7 @@ export function reverifyGroup(graph, principal, resolver) {
         dropped += 1;
       }
     }
+    if (!row.assent && row.cancels.size === 0) objectSetTable(graph).delete(id);
   }
   return { ok: true, value: { dropped } };
 }
@@ -721,6 +755,8 @@ export function checkGroupPresentation(graph, set, object, accessor, payload, no
  * True when the snapshot hides a removal or a newer object-set edge.
  * An edge that is not live is a removal unless the snapshot is stated 0
  * at a hamState at least as high as the stored assent.
+ * A one-sided stated-1 membership is not a removal. A stated-0 assent
+ * or an uncovered cancel is.
  * Member ham does not stand in for the object-set edge.
  * @param {object} graph
  * @param {string} object
@@ -733,25 +769,27 @@ export function snapshotUnderstatesGroup(graph, object, members, objectSet) {
   const current = id.ok ? objectSetTable(graph).get(id.value) : undefined;
   if (!current) return objectSet != null;
   if (!objectSet) return true;
-  if (!objectSetLive(current)) {
+  const assent = current.assent;
+  const ham = assent?.hamState ?? 0;
+  if (!assent || !objectSetLive(current)) {
     if (
       objectSet.stated !== 0
-      || objectSet.hamState < current.assent.hamState
+      || objectSet.hamState < ham
       || objectSet.predicate !== current.predicate
       || objectSet.setId !== current.set
     ) return true;
   } else if (
-    objectSet.hamState < current.assent.hamState
+    objectSet.hamState < assent.hamState
     || objectSet.predicate !== current.predicate
     || objectSet.setId !== current.set
-    || objectSet.stated !== current.assent.stated
+    || objectSet.stated !== assent.stated
   ) return true;
   const setOwner = objectPrincipal(current.set);
   if (!setOwner.ok) return true;
   for (const [soul, row] of membershipTable(graph)) {
     void soul;
     if (row.predicate !== current.predicate || row.set !== current.set) continue;
-    if (membershipLive(row)) continue;
+    if (!membershipRemoved(row)) continue;
     const snap = members.find((member) => member.accessor === row.member && member.predicate === row.predicate && member.setId === row.set);
     const ham = Math.max(row.memberAssent?.hamState ?? 0, row.setAssent?.hamState ?? 0);
     if (!snap || snap.stated !== 0 || snap.hamState < ham) return true;
@@ -824,7 +862,7 @@ export class MemoryGroupGraph {
       }
       if (incoming.memberAssent && replaces(local.memberAssent, incoming.memberAssent)) local.memberAssent = incoming.memberAssent;
       if (incoming.setAssent && replaces(local.setAssent, incoming.setAssent)) local.setAssent = incoming.setAssent;
-      for (const [id, cancel] of incoming.cancels) if (!local.cancels.has(id)) local.cancels.set(id, cancel);
+      for (const [, cancel] of incoming.cancels) keepCancel(local.cancels, cancel);
     }
     for (const [id, incoming] of objectSetTable(other)) {
       const admitted = admittedOwner(this, /** @type {ObjectId} */ (id));
@@ -835,18 +873,12 @@ export class MemoryGroupGraph {
         continue;
       }
       const sameEdge = local.set === incoming.set && local.predicate === incoming.predicate;
-      if (replaces(local.assent, incoming.assent)) {
+      if (incoming.assent && replaces(local.assent, incoming.assent)) {
         const cancels = new Map(sameEdge ? local.cancels : incoming.cancels);
-        if (sameEdge) {
-          for (const [cancelId, cancel] of incoming.cancels) {
-            if (!cancels.has(cancelId)) cancels.set(cancelId, cancel);
-          }
-        }
+        if (sameEdge) for (const [, cancel] of incoming.cancels) keepCancel(cancels, cancel);
         objectSetTable(this).set(id, { ...incoming, cancels });
       } else if (sameEdge) {
-        for (const [cancelId, cancel] of incoming.cancels) {
-          if (!local.cancels.has(cancelId)) local.cancels.set(cancelId, cancel);
-        }
+        for (const [, cancel] of incoming.cancels) keepCancel(local.cancels, cancel);
       }
     }
   }

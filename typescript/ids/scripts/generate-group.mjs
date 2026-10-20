@@ -474,6 +474,130 @@ add('accept', 'snapshot-without-an-edge', [
   { op: 'snapshot', object: chatA, members: [], objectSet: null, understates: false },
   { op: 'snapshot', object: chatA, members: [], objectSet: snapEdge, understates: true },
 ]);
+const currentEdge = () => ({ op: 'admit-object-set', row: edge(2, { issuedAt: now }), rotations: 'rotated', ok: true, kept: true });
+const currentMember = () => ({ op: 'admit-member', row: assent('member', 2, { issuedAt: now }), rotations: 'genesis', ok: true, kept: true });
+const currentSet = () => ({ op: 'admit-member', row: assent('set', 2, { issuedAt: now }), rotations: 'rotated', ok: true, kept: true });
+const bareMemberCancel = cancelRow('membership', 1, { issuedAt: at });
+const witnessedMemberCancel = cancelRow('membership', 1, { issuedAt: at, attest: true });
+const bareObjectCancel = cancelRow('object-set', 1, { issuedAt: at });
+const witnessedObjectCancel = cancelRow('object-set', 1, { issuedAt: at, attest: true });
+add('accept', 'witnessed-duplicate-replaces-a-bare-membership-cancel', [
+  put(),
+  currentMember(),
+  currentSet(),
+  currentEdge(),
+  admitCancel(bareMemberCancel, 'genesis'),
+  admitCancel(witnessedMemberCancel, 'rotated'),
+  check(chatA, p2, false, 'missing'),
+  { op: 'reverify-group', principal: p, rotations: 'rotated', ok: true, dropped: 0 },
+  check(chatA, p2, false, 'missing'),
+]);
+add('accept', 'witnessed-duplicate-replaces-a-bare-object-set-cancel', [
+  put(),
+  currentMember(),
+  currentSet(),
+  currentEdge(),
+  admitCancel(bareObjectCancel, 'genesis'),
+  admitCancel(witnessedObjectCancel, 'rotated'),
+  check(chatA, p2, false, 'missing'),
+  { op: 'reverify-group', principal: p, rotations: 'rotated', ok: true, dropped: 0 },
+  check(chatA, p2, false, 'missing'),
+]);
+add('accept', 'merge-upgrades-a-bare-membership-cancel', [
+  put(),
+  currentMember(),
+  currentSet(),
+  currentEdge(),
+  admitCancel(bareMemberCancel, 'genesis'),
+  side(put()),
+  side(currentMember()),
+  side(currentSet()),
+  side(currentEdge()),
+  side(admitCancel(witnessedMemberCancel, 'rotated')),
+  { op: 'merge' },
+  { op: 'reverify-group', principal: p, rotations: 'rotated', ok: true, dropped: 0 },
+  check(chatA, p2, false, 'missing'),
+]);
+add('accept', 'merge-upgrades-a-bare-object-set-cancel', [
+  put(),
+  currentMember(),
+  currentSet(),
+  currentEdge(),
+  admitCancel(bareObjectCancel, 'genesis'),
+  side(put()),
+  side(currentMember()),
+  side(currentSet()),
+  side(currentEdge()),
+  side(admitCancel(witnessedObjectCancel, 'rotated')),
+  { op: 'merge' },
+  { op: 'reverify-group', principal: p, rotations: 'rotated', ok: true, dropped: 0 },
+  check(chatA, p2, false, 'missing'),
+]);
+add('accept', 'merge-keeps-a-witnessed-cancel-over-a-bare-copy', [
+  put(),
+  currentMember(),
+  currentSet(),
+  currentEdge(),
+  admitCancel(witnessedObjectCancel, 'rotated'),
+  side(put()),
+  side(currentMember()),
+  side(currentSet()),
+  side(currentEdge()),
+  side(admitCancel(bareObjectCancel, 'genesis')),
+  { op: 'merge' },
+  { op: 'reverify-group', principal: p, rotations: 'rotated', ok: true, dropped: 0 },
+  check(chatA, p2, false, 'missing'),
+]);
+add('accept', 'reverify-keeps-a-witnessed-cancel-when-the-edge-retires', [
+  put(),
+  currentMember(),
+  currentSet(),
+  { op: 'admit-object-set', row: edge(1, { issuedAt: at }), rotations: 'genesis', ok: true, kept: true },
+  admitCancel(witnessedObjectCancel, 'genesis'),
+  check(chatA, p2, false, 'missing'),
+  { op: 'reverify-group', principal: p, rotations: 'rotated', ok: true, dropped: 1 },
+  { op: 'admit-object-set', row: edge(2, { issuedAt: now, hamState: 2 }), rotations: 'rotated', ok: true, kept: true },
+  check(chatA, p2, false, 'missing'),
+  { op: 'admit-object-set', row: edge(2, { issuedAt: now, hamState: 3, cancels: [cancelId] }), rotations: 'rotated', ok: true, kept: true },
+  check(chatA, p2, true, 'same-group'),
+]);
+add('accept', 'snapshot-ignores-a-one-sided-join', [
+  put(),
+  member(),
+  objectEdge(),
+  { op: 'snapshot', object: chatA, members: [], objectSet: snapEdge, understates: false },
+]);
+const retiredMember = { accessor: p2, predicate: 'same-group', setId: friends, stated: 0, hamState: 1 };
+add('accept', 'snapshot-understates-a-stated-zero-membership', [
+  put(),
+  { op: 'admit-member', row: assent('member', 2, { stated: 0 }), rotations: 'genesis', ok: true, kept: true },
+  setAssent(),
+  objectEdge(),
+  { op: 'snapshot', object: chatA, members: [], objectSet: snapEdge, understates: true },
+  { op: 'snapshot', object: chatA, members: [{ ...retiredMember, stated: 1 }], objectSet: snapEdge, understates: true },
+  { op: 'snapshot', object: chatA, members: [retiredMember], objectSet: snapEdge, understates: false },
+]);
+add('accept', 'snapshot-understates-an-uncovered-membership-cancel', [
+  ...live(),
+  admitCancel(cancelRow('membership', 2), 'genesis'),
+  { op: 'snapshot', object: chatA, members: [], objectSet: snapEdge, understates: true },
+  { op: 'snapshot', object: chatA, members: [retiredMember], objectSet: snapEdge, understates: false },
+]);
+add('accept', 'predicate-change-drops-the-previous-cancels', [
+  ...live(),
+  objectCancel(),
+  check(chatA, p2, false, 'missing'),
+  { op: 'admit-member', row: assent('member', 2, { predicate: 'named-circle' }), rotations: 'genesis', ok: true, kept: true },
+  { op: 'admit-member', row: assent('set', 1, { predicate: 'named-circle' }), rotations: 'genesis', ok: true, kept: true },
+  { op: 'admit-object-set', row: edge(1, { predicate: 'named-circle', hamState: 2 }), rotations: 'genesis', ok: true, kept: true },
+  check(chatA, p2, true, 'named-circle', { predicate: 'named-circle' }),
+]);
+const movedCancel = cancelRow('membership', 2);
+add('reject', 'cancel-issued-at-is-signed', [
+  ...live(),
+  { op: 'admit-cancel', row: { ...movedCancel, issuedAt: at + 1 }, rotations: 'genesis', ok: false, reason: 'bad-signature' },
+  check(chatA, p2, true, 'same-group'),
+]);
 const body = { v: 1, family: 'group', context, accept, reject };
 const path = new URL('../../../vectors/mesh/v2/group.json', import.meta.url);
 writeFileSync(path, JSON.stringify(body, null, 2) + '\n');

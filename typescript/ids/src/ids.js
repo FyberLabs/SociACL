@@ -207,6 +207,8 @@ export function parseSoul(x) {
     if (a[4] !== 'same-group' && a[4] !== 'named-circle') return fail('bad-template');
     const owner = keyPrincipal(a[2]); if (!owner.ok) return owner;
     const set = mintedSetId(a[5]); if (!set.ok) return set;
+    const embedded = objectPrincipal(set.value); if (!embedded.ok) return embedded;
+    if (embedded.value !== owner.value) return fail('bad-template');
     const accessor = keyPrincipal(a[6]); if (!accessor.ok) return accessor;
     return ok({ template: 'membership', ids: [owner.value, a[4], set.value, accessor.value] });
   }

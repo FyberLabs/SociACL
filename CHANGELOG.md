@@ -27,6 +27,15 @@
   segments, `s3rch/acl/<pk>/objset/<predicate>/<set>/<object>`. A cancel
   signed over that soul cannot move to another set or predicate. The
   soul parser accepts 509 characters, the longest object-set soul.
+- **Breaking:** a group cancel's signing bytes include the canonical
+  decimal `issuedAt`. A witnessed copy of an existing cancel replaces
+  the stored bare copy, on admission and on merge. `reverifyGroup`
+  drops a retired stated-1 object-set assent and keeps a witnessed
+  cancel on that record. A replacement edge keeps prior cancels only
+  when the set and the predicate both match. A one-sided stated-1
+  membership is not a snapshot removal. `parseSoul` accepts a
+  membership soul only when the owner key is the principal embedded
+  in the set id.
 - **Breaking:** `snapshotUnderstatesGroup` treats an object-set edge
   that is not live as a removal. A stated-1 snapshot understates that
   cancel. A stated-0 snapshot at a hamState at least as high as the

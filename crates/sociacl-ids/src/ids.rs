@@ -642,12 +642,17 @@ pub fn parse_soul(s: &str) -> Result<ParsedSoul, Reason> {
         ["s3rch", "acl", a, "member", predicate, set_id, b]
             if matches!(*predicate, "same-group" | "named-circle") =>
         {
+            let owner = key_principal(a)?;
+            let set = minted_set_id(set_id)?;
+            if object_principal(&set)? != owner {
+                return Err(Reason::BadTemplate);
+            }
             Ok(ParsedSoul {
                 template: "membership",
                 ids: vec![
-                    key_principal(a)?.to_string(),
+                    owner.to_string(),
                     (*predicate).to_string(),
-                    minted_set_id(set_id)?.to_string(),
+                    set.to_string(),
                     key_principal(b)?.to_string(),
                 ],
             })

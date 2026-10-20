@@ -192,7 +192,7 @@ struct ObjectSetRecord {
     object: ObjectId,
     predicate: GroupPredicate,
     set: ObjectId,
-    assent: StoredAssent,
+    assent: Option<StoredAssent>,
     cancels: BTreeMap<String, StoredCancel>,
 }
 
@@ -262,11 +262,8 @@ impl GroupRows {
                 Some(local) => {
                     take_assent(&mut local.member_assent, incoming.member_assent.as_ref());
                     take_assent(&mut local.set_assent, incoming.set_assent.as_ref());
-                    for (id, cancel) in &incoming.cancels {
-                        local
-                            .cancels
-                            .entry(id.clone())
-                            .or_insert_with(|| cancel.clone());
+                    for cancel in incoming.cancels.values() {
+                        keep_cancel(&mut local.cancels, cancel.clone());
                     }
                 }
             }
@@ -286,23 +283,28 @@ impl GroupRows {
             };
             // A different set or predicate keeps only the winner's cancels.
             let same_edge = local.set == incoming.set && local.predicate == incoming.predicate;
-            if replaces(&local.assent, &incoming.assent) {
+            let incoming_wins = incoming.assent.as_ref().is_some_and(|next| {
+                local
+                    .assent
+                    .as_ref()
+                    .is_none_or(|prev| replaces(prev, next))
+            });
+            if incoming_wins {
                 let mut next = incoming.clone();
                 if same_edge {
                     let mut cancels = local.cancels.clone();
-                    for (cid, cancel) in &incoming.cancels {
-                        cancels.entry(cid.clone()).or_insert_with(|| cancel.clone());
+                    for cancel in incoming.cancels.values() {
+                        keep_cancel(&mut cancels, cancel.clone());
                     }
                     next.cancels = cancels;
                 }
                 self.object_sets.insert(id.clone(), next);
             } else if same_edge {
                 if let Some(local) = self.object_sets.get_mut(id) {
-                    for (cid, cancel) in &incoming.cancels {
-                        local
-                            .cancels
-                            .entry(cid.clone())
-                            .or_insert_with(|| cancel.clone());
+                    let incoming_cancels: Vec<StoredCancel> =
+                        incoming.cancels.values().cloned().collect();
+                    for cancel in incoming_cancels {
+                        keep_cancel(&mut local.cancels, cancel);
                     }
                 }
             }
@@ -347,7 +349,47 @@ fn membership_live(row: &MembershipRecord) -> bool {
 }
 
 fn object_set_live(row: &ObjectSetRecord) -> bool {
-    row.assent.stated == 1 && covers(&row.assent.observed, &row.cancels)
+    row.assent
+        .as_ref()
+        .is_some_and(|assent| assent.stated == 1 && covers(&assent.observed, &row.cancels))
+}
+
+fn membership_removed(row: &MembershipRecord) -> bool {
+    if row
+        .member_assent
+        .as_ref()
+        .is_some_and(|assent| assent.stated == 0)
+        || row
+            .set_assent
+            .as_ref()
+            .is_some_and(|assent| assent.stated == 0)
+    {
+        return true;
+    }
+    if row.cancels.is_empty() {
+        return false;
+    }
+    let stated = |assent: &StoredAssent| assent.stated == 1;
+    let any_stated = row.member_assent.as_ref().is_some_and(stated)
+        || row.set_assent.as_ref().is_some_and(stated);
+    if !any_stated {
+        return true;
+    }
+    let uncovered =
+        |assent: &StoredAssent| stated(assent) && !covers(&assent.observed, &row.cancels);
+    row.member_assent.as_ref().is_some_and(uncovered)
+        || row.set_assent.as_ref().is_some_and(uncovered)
+}
+
+fn keep_cancel(cancels: &mut BTreeMap<String, StoredCancel>, cancel: StoredCancel) -> bool {
+    let upgrade = cancels.get(&cancel.id).is_some_and(|held| {
+        held.mode != SignedAtMode::Witnessed && cancel.mode == SignedAtMode::Witnessed
+    });
+    if cancels.contains_key(&cancel.id) && !upgrade {
+        return false;
+    }
+    cancels.insert(cancel.id.clone(), cancel);
+    true
 }
 
 fn u64_field(value: Option<&Value>) -> Result<u64, Reason> {
@@ -503,12 +545,14 @@ fn object_set_bytes(row: &ObjectSetAssent) -> Result<Vec<u8>, Reason> {
 }
 
 fn cancel_bytes(row: &GroupCancel) -> Result<Vec<u8>, Reason> {
+    let issued = row.issued_at.to_string();
     let count = row.prior.len().to_string();
     let mut fields = vec![
         CANCEL_DOMAIN,
         row.kind,
         row.row_soul.as_str(),
         row.cancel_id.as_str(),
+        issued.as_str(),
         count.as_str(),
     ];
     for id in &row.prior {
@@ -829,10 +873,19 @@ impl MeshSeeGraph {
             mode,
         );
         let id = edge.object.as_ref().to_string();
-        // A different set starts empty. The previous set's cancels do not follow the new edge.
+        // A different set or predicate starts empty. The previous edge's cancels do not follow.
         let cancels = match self.group.rows.object_sets.get(&id) {
-            Some(prev) if !replaces(&prev.assent, &next) => return Ok(false),
-            Some(prev) if prev.set == edge.set => prev.cancels.clone(),
+            Some(prev)
+                if prev
+                    .assent
+                    .as_ref()
+                    .is_some_and(|prev| !replaces(prev, &next)) =>
+            {
+                return Ok(false);
+            }
+            Some(prev) if prev.set == edge.set && prev.predicate == edge.predicate => {
+                prev.cancels.clone()
+            }
             _ => BTreeMap::new(),
         };
         self.group.rows.object_sets.insert(
@@ -842,7 +895,7 @@ impl MeshSeeGraph {
                 object: edge.object,
                 predicate: edge.predicate,
                 set: edge.set,
-                assent: next,
+                assent: Some(next),
                 cancels,
             },
         );
@@ -896,7 +949,7 @@ impl MeshSeeGraph {
             return Err(Reason::Unknown);
         };
         if held.cancels.contains_key(&cancel.id) {
-            return Ok(false);
+            return Ok(keep_cancel(&mut held.cancels, cancel));
         }
         if cancel.prior.iter().any(|id| !held.cancels.contains_key(id)) {
             return Err(Reason::BadRecord);
@@ -918,7 +971,7 @@ impl MeshSeeGraph {
             return Err(Reason::Unknown);
         };
         if held.cancels.contains_key(&stored.id) {
-            return Ok(false);
+            return Ok(keep_cancel(&mut held.cancels, stored));
         }
         if stored.prior.iter().any(|id| !held.cancels.contains_key(id)) {
             return Err(Reason::BadRecord);
@@ -928,8 +981,10 @@ impl MeshSeeGraph {
     }
 
     /// Drop this principal's group rows that the new checkpoint rejects.
-    /// A stated-1 assent signed by a retired key is dropped. An unwitnessed
-    /// retired-key cancel is dropped. Only a witnessed cancel survives.
+    /// A stated-1 assent signed by a retired key is dropped. A witnessed
+    /// cancel on that object-set record stays, so the next edge for the
+    /// same set and predicate still sees it. An unwitnessed retired-key
+    /// cancel is dropped. Only a witnessed cancel survives.
     pub fn reverify_group(
         &mut self,
         principal: &PrincipalId,
@@ -1035,23 +1090,30 @@ impl MeshSeeGraph {
             .map(|(id, _)| id.clone())
             .collect();
         for id in objects {
-            let Some(row) = self.group.rows.object_sets.get(&id) else {
-                continue;
+            let failed = {
+                let Some(row) = self.group.rows.object_sets.get(&id) else {
+                    continue;
+                };
+                match row.assent.as_ref() {
+                    None => false,
+                    Some(assent) => verify_party(
+                        &row.owner,
+                        &rotations,
+                        ctx,
+                        &assent.bytes,
+                        &assent.sig,
+                        assent.issued_at,
+                        Some(assent.stated),
+                        assent.attest.as_deref(),
+                    )
+                    .is_err(),
+                }
             };
-            let again = verify_party(
-                &row.owner,
-                &rotations,
-                ctx,
-                &row.assent.bytes,
-                &row.assent.sig,
-                row.assent.issued_at,
-                Some(row.assent.stated),
-                row.assent.attest.as_deref(),
-            );
-            if again.is_err() {
-                self.group.rows.object_sets.remove(&id);
+            if failed {
+                if let Some(row) = self.group.rows.object_sets.get_mut(&id) {
+                    row.assent = None;
+                }
                 dropped += 1;
-                continue;
             }
             let cancel_ids: Vec<String> = self
                 .group
@@ -1087,6 +1149,15 @@ impl MeshSeeGraph {
                     row.cancels.remove(&cancel_id);
                     dropped += 1;
                 }
+            }
+            let empty = self
+                .group
+                .rows
+                .object_sets
+                .get(&id)
+                .is_some_and(|row| row.assent.is_none() && row.cancels.is_empty());
+            if empty {
+                self.group.rows.object_sets.remove(&id);
             }
         }
         Ok(dropped)
@@ -1237,6 +1308,8 @@ impl MeshSeeGraph {
     /// True when the snapshot hides a removal or a newer object-set edge.
     /// An edge that is not live is a removal unless the snapshot is stated 0
     /// at a ham_state at least as high as the stored assent.
+    /// A one-sided stated-1 membership is not a removal. A stated-0 assent
+    /// or an uncovered cancel is.
     /// Member ham does not stand in for the object-set edge.
     pub fn snapshot_understates_group(
         &self,
@@ -1250,23 +1323,35 @@ impl MeshSeeGraph {
         let Some(snap) = object_set else {
             return true;
         };
+        let ham = current
+            .assent
+            .as_ref()
+            .map(|assent| assent.ham_state)
+            .unwrap_or(0);
         if !object_set_live(current) {
             if snap.stated != 0
-                || snap.ham_state < current.assent.ham_state
+                || snap.ham_state < ham
                 || snap.predicate != current.predicate
                 || snap.set_id != current.set.as_ref()
             {
                 return true;
             }
-        } else if snap.ham_state < current.assent.ham_state
+        } else if snap.ham_state < ham
             || snap.predicate != current.predicate
             || snap.set_id != current.set.as_ref()
-            || snap.stated != current.assent.stated
+            || snap.stated
+                != current
+                    .assent
+                    .as_ref()
+                    .map(|assent| assent.stated)
+                    .unwrap_or(0)
         {
             return true;
         }
         self.group.rows.memberships.values().any(|row| {
-            if row.predicate != current.predicate || row.set != current.set || membership_live(row)
+            if row.predicate != current.predicate
+                || row.set != current.set
+                || !membership_removed(row)
             {
                 return false;
             }
