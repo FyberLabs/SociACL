@@ -2,6 +2,36 @@
 
 ## sociacl/gun — unreleased
 
+- Close-out of the stored-id rebuild. There is no pre-v2 ACL migration.
+  PR 7 is dropped. Deleted helpers: `samePrincipal`, `sameParsed`,
+  `sameObjectId`, `canonicalAccessorId`, `canonical_accessor_id`,
+  `aclPrincipalKey`, `acl_principal_key`, `aclKey`, `acl_key`,
+  `encodeKey`, `encode_key`, `escapeKey`, `escape_key`, `unescape`,
+  `itemSoulAlias`, `item_soul_alias`, `objectNames`, `object_names`,
+  `accessor_names`, `grantNamesObject`, `canonicalStoredObject`,
+  `canonical_object_id`, `folded_see`, `folded_post`,
+  `reducibleItemInner`, `reducible_item_inner`, `mayAliasToItemSoul`,
+  `may_alias_to_item_soul`, `HELD_CLAIM_PREFIXES`,
+  `resolve_wallet_or_soul`, `s3rch_user`, `enrollSigner`,
+  `enroll_signer`, `asciiTrim`, `ascii_trim`, `principals_match`,
+  `principals_are`, `checkSeeLabel`, `check_see_label`,
+  `MemorySeeAcl`, `stateSeeGrant`, `state_see_grant`, `gun-legacy`,
+  `CLAIM_PREFIXES`, `user_node_id`, `user_node`, `item_segment`,
+  `trim_segment`, `add_wallet`, `s3rch_item`, `S3RCH_USERS`,
+  `item_key`, `accountGrantSoul`, `account_grant_soul`,
+  `GunNode::user`, `GunNode::feed`, `GunSoul::s3rch_item`,
+  `GunUserNode::as_node_id`, `sociacl_gun_item_soul`,
+  `sociacl_gun_user_soul`. Deleted modules: `typescript/src/legacy/`,
+  `crates/sociacl-gun/src/legacy.rs`, `post_label.rs`,
+  `crates/sociacl-encdisc/src/gun_soul.rs`. Refused domains:
+  `s3rch-post-grant-v1`, `s3rch-access-request-v1`, `s3rch-request`,
+  `sociacl-see-grant-v1`, `sociacl-membership-assent-v1`,
+  `sociacl-object-set-v1`, `sociacl-cancel-v1`, `sociacl-cancel-id-v1`,
+  plus the seven `s3rch:room` / `chat` / `forum-msg` / `post` /
+  `forum-group` / `bot` / `forum` object spellings. The see-vector
+  tests also reject `node:crypto` in `typescript/src`.
+  `typescript/ids/scripts/audit-legacy.mjs` is deleted. There is no
+  rejected-id inventory to preserve.
 - **Breaking:** `closed_object` does not trim. A leading space on
   `s3rch/meta` is not that closed object. The vector is
   `vectors/encrypted-discovery/closed-object.json`.
@@ -153,16 +183,14 @@
 
 - The see path takes stored ids only. `checkSee` / `check_see` have no string
   parameter and no label fallback. A string is the edge parser's reject.
-  `CheckObjectId` is `ObjectId` and `AccessorId` is `PrincipalId`. Helpers
-  that group, feed, and the contract migration path still
-  call live in `typescript/src/legacy/gun-legacy.js` and
-  `crates/sociacl-gun/src/legacy.rs`. The see, post, and request paths do
-  not import them. Group's copy is deleted in PR 5, and the feed,
-  encrypted-discovery, and contract copies in PR 6. The #55
+  `CheckObjectId` is `ObjectId` and `AccessorId` is `PrincipalId`. The
+  group, feed, and contract-migration copies of those helpers are deleted
+  (`typescript/src/legacy/`, `crates/sociacl-gun/src/legacy.rs`). The #55
   rebuild spec is not in this repo; that schedule is also in
   `docs/s3rch-check.md`. `vectors/mesh/forbidden-names.json` scopes the
-  banned names to the see-path files. Later pull requests append their
-  files to `scopes`.
+  banned names to `typescript/src`, `typescript/contract`, `sociacl-gun`,
+  `sociacl-encdisc`, and `docs/s3rch-check.d.ts`. `typescript/src` does
+  not reference `node:crypto`.
 - `parseSeeGrant` / `parse_see_grant` and `seeGrantBytes` / `see_grant_bytes`
   snapshot a `sociacl-see-grant-v2` row. A missing signature or a wrong
   domain is `legacy-row`. `stated` is the exact integer 0 or 1. `parseObjectRecord`

@@ -198,6 +198,19 @@ test("checkSee on a primitive graph is bad-record", () => {
   assert.deepEqual(checkSee(null, "chat", "bob", 0), { allowed: false, reason: "bad-record" });
 });
 
+test("typescript/src does not reference node:crypto", () => {
+  const root = fileURLToPath(new URL("../../", import.meta.url));
+  const files = [
+    ...filesForGlob(root, "typescript/src/**/*.js"),
+    ...filesForGlob(root, "typescript/src/**/*.ts"),
+  ];
+  assert.ok(files.length > 0);
+  const needle = /(^|[^A-Za-z0-9_])node:crypto([^A-Za-z0-9_]|$)/;
+  for (const path of files) {
+    assert.equal(needle.test(readFileSync(path, "utf8")), false, path);
+  }
+});
+
 test("see forbidden names are absent", () => {
   const root = fileURLToPath(new URL("../../", import.meta.url));
   const doc = JSON.parse(readFileSync(join(root, "vectors/mesh/forbidden-names.json"), "utf8"));

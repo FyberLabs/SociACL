@@ -10,5 +10,5 @@
     "skipLibCheck": false,
     "types": []
   },
-  "files": ["src/node-crypto.d.ts", "src/group.js", "group-types.ts", "../docs/s3rch-check.d.ts"]
+  "files": ["src/group.js", "group-types.ts", "../docs/s3rch-check.d.ts"]
 }

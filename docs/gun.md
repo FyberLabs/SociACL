@@ -18,9 +18,9 @@ This crate maps the fixed s3r.ch Gun graph onto existing SociACL Check predicate
 | Feed, UX, Gun peers, TypeScript graph | s3r.ch | s3r.ch PR #7 |
 | Elect, wills, devices, Case C mint | SociACL core only | not on the s3r.ch Gun surface |
 
-s3r.ch stores **only Gun-native objects** under this adapter. In-graph Gun data is the native ACL. Check evaluates graph relations on souls and nodes.
+s3r.ch stores **only Gun-native objects** under this adapter. In-graph Gun data is the native ACL. Check evaluates graph relations on stored ids.
 
-A Check **object** is a Gun-native **feed item** or a **held claim** on the user node. Same item shape. Not only identity claims. Accessor is a wallet / Gun peer. Lighter Check is `CHECK(see, object, accessor)` at now. Hopcap 1. Grants are jointly stated. Revoke is immediate.
+A Check **object** is an `ObjectId`: a minted id with the creator's genesis principal, a `claim_` derived id, or an `ext_` derived id. The accessor is a `PrincipalId`. A wallet and a `s3rch/users/<wallet>` path are not principals. Lighter Check is `CHECK(see, object, accessor)` at now. Hopcap 1. Grants are jointly stated. Revoke is immediate. SociACL never launched, so there is no pre-v2 ACL row to migrate.
 
 Non-Gun data is a URL. RSS3 GI, RSS/Atom, KYC / email / phone issuer HTTP calls are **leaf pointers**, not Gun nodes and not grants. Crossing them (`/api/ingest`, seeder) is an **untrusted handoff**. Destination re-authorizes on the way back, then may `put` a native object into `items`. A URL 200 is not `see`.
 
@@ -28,9 +28,9 @@ Execute-without-read is the existing `delegate` primitive (action mask `execute`
 
 A Social Light hop can factor Check. It cannot mint. The consume contract names this `HopFactor` on `checkSee(..., hint?, hop?)`. Decode (`acceptHop` / `decodeHop`) does not verify and does not mint. See [social-light.md](social-light.md).
 
-Mesh see grants are Gun-native dest-ACL nodes under `s3rch/acl/<owner>/<object>/<accessor>`. Post grants are a separate row under `s3rch/acl/<owner>/post/<object>/<accessor>` (`postSoul`). They do not fork `items` or `users`. Each peer Checks its locally HAM-merged graph at now. Cancel is owner-only privilege-down (`stated: 0` and a `hamState` bump) and must be visible on the next Check after merge (no cached allow). `checkPost` allows only when see also passes. A hop, a hint, a wrap, a request, or an inbox delivery never grants. Soul helpers: `aclKey`, `aclPrincipalKey`, `aclSoul`, `grantSoul`, `postSoul` in [s3rch-check.d.ts](s3rch-check.d.ts).
+Mesh see grants are Gun-native dest-ACL nodes under `grantSoul`: `s3rch/acl/<owner key>/<object>/<accessor key>`. Post grants are `postSoul`: `s3rch/acl/<owner key>/post/<object>/<accessor key>`. Owner and accessor keys are `p_` plus 128 lowercase hex. They do not fork `items` or `users`. Each peer Checks its locally HAM-merged graph at now. Cancel is owner-only privilege-down (`stated: 0` and a `hamState` bump) and must be visible on the next Check after merge (no cached allow). `checkPost` allows only when see also passes. A hop, a hint, a wrap, a request, or an inbox delivery never grants. Soul builders are `grantSoul`, `postSoul`, `membershipSoul`, and `objectSetSoul`. `aclKey` and `aclPrincipalKey` are deleted.
 
-Wrapped-key grants, recipient-side discovery, and rotation on revoke are specified in [encrypted-discovery.md](encrypted-discovery.md). That part is spec only. This crate evaluates plaintext `MeshSeeGrant` rows, plaintext `MeshPostGrant` rows (`checkPost`), and direct `same-group` / `named-circle` edges. A wrap is not a grant. A hop, a hint, a wrap, a request, or an inbox delivery never mints. SEA `priv` and `epriv` never go on Gun. SociACL runs no index. A per-contact inbox lane, when a product stores one, is indexed by its lane id hex alone, never under a principal soul or a `~pub` path. The contact-lane secret stays off Gun. The disclosed base lane id is not that secret. This crate does not wire that index. See [encrypted-discovery.md](encrypted-discovery.md). s3r.ch product draft: [FyberLabs/s3r.ch#108](https://github.com/FyberLabs/s3r.ch/pull/108). This repo does not edit s3r.ch.
+Wrapped-key grants, recipient-side discovery, and rotation on revoke are specified in [encrypted-discovery.md](encrypted-discovery.md). `crates/sociacl-encdisc` implements that path. This crate evaluates plaintext `MeshSeeGrant` rows, plaintext `MeshPostGrant` rows (`checkPost`), and direct `same-group` / `named-circle` edges. A wrap is not a grant. A hop, a hint, a wrap, a request, or an inbox delivery never mints. SEA `priv` and `epriv` never go on Gun. SociACL runs no index. A per-contact inbox lane, when a product stores one, is indexed by its lane id hex alone, never under a principal soul or a `~pub` path. The contact-lane secret stays off Gun. The disclosed base lane id is not that secret. This crate does not wire that index. See [encrypted-discovery.md](encrypted-discovery.md). s3r.ch product draft: [FyberLabs/s3r.ch#108](https://github.com/FyberLabs/s3r.ch/pull/108). This repo does not edit s3r.ch.
 
 Case C may Check a frozen bundle the way the rest of SociACL does. The client has no mint path for new Gun grants.
 
@@ -39,16 +39,13 @@ Case C may Check a frozen bundle the way the rest of SociACL does. The client ha
 Gun root: `s3rch`.
 
 ```
-gun.get('s3rch').get('items').get(<item key>)  → GunFeedNode
+gun.get('s3rch').get('items').get(<item key>)  → GunFeedNode (UX). Check id is ext_
 gun.get('s3rch').get('meta')                     → seed meta (not a Check object)
-gun.get('s3rch').get('users').get(wallet)        → GunUserNode
-gun.get('s3rch').get('acl').get(aclPrincipalKey(owner))
-     .get(aclKey(object)).get(aclPrincipalKey(accessor))  → MeshSeeGrant
-gun.get('s3rch').get('acl').get(aclPrincipalKey(owner))
-     .get('post').get(aclKey(object)).get(aclPrincipalKey(accessor))  → MeshPostGrant
+s3rch/acl/<owner key>/<object>/<accessor key>    → MeshSeeGrant (grantSoul)
+s3rch/acl/<owner key>/post/<object>/<accessor key> → MeshPostGrant (postSoul)
 ```
 
-The item key escapes `~ . # $ [ ]` and leaves `/` alone. That escape is a closed label detail, not a public helper. Dest-ACL keys also escape `/`, so dest-ACL souls stay five segments. `room.alpha`, `room_alpha`, and `room/alpha` are three keys. `aclPrincipalKey` is not that escape. It accepts an exact `s3rch/users/<wallet>` or a bare id. `.` is allowed inside a principal. `.` and `..` alone are rejected. `/ # $ [ ] ~`, an inner space, a control, Unicode whitespace, a format character, and `.get(` are rejected. Longer than 256 scalar values is rejected. TypeScript also rejects an unpaired surrogate. A failed parse is null, not an empty string, and is not a soul segment. Trim is ASCII whitespace only, so U+FEFF and U+0085 are rejected. `.`, `..`, and `...` are not principals. An object id with leading or trailing whitespace is rejected, including tab, space, U+0085, U+00A0, U+3000, U+2028, and U+FEFF. It does not alias to the inner id, and `putObject` does not replace an existing owner through an alias such as an item soul. Group see and group presentation reject that id before lookup and do not trim it. Those group queries are in `vectors/mesh/principals.json`. Protocol migration uses the same principal rejection, including `...`. Peer merge drops a post row whose owner or accessor does not parse. Shared principal and object-id cases are in `vectors/mesh/principals.json`. `s3rch/acl` is dest ACL, not a Check object.
+The item key escapes `~ . # $ [ ]` and leaves `/` alone. That escape is a closed UX detail, not a public helper and not a Check id. Dest-ACL souls are the ids builders above. `room.alpha`, `room_alpha`, and `room/alpha` are three strings and none of them is an object id. A wallet, `s3rch/users/<wallet>`, a Gun chain, `.`, `..`, and `...` are not principals. `/ # $ [ ] ~`, an inner space, a control, Unicode whitespace, a format character, and `.get(` are rejected. Longer than 256 scalar values is rejected. TypeScript also rejects an unpaired surrogate. A failed parse is not a soul segment. An object id with leading or trailing whitespace is rejected, including tab, space, U+0085, U+00A0, U+3000, U+2028, and U+FEFF. It does not alias to the inner id. Group see and group presentation reject that id before lookup and do not trim it. Those label strings are the parse rejects in `vectors/mesh/principals.json`. Live rows are `vectors/mesh/v2/`. Protocol migration uses the same principal rejection, including `...`. Peer merge drops a post row whose owner or accessor does not parse. `s3rch/acl` is dest ACL, not a Check object. This crate does not build `s3rch/users/<wallet>` or `s3rch/items/<id>`.
 
 `GunFeedNode` (in-graph = native SociACL object):
 
@@ -60,7 +57,7 @@ The item key escapes `~ . # $ [ ]` and leaves `/` alone. That escape is a closed
 
 `FeedTab` is `"public" | "mine" | "network"`. UX only. Not a Check object.
 
-`GunUserNode` (fixed): `{ id, indicators: string[], provenance, ts }` at `s3rch/users/<wallet>`. `indicators` are held-claim ids — the claim id itself (`ens:…` / `unstoppable:…` / `fc:…` / `lens:…` / `rss3:…`). Same Mesh Check path as a `GunFeedNode` id. Indicators are a comma-separated string on the Gun wire, same as tags. Overlay uses this same shape until s3r.ch `prepareShare*`. Do not invent a second user node. Do not invent `s3rch/users/<wallet>/claims/…`.
+`GunUserNode` (fixed): `{ id, indicators: string[], provenance, ts }`. It is not a core-plane principal, and this crate does not build `s3rch/users/<wallet>`. `indicators` list held-claim text (`ens:…` / `unstoppable:…` / `fc:…` / `lens:…` / `rss3:…`). The Check id is `claim_` derived from that text. Indicators are a comma-separated string on the Gun wire, same as tags. Overlay uses this same shape until s3r.ch `prepareShare*`. Do not invent a second user node. Do not invent `s3rch/users/<wallet>/claims/…`.
 
 `IdentityClaimKind`: `wallet | rss3 | ens | kyc_attestation | email | phone`. Issuers prove a claim to the holder. They are not grants.
 
@@ -118,7 +115,7 @@ Max string 4096. Fail closed on a bad magic, version, or length.
 | --- | --- |
 | `see` | Check `read` on a Gun-native object |
 | object | `GunFeedNode` or a held claim (same Check) |
-| accessor | wallet / Gun peer (`s3rch/users/<wallet>`) |
+| accessor | `PrincipalId` |
 | execute-without-view | `delegate` mask `execute` without `read` |
 | `IdentitySeeGrant` | `delegate` read + `until`; `check_see_grant` ANDs `[from, until)` at now; cancel is undelegate |
 | cancel | owner `undelegate` / unstate on the dest object |
@@ -149,7 +146,7 @@ Elect is visible and always fails (`sociacl_gun_elect`). Case C mint is visible 
 ## What this does not do
 
 - Open or edit FyberLabs/s3r.ch
-- Evaluate wrapped keys or blinded grant rows (spec only; see [encrypted-discovery.md](encrypted-discovery.md))
+- Evaluate wrapped keys or blinded grant rows (`sociacl-encdisc` does; see [encrypted-discovery.md](encrypted-discovery.md))
 - Run an index (one public index, per-group indexes, and local indexes are product storage)
 - Add a second graph schema or a second user node
 - Add a Gun-only Check verb
