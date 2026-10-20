@@ -27,7 +27,7 @@ test('runtime collection checks and explicit verifier history',()=>{
   assert.deepEqual(ids.verifyRotate(rotation,ctx.currentKey,{...ctx,history:undefined}),{ok:false,reason:'missing-history'});
 });
 
-test('optional revoke witness never invokes getters and history aliases stay witness-only',()=>{
+test('optional revoke witness never invokes getters and historical apis stay witness-only',()=>{
   const offline=f.accept.find(c=>c.name==='offline-current-key-revoke').input;
   const w=f.accept.find(c=>c.name==='wallet').input;
   let reads=0;
@@ -36,9 +36,9 @@ test('optional revoke witness never invokes getters and history aliases stay wit
   const result=ids.resolveWalletLinkNow(w.address,[w],[hostile],ctx);
   assert.equal(result.ok,true);assert.deepEqual(result.diagnostics.map(d=>d.reason),['bad-record']);
   assert.equal(reads,0);
-  const historical=ids.resolveWalletLinkAtKey(w.address,[w],[offline],{...ctx,present:true});
+  const historical=ids.resolveWalletLink(w.address,[w],[offline],{...ctx,present:true});
   assert.equal(historical.ok,true);assert.deepEqual(historical.diagnostics.map(d=>d.reason),['bad-attestation']);
-  assert.equal(ids.verifyRotateAtKey(rotation,ctx.currentKey,{...ctx,revocations:[offline],present:true}).ok,true);
+  assert.equal(ids.verifyRotate(rotation,ctx.currentKey,{...ctx,revocations:[offline],present:true}).ok,true);
   const present=ids.resolveWalletLinkNow(w.address,[w],[offline],ctx);
   assert.equal(present.ok,false);assert.equal(present.reason,'revoked-link');
 });

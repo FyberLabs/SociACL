@@ -809,7 +809,7 @@ test("the constructor is not an import path", () => {
 });
 
 test("typescript seal opens and matches the shared rust wrap", () => {
-  const row = records.accept.find((item) => item.name === "rotate-v3-wallet");
+  const row = records.accept.find((item) => item.name === vector.witnessed.rotationName);
   if (!row) throw new Error("missing rotation");
   const genesisPair = scalarSea(vector.witnessed.genesisScalar);
   const genesisEpub = scalarSea(vector.witnessed.genesisEpubScalar);

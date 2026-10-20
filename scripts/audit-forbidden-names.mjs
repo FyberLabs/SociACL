@@ -1,6 +1,6 @@
 // Close-out audit. Whole-token match, the same boundary rg uses.
 // Fails when a forbidden name appears in its scope, or when
-// typescript/src contains node:crypto or the bare "crypto" specifier.
+// typescript/src imports "crypto" or "node:crypto". WebCrypto stays allowed.
 // *.js also covers .mjs and .cjs. *.ts also covers .mts and .cts.
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
@@ -101,15 +101,160 @@ for (const glob of doc.scopes) {
   }
 }
 
-const cryptoNames = ["node:crypto", "crypto"];
+const CRYPTO_SPECIFIERS = new Set(["crypto", "node:crypto"]);
+
+function isIdent(c) {
+  return c !== undefined && /[A-Za-z0-9_$]/.test(c);
+}
+
+/** Import, export-from, require, import(), createRequire, and getBuiltinModule.
+ * Strings and comments are not code. Template specifiers count. The same
+ * scanner is copied in typescript/tests/test_see.js and see_vectors.rs.
+ * @param {string} source */
+function importsNodeCrypto(source) {
+  const n = source.length;
+  let i = 0;
+  /** @type {'import'|'export'|null} */ let stmt = null;
+  const skipSpace = (at) => {
+    while (at < n && /\s/.test(source[at])) at += 1;
+    return at;
+  };
+  const wordAt = (at, word) => source.startsWith(word, at) && !isIdent(source[at - 1]) && !isIdent(source[at + word.length]);
+  const readString = (at) => {
+    const quote = source[at];
+    let j = at + 1;
+    let value = "";
+    while (j < n) {
+      const c = source[j];
+      if (c === "\\") {
+        value += source[j + 1] ?? "";
+        j += 2;
+        continue;
+      }
+      if (quote === "`" && c === "$" && source[j + 1] === "{") return { value: null, end: j };
+      if (c === quote) return { value, end: j + 1 };
+      value += c;
+      j += 1;
+    }
+    return { value, end: n };
+  };
+  const skipBalanced = (at) => {
+    let depth = 0;
+    let j = at;
+    while (j < n) {
+      const c = source[j];
+      if (c === "/" && source[j + 1] === "/") {
+        j += 2;
+        while (j < n && source[j] !== "\n") j += 1;
+        continue;
+      }
+      if (c === "/" && source[j + 1] === "*") {
+        j += 2;
+        while (j < n && !(source[j] === "*" && source[j + 1] === "/")) j += 1;
+        j = Math.min(n, j + 2);
+        continue;
+      }
+      if (c === "'" || c === '"' || c === "`") {
+        j = readString(j).end;
+        continue;
+      }
+      if (c === "(") depth += 1;
+      else if (c === ")") {
+        depth -= 1;
+        if (depth === 0) return j + 1;
+      }
+      j += 1;
+    }
+    return n;
+  };
+  const specifierAt = (at) => {
+    if (source[at] !== "'" && source[at] !== '"' && source[at] !== "`") return false;
+    const read = readString(at);
+    return read.value !== null && CRYPTO_SPECIFIERS.has(read.value);
+  };
+  while (i < n) {
+    const c = source[i];
+    if (c === "/" && source[i + 1] === "/") {
+      i += 2;
+      while (i < n && source[i] !== "\n") i += 1;
+      continue;
+    }
+    if (c === "/" && source[i + 1] === "*") {
+      i += 2;
+      while (i < n && !(source[i] === "*" && source[i + 1] === "/")) i += 1;
+      i = Math.min(n, i + 2);
+      continue;
+    }
+    if (c === "'" || c === '"' || c === "`") {
+      i = readString(i).end;
+      continue;
+    }
+    if (c === ";") {
+      stmt = null;
+      i += 1;
+      continue;
+    }
+    if ((stmt === "import" || stmt === "export") && wordAt(i, "from")) {
+      if (specifierAt(skipSpace(i + 4))) return true;
+      i += 4;
+      continue;
+    }
+    if (wordAt(i, "import")) {
+      const j = skipSpace(i + 6);
+      if (source[j] === "(") {
+        if (specifierAt(skipSpace(j + 1))) return true;
+        i = j + 1;
+        continue;
+      }
+      if (specifierAt(j)) return true;
+      stmt = "import";
+      i += 6;
+      continue;
+    }
+    if (wordAt(i, "export")) {
+      stmt = "export";
+      i += 6;
+      continue;
+    }
+    if (wordAt(i, "createRequire")) {
+      let j = skipSpace(i + 13);
+      if (source[j] === "(") {
+        j = skipSpace(skipBalanced(j));
+        if (source[j] === "(" && specifierAt(skipSpace(j + 1))) return true;
+      }
+      i += 13;
+      continue;
+    }
+    if (wordAt(i, "getBuiltinModule") || wordAt(i, "require")) {
+      const word = wordAt(i, "getBuiltinModule") ? "getBuiltinModule" : "require";
+      const j = skipSpace(i + word.length);
+      if (source[j] === "(" && specifierAt(skipSpace(j + 1))) return true;
+      i += word.length;
+      continue;
+    }
+    i += 1;
+  }
+  return false;
+}
+
+const cryptoVectors = JSON.parse(readFileSync(join(root, "vectors/mesh/crypto-import.json"), "utf8"));
+for (const row of cryptoVectors.allowed) {
+  if (importsNodeCrypto(row.source)) {
+    console.error(`allowed crypto snippet flagged: ${row.name}`);
+    failed = true;
+  }
+}
+for (const row of cryptoVectors.banned) {
+  if (!importsNodeCrypto(row.source)) {
+    console.error(`banned crypto snippet missed: ${row.name}`);
+    failed = true;
+  }
+}
 for (const glob of ["typescript/src/**/*.js", "typescript/src/**/*.ts"]) {
   for (const path of filesForGlob(glob)) {
-    const text = readFileSync(path, "utf8");
-    for (const name of cryptoNames) {
-      if (present(text, name)) {
-        console.error(`${name} in ${path}`);
-        failed = true;
-      }
+    if (importsNodeCrypto(readFileSync(path, "utf8"))) {
+      console.error(`crypto import in ${path}`);
+      failed = true;
     }
   }
 }

@@ -74,12 +74,20 @@ fn provider_item_id_is_not_trimmed() {
     assert_eq!(spaced["source"], plain["source"]);
     let plain_id = plain["providerItemId"].as_str().unwrap();
     let spaced_id = spaced["providerItemId"].as_str().unwrap();
-    let derived = derive_external_id(&source, plain_id).unwrap();
-    assert_eq!(derived.as_ref(), plain["object"].as_str().unwrap());
-    assert_eq!(
-        derive_external_id(&source, spaced_id).unwrap_err().to_string(),
-        spaced["reason"].as_str().unwrap()
-    );
+    for row in rows {
+        let id = row["providerItemId"].as_str().unwrap();
+        let name = row["name"].as_str().unwrap();
+        match derive_external_id(&source, id) {
+            Ok(derived) => {
+                assert!(row["ok"].as_bool().unwrap(), "{name}");
+                assert_eq!(derived.as_ref(), row["object"].as_str().unwrap(), "{name}");
+            }
+            Err(err) => {
+                assert!(!row["ok"].as_bool().unwrap(), "{name}");
+                assert_eq!(err.to_string(), row["reason"].as_str().unwrap(), "{name}");
+            }
+        }
+    }
     let item = |id: &str| FeedItem {
         id: id.to_string(),
         source: FeedSource::Rss3,
@@ -101,6 +109,23 @@ fn provider_item_id_is_not_trimmed() {
         plain["object"].as_str().unwrap()
     );
     assert!(spaced_item.object_id(&source).is_err());
+    for row in doc["urls"].as_array().unwrap() {
+        if row.get("dstLen").is_some() {
+            continue;
+        }
+        let url = row["url"].as_str().unwrap();
+        let name = row["name"].as_str().unwrap();
+        match sociacl_gun::UrlLeaf::parse(url) {
+            Ok(leaf) => {
+                assert!(row["ok"].as_bool().unwrap(), "{name}");
+                assert_eq!(leaf.normalized(), row["normalized"].as_str().unwrap(), "{name}");
+            }
+            Err(err) => {
+                assert!(!row["ok"].as_bool().unwrap(), "{name}");
+                assert_eq!(err.to_string(), row["reason"].as_str().unwrap(), "{name}");
+            }
+        }
+    }
 }
 
 #[test]

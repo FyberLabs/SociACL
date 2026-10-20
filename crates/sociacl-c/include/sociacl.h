@@ -554,9 +554,9 @@ int sociacl_gun_elect(
 );
 
 /* Normalize a permalink. A URL is not a Gun node.
-   A normalized form longer than 256 bytes is -1, reason "too-long".
-   A dst that cannot hold the normalized form and its NUL is -1,
-   reason "buffer-too-small". The function does not truncate. */
+   UrlLeaf::parse rejects a normalized form longer than 256 bytes:
+   -1, reason "too-long". A dst that cannot hold the form and its NUL
+   is -1, reason "buffer-too-small". The function does not truncate. */
 int sociacl_gun_normalize_url(
     const char *url,
     char *dst,

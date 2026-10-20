@@ -47,7 +47,8 @@ object. Rust cannot represent an unpaired UTF-16 surrogate in `str`;
 | Creation | `mintObjectId`, `deriveClaimId`, `deriveExternalId` |
 | Signing | `lengthPrefixed`, `signingBytes`, `linkId`, `verifyKeySignature`, `signWithKeyring` |
 | Proofs | `verifySignedAt`, `verifyAclAttestation`, `verifyWalletLink`, `verifyOidcLink`, `verifyRotate`, `verifyRotationRequest`, `verifyGenesisEpubRequest`, `verifyRevoke` |
-| Present eligibility | `verifyRevokeNow`, `resolveWalletLinkNow` |
+| Present eligibility | `verifyRevokeNow`, `resolveWalletLinkNow`, `resolveOidcLinkNow`, `prepareRetainedLinksNow` |
+| Link map | `verifyingLinkMap` |
 | Histories | `resolveCurrentKey`, `resolveWalletLink`, `historyState`, `checkRotationPublish`, `checkRotationDraft` |
 
 Every parser/verifier returns `{ok:true,value}` or `{ok:false,reason}`. Scalar
@@ -170,7 +171,8 @@ API. The signature still binds principal, target link ID and issuance time.
 Direct callers must match those fields to the credential being revoked.
 
 `resolveWalletLinkNow(address, links, revocations, context)` uses that rule for
-present wallet eligibility. A current-key offline revoke blocks the newest
+present wallet eligibility. `resolveOidcLinkNow(cred, links, revocations, context)`
+is the same lookup for an OIDC credential (`iss`, `tenant`, `sub`). A current-key offline revoke blocks the newest
 binding without resurrecting an older one. **When its signer retires, an
 unwitnessed revoke stops applying.** There is no authenticated saved-state
 persistence in this API. Remove the link from the retained set, or use a
@@ -180,12 +182,12 @@ rotation. The same offline revoke is ignored by historical/as-of
 API for a historical query or choose its current key from `issuedAt`.
 
 Panopticon and clients **MUST exclude present-revoked links from `retainedLinks`**
-when constructing a rotation. Panopticon **MUST check present revocation before
+when constructing a rotation. Call `prepareRetainedLinksNow(candidates, context)`.
+It authenticates each candidate, drops ids revoked under the final current key, and returns each id once.
+It does not issue an attestation. Panopticon **MUST check present revocation before
 attesting any rotation or login**. For wallet authorization, use
 `resolveWalletLinkNow` and require the selected link ID to equal the authorizer
-ID. For OIDC, authenticate the enrolled link and check `verifyRevokeNow` using the
-final authenticated current key: match principal, target ID and
-`revoke.issuedAt >= link.issuedAt`. A revoked authorizer denies the attempt even
+ID. For OIDC, use `resolveOidcLinkNow`. A revoked authorizer denies the attempt even
 if omitted from retention. Check every candidate retained credential, including
 credentials of the other kind. Clients sign the filtered set; Panopticon
 independently verifies it and rechecks if account state changes. Historical
@@ -272,7 +274,9 @@ transitions at the same sequence freeze resolution with `rotation-fork`.
 Historical proofs are checked at issuance; `now` excludes future history.
 An expired enrollment attestation does not retroactively invalidate a completed
 rotation. A rotation's new key signs records issued **after** its timestamp;
-a same-second revoke by the preceding key can block that rotation. Once the
+a same-second revoke by the preceding key can block that rotation. A link
+signed by the new key in that same second is `bad-signature`: `historyState`
+still names the preceding key (`issuedAt < at`). Once the
 rotation is accepted, its retained set is authoritative at that horizon.
 `verifyRotate(record, currentKey, context)` checks the proof, authorizing link,
 every retained link, and pre-rotation revocations. OIDC authorizers name an
@@ -290,24 +294,32 @@ Revoking the newest link never resurrects an older one. Invalid unrelated entrie
 are reported and skipped. Link maps are examined in sorted key order in both
 languages. Diagnostics identify input positions; they are not authorization.
 
-Rust returns `Resolution<T> { result: Result<T, Reason>, diagnostics }`. Both
-languages expose `*_at_key` / `*AtKey` aliases for the explicit proof/history APIs;
-these are deprecated compatibility aliases. Use the canonical names in new
-code. They remain witness-only and do not alias the present-time entry points.
+Rust returns `Resolution<T> { result: Result<T, Reason>, diagnostics }`.
+Historical checks stay on `resolveWalletLink`, `verifyRevoke`, `verifyRotate`,
+and `resolveCurrentKey`. A `present` field on the context does not switch them.
 
-`ResolutionContext.links` accepts one proof copy per ID. Callers **must retain
-a copy that verifies** against authenticated key state and pinned witnesses;
-keep alternatives until this verification is possible. Neither first-write nor
-last-write wins over untrusted copies is safe: link IDs exclude signature/SIWE/
-attestation bytes, and a corrupt copy must not overwrite a verified one. Missing
-required evidence remains fatal. There is no storage/index deduplication adapter
-in this package.
+`verifyingLinkMap(copies, context)` groups wallet and OIDC copies by signing-byte
+id and keeps one copy that verifies. A tampered sibling does not remove that id,
+in either input order. An id with no verifying copy is omitted. If every copy of
+an id fails with `missing-history`, `rotation-fork`, or `rotation-conflict`, the
+call returns that reason. `ResolutionContext.links` still holds one proof copy
+per id. Callers **must** put a verifying copy there; this builder is how.
 
 The context must include complete known link, revocation, and rotation history;
 a pure verifier cannot discover omitted records or establish global freshness.
 Never treat a partial offline snapshot as proof that an account has no rotations
-or active wallets. Enforce input-size and work budgets at the caller; never
-silently truncate a history to satisfy those budgets.
+or active wallets. Resolution lists, the link map, revocation lists, and
+genesis-epub bindings are capped at `MAX_RESOLUTION_INPUT` (1024). A longer list
+is `too-long`. The functions do not truncate. `verifyRotate` and
+`verifyRotationRequest` use that cap.
+
+A wallet rotation with `nextEpub` requires `sociacl-rotate-attest-v4`: the v3
+claims plus `siweHash`. That hash is hex(sha256(length-prefixed
+`sociacl-siwe-proof-v1`, the SIWE message, and the SIWE signature)). A v3
+wallet attestation, or a hash that does not match the proof, is
+`bad-attestation` before SIWE verification. OIDC rotations stay on v3. A
+rotation without `nextEpub` stays v2. The rotation signing bytes stay
+`sociacl-rotate-v3` when `nextEpub` is present.
 
 `Reason` additionally includes `missing-history`, `unretained-link`, and
 `wallet-required` and `rotation-conflict`, alongside proof, ordering, fork, revocation, ambiguity,
