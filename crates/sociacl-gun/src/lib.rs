@@ -54,8 +54,8 @@ pub use feed::{
     HELD_CLAIM_PREFIXES,
 };
 pub use group::{
-    membership_soul, object_set_soul, DecodedGroupPayload, GroupPredicate, GroupPresentation,
-    GroupSnapshotMember, GroupSnapshotObjectSet, MeshMembership, ObjectSetName, PresentedGroup,
+    DecodedGroupPayload, GroupPredicate, GroupPresentation, GroupSnapshotMember,
+    GroupSnapshotObjectSet, MeshMembership, ObjectSetName, PresentedGroup,
 };
 pub use hint::{HandoffHint, MAGIC as HINT_MAGIC, VERSION as HINT_VERSION};
 pub use hop::{accept_hop, accept_hop_bytes, decode_hop, HopFactor};
@@ -67,6 +67,7 @@ pub use mesh::{
 };
 pub use post::MESH_REASON_POST;
 pub use request::{request_owner, ApprovedRequest};
+pub use sociacl_ids::{membership_soul, object_set_soul};
 pub use soul::{
     GunNode, GunNodeKind, GunSoul, S3RCH_ACL, S3RCH_ITEMS, S3RCH_META, S3RCH_ROOT, S3RCH_USERS,
 };

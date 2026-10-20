@@ -2165,7 +2165,7 @@ export type GroupSeeGraph = SeeGraph & {
  * No transitive inheritance.
  * Both the object-set edge and the membership edge must be stated 1.
  * Check compares the row's object, set id, and accessor to the
- * request, and verifies signatures with enrolledKey.
+ * request. Signatures were checked at admission.
  * Hop missing does not fail. Hop alone never allows.
  * A hop, a hint, or a wrap never mints.
  * stated 0 denies. now is the Check instant; membership has no

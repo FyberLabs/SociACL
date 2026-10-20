@@ -4,6 +4,7 @@ import { readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import * as ids from "../ids/src/index.js";
 import { runPostCase } from "../src/post.js";
+import { runGroupCase } from "./group-case.js";
 import { runRequestCase } from "./request-case.js";
 import { admitPost } from "../src/post.js";
 import { admitRow, checkSee, putObject, runSeeCase, seeAccessorEdge, seeObjectEdge } from "../src/see.js";
@@ -30,7 +31,7 @@ test("see vectors", () => {
   for (const fileName of readdirSync(dir).filter((name) => name.endsWith(".json")).sort()) {
     const file = JSON.parse(readFileSync(new URL(fileName, dir), "utf8"));
     const ctx = contextOf(file.context);
-    const run = file.family === "post" ? runPostCase : file.family === "request" ? runRequestCase : runSeeCase;
+    const run = file.family === "post" ? runPostCase : file.family === "request" ? runRequestCase : file.family === "group" ? runGroupCase : runSeeCase;
     for (const side of ["accept", "reject"]) {
       for (const entry of file[side]) {
         run(entry.steps, { ctx, rotations: (name) => file.context.rotationSets[name] });

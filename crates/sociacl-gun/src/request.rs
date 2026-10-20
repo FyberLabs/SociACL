@@ -3,7 +3,6 @@
 //! A hop, a hint, a wrap, a request, or an inbox delivery never grants.
 
 use serde_json::{json, Value};
-use sociacl_core::Timestamp;
 use sociacl_ids::{
     parse_access_request, parse_principal_id, post_grant_bytes, resolve_current_key,
     see_grant_bytes, sign_with_keyring, verify_post_grant, verify_see_grant, verify_signed_at,
@@ -124,23 +123,13 @@ impl MeshSeeGraph {
                 .as_ref()
                 .is_some_and(|row| same_live(row, owner, &req.object, &req.requester, from, until));
         if let Some((predicate, now)) = members {
-            let Some(label_owner) = self.labels.owner_of(req.object.as_ref()) else {
+            let Some(signed_owner) = self.object_owner(&req.object) else {
                 return Err(Reason::NotMember);
             };
-            let Ok(label) = parse_principal_id(&label_owner) else {
-                return Err(Reason::NotMember);
-            };
-            if label != *owner {
+            if signed_owner != owner {
                 return Err(Reason::NotMember);
             }
-            let see = self.check_group_see(
-                predicate,
-                req.object.as_ref(),
-                req.requester.as_ref(),
-                Timestamp(now),
-                None,
-                None,
-            );
+            let see = self.check_group_see(predicate, &req.object, &req.requester, now, None, None);
             if !see.allowed || see.reason == MESH_REASON_OWNER || see.reason != predicate.as_str() {
                 return Err(Reason::NotMember);
             }

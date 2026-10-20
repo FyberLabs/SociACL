@@ -5,6 +5,7 @@ import { secp256k1 } from '@noble/curves/secp256k1.js';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { keccak_256 } from '@noble/hashes/sha3.js';
 import * as ids from '../src/index.js';
+import { membershipAssentBytes, objectSetBytes } from '../../src/group.js';
 import { runRequestCase } from '../../tests/request-case.js';
 import { b64, hex, utf8 } from './vector-util.mjs';
 
@@ -99,6 +100,16 @@ function accessRow(fields, signer) {
   const bytes = ids.accessRequestBytes(bare);
   return { ...bare, sig: val(ids.signWithKeyring(secret(signer), bytes, keyFor(signer))) };
 }
+const friends = val(ids.mintObjectId('set', p, () => new Uint8Array(16).fill(0x33)));
+function memberAssent(role, signer) {
+  const row = { role, predicate: 'same-group', set: friends, member: p2, setOwner: p, stated: 1, hamState: 1, issuedAt: now, cancels: [] };
+  return { ...row, sig: val(ids.signWithKeyring(secret(signer), membershipAssentBytes(row), keyFor(signer))) };
+}
+function objectEdge() {
+  const row = { owner: p, object: chatA, predicate: 'same-group', set: friends, stated: 1, hamState: 1, issuedAt: now, cancels: [] };
+  return { ...row, sig: val(ids.signWithKeyring(secret(1), objectSetBytes(row), p)) };
+}
+const join = { op: 'join', rotations: 'genesis', member: memberAssent('member', 2), set: memberAssent('set', 1), edge: objectEdge() };
 const put = (object = chatA, owner = p, signer = 1) => ({ op: 'put', record: objectRecord(object, owner, signer), rotations: 'genesis', ok: true, kept: true });
 const window = { from: at, until: now + 100 };
 const hamMax = 9007199254740991;
@@ -144,7 +155,7 @@ add('accept', 'grant-read-post-writes-both', [
 ]);
 add('accept', 'members-gate-on-stored-id', [
   put(),
-  { op: 'join', owner: p, member: p2, setOwner: 'alice', setId: 'alice/friends', object: chatA, predicate: 'same-group' },
+  join,
   { op: 'grant', owner: p, signer: 1, rotations: 'genesis', request: accessRow({ requester: p2, object: chatA, scope: 'read', status: 'pending', message: '', issuedAt: now }, 2), window, members: { predicate: 'same-group', now }, granted: true, hamState: 1, post: false },
   { op: 'check', object: chatA, accessor: p2, now, allowed: true, reason: 'delegate' },
 ]);
@@ -177,7 +188,7 @@ add('reject', 'post-at-max-ham-writes-no-see', [
 ]);
 add('reject', 'members-gate-item-soul-is-parse-reject', [
   put(),
-  { op: 'join', owner: p, member: p2, setOwner: 'alice', setId: 'alice/friends', object: chatA, predicate: 'same-group' },
+  join,
   { op: 'grant', owner: p, signer: 1, rotations: 'genesis', request: { ...shell, object: `s3rch/items/${chatA}`, requestId: idA }, window, members: { predicate: 'same-group', now }, granted: false, reason: reasonOf(`s3rch/items/${chatA}`) },
   { op: 'view', object: chatA, accessor: p2, absent: true },
 ]);
@@ -212,12 +223,6 @@ add('reject', 'members-missing-is-not-member', [
 ]);
 const pending = () => accessRow({ requester: p2, object: chatA, scope: 'read', status: 'pending', message: '', issuedAt: now }, 2);
 const grant = (request, extra) => ({ op: 'grant', owner: p, signer: 1, rotations: 'genesis', request, window, ...extra });
-add('reject', 'members-label-owner-is-requester', [
-  put(),
-  { op: 'label-owner', object: chatA, owner: p2 },
-  grant(pending(), { members: { predicate: 'same-group', now }, granted: false, reason: 'not-member' }),
-  { op: 'view', object: chatA, accessor: p2, absent: true },
-], 'The merge attack is TypeScript-only. Rust has no merge path. This vector plants the label through the test hook.');
 add('reject', 'members-owner-shortcut-is-not-member', [
   put(),
   grant(accessRow({ requester: p, object: chatA, scope: 'read', status: 'pending', message: '', issuedAt: now }, 1), { members: { predicate: 'same-group', now }, granted: false, reason: 'not-member' }),
@@ -278,7 +283,6 @@ add('accept', 'approve-read-then-post-keeps-see', [
 ]);
 const live = { from: at, until: now + 100 };
 const members = { predicate: 'same-group', now };
-const join = { op: 'join', owner: p, member: p2, setOwner: 'alice', setId: 'alice/friends', object: chatA, predicate: 'same-group' };
 add('reject', 'members-approval-does-not-revive-cancel', [
   put(),
   join,
@@ -313,13 +317,12 @@ add('accept', 'manual-approval-after-post-cancel', [
   { op: 'view-post', object: chatA, accessor: p2, stated: 1, hamState: 2, mode: 'present' },
   { op: 'check-post', object: chatA, accessor: p2, now, allowed: true, reason: 'post' },
 ]);
-add('reject', 'alias-label-owner-is-not-member', [
+add('accept', 'members-grant-uses-the-signed-owner', [
   put(),
   join,
-  { op: 'label-owner', object: chatA, owner: `s3rch/users/${p}` },
-  grant(pending(), { members, granted: false, reason: 'not-member' }),
-  { op: 'view', object: chatA, accessor: p2, absent: true },
-]);
+  grant(pending(), { members, granted: true, hamState: 1, post: false }),
+  { op: 'view', object: chatA, accessor: p2, stated: 1, hamState: 1, mode: 'present' },
+], 'Members auto-approve uses the admitted signed owner.');
 const boundary = at + 30;
 add('reject', 'rotation-boundary', [
   put(),

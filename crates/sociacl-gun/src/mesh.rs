@@ -149,13 +149,14 @@ pub(crate) struct MeshObject {
 ///
 /// Group and circle rows live on this same graph. They do not fork
 /// items or users, and they are not see-grant souls.
-/// Label graph still used by group. It is not the typed see, post, or request API.
+/// `rows` is the group store. The object, grant, and friend maps are
+/// the legacy label harness. They are not the typed see, post, or request API.
 #[derive(Clone, Debug, Default)]
-pub(crate) struct LabelGraph {
+pub(crate) struct GroupGraph {
     pub(crate) objects: HashMap<String, MeshObject>,
     pub(crate) grants: HashMap<String, GunAclEdge>,
     pub(crate) friends: HashSet<(String, String)>,
-    pub(crate) groups: crate::group::GroupRows,
+    pub(crate) rows: crate::group::GroupRows,
 }
 
 /// Admitted object owner. `record` is the canonical signed snapshot,
@@ -173,7 +174,7 @@ struct ObjectAdmission {
 
 #[derive(Clone, Debug, Default)]
 pub struct MeshSeeGraph {
-    pub(crate) labels: LabelGraph,
+    pub(crate) group: GroupGraph,
     owners: HashMap<String, ObjectAdmission>,
     admitted: HashMap<String, AdmittedSee>,
     pub(crate) post_rows: HashMap<String, crate::post::AdmittedPost>,
@@ -276,10 +277,6 @@ impl MeshSeeGraph {
                 return Ok(false);
             }
         }
-        self.labels.put_object(
-            verified.record.object.as_ref(),
-            verified.record.owner.as_ref(),
-        );
         self.owners.insert(
             id,
             ObjectAdmission {
@@ -292,19 +289,21 @@ impl MeshSeeGraph {
         Ok(true)
     }
 
-    /// Unstable, test-only hook. Plants a label owner without a signed record.
-    /// Production builds omit this. Tests enable the `vectors` feature.
+    /// Unstable, test-only hook. Merges group rows the way a peer merge does.
+    /// An object-set row is copied only when this graph already holds the
+    /// admitted signed object record and that owner matches. A row that
+    /// arrives first is dropped.
     #[cfg(feature = "vectors")]
     #[doc(hidden)]
-    pub fn vector_label_owner(&mut self, object: &str, owner: &str) {
-        self.labels.put_object(object, owner);
-    }
-
-    /// Unstable, test-only hook. The label owner copied from an admitted record.
-    #[cfg(feature = "vectors")]
-    #[doc(hidden)]
-    pub fn vector_label_owner_of(&self, object: &str) -> Option<&str> {
-        self.labels.owner_of(object)
+    pub fn vector_merge_groups(&mut self, other: &Self) {
+        let object_owners: HashMap<String, String> = self
+            .owners
+            .iter()
+            .map(|(id, row)| (id.clone(), row.owner.as_ref().to_string()))
+            .collect();
+        self.group
+            .rows
+            .merge_from(&other.group.rows, &object_owners);
     }
 
     /// Admit one see row. The row is parsed once; the signature covers that value.
@@ -437,7 +436,6 @@ impl MeshSeeGraph {
             };
             if verify_object_record(&row.record, &rotations, ctx).is_err() {
                 self.owners.remove(&id);
-                self.labels.remove_object(&id);
                 dropped += 1;
             }
         }
@@ -454,7 +452,6 @@ impl MeshSeeGraph {
             .collect();
         for id in ids {
             self.owners.remove(&id);
-            self.labels.remove_object(&id);
         }
     }
 

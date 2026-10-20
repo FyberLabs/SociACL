@@ -159,9 +159,9 @@ export function grantApprovedRequest(graph, owner, request, window, members, sig
     if (members.predicate !== 'same-group' && members.predicate !== 'named-circle') return deny('bad-record');
     if (!integer(members.now)) return deny('bad-record');
     const group = /** @type {{ ownerOf?: (object: string) => string | undefined, checkGroupSee?: Function }} */ (graph);
-    const labelOwner = typeof group.ownerOf === 'function' ? group.ownerOf(req.object) : undefined;
-    const parsedLabel = typeof labelOwner === 'string' ? parsePrincipalId(labelOwner) : null;
-    if (!parsedLabel || !parsedLabel.ok || parsedLabel.value !== admission.owner) return deny('not-member');
+    const signedOwner = typeof group.ownerOf === 'function' ? group.ownerOf(req.object) : undefined;
+    const parsedOwner = typeof signedOwner === 'string' ? parsePrincipalId(signedOwner) : null;
+    if (!parsedOwner || !parsedOwner.ok || parsedOwner.value !== admission.owner) return deny('not-member');
     const check = group.checkGroupSee;
     if (typeof check !== 'function') return deny('not-member');
     const see = check.call(graph, members.predicate, req.object, req.requester, members.now);

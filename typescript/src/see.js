@@ -55,22 +55,6 @@ function graphObject(graph) {
   return typeof graph === 'object' && graph !== null;
 }
 
-/** Copy the admitted signed owner onto a group graph that records one.
- * A plain graph has no label map, and that is not an error.
- * @param {object} graph @param {string} object @param {string} owner */
-function bindLabel(graph, object, owner) {
-  const target = /** @type {{ bindSignedOwner?: (object: string, owner: string) => void }} */ (graph);
-  if (typeof target.bindSignedOwner === 'function') target.bindSignedOwner(object, owner);
-}
-
-/** Drop the label putObject copied from an admitted record.
- * A plain graph has no label map, and that is not an error.
- * @param {object} graph @param {string} object */
-function unbindLabel(graph, object) {
-  const target = /** @type {{ unbindSignedOwner?: (object: string) => void }} */ (graph);
-  if (typeof target.unbindSignedOwner === 'function') target.unbindSignedOwner(object);
-}
-
 /**
  * One plain copy of the context. Later reads do not touch the caller's object.
  * @param {ResolutionContext} ctx
@@ -278,26 +262,21 @@ export function putObject(graph, record, resolver) {
   if (!existing) {
     const admitted = { owner, issuedAt, record: verified.value.record, history: history.slice() };
     held.owners.set(id, admitted);
-    bindLabel(graph, id, owner);
     return { ok: true, value: admissionCopy(admitted), kept: true };
   }
   if (issuedAt <= existing.issuedAt) {
-    bindLabel(graph, id, existing.owner);
     return { ok: true, value: admissionCopy(existing), kept: false };
   }
   const still = verifyObjectRecord(existing.record, history, resolver.ctx);
   if (still.ok) {
-    bindLabel(graph, id, existing.owner);
     return { ok: true, value: admissionCopy(existing), kept: false };
   }
   if (signerRetired(existing.history, verified.value.key, issuedAt, owner, resolver.ctx)) {
-    bindLabel(graph, id, existing.owner);
     return { ok: true, value: admissionCopy(existing), kept: false };
   }
   existing.issuedAt = issuedAt;
   existing.record = verified.value.record;
   existing.history = history.slice();
-  bindLabel(graph, id, owner);
   return { ok: true, value: admissionCopy(existing), kept: true };
 }
 
@@ -477,10 +456,7 @@ export function reverifyPrincipal(graph, principal, resolver) {
       if (row.grant.owner === who.value) held.rows.delete(key);
     }
     for (const [id, row] of [...held.owners]) {
-      if (row.owner === who.value) {
-        held.owners.delete(id);
-        unbindLabel(graph, id);
-      }
+      if (row.owner === who.value) held.owners.delete(id);
     }
     reverifyPosts(graph, who.value, rotations, resolver.ctx);
     return { ok: false, reason: 'missing-history' };
@@ -501,7 +477,6 @@ export function reverifyPrincipal(graph, principal, resolver) {
     const again = verifyObjectRecord(row.record, rotations, resolver.ctx);
     if (!again.ok) {
       held.owners.delete(id);
-      unbindLabel(graph, id);
       dropped += 1;
     }
   }
@@ -607,22 +582,7 @@ export function checkSee(graph, object, accessor, now, hint, hop) {
  * @param {{ ctx: ResolutionContext, rotations: (name: string) => readonly unknown[] }} options
  */
 export function runSeeCase(steps, options) {
-  /** @type {Map<string, string>} */
-  const labels = new Map();
-  const graph = {
-    /** @param {string} object @param {string} owner */
-    bindSignedOwner(object, owner) {
-      labels.set(object, owner);
-    },
-    /** @param {string} object */
-    unbindSignedOwner(object) {
-      labels.delete(object);
-    },
-    /** @param {string} object */
-    ownerOf(object) {
-      return labels.get(object);
-    },
-  };
+  const graph = {};
   const resolverFor = (/** @type {Record<string, any>} */ step) => ({
     rotations: () => (step.history === 'unavailable' ? undefined : options.rotations(step.rotations)),
     ctx: step.revocations ? { ...options.ctx, revocations: step.revocations } : options.ctx,
@@ -694,15 +654,6 @@ export function runSeeCase(steps, options) {
       if (step.from !== undefined && got.from !== step.from) failStep(step, got);
       if (step.until !== undefined && got.until !== step.until) failStep(step, got);
       if (step.attest !== undefined && got.attest !== step.attest) failStep(step, got);
-      continue;
-    }
-    if (step.op === 'label') {
-      const got = graph.ownerOf(step.object);
-      if (step.absent) {
-        if (got !== undefined) failStep(step, got);
-        continue;
-      }
-      if (got !== step.owner) failStep(step, got);
       continue;
     }
     if (step.op === 'check') {

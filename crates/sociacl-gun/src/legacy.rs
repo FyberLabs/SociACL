@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use sociacl_core::{NodeId, Timestamp};
 
 use crate::mesh::{
-    GunAclEdge, LabelGraph, MeshCheckResult, MeshObject, MeshSeeGrant, MESH_REASON_ACL,
+    GroupGraph, GunAclEdge, MeshCheckResult, MeshObject, MeshSeeGrant, MESH_REASON_ACL,
     MESH_REASON_CANCELLED, MESH_REASON_DELEGATE, MESH_REASON_META, MESH_REASON_MISSING,
     MESH_REASON_OWNER, MESH_REASON_URL_LEAF,
 };
@@ -475,7 +475,7 @@ fn push_grant_str(buf: &mut Vec<u8>, value: &str) {
     buf.extend_from_slice(&bytes[..usize::try_from(len).unwrap_or(bytes.len())]);
 }
 
-impl LabelGraph {
+impl GroupGraph {
     pub(crate) fn put_object(&mut self, object: impl AsRef<str>, owner: impl AsRef<str>) {
         let raw = object.as_ref();
         if object_id_rejected(raw) {
@@ -489,7 +489,7 @@ impl LabelGraph {
                 return;
             }
             if !principals_are(existing.owner.as_str(), owner.as_str()) {
-                self.groups.drop_object_set(&id);
+                self.rows.drop_object_set(&id);
             }
             self.objects.insert(direct_key, MeshObject { id, owner });
             return;
@@ -708,7 +708,7 @@ impl LabelGraph {
             .values()
             .map(|object| (object.id.clone(), object.owner.clone()))
             .collect();
-        self.groups.merge_from(&other.groups, &object_owners);
+        self.rows.merge_from(&other.rows, &object_owners);
     }
 
     /// `CHECK(see, object, accessor)` at `now` on the locally merged
@@ -968,82 +968,13 @@ pub(crate) fn acl_soul(owner: impl AsRef<str>) -> Option<NodeId> {
 
 #[cfg(test)]
 mod label_tests {
-    use sociacl_core::{IssuerSecret, Timestamp};
+    use sociacl_core::Timestamp;
 
     use super::*;
-    use crate::mesh::MeshSeeGraph;
-    use crate::GroupPredicate;
-
-    fn signer(name: &str) -> IssuerSecret {
-        let mut bytes = [0u8; 32];
-        for (i, b) in name.as_bytes().iter().enumerate() {
-            bytes[i % 32] ^= b.wrapping_add((i as u8).wrapping_mul(17));
-        }
-        bytes[0] ^= name.len() as u8;
-        bytes[31] |= 1;
-        IssuerSecret::from_bytes(bytes)
-    }
-
-    #[test]
-    fn check_rejects_an_edge_whose_owner_is_not_the_current_owner() {
-        let mut graph = MeshSeeGraph::new();
-        let alice = signer("0xalice");
-        let bob = signer("0xbob");
-        graph.enroll_signer("0xalice", alice.verify_key()).unwrap();
-        graph.enroll_signer("0xbob", bob.verify_key()).unwrap();
-        graph.labels.put_object("doc", "0xalice");
-        graph
-            .record_set_owner("0xalice", GroupPredicate::SameGroup, "0xalice/ops")
-            .unwrap();
-        graph
-            .name_object_set(
-                "0xalice",
-                "doc",
-                GroupPredicate::SameGroup,
-                "0xalice/ops",
-                &alice,
-            )
-            .unwrap();
-        graph
-            .state_membership(
-                "0xbob",
-                GroupPredicate::SameGroup,
-                "0xalice/ops",
-                "0xbob",
-                &bob,
-            )
-            .unwrap();
-        graph
-            .state_membership(
-                "0xalice",
-                GroupPredicate::SameGroup,
-                "0xalice/ops",
-                "0xbob",
-                &alice,
-            )
-            .unwrap();
-        graph
-            .labels
-            .objects
-            .get_mut(&object_store_key("doc"))
-            .unwrap()
-            .owner = "0xcarol".into();
-        assert!(graph.object_set("doc").is_some());
-        let denied = graph.check_group_see(
-            GroupPredicate::SameGroup,
-            "doc",
-            "0xbob",
-            Timestamp(1),
-            None,
-            None,
-        );
-        assert!(!denied.allowed);
-        assert_eq!(denied.reason, MESH_REASON_MISSING);
-    }
 
     #[test]
     fn a_grant_names_one_object_and_a_gun_chain_is_not_a_record() {
-        let mut graph = LabelGraph::default();
+        let mut graph = GroupGraph::default();
         for object in [
             "room.alpha",
             "room_alpha",
@@ -1126,7 +1057,7 @@ mod label_tests {
 
     #[test]
     fn rejected_principals_do_not_match_as_the_owner() {
-        let mut graph = LabelGraph::default();
+        let mut graph = GroupGraph::default();
         graph.put_object("doc", "../meta");
         let now = Timestamp(10);
         assert!(

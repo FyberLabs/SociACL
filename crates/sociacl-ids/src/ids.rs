@@ -553,16 +553,23 @@ pub fn membership_soul(
         7,
     )
 }
-pub fn object_set_soul(owner: &PrincipalId, object: &ObjectId) -> Soul {
+pub fn object_set_soul(
+    owner: &PrincipalId,
+    object: &ObjectId,
+    predicate: MembershipPredicate,
+    set: &ObjectId,
+) -> Soul {
     soul(
         &[
             "s3rch",
             "acl",
             format_principal_key(owner).as_ref(),
             "objset",
+            predicate.as_str(),
+            set.as_ref(),
             object.as_ref(),
         ],
-        5,
+        7,
     )
 }
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -570,8 +577,16 @@ pub struct ParsedSoul {
     pub template: &'static str,
     pub ids: Vec<String>,
 }
+fn minted_set_id(s: &str) -> Result<ObjectId, Reason> {
+    let id = parse_object_id(s)?;
+    if !id.as_ref().starts_with("set_") {
+        return Err(Reason::BadTemplate);
+    }
+    object_principal(&id)?;
+    Ok(id)
+}
 pub fn parse_soul(s: &str) -> Result<ParsedSoul, Reason> {
-    text(s, 512)?;
+    text(s, 509)?;
     if let Some(p) = s.strip_prefix('~') {
         return Ok(ParsedSoul {
             template: "user",
@@ -588,13 +603,26 @@ pub fn parse_soul(s: &str) -> Result<ParsedSoul, Reason> {
             template: "acl",
             ids: vec![key_principal(a)?.to_string()],
         }),
-        ["s3rch", "acl", a, "objset", o] => Ok(ParsedSoul {
-            template: "objset",
-            ids: vec![
-                key_principal(a)?.to_string(),
-                parse_object_id(o)?.to_string(),
-            ],
-        }),
+        ["s3rch", "acl", a, "objset", predicate, set_id, o]
+            if matches!(*predicate, "same-group" | "named-circle") =>
+        {
+            let owner = key_principal(a)?;
+            let set = minted_set_id(set_id)?;
+            let object = parse_object_id(o)?;
+            let embedded = object_principal(&object)?;
+            if embedded != owner {
+                return Err(Reason::BadTemplate);
+            }
+            Ok(ParsedSoul {
+                template: "objset",
+                ids: vec![
+                    owner.to_string(),
+                    (*predicate).to_string(),
+                    set.to_string(),
+                    object.to_string(),
+                ],
+            })
+        }
         ["s3rch", "acl", a, o, b] => Ok(ParsedSoul {
             template: "grant",
             ids: vec![
@@ -614,12 +642,17 @@ pub fn parse_soul(s: &str) -> Result<ParsedSoul, Reason> {
         ["s3rch", "acl", a, "member", predicate, set_id, b]
             if matches!(*predicate, "same-group" | "named-circle") =>
         {
+            let owner = key_principal(a)?;
+            let set = minted_set_id(set_id)?;
+            if object_principal(&set)? != owner {
+                return Err(Reason::BadTemplate);
+            }
             Ok(ParsedSoul {
                 template: "membership",
                 ids: vec![
-                    key_principal(a)?.to_string(),
+                    owner.to_string(),
                     (*predicate).to_string(),
-                    parse_object_id(set_id)?.to_string(),
+                    set.to_string(),
                     key_principal(b)?.to_string(),
                 ],
             })

@@ -2,6 +2,55 @@
 
 ## sociacl/gun — unreleased
 
+- **Breaking:** a group set id is a minted ObjectId of kind `set`. The
+  signed set owner is the principal embedded in that id. Membership
+  assent is `sociacl-membership-assent-v2`, an object-set row is
+  `sociacl-object-set-v2`, and a group cancel is `sociacl-cancel-v2`.
+  `membershipSoul` and `objectSetSoul` are the ids builders.
+  `checkGroupSee` and `checkGroupPresentation` take branded ids.
+  `enrollSigner` / `enroll_signer` and Ed25519 signing are gone from
+  the group path. `<principal>/<name>` set ids are refused.
+  `vectors/mesh/v2/group.json` is the shared group suite, and
+  `members-gate-on-stored-id` uses the minted set id.
+- **Breaking:** `MemoryGroupGraph` no longer has `putObject`,
+  `bindSignedOwner`, or `unbindSignedOwner`, and `mergeFrom` does not
+  copy labels. `checkGroupSee` takes the owner from the principal
+  embedded in the object id and requires the admitted signed owner to
+  match. An object-set merge unions incoming cancels when that
+  admitted owner matches and both edges name the same set and predicate.
+  A different set or predicate keeps only the winning edge's cancels.
+  `reverifyGroup` rechecks the signatures it
+  stored at admission, including object-set cancels. A replacement
+  object-set edge for a different set does not keep the previous set's
+  cancels.
+- **Breaking:** `objectSetSoul(owner, object, predicate, set)` is seven
+  segments, `s3rch/acl/<pk>/objset/<predicate>/<set>/<object>`. A cancel
+  signed over that soul cannot move to another set or predicate. The
+  soul parser accepts 509 characters, the longest object-set soul.
+- **Breaking:** a group cancel's signing bytes include the canonical
+  decimal `issuedAt`. A witnessed copy of an existing cancel replaces
+  the stored bare copy, on admission and on merge. `reverifyGroup`
+  drops a retired stated-1 object-set assent and keeps a witnessed
+  cancel on that record. A replacement edge keeps prior cancels only
+  when the set and the predicate both match. A one-sided stated-1
+  membership is not a snapshot removal. `parseSoul` accepts a
+  membership soul only when the owner key is the principal embedded
+  in the set id.
+- **Breaking:** `snapshotUnderstatesGroup` treats an object-set edge
+  that is not live as a removal. A stated-1 snapshot understates that
+  cancel. A stated-0 snapshot at a hamState at least as high as the
+  stored assent does not.
+- `parseSoul` accepts an object-set soul only when the set segment is a
+  minted set id and the owner key is the principal embedded in the
+  object. A membership soul's set segment must also be a minted set id.
+  A 510-character soul is `too-long`.
+- Group rows live on `GroupGraph.rows` (`MeshSeeGraph.group.rows`).
+- **Breaking:** `MemoryGroupGraph` no longer keeps a label map.
+  `hasObject`, `objectRecord`, `ownerOf`, and `canonicalObjectId` read
+  the admitted signed object record. `see.js` does not copy an owner
+  onto a label. An object-set row that arrives before that record is
+  dropped. `reverifyGroup` drops an unwitnessed retired-key cancel;
+  only a witnessed cancel survives.
 - **Breaking:** an access request is `sociacl-access-request-v2`. The
   request id is `hex(sha256)` of `sociacl-request-id-v2`, the requester
   `PrincipalId`, and the object `ObjectId`. `grantApprovedRequest` takes

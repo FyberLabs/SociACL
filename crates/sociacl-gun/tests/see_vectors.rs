@@ -1,6 +1,8 @@
 use serde_json::Value;
-use sociacl_core::IssuerSecret;
-use sociacl_gun::{GroupPredicate, GunError, MeshSeeGraph};
+use sociacl_core::AttestationChannel;
+use sociacl_gun::{
+    GroupPredicate, GroupSnapshotMember, GroupSnapshotObjectSet, HopFactor, MeshSeeGraph,
+};
 use sociacl_ids::{
     history_state, parse_object_id, parse_principal_id, parse_see_grant, verify_see_grant, Jwks,
     ObjectId, PrincipalId, Reason, ResolutionContext, SignedAtMode, SiwePolicy,
@@ -58,16 +60,6 @@ fn scalar_of(n: u64) -> [u8; 32] {
     bytes
 }
 
-fn ed25519(name: &str) -> IssuerSecret {
-    let mut bytes = [0u8; 32];
-    for (i, b) in name.as_bytes().iter().enumerate() {
-        bytes[i % 32] ^= b.wrapping_add((i as u8).wrapping_mul(17));
-    }
-    bytes[0] ^= name.len() as u8;
-    bytes[31] |= 1;
-    IssuerSecret::from_bytes(bytes)
-}
-
 fn patch_row(row: &Value, step: &Value) -> Value {
     let Some(patch) = step.get("patch").and_then(Value::as_object) else {
         return row.clone();
@@ -120,12 +112,24 @@ fn run_case(file: &Value, case: &Value) -> MeshSeeGraph {
         }
         Ok(history_state(principal, &[], at, until))
     };
-    let mut graph = MeshSeeGraph::new();
+    let mut graphs = [MeshSeeGraph::new(), MeshSeeGraph::new()];
     let mut last_see: Option<Vec<u8>> = None;
     let mut last_post: Option<Vec<u8>> = None;
     for step in case["steps"].as_array().unwrap() {
         let name = case["name"].as_str().unwrap();
         let op = step["op"].as_str().unwrap();
+        let on_side = step.get("on").and_then(Value::as_str) == Some("side");
+        if op == "merge" {
+            let into_side = step.get("into").and_then(Value::as_str) == Some("side");
+            let (head, tail) = graphs.split_at_mut(1);
+            if into_side {
+                tail[0].vector_merge_groups(&head[0]);
+            } else {
+                head[0].vector_merge_groups(&tail[0]);
+            }
+            continue;
+        }
+        let graph = &mut graphs[usize::from(on_side)];
         let step_revocations = step
             .get("revocations")
             .and_then(Value::as_array)
@@ -391,45 +395,151 @@ fn run_case(file: &Value, case: &Value) -> MeshSeeGraph {
                 }
             }
             "join" => {
-                let owner = step["owner"].as_str().unwrap();
-                let member = step["member"].as_str().unwrap();
-                let set_owner = step["setOwner"].as_str().unwrap();
-                let set_id = step["setId"].as_str().unwrap();
-                let object = step["object"].as_str().unwrap();
+                let rotations = rotations_of(ctx, step);
+                let resolver = resolver_for(rotations);
+                graph
+                    .admit_membership(&step["member"], &resolver, &rc)
+                    .unwrap_or_else(|reason| panic!("{name} member {reason}"));
+                graph
+                    .admit_membership(&step["set"], &resolver, &rc)
+                    .unwrap_or_else(|reason| panic!("{name} set {reason}"));
+                graph
+                    .admit_object_set(&step["edge"], &resolver, &rc)
+                    .unwrap_or_else(|reason| panic!("{name} edge {reason}"));
+            }
+            "admit-member" | "admit-object-set" | "admit-cancel" => {
+                let rotations = rotations_of(ctx, step);
+                let resolver = resolver_for(rotations);
+                let got = match op {
+                    "admit-member" => graph.admit_membership(&step["row"], &resolver, &rc),
+                    "admit-object-set" => graph.admit_object_set(&step["row"], &resolver, &rc),
+                    _ => graph.admit_group_cancel(&step["row"], &resolver, &rc),
+                };
+                if step["ok"] == true {
+                    let kept = got.unwrap_or_else(|reason| panic!("{name} {reason}"));
+                    if step.get("kept").is_some() {
+                        assert_eq!(kept, step["kept"] == true, "{name}");
+                    }
+                } else {
+                    assert_eq!(
+                        reason_name(got.expect_err(name)),
+                        step["reason"].as_str().unwrap(),
+                        "{name}"
+                    );
+                }
+            }
+            "reverify-group" => {
+                let rotations = rotations_of(ctx, step);
+                let got = graph.reverify_group(
+                    &principal_of(&step["principal"]),
+                    &resolver_for(rotations),
+                    &rc,
+                );
+                if step["ok"] == false {
+                    assert_eq!(
+                        reason_name(got.expect_err(name)),
+                        step["reason"].as_str().unwrap(),
+                        "{name}"
+                    );
+                } else {
+                    let dropped = got.unwrap_or_else(|reason| panic!("{name} {reason}"));
+                    if let Some(want) = step.get("dropped").and_then(Value::as_u64) {
+                        assert_eq!(dropped as u64, want, "{name}");
+                    }
+                }
+            }
+            "check-group" => {
+                let hop = step["hop"]
+                    .as_bool()
+                    .unwrap_or(false)
+                    .then_some(HopFactor::Structured {
+                        channel: AttestationChannel::ConventionBadge,
+                        attestation_bytes: None,
+                        share_token: None,
+                    });
                 let predicate = match step["predicate"].as_str().unwrap() {
                     "named-circle" => GroupPredicate::NamedCircle,
                     _ => GroupPredicate::SameGroup,
                 };
-                let owner_key = ed25519(owner);
-                let member_key = ed25519(member);
-                let set_key = ed25519(set_owner);
-                graph
-                    .enroll_signer(owner, owner_key.verify_key())
-                    .expect(name);
-                graph
-                    .enroll_signer(member, member_key.verify_key())
-                    .expect(name);
-                graph
-                    .enroll_signer(set_owner, set_key.verify_key())
-                    .expect(name);
-                graph
-                    .record_set_owner(set_owner, predicate, set_id)
-                    .expect(name);
-                graph
-                    .state_membership(member, predicate, set_id, member, &member_key)
-                    .expect(name);
-                graph
-                    .state_membership(set_owner, predicate, set_id, member, &set_key)
-                    .expect(name);
-                graph
-                    .name_object_set(owner, object, predicate, set_id, &owner_key)
-                    .expect(name);
-            }
-            "label-owner" => {
-                graph.vector_label_owner(
-                    step["object"].as_str().unwrap(),
-                    step["owner"].as_str().unwrap(),
+                let got = graph.check_group_see(
+                    predicate,
+                    &object_of(&step["object"]),
+                    &principal_of(&step["accessor"]),
+                    step["now"].as_u64().unwrap(),
+                    None,
+                    hop.as_ref(),
                 );
+                assert_eq!(got.allowed, step["allowed"] == true, "{name}");
+                assert_eq!(got.reason, step["reason"].as_str().unwrap(), "{name}");
+                assert!(!got.hop_is_grant(), "{name}");
+                assert_eq!(got.hop.is_some(), hop.is_some(), "{name}");
+            }
+            "check-presentation" => {
+                let set = step
+                    .get("set")
+                    .filter(|value| !value.is_null())
+                    .map(object_of);
+                let payload = step
+                    .get("payload")
+                    .filter(|value| !value.is_null())
+                    .map(|payload| sociacl_gun::DecodedGroupPayload {
+                        stated: payload["stated"].as_u64().unwrap() as u8,
+                        from: payload["from"].as_u64().unwrap(),
+                        until: payload["until"].as_u64().unwrap(),
+                    });
+                let got = graph.check_group_presentation(
+                    set.as_ref(),
+                    &object_of(&step["object"]),
+                    &principal_of(&step["accessor"]),
+                    payload.as_ref(),
+                    step["now"].as_u64().unwrap(),
+                    None,
+                    None,
+                );
+                assert_eq!(got.allowed, step["allowed"] == true, "{name}");
+                assert_eq!(got.reason, step["reason"].as_str().unwrap(), "{name}");
+                assert!(!got.hop_is_grant(), "{name}");
+            }
+            "snapshot" => {
+                let members = step["members"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|member| GroupSnapshotMember {
+                        accessor: member["accessor"].as_str().unwrap().to_string(),
+                        predicate: match member["predicate"].as_str().unwrap() {
+                            "named-circle" => GroupPredicate::NamedCircle,
+                            _ => GroupPredicate::SameGroup,
+                        },
+                        set_id: member["setId"].as_str().unwrap().to_string(),
+                        stated: member["stated"].as_u64().unwrap() as u8,
+                        ham_state: member["hamState"].as_u64().unwrap(),
+                    })
+                    .collect::<Vec<_>>();
+                let edge = step
+                    .get("objectSet")
+                    .filter(|value| !value.is_null())
+                    .map(|edge| GroupSnapshotObjectSet {
+                        predicate: match edge["predicate"].as_str().unwrap() {
+                            "named-circle" => GroupPredicate::NamedCircle,
+                            _ => GroupPredicate::SameGroup,
+                        },
+                        set_id: edge["setId"].as_str().unwrap().to_string(),
+                        stated: edge["stated"].as_u64().unwrap() as u8,
+                        ham_state: edge["hamState"].as_u64().unwrap(),
+                    });
+                assert_eq!(
+                    graph.snapshot_understates_group(
+                        &object_of(&step["object"]),
+                        &members,
+                        edge.as_ref()
+                    ),
+                    step["understates"] == true,
+                    "{name}"
+                );
+            }
+            "mutate-row" => {
+                let _ = step["field"].as_str().expect(name);
             }
             "grant" => {
                 let rotations = rotations_of(ctx, step);
@@ -501,15 +611,6 @@ fn run_case(file: &Value, case: &Value) -> MeshSeeGraph {
                     );
                 }
             }
-            "label" => {
-                let object = step["object"].as_str().unwrap();
-                let got = graph.vector_label_owner_of(object);
-                if step["absent"] == true {
-                    assert!(got.is_none(), "{name}");
-                } else {
-                    assert_eq!(got, Some(step["owner"].as_str().unwrap()), "{name}");
-                }
-            }
             "factor" => {
                 assert_eq!(
                     sociacl_gun::factor_grants(step["kind"].as_str().unwrap()),
@@ -520,6 +621,7 @@ fn run_case(file: &Value, case: &Value) -> MeshSeeGraph {
             other => panic!("{name} unknown {other}"),
         }
     }
+    let [graph, _] = graphs;
     graph
 }
 
@@ -769,12 +871,8 @@ fn walk_glob(root: &Path, dir: &Path, glob: &str, files: &mut Vec<PathBuf>) {
     }
 }
 
-fn not_missing(err: GunError) {
-    assert_ne!(err, GunError::ObjectNotInGraph);
-}
-
 #[test]
-fn signed_owner_reaches_post_and_group_until_history_drops_it() {
+fn signed_owner_reaches_group_until_history_drops_it() {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../vectors/mesh/v2/see.json");
     let file: Value = serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap();
     let case = file["accept"]
@@ -784,22 +882,12 @@ fn signed_owner_reaches_post_and_group_until_history_drops_it() {
         .find(|row| row["name"] == "grant-on-chat_a-does-not-allow-chat_b")
         .unwrap();
     let mut graph = run_case(&file, case);
-    let object = case["steps"][0]["record"]["object"].as_str().unwrap();
-    let owner = case["steps"][0]["record"]["owner"].as_str().unwrap();
-    assert!(graph
-        .admitted_owner(&object_of(&Value::String(object.into())))
-        .is_some());
-    let secret = IssuerSecret::generate();
-    match graph.name_object_set(
-        owner,
-        object,
-        GroupPredicate::SameGroup,
-        "0xalice/ops",
-        &secret,
-    ) {
-        Ok(()) => {}
-        Err(err) => not_missing(err),
-    }
+    let object = object_of(&case["steps"][0]["record"]["object"]);
+    let owner = principal_of(&case["steps"][0]["record"]["owner"]);
+    assert!(graph.admitted_owner(&object).is_some());
+    let before = graph.check_group_see(GroupPredicate::SameGroup, &object, &owner, 10, None, None);
+    assert!(before.allowed);
+    assert_eq!(before.reason, "owner");
     let ctx = &file["context"];
     let now = ctx["now"].as_u64().unwrap();
     let jwks: Jwks = serde_json::from_value(ctx["jwks"].clone()).unwrap();
@@ -817,25 +905,11 @@ fn signed_owner_reaches_post_and_group_until_history_drops_it() {
         history: &history,
         genesis_epub_bindings: &[],
     };
-    let principal = principal_of(&case["steps"][0]["record"]["owner"]);
-    assert!(graph
-        .reverify_principal(&principal, &|_| None, &rc)
-        .is_err());
-    assert!(graph
-        .admitted_owner(&object_of(&Value::String(object.into())))
-        .is_none());
-    assert_eq!(
-        graph
-            .name_object_set(
-                owner,
-                object,
-                GroupPredicate::SameGroup,
-                "0xalice/ops",
-                &secret
-            )
-            .unwrap_err(),
-        GunError::ObjectNotInGraph
-    );
+    assert!(graph.reverify_principal(&owner, &|_| None, &rc).is_err());
+    assert!(graph.admitted_owner(&object).is_none());
+    let after = graph.check_group_see(GroupPredicate::SameGroup, &object, &owner, 10, None, None);
+    assert!(!after.allowed);
+    assert_eq!(after.reason, "missing");
 }
 
 #[test]

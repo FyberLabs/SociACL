@@ -162,8 +162,12 @@ export function membershipSoul(setOwner, predicate, set, member) {
   if (predicate !== 'same-group' && predicate !== 'named-circle') throw Error('invalid membership predicate');
   return soul(['s3rch', 'acl', formatPrincipalKey(setOwner), 'member', predicate, objectKey(set), formatPrincipalKey(member)], 7);
 }
-/** @param {PrincipalId} owner @param {ObjectId} object */
-export const objectSetSoul = (owner, object) => soul(['s3rch', 'acl', formatPrincipalKey(owner), 'objset', objectKey(object)], 5);
+/** Seven-segment object-set soul. The set and the predicate are in the id, so a cancel signed over this soul cannot move to another set.
+ * @param {PrincipalId} owner @param {ObjectId} object @param {MembershipPredicate} predicate @param {ObjectId} set */
+export function objectSetSoul(owner, object, predicate, set) {
+  if (predicate !== 'same-group' && predicate !== 'named-circle') throw Error('invalid object-set predicate');
+  return soul(['s3rch', 'acl', formatPrincipalKey(owner), 'objset', predicate, objectKey(set), objectKey(object)], 7);
+}
 /** @param {unknown} x @returns {Result<PrincipalId>} */
 function keyPrincipal(x) {
   const t = text(x, 160); if (!t.ok) return t;
@@ -171,9 +175,17 @@ function keyPrincipal(x) {
   const bytes = unhex(t.value.slice(2));
   return parsePrincipalId(b64(bytes.slice(0, 32)) + '.' + b64(bytes.slice(32)));
 }
+/** A minted set id. Any other object id is `bad-template`.
+ * @param {string} id @returns {Result<ObjectId>} */
+function mintedSetId(id) {
+  const set = parseObjectId(id); if (!set.ok) return set;
+  const bound = boundParts(set.value);
+  if (!bound || bound[1] !== 'set') return fail('bad-template');
+  return set;
+}
 /** @param {unknown} x @returns {Result<ParsedSoul>} */
 export function parseSoul(x) {
-  const t = text(x, 512); if (!t.ok) return t;
+  const t = text(x, 509); if (!t.ok) return t;
   if (t.value.startsWith('~')) {
     const p = parsePrincipalId(t.value.slice(1)); return p.ok ? ok({ template: 'user', ids: [p.value] }) : p;
   }
@@ -182,15 +194,21 @@ export function parseSoul(x) {
   if (a.length === 3 && ['items', 'rooms', 'users-legacy'].includes(a[1])) {
     const o = parseObjectId(a[2]); return o.ok ? ok({ template: 'object', ids: [a[1], o.value] }) : o;
   }
-  if (a[1] === 'acl' && a.length === 5 && a[3] === 'objset') {
+  if (a[1] === 'acl' && a.length === 7 && a[3] === 'objset') {
+    if (a[4] !== 'same-group' && a[4] !== 'named-circle') return fail('bad-template');
     const owner = keyPrincipal(a[2]); if (!owner.ok) return owner;
-    const object = parseObjectId(a[4]); if (!object.ok) return object;
-    return ok({ template: 'objset', ids: [owner.value, object.value] });
+    const set = mintedSetId(a[5]); if (!set.ok) return set;
+    const object = parseObjectId(a[6]); if (!object.ok) return object;
+    const embedded = objectPrincipal(object.value); if (!embedded.ok) return embedded;
+    if (embedded.value !== owner.value) return fail('bad-template');
+    return ok({ template: 'objset', ids: [owner.value, a[4], set.value, object.value] });
   }
   if (a[1] === 'acl' && a.length === 7 && a[3] === 'member') {
     if (a[4] !== 'same-group' && a[4] !== 'named-circle') return fail('bad-template');
     const owner = keyPrincipal(a[2]); if (!owner.ok) return owner;
-    const set = parseObjectId(a[5]); if (!set.ok) return set;
+    const set = mintedSetId(a[5]); if (!set.ok) return set;
+    const embedded = objectPrincipal(set.value); if (!embedded.ok) return embedded;
+    if (embedded.value !== owner.value) return fail('bad-template');
     const accessor = keyPrincipal(a[6]); if (!accessor.ok) return accessor;
     return ok({ template: 'membership', ids: [owner.value, a[4], set.value, accessor.value] });
   }

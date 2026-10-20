@@ -60,6 +60,8 @@
     "crates/sociacl-gun/src/post.rs",
     "typescript/src/request.js",
     "crates/sociacl-gun/src/request.rs",
+    "typescript/src/group.js",
+    "crates/sociacl-gun/src/group.rs",
     "docs/s3rch-check.d.ts"
   ]
 }

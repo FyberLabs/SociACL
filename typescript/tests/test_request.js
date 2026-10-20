@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { p256 } from "@noble/curves/nist.js";
 import * as ids from "../ids/src/index.js";
-import { issuerFromSeed, MemoryGroupGraph } from "../src/group.js";
+import { admitMembership, admitObjectSet, membershipAssentBytes, MemoryGroupGraph, objectSetBytes } from "../src/group.js";
 import { admittedPost, checkPost, factorGrants } from "../src/post.js";
 import * as postApi from "../src/post.js";
 import { grantApprovedRequest } from "../src/request.js";
@@ -154,7 +154,7 @@ test("a peer merge cannot auto-approve a non-member", () => {
   const mallory = new MemoryGroupGraph();
   const resolver = { rotations: () => [], ctx: context() };
   assert.equal(putObject(owner, objectRecord(), resolver).ok, true);
-  mallory.putObject(chat.value, p2);
+  assert.equal(owner.hasObject(chat.value), true);
   owner.mergeFrom(mallory);
   const request = signRequest({
     requester: p2,
@@ -175,8 +175,8 @@ test("a peer merge cannot auto-approve a non-member", () => {
   assert.equal(result.granted, false);
   assert.equal(result.reason, "not-member");
   assert.equal(admittedView(owner, chat.value, p2), undefined);
-  owner.putObject(chat.value, p2);
   assert.equal(owner.ownerOf(chat.value), p);
+  assert.equal(owner.objectRecord(chat.value)?.owner, p);
 });
 
 test("missing and non-string request fields are not-string", () => {
@@ -220,15 +220,6 @@ function signGrant(bytesOf, extra) {
   const sig = ids.signWithKeyring(secret(1), bytesOf(fields), p);
   if (!sig.ok) throw new Error(sig.reason);
   return { ...fields, sig: sig.value };
-}
-
-function ed25519Seed(name) {
-  const bytes = new Uint8Array(32);
-  const raw = new TextEncoder().encode(name);
-  for (let i = 0; i < raw.length; i += 1) bytes[i % 32] ^= (raw[i] + ((i * 17) & 255)) & 255;
-  bytes[0] ^= raw.length;
-  bytes[31] |= 1;
-  return bytes;
 }
 
 test("an earlier grant cannot revive a cancel, and another graph stays closed", () => {
@@ -483,23 +474,30 @@ test("the label plant setter is not on the published class", () => {
   assert.equal(MemoryGroupGraph.prototype.plantLabelOwnerForTest, undefined);
 });
 
-test("an alias label put keeps the signed owner spelling", () => {
+test("a signed admitted object is the owner", () => {
   const graph = new MemoryGroupGraph();
   const resolver = { rotations: () => [], ctx: context() };
+  assert.equal(graph.hasObject(chat.value), false);
+  assert.equal(graph.objectRecord(chat.value), undefined);
   assert.equal(putObject(graph, objectRecord(), resolver).ok, true);
-  graph.putObject(chat.value, `s3rch/users/${p}`);
-  graph.putObject(chat.value, p);
+  assert.equal(graph.hasObject(chat.value), true);
   assert.equal(graph.ownerOf(chat.value), p);
-  const ownerKey = issuerFromSeed(ed25519Seed(p));
-  const memberKey = issuerFromSeed(ed25519Seed(p2));
-  const setKey = issuerFromSeed(ed25519Seed("alice"));
-  graph.enrollSigner(p, ownerKey.publicKey);
-  graph.enrollSigner(p2, memberKey.publicKey);
-  graph.enrollSigner("alice", setKey.publicKey);
-  graph.recordSetOwner("alice", "same-group", "alice/friends");
-  graph.stateMembership(p2, "same-group", "alice/friends", p2, memberKey.privateKey);
-  graph.stateMembership("alice", "same-group", "alice/friends", p2, setKey.privateKey);
-  graph.nameObjectSet(p, chat.value, "same-group", "alice/friends", ownerKey.privateKey);
+  assert.equal(graph.objectRecord(chat.value)?.owner, p);
+  assert.equal(graph.canonicalObjectId(chat.value), chat.value);
+  const friends = ids.mintObjectId("set", p, () => new Uint8Array(16).fill(0x33));
+  if (!friends.ok) throw new Error(friends.reason);
+  const assent = (role, signer) => {
+    const row = { role, predicate: "same-group", set: friends.value, member: p2, setOwner: p, stated: 1, hamState: 1, issuedAt: now, cancels: [] };
+    const sig = ids.signWithKeyring(secret(signer), membershipAssentBytes(row), principal(signer));
+    if (!sig.ok) throw new Error(sig.reason);
+    return { ...row, sig: sig.value };
+  };
+  const edge = { owner: p, object: chat.value, predicate: "same-group", set: friends.value, stated: 1, hamState: 1, issuedAt: now, cancels: [] };
+  const edgeSig = ids.signWithKeyring(secret(1), objectSetBytes(edge), p);
+  if (!edgeSig.ok) throw new Error(edgeSig.reason);
+  assert.equal(admitMembership(graph, assent("member", 2), resolver).ok, true);
+  assert.equal(admitMembership(graph, assent("set", 1), resolver).ok, true);
+  assert.equal(admitObjectSet(graph, { ...edge, sig: edgeSig.value }, resolver).ok, true);
   const request = signRequest({
     requester: p2,
     object: chat.value,
