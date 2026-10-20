@@ -29,9 +29,20 @@
   `sociacl-object-set-v1`, `sociacl-cancel-v1`, `sociacl-cancel-id-v1`,
   plus the seven `s3rch:room` / `chat` / `forum-msg` / `post` /
   `forum-group` / `bot` / `forum` object spellings. The see-vector
-  tests also reject `node:crypto` in `typescript/src`.
-  `typescript/ids/scripts/audit-legacy.mjs` is deleted. There is no
-  rejected-id inventory to preserve.
+  tests also reject `node:crypto` in `typescript/src`. CI runs
+  `scripts/audit-forbidden-names.mjs` for that list and for
+  `node:crypto`. `typescript/ids/scripts/audit-legacy.mjs` is
+  deleted. There is no rejected-id inventory to preserve.
+  `vectors/mesh/principals.json` is deleted with its label suite.
+- **Breaking:** `S3RCH_ITEMS` is crate-private. `GunNodeKind::User`
+  and `GunNodeKind::Feed` are deleted. Only `Claim` remains.
+- **Breaking:** `ProtocolMigration.object` is an `ObjectId`.
+  `MigrationAdmissionInput.owner` and `caller` are `PrincipalId`s.
+- A predicate mismatch keeps the winning edge's cancels. The vector
+  is `merge-drops-another-predicates-cancel-when-incoming-wins`.
+  `snapshot-of-a-cancel-only-tombstone` is an assent-null row that
+  still holds a witnessed cancel. `witnessed-cancel-issuedat-rewrite`
+  drops the `zz-` prefix. The `mutate-row` step is a no-op in Rust.
 - **Breaking:** `closed_object` does not trim. A leading space on
   `s3rch/meta` is not that closed object. The vector is
   `vectors/encrypted-discovery/closed-object.json`.
@@ -42,7 +53,7 @@
 - `accountGrantSoul` / `account_grant_soul` are deleted. A grant soul
   is `grantSoul` / `grant_soul` only.
 - Rewriting `issuedAt` on a witnessed retired-key cancel is
-  `bad-attestation`. The vector is `zz-witnessed-cancel-issuedat-rewrite`.
+  `bad-attestation`. The vector is `witnessed-cancel-issuedat-rewrite`.
 - **Breaking:** `mergeFrom` / `merge_from` store the mode just verified
   on each copied cancel. A present attested copy replaces a bare copy
   of the same id after rotation. The vector is

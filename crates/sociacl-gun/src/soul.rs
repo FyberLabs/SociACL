@@ -3,7 +3,7 @@ use sociacl_core::NodeId;
 /// Locked s3r.ch Gun root. Do not invent a second graph.
 pub const S3RCH_ROOT: &str = "s3rch";
 /// Locked feed collection segment. A Check object is not this path.
-pub const S3RCH_ITEMS: &str = "items";
+pub(crate) const S3RCH_ITEMS: &str = "items";
 /// Locked seed meta: `gun.get('s3rch').get('meta')`. Not a Check object.
 pub const S3RCH_META: &str = "meta";
 /// Dest ACL collection. Sibling of items/users/meta. Not a Check
@@ -92,8 +92,6 @@ impl GunSoul {
 /// claim text, not a second identity node.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub enum GunNodeKind {
-    User,
-    Feed,
     Claim,
 }
 

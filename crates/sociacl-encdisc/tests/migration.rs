@@ -143,8 +143,29 @@ fn migration_vectors_match_the_shared_fixture() {
         assert!(names.contains(&required), "{required}");
     }
     for case in &document.cases {
+        let object = match sociacl_ids::parse_object_id(&case.object) {
+            Ok(object) => object,
+            Err(_) => {
+                assert!(!case.expect.ok, "{}", case.name);
+                continue;
+            }
+        };
+        let owner = match sociacl_ids::parse_principal_id(&case.owner) {
+            Ok(owner) => owner,
+            Err(_) => {
+                assert!(!case.expect.ok, "{}", case.name);
+                continue;
+            }
+        };
+        let caller = match sociacl_ids::parse_principal_id(&case.caller) {
+            Ok(caller) => caller,
+            Err(_) => {
+                assert!(!case.expect.ok, "{}", case.name);
+                continue;
+            }
+        };
         let migration = ProtocolMigration {
-            object: case.object.clone(),
+            object,
             from_version: case.from_version,
             to_version: case.to_version,
             rewrapped: case
@@ -232,8 +253,8 @@ fn migration_vectors_match_the_shared_fixture() {
         };
         let result = apply_protocol_migration(&MigrationAdmissionInput {
             migration: &migration,
-            owner: &case.owner,
-            caller: &case.caller,
+            owner: &owner,
+            caller: &caller,
             now: case.now,
             storage,
             grants: &grants,
@@ -386,7 +407,7 @@ fn owner_migration_drops_plaintext_per_reader_and_does_not_grant() {
         PreparedMigration::Encrypted(prepared) => prepared,
         PreparedMigration::SkippedPublic { .. } => panic!("private row was skipped"),
     };
-    assert_eq!(prepared.migration.object, "item_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111");
+    assert_eq!(prepared.migration.object.as_ref(), "item_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111");
     assert_eq!(prepared.migration.to_version, 2);
     assert!(prepared
         .migration

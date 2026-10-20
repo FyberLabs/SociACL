@@ -12,6 +12,8 @@ fi
 # shellcheck source=/dev/null
 . "${root}/scripts/require-node.sh"
 
+node "${root}/scripts/audit-forbidden-names.mjs"
+
 cargo build --workspace --locked
 mkdir -p target/ids
 mkdir -p target/mesh

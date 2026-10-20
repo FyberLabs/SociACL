@@ -34,7 +34,7 @@ These are not a data migration:
 SociACL follow-ups that this close-out does not take:
 
 - [#77](https://github.com/FyberLabs/SociACL/issues/77) request-path leftovers
-- [#79](https://github.com/FyberLabs/SociACL/issues/79) group-predicate leftovers
+- [#79](https://github.com/FyberLabs/SociACL/issues/79) group-predicate leftovers that are not the incoming-predicate vector, the cancel-only tombstone snapshot, or the Rust `mutate-row` note
 - [#81](https://github.com/FyberLabs/SociACL/issues/81) signed `sociacl-object-v2` ownership for `sociacl/ir` `putObject` and the Rust adapter core-plane owner
 
 ## Clarifications
