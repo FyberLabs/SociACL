@@ -103,7 +103,7 @@ An identical approval is a no-op only after the current key resolves, the owner'
 
 Members auto-approve does not revive an owner cancel. When `members` is set and the see row, or the post row for `read+post`, has `stated` 0, the result is `not-kept` and nothing is written. A manual approval (`members` null) is a new owner decision. It re-grants at `hamState + 1` above that cancel.
 
-Members auto-approve uses the admitted signed object owner. `checkGroupSee` takes that same owner from the principal embedded in the object id, and the admitted record must match. `hasObject` is true for that signed record. The owner shortcut (`reason` `owner`) is not membership. Only `same-group` or `named-circle` allows. A peer merge cannot auto-approve. An object-set row merged in before the signed record is dropped, and a later record does not revive it.
+Members auto-approve uses the admitted signed object owner. `checkGroupSee` takes that same owner from the principal embedded in the object id, and the admitted record must match. `hasObject` is true for that signed record. The owner shortcut (`reason` `owner`) is not membership. Only `same-group` or `named-circle` allows. A peer merge cannot auto-approve. Merge does not recheck rows already in the graph. It checks only the incoming rows, and only against the history the caller passes. An object-set row merged in before the signed record is dropped, and a later record does not revive it.
 
 Requests have no expiry. Approving an older pending copy grants only the window and the scope on that call. There is no withdraw ordering across copies. Scope is approve or refuse only. The owner cannot downscope. The window is owner-only. The accessor is the parsed requester.
 
@@ -117,8 +117,8 @@ When `now` equals the latest resolved rotation time, `grantApprovedRequest` writ
 
 | Object | Id | In-graph? |
 | --- | --- | --- |
-| Feed item | `s3rch/items/<item key>` | yes, after dest admit |
-| Held claim | claim id itself (`ens:…` / `unstoppable:…` / `fc:…` / `lens:…` / `rss3:…`), linked from `GunUserNode.indicators` | yes, after dest admit / s3r.ch `prepareShareClaimIntoMesh` |
+| Feed item | `ext_` derived from the source key and the provider item id | yes, after dest admit |
+| Held claim | `claim_` derived from the claim text. `GunUserNode.indicators` still lists the claim text; Check does not read that text as an object id | yes, after dest admit |
 | Post / room | opaque `CheckObjectId` (s3r.ch names the soul later) | yes, after dest admit |
 | Mine overlay | same `GunUserNode` shape, local only | **no** until s3r.ch `prepareShare*` then `putObject` |
 | Permalink / RSS3 / issuer HTTP | `UrlLeaf` | never |
@@ -148,7 +148,7 @@ The #55 rebuild spec is not in this repository. This section is the deletion sch
 | group | PR 5 |
 | feed, encrypted discovery, and the contract migration module | PR 6 |
 
-`vectors/mesh/forbidden-names.json` lists the banned names and the globs that must not contain them. Scopes cover see, post, request, group, `docs/s3rch-check.d.ts`, feed (`crates/sociacl-gun/src/feed.rs`), encrypted discovery (`crates/sociacl-encdisc/src/*.rs`), and `typescript/contract/migration.ts`.
+`vectors/mesh/forbidden-names.json` lists the banned names and the globs that must not contain them. Scopes cover `typescript/src`, `typescript/contract`, `sociacl-gun`, `sociacl-encdisc`, and `docs/s3rch-check.d.ts`.
 
 `acl-snapshot-utf8-order` still names U+E000 and U+10000. Those scalars are not principals, so a typed snapshot entry cannot carry them. The shared field vector and the Rust suite keep that order. Inbox and wrap vectors use minted object ids. `contract/migration.ts` sorts accessors in UTF-8 byte order. The vector is `vectors/encrypted-discovery/accessor-order.json`, with the strings `a`, `B`, `-`, and `_`. `crates/sociacl-encdisc/src/gun_soul.rs` is deleted. The C exports `sociacl_gun_item_soul` and `sociacl_gun_user_soul` are deleted. `sociacl_gun_encode_key` was already gone.
 

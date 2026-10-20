@@ -1738,9 +1738,17 @@ pub extern "C" fn sociacl_gun_check_see_grant(
         write_reason(reason_out, reason_len, "invalid-argument");
         return -1;
     };
+    let Ok(object_id) = sociacl_ids::parse_object_id(claim_id) else {
+        write_reason(reason_out, reason_len, "bad-alphabet");
+        return -1;
+    };
+    let Ok(accessor_id) = sociacl_ids::parse_principal_id(grant_accessor) else {
+        write_reason(reason_out, reason_len, "bad-alphabet");
+        return -1;
+    };
     let grant = IdentitySeeGrant {
-        claim_id: claim_id.to_string(),
-        accessor: grant_accessor.into(),
+        object: object_id,
+        accessor: accessor_id,
         from: Timestamp(from),
         until: Timestamp(until),
     };
@@ -2681,18 +2689,20 @@ mod tests {
     #[test]
     fn ffi_gun_hint_is_not_a_grant_dest_check_is() {
         let plane = sociacl_plane_new();
-        let alice = "s3rch/users/0xalice".to_string();
-        let bob = "s3rch/users/0xbob".to_string();
+        let alice = "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU".to_string();
+        let bob = "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E".to_string();
+        let claim = sociacl_ids::derive_claim_id("claim-1").unwrap();
+        let claim = claim.as_ref().to_string();
         assert_eq!(sociacl_add_person(plane, c(&alice).as_ptr()), 0);
         assert_eq!(sociacl_add_person(plane, c(&bob).as_ptr()), 0);
         assert_eq!(
-            sociacl_add_object(plane, c("claim-1").as_ptr(), c(&alice).as_ptr()),
+            sociacl_add_object(plane, c(&claim).as_ptr(), c(&alice).as_ptr()),
             0
         );
         assert_eq!(
             sociacl_set_object_property(
                 plane,
-                c("claim-1").as_ptr(),
+                c(&claim).as_ptr(),
                 c("predicate").as_ptr(),
                 c("delegate").as_ptr()
             ),
@@ -2704,7 +2714,7 @@ mod tests {
         assert_eq!(
             sociacl_gun_hint_encode(
                 c(&bob).as_ptr(),
-                c("claim-1").as_ptr(),
+                c(&claim).as_ptr(),
                 c("see").as_ptr(),
                 ptr::null(),
                 ptr::null_mut(),
@@ -2719,7 +2729,7 @@ mod tests {
         assert_eq!(
             sociacl_gun_hint_encode(
                 c(&bob).as_ptr(),
-                c("claim-1").as_ptr(),
+                c(&claim).as_ptr(),
                 c("see").as_ptr(),
                 ptr::null(),
                 hint.as_mut_ptr(),
@@ -2739,7 +2749,7 @@ mod tests {
             sociacl_gun_check(
                 plane,
                 c("see").as_ptr(),
-                c("claim-1").as_ptr(),
+                c(&claim).as_ptr(),
                 c(&bob).as_ptr(),
                 hint.as_ptr(),
                 written,
@@ -2756,7 +2766,7 @@ mod tests {
                 plane,
                 c(&alice).as_ptr(),
                 c(&bob).as_ptr(),
-                c("claim-1").as_ptr(),
+                c(&claim).as_ptr(),
                 c("read").as_ptr(),
                 0
             ),
@@ -2766,7 +2776,7 @@ mod tests {
             sociacl_gun_check(
                 plane,
                 c("see").as_ptr(),
-                c("claim-1").as_ptr(),
+                c(&claim).as_ptr(),
                 c(&bob).as_ptr(),
                 hint.as_ptr(),
                 written,
@@ -2780,11 +2790,11 @@ mod tests {
         assert_eq!(
             sociacl_gun_check_see_grant(
                 plane,
-                c("claim-1").as_ptr(),
+                c(&claim).as_ptr(),
                 c(&bob).as_ptr(),
                 40,
                 80,
-                c("claim-1").as_ptr(),
+                c(&claim).as_ptr(),
                 c(&bob).as_ptr(),
                 ptr::null(),
                 0,
@@ -2797,11 +2807,11 @@ mod tests {
         assert_eq!(
             sociacl_gun_check_see_grant(
                 plane,
-                c("claim-1").as_ptr(),
+                c(&claim).as_ptr(),
                 c(&bob).as_ptr(),
                 0,
                 80,
-                c("claim-1").as_ptr(),
+                c(&claim).as_ptr(),
                 c(&bob).as_ptr(),
                 ptr::null(),
                 0,
@@ -2813,7 +2823,7 @@ mod tests {
         assert_eq!(
             sociacl_gun_elect(
                 plane,
-                c("claim-1").as_ptr(),
+                c(&claim).as_ptr(),
                 hint.as_ptr(),
                 written,
                 reason.as_mut_ptr(),
@@ -2826,7 +2836,7 @@ mod tests {
                 plane,
                 c(&alice).as_ptr(),
                 c(&bob).as_ptr(),
-                c("claim-1").as_ptr()
+                c(&claim).as_ptr()
             ),
             0
         );
@@ -2834,7 +2844,7 @@ mod tests {
             sociacl_gun_check(
                 plane,
                 c("see").as_ptr(),
-                c("claim-1").as_ptr(),
+                c(&claim).as_ptr(),
                 c(&bob).as_ptr(),
                 ptr::null(),
                 0,
@@ -2850,7 +2860,7 @@ mod tests {
                 plane,
                 c(&alice).as_ptr(),
                 c(&bob).as_ptr(),
-                c("claim-1").as_ptr(),
+                c(&claim).as_ptr(),
                 c("x").as_ptr(),
                 0
             ),
@@ -2860,7 +2870,7 @@ mod tests {
             sociacl_gun_check(
                 plane,
                 c("execute").as_ptr(),
-                c("claim-1").as_ptr(),
+                c(&claim).as_ptr(),
                 c(&bob).as_ptr(),
                 ptr::null(),
                 0,
@@ -2875,7 +2885,7 @@ mod tests {
             sociacl_gun_check(
                 plane,
                 c("see").as_ptr(),
-                c("claim-1").as_ptr(),
+                c(&claim).as_ptr(),
                 c(&bob).as_ptr(),
                 ptr::null(),
                 0,

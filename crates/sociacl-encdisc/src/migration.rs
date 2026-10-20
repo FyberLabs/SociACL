@@ -187,12 +187,13 @@ pub enum PreparedMigration {
 pub fn apply_protocol_migration(
     input: &MigrationAdmissionInput<'_>,
 ) -> Result<MigrationOutcome, EncDiscError> {
-    if input.caller.is_empty()
-        || input.owner.is_empty()
-        || input.caller != input.owner
-        || input.migration.object.is_empty()
-        || input.migration.object != input_object(input)?
-    {
+    let owner = sociacl_ids::parse_principal_id(input.owner)
+        .map_err(|_| EncDiscError::MigrationRejected)?;
+    let caller = sociacl_ids::parse_principal_id(input.caller)
+        .map_err(|_| EncDiscError::MigrationRejected)?;
+    let object = sociacl_ids::parse_object_id(&input.migration.object)
+        .map_err(|_| EncDiscError::MigrationRejected)?;
+    if caller != owner || input.migration.object != input_object(input)? {
         return Err(EncDiscError::MigrationRejected);
     }
     safe_int(input.now)?;
@@ -203,12 +204,7 @@ pub fn apply_protocol_migration(
     if input.migration.from_version >= input.migration.to_version {
         return Err(EncDiscError::MigrationRejected);
     }
-    let current = current_grants(
-        input.grants,
-        &input.migration.object,
-        input.owner,
-        input.now,
-    )?;
+    let current = current_grants(input.grants, &object, &owner, input.now)?;
     if input.storage == GrantStorage::PublicPlain {
         return skip_public(input, &current);
     }
@@ -244,12 +240,13 @@ pub fn prepare_protocol_migration(
     prior_revision: &[(String, u64)],
     epoch_view: &MigrationEpoch<'_>,
 ) -> Result<PreparedMigration, EncDiscError> {
-    if object.is_empty() || owner_secret.account().is_empty() {
-        return Err(EncDiscError::MigrationRejected);
-    }
+    let owner = sociacl_ids::parse_principal_id(owner_secret.account())
+        .map_err(|_| EncDiscError::MigrationRejected)?;
+    let object_id = sociacl_ids::parse_object_id(object)
+        .map_err(|_| EncDiscError::MigrationRejected)?;
     if grants
         .iter()
-        .any(|grant| grant.owner != owner_secret.account())
+        .any(|grant| grant.owner != owner.as_ref())
     {
         return Err(EncDiscError::MigrationRejected);
     }
@@ -263,7 +260,7 @@ pub fn prepare_protocol_migration(
         return Err(EncDiscError::MigrationRejected);
     }
     canonical::require_revision_id(revision_id).map_err(|_| EncDiscError::MigrationRejected)?;
-    let current = current_grants(grants, object, owner_secret.account(), now)?;
+    let current = current_grants(grants, &object_id, &owner, now)?;
     if storage == GrantStorage::PublicPlain {
         if !readers.is_empty() {
             return Err(EncDiscError::MigrationRejected);
@@ -786,26 +783,34 @@ fn align_wraps(
     Ok(())
 }
 
-fn grant_soul(owner: &str, object: &str, accessor: &str) -> Option<String> {
-    let owner = sociacl_ids::parse_principal_id(owner).ok()?;
-    let object = sociacl_ids::parse_object_id(object).ok()?;
-    let accessor = sociacl_ids::parse_principal_id(accessor).ok()?;
-    Some(sociacl_ids::grant_soul(&owner, &object, &accessor).to_string())
+fn expected_soul(
+    owner: &sociacl_ids::PrincipalId,
+    object: &sociacl_ids::ObjectId,
+    accessor: &str,
+) -> Result<String, EncDiscError> {
+    let accessor = sociacl_ids::parse_principal_id(accessor)
+        .map_err(|_| EncDiscError::MigrationRejected)?;
+    let from_ids = sociacl_ids::grant_soul(owner, object, &accessor).to_string();
+    if from_ids != crate::identity::account_grant_soul(owner, object, &accessor) {
+        return Err(EncDiscError::MigrationRejected);
+    }
+    Ok(from_ids)
 }
 
 fn current_grants(
     grants: &[MigrationGrant],
-    object: &str,
-    owner: &str,
+    object: &sociacl_ids::ObjectId,
+    owner: &sociacl_ids::PrincipalId,
     now: u64,
 ) -> Result<Vec<MigrationGrant>, EncDiscError> {
     let mut current = Vec::new();
     let mut seen = Vec::new();
     for grant in grants {
-        let Some(expected) = grant_soul(owner, object, &grant.grant.accessor) else {
-            return Err(EncDiscError::MigrationRejected);
-        };
-        if grant.owner != owner || grant.grant.object != object || grant.soul != expected {
+        let expected = expected_soul(owner, object, &grant.grant.accessor)?;
+        if grant.owner != owner.as_ref()
+            || grant.grant.object != object.as_ref()
+            || grant.soul != expected
+        {
             return Err(EncDiscError::MigrationRejected);
         }
         safe_int(grant.ham_state)?;

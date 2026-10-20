@@ -478,6 +478,8 @@ function keepCancel(cancels, incoming) {
 }
 
 /**
+ * The mode is the one this history just verified, not the mode stored
+ * when the row was admitted.
  * @param {PrincipalId} principal
  * @param {Uint8Array} bytes
  * @param {string} sig
@@ -485,19 +487,20 @@ function keepCancel(cancels, incoming) {
  * @param {0 | 1 | null} stated
  * @param {string | undefined} attest
  * @param {SeeResolver} resolver
+ * @returns {'present' | 'witnessed' | null}
  */
 function partyOk(principal, bytes, sig, issuedAt, stated, attest, resolver) {
   const rotations = resolver.rotations(principal);
-  if (!rotations) return false;
-  return verifyParty(principal, rotations, resolver.ctx, bytes, sig, issuedAt, stated, attest).ok;
+  if (!rotations) return null;
+  const seen = verifyParty(principal, rotations, resolver.ctx, bytes, sig, issuedAt, stated, attest);
+  return seen.ok ? seen.mode : null;
 }
 
 /** @param {PrincipalId} principal @param {StoredAssent | null} assent @param {SeeResolver} resolver */
 function freshAssent(principal, assent, resolver) {
   if (!assent) return null;
-  return partyOk(principal, assent.bytes, assent.sig, assent.issuedAt, assent.stated, assent.attest, resolver)
-    ? assent
-    : null;
+  const mode = partyOk(principal, assent.bytes, assent.sig, assent.issuedAt, assent.stated, assent.attest, resolver);
+  return mode ? { ...assent, mode } : null;
 }
 
 /** @param {Map<string, StoredCancel>} cancels @param {SeeResolver} resolver */
@@ -505,9 +508,8 @@ function freshCancels(cancels, resolver) {
   /** @type {Map<string, StoredCancel>} */
   const next = new Map();
   for (const [id, cancel] of cancels) {
-    if (partyOk(cancel.signer, cancel.bytes, cancel.sig, cancel.issuedAt, null, cancel.attest, resolver)) {
-      next.set(id, cancel);
-    }
+    const mode = partyOk(cancel.signer, cancel.bytes, cancel.sig, cancel.issuedAt, null, cancel.attest, resolver);
+    if (mode) next.set(id, { ...cancel, mode });
   }
   return next;
 }

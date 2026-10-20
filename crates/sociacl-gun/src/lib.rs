@@ -41,16 +41,15 @@ mod request;
 mod soul;
 
 pub use adapter::{
-    accept_hint, accept_hint_bytes, add_claim, add_feed_node, add_item, add_wallet,
+    accept_hint, accept_hint_bytes, add_claim, add_feed_node, add_item, add_principal,
     apply_see_grant, cancel, check, check_execute, check_see, check_see_grant, check_see_hop,
     client_check, client_elect_from_hint, client_mint_grant, client_remint, elect_from_delegate,
     elect_from_hint, map_action, remint, GunCheckResult,
 };
 pub use error::GunError;
 pub use feed::{
-    from_gun_node, has_held_claim_prefix, item_key, to_gun_node, FeedItem, FeedMeta, FeedSource,
-    FeedTab, GunFeedNode, GunUserNode, IdentityClaimKind, IdentitySeeGrant, OffGraphKind,
-    CLAIM_PREFIXES,
+    from_gun_node, to_gun_node, FeedItem, FeedMeta, FeedSource, FeedTab, GunFeedNode, GunUserNode,
+    IdentityClaimKind, IdentitySeeGrant, OffGraphKind,
 };
 pub use group::{
     DecodedGroupPayload, GroupPredicate, GroupPresentation, GroupSnapshotMember,
@@ -68,7 +67,8 @@ pub use post::MESH_REASON_POST;
 pub use request::{request_owner, ApprovedRequest};
 pub use sociacl_ids::{membership_soul, object_set_soul};
 pub use soul::{
-    GunNode, GunNodeKind, GunSoul, S3RCH_ACL, S3RCH_ITEMS, S3RCH_META, S3RCH_ROOT, S3RCH_USERS,
+    item_key, GunNode, GunNodeKind, GunSoul, S3RCH_ACL, S3RCH_ITEMS, S3RCH_META, S3RCH_ROOT,
+    S3RCH_USERS,
 };
 
 /// Lighter s3r.ch Check: `CHECK(see, object, accessor)` at now.
@@ -78,4 +78,4 @@ pub use soul::{
 pub const SEE: &str = "see";
 
 #[cfg(test)]
-mod group_label_tests;
+mod group_predicate_tests;

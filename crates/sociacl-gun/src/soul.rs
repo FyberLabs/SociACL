@@ -12,25 +12,11 @@ pub const S3RCH_META: &str = "meta";
 /// object. Grants HAM-merge here; they do not fork items or users.
 pub const S3RCH_ACL: &str = "acl";
 
-/// Gun soul path. Maps onto an existing [`NodeId`].
-///
-/// Identity is a wallet: `s3rch/users/<wallet>`. A claim on that
-/// identity graph is a protected object. This is not a second user
-/// node and not a second graph schema.
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub struct GunSoul {
-    pub(crate) segments: Vec<String>,
-}
-
-fn trim_segment(text: &str) -> &str {
-    text.trim_matches(|ch: char| matches!(ch, '\t' | '\n' | '\u{000B}' | '\u{000C}' | '\r' | ' '))
-}
-
-/// Item-segment spelling. `~` is the escape. `/` stays, so a slash-bearing
-/// id does not become another soul.
-pub(crate) fn item_segment(id: &str) -> String {
-    let mut out = String::with_capacity(id.len());
-    for ch in id.chars() {
+/// Gun item-segment spelling. `~` is the escape. `/` stays, so a slash-bearing
+/// id does not become another soul. This is not a Check object id.
+pub fn item_key(id: impl AsRef<str>) -> String {
+    let mut out = String::with_capacity(id.as_ref().len());
+    for ch in id.as_ref().chars() {
         match ch {
             '~' => out.push_str("~0"),
             '.' => out.push_str("~1"),
@@ -44,25 +30,31 @@ pub(crate) fn item_segment(id: &str) -> String {
     out
 }
 
+/// Gun soul path. Maps onto an existing [`NodeId`].
+///
+/// Identity is a wallet: `s3rch/users/<wallet>`. A claim on that
+/// identity graph is a protected object. This is not a second user
+/// node and not a second graph schema.
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub struct GunSoul {
+    pub(crate) segments: Vec<String>,
+}
+
 impl GunSoul {
     pub fn new(segments: impl IntoIterator<Item = impl AsRef<str>>) -> Self {
         Self {
             segments: segments
                 .into_iter()
-                .map(|segment| trim_segment(segment.as_ref()).to_string())
+                .map(|segment| segment.as_ref().to_string())
                 .filter(|segment| !segment.is_empty())
                 .collect(),
         }
     }
 
-    /// `gun.get('s3rch').get('users').get(wallet)`.
-    pub fn user_node(wallet: impl AsRef<str>) -> Self {
-        Self::new([S3RCH_ROOT, S3RCH_USERS, wallet.as_ref()])
-    }
-
     /// `gun.get('s3rch').get('items').get(<escaped id>)`.
+    /// The escape is the Gun segment spelling. It is not a Check object id.
     pub fn s3rch_item(id: impl AsRef<str>) -> Self {
-        Self::new([S3RCH_ROOT, S3RCH_ITEMS, &item_segment(id.as_ref())])
+        Self::new([S3RCH_ROOT, S3RCH_ITEMS, &item_key(id.as_ref())])
     }
 
     /// `gun.get('s3rch').get('meta')`.
@@ -70,9 +62,8 @@ impl GunSoul {
         Self::new([S3RCH_ROOT, S3RCH_META])
     }
 
-    /// Slash form. A string containing `.get(` is rejected.
+    /// Slash form. A string containing `.get(` is rejected. Nothing is trimmed.
     pub fn parse(s: &str) -> Result<Self, crate::GunError> {
-        let s = trim_segment(s);
         if s.is_empty() || s.contains(".get(") {
             return Err(crate::GunError::HintCorrupt);
         }
@@ -147,10 +138,10 @@ pub struct GunNode {
 }
 
 impl GunNode {
-    /// Locked user node: `s3rch/users/<wallet>`.
+    /// Gun user spelling: `s3rch/users/<wallet>`. Not a core-plane principal.
     pub fn user(wallet: impl AsRef<str>) -> Self {
         Self {
-            soul: GunSoul::user_node(wallet),
+            soul: GunSoul::new([S3RCH_ROOT, S3RCH_USERS, wallet.as_ref()]),
             kind: GunNodeKind::User,
         }
     }

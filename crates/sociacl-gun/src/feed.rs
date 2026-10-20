@@ -1,7 +1,8 @@
 use sociacl_core::{NodeId, Timestamp};
+use sociacl_ids::{derive_external_id, ObjectId, PrincipalId, SourceKey};
 
 use crate::leaf::{normalize_permalink, split_tags, UrlLeaf};
-use crate::soul::{item_segment, GunSoul};
+use crate::soul::GunSoul;
 use crate::GunError;
 
 /// Locked feed source. `from_gun_node` refuses anything else.
@@ -78,10 +79,17 @@ impl FeedItem {
             .filter(|s| !s.is_empty())
     }
 
-    /// `gun.get('s3rch').get('items').get(<escaped id>)`.
-    pub fn as_node_id(&self) -> Option<NodeId> {
-        self.canonical_key()
-            .map(|id| GunSoul::s3rch_item(id).as_node_id())
+    /// Check object id. `ext_` derived from the source key and the provider item id.
+    pub fn object_id(&self, source: &SourceKey) -> Result<ObjectId, GunError> {
+        let item = self.canonical_key().ok_or(GunError::UrlLeafNotANode)?;
+        derive_external_id(source, &item).map_err(|_| GunError::ObjectNotInGraph)
+    }
+
+    /// The plane node for this item. Not the Gun `s3rch/items/…` spelling.
+    pub fn as_node_id(&self, source: &SourceKey) -> Option<NodeId> {
+        self.object_id(source)
+            .ok()
+            .map(|id| NodeId::new(id.as_ref()))
     }
 
     /// Permalink is a URL leaf on the item. It is not the Check object.
@@ -91,8 +99,14 @@ impl FeedItem {
 }
 
 impl GunFeedNode {
-    pub fn as_node_id(&self) -> NodeId {
-        GunSoul::s3rch_item(&self.id).as_node_id()
+    /// Check object id for this Gun node. The Gun path stays on [`GunSoul::s3rch_item`].
+    pub fn object_id(&self, source: &SourceKey) -> Result<ObjectId, GunError> {
+        derive_external_id(source, &self.id).map_err(|_| GunError::ObjectNotInGraph)
+    }
+
+    pub fn as_node_id(&self, source: &SourceKey) -> Result<NodeId, GunError> {
+        self.object_id(source)
+            .map(|id| NodeId::new(id.as_ref()))
     }
 
     pub fn permalink_leaf(&self) -> Result<UrlLeaf, GunError> {
@@ -158,8 +172,14 @@ pub struct GunUserNode {
 }
 
 impl GunUserNode {
+    /// Gun spelling `s3rch/users/<id>`. Not a core-plane principal.
     pub fn as_node_id(&self) -> NodeId {
-        GunSoul::user_node(&self.id).as_node_id()
+        GunSoul::new([
+            crate::soul::S3RCH_ROOT,
+            crate::soul::S3RCH_USERS,
+            self.id.as_str(),
+        ])
+        .as_node_id()
     }
 
     pub fn indicators_as_csv(&self) -> String {
@@ -175,18 +195,6 @@ impl GunUserNode {
     pub fn linked_claim_ids(&self) -> &[String] {
         &self.indicators
     }
-}
-
-/// Locked held-claim CheckObjectId prefixes (s3r.ch). The object id
-/// is the claim id itself, linked from [`GunUserNode::indicators`].
-pub const CLAIM_PREFIXES: [&str; 5] = ["ens:", "unstoppable:", "fc:", "lens:", "rss3:"];
-
-/// Whether `id` uses a locked held-claim prefix. Feed items may also
-/// start with `rss3:` — those still Check as whatever soul was put
-/// (`s3rch/items/…` after admit). Claims stay the claim id.
-pub fn has_held_claim_prefix(id: &str) -> bool {
-    let id = id.trim();
-    CLAIM_PREFIXES.iter().any(|p| id.starts_with(p))
 }
 
 /// Locked later claim kinds. Issuers prove a claim to the holder.
@@ -232,62 +240,30 @@ impl IdentityClaimKind {
     }
 }
 
-/// Locked later see-grant. Maps onto keep-operating `delegate` read.
-/// hopcap 1. Jointly stated. Revoke is immediate. Not Elect.
+/// Jointly stated see grant. hopcap 1. Privilege-down is immediate.
+/// The object and the accessor are already-parsed ids. A wallet string
+/// is not an accessor. A Gun item path is not the object.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct IdentitySeeGrant {
-    pub claim_id: String,
-    pub accessor: NodeId,
+    pub object: ObjectId,
+    pub accessor: PrincipalId,
     pub from: Timestamp,
     pub until: Timestamp,
 }
 
 impl IdentitySeeGrant {
-    pub fn object_id(&self) -> NodeId {
-        let id = self.claim_id.trim();
-        if id.contains('/') || id.contains(".get(") {
-            GunSoul::parse(id)
-                .map(|s| s.as_node_id())
-                .unwrap_or_else(|_| NodeId::new(id))
-        } else {
-            NodeId::new(id)
-        }
-    }
-
-    /// Wallet as we name them → locked `s3rch/users/<wallet>`. A soul
-    /// path is left as-is. Not a second user node.
-    pub fn accessor_id(&self) -> NodeId {
-        user_node_id(self.accessor.as_str())
-    }
-
-    /// Claim id or the feed item node for that id.
     pub fn names_object(&self, object: &NodeId) -> bool {
-        let id = self.object_id();
-        if id == *object {
-            return true;
-        }
-        GunSoul::s3rch_item(self.claim_id.trim()).as_node_id() == *object
+        self.object.as_ref() == object.as_str()
     }
 
     pub fn names_accessor(&self, accessor: &NodeId) -> bool {
-        self.accessor == *accessor || self.accessor_id() == *accessor
+        self.accessor.as_ref() == accessor.as_str()
     }
 
     /// `now ∈ [from, until)` at dest Check. `until` is exclusive, same
     /// as keep-operating `delegate`. `from` is inclusive.
     pub fn live_at(&self, now: Timestamp) -> bool {
         now.0 >= self.from.0 && now.0 < self.until.0
-    }
-}
-
-fn user_node_id(s: &str) -> NodeId {
-    let s = s.trim();
-    if s.contains('/') || s.contains(".get(") {
-        GunSoul::parse(s)
-            .map(|soul| soul.as_node_id())
-            .unwrap_or_else(|_| NodeId::new(s))
-    } else {
-        GunSoul::user_node(s).as_node_id()
     }
 }
 
@@ -352,7 +328,3 @@ impl OffGraphKind {
     }
 }
 
-/// Gun item key. `/` stays in the segment.
-pub fn item_key(id: impl AsRef<str>) -> String {
-    item_segment(id.as_ref())
-}

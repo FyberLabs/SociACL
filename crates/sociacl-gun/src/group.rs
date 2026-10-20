@@ -414,11 +414,9 @@ fn party_ok(
     attest: Option<&str>,
     resolver: &dyn Fn(&PrincipalId) -> Option<Vec<Value>>,
     ctx: &ResolutionContext<'_>,
-) -> bool {
-    let Some(rotations) = resolver(principal) else {
-        return false;
-    };
-    verify_party(principal, &rotations, ctx, bytes, sig, issued_at, stated, attest).is_ok()
+) -> Option<SignedAtMode> {
+    let rotations = resolver(principal)?;
+    verify_party(principal, &rotations, ctx, bytes, sig, issued_at, stated, attest).ok()
 }
 
 fn fresh_assent(
@@ -428,7 +426,7 @@ fn fresh_assent(
     ctx: &ResolutionContext<'_>,
 ) -> Option<StoredAssent> {
     let assent = assent?;
-    party_ok(
+    let mode = party_ok(
         principal,
         &assent.bytes,
         &assent.sig,
@@ -437,8 +435,10 @@ fn fresh_assent(
         assent.attest.as_deref(),
         resolver,
         ctx,
-    )
-    .then(|| assent.clone())
+    )?;
+    let mut copy = assent.clone();
+    copy.mode = mode;
+    Some(copy)
 }
 
 fn fresh_cancels(
@@ -446,22 +446,25 @@ fn fresh_cancels(
     resolver: &dyn Fn(&PrincipalId) -> Option<Vec<Value>>,
     ctx: &ResolutionContext<'_>,
 ) -> BTreeMap<String, StoredCancel> {
-    cancels
-        .values()
-        .filter(|cancel| {
-            party_ok(
-                &cancel.signer,
-                &cancel.bytes,
-                &cancel.sig,
-                cancel.issued_at,
-                None,
-                cancel.attest.as_deref(),
-                resolver,
-                ctx,
-            )
-        })
-        .map(|cancel| (cancel.id.clone(), cancel.clone()))
-        .collect()
+    let mut next = BTreeMap::new();
+    for cancel in cancels.values() {
+        let Some(mode) = party_ok(
+            &cancel.signer,
+            &cancel.bytes,
+            &cancel.sig,
+            cancel.issued_at,
+            None,
+            cancel.attest.as_deref(),
+            resolver,
+            ctx,
+        ) else {
+            continue;
+        };
+        let mut copy = cancel.clone();
+        copy.mode = mode;
+        next.insert(copy.id.clone(), copy);
+    }
+    next
 }
 
 fn keep_cancel(cancels: &mut BTreeMap<String, StoredCancel>, cancel: StoredCancel) -> bool {

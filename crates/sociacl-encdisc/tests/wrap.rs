@@ -39,7 +39,7 @@ fn item_dek_wraps_to_a_named_reader_epub_and_is_not_a_grant() {
     let wraps = wrap_item_dek_to_readers(
         &dek,
         3,
-        "s3rch/items/post",
+        "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
         &revision(),
         &[EnrolledSeaPub::from_account(&alice)],
         &granted,
@@ -64,7 +64,7 @@ fn item_dek_wraps_to_a_named_reader_epub_and_is_not_a_grant() {
     let again = wrap_item_dek_to_readers(
         &dek,
         3,
-        "s3rch/items/post",
+        "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
         &revision(),
         &[EnrolledSeaPub::from_account(&alice)],
         &granted,
@@ -87,7 +87,7 @@ fn a_swapped_revision_label_does_not_open() {
     let mut wrapped = wrap_item_dek_to_readers(
         &dek,
         3,
-        "s3rch/items/post",
+        "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
         &revision(),
         &[EnrolledSeaPub::from_account(&alice)],
         &granted,
@@ -102,7 +102,7 @@ fn a_swapped_revision_label_does_not_open() {
     let mut epoch_swap = wrap_item_dek_to_readers(
         &dek,
         3,
-        "s3rch/items/post",
+        "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
         &revision(),
         &[EnrolledSeaPub::from_account(&alice)],
         &granted,
@@ -124,7 +124,7 @@ fn unnamed_reader_fails_the_whole_call() {
         EnrolledSeaPub::from_account(&bob),
     ];
     assert_eq!(
-        wrap_item_dek_to_readers(&dek, 1, "s3rch/items/post", &revision(), &readers, &granted)
+        wrap_item_dek_to_readers(&dek, 1, "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111", &revision(), &readers, &granted)
             .unwrap_err(),
         EncDiscError::UnnamedReader
     );
@@ -138,7 +138,7 @@ fn unnamed_reader_fails_the_whole_call() {
         wrap_item_dek_to_readers(
             &dek,
             1,
-            "s3rch/items/post",
+            "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
             &revision(),
             &[corrupt],
             &granted,
@@ -189,7 +189,7 @@ fn group_epoch_key_wraps_per_member_and_the_item_dek_wraps_once() {
         &dek,
         &group_key,
         2,
-        "s3rch/items/post",
+        "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
         "circle-1",
         &revision(),
     )
@@ -213,7 +213,7 @@ fn group_epoch_key_wraps_per_member_and_the_item_dek_wraps_once() {
         &dek,
         &group_key,
         2,
-        "s3rch/items/post",
+        "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
         "circle-1",
         &revision(),
     )

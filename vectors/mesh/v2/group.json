@@ -2864,7 +2864,8 @@
           "on": "side"
         },
         {
-          "op": "merge"
+          "op": "merge",
+          "rotations": "rotated"
         },
         {
           "op": "reverify-group",
@@ -3064,7 +3065,8 @@
           "on": "side"
         },
         {
-          "op": "merge"
+          "op": "merge",
+          "rotations": "rotated"
         },
         {
           "op": "reverify-group",
@@ -3083,6 +3085,208 @@
           "reason": "missing"
         }
       ]
+    },
+    {
+      "name": "merge-upgrades-a-present-attested-copy-after-rotation",
+      "steps": [
+        {
+          "op": "put",
+          "record": {
+            "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+            "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+            "issuedAt": 1700000000,
+            "sig": "Z9fYJjtkbVsxBszNe5U5FEdoWWQI_8ZtRxbJk2ALU9PKBqOa-ga7kzgGUrgNHJdQuxiPvJFT7st1iub5IXG10g"
+          },
+          "rotations": "genesis",
+          "ok": true,
+          "kept": true
+        },
+        {
+          "op": "admit-member",
+          "row": {
+            "role": "member",
+            "predicate": "same-group",
+            "set": "set_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_33333333333333333333333333333333",
+            "member": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+            "setOwner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+            "stated": 1,
+            "hamState": 1,
+            "issuedAt": 1700000060,
+            "cancels": [],
+            "sig": "6XlA963vYf3uOVvhQ9OkyPb649U0_Z2Ah1YDH_u_FSJ-7Uavux-MRF9eB7A5RMbdHFE9a-XmrVKo5QVm86JXYg"
+          },
+          "rotations": "genesis",
+          "ok": true,
+          "kept": true
+        },
+        {
+          "op": "admit-member",
+          "row": {
+            "role": "set",
+            "predicate": "same-group",
+            "set": "set_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_33333333333333333333333333333333",
+            "member": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+            "setOwner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+            "stated": 1,
+            "hamState": 1,
+            "issuedAt": 1700000060,
+            "cancels": [],
+            "sig": "qqqK3iPHA5UGww-3VQjhXi_fNxOtAy024UVVm_0-FSNT_Q0T2WpcIAeAUYt6Ri7G6WxeM1_GA2Wc8jKT9hvgBw"
+          },
+          "rotations": "rotated",
+          "ok": true,
+          "kept": true
+        },
+        {
+          "op": "admit-object-set",
+          "row": {
+            "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+            "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+            "predicate": "same-group",
+            "set": "set_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_33333333333333333333333333333333",
+            "stated": 1,
+            "hamState": 1,
+            "issuedAt": 1700000060,
+            "cancels": [],
+            "sig": "d-7SiE_74kEVQvO6QORmdumwwRJ2RjgnuBEe-KQLD5c-ECak53jLV4I5r4tnmrePMnCBRqYAeM2RqhmTiYmHVw"
+          },
+          "rotations": "rotated",
+          "ok": true,
+          "kept": true
+        },
+        {
+          "op": "admit-cancel",
+          "row": {
+            "kind": "object-set",
+            "predicate": "same-group",
+            "set": "set_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_33333333333333333333333333333333",
+            "member": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+            "setOwner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+            "signer": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+            "rowSoul": "s3rch/acl/p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5/objset/same-group/set_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_33333333333333333333333333333333/chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+            "cancelId": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+            "prior": [],
+            "issuedAt": 1700000000,
+            "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+            "sig": "DtieBOyfcn0_Sh9HW6Nz1dTfHJqb1T8w6nRMOSSxiH5QPsenCzlmWlDH9Apar6kWkwp-3XWWi_EmOJkFC7s2kA"
+          },
+          "rotations": "genesis",
+          "ok": true,
+          "kept": true
+        },
+        {
+          "op": "put",
+          "record": {
+            "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+            "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+            "issuedAt": 1700000000,
+            "sig": "Z9fYJjtkbVsxBszNe5U5FEdoWWQI_8ZtRxbJk2ALU9PKBqOa-ga7kzgGUrgNHJdQuxiPvJFT7st1iub5IXG10g"
+          },
+          "rotations": "genesis",
+          "ok": true,
+          "kept": true,
+          "on": "side"
+        },
+        {
+          "op": "admit-member",
+          "row": {
+            "role": "member",
+            "predicate": "same-group",
+            "set": "set_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_33333333333333333333333333333333",
+            "member": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+            "setOwner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+            "stated": 1,
+            "hamState": 1,
+            "issuedAt": 1700000060,
+            "cancels": [],
+            "sig": "6XlA963vYf3uOVvhQ9OkyPb649U0_Z2Ah1YDH_u_FSJ-7Uavux-MRF9eB7A5RMbdHFE9a-XmrVKo5QVm86JXYg"
+          },
+          "rotations": "genesis",
+          "ok": true,
+          "kept": true,
+          "on": "side"
+        },
+        {
+          "op": "admit-member",
+          "row": {
+            "role": "set",
+            "predicate": "same-group",
+            "set": "set_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_33333333333333333333333333333333",
+            "member": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+            "setOwner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+            "stated": 1,
+            "hamState": 1,
+            "issuedAt": 1700000060,
+            "cancels": [],
+            "sig": "qqqK3iPHA5UGww-3VQjhXi_fNxOtAy024UVVm_0-FSNT_Q0T2WpcIAeAUYt6Ri7G6WxeM1_GA2Wc8jKT9hvgBw"
+          },
+          "rotations": "rotated",
+          "ok": true,
+          "kept": true,
+          "on": "side"
+        },
+        {
+          "op": "admit-object-set",
+          "row": {
+            "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+            "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+            "predicate": "same-group",
+            "set": "set_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_33333333333333333333333333333333",
+            "stated": 1,
+            "hamState": 1,
+            "issuedAt": 1700000060,
+            "cancels": [],
+            "sig": "d-7SiE_74kEVQvO6QORmdumwwRJ2RjgnuBEe-KQLD5c-ECak53jLV4I5r4tnmrePMnCBRqYAeM2RqhmTiYmHVw"
+          },
+          "rotations": "rotated",
+          "ok": true,
+          "kept": true,
+          "on": "side"
+        },
+        {
+          "op": "admit-cancel",
+          "row": {
+            "kind": "object-set",
+            "predicate": "same-group",
+            "set": "set_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_33333333333333333333333333333333",
+            "member": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+            "setOwner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+            "signer": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+            "rowSoul": "s3rch/acl/p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5/objset/same-group/set_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_33333333333333333333333333333333/chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+            "cancelId": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+            "prior": [],
+            "issuedAt": 1700000000,
+            "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+            "sig": "DtieBOyfcn0_Sh9HW6Nz1dTfHJqb1T8w6nRMOSSxiH5QPsenCzlmWlDH9Apar6kWkwp-3XWWi_EmOJkFC7s2kA",
+            "attest": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImZpeHR1cmUtMSIsInR5cCI6IkpXVCJ9.eyJ0eXAiOiJzb2NpYWNsLWFjbC1hdHRlc3QtdjEiLCJwcmluY2lwYWwiOiJheGZSOHVFc1FrZjR2T2JsWTZSQThuY0RmWUV0NnpPZzlLRTVSZGlZd3BZLlQtTkM0djRhZjV1TzUtdEtmQS1lRml2T00xZHJNVjdPeTdaQWFEZV9VZlUiLCJyZWNvcmRJZCI6ImM3Nzc5NTYxMmIzNmEwNTZkZGIzYmVhMWI5OTRmMzQzODhlZDRjYmRiMjRhYjQ2OGM0Y2FmMDBlNDkzMmQ2NjMiLCJpYXQiOjE3MDAwMDAwMDAsImV4cCI6MTcwMDAwMDYwMH0.RO-IUkmJMxqQjU5cwb3yzmCjPn3EvDINosDDJEzldPeQ-OpuoqQfH_kZinQLULjlSm5TZ68RG8WZgF8DYjv2Sw"
+          },
+          "rotations": "genesis",
+          "ok": true,
+          "kept": true,
+          "on": "side"
+        },
+        {
+          "op": "merge",
+          "rotations": "rotated"
+        },
+        {
+          "op": "reverify-group",
+          "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "rotations": "rotated",
+          "ok": true,
+          "dropped": 0
+        },
+        {
+          "op": "check-group",
+          "predicate": "same-group",
+          "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+          "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "now": 1700000060,
+          "allowed": false,
+          "reason": "missing"
+        }
+      ],
+      "note": "Both copies were admitted while the key was current, so both were stored as present. Merge with the rotated history stores the witnessed mode on the incoming copy and that copy replaces the bare one."
     },
     {
       "name": "merge-keeps-a-witnessed-cancel-over-a-bare-copy",

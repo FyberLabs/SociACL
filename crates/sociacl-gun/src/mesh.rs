@@ -70,8 +70,8 @@ impl MeshSeeGrant {
 impl From<&IdentitySeeGrant> for MeshSeeGrant {
     fn from(grant: &IdentitySeeGrant) -> Self {
         Self {
-            object: grant.claim_id.clone(),
-            accessor: grant.accessor.as_str().to_string(),
+            object: grant.object.as_ref().to_string(),
+            accessor: grant.accessor.as_ref().to_string(),
             from: grant.from,
             until: grant.until,
             stated: 1,

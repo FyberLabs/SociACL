@@ -523,7 +523,7 @@ add('accept', 'merge-upgrades-a-bare-membership-cancel', [
   side(currentSet()),
   side(currentEdge()),
   side(admitCancel(witnessedMemberCancel, 'rotated')),
-  { op: 'merge' },
+  { op: 'merge', rotations: 'rotated' },
   { op: 'reverify-group', principal: p, rotations: 'rotated', ok: true, dropped: 0 },
   check(chatA, p2, false, 'missing'),
 ]);
@@ -538,10 +538,25 @@ add('accept', 'merge-upgrades-a-bare-object-set-cancel', [
   side(currentSet()),
   side(currentEdge()),
   side(admitCancel(witnessedObjectCancel, 'rotated')),
-  { op: 'merge' },
+  { op: 'merge', rotations: 'rotated' },
   { op: 'reverify-group', principal: p, rotations: 'rotated', ok: true, dropped: 0 },
   check(chatA, p2, false, 'missing'),
 ]);
+add('accept', 'merge-upgrades-a-present-attested-copy-after-rotation', [
+  put(),
+  currentMember(),
+  currentSet(),
+  currentEdge(),
+  admitCancel(bareObjectCancel, 'genesis'),
+  side(put()),
+  side(currentMember()),
+  side(currentSet()),
+  side(currentEdge()),
+  side(admitCancel(witnessedObjectCancel, 'genesis')),
+  { op: 'merge', rotations: 'rotated' },
+  { op: 'reverify-group', principal: p, rotations: 'rotated', ok: true, dropped: 0 },
+  check(chatA, p2, false, 'missing'),
+], 'Both copies were admitted while the key was current, so both were stored as present. Merge with the rotated history stores the witnessed mode on the incoming copy and that copy replaces the bare one.');
 add('accept', 'merge-keeps-a-witnessed-cancel-over-a-bare-copy', [
   put(),
   currentMember(),

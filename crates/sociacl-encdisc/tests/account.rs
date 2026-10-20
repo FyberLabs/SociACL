@@ -255,7 +255,7 @@ fn item_auth_signature_covers_the_canonical_tuple() {
     let secret = alice();
     let reader = AccountSeaSecret::generate("0xbob").unwrap();
     let fields = ItemAuthFields {
-        object: "s3rch/items/post".to_string(),
+        object: "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111".to_string(),
         epoch: 1,
         version: 2,
         plaintext_digest: sociacl_encdisc::plaintext_digest(b"hello"),

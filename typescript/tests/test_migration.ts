@@ -12,6 +12,7 @@ import type {
 } from "../../docs/s3rch-check.js";
 import { sha256Hex, wrapReceiptBytes, wrapReceiptSha256 } from "../contract/canonical.ts";
 import { applyProtocolMigration, compareAccessors } from "../contract/migration.ts";
+import { accountGrantSoul } from "../contract/account-key.ts";
 import { grantSoul, parseObjectId, parsePrincipalId } from "../ids/src/index.js";
 
 function objectId(value: string): CheckObjectId {
@@ -75,6 +76,28 @@ const document = JSON.parse(
 const canonical = JSON.parse(
   readFileSync(new URL("../../vectors/encrypted-discovery/canonical.json", import.meta.url), "utf8"),
 ) as { cases: { name: string; kind: string; sha256: string; fields?: string[] }[] };
+
+function rawInput(row: Case): MigrationAdmissionInput {
+  return {
+    migration: {
+      object: row.object as CheckObjectId,
+      fromVersion: row.fromVersion,
+      toVersion: row.toVersion,
+      versionGate: row.versionGate,
+      readers: row.readers,
+      rewrapped: row.wraps,
+    },
+    owner: row.owner as AccessorId,
+    caller: row.caller as AccessorId,
+    now: row.now,
+    storage: row.storage,
+    grants: [],
+    payloads: [],
+    receipts: [],
+    readerVersions: [],
+    soulHamState: row.soulHamState,
+  };
+}
 
 function inputOf(row: Case): MigrationAdmissionInput {
   const owner = principalId(row.owner);
@@ -141,7 +164,13 @@ test("migration vectors match the shared fixture", () => {
   }
   for (const row of document.cases) {
     if (!row.expect.ok) {
-      assert.throws(() => applyProtocolMigration(inputOf(row)), /migration rejected/, row.name);
+      let input: MigrationAdmissionInput;
+      try {
+        input = inputOf(row);
+      } catch {
+        input = rawInput(row);
+      }
+      assert.throws(() => applyProtocolMigration(input), /migration rejected/, row.name);
       continue;
     }
     const outcome = applyProtocolMigration(inputOf(row));
@@ -170,6 +199,15 @@ test("migration vectors match the shared fixture", () => {
       assert.equal(actual.grant.object, row.object, row.name);
     }
   }
+});
+
+test("migration-grant-soul-is-ids-grantSoul", () => {
+  const owner = parsePrincipalId("axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU");
+  const object = parseObjectId("chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111");
+  const accessor = parsePrincipalId("fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E");
+  assert.equal(owner.ok && object.ok && accessor.ok, true);
+  if (!owner.ok || !object.ok || !accessor.ok) return;
+  assert.equal(accountGrantSoul(owner.value, object.value, accessor.value), grantSoul(owner.value, object.value, accessor.value));
 });
 
 test("accessor order is UTF-8 bytes for a, B, hyphen, and underscore", () => {

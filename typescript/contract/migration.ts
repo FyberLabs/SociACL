@@ -19,7 +19,8 @@ import type {
   SignedGrantPayload,
   WrappedKey,
 } from "../../docs/s3rch-check.js";
-import { grantSoul as typedGrantSoul, parseObjectId, parsePrincipalId } from "../ids/src/index.js";
+import { grantSoul, parseObjectId, parsePrincipalId, type ObjectId, type PrincipalId } from "../ids/src/index.js";
+import { accountGrantSoul } from "./account-key.ts";
 
 function reject(): never {
   throw new Error("migration rejected");
@@ -42,12 +43,10 @@ function stated(value: number): 0 | 1 {
 
 type CurrentGrant = GunAclEdge;
 
-function grantSoul(owner: string, object: string, accessor: string): string | null {
-  const parsedOwner = parsePrincipalId(owner);
-  const parsedObject = parseObjectId(object);
-  const parsedAccessor = parsePrincipalId(accessor);
-  if (!parsedOwner.ok || !parsedObject.ok || !parsedAccessor.ok) return null;
-  return typedGrantSoul(parsedOwner.value, parsedObject.value, parsedAccessor.value);
+function soulOf(owner: PrincipalId, object: ObjectId, accessor: PrincipalId): string {
+  const fromIds = grantSoul(owner, object, accessor);
+  if (fromIds !== accountGrantSoul(owner, object, accessor)) reject();
+  return fromIds;
 }
 
 /** UTF-8 byte order. `B` precedes `a`. `-` precedes `_`. */
@@ -63,16 +62,19 @@ export function compareAccessors(left: string, right: string): number {
 }
 
 function currentGrants(input: MigrationAdmissionInput): CurrentGrant[] {
+  const owner = parsePrincipalId(input.owner);
+  const object = parseObjectId(input.migration.object);
+  if (!owner.ok || !object.ok) reject();
   const seen: string[] = [];
   const current: CurrentGrant[] = [];
   for (const edge of input.grants) {
     const grant = edge.grant;
+    const accessor = parsePrincipalId(grant.accessor);
     if (
+      !accessor.ok ||
       edge.owner !== input.owner ||
       grant.object !== input.migration.object ||
-      grant.accessor.length === 0 ||
-      grantSoul(input.owner, input.migration.object, grant.accessor) == null ||
-      edge.soul !== grantSoul(input.owner, input.migration.object, grant.accessor) ||
+      edge.soul !== soulOf(owner.value, object.value, accessor.value) ||
       !safe(edge.hamState) ||
       !safe(grant.from) ||
       !safe(grant.until) ||
@@ -337,12 +339,10 @@ function finish(input: MigrationAdmissionInput, current: readonly CurrentGrant[]
  * Returns an admission that does not grant.
  */
 export function applyProtocolMigration(input: MigrationAdmissionInput): MigrationAdmission {
-  if (
-    input.caller.length === 0 ||
-    input.owner.length === 0 ||
-    input.caller !== input.owner ||
-    input.migration.object.length === 0
-  ) {
+  const owner = parsePrincipalId(input.owner);
+  const caller = parsePrincipalId(input.caller);
+  const object = parseObjectId(input.migration.object);
+  if (!owner.ok || !caller.ok || !object.ok || caller.value !== owner.value) {
     reject();
   }
   const objects = new Set(input.grants.map((edge) => edge.grant.object));

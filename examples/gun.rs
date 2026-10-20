@@ -9,15 +9,26 @@
 
 use sociacl_core::{ActionMask, PredicateId};
 use sociacl_gun::{
-    accept_hint, add_claim, add_item, add_wallet, cancel, check_execute, check_see,
+    accept_hint, add_claim, add_item, add_principal, cancel, check_execute, check_see,
     elect_from_hint, FeedItem, FeedSource, HandoffHint, UrlLeaf, SEE,
 };
+use sociacl_ids::{PrincipalId, SourceKey};
+
+fn principal(text: &str) -> PrincipalId {
+    text.parse().expect("principal")
+}
 
 fn main() {
     let mut plane = sociacl_core::Plane::new();
-    let alice = add_wallet(&mut plane, "0xalice");
-    let bob = add_wallet(&mut plane, "0xbob");
-    let claim = add_claim(&mut plane, "claim-1", &alice);
+    let alice = add_principal(
+        &mut plane,
+        &principal("axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU"),
+    );
+    let bob = add_principal(
+        &mut plane,
+        &principal("fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E"),
+    );
+    let claim = add_claim(&mut plane, "claim-1", &alice).unwrap();
     plane
         .set_object_property(&claim, "predicate", PredicateId::DELEGATE)
         .unwrap();
@@ -74,7 +85,10 @@ fn main() {
         tags: vec!["social".into()],
         provenance: "rss3:gi".into(),
     };
-    let feed = add_item(&mut plane, &item, &alice).unwrap();
+    let source: SourceKey = "sr1:rss/https%3A%2F%2Fs3r.ch/feed%2F%CE%B1%231/feed"
+        .parse()
+        .unwrap();
+    let feed = add_item(&mut plane, &item, &source, &alice).unwrap();
     plane
         .set_object_property(&feed, "predicate", PredicateId::OWNER)
         .unwrap();

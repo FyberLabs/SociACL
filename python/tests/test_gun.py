@@ -55,10 +55,10 @@ def test_url_leaf_is_not_a_node():
 
 
 def test_feed_item_checks_the_same_as_a_claim():
-    object_id = "s3rch/items/rss3:act/1~2x"
+    object_id = "ext_" + "ab" * 32
     plane = Plane()
-    alice = "s3rch/users/0xalice"
-    bob = "s3rch/users/0xbob"
+    alice = "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU"
+    bob = "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E"
     plane.add_person(alice)
     plane.add_person(bob)
     plane.add_object(object_id, alice)

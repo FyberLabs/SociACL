@@ -2,10 +2,20 @@
 
 ## sociacl/gun — unreleased
 
+- **Breaking:** `mergeFrom` / `merge_from` store the mode just verified
+  on each copied cancel. A present attested copy replaces a bare copy
+  of the same id after rotation. The vector is
+  `merge-upgrades-a-present-attested-copy-after-rotation`. Merge does
+  not recheck rows already in the graph, and it follows the history
+  the caller passes.
 - **Breaking:** `mergeFrom` / `merge_from` check each incoming assent and
   cancel against this graph's rotation history before copying the row.
   A retired-key stated-1 is not copied back in after `reverifyGroup`.
   The vector is `merge-does-not-revive-a-retired-assent`.
+- **Breaking:** a feed item's Check id is `deriveExternalId`. A core-plane
+  person is `add_principal(PrincipalId)`. `IdentitySeeGrant` is keyed on
+  `ObjectId` and `PrincipalId`. `add_wallet`, claim-prefix sniffing, and
+  the item-soul fallback are deleted. A wallet accessor is refused.
 - **Breaking:** `parseObjectId` / `parse_object_id` reject an unbound
   `<kind>_<32 lowercase hex>` id. The minted form and `claim_` / `ext_`
   plus 64 hex stay. A guard test rejects that unbound spelling in
