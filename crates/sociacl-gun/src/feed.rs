@@ -62,11 +62,12 @@ pub struct GunFeedNode {
 
 impl FeedItem {
     /// Dedupe: canonical id, else normalized permalink. Same as s3r.ch
-    /// `canonicalKey`.
+    /// `canonicalKey`. The provider item id is not trimmed. `"x"` and
+    /// `" x"` stay different, and the spaced id is rejected by
+    /// `derive_external_id`.
     pub fn canonical_key(&self) -> Option<String> {
-        let id = self.id.trim();
-        if !id.is_empty() {
-            return Some(id.to_string());
+        if !self.id.is_empty() {
+            return Some(self.id.clone());
         }
         let permalink = self.permalink.trim();
         if permalink.is_empty() {
@@ -130,14 +131,13 @@ pub fn to_gun_node(item: &FeedItem) -> GunFeedNode {
 
 /// s3r.ch `fromGunNode`. Unknown `source` is not a feed node.
 pub fn from_gun_node(node: &GunFeedNode) -> Option<FeedItem> {
-    let id = node.id.trim();
-    if id.is_empty() {
+    if node.id.is_empty() {
         return None;
     }
     let source = FeedSource::parse(&node.source)?;
     let kind = as_text(&node.kind);
     Some(FeedItem {
-        id: id.to_string(),
+        id: node.id.clone(),
         source,
         kind: if kind.is_empty() {
             "activity".to_string()

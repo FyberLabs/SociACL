@@ -111,6 +111,7 @@ struct ExpectJson {
     ciphertext_published: Option<bool>,
     soul_ham_state: Option<u64>,
     cancelled: Option<Vec<CancelJson>>,
+    field: Option<String>,
 }
 
 #[derive(Clone, Deserialize)]
@@ -143,27 +144,34 @@ fn migration_vectors_match_the_shared_fixture() {
         assert!(names.contains(&required), "{required}");
     }
     for case in &document.cases {
-        let object = match sociacl_ids::parse_object_id(&case.object) {
-            Ok(object) => object,
-            Err(_) => {
-                assert!(!case.expect.ok, "{}", case.name);
-                continue;
-            }
-        };
-        let owner = match sociacl_ids::parse_principal_id(&case.owner) {
-            Ok(owner) => owner,
-            Err(_) => {
-                assert!(!case.expect.ok, "{}", case.name);
-                continue;
-            }
-        };
-        let caller = match sociacl_ids::parse_principal_id(&case.caller) {
-            Ok(caller) => caller,
-            Err(_) => {
-                assert!(!case.expect.ok, "{}", case.name);
-                continue;
-            }
-        };
+        let mut failed = Vec::new();
+        if sociacl_ids::parse_object_id(&case.object).is_err() {
+            failed.push("object");
+        }
+        if sociacl_ids::parse_principal_id(&case.owner).is_err() {
+            failed.push("owner");
+        }
+        if sociacl_ids::parse_principal_id(&case.caller).is_err() {
+            failed.push("caller");
+        }
+        if !failed.is_empty() {
+            assert!(!case.expect.ok, "{}", case.name);
+            assert_eq!(
+                failed,
+                vec![case.expect.field.as_deref().unwrap_or("")],
+                "{}",
+                case.name
+            );
+            continue;
+        }
+        assert!(
+            case.expect.field.is_none(),
+            "{} names a field that parsed",
+            case.name
+        );
+        let object = sociacl_ids::parse_object_id(&case.object).unwrap();
+        let owner = sociacl_ids::parse_principal_id(&case.owner).unwrap();
+        let caller = sociacl_ids::parse_principal_id(&case.caller).unwrap();
         let migration = ProtocolMigration {
             object,
             from_version: case.from_version,

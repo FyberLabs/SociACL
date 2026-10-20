@@ -553,7 +553,10 @@ int sociacl_gun_elect(
     size_t reason_len
 );
 
-/* Normalize a permalink. A URL is not a Gun node. */
+/* Normalize a permalink. A URL is not a Gun node.
+   A normalized form longer than 256 bytes is -1, reason "too-long".
+   A dst that cannot hold the normalized form and its NUL is -1,
+   reason "buffer-too-small". The function does not truncate. */
 int sociacl_gun_normalize_url(
     const char *url,
     char *dst,

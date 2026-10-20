@@ -348,7 +348,7 @@ present/historical revocation boundary. The browser check
 bundles the runtime dependency graph and rejects Node imports. Node built-ins
 are used only in build/test tooling, outside the shipped runtime.
 
-After review and merge, tag `ids-v0.10.0`. The release job waits for the full test
+After review and merge, tag `ids-v0.10.0`. That is the tag #60 publishes once `master` is protected. The release job waits for the full test
 job, requires a protected `master` and verifies the tag commit is its ancestor.
 A read-only job installs dependencies with scripts disabled, explicitly builds,
 and checks the tag against `package.json`. A separate write-token job only

@@ -2,6 +2,12 @@
 
 ## sociacl/gun — unreleased
 
+- **Breaking:** `FeedItem::canonical_key` does not trim the provider item id before `derive_external_id`. `"x"` and `" x"` do not share an `ext_` id. The spaced id is `whitespace`. The vector is `vectors/mesh/strict-id.json`.
+- **Breaking:** `sociacl_gun_normalize_url` returns `too-long` when the normalized form exceeds 256 bytes and `buffer-too-small` when the destination cannot hold it. It does not truncate. The Python caller sizes the destination to the input and surfaces that reason. The same vector covers the C and Python callers.
+- The forbidden-names audit and the `typescript/src` `node:crypto` scan also read `.mjs`, `.cjs`, `.mts`, and `.cts`, and they reject the bare `crypto` specifier.
+- The Rust migration vector asserts which id field failed to parse (`object`, `owner`, or `caller`).
+- `merge-drops-another-predicates-cancel-when-incoming-wins` also asserts that `same-group` stays denied.
+- The release tag named by #60 is `ids-v0.10.0`.
 - Close-out of the stored-id rebuild. There is no pre-v2 ACL migration.
   PR 7 is dropped. Deleted helpers: `samePrincipal`, `sameParsed`,
   `sameObjectId`, `canonicalAccessorId`, `canonical_accessor_id`,

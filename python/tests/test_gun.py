@@ -1,6 +1,13 @@
 """Gun adapter Python binding tests. Requires `cargo build -p sociacl-c`."""
 
+import json
+from pathlib import Path
+
 from sociacl import Error, Plane, normalize_url
+
+STRICT_ID = json.loads(
+    (Path(__file__).resolve().parents[2] / "vectors" / "mesh" / "strict-id.json").read_text()
+)
 
 
 def test_hint_is_not_a_grant_dest_check_is():
@@ -54,6 +61,21 @@ def test_url_leaf_is_not_a_node():
         pass
 
 
+def test_normalize_url_vectors():
+    for row in STRICT_ID["urls"]:
+        if row.get("dstLen") is not None:
+            continue
+        if row["ok"]:
+            assert normalize_url(row["url"]) == row["normalized"], row["name"]
+        else:
+            try:
+                normalize_url(row["url"])
+            except Error as exc:
+                assert str(exc) == row["reason"], row["name"]
+            else:
+                raise AssertionError(row["name"])
+
+
 def test_feed_item_checks_the_same_as_a_claim():
     object_id = "ext_" + "ab" * 32
     plane = Plane()
@@ -82,5 +104,6 @@ def test_feed_item_checks_the_same_as_a_claim():
 if __name__ == "__main__":
     test_hint_is_not_a_grant_dest_check_is()
     test_url_leaf_is_not_a_node()
+    test_normalize_url_vectors()
     test_feed_item_checks_the_same_as_a_claim()
     print("ok")

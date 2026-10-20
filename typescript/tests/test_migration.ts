@@ -65,6 +65,7 @@ type Case = {
     ciphertextPublished?: boolean;
     soulHamState?: number;
     cancelled?: { accessor: string; hamState: number; stated: 0 | 1; from: number; until: number }[];
+    field?: "object" | "owner" | "caller";
   };
 };
 
@@ -162,6 +163,17 @@ test("migration vectors match the shared fixture", () => {
     assert.ok(names.includes(required), required);
   }
   for (const row of document.cases) {
+    const failed = [
+      parseObjectId(row.object).ok ? null : "object",
+      parsePrincipalId(row.owner).ok ? null : "owner",
+      parsePrincipalId(row.caller).ok ? null : "caller",
+    ].filter((name) => name !== null);
+    if (failed.length > 0) {
+      assert.equal(row.expect.ok, false, row.name);
+      assert.deepEqual(failed, [row.expect.field], row.name);
+      continue;
+    }
+    assert.equal(row.expect.field, undefined, row.name);
     if (!row.expect.ok) {
       let input: MigrationAdmissionInput;
       try {
