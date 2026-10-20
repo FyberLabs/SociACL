@@ -31,6 +31,10 @@ fn object_of(v: &Value) -> ObjectId {
     parse_object_id(v.as_str().expect("object")).expect("object id")
 }
 
+fn parsed_object(v: &Value) -> Result<ObjectId, Reason> {
+    parse_object_id(v.as_str().ok_or(Reason::NotString)?)
+}
+
 fn principal_of(v: &Value) -> PrincipalId {
     parse_principal_id(v.as_str().expect("principal")).expect("principal id")
 }
@@ -271,7 +275,11 @@ fn run_case(file: &Value, case: &Value) -> MeshSeeGraph {
                 }
             }
             "owner" => {
-                let got = graph.admitted_owner(&object_of(&step["object"]));
+                let Ok(object) = parsed_object(&step["object"]) else {
+                    assert!(step["absent"] == true, "{name}");
+                    continue;
+                };
+                let got = graph.admitted_owner(&object);
                 if step["absent"] == true {
                     assert!(got.is_none(), "{name}");
                 } else {
@@ -317,15 +325,24 @@ fn run_case(file: &Value, case: &Value) -> MeshSeeGraph {
                 }
             }
             "check" => {
-                let got = graph.check_see(
-                    &object_of(&step["object"]),
-                    &principal_of(&step["accessor"]),
-                    step["now"].as_u64().unwrap(),
-                    None,
-                    None,
-                );
-                assert_eq!(got.allowed, step["allowed"] == true, "{name}");
-                assert_eq!(got.reason, step["reason"].as_str().unwrap(), "{name}");
+                let (allowed, reason) = match (
+                    parsed_object(&step["object"]),
+                    parse_principal_id(step["accessor"].as_str().unwrap_or("")),
+                ) {
+                    (Err(reason), _) | (_, Err(reason)) => (false, reason_name(reason)),
+                    (Ok(object), Ok(accessor)) => {
+                        let got = graph.check_see(
+                            &object,
+                            &accessor,
+                            step["now"].as_u64().unwrap(),
+                            None,
+                            None,
+                        );
+                        (got.allowed, got.reason.to_string())
+                    }
+                };
+                assert_eq!(allowed, step["allowed"] == true, "{name}");
+                assert_eq!(reason, step["reason"].as_str().unwrap(), "{name}");
             }
             "admit-post" => {
                 let row = patch_row(step.get("row").unwrap_or(&Value::Null), step);
