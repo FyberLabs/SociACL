@@ -1,7 +1,7 @@
 {
   "notes": [
-    "Provider item ids are not trimmed before derive_external_id. \"x\" and \" x\" do not share an ext_ id; the spaced id is whitespace.",
-    "sociacl_gun_normalize_url returns too-long when the normalized form exceeds 256 bytes, and buffer-too-small when dst cannot hold it. It does not truncate."
+    "Provider item ids are not trimmed before derive_external_id. \"x\" and \" x\" do not share an ext_ id. A leading or trailing ASCII space is whitespace. A leading or trailing U+00A0 is bad-alphabet.",
+    "UrlLeaf::parse returns too-long when the normalized form exceeds 256 bytes. sociacl_gun_normalize_url returns that reason, and buffer-too-small when dst cannot hold the form. It does not truncate."
   ],
   "feed": [
     {
@@ -17,6 +17,20 @@
       "providerItemId": " x",
       "ok": false,
       "reason": "whitespace"
+    },
+    {
+      "name": "provider-item-trailing-space",
+      "source": "sr1:rss/https%3A%2F%2Fs3r.ch/feed%2F%CE%B1%231/feed",
+      "providerItemId": "x ",
+      "ok": false,
+      "reason": "whitespace"
+    },
+    {
+      "name": "provider-item-nbsp",
+      "source": "sr1:rss/https%3A%2F%2Fs3r.ch/feed%2F%CE%B1%231/feed",
+      "providerItemId": "x\u00a0",
+      "ok": false,
+      "reason": "bad-alphabet"
     }
   ],
   "urls": [

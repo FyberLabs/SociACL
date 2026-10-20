@@ -1,0 +1,20 @@
+{
+  "notes": [
+    "typescript/src may use WebCrypto. The audit flags only import, require, and dynamic import() of the specifiers crypto and node:crypto. Comments are ignored."
+  ],
+  "allowed": [
+    { "name": "webcrypto-global", "source": "const bytes = globalThis.crypto.getRandomValues(new Uint8Array(16));" },
+    { "name": "webcrypto-subtle", "source": "await crypto.subtle.digest('SHA-256', bytes);" },
+    { "name": "line-comment", "source": "// import \"node:crypto\"\nconst x = 1;" },
+    { "name": "block-comment", "source": "/* require('crypto') */\nconst x = 1;" }
+  ],
+  "banned": [
+    { "name": "import-crypto", "source": "import { randomBytes } from \"crypto\";" },
+    { "name": "import-node-crypto", "source": "import { webcrypto } from 'node:crypto';" },
+    { "name": "import-side-effect", "source": "import \"crypto\";" },
+    { "name": "require-crypto", "source": "const c = require(\"crypto\");" },
+    { "name": "require-node-crypto", "source": "const c = require('node:crypto');" },
+    { "name": "dynamic-crypto", "source": "const c = await import(\"crypto\");" },
+    { "name": "dynamic-node-crypto", "source": "const c = import('node:crypto');" }
+  ]
+}

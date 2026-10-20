@@ -17,6 +17,8 @@ pub enum GunError {
     UrlLeafNotANode,
     #[error("permalink URL is not a leaf pointer")]
     InvalidUrl,
+    #[error("too-long")]
+    TooLong,
     #[error("elect does not fire on a handoff hint")]
     ElectFromHint,
     #[error("Case C client has no mint path for new Gun grants")]

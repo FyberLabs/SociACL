@@ -198,18 +198,71 @@ test("checkSee on a primitive graph is bad-record", () => {
   assert.deepEqual(checkSee(null, "chat", "bob", 0), { allowed: false, reason: "bad-record" });
 });
 
-test("typescript/src does not reference node:crypto", () => {
+function stripComments(source) {
+  let out = "";
+  for (let i = 0; i < source.length; i += 1) {
+    if (source[i] === "/" && source[i + 1] === "/") {
+      while (i < source.length && source[i] !== "\n") i += 1;
+      if (i < source.length) out += "\n";
+      continue;
+    }
+    if (source[i] === "/" && source[i + 1] === "*") {
+      i += 2;
+      while (i < source.length && !(source[i] === "*" && source[i + 1] === "/")) i += 1;
+      i += 1;
+      out += " ";
+      continue;
+    }
+    out += source[i];
+  }
+  return out;
+}
+
+function endsWithWord(text, word) {
+  return new RegExp(`(^|[^A-Za-z0-9_])${word}$`).test(text);
+}
+
+function specifierIsImport(text, at) {
+  let i = at - 1;
+  while (i >= 0 && /\s/.test(text[i])) i -= 1;
+  const head = text.slice(0, at).trimEnd();
+  if (i >= 0 && text[i] === "(") {
+    const call = text.slice(0, i).trimEnd();
+    return endsWithWord(call, "require") || endsWithWord(call, "import");
+  }
+  if (endsWithWord(head, "import")) return true;
+  if (!endsWithWord(head, "from")) return false;
+  const stmt = head.split(/[;\n]/).pop() ?? "";
+  return /(^|[^A-Za-z0-9_])import( |$)/.test(stmt);
+}
+
+function importsNodeCrypto(source) {
+  const text = stripComments(source);
+  const specs = ['"crypto"', "'crypto'", '"node:crypto"', "'node:crypto'"];
+  for (const spec of specs) {
+    let from = 0;
+    while (from <= text.length) {
+      const at = text.indexOf(spec, from);
+      if (at < 0) break;
+      if (specifierIsImport(text, at)) return true;
+      from = at + spec.length;
+    }
+  }
+  return false;
+}
+
+test("typescript/src does not import node:crypto", () => {
   const root = fileURLToPath(new URL("../../", import.meta.url));
+  const vectors = JSON.parse(readFileSync(join(root, "vectors/mesh/crypto-import.json"), "utf8"));
+  for (const row of vectors.allowed) assert.equal(importsNodeCrypto(row.source), false, row.name);
+  for (const row of vectors.banned) assert.equal(importsNodeCrypto(row.source), true, row.name);
   const files = [
     ...filesForGlob(root, "typescript/src/**/*.js"),
     ...filesForGlob(root, "typescript/src/**/*.ts"),
   ];
   assert.ok(files.length > 0);
-  for (const name of ["node:crypto", "crypto"]) {
-    const needle = new RegExp(`(^|[^A-Za-z0-9_])${name}([^A-Za-z0-9_]|$)`);
-    for (const path of files) {
-      assert.equal(needle.test(readFileSync(path, "utf8")), false, `${name} in ${path}`);
-    }
+  for (const path of files) {
+    assert.equal(importsNodeCrypto(readFileSync(path, "utf8")), false, path);
   }
 });
 

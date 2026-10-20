@@ -1,6 +1,6 @@
 // Close-out audit. Whole-token match, the same boundary rg uses.
 // Fails when a forbidden name appears in its scope, or when
-// typescript/src contains node:crypto or the bare "crypto" specifier.
+// typescript/src imports "crypto" or "node:crypto". WebCrypto stays allowed.
 // *.js also covers .mjs and .cjs. *.ts also covers .mts and .cts.
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
@@ -101,15 +101,77 @@ for (const glob of doc.scopes) {
   }
 }
 
-const cryptoNames = ["node:crypto", "crypto"];
+function stripComments(source) {
+  let out = "";
+  for (let i = 0; i < source.length; i += 1) {
+    if (source[i] === "/" && source[i + 1] === "/") {
+      while (i < source.length && source[i] !== "\n") i += 1;
+      if (i < source.length) out += "\n";
+      continue;
+    }
+    if (source[i] === "/" && source[i + 1] === "*") {
+      i += 2;
+      while (i < source.length && !(source[i] === "*" && source[i + 1] === "/")) i += 1;
+      i += 1;
+      out += " ";
+      continue;
+    }
+    out += source[i];
+  }
+  return out;
+}
+
+function endsWithWord(text, word) {
+  return new RegExp(`(^|[^A-Za-z0-9_])${word}$`).test(text);
+}
+
+function specifierIsImport(text, at) {
+  let i = at - 1;
+  while (i >= 0 && /\s/.test(text[i])) i -= 1;
+  const head = text.slice(0, at).trimEnd();
+  if (i >= 0 && text[i] === "(") {
+    const call = text.slice(0, i).trimEnd();
+    return endsWithWord(call, "require") || endsWithWord(call, "import");
+  }
+  if (endsWithWord(head, "import")) return true;
+  if (!endsWithWord(head, "from")) return false;
+  const stmt = head.split(/[;\n]/).pop() ?? "";
+  return /(^|[^A-Za-z0-9_])import( |$)/.test(stmt);
+}
+
+function importsNodeCrypto(source) {
+  const text = stripComments(source);
+  const specs = ['"crypto"', "'crypto'", '"node:crypto"', "'node:crypto'"];
+  for (const spec of specs) {
+    let from = 0;
+    while (from <= text.length) {
+      const at = text.indexOf(spec, from);
+      if (at < 0) break;
+      if (specifierIsImport(text, at)) return true;
+      from = at + spec.length;
+    }
+  }
+  return false;
+}
+
+const cryptoVectors = JSON.parse(readFileSync(join(root, "vectors/mesh/crypto-import.json"), "utf8"));
+for (const row of cryptoVectors.allowed) {
+  if (importsNodeCrypto(row.source)) {
+    console.error(`allowed crypto snippet flagged: ${row.name}`);
+    failed = true;
+  }
+}
+for (const row of cryptoVectors.banned) {
+  if (!importsNodeCrypto(row.source)) {
+    console.error(`banned crypto snippet missed: ${row.name}`);
+    failed = true;
+  }
+}
 for (const glob of ["typescript/src/**/*.js", "typescript/src/**/*.ts"]) {
   for (const path of filesForGlob(glob)) {
-    const text = readFileSync(path, "utf8");
-    for (const name of cryptoNames) {
-      if (present(text, name)) {
-        console.error(`${name} in ${path}`);
-        failed = true;
-      }
+    if (importsNodeCrypto(readFileSync(path, "utf8"))) {
+      console.error(`crypto import in ${path}`);
+      failed = true;
     }
   }
 }

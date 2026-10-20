@@ -807,6 +807,84 @@ fn see_edge_mutations_call_check_see() {
     }
 }
 
+fn strip_comments(source: &str) -> String {
+    let mut out = String::new();
+    let mut chars = source.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '/' && chars.peek() == Some(&'/') {
+            chars.next();
+            for next in chars.by_ref() {
+                if next == '\n' {
+                    out.push('\n');
+                    break;
+                }
+            }
+            continue;
+        }
+        if c == '/' && chars.peek() == Some(&'*') {
+            chars.next();
+            while let Some(next) = chars.next() {
+                if next == '*' && chars.peek() == Some(&'/') {
+                    chars.next();
+                    break;
+                }
+            }
+            out.push(' ');
+            continue;
+        }
+        out.push(c);
+    }
+    out
+}
+
+fn ends_with_word(text: &str, word: &str) -> bool {
+    let rest = text.trim_end();
+    let Some(start) = rest.len().checked_sub(word.len()) else {
+        return false;
+    };
+    if &rest[start..] != word {
+        return false;
+    }
+    start == 0
+        || !rest[..start]
+            .chars()
+            .next_back()
+            .is_some_and(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+fn specifier_is_import(text: &str, at: usize) -> bool {
+    let before = &text[..at];
+    let trimmed = before.trim_end();
+    if trimmed.ends_with('(') {
+        let call = &trimmed[..trimmed.len() - 1];
+        return ends_with_word(call, "require") || ends_with_word(call, "import");
+    }
+    if ends_with_word(trimmed, "import") {
+        return true;
+    }
+    if !ends_with_word(trimmed, "from") {
+        return false;
+    }
+    let stmt = trimmed.rsplit([';', '\n']).next().unwrap_or(trimmed);
+    let stmt = stmt.trim_start();
+    stmt == "import" || stmt.starts_with("import ")
+}
+
+fn imports_node_crypto(source: &str) -> bool {
+    let text = strip_comments(source);
+    for spec in ["\"crypto\"", "'crypto'", "\"node:crypto\"", "'node:crypto'"] {
+        let mut from = 0;
+        while let Some(at) = text[from..].find(spec) {
+            let start = from + at;
+            if specifier_is_import(&text, start) {
+                return true;
+            }
+            from = start + spec.len();
+        }
+    }
+    false
+}
+
 fn ident_present(text: &str, name: &str) -> bool {
     let bytes = text.as_bytes();
     let mut from = 0;
@@ -968,16 +1046,32 @@ fn signed_owner_reaches_group_until_history_drops_it() {
 }
 
 #[test]
-fn typescript_src_does_not_reference_node_crypto() {
+fn typescript_src_does_not_import_node_crypto() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let vectors: Value = serde_json::from_str(
+        &fs::read_to_string(root.join("vectors/mesh/crypto-import.json")).unwrap(),
+    )
+    .unwrap();
+    for row in vectors["allowed"].as_array().unwrap() {
+        let name = row["name"].as_str().unwrap();
+        assert!(
+            !imports_node_crypto(row["source"].as_str().unwrap()),
+            "{name}"
+        );
+    }
+    for row in vectors["banned"].as_array().unwrap() {
+        let name = row["name"].as_str().unwrap();
+        assert!(
+            imports_node_crypto(row["source"].as_str().unwrap()),
+            "{name}"
+        );
+    }
     let mut files = files_for_glob(&root, "typescript/src/**/*.js");
     files.extend(files_for_glob(&root, "typescript/src/**/*.ts"));
     assert!(!files.is_empty());
     for path in files {
         let text = fs::read_to_string(&path).unwrap();
-        for name in ["node:crypto", "crypto"] {
-            assert!(!ident_present(&text, name), "{name} in {}", path.display());
-        }
+        assert!(!imports_node_crypto(&text), "{}", path.display());
     }
 }
 

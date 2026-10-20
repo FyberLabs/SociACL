@@ -624,6 +624,37 @@ bad('r5-request-oidc-wallet-within-skew',oidcBackdated,'wallet-required','rotati
 bad('r5-publish-oidc-wallet-within-skew',{candidate:oidcBackdated,siblings:[],prior:[]},'wallet-required','publish-check',{now:at+60,policy:skew60,links:withinLinks});
 accept('records','r5-request-oidc-wallet-beyond-horizon',oidcBackdated,p,{operation:'rotation-request',now:at+60,policy:skew60,links:beyondLinks});
 
+const siweHashOf = proof => hex(sha256(val(ids.lengthPrefixed(['sociacl-siwe-proof-v1', proof.message, proof.signature]))));
+const rotationV4 = (next = p2, n = 2, seq = 1, prev = p, issuedAt = at + 30, retainedLinks = [wid], nextEpub = principal(6)) => {
+  const r = { v: 1, kind: 'rotate', principal: p, seq, prevKey: prev, nextKey: next, nextEpub, issuedAt, retainedLinks, authorizer: { kind: 'wallet', link: wid } };
+  const signed = { ...r, nextSig: keySig(r, n), authorizer: { ...r.authorizer, siwe: siwe(r) } };
+  const siweHash = siweHashOf(signed.authorizer.siwe);
+  return { ...signed, attest: jws({ typ: 'sociacl-rotate-attest-v4', principal: p, nextKey: next, nextEpub, seq, iat: issuedAt, exp: issuedAt + 600, auth: 'wallet', linkId: wid, retainedLinks, siweHash }) };
+};
+const rot4 = rotationV4();
+accept('records','rotate-v4-wallet',rot4,p,{operation:'rotate',nextEpub:principal(6)});
+accept('records','rotate-v4-resolve',[rot4],p2,{operation:'resolve',currentEpub:principal(6)});
+accept('records','publish-v4',{candidate:rot4,siblings:[],prior:[]},p,{operation:'publish-check'});
+const tamperedV4 = { ...rot4, authorizer: { ...rot4.authorizer, siwe: { ...rot4.authorizer.siwe, message: rot4.authorizer.siwe.message.replace('Chain ID: 1', 'Chain ID: 5') } } };
+bad('rotate-v4-tampered-siwe',tamperedV4,'bad-attestation','rotate');
+for (const [order, copies] of [['valid-first',[rot4,tamperedV4]],['valid-last',[tamperedV4,rot4]]]) {
+  accept('records','rotate-v4-tampered-duplicate-'+order,copies,p2,{operation:'resolve',currentEpub:principal(6),diagnosticReasons:['bad-attestation']});
+}
+const boundary = ids.historyState(p, [rot], rot.issuedAt, now);
+const sameSecondNewKey = walletLink(p, rot.issuedAt, 2);
+bad('same-second-new-key-link',sameSecondNewKey,'bad-signature','wallet-link',{directState:{key:boundary.key,currentKey:boundary.currentKey,retainedLinks:boundary.retainedLinks}});
+accept('records','oidc-resolve-now',[oidc],p,{operation:'oidc-resolve-now',cred});
+bad('oidc-resolve-now-present-revoked',[oidc],'revoked-link','oidc-resolve-now',{cred,revocations:[offline(revokedOidc)]});
+const damagedWallet = { ...w, siwe: { ...w.siwe, message: w.siwe.message + '\nnope' } };
+for (const [order, copies] of [['valid-first',[w,damagedWallet]],['valid-last',[damagedWallet,w]]]) {
+  accept('records','verifying-link-map-'+order,copies,[wid],{operation:'verifying-link-map'});
+}
+accept('records','verifying-link-map-omits-unverified',[damagedWallet],[],{operation:'verifying-link-map'});
+bad('resolve-input-too-long',Array.from({length:1025},()=>({})),'too-long','resolve');
+bad('wallet-resolve-input-too-long',Array.from({length:1025},()=>({})),'too-long','wallet-resolve-now',{address:wallet});
+bad('retained-input-too-long',Array.from({length:1025},()=>'aa'.repeat(32)),'too-long','prepare-retained-links-now');
+bad('link-map-input-too-long',Array.from({length:1025},()=>({})),'too-long','verifying-link-map');
+
 accept('signing-bytes','length-prefixed-decimals',['1','900','0'],hex(val(ids.lengthPrefixed(['1','900','0']))),{operation:'length-prefixed'});
 accept('signing-bytes','length-prefixed-utf8',['é'],hex(val(ids.lengthPrefixed(['é']))),{operation:'length-prefixed'});
 reject('signing-bytes','length-prefixed-null',[null],'not-string',{operation:'length-prefixed'});

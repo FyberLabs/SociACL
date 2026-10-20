@@ -4,7 +4,9 @@
 
 - **Breaking:** `FeedItem::canonical_key` does not trim the provider item id before `derive_external_id`. `"x"` and `" x"` do not share an `ext_` id. The spaced id is `whitespace`. The vector is `vectors/mesh/strict-id.json`.
 - **Breaking:** `sociacl_gun_normalize_url` returns `too-long` when the normalized form exceeds 256 bytes and `buffer-too-small` when the destination cannot hold it. It does not truncate. The Python caller sizes the destination to the input and surfaces that reason. The same vector covers the C and Python callers.
-- The forbidden-names audit and the `typescript/src` `node:crypto` scan also read `.mjs`, `.cjs`, `.mts`, and `.cts`, and they reject the bare `crypto` specifier.
+- The forbidden-names audit flags `import`, `require`, and dynamic `import()` of `"crypto"` or `"node:crypto"` under `typescript/src`. `globalThis.crypto`, `crypto.subtle`, and comments stay allowed. Vectors: `vectors/mesh/crypto-import.json`.
+- `UrlLeaf::parse` rejects a normalized permalink longer than 256 bytes with `too-long`, the same reason the C and Python callers return. `buffer-too-small` stays a destination-buffer error.
+- The forbidden-names audit and the `typescript/src` crypto scan also read `.mjs`, `.cjs`, `.mts`, and `.cts`.
 - The Rust migration vector asserts which id field failed to parse (`object`, `owner`, or `caller`).
 - `merge-drops-another-predicates-cancel-when-incoming-wins` also asserts that `same-group` stays denied.
 - The release tag named by #60 is `ids-v0.10.0`.
@@ -315,6 +317,23 @@
 
 0.10.0 is the next minor after the still-untagged 0.9.0. The release tag
 is `ids-v0.10.0`.
+
+- `prepareRetainedLinksNow` / `prepare_retained_links_now` authenticates
+  candidate link ids and drops those revoked under the final current key.
+- `resolveOidcLinkNow` / `resolve_oidc_link_now` is the present OIDC
+  counterpart of `resolveWalletLinkNow`.
+- `verifyingLinkMap` / `verifying_link_map` groups copies by signing-byte
+  id and keeps one that verifies. A tampered duplicate does not produce
+  `missing-history` when a verifying copy is present.
+- Wallet rotation attestations may use `sociacl-rotate-attest-v4`, the v3
+  claims plus `siweHash` over the SIWE proof. A mismatch is
+  `bad-attestation`. Historical v2 and v3 attestations still verify.
+  OIDC stays on v3. Signing bytes are unchanged.
+- Resolution lists, link maps, revocation lists, and genesis-epub bindings
+  longer than 1024 are `too-long`. Nothing is truncated.
+- A link signed by the new key in the same second as a rotation is
+  `bad-signature`. `historyState` still names the preceding key.
+- The `*AtKey` aliases are removed. Use the canonical names.
 
 - A new object id embeds its creator's genesis principal:
   `<kind>_<principal-key>_<32 lowercase hex>`. The principal key is the

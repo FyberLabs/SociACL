@@ -53,7 +53,7 @@ The item key escapes `~ . # $ [ ]` and leaves `/` alone. That escape is a closed
 { id, source: rss3|rss|atom, kind, author, body, ts, permalink, tags: string, provenance }
 ```
 
-`FeedItem` is UX only (`tags: string[]`). Mapping is `toGunNode` / `fromGunNode`. Unknown `source` is not a feed node. Empty `kind` maps to `"activity"` (same as s3r.ch `fromGunNode`). Dedupe: canonical id, else normalized permalink. The provider item id is not trimmed before `derive_external_id`. `"x"` and `" x"` do not share an `ext_` id; the spaced id is `whitespace`. `sociacl_gun_normalize_url` returns `too-long` when the normalized form exceeds 256 bytes and `buffer-too-small` when the destination cannot hold it. It does not truncate.
+`FeedItem` is UX only (`tags: string[]`). Mapping is `toGunNode` / `fromGunNode`. Unknown `source` is not a feed node. Empty `kind` maps to `"activity"` (same as s3r.ch `fromGunNode`). Dedupe: canonical id, else normalized permalink. The provider item id is not trimmed before `derive_external_id`. `"x"` and `" x"` do not share an `ext_` id; the spaced id is `whitespace`. `UrlLeaf::parse` returns `too-long` when the normalized form exceeds 256 bytes. `sociacl_gun_normalize_url` returns that reason, and `buffer-too-small` when the destination cannot hold the form. It does not truncate.
 
 `FeedTab` is `"public" | "mine" | "network"`. UX only. Not a Check object.
 

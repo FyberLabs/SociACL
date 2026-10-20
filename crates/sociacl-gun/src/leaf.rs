@@ -11,10 +11,17 @@ pub struct UrlLeaf {
     normalized: String,
 }
 
+/// Normalized permalinks longer than this are `too-long`. The C and Python
+/// callers use the same cap through [`UrlLeaf::parse`].
+pub const MAX_NORMALIZED_URL: usize = 256;
+
 impl UrlLeaf {
     pub fn parse(url: impl AsRef<str>) -> Result<Self, GunError> {
         let raw = url.as_ref().trim().to_string();
         let normalized = normalize_permalink(&raw)?;
+        if normalized.len() > MAX_NORMALIZED_URL {
+            return Err(GunError::TooLong);
+        }
         Ok(Self { raw, normalized })
     }
 
@@ -121,9 +128,13 @@ pub fn normalize_permalink(raw: &str) -> Result<String, GunError> {
     if pathq.ends_with('/') && pathq != "/" {
         pathq.pop();
     }
-    if pathq.is_empty() {
-        Ok(format!("{scheme}://{hostport}"))
+    let normalized = if pathq.is_empty() {
+        format!("{scheme}://{hostport}")
     } else {
-        Ok(format!("{scheme}://{hostport}{pathq}"))
+        format!("{scheme}://{hostport}{pathq}")
+    };
+    if normalized.len() > MAX_NORMALIZED_URL {
+        return Err(GunError::TooLong);
     }
+    Ok(normalized)
 }

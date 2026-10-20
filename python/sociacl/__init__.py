@@ -536,6 +536,7 @@ def holder_keygen() -> Tuple[bytes, bytes]:
 
 def normalize_url(url: str) -> str:
     encoded = _b(url)
+    # Normalization never lengthens the input, so this buffer holds the result and its NUL.
     dst = ctypes.create_string_buffer(len(encoded) + 1)
     reason = ctypes.create_string_buffer(_REASON_LEN)
     if _LIB.sociacl_gun_normalize_url(encoded, dst, len(dst), reason, _REASON_LEN) != 0:

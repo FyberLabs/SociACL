@@ -19,17 +19,16 @@ test("provider item id is not trimmed", () => {
   const plain = strictId.feed.find((row) => row.name === "provider-item-x");
   const spaced = strictId.feed.find((row) => row.name === "provider-item-spaced");
   assert.ok(plain && spaced);
-  const source = parseSourceKey(plain.source);
-  assert.equal(source.ok, true);
-  if (!source.ok) return;
-  const derived = deriveExternalId(source.value, plain.providerItemId);
-  const rejected = deriveExternalId(source.value, spaced.providerItemId);
-  assert.equal(derived.ok, plain.ok);
-  assert.equal(rejected.ok, spaced.ok);
-  if (!derived.ok || rejected.ok) return;
-  assert.equal(derived.value, plain.object);
-  assert.equal(rejected.reason, spaced.reason);
   assert.notEqual(plain.providerItemId, spaced.providerItemId);
+  for (const row of strictId.feed) {
+    const source = parseSourceKey(row.source);
+    assert.equal(source.ok, true, row.name);
+    if (!source.ok) return;
+    const derived = deriveExternalId(source.value, row.providerItemId);
+    assert.equal(derived.ok, row.ok, row.name);
+    if (derived.ok) assert.equal(derived.value, row.object, row.name);
+    else assert.equal(derived.reason, row.reason, row.name);
+  }
 });
 
 for (const row of doc.cases) {

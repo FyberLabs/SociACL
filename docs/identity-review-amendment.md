@@ -52,7 +52,7 @@ resolving its account's current key. Rust exposes `verify_revoke_now` and
 | Check | Revoke authority | Timestamp witness |
 | --- | --- | --- |
 | Present lookup (`resolveWalletLinkNow`) or direct present proof (`verifyRevokeNow`) | Final authenticated current key | Optional |
-| Historical/as-of lookup (`resolveWalletLink`), `verifyRevoke`, `verifyRotate`, `resolveCurrentKey`, and their `*AtKey` aliases | Key current at the evaluation horizon | Required |
+| Historical/as-of lookup (`resolveWalletLink`), `verifyRevoke`, `verifyRotate`, `resolveCurrentKey` | Key current at the evaluation horizon | Required |
 
 Omit `attest` for an offline revoke; explicit null, empty and non-string values
 are malformed. Present verification does not certify an attached witness, even

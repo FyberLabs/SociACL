@@ -21,6 +21,29 @@ function siweData(x) {
   if (!/^0x[0-9a-fA-F]{130}$/.test(signature)) return fail('unsupported-wallet');
   return ok(Object.freeze({ message, signature: /** @type {`0x${string}`} */ (signature) }));
 }
+/** Each resolution list, link map, and revocation list stops at this length. Longer input is `too-long` and is not truncated. */
+export const MAX_RESOLUTION_INPUT = 1024;
+/** @param {unknown} list @returns {Result<readonly unknown[]>} */
+function boundedList(list) {
+  if (!Array.isArray(list)) return fail('bad-record');
+  if (list.length > MAX_RESOLUTION_INPUT) return fail('too-long');
+  return ok(list);
+}
+/** @param {ResolutionContext|undefined} ctx @returns {Result<true>} */
+function boundedContext(ctx) {
+  if (!ctx || typeof ctx.history !== 'function') return fail('missing-history');
+  if (ctx.links instanceof Map && ctx.links.size > MAX_RESOLUTION_INPUT) return fail('too-long');
+  if (ctx.revocations !== undefined && !Array.isArray(ctx.revocations)) return fail('bad-record');
+  if ((ctx.revocations?.length ?? 0) > MAX_RESOLUTION_INPUT) return fail('too-long');
+  if (ctx.genesisEpubBindings !== undefined && !Array.isArray(ctx.genesisEpubBindings)) return fail('bad-record');
+  if ((ctx.genesisEpubBindings?.length ?? 0) > MAX_RESOLUTION_INPUT) return fail('too-long');
+  return ok(true);
+}
+/** hex(sha256(length-prefixed sociacl-siwe-proof-v1, message, signature)).
+ * @param {Siwe} proof */
+function siweProofHash(proof) {
+  return hex(sha256(lp(['sociacl-siwe-proof-v1', proof.message, proof.signature])));
+}
 /** Sorted unique 64-hex link ids, at most 1024. The same rule as a signed rotation.
  * @param {unknown} list @returns {Result<string[]>} */
 function retainedIds(list) {
@@ -381,9 +404,13 @@ export function verifyRotationRequest(x, currentKey, ctx) {
  * @param {Rotate} r @param {Record<string, unknown>} c */
 function rotationClaimsMatch(r, c) {
   const v3 = hasNextEpub(r);
+  const v4 = v3 && r.authorizer.kind === 'wallet' && c.typ === 'sociacl-rotate-attest-v4';
   const attestKeys = ['typ','principal','nextKey','seq','iat','exp','auth','linkId','retainedLinks'];
   if (v3) attestKeys.push('nextEpub');
-  return only(c, attestKeys) && c.typ === (v3 ? 'sociacl-rotate-attest-v3' : 'sociacl-rotate-attest-v2') && c.principal === r.principal && c.nextKey === r.nextKey && (!v3 || c.nextEpub === r.nextEpub) && c.seq === r.seq && c.iat === r.issuedAt && c.auth === r.authorizer.kind && c.linkId === r.authorizer.link && JSON.stringify(c.retainedLinks) === JSON.stringify(r.retainedLinks);
+  if (v4) attestKeys.push('siweHash');
+  const typ = !v3 ? 'sociacl-rotate-attest-v2' : v4 ? 'sociacl-rotate-attest-v4' : 'sociacl-rotate-attest-v3';
+  if (!(only(c, attestKeys) && c.typ === typ && c.principal === r.principal && c.nextKey === r.nextKey && (!v3 || c.nextEpub === r.nextEpub) && c.seq === r.seq && c.iat === r.issuedAt && c.auth === r.authorizer.kind && c.linkId === r.authorizer.link && JSON.stringify(c.retainedLinks) === JSON.stringify(r.retainedLinks))) return false;
+  return !v4 || c.siweHash === siweProofHash(r.authorizer.siwe);
 }
 /** @param {Rotate} r @param {PrincipalId} currentKey @param {ResolutionContext} ctx @param {Diagnostic[]} diagnostics @param {boolean} requireAttest @returns {Result<Rotate>} */
 function checkRotateBody(r, currentKey, ctx, diagnostics, requireAttest) {
@@ -618,7 +645,11 @@ export function checkRotationPublish(candidate, siblings, genesis, priorRecords,
  * @param {PrincipalId} genesis @param {readonly unknown[]} rotations @param {ResolutionContext} ctx @returns {Resolution<ResolvedAccount>} */
 export function resolveCurrentKey(genesis, rotations, ctx) {
   /** @type {Diagnostic[]} */ const diagnostics = [];
-  if (!integer(ctx.now) || typeof ctx.history !== 'function') return { ...fail('missing-history'), diagnostics };
+  const rotationsList = boundedList(rotations);
+  if (!rotationsList.ok) return { ...rotationsList, diagnostics };
+  const bounded = boundedContext(ctx);
+  if (!bounded.ok) return { ...bounded, diagnostics };
+  if (!integer(ctx.now)) return { ...fail('missing-history'), diagnostics };
   const g = parsePrincipalId(genesis); if (!g.ok) return { ...g, diagnostics };
   const listed = genesisBindings(ctx); if (!listed.ok) return { ...listed, diagnostics };
   /** @type {{row: GenesisEpub, index: number}[]} */
@@ -714,11 +745,118 @@ export function resolveWalletLink(address, links, revocations, ctx) {
 export function resolveWalletLinkNow(address, links, revocations, ctx) {
   return resolveWallet(address, links, revocations, ctx, true);
 }
+/** Present OIDC eligibility. Matches issuer, tenant, and subject. Same envelope as the wallet lookup.
+ * @param {unknown} cred @param {readonly unknown[]} links @param {readonly unknown[]} revocations @param {ResolutionContext} ctx @returns {Resolution<OidcLink>} */
+export function resolveOidcLinkNow(cred, links, revocations, ctx) {
+  const parsed = parseOidcCredential(cred);
+  if (!parsed.ok) return { ...parsed, diagnostics: [] };
+  return resolveOidc(parsed.value, links, revocations, ctx);
+}
+/** @param {import('./types.js').OidcCredential} cred @param {readonly unknown[]} links @param {readonly unknown[]} revocations @param {ResolutionContext} ctx @returns {Resolution<OidcLink>} */
+function resolveOidc(cred, links, revocations, ctx) {
+  /** @type {Diagnostic[]} */ const diagnostics = [];
+  const listed = boundedList(links);
+  if (!listed.ok) return { ...listed, diagnostics };
+  const revokedList = boundedList(revocations ?? []);
+  if (!revokedList.ok) return { ...revokedList, diagnostics };
+  const bounded = boundedContext(ctx);
+  if (!bounded.ok) return { ...bounded, diagnostics };
+  if (!integer(ctx.now)) return { ...fail('missing-history'), diagnostics };
+  /** @type {Map<string, OidcLink>} */ const valid = new Map();
+  for (const [index, raw] of links.entries()) {
+    const p = record(raw);
+    if (!p.ok) { report(diagnostics, 'link', index, p.reason); continue; }
+    if (p.value.kind !== 'oidc' || p.value.cred.iss !== cred.iss || p.value.cred.tenant !== cred.tenant || p.value.cred.sub !== cred.sub) continue;
+    const v = historicalLink(p.value, ctx, ctx.now);
+    if (!v.ok) { report(diagnostics, 'link', index, v.reason); if (v.reason === 'missing-history' || v.reason === 'rotation-fork' || v.reason === 'rotation-conflict') return { ...v, diagnostics }; continue; }
+    valid.set(hex(sha256(bytes(v.value))), /** @type {OidcLink} */ (v.value));
+  }
+  const sorted = [...valid].sort((a, b) => b[1].issuedAt - a[1].issuedAt || (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
+  if (!sorted.length) return { ...fail('unknown-link'), diagnostics };
+  const newest = sorted[0][1];
+  if (sorted.length > 1 && sorted[1][1].issuedAt === newest.issuedAt) return { ...fail('ambiguous-link'), diagnostics };
+  const h = state(ctx.history, newest.principal, newest.issuedAt, ctx.now);
+  if (!h.ok) return { ...h, diagnostics };
+  const revoked = revokedAt(newest, revocations, h.value.currentKey, ctx.now, ctx.jwks, diagnostics, true);
+  return { ...(revoked ? fail('revoked-link') : ok(newest)), diagnostics };
+}
+/** Authenticate candidate link ids and drop those revoked under the final current key.
+ * Does not issue an attestation. Missing history fails the call.
+ * @param {readonly unknown[]} candidates @param {ResolutionContext} ctx @returns {Result<string[]>} */
+export function prepareRetainedLinksNow(candidates, ctx) {
+  const listed = boundedList(candidates);
+  if (!listed.ok) return listed;
+  const bounded = boundedContext(ctx);
+  if (!bounded.ok) return bounded;
+  if (!integer(ctx.now)) return fail('missing-history');
+  /** @type {string[]} */ const retained = [];
+  for (const id of listed.value) {
+    if (typeof id !== 'string') return fail('bad-record');
+    const link = ctx.links.get(id);
+    if (!link || typeof link !== 'object') return fail('missing-history');
+    const row = /** @type {WalletLink|OidcLink} */ (link);
+    const looked = state(ctx.history, row.principal, row.issuedAt, ctx.now);
+    if (!looked.ok) return looked;
+    const proof = row.kind === 'wallet'
+      ? verifyWalletLink(link, ctx.jwks, ctx.policy, row.issuedAt, looked.value)
+      : verifyOidcLink(link, ctx.jwks, ctx.pinnedIss, row.issuedAt, looked.value);
+    if (!proof.ok) return proof;
+    const computed = linkId(proof.value);
+    if (!computed.ok || computed.value !== id) return fail('missing-history');
+    const revoked = (ctx.revocations ?? []).some(raw => {
+      const r = verifyRevokeNow(raw, looked.value.currentKey, ctx.now);
+      return r.ok && r.value.principal === proof.value.principal && r.value.linkId === id && r.value.issuedAt >= proof.value.issuedAt;
+    });
+    if (!revoked) retained.push(id);
+  }
+  return ok(retained.sort());
+}
+/** Group untrusted link copies by signing-byte id and keep one that verifies.
+ * A tampered sibling does not drop that id. An id whose copies all fail closed
+ * on missing history still fails the call. Other failures omit the id.
+ * @param {readonly unknown[]} copies @param {ResolutionContext} ctx @returns {Result<Map<string, WalletLink|OidcLink>>} */
+export function verifyingLinkMap(copies, ctx) {
+  const listed = boundedList(copies);
+  if (!listed.ok) return listed;
+  const bounded = boundedContext(ctx);
+  if (!bounded.ok) return bounded;
+  if (!integer(ctx.now)) return fail('missing-history');
+  /** @type {Map<string, unknown[]>} */ const groups = new Map();
+  for (const raw of listed.value) {
+    const p = record(raw);
+    if (!p.ok || (p.value.kind !== 'wallet' && p.value.kind !== 'oidc')) continue;
+    const id = hex(sha256(bytes(p.value)));
+    const list = groups.get(id) ?? [];
+    list.push(raw);
+    groups.set(id, list);
+  }
+  /** @type {Map<string, WalletLink|OidcLink>} */ const kept = new Map();
+  for (const [id, list] of groups) {
+    /** @type {import('./types.js').Reason|null} */ let fatal = null;
+    /** @type {WalletLink|OidcLink|null} */ let winner = null;
+    for (const raw of list) {
+      const p = record(raw);
+      if (!p.ok || (p.value.kind !== 'wallet' && p.value.kind !== 'oidc')) continue;
+      const v = historicalLink(/** @type {WalletLink|OidcLink} */ (p.value), ctx, ctx.now);
+      if (v.ok) { winner = /** @type {WalletLink|OidcLink} */ (v.value); break; }
+      if (!fatal && (v.reason === 'missing-history' || v.reason === 'rotation-fork' || v.reason === 'rotation-conflict')) fatal = v.reason;
+    }
+    if (winner) kept.set(id, winner);
+    else if (fatal) return fail(fatal);
+  }
+  return ok(kept);
+}
 /** The public entry point fixes the revocation mode; history resolution always uses witnessed revokes.
  * @param {Eip55} address @param {readonly unknown[]} links @param {readonly unknown[]} revocations @param {ResolutionContext} ctx @param {boolean} present @returns {Resolution<WalletLink>} */
 function resolveWallet(address, links, revocations, ctx, present) {
   /** @type {Diagnostic[]} */ const diagnostics = [];
-  if (!integer(ctx.now) || typeof ctx.history !== 'function') return { ...fail('missing-history'), diagnostics };
+  const listed = boundedList(links);
+  if (!listed.ok) return { ...listed, diagnostics };
+  const revokedList = boundedList(revocations ?? []);
+  if (!revokedList.ok) return { ...revokedList, diagnostics };
+  const bounded = boundedContext(ctx);
+  if (!bounded.ok) return { ...bounded, diagnostics };
+  if (!integer(ctx.now)) return { ...fail('missing-history'), diagnostics };
   /** @type {Map<string,WalletLink>} */ const valid = new Map();
   for (const [index,raw] of links.entries()) {
     const p=record(raw);
@@ -1047,11 +1185,3 @@ export function verifyObjectRecord(row, rotations, ctx) {
   if (!signed.ok) return signed;
   return ok(Object.freeze({ ...signed.value, record: parsed.value.record, bytes: parsed.value.bytes }));
 }
-/** @deprecated Use verifyWalletLink; this alias retains historical verification semantics. */
-export const verifyWalletLinkAtKey = verifyWalletLink;
-/** @deprecated Use verifyOidcLink; this alias retains historical verification semantics. */
-export const verifyOidcLinkAtKey = verifyOidcLink;
-/** @deprecated Use verifyRotate; this alias retains historical verification semantics. */
-export const verifyRotateAtKey = verifyRotate;
-/** @deprecated Use resolveWalletLink; this alias retains historical verification semantics. */
-export const resolveWalletLinkAtKey = resolveWalletLink;

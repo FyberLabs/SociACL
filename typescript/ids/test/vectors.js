@@ -56,26 +56,11 @@ function run(f, c) {
     const rc={...ctx,links,history,pinnedIss:new Set(ctx.pinnedIss)};
     const keyState=ctx.directState??{key:ctx.currentKey,currentKey:ctx.currentKey,retainedLinks:null};
     switch(c.operation) {
-      case 'prepare-retained-links-now': {
-        // Reference caller step: authenticate candidate links, then exclude matching present revokes.
-        // This does not issue an attestation or replace authorizer/rotation verification.
-        if (!history) return {ok:false,reason:'missing-history'};
-        const retained=[];
-        for (const id of c.input) {
-          const link=links.get(id), state=history(link.principal,link.issuedAt,ctx.now);
-          if (!state.ok) return state;
-          const proof=link.kind==='wallet'
-            ? ids.verifyWalletLink(link,ctx.jwks,ctx.policy,link.issuedAt,state.value)
-            : ids.verifyOidcLink(link,ctx.jwks,new Set(ctx.pinnedIss),link.issuedAt,state.value);
-          if (!proof.ok) return proof;
-          assert.deepEqual(ids.linkId(proof.value),{ok:true,value:id});
-          const revoked=(ctx.revocations??[]).some(raw=>{
-            const r=ids.verifyRevokeNow(raw,state.value.currentKey,ctx.now);
-            return r.ok && r.value.principal===proof.value.principal && r.value.linkId===id && r.value.issuedAt>=proof.value.issuedAt;
-          });
-          if (!revoked) retained.push(id);
-        }
-        return {ok:true,value:retained.sort()};
+      case 'prepare-retained-links-now': return ids.prepareRetainedLinksNow(c.input, rc);
+      case 'oidc-resolve-now': r=ids.resolveOidcLinkNow(ctx.cred, c.input, ctx.revocations??[], rc); break;
+      case 'verifying-link-map': {
+        const built=ids.verifyingLinkMap(c.input, rc);
+        return built.ok ? {ok:true, value:[...built.value.keys()].sort()} : built;
       }
       case 'wallet-link': r=ids.verifyWalletLink(c.input,ctx.jwks,ctx.policy,ctx.now,keyState); break;
       case 'oidc-link': r=ids.verifyOidcLink(c.input,ctx.jwks,new Set(ctx.pinnedIss),ctx.now,keyState); break;
