@@ -61,6 +61,49 @@ fn feed_item_id_is_ext_derived() {
 }
 
 #[test]
+fn provider_item_id_is_not_trimmed() {
+    let doc: serde_json::Value =
+        serde_json::from_str(include_str!("../../../vectors/mesh/strict-id.json")).unwrap();
+    let rows = doc["feed"].as_array().unwrap();
+    let plain = rows.iter().find(|row| row["name"] == "provider-item-x").unwrap();
+    let spaced = rows
+        .iter()
+        .find(|row| row["name"] == "provider-item-spaced")
+        .unwrap();
+    let source = plain["source"].as_str().unwrap().parse().unwrap();
+    assert_eq!(spaced["source"], plain["source"]);
+    let plain_id = plain["providerItemId"].as_str().unwrap();
+    let spaced_id = spaced["providerItemId"].as_str().unwrap();
+    let derived = derive_external_id(&source, plain_id).unwrap();
+    assert_eq!(derived.as_ref(), plain["object"].as_str().unwrap());
+    assert_eq!(
+        derive_external_id(&source, spaced_id).unwrap_err().to_string(),
+        spaced["reason"].as_str().unwrap()
+    );
+    let item = |id: &str| FeedItem {
+        id: id.to_string(),
+        source: FeedSource::Rss3,
+        kind: "social".into(),
+        author: String::new(),
+        body: String::new(),
+        ts: 1,
+        permalink: "https://example.com/item".into(),
+        tags: Vec::new(),
+        provenance: String::new(),
+    };
+    let plain_item = item(plain_id);
+    let spaced_item = item(spaced_id);
+    assert_eq!(plain_item.canonical_key().as_deref(), Some(plain_id));
+    assert_eq!(spaced_item.canonical_key().as_deref(), Some(spaced_id));
+    assert_ne!(plain_item.canonical_key(), spaced_item.canonical_key());
+    assert_eq!(
+        plain_item.object_id(&source).unwrap().as_ref(),
+        plain["object"].as_str().unwrap()
+    );
+    assert!(spaced_item.object_id(&source).is_err());
+}
+
+#[test]
 fn wallet_accessor_refused_in_core() {
     let row = case("wallet-accessor-refused-in-core");
     assert_eq!(row["name"], "wallet-accessor-refused-in-core");

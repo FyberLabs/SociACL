@@ -4,7 +4,8 @@
     "scopes are repo-relative globs. See, post, request, group, feed, encrypted discovery, and the contract migration module are in scope.",
     "Deleted legacy modules are not scopes. The guard matches files that exist.",
     "PR 6 covers typescript/src, typescript/contract, sociacl-gun, and sociacl-encdisc. The renamed feed helpers and the deleted s3rch user and item builders are listed.",
-    "PR 8 is the close-out. The see-vector tests also reject the text node:crypto under typescript/src. typescript/contract may still import it for seals."
+    "PR 8 is the close-out. The see-vector tests also reject the text node:crypto under typescript/src. typescript/contract may still import it for seals.",
+    "The audit also reads .mjs, .cjs, .mts, and .cts. typescript/src rejects the bare crypto specifier as well as node:crypto."
   ],
   "identifiers": [
     "samePrincipal",

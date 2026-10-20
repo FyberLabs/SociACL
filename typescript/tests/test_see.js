@@ -205,9 +205,11 @@ test("typescript/src does not reference node:crypto", () => {
     ...filesForGlob(root, "typescript/src/**/*.ts"),
   ];
   assert.ok(files.length > 0);
-  const needle = /(^|[^A-Za-z0-9_])node:crypto([^A-Za-z0-9_]|$)/;
-  for (const path of files) {
-    assert.equal(needle.test(readFileSync(path, "utf8")), false, path);
+  for (const name of ["node:crypto", "crypto"]) {
+    const needle = new RegExp(`(^|[^A-Za-z0-9_])${name}([^A-Za-z0-9_]|$)`);
+    for (const path of files) {
+      assert.equal(needle.test(readFileSync(path, "utf8")), false, `${name} in ${path}`);
+    }
   }
 });
 
@@ -254,6 +256,27 @@ function globMatch(glob, path) {
   return rec(glob, path);
 }
 
+const SOURCE_EXT = [".js", ".mjs", ".cjs", ".ts", ".mts", ".cts", ".rs"];
+
+function sourceFile(name) {
+  return SOURCE_EXT.some((ext) => name.endsWith(ext));
+}
+
+function globMatchSource(glob, path) {
+  if (globMatch(glob, path)) return true;
+  const pairs = [
+    [".js", ".mjs"],
+    [".js", ".cjs"],
+    [".ts", ".mts"],
+    [".ts", ".cts"],
+  ];
+  for (const [from, to] of pairs) {
+    if (!glob.endsWith(`*${from}`) || !path.endsWith(to)) continue;
+    if (globMatch(glob, path.slice(0, -to.length) + from)) return true;
+  }
+  return false;
+}
+
 function filesForGlob(root, glob) {
   if (!glob.includes("*")) {
     const path = join(root, glob);
@@ -267,9 +290,9 @@ function filesForGlob(root, glob) {
       const path = join(dir, name);
       const info = statSync(path);
       if (info.isDirectory()) walk(path);
-      else if (name.endsWith(".js") || name.endsWith(".ts") || name.endsWith(".rs")) {
+      else if (sourceFile(name)) {
         const relative = path.slice(root.length).replaceAll("\\", "/").replace(/^\//, "");
-        if (globMatch(glob, relative)) files.push(path);
+        if (globMatchSource(glob, relative)) files.push(path);
       }
     }
   };

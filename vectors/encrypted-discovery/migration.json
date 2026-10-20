@@ -1167,7 +1167,7 @@
       "readers": [],
       "readerVersions": [],
       "receipts": [],
-      "expect": { "ok": false }
+      "expect": { "ok": false, "field": "object" }
     },
     {
       "name": "migration-rejects-room-object",
@@ -1186,12 +1186,12 @@
       "readers": [],
       "readerVersions": [],
       "receipts": [],
-      "expect": { "ok": false }
+      "expect": { "ok": false, "field": "object" }
     },
     {
       "name": "migration-rejects-bad-owner",
       "owner": "not a principal",
-      "caller": "not a principal",
+      "caller": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
       "now": 1000,
       "storage": "private-row",
       "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
@@ -1205,7 +1205,7 @@
       "readers": [],
       "readerVersions": [],
       "receipts": [],
-      "expect": { "ok": false }
+      "expect": { "ok": false, "field": "owner" }
     },
     {
       "name": "migration-rejects-bad-caller",
@@ -1224,7 +1224,7 @@
       "readers": [],
       "readerVersions": [],
       "receipts": [],
-      "expect": { "ok": false }
+      "expect": { "ok": false, "field": "caller" }
     }
   ]
 }

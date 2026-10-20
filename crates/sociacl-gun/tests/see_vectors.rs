@@ -870,6 +870,27 @@ fn glob_match(glob: &str, path: &str) -> bool {
     rec(glob.as_bytes(), path.as_bytes())
 }
 
+fn source_file(name: &str) -> bool {
+    [".js", ".mjs", ".cjs", ".ts", ".mts", ".cts", ".rs"]
+        .iter()
+        .any(|ext| name.ends_with(ext))
+}
+
+fn glob_match_source(glob: &str, path: &str) -> bool {
+    if glob_match(glob, path) {
+        return true;
+    }
+    for (from, to) in [(".js", ".mjs"), (".js", ".cjs"), (".ts", ".mts"), (".ts", ".cts")] {
+        if glob.ends_with(&format!("*{from}")) && path.ends_with(to) {
+            let rewritten = format!("{}{from}", &path[..path.len() - to.len()]);
+            if glob_match(glob, &rewritten) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 fn files_for_glob(root: &Path, glob: &str) -> Vec<PathBuf> {
     if !glob.contains('*') {
         let path = root.join(glob);
@@ -892,13 +913,13 @@ fn walk_glob(root: &Path, dir: &Path, glob: &str, files: &mut Vec<PathBuf>) {
         let path = entry.path();
         if path.is_dir() {
             walk_glob(root, &path, glob, files);
-        } else if name.ends_with(".js") || name.ends_with(".ts") || name.ends_with(".rs") {
+        } else if source_file(&name) {
             let relative = path
                 .strip_prefix(root)
                 .unwrap()
                 .to_string_lossy()
                 .replace('\\', "/");
-            if glob_match(glob, &relative) {
+            if glob_match_source(glob, &relative) {
                 files.push(path);
             }
         }
@@ -954,11 +975,9 @@ fn typescript_src_does_not_reference_node_crypto() {
     assert!(!files.is_empty());
     for path in files {
         let text = fs::read_to_string(&path).unwrap();
-        assert!(
-            !ident_present(&text, "node:crypto"),
-            "node:crypto in {}",
-            path.display()
-        );
+        for name in ["node:crypto", "crypto"] {
+            assert!(!ident_present(&text, name), "{name} in {}", path.display());
+        }
     }
 }
 

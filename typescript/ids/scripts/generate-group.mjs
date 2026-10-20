@@ -469,7 +469,8 @@ add('accept', 'merge-drops-another-predicates-cancel-when-incoming-wins', [
   side(check(chatA, p2, true, 'named-circle', { predicate: 'named-circle' })),
   { op: 'merge' },
   check(chatA, p2, true, 'named-circle', { predicate: 'named-circle' }),
-], 'A predicate mismatch keeps only the winning edge. The incoming named-circle row has the higher hamState, so the local same-group cancel is not carried over.');
+  check(chatA, p2, false, 'missing'),
+], 'A predicate mismatch keeps only the winning edge. The incoming named-circle row has the higher hamState, so the local same-group cancel is not carried over. same-group stays denied.');
 add('accept', 'reverify-drops-unwitnessed-object-set-cancel', [
   put(),
   { op: 'admit-member', row: assent('member', 2, { issuedAt: now }), rotations: 'genesis', ok: true, kept: true },

@@ -1882,7 +1882,16 @@ pub extern "C" fn sociacl_gun_normalize_url(
                 write_reason(reason_out, reason_len, "invalid-argument");
                 return -1;
             }
-            write_reason(dst, dst_len, leaf.normalized());
+            let normalized = leaf.normalized();
+            if normalized.len() > 256 {
+                write_reason(reason_out, reason_len, "too-long");
+                return -1;
+            }
+            if dst_len < normalized.len() + 1 {
+                write_reason(reason_out, reason_len, "buffer-too-small");
+                return -1;
+            }
+            write_reason(dst, dst_len, normalized);
             0
         }
         Err(e) => {
@@ -2912,6 +2921,37 @@ mod tests {
             .into_owned();
         assert_eq!(normalized, "https://example.com/item/1");
         sociacl_plane_free(plane);
+    }
+
+    #[test]
+    fn strict_id_url_vectors() {
+        let doc: serde_json::Value =
+            serde_json::from_str(include_str!("../../../vectors/mesh/strict-id.json")).unwrap();
+        for row in doc["urls"].as_array().unwrap() {
+            let url = row["url"].as_str().unwrap();
+            let dst_len = row["dstLen"].as_u64().unwrap_or(512) as usize;
+            let mut dst = vec![0i8; dst_len];
+            let mut reason = [0i8; 64];
+            let rc = sociacl_gun_normalize_url(
+                c(url).as_ptr(),
+                dst.as_mut_ptr(),
+                dst.len(),
+                reason.as_mut_ptr(),
+                reason.len(),
+            );
+            let name = row["name"].as_str().unwrap();
+            if row["ok"].as_bool().unwrap() {
+                assert_eq!(rc, 0, "{name}");
+                let normalized = unsafe { CStr::from_ptr(dst.as_ptr()) }
+                    .to_string_lossy()
+                    .into_owned();
+                assert_eq!(normalized, row["normalized"].as_str().unwrap(), "{name}");
+            } else {
+                assert_eq!(rc, -1, "{name}");
+                assert_eq!(text(&reason), row["reason"].as_str().unwrap(), "{name}");
+                assert!(dst.iter().all(|byte| *byte == 0), "{name}");
+            }
+        }
     }
 
     #[test]

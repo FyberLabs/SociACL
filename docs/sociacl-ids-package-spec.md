@@ -363,7 +363,7 @@ Property tests (fast-check in TS, proptest in Rust; at least 10k cases per prope
 - [ ] TS and Rust produce identical signing bytes, `linkId`s, path keys and souls.
 - [ ] Verification works end to end with fixed test keys for a wallet link, an OIDC link (test JWKS), a rotate via wallet, a rotate via fresh OIDC login, a fork, and a revoke.
 - [ ] No `node:` imports in `typescript/ids` (browser bundle check).
-- [ ] The release job produces `sociacl-ids-0.1.0.tgz` on tag `ids-v0.1.0`. A sample consumer (an `examples/consumer` folder in the SociACL repo) installs it from the local tgz and runs the parsers.
+- [ ] The release job produces `sociacl-ids-0.10.0.tgz` on tag `ids-v0.10.0`. [#60](https://github.com/FyberLabs/SociACL/issues/60) is that protected-`master` release. A sample consumer (an `examples/consumer` folder in the SociACL repo) installs it from the local tgz and runs the parsers.
 - [ ] The PR touches only `typescript/ids/**`, `crates/sociacl-ids/**`, `vectors/ids/**`, `Cargo.toml` (members), `Cargo.lock`, `scripts/test-all.sh`, `.github/workflows/ci.yml`, `CHANGELOG.md` and docs.
 
 ---

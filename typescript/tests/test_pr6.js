@@ -11,6 +11,26 @@ import {
 import { seeAccessorEdge } from "../src/see.js";
 
 const doc = JSON.parse(readFileSync(new URL("../../vectors/mesh/pr6.json", import.meta.url), "utf8"));
+const strictId = JSON.parse(
+  readFileSync(new URL("../../vectors/mesh/strict-id.json", import.meta.url), "utf8"),
+);
+
+test("provider item id is not trimmed", () => {
+  const plain = strictId.feed.find((row) => row.name === "provider-item-x");
+  const spaced = strictId.feed.find((row) => row.name === "provider-item-spaced");
+  assert.ok(plain && spaced);
+  const source = parseSourceKey(plain.source);
+  assert.equal(source.ok, true);
+  if (!source.ok) return;
+  const derived = deriveExternalId(source.value, plain.providerItemId);
+  const rejected = deriveExternalId(source.value, spaced.providerItemId);
+  assert.equal(derived.ok, plain.ok);
+  assert.equal(rejected.ok, spaced.ok);
+  if (!derived.ok || rejected.ok) return;
+  assert.equal(derived.value, plain.object);
+  assert.equal(rejected.reason, spaced.reason);
+  assert.notEqual(plain.providerItemId, spaced.providerItemId);
+});
 
 for (const row of doc.cases) {
   test(row.name, () => {

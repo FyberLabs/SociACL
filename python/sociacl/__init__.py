@@ -535,9 +535,10 @@ def holder_keygen() -> Tuple[bytes, bytes]:
 
 
 def normalize_url(url: str) -> str:
-    dst = ctypes.create_string_buffer(_REASON_LEN)
+    encoded = _b(url)
+    dst = ctypes.create_string_buffer(len(encoded) + 1)
     reason = ctypes.create_string_buffer(_REASON_LEN)
-    if _LIB.sociacl_gun_normalize_url(_b(url), dst, _REASON_LEN, reason, _REASON_LEN) != 0:
+    if _LIB.sociacl_gun_normalize_url(encoded, dst, len(dst), reason, _REASON_LEN) != 0:
         raise Error(reason.value.decode("utf-8", errors="replace") or "invalid url")
     return dst.value.decode("utf-8", errors="replace")
 

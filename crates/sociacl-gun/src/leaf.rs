@@ -64,12 +64,11 @@ impl ItemShape {
         self.tags.join(",")
     }
 
-    /// Dedup key: `id` else normalized permalink URL.
+    /// Dedup key: `id` else normalized permalink URL. The id is not trimmed.
     pub fn dedup_key(&self) -> Option<String> {
         if let Some(id) = self.id.as_ref() {
-            let id = id.trim();
             if !id.is_empty() {
-                return Some(id.to_string());
+                return Some(id.clone());
             }
         }
         self.permalink.as_ref().map(|u| u.normalized().to_string())

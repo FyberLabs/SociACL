@@ -1,0 +1,43 @@
+{
+  "notes": [
+    "Provider item ids are not trimmed before derive_external_id. \"x\" and \" x\" do not share an ext_ id; the spaced id is whitespace.",
+    "sociacl_gun_normalize_url returns too-long when the normalized form exceeds 256 bytes, and buffer-too-small when dst cannot hold it. It does not truncate."
+  ],
+  "feed": [
+    {
+      "name": "provider-item-x",
+      "source": "sr1:rss/https%3A%2F%2Fs3r.ch/feed%2F%CE%B1%231/feed",
+      "providerItemId": "x",
+      "ok": true,
+      "object": "ext_35e7dc7be1ce8212c2cf715aaa80960e9a62f25d4ab9e52a5b45543d6ce63574"
+    },
+    {
+      "name": "provider-item-spaced",
+      "source": "sr1:rss/https%3A%2F%2Fs3r.ch/feed%2F%CE%B1%231/feed",
+      "providerItemId": " x",
+      "ok": false,
+      "reason": "whitespace"
+    }
+  ],
+  "urls": [
+    {
+      "name": "normalize-example",
+      "url": "https://Example.COM/item/1/#x",
+      "ok": true,
+      "normalized": "https://example.com/item/1"
+    },
+    {
+      "name": "normalize-too-long",
+      "url": "https://example.com/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "ok": false,
+      "reason": "too-long"
+    },
+    {
+      "name": "normalize-buffer-too-small",
+      "url": "https://example.com/item/1",
+      "dstLen": 8,
+      "ok": false,
+      "reason": "buffer-too-small"
+    }
+  ]
+}
