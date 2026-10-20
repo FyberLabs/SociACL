@@ -2,6 +2,43 @@
 
 ## sociacl/gun — unreleased
 
+- **Breaking:** `closed_object` does not trim. A leading space on
+  `s3rch/meta` is not that closed object. The vector is
+  `vectors/encrypted-discovery/closed-object.json`.
+- **Breaking:** the builders of `s3rch/users/<wallet>` and
+  `s3rch/items/<id>` are deleted: `GunNode::user`, `GunNode::feed`,
+  `GunSoul::s3rch_item`, `item_key`, `GunUserNode::as_node_id`, and
+  the `S3RCH_USERS` export. Those names are on the forbidden-names list.
+- `accountGrantSoul` / `account_grant_soul` are deleted. A grant soul
+  is `grantSoul` / `grant_soul` only.
+- Rewriting `issuedAt` on a witnessed retired-key cancel is
+  `bad-attestation`. The vector is `zz-witnessed-cancel-issuedat-rewrite`.
+- **Breaking:** `mergeFrom` / `merge_from` store the mode just verified
+  on each copied cancel. A present attested copy replaces a bare copy
+  of the same id after rotation. The vector is
+  `merge-upgrades-a-present-attested-copy-after-rotation`. Merge does
+  not recheck rows already in the graph, and it follows the history
+  the caller passes.
+- **Breaking:** `mergeFrom` / `merge_from` check each incoming assent and
+  cancel against this graph's rotation history before copying the row.
+  A retired-key stated-1 is not copied back in after `reverifyGroup`.
+  The vector is `merge-does-not-revive-a-retired-assent`.
+- **Breaking:** a feed item's Check id is `deriveExternalId`. A core-plane
+  person is `add_principal(PrincipalId)`. `IdentitySeeGrant` is keyed on
+  `ObjectId` and `PrincipalId`. `add_wallet`, claim-prefix sniffing, and
+  the item-soul fallback are deleted. A wallet accessor is refused.
+- **Breaking:** `parseObjectId` / `parse_object_id` reject an unbound
+  `<kind>_<32 lowercase hex>` id. The minted form and `claim_` / `ext_`
+  plus 64 hex stay. A guard test rejects that unbound spelling in
+  non-test source. The label path is gone: `legacy.rs`, the label test
+  modules, `typescript/src/legacy/gun-legacy.js`, and the `GroupGraph`
+  label maps. C exports `sociacl_gun_item_soul` and
+  `sociacl_gun_user_soul` are deleted. Encrypted discovery no longer
+  keeps `gun_soul.rs`. `contract/migration.ts` sorts accessors in UTF-8
+  byte order (`vectors/encrypted-discovery/accessor-order.json`).
+- A group cancel's signing bytes are the length-prefixed fields
+  `sociacl-cancel-v2`, kind (`membership` or `object-set`), row soul,
+  cancel id, decimal `issuedAt`, the prior count, then those prior ids.
 - **Breaking:** a group set id is a minted ObjectId of kind `set`. The
   signed set owner is the principal embedded in that id. Membership
   assent is `sociacl-membership-assent-v2`, an object-set row is

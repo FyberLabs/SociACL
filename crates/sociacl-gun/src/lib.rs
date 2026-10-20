@@ -1,8 +1,8 @@
 //! GunDB adapter for the SociACL authority plane.
 //!
-//! In-graph Gun data is the native ACL. A Check object is a
-//! Gun-native feed item (`s3rch/items/<encodeKey(id)>`), a held
-//! claim on the user node, or a later opaque post/room id. Dest
+//! In-graph Gun data is the native ACL. A Check object is an
+//! `ext_` id derived from a feed item, a `claim_` id derived from
+//! a held claim, or a later opaque post/room id. Dest
 //! ACL grants HAM-merge under `s3rch/acl/…` and do not fork items
 //! or users. Non-Gun data is a [`UrlLeaf`]: RSS3, RSS/Atom, and
 //! issuer HTTP calls are not Gun nodes and not grants. A Social
@@ -35,23 +35,21 @@ mod group;
 mod hint;
 mod hop;
 mod leaf;
-mod legacy;
 mod mesh;
 mod post;
 mod request;
 mod soul;
 
 pub use adapter::{
-    accept_hint, accept_hint_bytes, add_claim, add_feed_node, add_item, add_wallet,
+    accept_hint, accept_hint_bytes, add_claim, add_feed_node, add_item, add_principal,
     apply_see_grant, cancel, check, check_execute, check_see, check_see_grant, check_see_hop,
     client_check, client_elect_from_hint, client_mint_grant, client_remint, elect_from_delegate,
     elect_from_hint, map_action, remint, GunCheckResult,
 };
 pub use error::GunError;
 pub use feed::{
-    from_gun_node, has_held_claim_prefix, item_key, to_gun_node, FeedItem, FeedMeta, FeedSource,
-    FeedTab, GunFeedNode, GunUserNode, IdentityClaimKind, IdentitySeeGrant, OffGraphKind,
-    HELD_CLAIM_PREFIXES,
+    from_gun_node, to_gun_node, FeedItem, FeedMeta, FeedSource, FeedTab, GunFeedNode, GunUserNode,
+    IdentityClaimKind, IdentitySeeGrant, OffGraphKind,
 };
 pub use group::{
     DecodedGroupPayload, GroupPredicate, GroupPresentation, GroupSnapshotMember,
@@ -68,9 +66,7 @@ pub use mesh::{
 pub use post::MESH_REASON_POST;
 pub use request::{request_owner, ApprovedRequest};
 pub use sociacl_ids::{membership_soul, object_set_soul};
-pub use soul::{
-    GunNode, GunNodeKind, GunSoul, S3RCH_ACL, S3RCH_ITEMS, S3RCH_META, S3RCH_ROOT, S3RCH_USERS,
-};
+pub use soul::{GunNode, GunNodeKind, GunSoul, S3RCH_ACL, S3RCH_ITEMS, S3RCH_META, S3RCH_ROOT};
 
 /// Lighter s3r.ch Check: `CHECK(see, object, accessor)` at now.
 /// Object is a Gun-native feed item, a held claim id itself
@@ -79,8 +75,4 @@ pub use soul::{
 pub const SEE: &str = "see";
 
 #[cfg(test)]
-mod group_label_tests;
-#[cfg(test)]
-mod mesh_label_tests;
-#[cfg(test)]
-mod principal_label_tests;
+mod group_predicate_tests;

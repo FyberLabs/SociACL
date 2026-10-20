@@ -51,7 +51,7 @@ const rot = rotation();
 const policy = { allowedDomains: ['s3r.ch'], allowedUris: ['https://s3r.ch/identity/link'], allowedChainIds: ['1'] };
 const chatA = val(ids.mintObjectId('chat', p, () => new Uint8Array(16).fill(0x11)));
 const chatB = val(ids.mintObjectId('chat', p, () => new Uint8Array(16).fill(0x22)));
-const unbound = val(ids.parseObjectId('chat_' + '33'.repeat(16)));
+const unbound = 'chat_' + '33'.repeat(16);
 const context = {
   jwks,
   links: [[wid, w]],
@@ -144,9 +144,9 @@ add('reject', 'fold-user-soul', [edge('principal', 's3rch/users/0xbob')]);
   ]);
 }
 add('reject', 'object-without-embedded-principal', [
-  { op: 'put', record: objectRecord(unbound, p, 1), rotations: 'genesis', ok: false, reason: 'bad-record' },
+  { op: 'put', record: { object: unbound, owner: p, issuedAt: at, sig: 'aa' }, rotations: 'genesis', ok: false, reason: 'bad-alphabet' },
   { op: 'owner', object: unbound, absent: true },
-  { op: 'check', object: unbound, accessor: p, now: 10, allowed: false, reason: 'unknown' },
+  { op: 'check', object: unbound, accessor: p, now: 10, allowed: false, reason: 'bad-alphabet' },
 ]);
 {
   const unsigned = base({});

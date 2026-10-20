@@ -11,8 +11,8 @@ import type {
   WrappedKey,
 } from "../../docs/s3rch-check.js";
 import { sha256Hex, wrapReceiptBytes, wrapReceiptSha256 } from "../contract/canonical.ts";
-import { applyProtocolMigration } from "../contract/migration.ts";
-import { parseObjectId, parsePrincipalId } from "../ids/src/index.js";
+import { applyProtocolMigration, compareAccessors } from "../contract/migration.ts";
+import { grantSoul, parseObjectId, parsePrincipalId } from "../ids/src/index.js";
 
 function objectId(value: string): CheckObjectId {
   const parsed = parseObjectId(value);
@@ -76,11 +76,35 @@ const canonical = JSON.parse(
   readFileSync(new URL("../../vectors/encrypted-discovery/canonical.json", import.meta.url), "utf8"),
 ) as { cases: { name: string; kind: string; sha256: string; fields?: string[] }[] };
 
+function rawInput(row: Case): MigrationAdmissionInput {
+  return {
+    migration: {
+      object: row.object as CheckObjectId,
+      fromVersion: row.fromVersion,
+      toVersion: row.toVersion,
+      versionGate: row.versionGate,
+      readers: row.readers,
+      rewrapped: row.wraps,
+    },
+    owner: row.owner as AccessorId,
+    caller: row.caller as AccessorId,
+    now: row.now,
+    storage: row.storage,
+    grants: [],
+    payloads: [],
+    receipts: [],
+    readerVersions: [],
+    soulHamState: row.soulHamState,
+  };
+}
+
 function inputOf(row: Case): MigrationAdmissionInput {
   const owner = principalId(row.owner);
   const object = objectId(row.object);
   const grants: GunAclEdge[] = row.grants.map((grant) => ({
-    soul: grant.soul ?? `s3rch/acl/${grant.owner}/${grant.object}/${grant.accessor}`,
+    soul:
+      grant.soul ??
+      grantSoul(principalId(grant.owner), objectId(grant.object), principalId(grant.accessor)),
     owner: principalId(grant.owner),
     hamState: grant.hamState,
     grant: {
@@ -139,7 +163,13 @@ test("migration vectors match the shared fixture", () => {
   }
   for (const row of document.cases) {
     if (!row.expect.ok) {
-      assert.throws(() => applyProtocolMigration(inputOf(row)), /migration rejected/, row.name);
+      let input: MigrationAdmissionInput;
+      try {
+        input = inputOf(row);
+      } catch {
+        input = rawInput(row);
+      }
+      assert.throws(() => applyProtocolMigration(input), /migration rejected/, row.name);
       continue;
     }
     const outcome = applyProtocolMigration(inputOf(row));
@@ -168,6 +198,13 @@ test("migration vectors match the shared fixture", () => {
       assert.equal(actual.grant.object, row.object, row.name);
     }
   }
+});
+
+test("accessor order is UTF-8 bytes for a, B, hyphen, and underscore", () => {
+  const order = JSON.parse(
+    readFileSync(new URL("../../vectors/encrypted-discovery/accessor-order.json", import.meta.url), "utf8"),
+  ) as { input: string[]; utf8: string[] };
+  assert.deepEqual([...order.input].sort(compareAccessors), order.utf8);
 });
 
 test("wrap receipt bytes match the canonical vector", () => {

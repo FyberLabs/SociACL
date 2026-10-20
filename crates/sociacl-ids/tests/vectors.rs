@@ -4,6 +4,7 @@ use sociacl_ids::*;
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
+    path::{Path, PathBuf},
 };
 
 #[derive(Deserialize)]
@@ -593,4 +594,93 @@ fn every_shared_vector() {
         )
         .unwrap();
     }
+}
+
+fn lower_hex(c: u8) -> bool {
+    c.is_ascii_digit() || (b'a'..=b'f').contains(&c)
+}
+
+/// Unbound `<kind>_<32 lowercase hex>`. The minted form and `claim_` / `ext_`
+/// plus 64 hex do not match: the kind must be 2–16 chars at an identifier boundary.
+fn unbound_kind_hex(text: &str) -> Option<usize> {
+    let b = text.as_bytes();
+    let mut i = 0;
+    while i + 33 <= b.len() {
+        let tail = i + 33;
+        let closed = tail == b.len() || {
+            let c = b[tail];
+            !lower_hex(c) && c != b'_'
+        };
+        if b[i] == b'_' && closed && (i + 1..tail).all(|j| lower_hex(b[j])) {
+            let mut start = i;
+            while start > 0 && (b[start - 1].is_ascii_lowercase() || b[start - 1].is_ascii_digit())
+            {
+                start -= 1;
+            }
+            let kind_len = i - start;
+            let boundary = start == 0 || {
+                let c = b[start - 1];
+                !c.is_ascii_alphanumeric() && c != b'_'
+            };
+            if (2..=16).contains(&kind_len) && b[start].is_ascii_lowercase() && boundary {
+                return Some(text[..i].chars().count());
+            }
+        }
+        i += 1;
+    }
+    None
+}
+
+fn skip_source_dir(name: &str) -> bool {
+    matches!(
+        name,
+        "node_modules" | "target" | ".git" | "vectors" | "tests" | "test"
+    )
+}
+
+fn source_file(name: &str) -> bool {
+    if name.starts_with("test_") || name.ends_with("_tests.rs") {
+        return false;
+    }
+    name.ends_with(".js") || name.ends_with(".ts") || name.ends_with(".mjs") || name.ends_with(".rs")
+}
+
+fn walk_sources(dir: &Path, hits: &mut Vec<String>, seen: &mut usize) {
+    for entry in fs::read_dir(dir).unwrap() {
+        let entry = entry.unwrap();
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if skip_source_dir(&name) {
+            continue;
+        }
+        let path = entry.path();
+        if path.is_dir() {
+            walk_sources(&path, hits, seen);
+        } else if source_file(&name) {
+            *seen += 1;
+            let text = fs::read_to_string(&path).unwrap();
+            if let Some(at) = unbound_kind_hex(&text) {
+                hits.push(format!("{}:{at}", path.display()));
+            }
+        }
+    }
+}
+
+#[test]
+fn non_test_sources_do_not_build_unbound_kind_hex() {
+    assert!(unbound_kind_hex(&format!("chat_{}", "1".repeat(32))).is_some());
+    assert!(unbound_kind_hex(&format!(
+        "chat_p_{}_{}",
+        "ab".repeat(64),
+        "1".repeat(32)
+    ))
+    .is_none());
+    assert!(unbound_kind_hex(&format!("claim_{}", "ab".repeat(32))).is_none());
+    assert!(unbound_kind_hex(&format!("ext_{}", "cd".repeat(32))).is_none());
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let mut hits = Vec::new();
+    let mut seen = 0;
+    walk_sources(&root, &mut hits, &mut seen);
+    assert!(seen > 0);
+    assert!(hits.is_empty(), "{hits:?}");
 }

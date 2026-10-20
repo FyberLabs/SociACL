@@ -818,7 +818,7 @@ mod tests {
             &dek,
             &group,
             4,
-            "s3rch/items/post",
+            "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
             "circle-1",
             &revision,
             &nonce,
@@ -828,8 +828,8 @@ mod tests {
         assert_eq!(blob[0], 2);
         let aes: zeroize::Zeroizing<[u8; 32]> = kdf_group(group.as_bytes()).unwrap();
         let plain = decrypt(&aes, &nonce, &blob[13..]).unwrap();
-        let text = String::from_utf8(plain.to_vec()).unwrap();
-        assert!(text.contains(&revision));
+        let text = String::from_utf8_lossy(&plain);
+        assert!(plain.windows(revision.len()).any(|window| window == revision.as_bytes()));
         assert!(text.contains("s3rch-wrapped-key-v1"));
         assert!(!text.contains("priv"));
     }
@@ -845,7 +845,7 @@ mod tests {
             epoch: 4,
             target: WrapTarget::GroupEpoch,
             target_id: "circle-1".to_string(),
-            object: Some("s3rch/items/post".to_string()),
+            object: Some("chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111".to_string()),
             group: Some("circle-1".to_string()),
             revision_id: revision.clone(),
         };
@@ -860,7 +860,7 @@ mod tests {
             &dek,
             &group,
             4,
-            "s3rch/items/post",
+            "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
             "circle-1",
             &revision,
             &nonce,
@@ -896,7 +896,7 @@ mod tests {
         let wraps = wrap_item_dek_to_readers_with(
             &dek,
             3,
-            "s3rch/items/post",
+            vector["object"].as_str().unwrap(),
             revision,
             &[EnrolledSeaPub::from_account(&alice)],
             &granted,

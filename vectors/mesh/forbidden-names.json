@@ -1,9 +1,9 @@
 {
   "notes": [
     "identifiers are whole tokens. A later PR appends a name only when that PR deletes it.",
-    "scopes are repo-relative globs. The see path is in scope now.",
-    "Legacy modules stay out until the PR that migrates their caller appends that file.",
-    "The post path is in scope. PR 4 appends request. PR 5 appends group. PR 6 appends feed, encrypted discovery, and the contract migration module."
+    "scopes are repo-relative globs. See, post, request, group, feed, encrypted discovery, and the contract migration module are in scope.",
+    "Deleted legacy modules are not scopes. The guard matches files that exist.",
+    "PR 6 covers typescript/src, typescript/contract, sociacl-gun, and sociacl-encdisc. The renamed feed helpers and the deleted s3rch user and item builders are listed."
   ],
   "identifiers": [
     "samePrincipal",
@@ -49,19 +49,23 @@
     "stateSeeGrant",
     "state_see_grant",
     "gun-legacy",
-    "crate::legacy"
+    "crate::legacy",
+    "CLAIM_PREFIXES",
+    "user_node_id",
+    "user_node",
+    "item_segment",
+    "trim_segment",
+    "add_wallet",
+    "s3rch_item",
+    "S3RCH_USERS",
+    "item_key"
   ],
   "scopes": [
-    "typescript/src/see.js",
-    "typescript/src/gun.js",
-    "crates/sociacl-gun/src/soul.rs",
-    "crates/sociacl-gun/src/mesh.rs",
-    "typescript/src/post.js",
-    "crates/sociacl-gun/src/post.rs",
-    "typescript/src/request.js",
-    "crates/sociacl-gun/src/request.rs",
-    "typescript/src/group.js",
-    "crates/sociacl-gun/src/group.rs",
+    "typescript/src/**/*.js",
+    "typescript/src/**/*.ts",
+    "typescript/contract/**/*.ts",
+    "crates/sociacl-gun/**/*.rs",
+    "crates/sociacl-encdisc/**/*.rs",
     "docs/s3rch-check.d.ts"
   ]
 }

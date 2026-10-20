@@ -13,3 +13,4 @@ crate-type = ["cdylib", "staticlib", "rlib"]
 [dependencies]
 sociacl-core = { path = "../sociacl-core" }
 sociacl-gun = { path = "../sociacl-gun" }
+sociacl-ids = { path = "../sociacl-ids" }

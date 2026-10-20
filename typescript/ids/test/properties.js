@@ -34,7 +34,8 @@ test('10k roundtrips, idempotence, injectivity and segment safety across all fam
     const n2=val(ids.parseNetworkId(n1.replace('https://node','https://other')));
     const s2=val(ids.parseSourceKey(s.replace('/chat','/forum')));
     const c2=val(ids.parseOidcCredential({...c,sub:c.sub+'x'}));
-    const o2=val(ids.parseObjectId('chat_'+hex(object)));
+    const flipped=object.slice(); flipped[0]^=0xff;
+    const o2=val(ids.mintObjectId('chat',p,()=>flipped));
     const others=[ids.formatPrincipalKey(p2),ids.formatWalletKey(w2),ids.formatOidcKey(c2),ids.formatNetworkKey(n2),ids.formatSourcePathKey(s2),ids.objectKey(o2)];
     all.forEach((key,i)=>assert.notEqual(key,others[i]));
     const claim=val(ids.deriveClaimId('ens:'+hex(seed)));
@@ -44,7 +45,7 @@ test('10k roundtrips, idempotence, injectivity and segment safety across all fam
     assert.notEqual(ext,val(ids.deriveExternalId(s2,'provider/'+n)));
 
     all.forEach(k=>assert.match(k,/^[A-Za-z0-9_:-]{1,180}$/));
-    const changed=val(ids.parseObjectId('chat_'+hex(object)));
+    const changed=o2;
     assert.notEqual(ids.objectKey(o),ids.objectKey(changed));
     assert.notEqual(ids.formatOidcKey(c),ids.formatOidcKey({...c,sub:c.sub+'x'}));
     for(const [s,count] of [[ids.objectSoul('items',o),3],[ids.aclSoul(p),3],[ids.grantSoul(p,o,p),5],[ids.postSoul(p,o,p),6],[ids.membershipSoul(p,'same-group',set,p),7],[ids.objectSetSoul(p,o,'same-group',set),7]]) {

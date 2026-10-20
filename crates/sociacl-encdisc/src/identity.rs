@@ -14,7 +14,7 @@ use aes_gcm::{Aes256Gcm, Nonce};
 use rand::rngs::OsRng;
 use rand::RngCore;
 use sociacl_ids::{
-    format_principal_key, grant_soul, parse_eip55, parse_object_id, parse_principal_id,
+    format_principal_key, parse_eip55, parse_object_id, parse_principal_id,
     principal_from_sec1, user_soul, ObjectId, PrincipalId, Reason,
 };
 use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
@@ -682,15 +682,6 @@ pub fn delivery_mints_grant(kind: &str) -> Result<bool, EncDiscError> {
         "enrollment" | "hop" | "hint" | "wrap" | "request" | "inbox" => Ok(false),
         _ => Err(EncDiscError::IdentityRejected("unknown-delivery".into())),
     }
-}
-
-/// Soul for a grant between two principals. Uses `sociacl-ids` only.
-pub fn account_grant_soul(
-    owner: &PrincipalId,
-    object: &ObjectId,
-    accessor: &PrincipalId,
-) -> String {
-    grant_soul(owner, object, accessor).to_string()
 }
 
 pub fn parse_wrap_object(text: &str) -> Result<ObjectId, EncDiscError> {
@@ -1426,7 +1417,7 @@ mod tests {
         assert_eq!(opened_phone.key_bytes(), opened_laptop.key_bytes());
         assert!(!opened_phone.grants_see());
         assert!(!opened_laptop.grants_see());
-        let soul = account_grant_soul(account.principal(), &object, account.principal());
+        let soul = sociacl_ids::grant_soul(account.principal(), &object, account.principal()).to_string();
         assert_eq!(soul.split('/').count(), 5);
         assert!(soul.contains(&account.principal_key()));
         assert!(!soul.contains(account.principal().as_ref()));
@@ -1543,7 +1534,7 @@ mod tests {
         let second = seal_account_backup(
             &account,
             transport.sea_pub(),
-            &parse_wrap_object("wrap_ffeeddccbbaa99887766554433221100").unwrap(),
+            &parse_wrap_object("wrap_p_60fed4ba255a9d31c961eb74c6356d68c049b8923b61fa6ce669622e60f29fb67903fe1008b8bc99a41ae9e95628bc64f2f1b20c2d7e9f5177a3c294d4462299_ffeeddccbbaa99887766554433221100").unwrap(),
             &[],
             &context,
             &mut other,

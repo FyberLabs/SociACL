@@ -70,8 +70,8 @@ claim of injectivity.
 New object ids are `<kind>_<principal-key>_<32 lowercase hex>`. The
 principal key is the creator's genesis principal as `p_` plus 128
 lowercase hex. `objectPrincipal` reads that one principal back out.
-`claim_<64hex>`, `ext_<64hex>`, and the older `<kind>_<32 hex>` form still
-parse. The older form is not an object record. The s3r.ch object spellings
+`claim_<64hex>` and `ext_<64hex>` still parse. The older
+`<kind>_<32 hex>` form is rejected (`bad-alphabet`). The s3r.ch object spellings
 do not parse: `s3rch:room`, `s3rch:chat`, `s3rch:forum-msg`, `s3rch:post`,
 `s3rch:forum-group`, `s3rch:bot`, and `s3rch:forum` are `bad-alphabet`.
 `post` is a reserved kind, so a s3r.ch post cannot use kind `post`.

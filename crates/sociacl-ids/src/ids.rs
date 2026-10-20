@@ -246,19 +246,6 @@ pub fn parse_object_id(s: &str) -> Result<ObjectId, Reason> {
         if ["claim", "ext"].contains(&kind) && is_hex(raw, 64) {
             return Ok(ObjectId(s.into()));
         }
-        if valid_kind(kind) && is_hex(raw, 32) {
-            if ["claim", "ext", "post", "member", "objset"].contains(&kind) {
-                return Err(Reason::ReservedKind);
-            }
-            return Ok(ObjectId(s.into()));
-        }
-        if valid_kind(&kind.to_ascii_lowercase())
-            && (32..=64).contains(&raw.len())
-            && raw.bytes().all(|c| c.is_ascii_hexdigit())
-            && s != s.to_ascii_lowercase()
-        {
-            return Err(Reason::NonCanonical);
-        }
     }
     Err(Reason::BadAlphabet)
 }

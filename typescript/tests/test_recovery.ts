@@ -36,12 +36,21 @@ import { DOMAIN_STORE_WRITE, HeadFloor, recoveryEnvelopeHash, REPLACED_NONE, sig
 import { deliverKeyringWith, sealRecoveryCopyWith } from "./support/recovery-deterministic.ts";
 import {
   historyState,
+  mintObjectId,
   parsePrincipalId,
   resolveCurrentKey,
   type Jwks,
   type PrincipalId,
   type ResolutionContext,
 } from "../ids/src/index.js";
+
+function mintedWrap(principal: PrincipalId, n: number) {
+  const bytes = new Uint8Array(16);
+  new DataView(bytes.buffer).setUint32(12, n);
+  const minted = mintObjectId("wrap", principal, () => bytes);
+  if (!minted.ok) throw new Error(minted.reason);
+  return parseWrapObject(minted.value);
+}
 
 const recoveryVector = JSON.parse(readFileSync(new URL("../../vectors/encrypted-discovery/recovery-copy.json", import.meta.url), "utf8")) as {
   domain: string;
@@ -656,7 +665,7 @@ test("delivered keyring matches the shared vector and does not mint", async () =
     await errorMessage(() =>
       delivery.openDeliveredKeyring(
         recoveryVector.delivery.transportScalarHex,
-        { ...wrap, wrapId: parseWrapObject("wrap_00112233445566778899aabbccddee00") },
+        { ...wrap, wrapId: parseWrapObject("wrap_p_60fed4ba255a9d31c961eb74c6356d68c049b8923b61fa6ce669622e60f29fb67903fe1008b8bc99a41ae9e95628bc64f2f1b20c2d7e9f5177a3c294d4462299_00112233445566778899aabbccddee00") },
         keyring.principal,
         0,
         [],
@@ -1049,9 +1058,9 @@ test("two devices and the genesis backup share the store", () => {
     ring.genesis.epub,
     ring.genesis.epriv,
   );
-  const genesisId = parseWrapObject("wrap_00112233445566778899aabbccddee01");
+  const genesisId = parseWrapObject("wrap_p_60fed4ba255a9d31c961eb74c6356d68c049b8923b61fa6ce669622e60f29fb67903fe1008b8bc99a41ae9e95628bc64f2f1b20c2d7e9f5177a3c294d4462299_00112233445566778899aabbccddee01");
   const firstId = parseWrapObject(recoveryVector.delivery.wrapId);
-  const secondId = parseWrapObject("wrap_00112233445566778899aabbccddee02");
+  const secondId = parseWrapObject("wrap_p_60fed4ba255a9d31c961eb74c6356d68c049b8923b61fa6ce669622e60f29fb67903fe1008b8bc99a41ae9e95628bc64f2f1b20c2d7e9f5177a3c294d4462299_00112233445566778899aabbccddee02");
   const genesis = sealAccountBackup(account, recoveryVector.delivery.transportPub, genesisId, store, [], context);
   const first = deliverKeyringWith(
     keyring,
@@ -1116,11 +1125,11 @@ test("wrap rows are capped and a class sticks to its id", () => {
   const signer = ring.genesis.signingPriv;
   const ids: ReturnType<typeof parseWrapObject>[] = [];
   for (let n = 0; n < MAX_WRAPS_PER_PRINCIPAL; n += 1) {
-    const wrapId = parseWrapObject(`wrap_${n.toString(16).padStart(32, "0")}`);
+    const wrapId = mintedWrap(principal, n);
     ids.push(wrapId);
     putWrap(store, principal, wrapId, n === 0 ? "genesis" : "delivery", n.toString(16).padStart(2, "0"), signer, context);
   }
-  const extra = parseWrapObject(`wrap_${(80).toString(16).padStart(32, "0")}`);
+  const extra = mintedWrap(principal, 80);
   assert.throws(
     () => putWrap(store, principal, extra, "delivery", "bb", signer, context),
     (error: unknown) => error instanceof Error && error.message === "store-rejected",
@@ -1193,7 +1202,7 @@ test("a rotated delivery needs its chain and a stale seq wins", () => {
     transport.pub,
     hexToBytes(scalarHex(7)),
     new Uint8Array(12).fill(9),
-    parseWrapObject("wrap_00112233445566778899aabbccddee03"),
+    parseWrapObject("wrap_p_60fed4ba255a9d31c961eb74c6356d68c049b8923b61fa6ce669622e60f29fb67903fe1008b8bc99a41ae9e95628bc64f2f1b20c2d7e9f5177a3c294d4462299_00112233445566778899aabbccddee03"),
     [rotation.input],
     context,
     store,
@@ -1240,7 +1249,7 @@ function forgedDelivery(principal: PrincipalId, epub: string, plain: Uint8Array,
   const point = p256.getPublicKey(ephemeral, false);
   const ephemeralPub = seaPoint(ephemeral);
   const shared = sharedX(ephemeral, uncompressedFromSea(transportPub));
-  const wrapId = parseWrapObject("wrap_00112233445566778899aabbccddee09");
+  const wrapId = parseWrapObject("wrap_p_60fed4ba255a9d31c961eb74c6356d68c049b8923b61fa6ce669622e60f29fb67903fe1008b8bc99a41ae9e95628bc64f2f1b20c2d7e9f5177a3c294d4462299_00112233445566778899aabbccddee09");
   const key = backupKdf(shared, principal, wrapId, transportPub, ephemeralPub, "sociacl-keyring-delivery-v1");
   shared.fill(0);
   const aad = backupAad(principal, wrapId, transportPub, ephemeralPub, "sociacl-keyring-delivery-v1");
@@ -1531,7 +1540,7 @@ test("a resolved head raises the shared floor", () => {
   assert.equal(recoveryStore.writeGeneration(principal), 0);
 
   const wraps = new MemoryKeyWrapStore(watch([], context), floor);
-  const wrapId = parseWrapObject("wrap_00112233445566778899aabbccddee11");
+  const wrapId = parseWrapObject("wrap_p_60fed4ba255a9d31c961eb74c6356d68c049b8923b61fa6ce669622e60f29fb67903fe1008b8bc99a41ae9e95628bc64f2f1b20c2d7e9f5177a3c294d4462299_00112233445566778899aabbccddee11");
   const wrap = {
     principal,
     wrapId,
@@ -1579,14 +1588,14 @@ test("a retired key cannot fill or relabel wraps", () => {
   const principal = asPrincipal(k0.pub);
   const store = new MemoryKeyWrapStore(watch(chain, context));
   for (let n = 0; n < MAX_WRAPS_PER_PRINCIPAL; n += 1) {
-    const wrapId = parseWrapObject(`wrap_${n.toString(16).padStart(32, "0")}`);
+    const wrapId = mintedWrap(principal, n);
     assert.equal(
       messageSync(() => putWrap(store, principal, wrapId, "delivery", n.toString(16).padStart(2, "0"), k0.priv, context)),
       "store-rejected",
     );
   }
   assert.equal(store.list(principal).length, 0);
-  const wrapId = parseWrapObject("wrap_00112233445566778899aabbccddee11");
+  const wrapId = parseWrapObject("wrap_p_60fed4ba255a9d31c961eb74c6356d68c049b8923b61fa6ce669622e60f29fb67903fe1008b8bc99a41ae9e95628bc64f2f1b20c2d7e9f5177a3c294d4462299_00112233445566778899aabbccddee11");
   putWrap(store, principal, wrapId, "delivery", "aa", k2.priv, context);
   assert.equal(store.list(principal).length, 1);
   assert.equal(

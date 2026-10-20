@@ -129,13 +129,13 @@
           "epoch": 3,
           "target": "reader-epub",
           "targetId": "EMvdmXTv89JPyMx5n3blU3L_D70U-6JoVaVzTvSzgYg.B_b0CP3o9X3I7tWrxA_F1VhXpjeMuIJCtQWnOh7LN5c",
-          "object": "s3rch/items/post",
+          "object": "item_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
           "revisionId": "7959127078e9212a046160203b536df084c7884f9f1c18f439fda77f28450008",
           "wrappedKey": "aa"
         }
       },
-      "encodedLen": 336,
-      "sha256": "f1c3ff60f643e742f0cb2ae9eff8013507e6ae83b9d8b91bb99bbaf839fa62f1"
+      "encodedLen": 488,
+      "sha256": "37c90252dddad182a65cdb5295f331498a301144ce5aa0ef468696710eb8deb5"
     },
     {
       "name": "inbox-group-empty",
@@ -151,14 +151,14 @@
           "epoch": 3,
           "target": "reader-epub",
           "targetId": "EMvdmXTv89JPyMx5n3blU3L_D70U-6JoVaVzTvSzgYg.B_b0CP3o9X3I7tWrxA_F1VhXpjeMuIJCtQWnOh7LN5c",
-          "object": "s3rch/items/post",
+          "object": "item_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
           "revisionId": "7959127078e9212a046160203b536df084c7884f9f1c18f439fda77f28450008",
           "wrappedKey": "aa",
           "group": ""
         }
       },
-      "encodedLen": 336,
-      "sha256": "f1c3ff60f643e742f0cb2ae9eff8013507e6ae83b9d8b91bb99bbaf839fa62f1"
+      "encodedLen": 488,
+      "sha256": "37c90252dddad182a65cdb5295f331498a301144ce5aa0ef468696710eb8deb5"
     },
     {
       "name": "inbox-wrap-byte",
@@ -174,19 +174,19 @@
           "epoch": 3,
           "target": "reader-epub",
           "targetId": "EMvdmXTv89JPyMx5n3blU3L_D70U-6JoVaVzTvSzgYg.B_b0CP3o9X3I7tWrxA_F1VhXpjeMuIJCtQWnOh7LN5c",
-          "object": "s3rch/items/post",
+          "object": "item_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
           "revisionId": "7959127078e9212a046160203b536df084c7884f9f1c18f439fda77f28450008",
           "wrappedKey": "ab"
         }
       },
-      "encodedLen": 336,
-      "sha256": "52d6de415a7c6e258a444a98bda1a18a99c930bef882b63de5b216985f7bbed2"
+      "encodedLen": 488,
+      "sha256": "816629186e32c9bd0b338534f88389024da2ccff37f2c4b26f3ff2b3072a3412"
     },
     {
       "name": "epoch-default-window",
       "kind": "epochRevisionId",
       "body": {
-        "object": "chat_11111111111111111111111111111111",
+        "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
         "epoch": 1,
         "previousEpoch": 0,
         "deviceId": "device-1",
@@ -194,14 +194,14 @@
         "settleWindowMs": 86400000,
         "aclSnapshot": "f9ac289c45e5e277cf0ecee22616a46b07d5ff92b83df0b13cacf8a9b5097449"
       },
-      "encodedLen": 191,
-      "sha256": "79dacacccbc922ca0edf1566a5d9c1c2feae81ca30ec00b1a50f2743f148db5a"
+      "encodedLen": 322,
+      "sha256": "d068c39be0391bb64791839b21a21413392abe28f4e8f824d524884f07bd486f"
     },
     {
       "name": "epoch-zero",
       "kind": "epochRevisionId",
       "body": {
-        "object": "chat_11111111111111111111111111111111",
+        "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
         "epoch": 0,
         "previousEpoch": 0,
         "deviceId": "device-1",
@@ -209,14 +209,14 @@
         "settleWindowMs": 0,
         "aclSnapshot": "f9ac289c45e5e277cf0ecee22616a46b07d5ff92b83df0b13cacf8a9b5097449"
       },
-      "encodedLen": 184,
-      "sha256": "8b27e252237f83e800db183875e451b1c0b0692c01fb78fa60b65b4372139165"
+      "encodedLen": 315,
+      "sha256": "161e28f490166fa0d2e82b45fdeead93bc432404d1b37c963c27740471f46c50"
     },
     {
       "name": "epoch-max-safe",
       "kind": "epochRevisionId",
       "body": {
-        "object": "chat_11111111111111111111111111111111",
+        "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
         "epoch": 9007199254740991,
         "previousEpoch": 9007199254740991,
         "deviceId": "device-1",
@@ -224,34 +224,34 @@
         "settleWindowMs": 9007199254740991,
         "aclSnapshot": "f9ac289c45e5e277cf0ecee22616a46b07d5ff92b83df0b13cacf8a9b5097449"
       },
-      "encodedLen": 229,
-      "sha256": "3a2db833c65a130838b95c9ee7deccdf8f7579e93b60d347885f8f48db563238"
+      "encodedLen": 360,
+      "sha256": "e90147dc4cda7ff5f29999e4e027eee1572820e08620f4e956489bc63e4137d5"
     },
     {
       "name": "item-auth-hello",
       "kind": "itemAuth",
       "body": {
-        "object": "chat_11111111111111111111111111111111",
+        "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
         "epoch": 1,
         "version": 2,
         "plaintextDigest": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824",
         "revisionId": "7959127078e9212a046160203b536df084c7884f9f1c18f439fda77f28450008"
       },
-      "encodedLen": 209,
-      "sha256": "40213cb0d4f0b281f05d2399e17bc071ddfba51064628d27551c18a83fb32ddc"
+      "encodedLen": 340,
+      "sha256": "af76a59695bf9d0a791030d2c420d1ca60df8a7dec8613ad426a590b39381d35"
     },
     {
       "name": "item-auth-zero",
       "kind": "itemAuth",
       "body": {
-        "object": "chat_11111111111111111111111111111111",
+        "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
         "epoch": 0,
         "version": 0,
         "plaintextDigest": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824",
         "revisionId": "7959127078e9212a046160203b536df084c7884f9f1c18f439fda77f28450008"
       },
-      "encodedLen": 209,
-      "sha256": "f9e19e418913253982db74e12fa914a325fa4f480b230e5c282732865535d20b"
+      "encodedLen": 340,
+      "sha256": "e5a89e03f470f37e6f37f48ca7cc6338029aa7799b4616799b639560d7888b79"
     },
     {
       "name": "account-binding",
@@ -278,13 +278,13 @@
           "epoch": 3,
           "target": "reader-epub",
           "targetId": "EMvdmXTv89JPyMx5n3blU3L_D70U-6JoVaVzTvSzgYg.B_b0CP3o9X3I7tWrxA_F1VhXpjeMuIJCtQWnOh7LN5c",
-          "object": "s3rch/items/post",
+          "object": "item_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
           "revisionId": "7959127078e9212a046160203b536df084c7884f9f1c18f439fda77f28450008",
-          "wrappedKey": "010460fed4ba255a9d31c961eb74c6356d68c049b8923b61fa6ce669622e60f29fb67903fe1008b8bc99a41ae9e95628bc64f2f1b20c2d7e9f5177a3c294d44622992222222222222222222222229f4cce0f8eeac218f2cdc739e833f4c63e8f82d3113b5f6509bab79c0c5aa351d2310666fddd5a247459f7199887555eafca9c3b32b3500dc7e3eddd2058c095e650afe733bba9518d831ad08edfe4b7237a6ae186406d502d184cd8f278960ff46485b7a9e4e076c31427f66aa4a7f0694dd35c03fb978c23635299ec445a8b0db83eddeaea649f0a40f6f4f590dd2a9c23c0761cc4cd2f0f2540a698e76ab51f1735e451e2aa1fbd682130637e6de2a516c83858e537b7eb75cf6a7893d5231892118df221c580dc259942e3bc4e7e829baf09b515120cb086c0c08ac3cff927a95e0f5827b581356b3cb7888609c5f9ba5b24511fc7b2f95380a38bcacff2ebd1ceef53baa54584788571f5a70f1378bc8158ac3291364ef2733d46441114c0eef67867bb9fc47d9fa53652ec8e45a51ab2ef6ab4cd676e210b882718b19fc799d8"
+          "wrappedKey": "010460fed4ba255a9d31c961eb74c6356d68c049b8923b61fa6ce669622e60f29fb67903fe1008b8bc99a41ae9e95628bc64f2f1b20c2d7e9f5177a3c294d44622992222222222222222222222229f4cce0f8eeac218f2cdc739e833f4c63e8f82d3113b5f6509bab79c0c5aa351d2310666fddd5a247459f7199887555eafca9c3b32b3500dc7e3eddd2058c095e650afe733bba9518d831ad08edfe4b7237a6ae186406d502d184cd8f278960ff46485b7a9e4e076c31427f66aa4a7f0694dd35c03fb978c23635299ec445a8b0db83eddeaea649f0a40f6f4f590dd2a9c23c0ce1cc4cd3548324e91c7d128b243537ea558a3bb2e8f0b154257490bedfe40943f0fe731b3b224c2682f9383241c9717dffa22c7d7db729947e6ea1872d7c9ab08b914100def8fc0c38b93cfac7bfc0e5c0a22b5d63c3e3ee181d409e09c8d3e77544fc1e0f80488f78bcdcca1b985cced57bca21686788125a7f35d402bbb8459ab3b93301da5773d11407f14c0eef67867bb9fc47d9fa53652ec8e45a51ab240506dc12c8a5db3fe8545be5c21ec8b5c18073fc30edf0647f82d31ed9134974b0033936ee2f8c129922c820713606c05215092b944b112f9ab477992e79a22a28435afd457d43961ecb33a43f7160beda614adb38246cd6f80d85b9cdec977f624fb12f6e3dc9d0272da124df735afae3ba6db167364baf34a96743632d10633ae37b68c45afbdc565f1fef3f0e25f1f8a80c7844ea2c972de9bb06ad95e6ad7ec53b14ef5d583"
         }
       },
-      "encodedLen": 1136,
-      "sha256": "fd5da80c6b1eff69f045e836bcd83ddb7651056fc04c3a619a32802578754bab"
+      "encodedLen": 1592,
+      "sha256": "9f84afab93230390fc9785433d4fac850192b92b587cb8600d684eb3c40050cf"
     },
     {
       "name": "acl-snapshot-direct",
@@ -335,15 +335,15 @@
       "kind": "fields",
       "fields": [
         "s3rch-epoch-finalization-v1",
-        "chat_11111111111111111111111111111111",
+        "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
         "3",
         "2",
         "abababababababababababababababababababababababababababababababab",
         "",
         "abababababababababababababababababababababababababababababababab"
       ],
-      "encodedLen": 222,
-      "sha256": "c32dc4cd018b0e46c83c3b44f6e44643c4f963d56e353212bb77b1c6fc12ffbb"
+      "encodedLen": 353,
+      "sha256": "b4391868378a1b6dcc955bb8f05bdc0f01b197cfa7ad2d947e5fa22239ead560"
     },
     {
       "name": "epoch-manifest-sig",
@@ -428,14 +428,14 @@
       "kind": "fields",
       "fields": [
         "s3rch-wrap-receipt-v1",
-        "chat_11111111111111111111111111111111",
+        "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
         "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
         "2",
         "abababababababababababababababababababababababababababababababab",
         "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
       ],
-      "encodedLen": 298,
-      "sha256": "d963fcda84dd4ab7525391a1e21b159ccaae901b85934dad06db0fb96c045ac9"
+      "encodedLen": 429,
+      "sha256": "3746ed0383333a0573ea00b81f45ad51c8f26cc574d732bb6d7a9dd86a6c85de"
     }
   ]
 }

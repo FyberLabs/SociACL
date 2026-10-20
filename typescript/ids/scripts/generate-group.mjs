@@ -144,7 +144,7 @@ function add(bucket, name, steps, note) {
 }
 add('reject', 'set-id-must-be-minted', [
   { op: 'admit-member', row: assent('member', 2, { set: 'alice/friends' }), rotations: 'genesis', ok: false, reason: 'bad-alphabet' },
-  { op: 'admit-member', row: assent('member', 2, { set: unbound }), rotations: 'genesis', ok: false, reason: 'bad-template' },
+  { op: 'admit-member', row: assent('member', 2, { set: unbound }), rotations: 'genesis', ok: false, reason: 'bad-alphabet' },
 ]);
 add('reject', 'member-assent-by-other-key-refused', [
   put(),
@@ -170,6 +170,15 @@ add('reject', 'rotation-drops-old-assent', [
   ...live(),
   check(chatA, p2, true, 'same-group'),
   { op: 'reverify-group', principal: p, rotations: 'rotated', ok: true, dropped: 2 },
+  check(chatA, p2, false, 'missing'),
+]);
+add('reject', 'merge-does-not-revive-a-retired-assent', [
+  ...live(),
+  check(chatA, p2, true, 'same-group'),
+  { op: 'reverify-group', principal: p, rotations: 'rotated', ok: true, dropped: 2 },
+  check(chatA, p2, false, 'missing'),
+  ...live().map((step) => ({ ...step, on: 'side' })),
+  { op: 'merge', rotations: 'rotated' },
   check(chatA, p2, false, 'missing'),
 ]);
 add('accept', 'group-gate-uses-stored-id', [
@@ -514,7 +523,7 @@ add('accept', 'merge-upgrades-a-bare-membership-cancel', [
   side(currentSet()),
   side(currentEdge()),
   side(admitCancel(witnessedMemberCancel, 'rotated')),
-  { op: 'merge' },
+  { op: 'merge', rotations: 'rotated' },
   { op: 'reverify-group', principal: p, rotations: 'rotated', ok: true, dropped: 0 },
   check(chatA, p2, false, 'missing'),
 ]);
@@ -529,10 +538,25 @@ add('accept', 'merge-upgrades-a-bare-object-set-cancel', [
   side(currentSet()),
   side(currentEdge()),
   side(admitCancel(witnessedObjectCancel, 'rotated')),
-  { op: 'merge' },
+  { op: 'merge', rotations: 'rotated' },
   { op: 'reverify-group', principal: p, rotations: 'rotated', ok: true, dropped: 0 },
   check(chatA, p2, false, 'missing'),
 ]);
+add('accept', 'merge-upgrades-a-present-attested-copy-after-rotation', [
+  put(),
+  currentMember(),
+  currentSet(),
+  currentEdge(),
+  admitCancel(bareObjectCancel, 'genesis'),
+  side(put()),
+  side(currentMember()),
+  side(currentSet()),
+  side(currentEdge()),
+  side(admitCancel(witnessedObjectCancel, 'genesis')),
+  { op: 'merge', rotations: 'rotated' },
+  { op: 'reverify-group', principal: p, rotations: 'rotated', ok: true, dropped: 0 },
+  check(chatA, p2, false, 'missing'),
+], 'Both copies were admitted while the key was current, so both were stored as present. Merge with the rotated history stores the witnessed mode on the incoming copy and that copy replaces the bare one.');
 add('accept', 'merge-keeps-a-witnessed-cancel-over-a-bare-copy', [
   put(),
   currentMember(),
@@ -596,6 +620,12 @@ const movedCancel = cancelRow('membership', 2);
 add('reject', 'cancel-issued-at-is-signed', [
   ...live(),
   { op: 'admit-cancel', row: { ...movedCancel, issuedAt: at + 1 }, rotations: 'genesis', ok: false, reason: 'bad-signature' },
+  check(chatA, p2, true, 'same-group'),
+]);
+const witnessedRewrite = cancelRow('membership', 1, { issuedAt: at, attest: true });
+add('reject', 'zz-witnessed-cancel-issuedat-rewrite', [
+  ...live(),
+  { op: 'admit-cancel', row: { ...witnessedRewrite, issuedAt: at + 1 }, rotations: 'rotated', ok: false, reason: 'bad-attestation' },
   check(chatA, p2, true, 'same-group'),
 ]);
 const body = { v: 1, family: 'group', context, accept, reject };

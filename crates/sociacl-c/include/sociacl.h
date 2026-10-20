@@ -553,21 +553,6 @@ int sociacl_gun_elect(
     size_t reason_len
 );
 
-/* Write s3rch/users/<wallet>. Returns 0. */
-int sociacl_gun_user_soul(
-    const char *wallet,
-    char *dst,
-    size_t dst_len
-);
-
-/* Write s3rch/items/<encodeKey(id)>. Returns 0, or -1 when dst cannot
- * hold the expanded soul and a trailing NUL. */
-int sociacl_gun_item_soul(
-    const char *id,
-    char *dst,
-    size_t dst_len
-);
-
 /* Normalize a permalink. A URL is not a Gun node. */
 int sociacl_gun_normalize_url(
     const char *url,

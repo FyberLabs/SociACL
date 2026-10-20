@@ -155,7 +155,7 @@ test("a peer merge cannot auto-approve a non-member", () => {
   const resolver = { rotations: () => [], ctx: context() };
   assert.equal(putObject(owner, objectRecord(), resolver).ok, true);
   assert.equal(owner.hasObject(chat.value), true);
-  owner.mergeFrom(mallory);
+  owner.mergeFrom(mallory, resolver);
   const request = signRequest({
     requester: p2,
     object: chat.value,

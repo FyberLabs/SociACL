@@ -12,7 +12,7 @@ import type {
   PrincipalId,
 } from "../../docs/s3rch-check.js";
 import { lengthPrefixed, sha256Hex } from "../contract/canonical.ts";
-import { parseObjectId, parsePrincipalId } from "../ids/src/index.js";
+import { mintObjectId, parseObjectId, parsePrincipalId } from "../ids/src/index.js";
 import {
   aclSnapshotBytes,
   aclSnapshotId,
@@ -51,8 +51,16 @@ function mustPrincipal(value: string): PrincipalId {
   return parsed.value as PrincipalId;
 }
 
-const OBJECT = mustObject("chat_" + "11".repeat(16));
-const OBJECT_B = mustObject("chat_" + "22".repeat(16));
+function mintedChat(byte: number): ObjectId {
+  const who = mustPrincipal(
+    "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+  );
+  const minted = mintObjectId("chat", who, () => new Uint8Array(16).fill(byte));
+  if (!minted.ok) throw new Error(minted.reason);
+  return mustObject(minted.value);
+}
+const OBJECT = mintedChat(0x11);
+const OBJECT_B = mintedChat(0x22);
 const ALICE = mustPrincipal(
   "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
 );

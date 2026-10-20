@@ -1,13 +1,12 @@
 """Gun adapter Python binding tests. Requires `cargo build -p sociacl-c`."""
 
-from sociacl import Error, Plane, item_soul, normalize_url, user_soul
+from sociacl import Error, Plane, normalize_url
 
 
 def test_hint_is_not_a_grant_dest_check_is():
     plane = Plane()
-    alice = user_soul("0xalice")
-    bob = user_soul("0xbob")
-    assert alice == "s3rch/users/0xalice"
+    alice = "s3rch/users/0xalice"
+    bob = "s3rch/users/0xbob"
     plane.add_person(alice)
     plane.add_person(bob)
     plane.add_object("claim-1", alice)
@@ -56,11 +55,10 @@ def test_url_leaf_is_not_a_node():
 
 
 def test_feed_item_checks_the_same_as_a_claim():
-    object_id = item_soul("rss3:act/1#x")
-    assert object_id == "s3rch/items/rss3:act/1~2x"
+    object_id = "ext_" + "ab" * 32
     plane = Plane()
-    alice = user_soul("0xalice")
-    bob = user_soul("0xbob")
+    alice = "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU"
+    bob = "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E"
     plane.add_person(alice)
     plane.add_person(bob)
     plane.add_object(object_id, alice)
@@ -81,14 +79,8 @@ def test_feed_item_checks_the_same_as_a_claim():
     plane.close()
 
 
-def test_item_soul_fits_the_expanded_form():
-    dotted = "." * 128
-    assert item_soul(dotted) == "s3rch/items/" + ("~1" * 128)
-
-
 if __name__ == "__main__":
     test_hint_is_not_a_grant_dest_check_is()
     test_url_leaf_is_not_a_node()
     test_feed_item_checks_the_same_as_a_claim()
-    test_item_soul_fits_the_expanded_form()
     print("ok")

@@ -27,10 +27,8 @@ int main(void) {
         die("sociacl_plane_new");
     }
 
-    char alice[64];
-    char bob[64];
-    must(sociacl_gun_user_soul("0xalice", alice, sizeof alice), "alice soul");
-    must(sociacl_gun_user_soul("0xbob", bob, sizeof bob), "bob soul");
+    const char *alice = "s3rch/users/0xalice";
+    const char *bob = "s3rch/users/0xbob";
     must(sociacl_add_person(plane, alice), "alice");
     must(sociacl_add_person(plane, bob), "bob");
     must(sociacl_add_object(plane, "claim-1", alice), "claim");

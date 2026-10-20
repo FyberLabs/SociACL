@@ -38,7 +38,7 @@ Rules. Each rule is normative.
 | `NetworkId` | `s3rch:https://<host>:<port>;key=<64hex>` or one of `atproto`, `farcaster`, `nostr`, `activitypub`, `rss` | The deployment's permitted key / the protocol | Same grammar as s3r.ch `lib/views-source-ref.ts:94-116`. |
 | `SourceKey` | `formatCanonical(SourceRef)` from s3r.ch `lib/views-source-ref.ts:225-227` (`sr1:` + pct(network) `/` pct(owner) `/` pct(source) `/` kind) | Deterministic | For s3r.ch networks, `owner` becomes a `PrincipalId` (follow-up call site, Appendix B). |
 
-Why the bound `ObjectId` uses the principal key: the 87-character principal contains `.`, and `.` is reserved in a path key. `p_` + lowercase hex is the path form that already exists, it is canonical, and it decodes to exactly one on-curve principal. The id is `<kind>_<principal-key>_<32 lowercase hex>`. Kind is 2–16 characters, the principal key is 130 characters, and the nonce is 32 hex digits, so the longest id is 180 characters. A path key may be 180 characters. A membership soul's set segment is a minted set id, and its owner key is the principal embedded in that set, so the longest membership soul is 459 characters. An object-set soul's set segment is a minted set id, and its owner key is the principal embedded in the object. The longest such soul is 509 characters. The soul parser accepts 509 characters, so 510 is `too-long`. `claim`, `ext`, `post`, `member`, and `objset` stay reserved and cannot be the kind. The older `<kind>_<32 lowercase hex>` form still parses. It has no embedded principal, and an object record cannot use it.
+Why the bound `ObjectId` uses the principal key: the 87-character principal contains `.`, and `.` is reserved in a path key. `p_` + lowercase hex is the path form that already exists, it is canonical, and it decodes to exactly one on-curve principal. The id is `<kind>_<principal-key>_<32 lowercase hex>`. Kind is 2–16 characters, the principal key is 130 characters, and the nonce is 32 hex digits, so the longest id is 180 characters. A path key may be 180 characters. A membership soul's set segment is a minted set id, and its owner key is the principal embedded in that set, so the longest membership soul is 459 characters. An object-set soul's set segment is a minted set id, and its owner key is the principal embedded in the object. The longest such soul is 509 characters. The soul parser accepts 509 characters, so 510 is `too-long`. `claim`, `ext`, `post`, `member`, and `objset` stay reserved and cannot be the kind. The older `<kind>_<32 lowercase hex>` form is rejected. Parsers return `bad-alphabet`. It has no embedded principal.
 
 Why the original random form was `<kind>_<32 lowercase hex>` with 128 bits from a CSPRNG.
 - **Hex, not base32:** hex has exactly one encoding per value. Base32 needs a rule about unused trailing bits.
@@ -72,11 +72,11 @@ oidc-key      = "k_" 64HEXL                                     ; sha256(LP("soc
 ; 3.4 Objects
 kind          = %x61-7A 1*15( %x61-7A / DIGIT )                 ; 2..16 chars, NOT one of: "claim" "ext" "post" "member" "objset"
 bound-object  = kind "_" principal-key "_" 32HEXL               ; creator's genesis key; 166..180 chars
-object-id     = kind "_" 32HEXL                                 ; older unbound form; ≤ 49 chars; not an object record
+object-id     = kind "_" 32HEXL                                 ; rejected; parsers return bad-alphabet
 derived-id    = ( "claim" / "ext" ) "_" 64HEXL
                 ; claim_ = sha256(LP("sociacl-claim-v1") LP(claimText)); claimText is the existing held-claim id, e.g. "ens:alice.eth"
                 ; ext_   = sha256(LP("sociacl-ext-v1") LP(sourceKey) LP(providerItemId))
-any-object    = bound-object / object-id / derived-id
+any-object    = bound-object / derived-id
 object-key    = any-object                                      ; already path-safe; the path key is the id itself
 
 ; 3.5 Network / SourceKey
@@ -126,7 +126,7 @@ export type PrincipalKey    = Brand<string, "PrincipalKey">;      // "p_..."
 export type Eip55           = Brand<string, "Eip55">;
 export type TenantId        = Brand<string, "TenantId">;
 export type OidcCredential  = { readonly iss: string; readonly tenant: TenantId; readonly sub: string };
-export type ObjectId        = Brand<string, "ObjectId">;          // bound-object | object-id | derived-id | legacy-id
+export type ObjectId        = Brand<string, "ObjectId">;          // bound-object | derived-id
 export type MintedObjectId  = ObjectId & Brand<string, "Minted">;
 export type NetworkId       = Brand<string, "NetworkId">;
 export type SourceKey       = Brand<string, "SourceKey">;
@@ -148,7 +148,7 @@ parseEip55(x: unknown): Result<Eip55>                 // stored data: exact chec
 parseWalletInput(x: unknown): Result<Eip55>           // UI edge only: all-lower or all-upper hex accepted → EIP-55; mixed case must match checksum
 parseTenantId(x: unknown): Result<TenantId>           // lowercase only; uppercase = "non-canonical"
 parseOidcCredential(x: unknown): Result<OidcCredential>   // {iss, tenant, sub}; iss compared later against a pinned issuer, never normalized
-parseObjectId(x: unknown): Result<ObjectId>           // bound-object | object-id | derived-id | legacy-id
+parseObjectId(x: unknown): Result<ObjectId>           // bound-object | derived-id
 objectPrincipal(x: unknown): Result<PrincipalId>       // the one genesis principal in a bound-object; bad-template otherwise
 parseNetworkId(x: unknown): Result<NetworkId>
 parseSourceKey(x: unknown): Result<SourceKey>         // port of s3r.ch parseCanonical + validateSourceRef; s3rch owner must be a PrincipalId

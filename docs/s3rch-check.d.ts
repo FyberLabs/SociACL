@@ -125,8 +125,8 @@ export type IdentityClaimKind =
  * ANDs now ∈ [from, until).
  */
 export type IdentitySeeGrant = {
-  claimId: string;
-  accessor: string;
+  object: ObjectId;
+  accessor: PrincipalId;
   from: number;
   until: number;
 };

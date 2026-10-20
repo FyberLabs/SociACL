@@ -103,7 +103,7 @@ An identical approval is a no-op only after the current key resolves, the owner'
 
 Members auto-approve does not revive an owner cancel. When `members` is set and the see row, or the post row for `read+post`, has `stated` 0, the result is `not-kept` and nothing is written. A manual approval (`members` null) is a new owner decision. It re-grants at `hamState + 1` above that cancel.
 
-Members auto-approve uses the admitted signed object owner. `checkGroupSee` takes that same owner from the principal embedded in the object id, and the admitted record must match. `hasObject` is true for that signed record. The owner shortcut (`reason` `owner`) is not membership. Only `same-group` or `named-circle` allows. A peer merge cannot auto-approve. An object-set row merged in before the signed record is dropped, and a later record does not revive it.
+Members auto-approve uses the admitted signed object owner. `checkGroupSee` takes that same owner from the principal embedded in the object id, and the admitted record must match. `hasObject` is true for that signed record. The owner shortcut (`reason` `owner`) is not membership. Only `same-group` or `named-circle` allows. A peer merge cannot auto-approve. Merge does not recheck rows already in the graph. It checks only the incoming rows, and only against the history the caller passes. An object-set row merged in before the signed record is dropped, and a later record does not revive it.
 
 Requests have no expiry. Approving an older pending copy grants only the window and the scope on that call. There is no withdraw ordering across copies. Scope is approve or refuse only. The owner cannot downscope. The window is owner-only. The accessor is the parsed requester.
 
@@ -117,8 +117,8 @@ When `now` equals the latest resolved rotation time, `grantApprovedRequest` writ
 
 | Object | Id | In-graph? |
 | --- | --- | --- |
-| Feed item | `s3rch/items/<item key>` | yes, after dest admit |
-| Held claim | claim id itself (`ens:…` / `unstoppable:…` / `fc:…` / `lens:…` / `rss3:…`), linked from `GunUserNode.indicators` | yes, after dest admit / s3r.ch `prepareShareClaimIntoMesh` |
+| Feed item | `ext_` derived from the source key and the provider item id | yes, after dest admit |
+| Held claim | `claim_` derived from the claim text. `GunUserNode.indicators` still lists the claim text; Check does not read that text as an object id | yes, after dest admit |
 | Post / room | opaque `CheckObjectId` (s3r.ch names the soul later) | yes, after dest admit |
 | Mine overlay | same `GunUserNode` shape, local only | **no** until s3r.ch `prepareShare*` then `putObject` |
 | Permalink / RSS3 / issuer HTTP | `UrlLeaf` | never |
@@ -139,31 +139,22 @@ Reuse SociACL Social Light (`convention-badge` / `enrolled-station`, SLHP v1). D
 
 The #55 rebuild spec is not in this repository. This section is the deletion schedule.
 
-`checkSee` / `check_see` do not import the alias helpers. Group, feed, and the contract migration path still call them. The request copy is deleted. The remaining copies live in private modules:
-
-- `typescript/src/legacy/gun-legacy.js`
-- `crates/sociacl-gun/src/legacy.rs`
-
-Nothing on the see path imports either file. Each copy is deleted in the pull request that migrates its caller:
+`checkSee` / `check_see` do not import the alias helpers. The post, request, group, feed, encrypted-discovery, and contract migration copies are deleted. `typescript/src/legacy/gun-legacy.js`, `crates/sociacl-gun/src/legacy.rs`, the label test modules, and the label maps on `GroupGraph` are gone.
 
 | Caller | Delete the copy in |
 | --- | --- |
 | post | PR 3 |
-| request | deleted in this pull request |
+| request | PR 4 |
 | group | PR 5 |
 | feed, encrypted discovery, and the contract migration module | PR 6 |
 
-`vectors/mesh/forbidden-names.json` lists the banned names and the see-path globs. Those later pull requests append their files to `scopes`. The legacy modules stay out of the guard until then.
+`vectors/mesh/forbidden-names.json` lists the banned names and the globs that must not contain them. Scopes cover `typescript/src`, `typescript/contract`, `sociacl-gun`, `sociacl-encdisc`, and `docs/s3rch-check.d.ts`.
 
-`acl-snapshot-utf8-order` still names U+E000 and U+10000. Those scalars are not principals, so a typed snapshot entry cannot carry them. The shared field vector and the Rust suite keep that order. Inbox and wrap vectors still use the object string `s3rch/items/post`. That string is the encrypted-discovery fixture. It is not an `ObjectId`. PR 6 retargets those inbox and wrap vectors and adds encrypted discovery to the forbidden-name scopes, including `crates/sociacl-encdisc/src/gun_soul.rs`. PR 6 also switches `contract/migration.ts` accessor sorting from `localeCompare` to UTF-8 byte order, with a vector using `a`/`B` and `-`/`_` principals. Encrypted discovery keeps a private copy of the soul helpers in `crates/sociacl-encdisc/src/gun_soul.rs` until PR 6 deletes that file. PR 6 also deletes the C exports `sociacl_gun_item_soul` and `sociacl_gun_user_soul`. `sociacl_gun_encode_key` is already gone.
+`acl-snapshot-utf8-order` still names U+E000 and U+10000. Those scalars are not principals, so a typed snapshot entry cannot carry them. The shared field vector and the Rust suite keep that order. Inbox and wrap vectors use minted object ids. `contract/migration.ts` sorts accessors in UTF-8 byte order. The vector is `vectors/encrypted-discovery/accessor-order.json`, with the strings `a`, `B`, `-`, and `_`. `crates/sociacl-encdisc/src/gun_soul.rs` is deleted. The C exports `sociacl_gun_item_soul` and `sociacl_gun_user_soul` are deleted. `sociacl_gun_encode_key` was already gone.
 
-PR 6 still mints or parses unbound object ids. Switch these to `mintObjectId(kind, creator)` / `mint_object_id` when that pull request lands:
+Both parsers reject an unbound `<kind>_<32 lowercase hex>` object id. `claim_` and `ext_` plus 64 lowercase hex stay, and so does the minted form `kind_p_<128 hex>_<32 hex>`. The native object vector that used to accept the unbound form now rejects it. A guard test fails when non-test `.js`, `.ts`, `.mjs`, or `.rs` source builds that unbound form. Encrypted-discovery wrap and delivery vectors were regenerated after the id change.
 
-- `typescript/contract/delivery-seal.ts`, `typescript/contract/content-wrap.ts`, and `typescript/contract/account-key.ts` parse `wrap_` plus 32 hex.
-- `crates/sociacl-encdisc/src/delivery.rs` and `crates/sociacl-encdisc/src/recovery.rs` parse the same `wrap_` form.
-- `typescript/tests/test_epoch.ts` and `crates/sociacl-encdisc` tests still build `chat_` plus 32 hex fixtures.
-
-PR 6 also deletes the unbound `<kind>_<32 lowercase hex>` object form from both parsers, flips the `vectors/ids/object.json` native accept to a reject, and adds a guard test that no non-test source builds that form. PR 6 regenerates the encrypted-discovery wrap and delivery vectors after those ids change. Neither of those lands in the post pull request.
+A group cancel is length-prefixed UTF-8. Each field is a little-endian `u32` byte length followed by those bytes. Integer fields are decimal strings. The fields, in order, are domain `sociacl-cancel-v2`, kind (`membership` or `object-set`), `rowSoul`, `cancelId`, `issuedAt`, the prior count, then each prior cancel id. `issuedAt` is inside those bytes. Rewriting it on a present-key cancel is `bad-signature`. Rewriting it on a witnessed retired-key cancel is `bad-attestation`.
 
 A group set id is a minted ObjectId of kind `set`. The owner is the principal embedded in that id and the signed set-owner field. An object-set soul is `s3rch/acl/<owner key>/objset/<predicate>/<set>/<object>`. A cancel signed over that soul cannot move to another set or predicate. An object-set row merged in before this graph holds the admitted signed object record is dropped. `reverifyGroup` drops an unwitnessed retired-key cancel. Only a witnessed cancel survives that recheck. The request path writes owner-signed `sociacl-see-grant-v2` and `sociacl-post-grant-v2` rows. `typescript/src/legacy/post-label.js` and `crates/sociacl-gun/src/post_label.rs` are deleted.
 

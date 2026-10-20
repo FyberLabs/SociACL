@@ -48,7 +48,9 @@ proptest! {
         let n2=parse_network_id(&net.as_ref().replace("https://node","https://other")).unwrap();
         let s2=parse_source_key(&source.as_ref().replace("/chat","/forum")).unwrap();
         let c2=parse_oidc_credential(&serde_json::json!({"iss":cred.issuer(),"tenant":cred.tenant(),"sub":format!("{}x",cred.subject())})).unwrap();
-        let o2=parse_object_id(&format!("chat_{}",hex(&object))).unwrap();
+        let mut flipped=object; flipped[0]^=0xff;
+        let o2=mint_object_id_with("chat",&p,|out|{*out=flipped;Ok(())}).unwrap();
+        let o2=o2.object_id().clone();
         let others=[format_principal_key(&p2).to_string(),format_wallet_key(&w2).to_string(),format_oidc_key(&c2).to_string(),format_network_key(&n2).to_string(),format_source_path_key(&s2).to_string(),object_key(&o2).to_string()];
         for(a,b)in keys.iter().zip(others.iter()){prop_assert_ne!(a,b);}
         let claim=derive_claim_id(&format!("ens:{}",hex(&seed))).unwrap();
@@ -59,7 +61,7 @@ proptest! {
         prop_assert_ne!(ext,derive_external_id(&s2,&format!("provider/{n}")).unwrap());
 
         for key in &keys{prop_assert!(key.len()<=180&&key.bytes().all(|c|c.is_ascii_alphanumeric()||b"_:-".contains(&c)));prop_assert_eq!(key.parse::<PathKey>().unwrap().to_string(),key.clone());}
-        let other=parse_object_id(&format!("chat_{}",hex(&object))).unwrap();
+        let other=o2.clone();
         prop_assert_ne!(object_key(o),object_key(&other));
         prop_assert_ne!(grant_soul(&p,o,&p),grant_soul(&p,&other,&p));
         for(s,count)in[(object_soul(Collection::Items,o),3),(acl_soul(&p),3),(grant_soul(&p,o,&p),5),(post_soul(&p,o,&p),6),(membership_soul(&p,MembershipPredicate::SameGroup,set,&p),7),(object_set_soul(&p,o,MembershipPredicate::SameGroup,set),7)]{

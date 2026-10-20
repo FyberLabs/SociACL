@@ -31,6 +31,10 @@ fn object_of(v: &Value) -> ObjectId {
     parse_object_id(v.as_str().expect("object")).expect("object id")
 }
 
+fn parsed_object(v: &Value) -> Result<ObjectId, Reason> {
+    parse_object_id(v.as_str().ok_or(Reason::NotString)?)
+}
+
 fn principal_of(v: &Value) -> PrincipalId {
     parse_principal_id(v.as_str().expect("principal")).expect("principal id")
 }
@@ -121,11 +125,28 @@ fn run_case(file: &Value, case: &Value) -> MeshSeeGraph {
         let on_side = step.get("on").and_then(Value::as_str) == Some("side");
         if op == "merge" {
             let into_side = step.get("into").and_then(Value::as_str) == Some("side");
+            let step_revocations = step
+                .get("revocations")
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_else(|| file_revocations.clone());
+            let step_now = step.get("now").and_then(Value::as_u64).unwrap_or(now);
+            let rc = ResolutionContext {
+                jwks: &jwks,
+                links: &links,
+                revocations: &step_revocations,
+                now: step_now,
+                policy: &policy,
+                pinned_iss: &pinned,
+                history: &history,
+                genesis_epub_bindings: &[],
+            };
+            let rotations = rotations_of(ctx, step);
             let (head, tail) = graphs.split_at_mut(1);
             if into_side {
-                tail[0].vector_merge_groups(&head[0]);
+                tail[0].vector_merge_groups(&head[0], &resolver_for(rotations), &rc);
             } else {
-                head[0].vector_merge_groups(&tail[0]);
+                head[0].vector_merge_groups(&tail[0], &resolver_for(rotations), &rc);
             }
             continue;
         }
@@ -254,7 +275,11 @@ fn run_case(file: &Value, case: &Value) -> MeshSeeGraph {
                 }
             }
             "owner" => {
-                let got = graph.admitted_owner(&object_of(&step["object"]));
+                let Ok(object) = parsed_object(&step["object"]) else {
+                    assert!(step["absent"] == true, "{name}");
+                    continue;
+                };
+                let got = graph.admitted_owner(&object);
                 if step["absent"] == true {
                     assert!(got.is_none(), "{name}");
                 } else {
@@ -300,15 +325,24 @@ fn run_case(file: &Value, case: &Value) -> MeshSeeGraph {
                 }
             }
             "check" => {
-                let got = graph.check_see(
-                    &object_of(&step["object"]),
-                    &principal_of(&step["accessor"]),
-                    step["now"].as_u64().unwrap(),
-                    None,
-                    None,
-                );
-                assert_eq!(got.allowed, step["allowed"] == true, "{name}");
-                assert_eq!(got.reason, step["reason"].as_str().unwrap(), "{name}");
+                let (allowed, reason) = match (
+                    parsed_object(&step["object"]),
+                    parse_principal_id(step["accessor"].as_str().unwrap_or("")),
+                ) {
+                    (Err(reason), _) | (_, Err(reason)) => (false, reason_name(reason)),
+                    (Ok(object), Ok(accessor)) => {
+                        let got = graph.check_see(
+                            &object,
+                            &accessor,
+                            step["now"].as_u64().unwrap(),
+                            None,
+                            None,
+                        );
+                        (got.allowed, got.reason.to_string())
+                    }
+                };
+                assert_eq!(allowed, step["allowed"] == true, "{name}");
+                assert_eq!(reason, step["reason"].as_str().unwrap(), "{name}");
             }
             "admit-post" => {
                 let row = patch_row(step.get("row").unwrap_or(&Value::Null), step);

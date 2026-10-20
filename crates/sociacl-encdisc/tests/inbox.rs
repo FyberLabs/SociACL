@@ -64,7 +64,7 @@ fn dummy_wrap(blob: &str) -> WrappedKey {
         epoch: 3,
         target: sociacl_encdisc::WrapTarget::ReaderEpub,
         target_id: "reader-epub".to_string(),
-        object: Some("s3rch/items/post".to_string()),
+        object: Some("chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111".to_string()),
         group: None,
         revision_id: "ab".repeat(32),
         wrapped_key: blob.to_string(),
@@ -197,7 +197,7 @@ fn one_lane_per_reader_and_not_per_device() {
     assert!(!lane_id_is_opaque("0xalice", "0xalice"));
     assert!(!lane_id_is_opaque(
         "0xalice",
-        "s3rch/acl/0xalice/s3rch/items/post/0xbob"
+        "s3rch/acl/0xalice/chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111/0xbob"
     ));
     assert!(lane_id_is_opaque("0xalice", &phone.inbox().lane_id));
     assert!(!lane_id_is_opaque("0xalice", "x"));
@@ -1140,7 +1140,7 @@ fn append_and_opened_wrap_never_grant() {
     let wraps = wrap_item_dek_to_readers(
         &dek,
         1,
-        "s3rch/items/post",
+        "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
         &"ab".repeat(32),
         &[EnrolledSeaPub::from_account(&desk.reader)],
         &NamedSet::try_from_accessors([desk.reader.account()]).unwrap(),

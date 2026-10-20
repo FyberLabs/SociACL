@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { MemorySeeAcl, checkSeeLabel, grantSoul } from "../src/legacy/gun-legacy.js";
-import { canonicalAccessorId } from "../src/legacy/gun-legacy.js";
+import { parseObjectId, parsePrincipalId } from "../ids/src/index.js";
+import { seeAccessorEdge, seeObjectEdge } from "../src/see.js";
 
 const vectors = JSON.parse(
   readFileSync(new URL("../../vectors/mesh/principals.json", import.meta.url), "utf8"),
@@ -13,51 +13,30 @@ function principalId(row) {
   return row.id;
 }
 
-function expectedPrincipal(row) {
-  if (row.canonical === "repeat") return row.repeat.repeat(row.count);
-  return row.canonical;
-}
-
-test("shared principal vectors", () => {
+test("label principals are not PrincipalIds", () => {
   for (const row of vectors.principals) {
     const id = principalId(row);
-    assert.equal(canonicalAccessorId(id), expectedPrincipal(row), id);
+    const parsed = parsePrincipalId(id);
+    assert.equal(parsed.ok, false, id);
+    const edge = seeAccessorEdge(id);
+    assert.equal(edge.ok, false, id);
   }
-  assert.equal(canonicalAccessorId("0x\ud800victim"), null);
+  assert.equal(parsePrincipalId("0x\ud800victim").ok, false);
 });
 
-test("shared grant soul vectors", () => {
+test("label grant endpoints do not parse", () => {
   for (const row of vectors.grants) {
-    assert.equal(grantSoul(row.owner, row.object, row.accessor), row.soul, row.accessor);
+    assert.equal(parsePrincipalId(row.owner).ok, false, row.owner);
+    assert.equal(parseObjectId(row.object).ok, false, row.object);
+    assert.equal(parsePrincipalId(row.accessor).ok, false, row.accessor);
   }
 });
 
-test("shared object id vectors", () => {
+test("label object ids do not parse and do not alias", () => {
   for (const row of vectors.objects) {
-    const acl = new MemorySeeAcl();
-    acl.putObject(row.stored, row.owner);
-    if (row.put != null) acl.putObject(row.put, row.putOwner);
-    if (row.hasPutId != null) assert.equal(acl.hasObject(row.put), row.hasPutId, row.name);
-    assert.equal(acl.ownerOf(row.stored), row.ownerAfter, row.name);
-    if (row.query != null) {
-      assert.equal(checkSeeLabel(acl, row.query, row.accessor, 10).allowed, row.allowed, row.name);
-    }
-  }
-});
-
-test("a null grant key does not return another object's grant", () => {
-  for (const row of vectors.nullKeys) {
-    const acl = new MemorySeeAcl();
-    acl.putObject(row.other, "0xmallory");
-    acl.putObject(row.secret, "0xalice");
-    acl.stateSeeGrant("0xmallory", {
-      object: row.other,
-      accessor: row.accessor,
-      from: 0,
-      until: 80,
-    });
-    assert.equal(acl.seeGrant(row.secret, row.accessor), undefined, row.accessor);
-    assert.equal(acl.seeGrant(row.other, row.accessor), undefined, row.accessor);
-    assert.equal(checkSeeLabel(acl, row.secret, row.accessor, 10).allowed, false);
+    assert.equal(parseObjectId(row.stored).ok, false, row.name);
+    assert.equal(seeObjectEdge(row.stored).ok, false, row.name);
+    if (row.query != null) assert.equal(parseObjectId(row.query).ok, false, row.name);
+    if (row.put != null) assert.equal(parseObjectId(row.put).ok, false, row.name);
   }
 });

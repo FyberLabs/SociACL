@@ -20,8 +20,12 @@ SIGN_PUB = "YP7UuiVanTHJYet0xjVtaMBJuJI7Yfps5mliLmDyn7Y.eQP-EAi4vJmkGunpVii8ZPLx
 SIGN_PRIV_SEA = "ya-p2EW6dRZrXCFXZ7HWk05Qw9s26JsSe4piKxIPZyE"
 EPRIV = "6EXhKuFCyTddo7uvYddNjXON5iKEMV7v8bCol7XOHt8"
 EPUB = "EMvdmXTv89JPyMx5n3blU3L_D70U-6JoVaVzTvSzgYg.B_b0CP3o9X3I7tWrxA_F1VhXpjeMuIJCtQWnOh7LN5c"
-# Parser-produced ids. Inbox and wrap rows stay on s3rch/items/post until PR 6.
-OBJECT = "chat_" + "11" * 16
+# Minted chat id for the ids principal whose SEA pair is ALICE. Nonce is 16 bytes of 0x11.
+OBJECT = (
+    "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c296"
+    "4fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_"
+    + "11" * 16
+)
 ALICE = "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU"
 BOB = "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E"
 ADA = "4lNKNTLQj7ugLd5lnuYr0AMf4tt4VZbvUJMCRGsDCFI.4PFXWkxjPMcZ3-5f2oYtdk78lsPzDuAFXELCPxhO2MY"
@@ -154,7 +158,7 @@ def main() -> None:
     assert hello == "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
 
     wrap_doc = json.loads((HERE / "wrap.json").read_text(encoding="utf-8"))
-    if wrap_doc["epoch"] != 3 or wrap_doc["object"] != "s3rch/items/post":
+    if wrap_doc["epoch"] != 3 or not str(wrap_doc["object"]).startswith("item_p_"):
         raise SystemExit("wrap.json does not match the inbox fixture")
     if wrap_doc["dekHex"] != "11" * 32 or wrap_doc["nonceHex"] != "22" * 12:
         raise SystemExit("wrap.json DEK or nonce changed")
@@ -172,7 +176,7 @@ def main() -> None:
         "epoch": 3,
         "target": "reader-epub",
         "targetId": EPUB,
-        "object": "s3rch/items/post",
+        "object": wrap_doc["object"],
         "revisionId": revision,
         "wrappedKey": "aa",
     }

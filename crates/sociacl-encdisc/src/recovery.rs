@@ -2851,7 +2851,7 @@ mod tests {
 
         let mut wraps = crate::MemoryKeyWrapStore::sharing(watch(&[], &base), floor);
         let wrap_id =
-            sociacl_ids::parse_object_id("wrap_00112233445566778899aabbccddee11").unwrap();
+            sociacl_ids::parse_object_id("wrap_p_60fed4ba255a9d31c961eb74c6356d68c049b8923b61fa6ce669622e60f29fb67903fe1008b8bc99a41ae9e95628bc64f2f1b20c2d7e9f5177a3c294d4462299_00112233445566778899aabbccddee11").unwrap();
         let wrap = crate::EncryptedAccountWrap {
             principal: principal.clone(),
             wrap_id: wrap_id.clone(),

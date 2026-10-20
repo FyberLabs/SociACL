@@ -91,7 +91,6 @@ mod delivery;
 mod epoch;
 mod error;
 mod grant;
-mod gun_soul;
 mod hexutil;
 mod identity;
 mod inbox;
@@ -155,7 +154,7 @@ pub use grant::{
     MeshSeeGrant, SignedGrantPayload,
 };
 pub use identity::{
-    account_grant_soul, account_id_from_label, current_signing_key, delete_account_wrap,
+    account_id_from_label, current_signing_key, delete_account_wrap,
     delivery_mints_grant, open_account_backup, parse_wrap_object, seal_account_backup,
     EncryptedAccountWrap, GenesisAccount, InheritedDevice, KeyWrapStore, LinkedCredential,
     MemoryKeyWrapStore, TransportKey, WrapClass, WrapIndex,

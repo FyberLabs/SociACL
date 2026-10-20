@@ -2,10 +2,9 @@ use sociacl_core::{
     Action, ActionMask, AttestationFactor, Capability, CheckRequest, CheckResult, Client,
     ElectResult, NodeId, Plane, SocialLightStatement, Timestamp, VerbError, Zookie,
 };
+use sociacl_ids::{derive_claim_id, derive_external_id, PrincipalId, SourceKey};
 
-use crate::{
-    FeedItem, GunError, GunFeedNode, GunNode, GunSoul, HandoffHint, IdentitySeeGrant, SEE,
-};
+use crate::{FeedItem, GunError, GunFeedNode, HandoffHint, IdentitySeeGrant, SEE};
 
 /// `see` is Check `read` on a Gun-native object (feed item or claim).
 pub fn map_action(verb: &str) -> Action {
@@ -241,61 +240,63 @@ pub fn client_elect_from_hint(
     Err(GunError::ElectFromHint)
 }
 
-/// Enroll the locked wallet identity as a person. One user node.
-pub fn add_wallet(plane: &mut Plane, wallet: impl AsRef<str>) -> NodeId {
-    plane
-        .add_person(GunSoul::s3rch_user(wallet).as_node_id())
-        .id
+/// Enroll a principal as a person. The plane id is that principal.
+/// A wallet string is not a principal.
+pub fn add_principal(plane: &mut Plane, principal: &PrincipalId) -> NodeId {
+    plane.add_person(NodeId::new(principal.as_ref())).id
 }
 
-/// Held claim on the destination plane. Default predicate is `owner`.
-pub fn add_claim(plane: &mut Plane, claim: impl AsRef<str>, owner: impl Into<NodeId>) -> NodeId {
-    plane
-        .add_object(GunNode::claim(claim).as_node_id(), owner)
-        .id
+/// Held claim on the destination plane. The object id is `claim_` + the
+/// ids hash. Default predicate is `owner`.
+pub fn add_claim(
+    plane: &mut Plane,
+    claim: impl AsRef<str>,
+    owner: impl Into<NodeId>,
+) -> Result<NodeId, GunError> {
+    let id = derive_claim_id(claim.as_ref()).map_err(|_| GunError::ObjectNotInGraph)?;
+    Ok(plane.add_object(NodeId::new(id.as_ref()), owner).id)
 }
 
-/// Admit a Gun-native feed item. Destination re-authorizes before
-/// this put. A permalink / RSS3 / RSS / KYC URL is not the object.
+/// Admit a feed item. The Check object is `derive_external_id(source, item)`.
+/// A permalink / RSS3 / RSS / KYC URL is not the object. The Gun path is not either.
 pub fn add_item(
     plane: &mut Plane,
     item: &FeedItem,
+    source: &SourceKey,
     owner: impl Into<NodeId>,
 ) -> Result<NodeId, GunError> {
-    let id = item.as_node_id().ok_or(GunError::UrlLeafNotANode)?;
-    Ok(plane.add_object(id, owner).id)
+    let id = item.object_id(source)?;
+    Ok(plane.add_object(NodeId::new(id.as_ref()), owner).id)
 }
 
-pub fn add_feed_node(plane: &mut Plane, node: &GunFeedNode, owner: impl Into<NodeId>) -> NodeId {
-    plane.add_object(node.as_node_id(), owner).id
+pub fn add_feed_node(
+    plane: &mut Plane,
+    node: &GunFeedNode,
+    source: &SourceKey,
+    owner: impl Into<NodeId>,
+) -> Result<NodeId, GunError> {
+    let id = derive_external_id(source, &node.id).map_err(|_| GunError::ObjectNotInGraph)?;
+    Ok(plane.add_object(NodeId::new(id.as_ref()), owner).id)
 }
 
 /// `IdentitySeeGrant` is keep-operating `delegate` read with `until`.
 /// Not Elect. Privilege-down is `cancel` / undelegate. `from` is
-/// enforced at Check, not by delaying the dest edge.
+/// enforced at Check, not by delaying the dest edge. The object is the
+/// grant's object id. There is no item-path fallback.
 pub fn apply_see_grant(
     plane: &mut Plane,
     owner: impl Into<NodeId>,
     grant: &IdentitySeeGrant,
 ) -> Result<(), VerbError> {
-    let object = resolve_grant_object(plane, grant)?;
+    let object = NodeId::new(grant.object.as_ref());
+    if plane.object(&object).is_none() {
+        return Err(VerbError::ObjectNotFound(object));
+    }
     plane.jointly_delegate(
         owner,
-        grant.accessor_id(),
+        NodeId::new(grant.accessor.as_ref()),
         object,
         ActionMask::read(),
         Some(grant.until),
     )
-}
-
-fn resolve_grant_object(plane: &Plane, grant: &IdentitySeeGrant) -> Result<NodeId, VerbError> {
-    let object = grant.object_id();
-    if plane.object(&object).is_some() {
-        return Ok(object);
-    }
-    let item = GunSoul::s3rch_item(grant.claim_id.trim()).as_node_id();
-    if plane.object(&item).is_some() {
-        return Ok(item);
-    }
-    Err(VerbError::ObjectNotFound(object))
 }

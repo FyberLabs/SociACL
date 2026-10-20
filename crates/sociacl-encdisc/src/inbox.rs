@@ -799,7 +799,7 @@ mod tests {
                 epoch: 7,
                 target: WrapTarget::ReaderEpub,
                 target_id: "0xbob".to_string(),
-                object: Some("s3rch/items/post".to_string()),
+                object: Some("chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111".to_string()),
                 group: None,
                 revision_id: "11".repeat(32),
                 wrapped_key: "22".repeat(8),
