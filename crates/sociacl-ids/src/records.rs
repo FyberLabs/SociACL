@@ -1200,6 +1200,9 @@ pub fn verify_rotate(
     current_key: &PrincipalId,
     ctx: &ResolutionContext<'_>,
 ) -> Result<Rotate, Reason> {
+    bounded(ctx.links.len())?;
+    bounded(ctx.revocations.len())?;
+    bounded(ctx.genesis_epub_bindings.len())?;
     check_rotate(v, current_key, ctx, &mut Vec::new())
 }
 // A missing/malformed unsigned SIWE proof must not hide an authenticated transition.
@@ -1301,8 +1304,8 @@ fn rotation_claims_match(rot: &Rotate, c: &Value) -> bool {
         Authorizer::Wallet { link, siwe } => ("wallet", link.as_str(), Some(siwe)),
         Authorizer::OidcFreshLogin { link } => ("oidc-fresh-login", link.as_str(), None),
     };
-    let v3 = rot.next_epub.is_some();
-    let v4 = v3 && siwe.is_some() && c["typ"] == "sociacl-rotate-attest-v4";
+    let epub = rot.next_epub.is_some();
+    let wallet = epub && siwe.is_some();
     let mut attest_keys = vec![
         "typ",
         "principal",
@@ -1314,24 +1317,24 @@ fn rotation_claims_match(rot: &Rotate, c: &Value) -> bool {
         "linkId",
         "retainedLinks",
     ];
-    if v3 {
+    if epub {
         attest_keys.push("nextEpub");
     }
-    if v4 {
+    if wallet {
         attest_keys.push("siweHash");
     }
     let epub_matches = match &rot.next_epub {
         Some(epub) => c["nextEpub"] == epub.as_ref(),
         None => true,
     };
-    let typ = if !v3 {
+    let typ = if !epub {
         "sociacl-rotate-attest-v2"
-    } else if v4 {
+    } else if wallet {
         "sociacl-rotate-attest-v4"
     } else {
         "sociacl-rotate-attest-v3"
     };
-    let hash_ok = match (v4, siwe) {
+    let hash_ok = match (wallet, siwe) {
         (true, Some(proof)) => c["siweHash"].as_str() == Some(siwe_proof_hash(proof).as_str()),
         (true, None) => false,
         _ => true,
@@ -1613,6 +1616,9 @@ pub fn verify_rotation_request(
     current_key: &PrincipalId,
     ctx: &ResolutionContext<'_>,
 ) -> Result<Rotate, Reason> {
+    bounded(ctx.links.len())?;
+    bounded(ctx.revocations.len())?;
+    bounded(ctx.genesis_epub_bindings.len())?;
     if v["kind"] != "rotate" || v.get("attest").is_some() || v.get("nextEpub").is_none() {
         return Err(Reason::BadRecord);
     }
@@ -2246,18 +2252,28 @@ pub fn prepare_retained_links_now(
     bounded(candidates.len())?;
     bounded(ctx.revocations.len())?;
     bounded(ctx.links.len())?;
+    if ctx.now > MAX_SAFE {
+        return Err(Reason::MissingHistory);
+    }
     let mut retained = Vec::new();
     for id_value in candidates {
         let id = id_value.as_str().ok_or(Reason::BadRecord)?;
+        if retained.iter().any(|seen| seen == id) {
+            continue;
+        }
         let raw = ctx.links.get(id).ok_or(Reason::MissingHistory)?;
         let parsed = record(raw, false)?;
         let principal = parsed.principal().clone();
         let issued_at = parsed.issued_at();
         let state = (ctx.history)(&principal, issued_at, ctx.now)?;
         let proof = match &parsed {
-            IdentityRecord::Wallet(_) => {
-                IdentityRecord::Wallet(verify_wallet_link(raw, ctx.jwks, ctx.policy, issued_at, &state)?)
-            }
+            IdentityRecord::Wallet(_) => IdentityRecord::Wallet(verify_wallet_link(
+                raw,
+                ctx.jwks,
+                ctx.policy,
+                issued_at,
+                &state,
+            )?),
             IdentityRecord::Oidc(_) => IdentityRecord::Oidc(verify_oidc_link(
                 raw,
                 ctx.jwks,
@@ -2271,9 +2287,16 @@ pub fn prepare_retained_links_now(
             return Err(Reason::MissingHistory);
         }
         let revoked = ctx.revocations.iter().any(|raw| {
-            verify_revoke_now(raw, &state.current_key, ctx.now).is_ok_and(|revoke| {
-                revoke.principal == principal && revoke.link_id == id && revoke.issued_at >= issued_at
-            })
+            let Ok(IdentityRecord::Revoke(revoke)) = record(raw, false) else {
+                return false;
+            };
+            if revoke.principal != principal
+                || revoke.link_id != id
+                || revoke.issued_at < issued_at
+            {
+                return false;
+            }
+            verify_revoke_now(raw, &state.current_key, ctx.now).is_ok()
         });
         if !revoked {
             retained.push(id.to_owned());

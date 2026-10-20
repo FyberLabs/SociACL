@@ -183,7 +183,7 @@ API for a historical query or choose its current key from `issuedAt`.
 
 Panopticon and clients **MUST exclude present-revoked links from `retainedLinks`**
 when constructing a rotation. Call `prepareRetainedLinksNow(candidates, context)`.
-It authenticates each candidate and drops ids revoked under the final current key.
+It authenticates each candidate, drops ids revoked under the final current key, and returns each id once.
 It does not issue an attestation. Panopticon **MUST check present revocation before
 attesting any rotation or login**. For wallet authorization, use
 `resolveWalletLinkNow` and require the selected link ID to equal the authorizer
@@ -310,14 +310,16 @@ a pure verifier cannot discover omitted records or establish global freshness.
 Never treat a partial offline snapshot as proof that an account has no rotations
 or active wallets. Resolution lists, the link map, revocation lists, and
 genesis-epub bindings are capped at `MAX_RESOLUTION_INPUT` (1024). A longer list
-is `too-long`. The functions do not truncate.
+is `too-long`. The functions do not truncate. `verifyRotate` and
+`verifyRotationRequest` use that cap.
 
-A wallet rotation attestation may be `sociacl-rotate-attest-v4`: the v3 claims
-plus `siweHash`. That hash is hex(sha256(length-prefixed `sociacl-siwe-proof-v1`,
-the SIWE message, and the SIWE signature)). A mismatch is `bad-attestation`
-before SIWE verification. OIDC rotations stay on v3. Historical v2 and v3
-attestations still verify. The rotation signing bytes stay `sociacl-rotate-v3`
-when `nextEpub` is present.
+A wallet rotation with `nextEpub` requires `sociacl-rotate-attest-v4`: the v3
+claims plus `siweHash`. That hash is hex(sha256(length-prefixed
+`sociacl-siwe-proof-v1`, the SIWE message, and the SIWE signature)). A v3
+wallet attestation, or a hash that does not match the proof, is
+`bad-attestation` before SIWE verification. OIDC rotations stay on v3. A
+rotation without `nextEpub` stays v2. The rotation signing bytes stay
+`sociacl-rotate-v3` when `nextEpub` is present.
 
 `Reason` additionally includes `missing-history`, `unretained-link`, and
 `wallet-required` and `rotation-conflict`, alongside proof, ordering, fork, revocation, ambiguity,

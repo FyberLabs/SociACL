@@ -365,7 +365,11 @@ function requiredHistoryFailure(reason) {
   return reason === 'rotation-fork' || reason === 'rotation-conflict' ? reason : 'missing-history';
 }
 /** @param {unknown} x @param {PrincipalId} currentKey @param {ResolutionContext} ctx @returns {Result<Rotate>} */
-export function verifyRotate(x,currentKey,ctx) {return checkRotate(x,currentKey,ctx,[]);}
+export function verifyRotate(x,currentKey,ctx) {
+  const bounded = boundedContext(ctx);
+  if (!bounded.ok) return bounded;
+  return checkRotate(x,currentKey,ctx,[]);
+}
 /** Local pre-attestation check for one v3 rotation request.
  * Covers: v3 (`nextEpub` required; v2 is `bad-record`); no `attest` field
  * (a present attestation is `bad-record` and is not returned); `|issuedAt-now|`
@@ -391,7 +395,8 @@ export function verifyRotate(x,currentKey,ctx) {return checkRotate(x,currentKey,
  * `verifyRotate` still requires an attestation and does not use this window.
  * @param {unknown} x @param {PrincipalId} currentKey @param {ResolutionContext} ctx @returns {Result<Rotate>} */
 export function verifyRotationRequest(x, currentKey, ctx) {
-  if (typeof ctx.history !== 'function') return fail('missing-history');
+  const bounded = boundedContext(ctx);
+  if (!bounded.ok) return bounded;
   const d = data(x); if (!d.ok) return d;
   if (d.value.kind !== 'rotate' || Object.hasOwn(d.value, 'attest') || !Object.hasOwn(d.value, 'nextEpub')) return fail('bad-record');
   const p = rotationCandidate({ ...d.value, attest: 'request' }); if (!p.ok) return p;
@@ -403,14 +408,14 @@ export function verifyRotationRequest(x, currentKey, ctx) {
 /** Exact Panopticon rotation claim, including auth, linkId, and retainedLinks.
  * @param {Rotate} r @param {Record<string, unknown>} c */
 function rotationClaimsMatch(r, c) {
-  const v3 = hasNextEpub(r);
-  const v4 = v3 && r.authorizer.kind === 'wallet' && c.typ === 'sociacl-rotate-attest-v4';
+  const epub = hasNextEpub(r);
+  const wallet = epub && r.authorizer.kind === 'wallet';
   const attestKeys = ['typ','principal','nextKey','seq','iat','exp','auth','linkId','retainedLinks'];
-  if (v3) attestKeys.push('nextEpub');
-  if (v4) attestKeys.push('siweHash');
-  const typ = !v3 ? 'sociacl-rotate-attest-v2' : v4 ? 'sociacl-rotate-attest-v4' : 'sociacl-rotate-attest-v3';
-  if (!(only(c, attestKeys) && c.typ === typ && c.principal === r.principal && c.nextKey === r.nextKey && (!v3 || c.nextEpub === r.nextEpub) && c.seq === r.seq && c.iat === r.issuedAt && c.auth === r.authorizer.kind && c.linkId === r.authorizer.link && JSON.stringify(c.retainedLinks) === JSON.stringify(r.retainedLinks))) return false;
-  return !v4 || c.siweHash === siweProofHash(r.authorizer.siwe);
+  if (epub) attestKeys.push('nextEpub');
+  if (wallet) attestKeys.push('siweHash');
+  const typ = !epub ? 'sociacl-rotate-attest-v2' : wallet ? 'sociacl-rotate-attest-v4' : 'sociacl-rotate-attest-v3';
+  if (!(only(c, attestKeys) && c.typ === typ && c.principal === r.principal && c.nextKey === r.nextKey && (!epub || c.nextEpub === r.nextEpub) && c.seq === r.seq && c.iat === r.issuedAt && c.auth === r.authorizer.kind && c.linkId === r.authorizer.link && JSON.stringify(c.retainedLinks) === JSON.stringify(r.retainedLinks))) return false;
+  return !wallet || c.siweHash === siweProofHash(r.authorizer.siwe);
 }
 /** @param {Rotate} r @param {PrincipalId} currentKey @param {ResolutionContext} ctx @param {Diagnostic[]} diagnostics @param {boolean} requireAttest @returns {Result<Rotate>} */
 function checkRotateBody(r, currentKey, ctx, diagnostics, requireAttest) {
@@ -792,9 +797,12 @@ export function prepareRetainedLinksNow(candidates, ctx) {
   /** @type {string[]} */ const retained = [];
   for (const id of listed.value) {
     if (typeof id !== 'string') return fail('bad-record');
+    if (retained.includes(id)) continue;
     const link = ctx.links.get(id);
-    if (!link || typeof link !== 'object') return fail('missing-history');
-    const row = /** @type {WalletLink|OidcLink} */ (link);
+    if (link === undefined) return fail('missing-history');
+    const parsed = record(link);
+    if (!parsed.ok || (parsed.value.kind !== 'wallet' && parsed.value.kind !== 'oidc')) return fail('missing-history');
+    const row = /** @type {WalletLink|OidcLink} */ (parsed.value);
     const looked = state(ctx.history, row.principal, row.issuedAt, ctx.now);
     if (!looked.ok) return looked;
     const proof = row.kind === 'wallet'
@@ -804,8 +812,11 @@ export function prepareRetainedLinksNow(candidates, ctx) {
     const computed = linkId(proof.value);
     if (!computed.ok || computed.value !== id) return fail('missing-history');
     const revoked = (ctx.revocations ?? []).some(raw => {
-      const r = verifyRevokeNow(raw, looked.value.currentKey, ctx.now);
-      return r.ok && r.value.principal === proof.value.principal && r.value.linkId === id && r.value.issuedAt >= proof.value.issuedAt;
+      const candidate = record(raw);
+      if (!candidate.ok || candidate.value.kind !== 'revoke') return false;
+      const revoke = candidate.value;
+      if (revoke.principal !== proof.value.principal || revoke.linkId !== id || revoke.issuedAt < proof.value.issuedAt) return false;
+      return verifyRevokeNow(raw, looked.value.currentKey, ctx.now).ok;
     });
     if (!revoked) retained.push(id);
   }

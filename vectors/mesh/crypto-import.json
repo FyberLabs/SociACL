@@ -1,12 +1,14 @@
 {
   "notes": [
-    "typescript/src may use WebCrypto. The audit flags only import, require, and dynamic import() of the specifiers crypto and node:crypto. Comments are ignored."
+    "typescript/src may use WebCrypto. The audit flags import, export from, require, dynamic import(), createRequire, and process.getBuiltinModule of the specifiers crypto and node:crypto, including multi-line forms and template literals. Strings and comments are ignored."
   ],
   "allowed": [
     { "name": "webcrypto-global", "source": "const bytes = globalThis.crypto.getRandomValues(new Uint8Array(16));" },
     { "name": "webcrypto-subtle", "source": "await crypto.subtle.digest('SHA-256', bytes);" },
     { "name": "line-comment", "source": "// import \"node:crypto\"\nconst x = 1;" },
-    { "name": "block-comment", "source": "/* require('crypto') */\nconst x = 1;" }
+    { "name": "block-comment", "source": "/* require('crypto') */\nconst x = 1;" },
+    { "name": "string-holds-import", "source": "const s = 'import \"node:crypto\";';" },
+    { "name": "string-holds-comment-markers", "source": "const a = \"/* // */\";\nconst x = globalThis.crypto;" }
   ],
   "banned": [
     { "name": "import-crypto", "source": "import { randomBytes } from \"crypto\";" },
@@ -15,6 +17,14 @@
     { "name": "require-crypto", "source": "const c = require(\"crypto\");" },
     { "name": "require-node-crypto", "source": "const c = require('node:crypto');" },
     { "name": "dynamic-crypto", "source": "const c = await import(\"crypto\");" },
-    { "name": "dynamic-node-crypto", "source": "const c = import('node:crypto');" }
+    { "name": "dynamic-node-crypto", "source": "const c = import('node:crypto');" },
+    { "name": "multiline-import", "source": "import {\n  randomBytes\n} from \"node:crypto\";" },
+    { "name": "export-from", "source": "export { randomBytes } from \"node:crypto\";" },
+    { "name": "export-star", "source": "export * from \"node:crypto\";" },
+    { "name": "template-import", "source": "const c = import(`node:crypto`);" },
+    { "name": "after-string-slash-slash", "source": "const s = \"http://example.com\"; import \"node:crypto\";" },
+    { "name": "after-string-block-markers", "source": "const a = \"/*\";\nimport \"node:crypto\";\nconst b = \"*/\";" },
+    { "name": "create-require", "source": "createRequire(import.meta.url)(\"node:crypto\");" },
+    { "name": "get-builtin-module", "source": "process.getBuiltinModule(\"node:crypto\");" }
   ]
 }

@@ -198,55 +198,135 @@ test("checkSee on a primitive graph is bad-record", () => {
   assert.deepEqual(checkSee(null, "chat", "bob", 0), { allowed: false, reason: "bad-record" });
 });
 
-function stripComments(source) {
-  let out = "";
-  for (let i = 0; i < source.length; i += 1) {
-    if (source[i] === "/" && source[i + 1] === "/") {
-      while (i < source.length && source[i] !== "\n") i += 1;
-      if (i < source.length) out += "\n";
-      continue;
-    }
-    if (source[i] === "/" && source[i + 1] === "*") {
-      i += 2;
-      while (i < source.length && !(source[i] === "*" && source[i + 1] === "/")) i += 1;
-      i += 1;
-      out += " ";
-      continue;
-    }
-    out += source[i];
-  }
-  return out;
+const CRYPTO_SPECIFIERS = new Set(["crypto", "node:crypto"]);
+
+function isIdent(c) {
+  return c !== undefined && /[A-Za-z0-9_$]/.test(c);
 }
 
-function endsWithWord(text, word) {
-  return new RegExp(`(^|[^A-Za-z0-9_])${word}$`).test(text);
-}
-
-function specifierIsImport(text, at) {
-  let i = at - 1;
-  while (i >= 0 && /\s/.test(text[i])) i -= 1;
-  const head = text.slice(0, at).trimEnd();
-  if (i >= 0 && text[i] === "(") {
-    const call = text.slice(0, i).trimEnd();
-    return endsWithWord(call, "require") || endsWithWord(call, "import");
-  }
-  if (endsWithWord(head, "import")) return true;
-  if (!endsWithWord(head, "from")) return false;
-  const stmt = head.split(/[;\n]/).pop() ?? "";
-  return /(^|[^A-Za-z0-9_])import( |$)/.test(stmt);
-}
-
+/** Kept in lockstep with scripts/audit-forbidden-names.mjs and see_vectors.rs. */
 function importsNodeCrypto(source) {
-  const text = stripComments(source);
-  const specs = ['"crypto"', "'crypto'", '"node:crypto"', "'node:crypto'"];
-  for (const spec of specs) {
-    let from = 0;
-    while (from <= text.length) {
-      const at = text.indexOf(spec, from);
-      if (at < 0) break;
-      if (specifierIsImport(text, at)) return true;
-      from = at + spec.length;
+  const n = source.length;
+  let i = 0;
+  let stmt = null;
+  const skipSpace = (at) => {
+    while (at < n && /\s/.test(source[at])) at += 1;
+    return at;
+  };
+  const wordAt = (at, word) => source.startsWith(word, at) && !isIdent(source[at - 1]) && !isIdent(source[at + word.length]);
+  const readString = (at) => {
+    const quote = source[at];
+    let j = at + 1;
+    let value = "";
+    while (j < n) {
+      const c = source[j];
+      if (c === "\\") {
+        value += source[j + 1] ?? "";
+        j += 2;
+        continue;
+      }
+      if (quote === "`" && c === "$" && source[j + 1] === "{") return { value: null, end: j };
+      if (c === quote) return { value, end: j + 1 };
+      value += c;
+      j += 1;
     }
+    return { value, end: n };
+  };
+  const skipBalanced = (at) => {
+    let depth = 0;
+    let j = at;
+    while (j < n) {
+      const c = source[j];
+      if (c === "/" && source[j + 1] === "/") {
+        j += 2;
+        while (j < n && source[j] !== "\n") j += 1;
+        continue;
+      }
+      if (c === "/" && source[j + 1] === "*") {
+        j += 2;
+        while (j < n && !(source[j] === "*" && source[j + 1] === "/")) j += 1;
+        j = Math.min(n, j + 2);
+        continue;
+      }
+      if (c === "'" || c === '"' || c === "`") {
+        j = readString(j).end;
+        continue;
+      }
+      if (c === "(") depth += 1;
+      else if (c === ")") {
+        depth -= 1;
+        if (depth === 0) return j + 1;
+      }
+      j += 1;
+    }
+    return n;
+  };
+  const specifierAt = (at) => {
+    if (source[at] !== "'" && source[at] !== '"' && source[at] !== "`") return false;
+    const read = readString(at);
+    return read.value !== null && CRYPTO_SPECIFIERS.has(read.value);
+  };
+  while (i < n) {
+    const c = source[i];
+    if (c === "/" && source[i + 1] === "/") {
+      i += 2;
+      while (i < n && source[i] !== "\n") i += 1;
+      continue;
+    }
+    if (c === "/" && source[i + 1] === "*") {
+      i += 2;
+      while (i < n && !(source[i] === "*" && source[i + 1] === "/")) i += 1;
+      i = Math.min(n, i + 2);
+      continue;
+    }
+    if (c === "'" || c === '"' || c === "`") {
+      i = readString(i).end;
+      continue;
+    }
+    if (c === ";") {
+      stmt = null;
+      i += 1;
+      continue;
+    }
+    if ((stmt === "import" || stmt === "export") && wordAt(i, "from")) {
+      if (specifierAt(skipSpace(i + 4))) return true;
+      i += 4;
+      continue;
+    }
+    if (wordAt(i, "import")) {
+      const j = skipSpace(i + 6);
+      if (source[j] === "(") {
+        if (specifierAt(skipSpace(j + 1))) return true;
+        i = j + 1;
+        continue;
+      }
+      if (specifierAt(j)) return true;
+      stmt = "import";
+      i += 6;
+      continue;
+    }
+    if (wordAt(i, "export")) {
+      stmt = "export";
+      i += 6;
+      continue;
+    }
+    if (wordAt(i, "createRequire")) {
+      let j = skipSpace(i + 13);
+      if (source[j] === "(") {
+        j = skipSpace(skipBalanced(j));
+        if (source[j] === "(" && specifierAt(skipSpace(j + 1))) return true;
+      }
+      i += 13;
+      continue;
+    }
+    if (wordAt(i, "getBuiltinModule") || wordAt(i, "require")) {
+      const word = wordAt(i, "getBuiltinModule") ? "getBuiltinModule" : "require";
+      const j = skipSpace(i + word.length);
+      if (source[j] === "(" && specifierAt(skipSpace(j + 1))) return true;
+      i += word.length;
+      continue;
+    }
+    i += 1;
   }
   return false;
 }

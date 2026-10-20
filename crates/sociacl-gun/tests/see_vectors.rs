@@ -807,80 +807,181 @@ fn see_edge_mutations_call_check_see() {
     }
 }
 
-fn strip_comments(source: &str) -> String {
-    let mut out = String::new();
-    let mut chars = source.chars().peekable();
-    while let Some(c) = chars.next() {
-        if c == '/' && chars.peek() == Some(&'/') {
-            chars.next();
-            for next in chars.by_ref() {
-                if next == '\n' {
-                    out.push('\n');
-                    break;
-                }
-            }
-            continue;
-        }
-        if c == '/' && chars.peek() == Some(&'*') {
-            chars.next();
-            while let Some(next) = chars.next() {
-                if next == '*' && chars.peek() == Some(&'/') {
-                    chars.next();
-                    break;
-                }
-            }
-            out.push(' ');
-            continue;
-        }
-        out.push(c);
-    }
-    out
+fn is_ident(c: u8) -> bool {
+    c.is_ascii_alphanumeric() || c == b'_' || c == b'$'
 }
 
-fn ends_with_word(text: &str, word: &str) -> bool {
-    let rest = text.trim_end();
-    let Some(start) = rest.len().checked_sub(word.len()) else {
-        return false;
-    };
-    if &rest[start..] != word {
-        return false;
-    }
-    start == 0
-        || !rest[..start]
-            .chars()
-            .next_back()
-            .is_some_and(|c| c.is_ascii_alphanumeric() || c == '_')
-}
-
-fn specifier_is_import(text: &str, at: usize) -> bool {
-    let before = &text[..at];
-    let trimmed = before.trim_end();
-    if trimmed.ends_with('(') {
-        let call = &trimmed[..trimmed.len() - 1];
-        return ends_with_word(call, "require") || ends_with_word(call, "import");
-    }
-    if ends_with_word(trimmed, "import") {
-        return true;
-    }
-    if !ends_with_word(trimmed, "from") {
-        return false;
-    }
-    let stmt = trimmed.rsplit([';', '\n']).next().unwrap_or(trimmed);
-    let stmt = stmt.trim_start();
-    stmt == "import" || stmt.starts_with("import ")
-}
-
+/// Kept in lockstep with scripts/audit-forbidden-names.mjs and test_see.js.
 fn imports_node_crypto(source: &str) -> bool {
-    let text = strip_comments(source);
-    for spec in ["\"crypto\"", "'crypto'", "\"node:crypto\"", "'node:crypto'"] {
-        let mut from = 0;
-        while let Some(at) = text[from..].find(spec) {
-            let start = from + at;
-            if specifier_is_import(&text, start) {
+    let bytes = source.as_bytes();
+    let n = bytes.len();
+    let mut i = 0;
+    let mut stmt: Option<&str> = None;
+    let skip_space = |mut at: usize| {
+        while at < n && bytes[at].is_ascii_whitespace() {
+            at += 1;
+        }
+        at
+    };
+    let word_at = |at: usize, word: &str| {
+        let end = at + word.len();
+        end <= n
+            && &source[at..end] == word
+            && (at == 0 || !is_ident(bytes[at - 1]))
+            && (end == n || !is_ident(bytes[end]))
+    };
+    let read_string = |at: usize| -> (Option<String>, usize) {
+        let quote = bytes[at];
+        let mut j = at + 1;
+        let mut value = Vec::new();
+        while j < n {
+            let c = bytes[j];
+            if c == b'\\' {
+                if j + 1 < n {
+                    value.push(bytes[j + 1]);
+                }
+                j += 2;
+                continue;
+            }
+            if quote == b'`' && c == b'$' && j + 1 < n && bytes[j + 1] == b'{' {
+                return (None, j);
+            }
+            if c == quote {
+                return (String::from_utf8(value).ok(), j + 1);
+            }
+            value.push(c);
+            j += 1;
+        }
+        (String::from_utf8(value).ok(), n)
+    };
+    let specifier_at = |at: usize| {
+        if at >= n || !matches!(bytes[at], b'\'' | b'"' | b'`') {
+            return false;
+        }
+        matches!(
+            read_string(at).0.as_deref(),
+            Some("crypto" | "node:crypto")
+        )
+    };
+    let skip_balanced = |at: usize| {
+        let mut depth = 0;
+        let mut j = at;
+        while j < n {
+            let c = bytes[j];
+            if c == b'/' && j + 1 < n && bytes[j + 1] == b'/' {
+                j += 2;
+                while j < n && bytes[j] != b'\n' {
+                    j += 1;
+                }
+                continue;
+            }
+            if c == b'/' && j + 1 < n && bytes[j + 1] == b'*' {
+                j += 2;
+                while j + 1 < n && !(bytes[j] == b'*' && bytes[j + 1] == b'/') {
+                    j += 1;
+                }
+                j = (j + 2).min(n);
+                continue;
+            }
+            if matches!(c, b'\'' | b'"' | b'`') {
+                j = read_string(j).1;
+                continue;
+            }
+            if c == b'(' {
+                depth += 1;
+            } else if c == b')' {
+                depth -= 1;
+                if depth == 0 {
+                    return j + 1;
+                }
+            }
+            j += 1;
+        }
+        n
+    };
+    while i < n {
+        if !source.is_char_boundary(i) {
+            i += 1;
+            continue;
+        }
+        let c = bytes[i];
+        if c == b'/' && i + 1 < n && bytes[i + 1] == b'/' {
+            i += 2;
+            while i < n && bytes[i] != b'\n' {
+                i += 1;
+            }
+            continue;
+        }
+        if c == b'/' && i + 1 < n && bytes[i + 1] == b'*' {
+            i += 2;
+            while i + 1 < n && !(bytes[i] == b'*' && bytes[i + 1] == b'/') {
+                i += 1;
+            }
+            i = (i + 2).min(n);
+            continue;
+        }
+        if matches!(c, b'\'' | b'"' | b'`') {
+            i = read_string(i).1;
+            continue;
+        }
+        if c == b';' {
+            stmt = None;
+            i += 1;
+            continue;
+        }
+        if matches!(stmt, Some("import" | "export")) && word_at(i, "from") {
+            if specifier_at(skip_space(i + 4)) {
                 return true;
             }
-            from = start + spec.len();
+            i += 4;
+            continue;
         }
+        if word_at(i, "import") {
+            let j = skip_space(i + 6);
+            if j < n && bytes[j] == b'(' {
+                if specifier_at(skip_space(j + 1)) {
+                    return true;
+                }
+                i = j + 1;
+                continue;
+            }
+            if specifier_at(j) {
+                return true;
+            }
+            stmt = Some("import");
+            i += 6;
+            continue;
+        }
+        if word_at(i, "export") {
+            stmt = Some("export");
+            i += 6;
+            continue;
+        }
+        if word_at(i, "createRequire") {
+            let mut j = skip_space(i + 13);
+            if j < n && bytes[j] == b'(' {
+                j = skip_space(skip_balanced(j));
+                if j < n && bytes[j] == b'(' && specifier_at(skip_space(j + 1)) {
+                    return true;
+                }
+            }
+            i += 13;
+            continue;
+        }
+        if word_at(i, "getBuiltinModule") || word_at(i, "require") {
+            let word = if word_at(i, "getBuiltinModule") {
+                "getBuiltinModule"
+            } else {
+                "require"
+            };
+            let j = skip_space(i + word.len());
+            if j < n && bytes[j] == b'(' && specifier_at(skip_space(j + 1)) {
+                return true;
+            }
+            i += word.len();
+            continue;
+        }
+        i += 1;
     }
     false
 }

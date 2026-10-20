@@ -128,13 +128,9 @@ pub fn normalize_permalink(raw: &str) -> Result<String, GunError> {
     if pathq.ends_with('/') && pathq != "/" {
         pathq.pop();
     }
-    let normalized = if pathq.is_empty() {
+    Ok(if pathq.is_empty() {
         format!("{scheme}://{hostport}")
     } else {
         format!("{scheme}://{hostport}{pathq}")
-    };
-    if normalized.len() > MAX_NORMALIZED_URL {
-        return Err(GunError::TooLong);
-    }
-    Ok(normalized)
+    })
 }

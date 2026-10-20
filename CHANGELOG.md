@@ -325,12 +325,13 @@ is `ids-v0.10.0`.
 - `verifyingLinkMap` / `verifying_link_map` groups copies by signing-byte
   id and keeps one that verifies. A tampered duplicate does not produce
   `missing-history` when a verifying copy is present.
-- Wallet rotation attestations may use `sociacl-rotate-attest-v4`, the v3
-  claims plus `siweHash` over the SIWE proof. A mismatch is
-  `bad-attestation`. Historical v2 and v3 attestations still verify.
-  OIDC stays on v3. Signing bytes are unchanged.
+- A wallet rotation with `nextEpub` requires `sociacl-rotate-attest-v4`, the
+  v3 claims plus `siweHash` over the SIWE proof. A v3 wallet attestation or a
+  hash mismatch is `bad-attestation`. OIDC stays on v3. A rotation without
+  `nextEpub` stays v2. Signing bytes are unchanged.
 - Resolution lists, link maps, revocation lists, and genesis-epub bindings
-  longer than 1024 are `too-long`. Nothing is truncated.
+  longer than 1024 are `too-long`. Nothing is truncated. `verifyRotate` and
+  `verifyRotationRequest` use the same cap.
 - A link signed by the new key in the same second as a rotation is
   `bad-signature`. `historyState` still names the preceding key.
 - The `*AtKey` aliases are removed. Use the canonical names.

@@ -35,6 +35,7 @@ const signMessage = message => {
   return { message, signature: '0x' + hex(new Uint8Array([...sig.slice(1), sig[0] + 27])) };
 };
 const siwe = (r, options = '') => signMessage(`s3r.ch wants you to sign in with your Ethereum account:\n${wallet}\n\nSociACL link: ${hex(sha256(bytes(r)))}\n\nURI: https://s3r.ch/identity/link\nVersion: 1\nChain ID: 1\nNonce: ${r.nonce ?? 'rotation1234'}\nIssued At: ${date(r.issuedAt)}${options}`);
+const siweHashOf = proof => hex(sha256(val(ids.lengthPrefixed(['sociacl-siwe-proof-v1', proof.message, proof.signature]))));
 function walletLink(principal = p, issuedAt = at, n = 1) {
   const r = { v: 1, kind: 'wallet', principal, address: wallet, issuedAt, nonce: 'fixtureNonce123' };
   return { ...r, keySig: keySig(r, n), siwe: siwe(r), attest:jws({typ:'sociacl-wallet-attest-v1',principal,linkId:val(ids.linkId(r)),iat:issuedAt,exp:issuedAt+600}) };
@@ -50,7 +51,10 @@ const rotation = (kind = 'wallet', next = p2, n = 2, seq = 1, prev = p, issuedAt
 };
 const rotationV3 = (kind = 'wallet', next = p2, n = 2, seq = 1, prev = p, issuedAt = at + 30, retainedLinks = kind==='wallet'?[wid]:[oid], nextEpub = principal(6)) => {
   const r = { v: 1, kind: 'rotate', principal: p, seq, prevKey: prev, nextKey: next, nextEpub, issuedAt, retainedLinks, authorizer:{kind,link:kind==='wallet'?wid:oid} };
-  return { ...r, nextSig: keySig(r, n), authorizer: kind === 'wallet' ? {...r.authorizer,siwe:siwe(r)} : r.authorizer, attest: jws({ typ: 'sociacl-rotate-attest-v3', principal: p, nextKey: next, nextEpub, seq, iat: issuedAt, exp: issuedAt + 600, auth: kind, linkId:r.authorizer.link, retainedLinks }) };
+  const authorizer = kind === 'wallet' ? {...r.authorizer,siwe:siwe(r)} : r.authorizer;
+  const signed = { ...r, nextSig: keySig(r, n), authorizer };
+  if (kind !== 'wallet') return { ...signed, attest: jws({ typ: 'sociacl-rotate-attest-v3', principal: p, nextKey: next, nextEpub, seq, iat: issuedAt, exp: issuedAt + 600, auth: kind, linkId:r.authorizer.link, retainedLinks }) };
+  return { ...signed, attest: jws({ typ: 'sociacl-rotate-attest-v4', principal: p, nextKey: next, nextEpub, seq, iat: issuedAt, exp: issuedAt + 600, auth: 'wallet', linkId:r.authorizer.link, retainedLinks, siweHash: siweHashOf(authorizer.siwe) }) };
 };
 const rot = rotation(), rotOidc = rotation('oidc-fresh-login'), fork = rotation('wallet', p3, 3);
 const stampRevoke=r=>jws({typ:'sociacl-revoke-attest-v1',principal:r.principal,recordId:val(ids.linkId(r)),iat:r.issuedAt,exp:r.issuedAt+600});
@@ -471,6 +475,8 @@ for(const [name,revs,expected] of [
 ]) accept('records','retention-excludes-present-revoked-'+name,[wid,oid].sort(),expected,{operation:'prepare-retained-links-now',revocations:revs});
 accept('records','retention-ignores-retired-key-offline-revoke',[wid],[wid],{operation:'prepare-retained-links-now',histories:[[p,[rot]]],revocations:[offlineRev]});
 bad('retention-cannot-use-missing-history',[wid],'missing-history','prepare-retained-links-now',{missingHistory:true});
+accept('records','retention-dedupes-ids',[wid,wid],[wid],{operation:'prepare-retained-links-now'});
+bad('retention-unsafe-now',[wid],'missing-history','prepare-retained-links-now',{now:9007199254740992});
 bad('panopticon-present-check-refuses-offline-revoked-wallet',[w],'revoked-link','wallet-resolve-now',{address:wallet,revocations:[offlineRev]});
 accept('records','build-rotation-excluding-offline-revoked-oidc',[rot],p2,{operation:'resolve',revocations:[offline(revokedOidc)]});
 bad('excluded-offline-revoked-oidc-remains-unusable',oidc,'unretained-link','oidc-link',{directState:{key:p,currentKey:p2,retainedLinks:[wid]}});
@@ -479,7 +485,7 @@ bad('excluded-offline-revoked-oidc-remains-unusable',oidc,'unretained-link','oid
 const epub = principal(6), epub2 = principal(8);
 const rot3 = rotationV3();
 accept('signing-bytes','rotate-v3',rot3,hex(bytes(rot3)),{linkId:val(ids.linkId(rot3))});
-accept('records','rotate-v3-wallet',rot3,p,{operation:'rotate',nextEpub:epub});
+bad('rotate-v3-wallet',{...rot3,attest:jws({typ:'sociacl-rotate-attest-v3',principal:p,nextKey:rot3.nextKey,nextEpub:rot3.nextEpub,seq:rot3.seq,iat:rot3.issuedAt,exp:rot3.issuedAt+600,auth:'wallet',linkId:wid,retainedLinks:rot3.retainedLinks})},'bad-attestation','rotate');
 accept('records','rotate-v3-resolve',[rot3],p2,{operation:'resolve',currentEpub:epub});
 const rot3second = rotationV3('wallet',p3,3,2,p2,at+40,[wid],epub2);
 accept('records','rotate-v3-after-v2',[rot,rot3second],p3,{operation:'resolve',currentEpub:epub2});
@@ -624,7 +630,6 @@ bad('r5-request-oidc-wallet-within-skew',oidcBackdated,'wallet-required','rotati
 bad('r5-publish-oidc-wallet-within-skew',{candidate:oidcBackdated,siblings:[],prior:[]},'wallet-required','publish-check',{now:at+60,policy:skew60,links:withinLinks});
 accept('records','r5-request-oidc-wallet-beyond-horizon',oidcBackdated,p,{operation:'rotation-request',now:at+60,policy:skew60,links:beyondLinks});
 
-const siweHashOf = proof => hex(sha256(val(ids.lengthPrefixed(['sociacl-siwe-proof-v1', proof.message, proof.signature]))));
 const rotationV4 = (next = p2, n = 2, seq = 1, prev = p, issuedAt = at + 30, retainedLinks = [wid], nextEpub = principal(6)) => {
   const r = { v: 1, kind: 'rotate', principal: p, seq, prevKey: prev, nextKey: next, nextEpub, issuedAt, retainedLinks, authorizer: { kind: 'wallet', link: wid } };
   const signed = { ...r, nextSig: keySig(r, n), authorizer: { ...r.authorizer, siwe: siwe(r) } };
@@ -654,6 +659,8 @@ bad('resolve-input-too-long',Array.from({length:1025},()=>({})),'too-long','reso
 bad('wallet-resolve-input-too-long',Array.from({length:1025},()=>({})),'too-long','wallet-resolve-now',{address:wallet});
 bad('retained-input-too-long',Array.from({length:1025},()=>'aa'.repeat(32)),'too-long','prepare-retained-links-now');
 bad('link-map-input-too-long',Array.from({length:1025},()=>({})),'too-long','verifying-link-map');
+bad('rotate-context-too-long',rot4,'too-long','rotate',{genesisEpubBindings:Array.from({length:1025},()=>({}))});
+bad('rotation-request-context-too-long',unattestedRot3,'too-long','rotation-request',{now:at+30,genesisEpubBindings:Array.from({length:1025},()=>({}))});
 
 accept('signing-bytes','length-prefixed-decimals',['1','900','0'],hex(val(ids.lengthPrefixed(['1','900','0']))),{operation:'length-prefixed'});
 accept('signing-bytes','length-prefixed-utf8',['é'],hex(val(ids.lengthPrefixed(['é']))),{operation:'length-prefixed'});
