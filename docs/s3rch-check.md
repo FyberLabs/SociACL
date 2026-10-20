@@ -41,7 +41,7 @@ Owner and accessor keys are `p_` plus 128 lowercase hex. The object segment is t
 
 A feed item key may escape `~ . # $ [ ]` for the UX node. That escape is not a Check id and not a dest-ACL key. `room.alpha`, `room_alpha`, and `room/alpha` do not parse as one object.
 
-A held claim's Check id is `claim_` derived from the claim text. `GunUserNode.indicators` may list that text. Check does not read the text as an object id. Do not invent `s3rch/users/<wallet>/claims/…`. A post or room is a minted object id when it is created.
+A held claim's Check id is `claim_` derived from the claim text (`ens:…` / `unstoppable:…` / `fc:…` / `lens:…` / `rss3:…`). `GunUserNode.indicators` may list that text. Check does not read the text as an object id. Do not invent `s3rch/users/<wallet>/claims/…`. A post or room is a minted object id when it is created.
 
 The Rust crate in this repo remains the full plane. See [gun.md](gun.md) for that map. Social Light hop wire: [social-light.md](social-light.md).
 
