@@ -22,10 +22,10 @@ Light Check stays `CHECK(see, object, accessor)` at `now`.
 Plaintext dest ACL today is a `MeshSeeGrant` on a `GunAclEdge` (`hamState`) at `grantSoul(owner, object, accessor)`, under `aclSoul(owner)`:
 
 ```
-s3rch/acl/<aclPrincipalKey(owner)>/<aclKey(object)>/<aclPrincipalKey(accessor)>
+s3rch/acl/<owner key>/<object>/<accessor key>
 ```
 
-Those helpers are the mesh consume contract ([#15](https://github.com/FyberLabs/SociACL/pull/15); the light Check file started in [#13](https://github.com/FyberLabs/SociACL/pull/13)). Private rows replace **enumeration** of that path. They do not fork `items` or `users`. Each reader has exactly one inbox lane. That lane is not a new locked collection name in this spec, and it is not a bucket shared with other readers.
+The owner and accessor keys are `p_` plus 128 lowercase hex. `aclKey` and `aclPrincipalKey` are deleted. Private rows replace **enumeration** of that path. They do not fork `items` or `users`. Each reader has exactly one inbox lane. That lane is not a new locked collection name in this spec, and it is not a bucket shared with other readers.
 
 ## Wrapped-key grant edge
 

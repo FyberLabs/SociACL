@@ -14,8 +14,8 @@ The Next app runs Check **in the browser** on the Gun mesh. It does **not** impo
 
 | Name | Meaning |
 | --- | --- |
-| `object` | `GunFeedNode` at `s3rch/items/<item key>`, or a held claim id itself (`ens:…` / `unstoppable:…` / `fc:…` / `lens:…` / `rss3:…`) linked from `GunUserNode.indicators`, or a later opaque post/room `CheckObjectId` |
-| `accessor` | wallet / Gun peer (`s3rch/users/{wallet}`) |
+| `object` | stored `ObjectId`: minted `kind_p_<128 hex>_<32 hex>`, `claim_` plus 64 hex, or `ext_` plus 64 hex |
+| `accessor` | `PrincipalId`. A wallet and `s3rch/users/<wallet>` are not principals |
 | `see` | dest Check `read` |
 | grant | jointly stated `IdentitySeeGrant` / mesh `MeshSeeGrant`; hopcap **1** (no friend-of-friend) |
 | revoke | immediate privilege-down on the dest object (`cancelSee`) |
@@ -31,20 +31,17 @@ Later, on request: more verbs on the TS spec for granted distribution. Not this 
 ## Fixed Gun paths (do not fork)
 
 ```
-gun.get('s3rch').get('items').get(<item key>)  → GunFeedNode
+gun.get('s3rch').get('items').get(<item key>)  → GunFeedNode (UX). Check id is ext_ derived
 gun.get('s3rch').get('meta')                     → seed meta (not a Check object)
-gun.get('s3rch').get('users').get(wallet)        → GunUserNode
-gun.get('s3rch').get('acl').get(aclPrincipalKey(owner))
-     .get(aclKey(object)).get(aclPrincipalKey(accessor))  → MeshSeeGrant
-gun.get('s3rch').get('acl').get(aclPrincipalKey(owner))
-     .get('post').get(aclKey(object)).get(aclPrincipalKey(accessor))  → MeshPostGrant
+s3rch/acl/<owner key>/<object>/<accessor key>    → MeshSeeGrant (grantSoul)
+s3rch/acl/<owner key>/post/<object>/<accessor key> → MeshPostGrant (postSoul)
 ```
 
-The item key escapes `~ . # $ [ ]` and leaves `/` alone. That escape is a closed label detail, not a public helper.
+Owner and accessor keys are `p_` plus 128 lowercase hex. The object segment is the stored `ObjectId`. `grantSoul`, `postSoul`, `membershipSoul`, and `objectSetSoul` are the ids builders. `aclKey` and `aclPrincipalKey` are deleted. This crate does not build `s3rch/users/<wallet>` or `s3rch/items/<id>`.
 
-Dest-ACL keys escape those characters and also `/`, so dest-ACL souls stay five segments. `room.alpha`, `room_alpha`, and `room/alpha` are three keys.
+A feed item key may escape `~ . # $ [ ]` for the UX node. That escape is not a Check id and not a dest-ACL key. `room.alpha`, `room_alpha`, and `room/alpha` do not parse as one object.
 
-Held-claim object id is the **claim id itself** (`ens:name.eth`, `unstoppable:…`, `fc:…`, `lens:…`, `rss3:0x…`), linked from `GunUserNode.indicators` on `s3rch/users/<wallet>`. Mesh Check treats those ids the same as `GunFeedNode` ids. Do not invent `s3rch/users/<wallet>/claims/…`. Overlay uses the same `GunUserNode` shape until s3r.ch `prepareShareUserIntoMesh` / `prepareShareClaimIntoMesh`. Do not invent `s3rch/posts/…` — s3r.ch owns post/room souls; treat them as opaque `CheckObjectId`s.
+A held claim's Check id is `claim_` derived from the claim text (`ens:…` / `unstoppable:…` / `fc:…` / `lens:…` / `rss3:…`). `GunUserNode.indicators` may list that text. Check does not read the text as an object id. Do not invent `s3rch/users/<wallet>/claims/…`. A post or room is a minted object id when it is created.
 
 The Rust crate in this repo remains the full plane. See [gun.md](gun.md) for that map. Social Light hop wire: [social-light.md](social-light.md).
 
@@ -59,21 +56,16 @@ This is the cut the s3r.ch design engineer wires after held-claims land.
 See grants are Gun nodes under the **object owner's dest ACL**, not under `items` or `users`:
 
 ```
-s3rch/acl/<aclPrincipalKey(owner)>/<aclKey(object)>/<aclPrincipalKey(accessor)>
+s3rch/acl/<owner key>/<object>/<accessor key>
 ```
 
-`s3rch/users/<wallet>` collapses to the wallet text on dest ACL. A principal is that wallet, or a bare id. `.` is allowed inside an id. The whole id cannot be `.`, `..`, or `...`. `/ # $ [ ] ~`, an inner space, a control, Unicode whitespace, a format character, `.get(`, an unpaired surrogate, and more than 256 scalar values are rejected. A failed parse is null, not an empty string, and is not a soul segment. Trim is ASCII whitespace only (tab, LF, VT, FF, CR, space), so U+FEFF and U+0085 stay in the text and are rejected. It is not an `escapeKey` form. Examples:
-
-```
-s3rch/acl/0xalice/rss3:act~61~2x/0xbob        // feed item rss3:act/1#x
-s3rch/acl/0xalice/ens:alice~1eth/0xbob       // held claim ens:alice.eth
-```
+`grantSoul(owner, object, accessor)` builds that soul. The owner and accessor arguments are `PrincipalId`s. The object argument is an `ObjectId`. A wallet, `s3rch/users/<wallet>`, a Gun chain, a label, and the fold triple `room.alpha` / `room/alpha` / `room_alpha` do not parse. There is no collapse onto a wallet and no `escapeKey`. Live grant rows are `vectors/mesh/v2/`.
 
 Each field HAM-merges. `MeshSeeGrant.stated` is `1` (live) or `0` (cancelled). Cancel is owner-only and **must bump Gun HAM state** so privilege-down wins the next merge. Each peer runs `checkSee` on its locally HAM-merged graph at `now`. Do not cache an allow across a privilege-down merge.
 
 The stored-id see path keeps one row per owner, object, and accessor. Higher `hamState` wins. At an equal `hamState` a cancel (`stated` 0) wins, then a window that is strictly inside the other: its `from` is at least the other's `from`, its `until` is at most the other's `until`, and one bound is strict. Equal windows are not inside each other. When neither window contains the other, the smaller `sociacl-see-grant-v2` bytes win. When those bytes are equal, the copy whose `sociacl-acl-attest-v1` witness validates replaces the copy whose witness does not. A string that is not a valid witness does not win. Two invalid witnesses, or two valid ones, keep the first copy. That copy only adds the witness. It does not re-open a row. Typed rows move only through `admitRow` / `admit_row` and `putObject` / `put_object`. A label merge does not carry them.
 
-An object owner is a signed `sociacl-object-v2` record. The fields are the object, the owner `PrincipalId`, and `issuedAt`, length-prefixed under that domain. The owner signs it with the current key. The object id must be the bound form in the ids spec: `<kind>_<principal-key>_<32 lowercase hex>`, and the record's owner must be the embedded genesis principal. An id with no embedded principal, or an owner that is not that principal, is `bad-record`. It is not admitted. A later record from the same owner is a no-op while the stored record still verifies. A stored record is replaced only when the new `issuedAt` is strictly newer and the stored record no longer verifies. A newer record signed by a key that stored history marks retired does not replace it, even when the resolver goes backwards. An older record does not downgrade a newer one, including when the resolver hands back a stale history. A retired-key object record is refused, including one that carries a valid see witness. `putObject` parses the record before it asks the resolver for that owner's history. `reverifyPrincipal` checks object records again. After a rotation, a record the current key does not sign stops counting until a record signed by that key is admitted. Missing history drops that principal's see rows and object records. An owner allow comes only from an admitted object record. Object records are added in PR 2 of the #55 rebuild. PR 7 does not re-sign legacy objects. There are no legacy objects: SociACL has not launched. The owner re-signs a bound object record on rotation, in this see path, by admitting the new signature.
+An object owner is a signed `sociacl-object-v2` record. The fields are the object, the owner `PrincipalId`, and `issuedAt`, length-prefixed under that domain. The owner signs it with the current key. The object id must be the bound form in the ids spec: `<kind>_<principal-key>_<32 lowercase hex>`, and the record's owner must be the embedded genesis principal. An id with no embedded principal, or an owner that is not that principal, is `bad-record`. It is not admitted. A later record from the same owner is a no-op while the stored record still verifies. A stored record is replaced only when the new `issuedAt` is strictly newer and the stored record no longer verifies. A newer record signed by a key that stored history marks retired does not replace it, even when the resolver goes backwards. An older record does not downgrade a newer one, including when the resolver hands back a stale history. A retired-key object record is refused, including one that carries a valid see witness. `putObject` parses the record before it asks the resolver for that owner's history. `reverifyPrincipal` checks object records again. After a rotation, a record the current key does not sign stops counting until a record signed by that key is admitted. Missing history drops that principal's see rows and object records. An owner allow comes only from an admitted object record. Object records are added in PR 2 of the #55 rebuild. PR 7 is dropped: there are no legacy objects to re-sign. The owner re-signs a bound object record on rotation, in this see path, by admitting the new signature.
 
 ### Post grant
 
@@ -103,7 +95,7 @@ An identical approval is a no-op only after the current key resolves, the owner'
 
 Members auto-approve does not revive an owner cancel. When `members` is set and the see row, or the post row for `read+post`, has `stated` 0, the result is `not-kept` and nothing is written. A manual approval (`members` null) is a new owner decision. It re-grants at `hamState + 1` above that cancel.
 
-Members auto-approve uses the admitted signed object owner. `checkGroupSee` takes that same owner from the principal embedded in the object id, and the admitted record must match. `hasObject` is true for that signed record. The owner shortcut (`reason` `owner`) is not membership. Only `same-group` or `named-circle` allows. A peer merge cannot auto-approve. Merge does not recheck rows already in the graph. It checks only the incoming rows, and only against the history the caller passes. An object-set row merged in before the signed record is dropped, and a later record does not revive it.
+Members auto-approve uses the admitted signed object owner. `checkGroupSee` takes that same owner from the principal embedded in the object id, and the admitted record must match. `hasObject` is true for that signed record. The owner shortcut (`reason` `owner`) is not membership. Only `same-group` or `named-circle` allows. A peer merge cannot auto-approve. Merge does not recheck rows already in the graph. It checks only the incoming rows, and only against the history the caller passes. The `mutate-row` vector step edits the row the TypeScript runner still holds. Rust copies the row at admission, so that step is a no-op in the Rust runner. An object-set row merged in before the signed record is dropped, and a later record does not revive it.
 
 Requests have no expiry. Approving an older pending copy grants only the window and the scope on that call. There is no withdraw ordering across copies. Scope is approve or refuse only. The owner cannot downscope. The window is owner-only. The accessor is the parsed requester.
 
@@ -148,7 +140,13 @@ The #55 rebuild spec is not in this repository. This section is the deletion sch
 | group | PR 5 |
 | feed, encrypted discovery, and the contract migration module | PR 6 |
 
-`vectors/mesh/forbidden-names.json` lists the banned names and the globs that must not contain them. Scopes cover `typescript/src`, `typescript/contract`, `sociacl-gun`, `sociacl-encdisc`, and `docs/s3rch-check.d.ts`.
+### Amendments
+
+The #55 rebuild spec stays out of this repository. This list is the amendment record.
+
+- **PR 7:** dropped. SociACL never launched, so there is no old graph and no pre-v2 ACL row to read. There is no `migrateAclRows` / `migrate_acl_rows`, no `objectMap`, and no wallet or `s3rch/users/<wallet>` resolver. Old domains stay `legacy-row` and never reach Check. Owners mint fresh v2 rows. Do not preserve a rejected id and do not infer ownership from one. Signed `sociacl-object-v2` ownership for `sociacl/ir` `putObject` and the Rust adapter core-plane owner is [#81](https://github.com/FyberLabs/SociACL/issues/81).
+
+`vectors/mesh/forbidden-names.json` lists the banned names and the globs that must not contain them. Scopes cover `typescript/src`, `typescript/contract`, `sociacl-gun`, `sociacl-encdisc`, and `docs/s3rch-check.d.ts`. The same see-vector tests fail when `typescript/src` contains `node:crypto`. `vectors/mesh/access-request.json`, `vectors/mesh/post-grant.json`, and `vectors/mesh/principals.json` are gone. `principals.json` was the old label suite.
 
 `acl-snapshot-utf8-order` still names U+E000 and U+10000. Those scalars are not principals, so a typed snapshot entry cannot carry them. The shared field vector and the Rust suite keep that order. Inbox and wrap vectors use minted object ids. `contract/migration.ts` sorts accessors in UTF-8 byte order. The vector is `vectors/encrypted-discovery/accessor-order.json`, with the strings `a`, `B`, `-`, and `_`. `crates/sociacl-encdisc/src/gun_soul.rs` is deleted. The C exports `sociacl_gun_item_soul` and `sociacl_gun_user_soul` are deleted. `sociacl_gun_encode_key` was already gone.
 

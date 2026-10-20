@@ -35,6 +35,7 @@ use crate::inbox::lane_id_is_opaque;
 use crate::rotation::GrantStorage;
 use crate::sea;
 use crate::wrap::{self, ItemDek, WrapScope, WrapTarget, WrappedKey};
+use sociacl_ids::{ObjectId, PrincipalId};
 
 const FORMAT_ITEM: u8 = 1;
 const DOMAIN_MIGRATED_ITEM: &str = "s3rch-migrated-item-v1";
@@ -52,7 +53,7 @@ pub struct ReaderMigration {
 /// Owner's migration record. There is no single flag for every reader.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ProtocolMigration {
-    pub object: String,
+    pub object: ObjectId,
     pub from_version: u64,
     pub to_version: u64,
     pub rewrapped: Vec<WrappedKey>,
@@ -87,8 +88,8 @@ pub struct WrapReceipt {
 /// Structural admission input. SEA verification stays in [`accept_migration`].
 pub struct MigrationAdmissionInput<'a> {
     pub migration: &'a ProtocolMigration,
-    pub owner: &'a str,
-    pub caller: &'a str,
+    pub owner: &'a PrincipalId,
+    pub caller: &'a PrincipalId,
     pub now: u64,
     pub storage: GrantStorage,
     pub grants: &'a [MigrationGrant],
@@ -187,13 +188,12 @@ pub enum PreparedMigration {
 pub fn apply_protocol_migration(
     input: &MigrationAdmissionInput<'_>,
 ) -> Result<MigrationOutcome, EncDiscError> {
-    let owner = sociacl_ids::parse_principal_id(input.owner)
-        .map_err(|_| EncDiscError::MigrationRejected)?;
-    let caller = sociacl_ids::parse_principal_id(input.caller)
-        .map_err(|_| EncDiscError::MigrationRejected)?;
-    let object = sociacl_ids::parse_object_id(&input.migration.object)
-        .map_err(|_| EncDiscError::MigrationRejected)?;
-    if caller != owner || input.migration.object != input_object(input)? {
+    if input.caller != input.owner {
+        return Err(EncDiscError::MigrationRejected);
+    }
+    let owner = input.owner;
+    let object = input_object(input)?;
+    if input.migration.object != object {
         return Err(EncDiscError::MigrationRejected);
     }
     safe_int(input.now)?;
@@ -204,7 +204,7 @@ pub fn apply_protocol_migration(
     if input.migration.from_version >= input.migration.to_version {
         return Err(EncDiscError::MigrationRejected);
     }
-    let current = current_grants(input.grants, &object, &owner, input.now)?;
+    let current = current_grants(input.grants, &object, owner, input.now)?;
     if input.storage == GrantStorage::PublicPlain {
         return skip_public(input, &current);
     }
@@ -365,7 +365,7 @@ pub fn prepare_protocol_migration(
         });
     }
     let migration = ProtocolMigration {
-        object: object.to_string(),
+        object: object_id.clone(),
         from_version,
         to_version,
         rewrapped: wraps,
@@ -434,18 +434,20 @@ pub fn accept_migration(
     }
     require_open_revision(
         epoch_view,
-        &prepared.migration.object,
+        prepared.migration.object.as_ref(),
         prepared.epoch,
         &prepared_revision(prepared)?,
         now,
     )?;
+    let account = sociacl_ids::parse_principal_id(owner_secret.account())
+        .map_err(|_| EncDiscError::MigrationRejected)?;
     let versions = reader_versions(&prepared.readers)?;
     let payloads = open_rows(owner_secret, prepared)?;
     verify_receipts(prepared, proposed, receipts)?;
     apply_protocol_migration(&MigrationAdmissionInput {
         migration: proposed,
-        owner: owner_secret.account(),
-        caller: owner_secret.account(),
+        owner: &account,
+        caller: &account,
         now,
         storage: GrantStorage::PrivateRow,
         grants,
@@ -550,7 +552,7 @@ fn skip_public(
         return Err(EncDiscError::MigrationRejected);
     }
     Ok(MigrationOutcome {
-        object: input.migration.object.clone(),
+        object: input.migration.object.to_string(),
         plaintext_retained: names(current),
         plaintext_dropped: Vec::new(),
         soul_replaced: false,
@@ -591,7 +593,7 @@ fn finish(
             });
         }
         return Ok(MigrationOutcome {
-            object: input.migration.object.clone(),
+            object: input.migration.object.to_string(),
             plaintext_retained: retained,
             plaintext_dropped: dropped,
             soul_replaced: true,
@@ -602,7 +604,7 @@ fn finish(
         });
     }
     Ok(MigrationOutcome {
-        object: input.migration.object.clone(),
+        object: input.migration.object.to_string(),
         plaintext_retained: retained,
         plaintext_dropped: dropped,
         soul_replaced: false,
@@ -708,7 +710,7 @@ fn align_payloads(
         safe_int(payload.epoch)?;
         safe_int(payload.grant_revision)?;
         if payload.object != grant.grant.object
-            || payload.owner != input.owner
+            || payload.owner.as_str() != input.owner.as_ref()
             || payload.accessor != grant.grant.accessor
             || payload.from != grant.grant.from
             || payload.until != grant.grant.until
@@ -759,7 +761,7 @@ fn align_wraps(
         safe_int(wrap.epoch)?;
         if wrap.scope != WrapScope::ItemDek
             || wrap.target != WrapTarget::ReaderEpub
-            || wrap.object.as_deref() != Some(input.migration.object.as_str())
+            || wrap.object.as_deref() != Some(input.migration.object.as_ref())
             || wrap.group.as_deref().is_some_and(|group| !group.is_empty())
             || wrap.wrapped_key.is_empty()
             || !is_lower_hex(&wrap.wrapped_key)
@@ -909,7 +911,7 @@ fn verify_item(
 ) -> Result<(), EncDiscError> {
     let dek_hex = prepared
         .author
-        .open(&prepared.migration.object, &prepared_revision(prepared)?)
+        .open(prepared.migration.object.as_ref(), &prepared_revision(prepared)?)
         .map_err(|_| EncDiscError::MigrationRejected)?;
     let dek_bytes =
         hexutil::decode_hex_array::<32>(&dek_hex).map_err(|_| EncDiscError::MigrationRejected)?;
@@ -927,7 +929,7 @@ fn verify_item(
         return Err(EncDiscError::MigrationRejected);
     }
     let fields = ItemAuthFields {
-        object: prepared.migration.object.clone(),
+        object: prepared.migration.object.to_string(),
         epoch: opened.epoch,
         version: opened.version,
         plaintext_digest: digest,
@@ -944,7 +946,7 @@ fn open_rows(
 ) -> Result<Vec<SignedGrantPayload>, EncDiscError> {
     let dek_hex = prepared
         .author
-        .open(&prepared.migration.object, &prepared_revision(prepared)?)
+        .open(prepared.migration.object.as_ref(), &prepared_revision(prepared)?)
         .map_err(|_| EncDiscError::MigrationRejected)?;
     let dek_bytes =
         hexutil::decode_hex_array::<32>(&dek_hex).map_err(|_| EncDiscError::MigrationRejected)?;
@@ -1038,7 +1040,7 @@ fn verify_receipts(
                 return Err(EncDiscError::MigrationRejected);
             }
             let message = canonical::wrap_receipt_bytes(
-                &prepared.migration.object,
+                prepared.migration.object.as_ref(),
                 &reader.enrolled.account,
                 prepared.migration.to_version,
                 &prepared_revision(prepared)?,
@@ -1239,7 +1241,7 @@ fn decrypt(key: &[u8; 32], nonce: &[u8; 12], ciphertext: &[u8]) -> Result<Vec<u8
         .map_err(|_| EncDiscError::MigrationRejected)
 }
 
-fn input_object(input: &MigrationAdmissionInput<'_>) -> Result<String, EncDiscError> {
+fn input_object(input: &MigrationAdmissionInput<'_>) -> Result<ObjectId, EncDiscError> {
     if let Some(grant) = input.grants.first() {
         if input
             .grants
@@ -1248,7 +1250,7 @@ fn input_object(input: &MigrationAdmissionInput<'_>) -> Result<String, EncDiscEr
         {
             return Err(EncDiscError::MigrationRejected);
         }
-        if grant.grant.object != input.migration.object {
+        if grant.grant.object.as_str() != input.migration.object.as_ref() {
             return Err(EncDiscError::MigrationRejected);
         }
     }
@@ -1300,8 +1302,10 @@ mod tests {
 
     #[test]
     fn an_invalid_principal_is_not_admitted_as_an_empty_soul() {
+        let object = sociacl_ids::parse_object_id("item_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111").unwrap();
+        let owner = sociacl_ids::parse_principal_id("axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU").unwrap();
         let migration = ProtocolMigration {
-            object: "doc".to_string(),
+            object: object.clone(),
             from_version: 1,
             to_version: 2,
             rewrapped: Vec::new(),
@@ -1324,8 +1328,8 @@ mod tests {
                 };
                 let err = apply_protocol_migration(&MigrationAdmissionInput {
                     migration: &migration,
-                    owner: "0xalice",
-                    caller: "0xalice",
+                    owner: &owner,
+                    caller: &owner,
                     now: 10,
                     storage: GrantStorage::PublicPlain,
                     grants: std::slice::from_ref(&grant),

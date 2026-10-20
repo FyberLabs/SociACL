@@ -40,6 +40,9 @@ jobs:
         with:
           tool: cargo-llvm-cov
 
+      - name: Audit forbidden names and node:crypto
+        run: node scripts/audit-forbidden-names.mjs
+
       - name: Test all languages
         run: ./scripts/test-all.sh
 

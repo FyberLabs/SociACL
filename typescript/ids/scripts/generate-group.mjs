@@ -455,6 +455,21 @@ add('accept', 'merge-drops-another-predicates-cancel-when-local-wins', [
   { op: 'merge' },
   check(chatA, p2, true, 'named-circle', { predicate: 'named-circle' }),
 ]);
+add('accept', 'merge-drops-another-predicates-cancel-when-incoming-wins', [
+  put(),
+  member(),
+  setAssent(),
+  objectEdge(),
+  objectCancel(),
+  check(chatA, p2, false, 'missing'),
+  side(put()),
+  side({ op: 'admit-member', row: assent('member', 2, { predicate: 'named-circle' }), rotations: 'genesis', ok: true, kept: true }),
+  side({ op: 'admit-member', row: assent('set', 1, { predicate: 'named-circle' }), rotations: 'genesis', ok: true, kept: true }),
+  side({ op: 'admit-object-set', row: edge(1, { predicate: 'named-circle', hamState: 3 }), rotations: 'genesis', ok: true, kept: true }),
+  side(check(chatA, p2, true, 'named-circle', { predicate: 'named-circle' })),
+  { op: 'merge' },
+  check(chatA, p2, true, 'named-circle', { predicate: 'named-circle' }),
+], 'A predicate mismatch keeps only the winning edge. The incoming named-circle row has the higher hamState, so the local same-group cancel is not carried over.');
 add('accept', 'reverify-drops-unwitnessed-object-set-cancel', [
   put(),
   { op: 'admit-member', row: assent('member', 2, { issuedAt: now }), rotations: 'genesis', ok: true, kept: true },
@@ -572,6 +587,18 @@ add('accept', 'merge-keeps-a-witnessed-cancel-over-a-bare-copy', [
   { op: 'reverify-group', principal: p, rotations: 'rotated', ok: true, dropped: 0 },
   check(chatA, p2, false, 'missing'),
 ]);
+add('accept', 'snapshot-of-a-cancel-only-tombstone', [
+  put(),
+  currentMember(),
+  currentSet(),
+  { op: 'admit-object-set', row: edge(1, { issuedAt: at }), rotations: 'genesis', ok: true, kept: true },
+  admitCancel(witnessedObjectCancel, 'genesis'),
+  check(chatA, p2, false, 'missing'),
+  { op: 'reverify-group', principal: p, rotations: 'rotated', ok: true, dropped: 1 },
+  { op: 'snapshot', object: chatA, members: [], objectSet: null, understates: true },
+  { op: 'snapshot', object: chatA, members: [], objectSet: { ...snapEdge, stated: 1, hamState: 0 }, understates: true },
+  { op: 'snapshot', object: chatA, members: [], objectSet: { ...snapEdge, stated: 0, hamState: 0 }, understates: false },
+], 'Reverify drops the retired assent and keeps the witnessed cancel. The row is a tombstone: assent null, cancels only. A stated-1 snapshot hides it. A stated-0 snapshot at ham 0 does not.');
 add('accept', 'reverify-keeps-a-witnessed-cancel-when-the-edge-retires', [
   put(),
   currentMember(),
@@ -623,7 +650,7 @@ add('reject', 'cancel-issued-at-is-signed', [
   check(chatA, p2, true, 'same-group'),
 ]);
 const witnessedRewrite = cancelRow('membership', 1, { issuedAt: at, attest: true });
-add('reject', 'zz-witnessed-cancel-issuedat-rewrite', [
+add('reject', 'witnessed-cancel-issuedat-rewrite', [
   ...live(),
   { op: 'admit-cancel', row: { ...witnessedRewrite, issuedAt: at + 1 }, rotations: 'rotated', ok: false, reason: 'bad-attestation' },
   check(chatA, p2, true, 'same-group'),
