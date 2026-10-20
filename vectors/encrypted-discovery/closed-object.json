@@ -1,0 +1,19 @@
+{
+  "v": 1,
+  "family": "closed-object",
+  "notes": [
+    "A leading space is not trimmed. The padded string is a different object from s3rch/meta."
+  ],
+  "cases": [
+    {
+      "name": "leading-space-s3rch-meta",
+      "object": " s3rch/meta",
+      "reason": "missing"
+    },
+    {
+      "name": "exact-s3rch-meta",
+      "object": "s3rch/meta",
+      "reason": "meta"
+    }
+  ]
+}

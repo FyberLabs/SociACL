@@ -790,11 +790,7 @@ fn expected_soul(
 ) -> Result<String, EncDiscError> {
     let accessor = sociacl_ids::parse_principal_id(accessor)
         .map_err(|_| EncDiscError::MigrationRejected)?;
-    let from_ids = sociacl_ids::grant_soul(owner, object, &accessor).to_string();
-    if from_ids != crate::identity::account_grant_soul(owner, object, &accessor) {
-        return Err(EncDiscError::MigrationRejected);
-    }
-    Ok(from_ids)
+    Ok(sociacl_ids::grant_soul(owner, object, &accessor).to_string())
 }
 
 fn current_grants(

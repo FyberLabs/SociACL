@@ -126,7 +126,7 @@ export type PrincipalKey    = Brand<string, "PrincipalKey">;      // "p_..."
 export type Eip55           = Brand<string, "Eip55">;
 export type TenantId        = Brand<string, "TenantId">;
 export type OidcCredential  = { readonly iss: string; readonly tenant: TenantId; readonly sub: string };
-export type ObjectId        = Brand<string, "ObjectId">;          // bound-object | object-id | derived-id | legacy-id
+export type ObjectId        = Brand<string, "ObjectId">;          // bound-object | derived-id
 export type MintedObjectId  = ObjectId & Brand<string, "Minted">;
 export type NetworkId       = Brand<string, "NetworkId">;
 export type SourceKey       = Brand<string, "SourceKey">;
@@ -148,7 +148,7 @@ parseEip55(x: unknown): Result<Eip55>                 // stored data: exact chec
 parseWalletInput(x: unknown): Result<Eip55>           // UI edge only: all-lower or all-upper hex accepted → EIP-55; mixed case must match checksum
 parseTenantId(x: unknown): Result<TenantId>           // lowercase only; uppercase = "non-canonical"
 parseOidcCredential(x: unknown): Result<OidcCredential>   // {iss, tenant, sub}; iss compared later against a pinned issuer, never normalized
-parseObjectId(x: unknown): Result<ObjectId>           // bound-object | object-id | derived-id | legacy-id
+parseObjectId(x: unknown): Result<ObjectId>           // bound-object | derived-id
 objectPrincipal(x: unknown): Result<PrincipalId>       // the one genesis principal in a bound-object; bad-template otherwise
 parseNetworkId(x: unknown): Result<NetworkId>
 parseSourceKey(x: unknown): Result<SourceKey>         // port of s3r.ch parseCanonical + validateSourceRef; s3rch owner must be a PrincipalId

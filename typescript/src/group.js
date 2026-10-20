@@ -885,8 +885,10 @@ export class MemoryGroupGraph {
    * dropped, and a later record does not revive it. Object-set cancels are
    * unioned only when both edges name the same set and predicate. Otherwise
    * only the winning edge's cancels are kept. Each incoming assent and
-   * cancel is checked against this graph's rotation history. A copy signed
-   * by a retired key is not stored.
+   * cancel is checked against this graph's rotation history. Rows already
+   * in this graph are not rechecked. The result depends on the caller
+   * passing the current history. A copy signed by a retired key is not
+   * stored when that history is current.
    * @param {MemoryGroupGraph} other
    * @param {SeeResolver} resolver
    */

@@ -1,8 +1,8 @@
 //! GunDB adapter for the SociACL authority plane.
 //!
-//! In-graph Gun data is the native ACL. A Check object is a
-//! Gun-native feed item (`s3rch/items/<id>`), a held
-//! claim on the user node, or a later opaque post/room id. Dest
+//! In-graph Gun data is the native ACL. A Check object is an
+//! `ext_` id derived from a feed item, a `claim_` id derived from
+//! a held claim, or a later opaque post/room id. Dest
 //! ACL grants HAM-merge under `s3rch/acl/…` and do not fork items
 //! or users. Non-Gun data is a [`UrlLeaf`]: RSS3, RSS/Atom, and
 //! issuer HTTP calls are not Gun nodes and not grants. A Social
@@ -66,10 +66,7 @@ pub use mesh::{
 pub use post::MESH_REASON_POST;
 pub use request::{request_owner, ApprovedRequest};
 pub use sociacl_ids::{membership_soul, object_set_soul};
-pub use soul::{
-    item_key, GunNode, GunNodeKind, GunSoul, S3RCH_ACL, S3RCH_ITEMS, S3RCH_META, S3RCH_ROOT,
-    S3RCH_USERS,
-};
+pub use soul::{GunNode, GunNodeKind, GunSoul, S3RCH_ACL, S3RCH_ITEMS, S3RCH_META, S3RCH_ROOT};
 
 /// Lighter s3r.ch Check: `CHECK(see, object, accessor)` at now.
 /// Object is a Gun-native feed item, a held claim id itself

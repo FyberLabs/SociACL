@@ -2,7 +2,6 @@ use sociacl_core::{NodeId, Timestamp};
 use sociacl_ids::{derive_external_id, ObjectId, PrincipalId, SourceKey};
 
 use crate::leaf::{normalize_permalink, split_tags, UrlLeaf};
-use crate::soul::GunSoul;
 use crate::GunError;
 
 /// Locked feed source. `from_gun_node` refuses anything else.
@@ -99,7 +98,7 @@ impl FeedItem {
 }
 
 impl GunFeedNode {
-    /// Check object id for this Gun node. The Gun path stays on [`GunSoul::s3rch_item`].
+    /// Check object id for this Gun node. The provider item id is not trimmed.
     pub fn object_id(&self, source: &SourceKey) -> Result<ObjectId, GunError> {
         derive_external_id(source, &self.id).map_err(|_| GunError::ObjectNotInGraph)
     }
@@ -158,11 +157,9 @@ fn as_text(s: &str) -> String {
     s.trim().to_string()
 }
 
-/// Locked user node. `gun.get('s3rch').get('users').get(wallet)`.
-/// `indicators` are held-claim ids (the claim id itself: `ens:…` /
+/// Locked user node. `indicators` are held-claim texts (`ens:…` /
 /// `unstoppable:…` / `fc:…` / `lens:…` / `rss3:…`). Gun stores them
-/// as a comma-separated string. Not a second user schema and not
-/// `s3rch/users/<wallet>/claims/…`.
+/// as a comma-separated string. This node is not a core-plane principal.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct GunUserNode {
     pub id: String,
@@ -172,16 +169,6 @@ pub struct GunUserNode {
 }
 
 impl GunUserNode {
-    /// Gun spelling `s3rch/users/<id>`. Not a core-plane principal.
-    pub fn as_node_id(&self) -> NodeId {
-        GunSoul::new([
-            crate::soul::S3RCH_ROOT,
-            crate::soul::S3RCH_USERS,
-            self.id.as_str(),
-        ])
-        .as_node_id()
-    }
-
     pub fn indicators_as_csv(&self) -> String {
         self.indicators.join(",")
     }

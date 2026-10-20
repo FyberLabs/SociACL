@@ -16,7 +16,6 @@ import { randomBytes } from "node:crypto";
 import { p256 } from "@noble/curves/nist.js";
 import {
   formatPrincipalKey,
-  grantSoul,
   parseEip55,
   parseObjectId,
   parsePrincipalId,
@@ -353,10 +352,6 @@ export function deliveryMintsGrant(kind: string): boolean {
 export function sameAccount(credential: unknown, account: PrincipalId): boolean {
   if (!LinkedCredential.isVerified(credential)) throw new Error("unverified-credential");
   return credential.principal === account;
-}
-
-export function accountGrantSoul(owner: PrincipalId, object: ObjectId, accessor: PrincipalId): string {
-  return grantSoul(owner, object, accessor);
 }
 
 export function parseWrapObject(text: string): ObjectId {

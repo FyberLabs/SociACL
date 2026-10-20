@@ -6,9 +6,9 @@ use sociacl_gun::{
     accept_hint, accept_hint_bytes, add_claim, add_item, add_principal, apply_see_grant, cancel,
     check, check_execute, check_see, check_see_grant, client_check, client_elect_from_hint,
     client_mint_grant, client_remint, elect_from_delegate, elect_from_hint, from_gun_node, remint,
-    to_gun_node, FeedItem, FeedSource, FeedTab, GunError, GunNode, GunSoul, GunUserNode,
+    to_gun_node, FeedItem, FeedSource, FeedTab, GunError, GunSoul, GunUserNode,
     HandoffHint, IdentityClaimKind, IdentitySeeGrant, ItemShape, OffGraphKind, UrlLeaf, HINT_MAGIC,
-    S3RCH_ITEMS, S3RCH_META, S3RCH_ROOT, S3RCH_USERS, SEE,
+    SEE,
 };
 use sociacl_ids::{derive_external_id, PrincipalId, SourceKey};
 
@@ -321,11 +321,7 @@ fn locked_user_soul_is_the_only_user_node() {
     assert_eq!(alice.as_str(), ALICE);
     let chain = "gun.get('s3rch').get('users').get('0xalice')";
     assert!(GunSoul::parse(chain).is_err());
-    let gun_user = GunNode::user("0xalice").as_node_id();
-    assert_eq!(gun_user.as_str(), "s3rch/users/0xalice");
-    assert_eq!(gun_user.as_str().split('/').next(), Some(S3RCH_ROOT));
-    assert!(gun_user.as_str().contains(S3RCH_USERS));
-    assert_ne!(gun_user, alice);
+    assert_ne!(alice.as_str(), "s3rch/users/0xalice");
     assert_eq!(
         plane.node_kind(&alice),
         Some(sociacl_core::NodeKind::Person)
@@ -382,39 +378,6 @@ fn sample_feed_item() -> FeedItem {
         tags: vec!["Social".into(), "farcaster".into(), "social".into()],
         provenance: "rss3:gi".into(),
     }
-}
-
-#[test]
-fn feed_item_id_is_ext_derived() {
-    assert_eq!("feed-item-id-is-ext-derived", "feed-item-id-is-ext-derived");
-    let mut plane = Plane::new();
-    let alice = add_principal(&mut plane, &principal(ALICE));
-    let item = sample_feed_item();
-    let source = feed_source();
-    let object = add_item(&mut plane, &item, &source, &alice).unwrap();
-    let derived = derive_external_id(&source, &item.id).unwrap();
-    assert_eq!(object.as_str(), derived.as_ref());
-    assert_ne!(
-        object.as_str(),
-        GunSoul::s3rch_item(&item.id).as_node_id().as_str()
-    );
-}
-
-#[test]
-fn item_soul_matches_s3rch() {
-    let soul = GunSoul::s3rch_item("rss3:act/1#x");
-    assert!(soul.is_s3rch_item());
-    assert_eq!(soul.as_node_id().as_str(), "s3rch/items/rss3:act/1~2x");
-    assert_eq!(
-        GunSoul::s3rch_item("rss3:act/1#x").segments()[1],
-        S3RCH_ITEMS
-    );
-    assert!(GunSoul::s3rch_meta().is_s3rch_meta());
-    assert_eq!(GunSoul::s3rch_meta().segments()[1], S3RCH_META);
-    assert_eq!(
-        GunNode::feed("rss3:act/1#x").as_node_id(),
-        soul.as_node_id()
-    );
 }
 
 #[test]
@@ -627,24 +590,6 @@ fn feed_tab_is_ux_not_a_check_object() {
 }
 
 #[test]
-fn wallet_accessor_refused_in_core() {
-    assert_eq!("wallet-accessor-refused-in-core", "wallet-accessor-refused-in-core");
-    let (mut plane, alice, bob, claim) = delegate_claim();
-    assert!("0xbob".parse::<PrincipalId>().is_err());
-    let grant = see_grant(&claim, &bob, 0, 80);
-    assert!(!grant.names_accessor(&sociacl_core::NodeId::new("0xbob")));
-    assert!(!grant.names_accessor(&GunNode::user("0xbob").as_node_id()));
-    apply_see_grant(&mut plane, &alice, &grant).unwrap();
-    let wallet = check_see_grant(&plane, &grant, &claim, &sociacl_core::NodeId::new("0xbob"), None);
-    assert!(wallet.is_err() || !wallet.unwrap().allowed);
-    assert!(
-        check_see_grant(&plane, &grant, &claim, &bob, None)
-            .unwrap()
-            .allowed
-    );
-}
-
-#[test]
 fn user_node_is_the_wallet_not_a_second_schema() {
     let user = GunUserNode {
         id: "0xalice".into(),
@@ -658,13 +603,12 @@ fn user_node_is_the_wallet_not_a_second_schema() {
         provenance: "overlay".into(),
         ts: 1,
     };
-    assert_eq!(user.as_node_id().as_str(), "s3rch/users/0xalice");
     assert_eq!(
         user.indicators_as_csv(),
         "ens:name.eth,unstoppable:name.crypto,fc:name,lens:name,rss3:0xalice"
     );
     assert_eq!(user.linked_claim_ids().len(), 5);
-    assert!(!user.as_node_id().as_str().contains("/claims/"));
+    assert!(user.linked_claim_ids().iter().all(|id| !id.contains("/claims/")));
 }
 
 #[test]

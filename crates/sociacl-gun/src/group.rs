@@ -249,6 +249,8 @@ pub(crate) struct GroupRows {
 }
 
 impl GroupRows {
+    /// Incoming assents and cancels are checked against the history the
+    /// caller passes. Rows already in this graph are not rechecked.
     pub(crate) fn merge_from(
         &mut self,
         other: &Self,

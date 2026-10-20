@@ -622,6 +622,12 @@ add('reject', 'cancel-issued-at-is-signed', [
   { op: 'admit-cancel', row: { ...movedCancel, issuedAt: at + 1 }, rotations: 'genesis', ok: false, reason: 'bad-signature' },
   check(chatA, p2, true, 'same-group'),
 ]);
+const witnessedRewrite = cancelRow('membership', 1, { issuedAt: at, attest: true });
+add('reject', 'zz-witnessed-cancel-issuedat-rewrite', [
+  ...live(),
+  { op: 'admit-cancel', row: { ...witnessedRewrite, issuedAt: at + 1 }, rotations: 'rotated', ok: false, reason: 'bad-attestation' },
+  check(chatA, p2, true, 'same-group'),
+]);
 const body = { v: 1, family: 'group', context, accept, reject };
 const path = new URL('../../../vectors/mesh/v2/group.json', import.meta.url);
 writeFileSync(path, JSON.stringify(body, null, 2) + '\n');

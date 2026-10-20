@@ -5,7 +5,6 @@ import * as accountKey from "../contract/account-key.ts";
 import * as accountKeyring from "../contract/account-keyring.ts";
 import * as contentWrap from "../contract/content-wrap.ts";
 import {
-  accountGrantSoul,
   accountIdFromLabel,
   contentWrapHex,
   currentSigningKey,
@@ -24,6 +23,7 @@ import {
 } from "../contract/account-key.ts";
 import { contentWrapHexWith, sealAccountBackupWith } from "./support/account-key-deterministic.ts";
 import {
+  grantSoul,
   historyState,
   parsePrincipalId,
   resolveCurrentKey,
@@ -352,7 +352,7 @@ test("backup wrap is stored off gun and both devices open one epub wrap", () => 
     vector.contentWrap.revisionId,
   ), wrapped);
   const object = parseWrapObject(vector.contentWrap.objectId);
-  const soul = accountGrantSoul(genesis.principal, object, genesis.principal);
+  const soul = grantSoul(genesis.principal, object, genesis.principal);
   assert.throws(() => contentWrapHex(genesis, vector.contentWrap.dekHex, Number.NaN, vector.contentWrap.objectId, vector.contentWrap.revisionId));
   assert.throws(() => contentWrapHex(genesis, vector.contentWrap.dekHex, vector.contentWrap.epoch, "not-an-object", vector.contentWrap.revisionId));
   assert.throws(

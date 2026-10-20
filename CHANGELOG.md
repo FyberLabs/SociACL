@@ -2,6 +2,17 @@
 
 ## sociacl/gun — unreleased
 
+- **Breaking:** `closed_object` does not trim. A leading space on
+  `s3rch/meta` is not that closed object. The vector is
+  `vectors/encrypted-discovery/closed-object.json`.
+- **Breaking:** the builders of `s3rch/users/<wallet>` and
+  `s3rch/items/<id>` are deleted: `GunNode::user`, `GunNode::feed`,
+  `GunSoul::s3rch_item`, `item_key`, `GunUserNode::as_node_id`, and
+  the `S3RCH_USERS` export. Those names are on the forbidden-names list.
+- `accountGrantSoul` / `account_grant_soul` are deleted. A grant soul
+  is `grantSoul` / `grant_soul` only.
+- Rewriting `issuedAt` on a witnessed retired-key cancel is
+  `bad-attestation`. The vector is `zz-witnessed-cancel-issuedat-rewrite`.
 - **Breaking:** `mergeFrom` / `merge_from` store the mode just verified
   on each copied cancel. A present attested copy replaces a bare copy
   of the same id after rotation. The vector is

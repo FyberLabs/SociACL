@@ -20,7 +20,6 @@ import type {
   WrappedKey,
 } from "../../docs/s3rch-check.js";
 import { grantSoul, parseObjectId, parsePrincipalId, type ObjectId, type PrincipalId } from "../ids/src/index.js";
-import { accountGrantSoul } from "./account-key.ts";
 
 function reject(): never {
   throw new Error("migration rejected");
@@ -44,9 +43,7 @@ function stated(value: number): 0 | 1 {
 type CurrentGrant = GunAclEdge;
 
 function soulOf(owner: PrincipalId, object: ObjectId, accessor: PrincipalId): string {
-  const fromIds = grantSoul(owner, object, accessor);
-  if (fromIds !== accountGrantSoul(owner, object, accessor)) reject();
-  return fromIds;
+  return grantSoul(owner, object, accessor);
 }
 
 /** UTF-8 byte order. `B` precedes `a`. `-` precedes `_`. */

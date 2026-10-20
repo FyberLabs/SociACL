@@ -190,7 +190,6 @@ pub fn check_opened_grant(
 }
 
 fn closed_object(object: &str) -> Option<&'static str> {
-    let object = object.trim();
     if object == "s3rch/meta" || object == "meta" {
         return Some("meta");
     }
@@ -292,7 +291,8 @@ pub struct HandoffHint {
 
 #[cfg(test)]
 mod tests {
-    use super::hop_forbidden;
+    use super::{check_opened_grant, hop_forbidden, IdentitySeeGrant, SeeGraph};
+    use crate::grant::{GrantStated, SignedGrantPayload};
 
     #[test]
     fn forbidden_names_follow_the_shared_vector() {
@@ -313,5 +313,53 @@ mod tests {
         assert!(!hop_forbidden("0xbob"));
         assert!(!hop_forbidden("diff"));
         assert!(!hop_forbidden("field-iff-extra"));
+    }
+
+    struct Empty;
+
+    impl SeeGraph for Empty {
+        fn has_object(&self, _object: &str) -> bool {
+            false
+        }
+        fn owner_of(&self, _object: &str) -> Option<&str> {
+            None
+        }
+        fn see_grants(&self, _object: &str) -> &[IdentitySeeGrant] {
+            &[]
+        }
+        fn object_version(&self, _object: &str) -> Option<u64> {
+            None
+        }
+        fn snapshot_hash(&self, _object: &str) -> Option<&str> {
+            None
+        }
+    }
+
+    #[test]
+    fn leading_space_s3rch_meta_is_not_closed() {
+        let doc: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../vectors/encrypted-discovery/closed-object.json"
+        ))
+        .unwrap();
+        let graph = Empty;
+        let cases = doc["cases"].as_array().unwrap();
+        assert!(cases.iter().any(|case| case["object"] == " s3rch/meta"));
+        for case in cases {
+            let object = case["object"].as_str().unwrap();
+            let payload = SignedGrantPayload {
+                object: object.to_string(),
+                accessor: "bob".into(),
+                from: 0,
+                until: 10,
+                stated: GrantStated::Live,
+                epoch: 1,
+                owner: "alice".into(),
+                grant_revision: 1,
+                item_ciphertext_digest: String::new(),
+            };
+            let got = check_opened_grant(&graph, &payload, "bob", 1, None);
+            assert!(!got.allowed, "{}", case["name"]);
+            assert_eq!(got.reason, case["reason"].as_str().unwrap(), "{object}");
+        }
     }
 }

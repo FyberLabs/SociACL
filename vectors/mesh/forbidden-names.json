@@ -3,7 +3,7 @@
     "identifiers are whole tokens. A later PR appends a name only when that PR deletes it.",
     "scopes are repo-relative globs. See, post, request, group, feed, encrypted discovery, and the contract migration module are in scope.",
     "Deleted legacy modules are not scopes. The guard matches files that exist.",
-    "PR 6 covers typescript/src, typescript/contract, sociacl-gun, and sociacl-encdisc. The renamed feed helpers are listed with the names they replaced."
+    "PR 6 covers typescript/src, typescript/contract, sociacl-gun, and sociacl-encdisc. The renamed feed helpers and the deleted s3rch user and item builders are listed."
   ],
   "identifiers": [
     "samePrincipal",
@@ -55,7 +55,10 @@
     "user_node",
     "item_segment",
     "trim_segment",
-    "add_wallet"
+    "add_wallet",
+    "s3rch_item",
+    "S3RCH_USERS",
+    "item_key"
   ],
   "scopes": [
     "typescript/src/**/*.js",
