@@ -167,7 +167,7 @@ fn canonical_epoch_bodies_match_the_shared_fixture() {
     );
     assert_eq!(
         epoch_finalization_id(
-            "chat_11111111111111111111111111111111",
+            "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
             3,
             2,
             REV,

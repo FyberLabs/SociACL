@@ -282,7 +282,7 @@ test("backup wrap is stored off gun and both devices open one epub wrap", () => 
   const again = sealAccountBackup(
     genesis,
     vector.backupWrap.transportPub,
-    parseWrapObject("wrap_ffeeddccbbaa99887766554433221100"),
+    parseWrapObject("wrap_p_60fed4ba255a9d31c961eb74c6356d68c049b8923b61fa6ce669622e60f29fb67903fe1008b8bc99a41ae9e95628bc64f2f1b20c2d7e9f5177a3c294d4462299_ffeeddccbbaa99887766554433221100"),
     new MemoryKeyWrapStore(watch([], context)),
     [],
     context,
@@ -371,7 +371,7 @@ test("backup wrap is stored off gun and both devices open one epub wrap", () => 
     vector.substitution.epub,
     vector.substitution.epriv,
   );
-  const swapped = sealAccountBackup(attacker, vector.backupWrap.transportPub, parseWrapObject("wrap_00112233445566778899aabbccddee00"), new MemoryKeyWrapStore(watch([], context)), [], context);
+  const swapped = sealAccountBackup(attacker, vector.backupWrap.transportPub, parseWrapObject("wrap_p_60fed4ba255a9d31c961eb74c6356d68c049b8923b61fa6ce669622e60f29fb67903fe1008b8bc99a41ae9e95628bc64f2f1b20c2d7e9f5177a3c294d4462299_00112233445566778899aabbccddee00"), new MemoryKeyWrapStore(watch([], context)), [], context);
   assert.throws(() => openAccountBackup(vector.backupWrap.transportScalarHex, swapped, genesis.principal, [], context));
   assert.equal(soul.split("/").length, 5);
   assert.equal(soul.includes(principalKey(genesis)), true);

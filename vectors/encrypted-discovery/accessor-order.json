@@ -1,0 +1,8 @@
+{
+  "notes": [
+    "Accessor sort is UTF-8 byte order. localeCompare puts '_' before '-' and 'a' before 'B'.",
+    "These four strings are the order vector. They are not curve points."
+  ],
+  "input": ["a", "B", "-", "_"],
+  "utf8": ["-", "B", "_", "a"]
+}

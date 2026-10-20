@@ -1,8 +1,7 @@
 use sociacl_core::{NodeId, Timestamp};
 
 use crate::leaf::{normalize_permalink, split_tags, UrlLeaf};
-use crate::legacy::encode_key;
-use crate::soul::GunSoul;
+use crate::soul::{item_segment, GunSoul};
 use crate::GunError;
 
 /// Locked feed source. `from_gun_node` refuses anything else.
@@ -79,7 +78,7 @@ impl FeedItem {
             .filter(|s| !s.is_empty())
     }
 
-    /// `gun.get('s3rch').get('items').get(encodeKey(id))`.
+    /// `gun.get('s3rch').get('items').get(<escaped id>)`.
     pub fn as_node_id(&self) -> Option<NodeId> {
         self.canonical_key()
             .map(|id| GunSoul::s3rch_item(id).as_node_id())
@@ -160,7 +159,7 @@ pub struct GunUserNode {
 
 impl GunUserNode {
     pub fn as_node_id(&self) -> NodeId {
-        GunSoul::s3rch_user(&self.id).as_node_id()
+        GunSoul::user_node(&self.id).as_node_id()
     }
 
     pub fn indicators_as_csv(&self) -> String {
@@ -180,14 +179,14 @@ impl GunUserNode {
 
 /// Locked held-claim CheckObjectId prefixes (s3r.ch). The object id
 /// is the claim id itself, linked from [`GunUserNode::indicators`].
-pub const HELD_CLAIM_PREFIXES: [&str; 5] = ["ens:", "unstoppable:", "fc:", "lens:", "rss3:"];
+pub const CLAIM_PREFIXES: [&str; 5] = ["ens:", "unstoppable:", "fc:", "lens:", "rss3:"];
 
 /// Whether `id` uses a locked held-claim prefix. Feed items may also
 /// start with `rss3:` — those still Check as whatever soul was put
 /// (`s3rch/items/…` after admit). Claims stay the claim id.
 pub fn has_held_claim_prefix(id: &str) -> bool {
     let id = id.trim();
-    HELD_CLAIM_PREFIXES.iter().any(|p| id.starts_with(p))
+    CLAIM_PREFIXES.iter().any(|p| id.starts_with(p))
 }
 
 /// Locked later claim kinds. Issuers prove a claim to the holder.
@@ -258,10 +257,10 @@ impl IdentitySeeGrant {
     /// Wallet as we name them → locked `s3rch/users/<wallet>`. A soul
     /// path is left as-is. Not a second user node.
     pub fn accessor_id(&self) -> NodeId {
-        resolve_wallet_or_soul(self.accessor.as_str())
+        user_node_id(self.accessor.as_str())
     }
 
-    /// Claim id, item soul, or raw item id (`encodeKey` path).
+    /// Claim id or the feed item node for that id.
     pub fn names_object(&self, object: &NodeId) -> bool {
         let id = self.object_id();
         if id == *object {
@@ -281,14 +280,14 @@ impl IdentitySeeGrant {
     }
 }
 
-fn resolve_wallet_or_soul(s: &str) -> NodeId {
+fn user_node_id(s: &str) -> NodeId {
     let s = s.trim();
     if s.contains('/') || s.contains(".get(") {
         GunSoul::parse(s)
             .map(|soul| soul.as_node_id())
             .unwrap_or_else(|_| NodeId::new(s))
     } else {
-        GunSoul::s3rch_user(s).as_node_id()
+        GunSoul::user_node(s).as_node_id()
     }
 }
 
@@ -353,7 +352,7 @@ impl OffGraphKind {
     }
 }
 
-/// Encode a Gun item key. Same as s3r.ch `encodeKey`.
+/// Gun item key. `/` stays in the segment.
 pub fn item_key(id: impl AsRef<str>) -> String {
-    encode_key(id.as_ref())
+    item_segment(id.as_ref())
 }

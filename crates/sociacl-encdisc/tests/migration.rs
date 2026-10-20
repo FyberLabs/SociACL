@@ -177,10 +177,10 @@ fn migration_vectors_match_the_shared_fixture() {
             .iter()
             .map(|grant| MigrationGrant {
                 soul: grant.soul.clone().unwrap_or_else(|| {
-                    format!(
-                        "s3rch/acl/{}/{}/{}",
-                        grant.owner, grant.object, grant.accessor
-                    )
+                    let owner = sociacl_ids::parse_principal_id(&grant.owner).unwrap();
+                    let object = sociacl_ids::parse_object_id(&grant.object).unwrap();
+                    let accessor = sociacl_ids::parse_principal_id(&grant.accessor).unwrap();
+                    sociacl_ids::grant_soul(&owner, &object, &accessor).to_string()
                 }),
                 owner: grant.owner.clone(),
                 grant: MeshSeeGrant {
@@ -309,6 +309,27 @@ fn migration_vectors_match_the_shared_fixture() {
 }
 
 #[test]
+fn accessor_order_is_utf8_bytes() {
+    let document: serde_json::Value =
+        serde_json::from_str(include_str!("../../../vectors/encrypted-discovery/accessor-order.json"))
+            .unwrap();
+    let mut input: Vec<String> = document["input"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| item.as_str().unwrap().to_string())
+        .collect();
+    input.sort();
+    let expected: Vec<&str> = document["utf8"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| item.as_str().unwrap())
+        .collect();
+    assert_eq!(input, expected);
+}
+
+#[test]
 fn wrap_receipt_bytes_match_the_canonical_vector() {
     let document: serde_json::Value = serde_json::from_str(CANONICAL).unwrap();
     let case = document["cases"]
@@ -331,12 +352,12 @@ fn wrap_receipt_bytes_match_the_canonical_vector() {
 
 #[test]
 fn owner_migration_drops_plaintext_per_reader_and_does_not_grant() {
-    let owner = AccountSeaSecret::generate("0xalice").unwrap();
-    let bob = AccountSeaSecret::generate("0xbob").unwrap();
-    let carol = AccountSeaSecret::generate("0xcarol").unwrap();
-    let dave = AccountSeaSecret::generate("0xdave").unwrap();
+    let owner = principal_account("0xalice");
+    let bob = principal_account("0xbob");
+    let carol = principal_account("0xcarol");
+    let dave = principal_account("0xdave");
     let plaintext = b"existing-body";
-    let (view, snapshot) = settled_view("item-1", 1, REV);
+    let (view, snapshot) = settled_view("item_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111", 1, REV);
     let epoch_view = migration_epoch(&view, &snapshot);
     let grants = vec![
         edge(&owner, bob.account(), GrantStated::Live, 2),
@@ -345,7 +366,7 @@ fn owner_migration_drops_plaintext_per_reader_and_does_not_grant() {
     let readers = vec![migration_reader(&bob, 2), migration_reader(&carol, 1)];
     let prepared = match prepare_protocol_migration(
         &owner,
-        "item-1",
+        "item_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
         plaintext,
         1,
         2,
@@ -365,7 +386,7 @@ fn owner_migration_drops_plaintext_per_reader_and_does_not_grant() {
         PreparedMigration::Encrypted(prepared) => prepared,
         PreparedMigration::SkippedPublic { .. } => panic!("private row was skipped"),
     };
-    assert_eq!(prepared.migration.object, "item-1");
+    assert_eq!(prepared.migration.object, "item_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111");
     assert_eq!(prepared.migration.to_version, 2);
     assert!(prepared
         .migration
@@ -379,13 +400,13 @@ fn owner_migration_drops_plaintext_per_reader_and_does_not_grant() {
         .any(|reader| reader.accessor == carol.account() && !reader.at_gate));
     assert_eq!(prepared.rows.len(), 2);
     assert!(prepared.rows.iter().all(|row| row.wrap.is_some()));
-    let dek = prepared.author.open("item-1", REV).unwrap();
-    assert!(prepared.author.open("item-1", &"22".repeat(32)).is_err());
+    let dek = prepared.author.open("item_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111", REV).unwrap();
+    assert!(prepared.author.open("item_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111", &"22".repeat(32)).is_err());
     let opened = open_migrated_item(
         &prepared.item_blob,
         &sociacl_encdisc::ItemDek::from_bytes(decode_key(&dek)),
         owner.sea_pub(),
-        "item-1",
+        "item_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
     )
     .unwrap();
     assert_eq!(opened, plaintext);
@@ -423,7 +444,7 @@ fn owner_migration_drops_plaintext_per_reader_and_does_not_grant() {
         .unwrap();
     let bob_receipt = WrapReceipt {
         accessor: bob.account().to_string(),
-        signature: sign_wrap_receipt(&bob, "item-1", 2, REV, &bob_row.entry_id).unwrap(),
+        signature: sign_wrap_receipt(&bob, "item_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111", 2, REV, &bob_row.entry_id).unwrap(),
     };
     let mut one = prepared.migration.clone();
     one.readers
@@ -453,7 +474,7 @@ fn owner_migration_drops_plaintext_per_reader_and_does_not_grant() {
     assert!(partial.historical_replica_remains());
 
     let concatenated = format!(
-        "s3rch-wrap-receipt-v1item-1{}2{REV}{}",
+        "s3rch-wrap-receipt-v1item_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111{}2{REV}{}",
         bob.account(),
         bob_row.entry_id
     );
@@ -475,7 +496,7 @@ fn owner_migration_drops_plaintext_per_reader_and_does_not_grant() {
     .is_err());
     let foreign = WrapReceipt {
         accessor: bob.account().to_string(),
-        signature: sign_wrap_receipt(&carol, "item-1", 2, REV, &bob_row.entry_id).unwrap(),
+        signature: sign_wrap_receipt(&carol, "item_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111", 2, REV, &bob_row.entry_id).unwrap(),
     };
     assert!(accept_migration(
         &owner,
@@ -497,7 +518,7 @@ fn owner_migration_drops_plaintext_per_reader_and_does_not_grant() {
         .unwrap();
     let carol_receipt = WrapReceipt {
         accessor: carol.account().to_string(),
-        signature: sign_wrap_receipt(&carol, "item-1", 2, REV, &carol_row.entry_id).unwrap(),
+        signature: sign_wrap_receipt(&carol, "item_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111", 2, REV, &carol_row.entry_id).unwrap(),
     };
     let mut both = one.clone();
     both.readers
@@ -522,14 +543,14 @@ fn owner_migration_drops_plaintext_per_reader_and_does_not_grant() {
     assert!(settled.plaintext_retained.is_empty());
     assert_eq!(settled.cancelled.len(), 2);
     assert!(settled.cancelled.iter().all(|grant| {
-        grant.grant.stated == GrantStated::Cancelled && grant.grant.object == "item-1"
+        grant.grant.stated == GrantStated::Cancelled && grant.grant.object == "item_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111"
     }));
     assert!(!settled.claws_back_historical_replica());
     assert!(!settled.grants_see());
 
     assert!(prepare_protocol_migration(
         &bob,
-        "item-1",
+        "item_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
         plaintext,
         1,
         2,
@@ -549,7 +570,7 @@ fn owner_migration_drops_plaintext_per_reader_and_does_not_grant() {
     extra.push(migration_reader(&dave, 2));
     assert!(prepare_protocol_migration(
         &owner,
-        "item-1",
+        "item_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
         plaintext,
         1,
         2,
@@ -568,7 +589,7 @@ fn owner_migration_drops_plaintext_per_reader_and_does_not_grant() {
 
     let skipped = prepare_protocol_migration(
         &owner,
-        "item-1",
+        "item_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
         plaintext,
         1,
         2,
@@ -593,7 +614,7 @@ fn owner_migration_drops_plaintext_per_reader_and_does_not_grant() {
     let only_carol = vec![migration_reader(&carol, 2)];
     let revoked = match prepare_protocol_migration(
         &owner,
-        "item-1",
+        "item_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
         plaintext,
         1,
         2,
@@ -641,17 +662,17 @@ fn owner_migration_drops_plaintext_per_reader_and_does_not_grant() {
 
 #[test]
 fn stale_soul_epoch_wrap_and_future_grant_fail_closed() {
-    let owner = AccountSeaSecret::generate("0xalice").unwrap();
-    let bob = AccountSeaSecret::generate("0xbob").unwrap();
-    let dave = AccountSeaSecret::generate("0xdave").unwrap();
+    let owner = principal_account("0xalice");
+    let bob = principal_account("0xbob");
+    let dave = principal_account("0xdave");
     let plaintext = b"existing-body";
-    let (view, snapshot) = settled_view("item-1", 1, REV);
+    let (view, snapshot) = settled_view("item_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111", 1, REV);
     let epoch_view = migration_epoch(&view, &snapshot);
     let grants = vec![edge(&owner, bob.account(), GrantStated::Live, 2)];
     let readers = vec![migration_reader(&bob, 2)];
     let prepared = match prepare_protocol_migration(
         &owner,
-        "item-1",
+        "item_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
         plaintext,
         1,
         2,
@@ -674,7 +695,7 @@ fn stale_soul_epoch_wrap_and_future_grant_fail_closed() {
     let row = &prepared.rows[0];
     let receipt = WrapReceipt {
         accessor: bob.account().to_string(),
-        signature: sign_wrap_receipt(&bob, "item-1", 2, REV, &row.entry_id).unwrap(),
+        signature: sign_wrap_receipt(&bob, "item_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111", 2, REV, &row.entry_id).unwrap(),
     };
     let mut acknowledged = prepared.migration.clone();
     acknowledged.readers[0].acknowledged = true;
@@ -735,7 +756,7 @@ fn stale_soul_epoch_wrap_and_future_grant_fail_closed() {
 
     assert!(prepare_protocol_migration(
         &owner,
-        "item-1",
+        "item_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
         plaintext,
         1,
         2,
@@ -754,7 +775,7 @@ fn stale_soul_epoch_wrap_and_future_grant_fail_closed() {
     let other = "22".repeat(32);
     let mut pending = view.clone();
     pending.seen = vec![sociacl_encdisc::EpochFinalization::seal(
-        "item-1",
+        "item_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
         0,
         1,
         &other,
@@ -767,7 +788,7 @@ fn stale_soul_epoch_wrap_and_future_grant_fail_closed() {
     let pending_epoch = migration_epoch(&pending, &snapshot);
     assert!(prepare_protocol_migration(
         &owner,
-        "item-1",
+        "item_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
         plaintext,
         1,
         2,
@@ -788,7 +809,7 @@ fn stale_soul_epoch_wrap_and_future_grant_fail_closed() {
     mismatched[0].soul = "s3rch/acl/0xalice/elsewhere/0xbob".to_string();
     assert!(prepare_protocol_migration(
         &owner,
-        "item-1",
+        "item_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
         plaintext,
         1,
         2,
@@ -810,7 +831,7 @@ fn stale_soul_epoch_wrap_and_future_grant_fail_closed() {
     let with_future = vec![grants[0].clone(), future];
     assert!(prepare_protocol_migration(
         &owner,
-        "item-1",
+        "item_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
         plaintext,
         1,
         2,
@@ -829,7 +850,7 @@ fn stale_soul_epoch_wrap_and_future_grant_fail_closed() {
     let including = vec![migration_reader(&bob, 2), migration_reader(&dave, 2)];
     let future_prepared = match prepare_protocol_migration(
         &owner,
-        "item-1",
+        "item_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
         plaintext,
         1,
         2,
@@ -869,7 +890,7 @@ fn stale_soul_epoch_wrap_and_future_grant_fail_closed() {
     .unwrap();
     let swapped = WrapReceipt {
         accessor: bob.account().to_string(),
-        signature: sign_wrap_receipt(&bob, "item-1", 2, REV, &tampered.rows[0].entry_id).unwrap(),
+        signature: sign_wrap_receipt(&bob, "item_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111", 2, REV, &tampered.rows[0].entry_id).unwrap(),
     };
     assert!(accept_migration(
         &owner,
@@ -916,17 +937,34 @@ fn migration_epoch<'a>(
     }
 }
 
+
+fn principal_account(label: &str) -> AccountSeaSecret {
+    let secret = AccountSeaSecret::generate(label).unwrap();
+    AccountSeaSecret::import_local(
+        secret.sea_pub(),
+        secret.lane_id(),
+        secret.sea_pub(),
+        secret.local_priv(),
+        secret.epub(),
+        secret.local_epriv(),
+    )
+    .unwrap()
+}
+
 fn edge(
     owner: &AccountSeaSecret,
     accessor: &str,
     stated: GrantStated,
     ham_state: u64,
 ) -> MigrationGrant {
+    let owner_id = sociacl_ids::parse_principal_id(owner.account()).unwrap();
+    let accessor_id = sociacl_ids::parse_principal_id(accessor).unwrap();
+    let object = sociacl_ids::parse_object_id("item_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111").unwrap();
     MigrationGrant {
-        soul: format!("s3rch/acl/{}/item-1/{accessor}", owner.account()),
+        soul: sociacl_ids::grant_soul(&owner_id, &object, &accessor_id).to_string(),
         owner: owner.account().to_string(),
         grant: MeshSeeGrant {
-            object: "item-1".to_string(),
+            object: "item_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111".to_string(),
             accessor: accessor.to_string(),
             from: 0,
             until: 5_000,

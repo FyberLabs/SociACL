@@ -896,7 +896,7 @@ mod tests {
         let wraps = wrap_item_dek_to_readers_with(
             &dek,
             3,
-            "s3rch/items/post",
+            vector["object"].as_str().unwrap(),
             revision,
             &[EnrolledSeaPub::from_account(&alice)],
             &granted,

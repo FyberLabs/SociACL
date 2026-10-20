@@ -22,7 +22,67 @@ pub struct GunSoul {
     pub(crate) segments: Vec<String>,
 }
 
+fn trim_segment(text: &str) -> &str {
+    text.trim_matches(|ch: char| matches!(ch, '\t' | '\n' | '\u{000B}' | '\u{000C}' | '\r' | ' '))
+}
+
+/// Item-segment spelling. `~` is the escape. `/` stays, so a slash-bearing
+/// id does not become another soul.
+pub(crate) fn item_segment(id: &str) -> String {
+    let mut out = String::with_capacity(id.len());
+    for ch in id.chars() {
+        match ch {
+            '~' => out.push_str("~0"),
+            '.' => out.push_str("~1"),
+            '#' => out.push_str("~2"),
+            '$' => out.push_str("~3"),
+            '[' => out.push_str("~4"),
+            ']' => out.push_str("~5"),
+            _ => out.push(ch),
+        }
+    }
+    out
+}
+
 impl GunSoul {
+    pub fn new(segments: impl IntoIterator<Item = impl AsRef<str>>) -> Self {
+        Self {
+            segments: segments
+                .into_iter()
+                .map(|segment| trim_segment(segment.as_ref()).to_string())
+                .filter(|segment| !segment.is_empty())
+                .collect(),
+        }
+    }
+
+    /// `gun.get('s3rch').get('users').get(wallet)`.
+    pub fn user_node(wallet: impl AsRef<str>) -> Self {
+        Self::new([S3RCH_ROOT, S3RCH_USERS, wallet.as_ref()])
+    }
+
+    /// `gun.get('s3rch').get('items').get(<escaped id>)`.
+    pub fn s3rch_item(id: impl AsRef<str>) -> Self {
+        Self::new([S3RCH_ROOT, S3RCH_ITEMS, &item_segment(id.as_ref())])
+    }
+
+    /// `gun.get('s3rch').get('meta')`.
+    pub fn s3rch_meta() -> Self {
+        Self::new([S3RCH_ROOT, S3RCH_META])
+    }
+
+    /// Slash form. A string containing `.get(` is rejected.
+    pub fn parse(s: &str) -> Result<Self, crate::GunError> {
+        let s = trim_segment(s);
+        if s.is_empty() || s.contains(".get(") {
+            return Err(crate::GunError::HintCorrupt);
+        }
+        let soul = Self::new(s.split('/'));
+        if soul.segments.is_empty() {
+            return Err(crate::GunError::HintCorrupt);
+        }
+        Ok(soul)
+    }
+
     pub fn segments(&self) -> &[String] {
         &self.segments
     }
@@ -87,6 +147,14 @@ pub struct GunNode {
 }
 
 impl GunNode {
+    /// Locked user node: `s3rch/users/<wallet>`.
+    pub fn user(wallet: impl AsRef<str>) -> Self {
+        Self {
+            soul: GunSoul::user_node(wallet),
+            kind: GunNodeKind::User,
+        }
+    }
+
     /// In-graph feed item. Same Check path as a held claim.
     pub fn feed(id: impl AsRef<str>) -> Self {
         Self {

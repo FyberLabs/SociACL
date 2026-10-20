@@ -249,21 +249,48 @@ pub(crate) struct GroupRows {
 }
 
 impl GroupRows {
-    pub(crate) fn drop_object_set(&mut self, object: &str) {
-        self.object_sets.remove(object);
-    }
-
-    pub(crate) fn merge_from(&mut self, other: &Self, object_owners: &HashMap<String, String>) {
+    pub(crate) fn merge_from(
+        &mut self,
+        other: &Self,
+        object_owners: &HashMap<String, String>,
+        resolver: &dyn Fn(&PrincipalId) -> Option<Vec<Value>>,
+        ctx: &ResolutionContext<'_>,
+    ) {
         for (soul, incoming) in &other.memberships {
+            let member_assent = fresh_assent(&incoming.member, incoming.member_assent.as_ref(), resolver, ctx);
+            let set_assent = fresh_assent(&incoming.set_owner, incoming.set_assent.as_ref(), resolver, ctx);
+            let cancels = fresh_cancels(&incoming.cancels, resolver, ctx);
             match self.memberships.get_mut(soul) {
                 None => {
-                    self.memberships.insert(soul.clone(), incoming.clone());
+                    if member_assent.is_none() && set_assent.is_none() && cancels.is_empty() {
+                        continue;
+                    }
+                    self.memberships.insert(
+                        soul.clone(),
+                        MembershipRecord {
+                            predicate: incoming.predicate,
+                            set: incoming.set.clone(),
+                            member: incoming.member.clone(),
+                            set_owner: incoming.set_owner.clone(),
+                            member_assent,
+                            set_assent,
+                            cancels,
+                        },
+                    );
                 }
                 Some(local) => {
-                    take_assent(&mut local.member_assent, incoming.member_assent.as_ref());
-                    take_assent(&mut local.set_assent, incoming.set_assent.as_ref());
-                    for cancel in incoming.cancels.values() {
-                        keep_cancel(&mut local.cancels, cancel.clone());
+                    if let Some(next) = member_assent {
+                        if local.member_assent.as_ref().is_none_or(|prev| replaces(prev, &next)) {
+                            local.member_assent = Some(next);
+                        }
+                    }
+                    if let Some(next) = set_assent {
+                        if local.set_assent.as_ref().is_none_or(|prev| replaces(prev, &next)) {
+                            local.set_assent = Some(next);
+                        }
+                    }
+                    for cancel in cancels.into_values() {
+                        keep_cancel(&mut local.cancels, cancel);
                     }
                 }
             }
@@ -277,47 +304,44 @@ impl GroupRows {
             {
                 continue;
             }
+            let assent = fresh_assent(&incoming.owner, incoming.assent.as_ref(), resolver, ctx);
+            let cancels = fresh_cancels(&incoming.cancels, resolver, ctx);
             let Some(local) = self.object_sets.get(id) else {
-                self.object_sets.insert(id.clone(), incoming.clone());
+                if assent.is_none() && cancels.is_empty() {
+                    continue;
+                }
+                let mut next = incoming.clone();
+                next.assent = assent;
+                next.cancels = cancels;
+                self.object_sets.insert(id.clone(), next);
                 continue;
             };
             // A different set or predicate keeps only the winner's cancels.
             let same_edge = local.set == incoming.set && local.predicate == incoming.predicate;
-            let incoming_wins = incoming.assent.as_ref().is_some_and(|next| {
-                local
-                    .assent
-                    .as_ref()
-                    .is_none_or(|prev| replaces(prev, next))
+            let incoming_wins = assent.as_ref().is_some_and(|next| {
+                local.assent.as_ref().is_none_or(|prev| replaces(prev, next))
             });
             if incoming_wins {
                 let mut next = incoming.clone();
+                next.assent = assent;
                 if same_edge {
-                    let mut cancels = local.cancels.clone();
-                    for cancel in incoming.cancels.values() {
-                        keep_cancel(&mut cancels, cancel.clone());
+                    let mut kept = local.cancels.clone();
+                    for cancel in cancels.into_values() {
+                        keep_cancel(&mut kept, cancel);
                     }
+                    next.cancels = kept;
+                } else {
                     next.cancels = cancels;
                 }
                 self.object_sets.insert(id.clone(), next);
             } else if same_edge {
                 if let Some(local) = self.object_sets.get_mut(id) {
-                    let incoming_cancels: Vec<StoredCancel> =
-                        incoming.cancels.values().cloned().collect();
-                    for cancel in incoming_cancels {
+                    for cancel in cancels.into_values() {
                         keep_cancel(&mut local.cancels, cancel);
                     }
                 }
             }
         }
-    }
-}
-
-fn take_assent(local: &mut Option<StoredAssent>, incoming: Option<&StoredAssent>) {
-    let Some(next) = incoming else {
-        return;
-    };
-    if local.as_ref().is_none_or(|prev| replaces(prev, next)) {
-        *local = Some(next.clone());
     }
 }
 
@@ -379,6 +403,65 @@ fn membership_removed(row: &MembershipRecord) -> bool {
         |assent: &StoredAssent| stated(assent) && !covers(&assent.observed, &row.cancels);
     row.member_assent.as_ref().is_some_and(uncovered)
         || row.set_assent.as_ref().is_some_and(uncovered)
+}
+
+fn party_ok(
+    principal: &PrincipalId,
+    bytes: &[u8],
+    sig: &str,
+    issued_at: u64,
+    stated: Option<u8>,
+    attest: Option<&str>,
+    resolver: &dyn Fn(&PrincipalId) -> Option<Vec<Value>>,
+    ctx: &ResolutionContext<'_>,
+) -> bool {
+    let Some(rotations) = resolver(principal) else {
+        return false;
+    };
+    verify_party(principal, &rotations, ctx, bytes, sig, issued_at, stated, attest).is_ok()
+}
+
+fn fresh_assent(
+    principal: &PrincipalId,
+    assent: Option<&StoredAssent>,
+    resolver: &dyn Fn(&PrincipalId) -> Option<Vec<Value>>,
+    ctx: &ResolutionContext<'_>,
+) -> Option<StoredAssent> {
+    let assent = assent?;
+    party_ok(
+        principal,
+        &assent.bytes,
+        &assent.sig,
+        assent.issued_at,
+        Some(assent.stated),
+        assent.attest.as_deref(),
+        resolver,
+        ctx,
+    )
+    .then(|| assent.clone())
+}
+
+fn fresh_cancels(
+    cancels: &BTreeMap<String, StoredCancel>,
+    resolver: &dyn Fn(&PrincipalId) -> Option<Vec<Value>>,
+    ctx: &ResolutionContext<'_>,
+) -> BTreeMap<String, StoredCancel> {
+    cancels
+        .values()
+        .filter(|cancel| {
+            party_ok(
+                &cancel.signer,
+                &cancel.bytes,
+                &cancel.sig,
+                cancel.issued_at,
+                None,
+                cancel.attest.as_deref(),
+                resolver,
+                ctx,
+            )
+        })
+        .map(|cancel| (cancel.id.clone(), cancel.clone()))
+        .collect()
 }
 
 fn keep_cancel(cancels: &mut BTreeMap<String, StoredCancel>, cancel: StoredCancel) -> bool {

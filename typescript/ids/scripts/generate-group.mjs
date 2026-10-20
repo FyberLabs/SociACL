@@ -144,7 +144,7 @@ function add(bucket, name, steps, note) {
 }
 add('reject', 'set-id-must-be-minted', [
   { op: 'admit-member', row: assent('member', 2, { set: 'alice/friends' }), rotations: 'genesis', ok: false, reason: 'bad-alphabet' },
-  { op: 'admit-member', row: assent('member', 2, { set: unbound }), rotations: 'genesis', ok: false, reason: 'bad-template' },
+  { op: 'admit-member', row: assent('member', 2, { set: unbound }), rotations: 'genesis', ok: false, reason: 'bad-alphabet' },
 ]);
 add('reject', 'member-assent-by-other-key-refused', [
   put(),
@@ -170,6 +170,15 @@ add('reject', 'rotation-drops-old-assent', [
   ...live(),
   check(chatA, p2, true, 'same-group'),
   { op: 'reverify-group', principal: p, rotations: 'rotated', ok: true, dropped: 2 },
+  check(chatA, p2, false, 'missing'),
+]);
+add('reject', 'merge-does-not-revive-a-retired-assent', [
+  ...live(),
+  check(chatA, p2, true, 'same-group'),
+  { op: 'reverify-group', principal: p, rotations: 'rotated', ok: true, dropped: 2 },
+  check(chatA, p2, false, 'missing'),
+  ...live().map((step) => ({ ...step, on: 'side' })),
+  { op: 'merge', rotations: 'rotated' },
   check(chatA, p2, false, 'missing'),
 ]);
 add('accept', 'group-gate-uses-stored-id', [

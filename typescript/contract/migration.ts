@@ -19,6 +19,7 @@ import type {
   SignedGrantPayload,
   WrappedKey,
 } from "../../docs/s3rch-check.js";
+import { grantSoul as typedGrantSoul, parseObjectId, parsePrincipalId } from "../ids/src/index.js";
 
 function reject(): never {
   throw new Error("migration rejected");
@@ -41,90 +42,24 @@ function stated(value: number): 0 | 1 {
 
 type CurrentGrant = GunAclEdge;
 
-function escapeKey(id: string, slash: boolean): string {
-  return id.replace(slash ? /[~.#$[\]/]/g : /[~.#$[\]]/g, (ch) => {
-    switch (ch) {
-      case "~":
-        return "~0";
-      case ".":
-        return "~1";
-      case "#":
-        return "~2";
-      case "$":
-        return "~3";
-      case "[":
-        return "~4";
-      case "]":
-        return "~5";
-      case "/":
-        return "~6";
-      default:
-        return ch;
-    }
-  });
-}
-
-function asciiTrim(text: string): string {
-  let start = 0;
-  let end = text.length;
-  const space = (code: number) =>
-    code === 0x09 || code === 0x0a || code === 0x0b || code === 0x0c || code === 0x0d || code === 0x20;
-  while (start < end && space(text.charCodeAt(start))) start += 1;
-  while (end > start && space(text.charCodeAt(end - 1))) end -= 1;
-  return text.slice(start, end);
-}
-
-function aclKey(id: string): string {
-  return escapeKey(asciiTrim(id), true);
-}
-
-function hasUnpairedSurrogate(text: string): boolean {
-  for (let i = 0; i < text.length; i += 1) {
-    const code = text.charCodeAt(i);
-    if (code >= 0xd800 && code <= 0xdbff) {
-      const next = text.charCodeAt(i + 1);
-      if (!(next >= 0xdc00 && next <= 0xdfff)) return true;
-      i += 1;
-      continue;
-    }
-    if (code >= 0xdc00 && code <= 0xdfff) return true;
-  }
-  return false;
-}
-
-function barePrincipal(id: string): string | null {
-  if (id.length === 0 || id === "." || id === ".." || id === "..." || id.includes(".get(") || id.includes(" ")) return null;
-  if (hasUnpairedSurrogate(id)) return null;
-  if ([...id].length > 256) return null;
-  if (/[/#$[\]~]/.test(id)) return null;
-  if (/\p{Z}|\p{Cf}/u.test(id)) return null;
-  for (let i = 0; i < id.length; i += 1) {
-    const code = id.charCodeAt(i);
-    if (code <= 0x1f || (code >= 0x7f && code <= 0x9f)) return null;
-  }
-  return id;
-}
-
-function aclPrincipalKey(id: string): string | null {
-  if (hasUnpairedSurrogate(id)) return null;
-  const trimmed = asciiTrim(id);
-  if (trimmed.length === 0 || trimmed.includes(".get(")) return null;
-  const parts = trimmed
-    .split("/")
-    .map((part) => asciiTrim(part))
-    .filter((part) => part.length > 0);
-  if (parts.length === 3 && parts[0] === "s3rch" && parts[1] === "users") {
-    return barePrincipal(parts[2] ?? "");
-  }
-  if (trimmed.includes("/")) return null;
-  return barePrincipal(trimmed);
-}
-
 function grantSoul(owner: string, object: string, accessor: string): string | null {
-  const ownerKey = aclPrincipalKey(owner);
-  const accessorKey = aclPrincipalKey(accessor);
-  if (ownerKey == null || accessorKey == null) return null;
-  return `s3rch/acl/${ownerKey}/${aclKey(object)}/${accessorKey}`;
+  const parsedOwner = parsePrincipalId(owner);
+  const parsedObject = parseObjectId(object);
+  const parsedAccessor = parsePrincipalId(accessor);
+  if (!parsedOwner.ok || !parsedObject.ok || !parsedAccessor.ok) return null;
+  return typedGrantSoul(parsedOwner.value, parsedObject.value, parsedAccessor.value);
+}
+
+/** UTF-8 byte order. `B` precedes `a`. `-` precedes `_`. */
+export function compareAccessors(left: string, right: string): number {
+  const a = new TextEncoder().encode(left);
+  const b = new TextEncoder().encode(right);
+  const n = Math.min(a.length, b.length);
+  for (let i = 0; i < n; i += 1) {
+    if (a[i] !== b[i]) return a[i]! < b[i]! ? -1 : 1;
+  }
+  if (a.length === b.length) return 0;
+  return a.length < b.length ? -1 : 1;
 }
 
 function currentGrants(input: MigrationAdmissionInput): CurrentGrant[] {
@@ -160,7 +95,7 @@ function currentGrants(input: MigrationAdmissionInput): CurrentGrant[] {
       current.push(edge);
     }
   }
-  current.sort((left, right) => left.grant.accessor.localeCompare(right.grant.accessor));
+  current.sort((left, right) => compareAccessors(left.grant.accessor, right.grant.accessor));
   return current;
 }
 
@@ -172,7 +107,7 @@ function bump(hamState: number): number {
 }
 
 function names(grants: readonly CurrentGrant[]): AccessorId[] {
-  return grants.map((edge) => edge.grant.accessor).sort((left, right) => left.localeCompare(right));
+  return grants.map((edge) => edge.grant.accessor).sort((left, right) => compareAccessors(left, right));
 }
 
 function skipPublic(input: MigrationAdmissionInput, current: readonly CurrentGrant[]): MigrationAdmission {
@@ -206,10 +141,10 @@ function alignReaders(input: MigrationAdmissionInput, current: readonly CurrentG
     reject();
   }
   const readers = [...input.migration.readers].sort((left, right) =>
-    left.accessor.localeCompare(right.accessor),
+    compareAccessors(left.accessor, right.accessor),
   );
   const versions = [...input.readerVersions].sort((left, right) =>
-    left.accessor.localeCompare(right.accessor),
+    compareAccessors(left.accessor, right.accessor),
   );
   const epubs: string[] = [];
   for (let index = 0; index < current.length; index += 1) {
@@ -322,7 +257,7 @@ function alignWraps(input: MigrationAdmissionInput, epoch: number | undefined): 
     reject();
   }
   const versions = [...input.readerVersions].sort((left, right) =>
-    left.accessor.localeCompare(right.accessor),
+    compareAccessors(left.accessor, right.accessor),
   );
   let revision: string | undefined;
   const seen: string[] = [];
@@ -354,8 +289,8 @@ function finish(input: MigrationAdmissionInput, current: readonly CurrentGrant[]
       retained.push(reader.accessor);
     }
   }
-  dropped.sort((left, right) => left.localeCompare(right));
-  retained.sort((left, right) => left.localeCompare(right));
+  dropped.sort((left, right) => compareAccessors(left, right));
+  retained.sort((left, right) => compareAccessors(left, right));
   if (retained.length === 0) {
     const cancelled: GunAclEdge[] = current.map((edge) => {
       const grant: MeshSeeGrant = { ...edge.grant, stated: 0 };

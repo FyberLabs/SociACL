@@ -6,7 +6,7 @@
 //! visible as privilege-down on the next Check after merge. There is
 //! no cached allow.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use serde_json::Value;
 use sociacl_core::Timestamp;
@@ -136,26 +136,13 @@ pub fn factor_grants(_kind: &str) -> bool {
     false
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct MeshObject {
-    pub(crate) id: String,
-    pub(crate) owner: String,
-}
-
 /// Locally HAM-merged dest ACL a peer Checks at `now`.
 ///
-/// Friend edges may be recorded and are never walked (hopcap 1).
 /// Mine overlay stays off this graph until an admitted object record.
-///
 /// Group and circle rows live on this same graph. They do not fork
 /// items or users, and they are not see-grant souls.
-/// `rows` is the group store. The object, grant, and friend maps are
-/// the legacy label harness. They are not the typed see, post, or request API.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct GroupGraph {
-    pub(crate) objects: HashMap<String, MeshObject>,
-    pub(crate) grants: HashMap<String, GunAclEdge>,
-    pub(crate) friends: HashSet<(String, String)>,
     pub(crate) rows: crate::group::GroupRows,
 }
 
@@ -292,10 +279,16 @@ impl MeshSeeGraph {
     /// Unstable, test-only hook. Merges group rows the way a peer merge does.
     /// An object-set row is copied only when this graph already holds the
     /// admitted signed object record and that owner matches. A row that
-    /// arrives first is dropped.
+    /// arrives first is dropped. Each incoming assent and cancel is checked
+    /// against this graph's rotation history.
     #[cfg(feature = "vectors")]
     #[doc(hidden)]
-    pub fn vector_merge_groups(&mut self, other: &Self) {
+    pub fn vector_merge_groups(
+        &mut self,
+        other: &Self,
+        resolver: &dyn Fn(&PrincipalId) -> Option<Vec<Value>>,
+        ctx: &ResolutionContext<'_>,
+    ) {
         let object_owners: HashMap<String, String> = self
             .owners
             .iter()
@@ -303,7 +296,7 @@ impl MeshSeeGraph {
             .collect();
         self.group
             .rows
-            .merge_from(&other.group.rows, &object_owners);
+            .merge_from(&other.group.rows, &object_owners, resolver, ctx);
     }
 
     /// Admit one see row. The row is parsed once; the signature covers that value.

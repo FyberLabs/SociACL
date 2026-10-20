@@ -477,6 +477,41 @@ function keepCancel(cancels, incoming) {
   return false;
 }
 
+/**
+ * @param {PrincipalId} principal
+ * @param {Uint8Array} bytes
+ * @param {string} sig
+ * @param {number} issuedAt
+ * @param {0 | 1 | null} stated
+ * @param {string | undefined} attest
+ * @param {SeeResolver} resolver
+ */
+function partyOk(principal, bytes, sig, issuedAt, stated, attest, resolver) {
+  const rotations = resolver.rotations(principal);
+  if (!rotations) return false;
+  return verifyParty(principal, rotations, resolver.ctx, bytes, sig, issuedAt, stated, attest).ok;
+}
+
+/** @param {PrincipalId} principal @param {StoredAssent | null} assent @param {SeeResolver} resolver */
+function freshAssent(principal, assent, resolver) {
+  if (!assent) return null;
+  return partyOk(principal, assent.bytes, assent.sig, assent.issuedAt, assent.stated, assent.attest, resolver)
+    ? assent
+    : null;
+}
+
+/** @param {Map<string, StoredCancel>} cancels @param {SeeResolver} resolver */
+function freshCancels(cancels, resolver) {
+  /** @type {Map<string, StoredCancel>} */
+  const next = new Map();
+  for (const [id, cancel] of cancels) {
+    if (partyOk(cancel.signer, cancel.bytes, cancel.sig, cancel.issuedAt, null, cancel.attest, resolver)) {
+      next.set(id, cancel);
+    }
+  }
+  return next;
+}
+
 /** @param {StoredAssent | null | undefined} prev @param {StoredAssent} next */
 function replaces(prev, next) {
   if (!prev) return true;
@@ -847,38 +882,54 @@ export class MemoryGroupGraph {
    * owner is the row's owner. A row that arrives before that record is
    * dropped, and a later record does not revive it. Object-set cancels are
    * unioned only when both edges name the same set and predicate. Otherwise
-   * only the winning edge's cancels are kept.
+   * only the winning edge's cancels are kept. Each incoming assent and
+   * cancel is checked against this graph's rotation history. A copy signed
+   * by a retired key is not stored.
    * @param {MemoryGroupGraph} other
+   * @param {SeeResolver} resolver
    */
-  mergeFrom(other) {
+  mergeFrom(other, resolver) {
+    if (!resolverReady(resolver)) return;
     for (const [soul, incoming] of membershipTable(other)) {
+      const memberAssent = freshAssent(incoming.member, incoming.memberAssent, resolver);
+      const setAssent = freshAssent(incoming.setOwner, incoming.setAssent, resolver);
+      const cancels = freshCancels(incoming.cancels, resolver);
       const local = membershipTable(this).get(soul);
       if (!local) {
+        if (!memberAssent && !setAssent && cancels.size === 0) continue;
         membershipTable(this).set(soul, {
-          ...incoming,
-          cancels: new Map(incoming.cancels),
+          predicate: incoming.predicate,
+          set: incoming.set,
+          member: incoming.member,
+          setOwner: incoming.setOwner,
+          memberAssent,
+          setAssent,
+          cancels,
         });
         continue;
       }
-      if (incoming.memberAssent && replaces(local.memberAssent, incoming.memberAssent)) local.memberAssent = incoming.memberAssent;
-      if (incoming.setAssent && replaces(local.setAssent, incoming.setAssent)) local.setAssent = incoming.setAssent;
-      for (const [, cancel] of incoming.cancels) keepCancel(local.cancels, cancel);
+      if (memberAssent && replaces(local.memberAssent, memberAssent)) local.memberAssent = memberAssent;
+      if (setAssent && replaces(local.setAssent, setAssent)) local.setAssent = setAssent;
+      for (const [, cancel] of cancels) keepCancel(local.cancels, cancel);
     }
     for (const [id, incoming] of objectSetTable(other)) {
       const admitted = admittedOwner(this, /** @type {ObjectId} */ (id));
       if (!admitted || admitted.owner !== incoming.owner) continue;
+      const assent = freshAssent(incoming.owner, incoming.assent, resolver);
+      const cancels = freshCancels(incoming.cancels, resolver);
       const local = objectSetTable(this).get(id);
       if (!local) {
-        objectSetTable(this).set(id, { ...incoming, cancels: new Map(incoming.cancels) });
+        if (!assent && cancels.size === 0) continue;
+        objectSetTable(this).set(id, { ...incoming, assent, cancels });
         continue;
       }
       const sameEdge = local.set === incoming.set && local.predicate === incoming.predicate;
-      if (incoming.assent && replaces(local.assent, incoming.assent)) {
-        const cancels = new Map(sameEdge ? local.cancels : incoming.cancels);
-        if (sameEdge) for (const [, cancel] of incoming.cancels) keepCancel(cancels, cancel);
-        objectSetTable(this).set(id, { ...incoming, cancels });
+      if (assent && replaces(local.assent, assent)) {
+        const kept = new Map(sameEdge ? local.cancels : cancels);
+        if (sameEdge) for (const [, cancel] of cancels) keepCancel(kept, cancel);
+        objectSetTable(this).set(id, { ...incoming, assent, cancels: kept });
       } else if (sameEdge) {
-        for (const [, cancel] of incoming.cancels) keepCancel(local.cancels, cancel);
+        for (const [, cancel] of cancels) keepCancel(local.cancels, cancel);
       }
     }
   }

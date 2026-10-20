@@ -11,8 +11,8 @@ import type {
   WrappedKey,
 } from "../../docs/s3rch-check.js";
 import { sha256Hex, wrapReceiptBytes, wrapReceiptSha256 } from "../contract/canonical.ts";
-import { applyProtocolMigration } from "../contract/migration.ts";
-import { parseObjectId, parsePrincipalId } from "../ids/src/index.js";
+import { applyProtocolMigration, compareAccessors } from "../contract/migration.ts";
+import { grantSoul, parseObjectId, parsePrincipalId } from "../ids/src/index.js";
 
 function objectId(value: string): CheckObjectId {
   const parsed = parseObjectId(value);
@@ -80,7 +80,9 @@ function inputOf(row: Case): MigrationAdmissionInput {
   const owner = principalId(row.owner);
   const object = objectId(row.object);
   const grants: GunAclEdge[] = row.grants.map((grant) => ({
-    soul: grant.soul ?? `s3rch/acl/${grant.owner}/${grant.object}/${grant.accessor}`,
+    soul:
+      grant.soul ??
+      grantSoul(principalId(grant.owner), objectId(grant.object), principalId(grant.accessor)),
     owner: principalId(grant.owner),
     hamState: grant.hamState,
     grant: {
@@ -168,6 +170,13 @@ test("migration vectors match the shared fixture", () => {
       assert.equal(actual.grant.object, row.object, row.name);
     }
   }
+});
+
+test("accessor order is UTF-8 bytes for a, B, hyphen, and underscore", () => {
+  const order = JSON.parse(
+    readFileSync(new URL("../../vectors/encrypted-discovery/accessor-order.json", import.meta.url), "utf8"),
+  ) as { input: string[]; utf8: string[] };
+  assert.deepEqual([...order.input].sort(compareAccessors), order.utf8);
 });
 
 test("wrap receipt bytes match the canonical vector", () => {

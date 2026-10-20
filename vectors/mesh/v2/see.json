@@ -1461,11 +1461,11 @@
             "object": "chat_33333333333333333333333333333333",
             "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
             "issuedAt": 1700000000,
-            "sig": "hoNQm1Nu6j7I6KITK2jbMn9p87smKADK0tWhBS4LXvSIO5e4qQ0IAWLfV69S2G2ttk7PZcgSBJIKsLDIr0ccoQ"
+            "sig": "aa"
           },
           "rotations": "genesis",
           "ok": false,
-          "reason": "bad-record"
+          "reason": "bad-alphabet"
         },
         {
           "op": "owner",
@@ -1478,7 +1478,7 @@
           "accessor": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
           "now": 10,
           "allowed": false,
-          "reason": "unknown"
+          "reason": "bad-alphabet"
         }
       ]
     },

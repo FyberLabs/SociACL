@@ -1,9 +1,9 @@
 {
   "notes": [
     "identifiers are whole tokens. A later PR appends a name only when that PR deletes it.",
-    "scopes are repo-relative globs. The see path is in scope now.",
-    "Legacy modules stay out until the PR that migrates their caller appends that file.",
-    "The post path is in scope. PR 4 appends request. PR 5 appends group. PR 6 appends feed, encrypted discovery, and the contract migration module."
+    "scopes are repo-relative globs. See, post, request, group, feed, encrypted discovery, and the contract migration module are in scope.",
+    "Deleted legacy modules are not scopes. The guard matches files that exist.",
+    "PR 4 appended request. PR 5 appended group. PR 6 appended feed, encrypted discovery, and the contract migration module."
   ],
   "identifiers": [
     "samePrincipal",
@@ -62,6 +62,9 @@
     "crates/sociacl-gun/src/request.rs",
     "typescript/src/group.js",
     "crates/sociacl-gun/src/group.rs",
-    "docs/s3rch-check.d.ts"
+    "docs/s3rch-check.d.ts",
+    "crates/sociacl-gun/src/feed.rs",
+    "crates/sociacl-encdisc/src/*.rs",
+    "typescript/contract/migration.ts"
   ]
 }

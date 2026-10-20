@@ -2,6 +2,22 @@
 
 ## sociacl/gun — unreleased
 
+- **Breaking:** `mergeFrom` / `merge_from` check each incoming assent and
+  cancel against this graph's rotation history before copying the row.
+  A retired-key stated-1 is not copied back in after `reverifyGroup`.
+  The vector is `merge-does-not-revive-a-retired-assent`.
+- **Breaking:** `parseObjectId` / `parse_object_id` reject an unbound
+  `<kind>_<32 lowercase hex>` id. The minted form and `claim_` / `ext_`
+  plus 64 hex stay. A guard test rejects that unbound spelling in
+  non-test source. The label path is gone: `legacy.rs`, the label test
+  modules, `typescript/src/legacy/gun-legacy.js`, and the `GroupGraph`
+  label maps. C exports `sociacl_gun_item_soul` and
+  `sociacl_gun_user_soul` are deleted. Encrypted discovery no longer
+  keeps `gun_soul.rs`. `contract/migration.ts` sorts accessors in UTF-8
+  byte order (`vectors/encrypted-discovery/accessor-order.json`).
+- A group cancel's signing bytes are the length-prefixed fields
+  `sociacl-cancel-v2`, kind (`membership` or `object-set`), row soul,
+  cancel id, decimal `issuedAt`, the prior count, then those prior ids.
 - **Breaking:** a group set id is a minted ObjectId of kind `set`. The
   signed set owner is the principal embedded in that id. Membership
   assent is `sociacl-membership-assent-v2`, an object-set row is

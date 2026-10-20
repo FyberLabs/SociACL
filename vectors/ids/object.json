@@ -3,12 +3,6 @@
   "family": "object",
   "accept": [
     {
-      "name": "native",
-      "input": "room_01010101010101010101010101010101",
-      "canonical": "room_01010101010101010101010101010101",
-      "pathKey": "room_01010101010101010101010101010101"
-    },
-    {
       "name": "claim",
       "input": "ens:alice.eth",
       "canonical": "claim_4440d12c2e6483c67aeb6e474e1c787923e0720c1e3c2b355b709b4f16da6a65",
@@ -18,10 +12,10 @@
     {
       "name": "external",
       "input": {
-        "source": "sr1:s3rch%3Ahttps%3A%2F%2Fs3r.ch%3A443%3Bkey%3D1212121212121212121212121212121212121212121212121212121212121212/axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU/room_01010101010101010101010101010101/chat",
+        "source": "sr1:s3rch%3Ahttps%3A%2F%2Fs3r.ch%3A443%3Bkey%3D1212121212121212121212121212121212121212121212121212121212121212/axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU/room_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_01010101010101010101010101010101/chat",
         "providerItemId": "rss3:act/1#x"
       },
-      "canonical": "ext_cc343272b4ccbd6833dfdaf7c8dfc6a62b38163f7817bbe972d5b466954e32b2",
+      "canonical": "ext_7029733fbd790ea20fbe12ea1a718f9508053511e8db0fa50ba31ef8526009e3",
       "operation": "external"
     },
     {
@@ -265,29 +259,34 @@
       "reason": "not-string"
     },
     {
+      "name": "native",
+      "input": "room_01010101010101010101010101010101",
+      "reason": "bad-alphabet"
+    },
+    {
       "name": "uppercase-hex",
       "input": "room_ABABABABABABABABABABABABABABABAB",
-      "reason": "non-canonical"
+      "reason": "bad-alphabet"
     },
     {
       "name": "reserved-kind",
       "input": "claim_01010101010101010101010101010101",
-      "reason": "reserved-kind"
+      "reason": "bad-alphabet"
     },
     {
       "name": "reserved-kind-post",
       "input": "post_01010101010101010101010101010101",
-      "reason": "reserved-kind"
+      "reason": "bad-alphabet"
     },
     {
       "name": "reserved-kind-member",
       "input": "member_01010101010101010101010101010101",
-      "reason": "reserved-kind"
+      "reason": "bad-alphabet"
     },
     {
       "name": "reserved-kind-objset",
       "input": "objset_01010101010101010101010101010101",
-      "reason": "reserved-kind"
+      "reason": "bad-alphabet"
     },
     {
       "name": "mint-kind-post",
@@ -319,7 +318,7 @@
     {
       "name": "unbound-principal",
       "input": "room_01010101010101010101010101010101",
-      "reason": "bad-template",
+      "reason": "bad-alphabet",
       "operation": "object-principal"
     },
     {

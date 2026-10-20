@@ -32,7 +32,8 @@ export function runGroupCase(steps, options) {
     if (step.op === 'merge') {
       const into = step.into === 'side' ? graphs.side : graphs.local;
       const from = into === graphs.side ? graphs.local : graphs.side;
-      into.mergeFrom(from);
+      const named = step.rotations ? step : { ...step, rotations: 'genesis' };
+      into.mergeFrom(from, resolverFor(named));
       continue;
     }
     if (step.op === 'mutate-row') {

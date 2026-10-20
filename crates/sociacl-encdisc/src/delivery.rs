@@ -457,14 +457,26 @@ mod tests {
     use crate::{GenesisAccount, MemoryKeyWrapStore};
     use serde_json::Value;
     use sociacl_ids::{
-        history_state, parse_object_id, resolve_current_key, HistoryResolver, Jwks, KeyState,
-        PrincipalId, Reason, ResolutionContext, Rotate, SiwePolicy,
+        history_state, mint_object_id_with, parse_object_id, resolve_current_key, HistoryResolver,
+        Jwks, KeyState, PrincipalId, Reason, ResolutionContext, Rotate, SiwePolicy,
     };
     use std::collections::{BTreeMap, BTreeSet};
 
     const RING: &str = include_str!("../../../vectors/encrypted-discovery/account-keyring.json");
     const RECOVERY: &str = include_str!("../../../vectors/encrypted-discovery/recovery-copy.json");
     const RECORDS: &str = include_str!("../../../vectors/ids/records.json");
+
+    fn minted_wrap(principal: &PrincipalId, n: usize) -> sociacl_ids::ObjectId {
+        let n = u32::try_from(n).unwrap();
+        mint_object_id_with("wrap", principal, |bytes| {
+            *bytes = [0; 16];
+            bytes[12..].copy_from_slice(&n.to_be_bytes());
+            Ok(())
+        })
+        .unwrap()
+        .object_id()
+        .clone()
+    }
 
     fn recovery() -> Value {
         serde_json::from_str(RECOVERY).unwrap()
@@ -660,7 +672,7 @@ mod tests {
                 .unwrap_err();
         assert!(matches!(wrong_device, EncDiscError::WrapRejected));
         let mut wrong_id = wrap.clone();
-        wrong_id.wrap_id = parse_object_id("wrap_00112233445566778899aabbccddee00").unwrap();
+        wrong_id.wrap_id = parse_object_id("wrap_p_60fed4ba255a9d31c961eb74c6356d68c049b8923b61fa6ce669622e60f29fb67903fe1008b8bc99a41ae9e95628bc64f2f1b20c2d7e9f5177a3c294d4462299_00112233445566778899aabbccddee00").unwrap();
         let wrong_wrap =
             open_delivered_keyring(&transport, &wrong_id, keyring.principal(), 0, &[], &ctx)
                 .unwrap_err();
@@ -706,9 +718,9 @@ mod tests {
         .unwrap();
         let delivery = &v["delivery"];
         let transport_pub = delivery["transportPub"].as_str().unwrap();
-        let genesis_id = parse_object_id("wrap_00112233445566778899aabbccddee01").unwrap();
+        let genesis_id = parse_object_id("wrap_p_60fed4ba255a9d31c961eb74c6356d68c049b8923b61fa6ce669622e60f29fb67903fe1008b8bc99a41ae9e95628bc64f2f1b20c2d7e9f5177a3c294d4462299_00112233445566778899aabbccddee01").unwrap();
         let first_id = parse_object_id(delivery["wrapId"].as_str().unwrap()).unwrap();
-        let second_id = parse_object_id("wrap_00112233445566778899aabbccddee02").unwrap();
+        let second_id = parse_object_id("wrap_p_60fed4ba255a9d31c961eb74c6356d68c049b8923b61fa6ce669622e60f29fb67903fe1008b8bc99a41ae9e95628bc64f2f1b20c2d7e9f5177a3c294d4462299_00112233445566778899aabbccddee02").unwrap();
         let genesis =
             crate::seal_account_backup(&account, transport_pub, &genesis_id, &[], &ctx, &mut store)
                 .unwrap();
@@ -830,7 +842,7 @@ mod tests {
         let mut store = MemoryKeyWrapStore::new(watch(&[], &ctx));
         let mut ids = Vec::new();
         for n in 0..crate::limits::MAX_WRAPS_PER_PRINCIPAL {
-            let wrap_id = parse_object_id(&format!("wrap_{n:032x}")).unwrap();
+            let wrap_id = minted_wrap(&principal, n);
             ids.push(wrap_id.clone());
             let class = if n == 0 {
                 WrapClass::Genesis
@@ -852,7 +864,7 @@ mod tests {
             recovery()["limits"]["wrapsPerPrincipal"].as_u64().unwrap() as usize,
             crate::limits::MAX_WRAPS_PER_PRINCIPAL
         );
-        let extra = parse_object_id(&format!("wrap_{:032x}", 80u32)).unwrap();
+        let extra = minted_wrap(&principal, 80);
         let capped = put_dummy(
             &mut store,
             &principal,
@@ -1001,7 +1013,7 @@ mod tests {
             p256::SecretKey::from_slice(&hexutil::decode_hex(&format!("{:064x}", 7u32)).unwrap())
                 .unwrap();
         let nonce = [9u8; 12];
-        let wrap_id = parse_object_id("wrap_00112233445566778899aabbccddee03").unwrap();
+        let wrap_id = parse_object_id("wrap_p_60fed4ba255a9d31c961eb74c6356d68c049b8923b61fa6ce669622e60f29fb67903fe1008b8bc99a41ae9e95628bc64f2f1b20c2d7e9f5177a3c294d4462299_00112233445566778899aabbccddee03").unwrap();
         let wrap = deliver_keyring_with(
             &keyring,
             transport.sea_pub(),
@@ -1102,7 +1114,7 @@ mod tests {
         let epub = ring["genesis"]["epub"].as_str().unwrap();
         let mut store = MemoryKeyWrapStore::new(watch(&chain, &base));
         for n in 0..crate::limits::MAX_WRAPS_PER_PRINCIPAL {
-            let wrap_id = parse_object_id(&format!("wrap_{n:032x}")).unwrap();
+            let wrap_id = minted_wrap(&principal, n);
             let refused = put_dummy(
                 &mut store,
                 &principal,
@@ -1115,7 +1127,7 @@ mod tests {
             assert!(matches!(refused, Err(EncDiscError::StoreRejected)));
         }
         assert!(store.list_wraps(&principal).unwrap().is_empty());
-        let wrap_id = parse_object_id("wrap_00112233445566778899aabbccddee11").unwrap();
+        let wrap_id = parse_object_id("wrap_p_60fed4ba255a9d31c961eb74c6356d68c049b8923b61fa6ce669622e60f29fb67903fe1008b8bc99a41ae9e95628bc64f2f1b20c2d7e9f5177a3c294d4462299_00112233445566778899aabbccddee11").unwrap();
         put_dummy(
             &mut store,
             &principal,
@@ -1270,7 +1282,7 @@ mod tests {
             ecdh_x(&secret, &peer).unwrap()
         };
         let ephemeral_sea = sea::sea_pub_from_point(&peer).unwrap();
-        let wrap_id = parse_object_id("wrap_00112233445566778899aabbccddee09").unwrap();
+        let wrap_id = parse_object_id("wrap_p_60fed4ba255a9d31c961eb74c6356d68c049b8923b61fa6ce669622e60f29fb67903fe1008b8bc99a41ae9e95628bc64f2f1b20c2d7e9f5177a3c294d4462299_00112233445566778899aabbccddee09").unwrap();
         let aes_key = kdf_backup(
             DOMAIN_DELIVERY_BIND,
             &shared,

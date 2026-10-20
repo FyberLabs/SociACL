@@ -244,7 +244,7 @@ pub fn client_elect_from_hint(
 /// Enroll the locked wallet identity as a person. One user node.
 pub fn add_wallet(plane: &mut Plane, wallet: impl AsRef<str>) -> NodeId {
     plane
-        .add_person(GunSoul::s3rch_user(wallet).as_node_id())
+        .add_person(GunSoul::user_node(wallet).as_node_id())
         .id
 }
 

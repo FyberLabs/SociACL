@@ -787,7 +787,10 @@ fn align_wraps(
 }
 
 fn grant_soul(owner: &str, object: &str, accessor: &str) -> Option<String> {
-    crate::gun_soul::grant_soul(owner, object, accessor)
+    let owner = sociacl_ids::parse_principal_id(owner).ok()?;
+    let object = sociacl_ids::parse_object_id(object).ok()?;
+    let accessor = sociacl_ids::parse_principal_id(accessor).ok()?;
+    Some(sociacl_ids::grant_soul(&owner, &object, &accessor).to_string())
 }
 
 fn current_grants(
@@ -1293,48 +1296,6 @@ fn is_lower_hex(value: &str) -> bool {
 #[allow(deprecated)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn grant_soul_matches_the_dest_acl_contract() {
-        assert_eq!(
-            grant_soul("0xalice", "item-1", "0xbob").as_deref(),
-            Some("s3rch/acl/0xalice/item-1/0xbob")
-        );
-        assert_eq!(
-            grant_soul("s3rch/users/0xalice", "item-1", "0xbob").as_deref(),
-            Some("s3rch/acl/0xalice/item-1/0xbob")
-        );
-        assert_eq!(
-            grant_soul("0xalice", "rss3:act/1_x", "s3rch/users/0xbob").as_deref(),
-            Some("s3rch/acl/0xalice/rss3:act~61_x/0xbob")
-        );
-        assert_eq!(
-            grant_soul("alice.name", "a.b", "carol").as_deref(),
-            Some("s3rch/acl/alice.name/a~1b/carol")
-        );
-    }
-
-    #[test]
-    fn acl_keys_do_not_fold_and_a_gun_chain_is_not_a_wallet() {
-        assert_ne!(
-            crate::gun_soul::acl_key("room.alpha"),
-            crate::gun_soul::acl_key("room_alpha")
-        );
-        assert_ne!(
-            crate::gun_soul::acl_key("room.alpha"),
-            crate::gun_soul::acl_key("room/alpha")
-        );
-        assert_ne!(
-            crate::gun_soul::acl_key("room_alpha"),
-            crate::gun_soul::acl_key("room/alpha")
-        );
-        let chain = "0xattacker.get('s3rch').get('users').get('0xvictim')";
-        assert_eq!(crate::gun_soul::acl_principal_key(chain), None);
-        assert_ne!(
-            grant_soul("0xalice", "room", chain),
-            grant_soul("0xalice", "room", "0xvictim")
-        );
-    }
 
     #[test]
     fn an_invalid_principal_is_not_admitted_as_an_empty_soul() {

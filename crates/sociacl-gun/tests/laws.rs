@@ -297,8 +297,8 @@ fn locked_user_soul_is_the_only_user_node() {
     assert_eq!(alice.as_str(), "s3rch/users/0xalice");
     let chain = "gun.get('s3rch').get('users').get('0xalice')";
     assert!(GunSoul::parse(chain).is_err());
-    assert_eq!(GunSoul::s3rch_user("0xalice").segments()[0], S3RCH_ROOT);
-    assert_eq!(GunSoul::s3rch_user("0xalice").segments()[1], S3RCH_USERS);
+    assert_eq!(GunSoul::user_node("0xalice").segments()[0], S3RCH_ROOT);
+    assert_eq!(GunSoul::user_node("0xalice").segments()[1], S3RCH_USERS);
     assert_eq!(GunNode::user("0xalice").as_node_id(), alice);
     assert_eq!(
         plane.node_kind(&alice),

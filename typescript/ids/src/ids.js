@@ -72,9 +72,6 @@ export function parseObjectId(x) {
     return ok(/** @type {ObjectId} */ (s));
   }
   if (/^(claim|ext)_[0-9a-f]{64}$/.test(s)) return ok(/** @type {ObjectId} */ (s));
-  const m = /^([a-z][a-z0-9]{1,15})_([0-9a-f]{32})$/.exec(s);
-  if (m) return RESERVED_KINDS.includes(m[1]) ? fail('reserved-kind') : ok(/** @type {ObjectId} */ (s));
-  if (/^[a-z][a-z0-9]{1,15}_[0-9a-f]{32,64}$/i.test(s) && s !== s.toLowerCase()) return fail('non-canonical');
   return fail('bad-alphabet');
 }
 /** @param {unknown} x @returns {Result<NetworkId>} */

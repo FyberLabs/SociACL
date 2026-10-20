@@ -498,18 +498,6 @@ _LIB.sociacl_gun_elect.argtypes = [
     ctypes.c_size_t,
 ]
 _LIB.sociacl_gun_elect.restype = ctypes.c_int
-_LIB.sociacl_gun_user_soul.argtypes = [
-    ctypes.c_char_p,
-    ctypes.c_char_p,
-    ctypes.c_size_t,
-]
-_LIB.sociacl_gun_user_soul.restype = ctypes.c_int
-_LIB.sociacl_gun_item_soul.argtypes = [
-    ctypes.c_char_p,
-    ctypes.c_char_p,
-    ctypes.c_size_t,
-]
-_LIB.sociacl_gun_item_soul.restype = ctypes.c_int
 _LIB.sociacl_gun_normalize_url.argtypes = [
     ctypes.c_char_p,
     ctypes.c_char_p,
@@ -544,27 +532,6 @@ def holder_keygen() -> Tuple[bytes, bytes]:
     if _LIB.sociacl_holder_keygen(pk, sk) != 0:
         raise Error("holder_keygen failed")
     return bytes(pk), bytes(sk)
-
-
-def user_soul(wallet: str) -> str:
-    buf = ctypes.create_string_buffer(_REASON_LEN)
-    if _LIB.sociacl_gun_user_soul(_b(wallet), buf, _REASON_LEN) != 0:
-        raise Error("user_soul failed")
-    return buf.value.decode("utf-8", errors="replace")
-
-
-def _expanded_buf(text: str, prefix: int = 0):
-    # Each escaped character is two bytes. The buffer holds that expansion,
-    # an optional soul prefix, and the trailing NUL.
-    n = prefix + len(text.encode("utf-8")) * 2 + 1
-    return ctypes.create_string_buffer(n), n
-
-
-def item_soul(id: str) -> str:
-    buf, n = _expanded_buf(id, prefix=len(b"s3rch/items/"))
-    if _LIB.sociacl_gun_item_soul(_b(id), buf, n) != 0:
-        raise Error("item_soul failed")
-    return buf.value.decode("utf-8")
 
 
 def normalize_url(url: str) -> str:
