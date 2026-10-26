@@ -591,10 +591,11 @@ function loadChain(genesis, priorRecords, ctx) {
 /** Sequence, sibling, and epub-reuse tail shared by publish and draft checks.
  * @param {Rotate} raw @param {readonly unknown[]} siblings @param {PrincipalId} genesis @param {readonly Rotate[]} history @param {PrincipalId|null} bindingEpub @param {ResolutionContext} ctx @param {boolean} draft @returns {Result<Rotate>} */
 function publishTail(raw, siblings, genesis, history, bindingEpub, ctx, draft) {
+  const current = history.length ? history[history.length - 1].nextKey : genesis;
   const id = draft ? '' : hex(sha256(bytes(raw)));
   for (const sibling of siblings) {
     const other = authenticatedSibling(sibling, ctx);
-    if (!other || other.principal !== raw.principal || other.seq !== raw.seq) continue;
+    if (!other || other.principal !== raw.principal || other.seq !== raw.seq || other.prevKey !== current) continue;
     if (draft) {
       if (!sameDraft(raw, other)) return fail('rotation-fork');
       continue;
@@ -602,7 +603,6 @@ function publishTail(raw, siblings, genesis, history, bindingEpub, ctx, draft) {
     if (!hasNextEpub(other) || hex(sha256(bytes(other))) !== id) return fail('rotation-fork');
   }
   const seq = history.length + 1;
-  const current = history.length ? history[history.length - 1].nextKey : genesis;
   const lastTime = history.length ? history[history.length - 1].issuedAt : -1;
   const timed = !draft || raw.issuedAt !== 0;
   if (raw.seq !== seq || (timed && raw.issuedAt <= lastTime) || raw.prevKey !== current || raw.nextKey === genesis || history.some(r => r.nextKey === raw.nextKey) || reusesEpub(raw, genesis, history, bindingEpub)) return fail('bad-sequence');
