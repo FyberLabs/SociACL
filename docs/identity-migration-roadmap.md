@@ -12,11 +12,11 @@ SociACL never launched. There is no persisted graph, no pre-v2 ACL row, and noth
 | --- | --- | --- | --- |
 | Canonical ids and keys in TS/Rust | Implemented | Merged in #57. Tag `ids-v0.10.0` is not published | Shared grammar, path, and soul vectors |
 | Wallet/OIDC proofs, rotation and revocation | Implemented | Merged in #57. Tag not published | Fixed-key records and the history, revocation, and fork vectors |
-| Present credential lookup and retained-link preparation | Implemented | [PR #84](https://github.com/FyberLabs/SociACL/pull/84) under review; covers #58 and #59 | Shared future/issuance-boundary, duplicate-copy, revocation, and input-limit vectors. Retention rejects future links before history lookup |
+| Present credential lookup and retained-link preparation | Implemented | [PR #84](https://github.com/FyberLabs/SociACL/pull/84) merged; covers #58 and #59 | Shared future/issuance-boundary, duplicate-copy, revocation, and input-limit vectors. Retention rejects future links before history lookup |
 | Browser package and optional Zod entry point | Implemented | Merged in #57. Tag not published | Strict types, browser bundle, installed-tarball consumer |
 | Shared-vector accounting and release workflow | Implemented | Tag not published | CI compares both execution manifests to the vectors |
 | SociACL permission callers | Implemented | #55 PRs 1–6 merged. PR 7 dropped. This close-out is PR 8 | Branded `ObjectId` and `PrincipalId`. Alias, fold, and chain-accessor helpers deleted. Forbidden-names guard and the `typescript/src` `node:crypto` audit |
-| PR #84 review hardening | Implemented | [PR #84](https://github.com/FyberLabs/SociACL/pull/84) awaits review and merge | Damaged v4 proof copies cannot restore retired keys; shared resolution and signed-at regressions. One parser-based crypto import audit replaces three hand-written scanners |
+| PR #84 review hardening | Implemented | [PR #84](https://github.com/FyberLabs/SociACL/pull/84) merged | Damaged v4 proof copies cannot restore retired keys; shared resolution and signed-at regressions. One parser-based crypto import audit replaces three hand-written scanners |
 | Panopticon credential attestation | Planned | Separate work | Pinned ES256 attestations after a wallet proof or a fresh OIDC login |
 | s3r.ch account enrollment and recovery | Planned | Separate product work. Not a SociACL graph migration | One genesis per account |
 | s3r.ch objects, permissions and Views | Planned | Separate product work. Mint new ids there | Exact object grants on stored ids |
@@ -35,9 +35,9 @@ These are not a data migration:
 
 SociACL follow-ups that this close-out does not take:
 
-- [#77](https://github.com/FyberLabs/SociACL/issues/77): request pairs now validate privately and publish together, with reentrant cancels and owner removal aborting the pair. Rust self-requests reuse one history lookup and members timestamps share the JavaScript safe-integer limit. Shared vectors cover missing request fields, self-resolution counts, and the timestamp limit. The KDF rejection test counts calls rather than elapsed time; the feature-off adapter build rejects warnings. Test hooks live outside the package, and the package import boundary is documented. These changes are in [PR #85](https://github.com/FyberLabs/SociACL/pull/85), awaiting review and merge. The old public owner bind/unbind functions were already removed on master. Group-policy questions remain in #79.
+- [#77](https://github.com/FyberLabs/SociACL/issues/77): request pairs now validate privately and publish together, with reentrant cancels and owner removal aborting the pair. Rust self-requests reuse one history lookup and members timestamps share the JavaScript safe-integer limit. Shared vectors cover missing request fields, self-resolution counts, and the timestamp limit. The KDF rejection test counts calls rather than elapsed time; the feature-off adapter build rejects warnings. Test hooks live outside the package, and the package import boundary is documented. These changes are in [PR #85](https://github.com/FyberLabs/SociACL/pull/85), merged. The old public owner bind/unbind functions were already removed on master. Group-policy questions remain in #79.
 - [#79](https://github.com/FyberLabs/SociACL/issues/79) group-predicate leftovers that are not the incoming-predicate vector, the cancel-only tombstone snapshot, or the Rust `mutate-row` note
-- [#81](https://github.com/FyberLabs/SociACL/issues/81) signed `sociacl-object-v2` ownership for `sociacl/ir` `putObject` and the Rust adapter core-plane owner
+- [#81](https://github.com/FyberLabs/SociACL/issues/81): implemented removal of the unsigned `sociacl/ir` runtime and Rust core-plane Gun adapter, including C/Python authority wrappers. Signed object admission remains the ownership boundary. Public API regressions cover unsigned/forged records, rejected overwrites, core/mesh separation, and removed exports. [PR #86](https://github.com/FyberLabs/SociACL/pull/86) awaits review and merge; [replacement APIs](gun.md#signed-ownership-boundary).
 
 ## Clarifications
 

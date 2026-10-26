@@ -61,14 +61,18 @@ jobs:
             const root = await import('sociacl');
             const gun = await import('sociacl/gun');
             const group = await import('sociacl/group');
-            const ir = await import('sociacl/ir');
             if (typeof root.HOPCAP !== 'number') throw new Error('root');
             if (typeof gun.admitRow !== 'function') throw new Error('admitRow');
             if (typeof gun.checkSee !== 'function') throw new Error('checkSee');
             if (typeof gun.admitPost !== 'function') throw new Error('admitPost');
             if (typeof gun.checkPost !== 'function') throw new Error('checkPost');
             if (typeof group.MemoryGroupGraph !== 'function') throw new Error('MemoryGroupGraph');
-            if (typeof ir.mapAction !== 'function') throw new Error('ir');
+            try {
+              await import('sociacl/ir');
+              throw new Error('unsigned IR adapter is exported');
+            } catch (error) {
+              if (error.code !== 'ERR_PACKAGE_PATH_NOT_EXPORTED') throw error;
+            }
           "
 
       - name: Coverage

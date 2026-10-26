@@ -1,8 +1,5 @@
-use sociacl_core::{NodeId, Plane, PredicateId, Timestamp};
-use sociacl_gun::{
-    add_claim, add_item, add_principal, apply_see_grant, check_see_grant, FeedItem, FeedSource,
-    IdentitySeeGrant,
-};
+use sociacl_core::{NodeId, Timestamp};
+use sociacl_gun::{FeedItem, FeedSource, IdentitySeeGrant};
 use sociacl_ids::{derive_claim_id, derive_external_id, grant_soul, parse_principal_id};
 
 fn cases() -> Vec<serde_json::Value> {
@@ -40,8 +37,6 @@ fn feed_item_id_is_ext_derived() {
     let derived = derive_external_id(&source, item_id).unwrap();
     assert_eq!(derived.as_ref(), row["object"].as_str().unwrap());
     assert_ne!(derived.as_ref(), row["notObject"].as_str().unwrap());
-    let mut plane = Plane::new();
-    let owner = add_principal(&mut plane, &row["owner"].as_str().unwrap().parse().unwrap());
     let item = FeedItem {
         id: item_id.to_string(),
         source: FeedSource::Rss3,
@@ -53,8 +48,8 @@ fn feed_item_id_is_ext_derived() {
         tags: Vec::new(),
         provenance: "rss3:gi".into(),
     };
-    let object = add_item(&mut plane, &item, &source, &owner).unwrap();
-    assert_eq!(object.as_str(), row["object"].as_str().unwrap());
+    let object = item.object_id(&source).unwrap();
+    assert_eq!(object.as_ref(), row["object"].as_str().unwrap());
 }
 
 #[test]
@@ -133,7 +128,7 @@ fn provider_item_id_is_not_trimmed() {
 }
 
 #[test]
-fn wallet_accessor_refused_in_core() {
+fn wallet_accessor_is_not_a_grant_principal() {
     let row = case("wallet-accessor-refused-in-core");
     assert_eq!(row["name"], "wallet-accessor-refused-in-core");
     let wallet = row["wallet"].as_str().unwrap();
@@ -146,39 +141,17 @@ fn wallet_accessor_refused_in_core() {
         parse_principal_id(gun_path).unwrap_err().to_string(),
         row["reason"].as_str().unwrap()
     );
-    let owner = row["owner"].as_str().unwrap().parse().unwrap();
-    let accessor = row["accessor"].as_str().unwrap().parse().unwrap();
-    let mut plane = Plane::new();
-    let alice = add_principal(&mut plane, &owner);
-    let bob = add_principal(&mut plane, &accessor);
-    let claim = add_claim(&mut plane, row["claimText"].as_str().unwrap(), &alice).unwrap();
-    assert_eq!(claim.as_str(), row["object"].as_str().unwrap());
-    assert_eq!(
-        derive_claim_id(row["claimText"].as_str().unwrap())
-            .unwrap()
-            .as_ref(),
-        claim.as_str()
-    );
-    plane
-        .set_object_property(&claim, "predicate", PredicateId::DELEGATE)
-        .unwrap();
+    let claim = derive_claim_id(row["claimText"].as_str().unwrap()).unwrap();
+    assert_eq!(claim.as_ref(), row["object"].as_str().unwrap());
     let grant = IdentitySeeGrant {
-        object: claim.as_str().parse().unwrap(),
-        accessor: accessor,
+        object: claim,
+        accessor: row["accessor"].as_str().unwrap().parse().unwrap(),
         from: Timestamp(0),
         until: Timestamp(80),
     };
     assert!(!grant.names_accessor(&NodeId::new(wallet)));
     assert!(!grant.names_accessor(&NodeId::new(gun_path)));
-    apply_see_grant(&mut plane, &alice, &grant).unwrap();
-    let wallet_check = check_see_grant(&plane, &grant, &claim, &NodeId::new(wallet), None);
-    assert!(wallet_check.is_err() || !wallet_check.unwrap().allowed);
     assert!(!row["allowed"].as_bool().unwrap());
-    assert!(
-        check_see_grant(&plane, &grant, &claim, &bob, None)
-            .unwrap()
-            .allowed
-    );
 }
 
 #[test]

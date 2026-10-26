@@ -120,9 +120,9 @@ export type IdentityClaimKind =
   | "phone";
 
 /**
- * Jointly stated see grant. hopcap 1. Privilege-down is immediate.
- * `from` inclusive, `until` exclusive. Dest stores `until`; Check
- * ANDs now ∈ [from, until).
+ * Unsigned see-grant data, not admission or proof of ownership.
+ * Check requires an admitted signed mesh row and signed object record.
+ * `from` inclusive, `until` exclusive.
  */
 export type IdentitySeeGrant = {
   object: ObjectId;

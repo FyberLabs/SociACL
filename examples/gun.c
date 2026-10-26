@@ -1,4 +1,4 @@
-/* Gun adapter via the C FFI: hint is not a grant. Dest Check is.
+/* Gun transport via the C FFI. Decode does not verify or establish ownership.
  * Build after `cargo build -p sociacl-c`:
  *   cc -I crates/sociacl-c/include examples/gun.c -L target/debug -lsociacl -o gun
  *   LD_LIBRARY_PATH=target/debug ./gun
@@ -22,17 +22,7 @@ static void must(int rc, const char *what) {
 }
 
 int main(void) {
-    sociacl_plane *plane = sociacl_plane_new();
-    if (!plane) {
-        die("sociacl_plane_new");
-    }
-
-    const char *alice = "s3rch/users/0xalice";
-    const char *bob = "s3rch/users/0xbob";
-    must(sociacl_add_person(plane, alice), "alice");
-    must(sociacl_add_person(plane, bob), "bob");
-    must(sociacl_add_object(plane, "claim-1", alice), "claim");
-    must(sociacl_set_object_property(plane, "claim-1", "predicate", "delegate"), "pred");
+    const char *bob = "untrusted-principal";
 
     char reason[128];
     size_t written = 0;
@@ -71,49 +61,6 @@ int main(void) {
     must(sociacl_gun_hint_accept(hint, written, reason, sizeof reason), "accept");
     printf("accept: %s\n", reason);
 
-    int rc = sociacl_gun_check(
-        plane,
-        "see",
-        "claim-1",
-        bob,
-        hint,
-        written,
-        NULL,
-        0,
-        reason,
-        sizeof reason
-    );
-    if (rc != 0) {
-        fprintf(stderr, "hint alone must deny, got %d %s\n", rc, reason);
-        exit(1);
-    }
-    printf("hint alone: allowed=0\n");
-
-    must(sociacl_delegate(plane, alice, bob, "claim-1", "read", 0), "delegate");
-    rc = sociacl_gun_check(
-        plane,
-        "see",
-        "claim-1",
-        bob,
-        hint,
-        written,
-        NULL,
-        0,
-        reason,
-        sizeof reason
-    );
-    if (rc != 1) {
-        fprintf(stderr, "dest re-check must allow, got %d %s\n", rc, reason);
-        exit(1);
-    }
-    printf("dest re-check: allowed=1 reason=%s\n", reason);
-
-    rc = sociacl_gun_elect(plane, "claim-1", hint, written, reason, sizeof reason);
-    if (rc != -1) {
-        die("elect from hint must fail");
-    }
-    printf("elect from hint: %s\n", reason);
-
     char url[64];
     must(
         sociacl_gun_normalize_url(
@@ -128,6 +75,5 @@ int main(void) {
     printf("url leaf: %s\n", url);
 
     free(hint);
-    sociacl_plane_free(plane);
     return 0;
 }

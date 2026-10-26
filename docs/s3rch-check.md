@@ -14,10 +14,10 @@ The Next app runs Check **in the browser** on the Gun mesh. It does **not** impo
 
 | Name | Meaning |
 | --- | --- |
-| `object` | stored `ObjectId`: minted `kind_p_<128 hex>_<32 hex>`, `claim_` plus 64 hex, or `ext_` plus 64 hex |
+| `object` | stored minted `ObjectId` backed by a verified `sociacl-object-v2` record; derived `claim_` / `ext_` ids alone carry no ownership |
 | `accessor` | `PrincipalId`. A wallet and `s3rch/users/<wallet>` are not principals |
 | `see` | dest Check `read` |
-| grant | jointly stated `IdentitySeeGrant` / mesh `MeshSeeGrant`; hopcap **1** (no friend-of-friend) |
+| grant | admitted signed mesh row; `IdentitySeeGrant` is only an unsigned data shape; hopcap **1** (no friend-of-friend) |
 | revoke | immediate privilege-down on the dest object (`cancelSee`) |
 | hint | `HandoffHint` — untrusted; never a grant |
 | hop | optional Social Light `HopFactor`; never a grant; missing does not fail |
@@ -144,7 +144,7 @@ The #55 rebuild spec is not in this repository. This section is the deletion sch
 
 The #55 rebuild spec stays out of this repository. This list is the amendment record.
 
-- **PR 7:** dropped. SociACL never launched, so there is no old graph and no pre-v2 ACL row to read. There is no `migrateAclRows` / `migrate_acl_rows`, no `objectMap`, and no wallet or `s3rch/users/<wallet>` resolver. Old domains stay `legacy-row` and never reach Check. Owners mint fresh v2 rows. Do not preserve a rejected id and do not infer ownership from one. Signed `sociacl-object-v2` ownership for `sociacl/ir` `putObject` and the Rust adapter core-plane owner is [#81](https://github.com/FyberLabs/SociACL/issues/81).
+- **PR 7:** dropped. SociACL never launched, so there is no old graph and no pre-v2 ACL row to read. There is no `migrateAclRows` / `migrate_acl_rows`, no `objectMap`, and no wallet or `s3rch/users/<wallet>` resolver. Old domains stay `legacy-row` and never reach Check. Owners mint fresh v2 rows. Do not preserve a rejected id and do not infer ownership from one. [#81](https://github.com/FyberLabs/SociACL/issues/81) removes the unsigned `sociacl/ir` entry and Rust core-plane adapter, including C/Python authority wrappers. Use signed `sociacl-object-v2` admission; see [the API replacement guide](gun.md#signed-ownership-boundary).
 
 `vectors/mesh/forbidden-names.json` lists the banned names and the globs that must not contain them. Scopes cover `typescript/src`, `typescript/contract`, `sociacl-gun`, `sociacl-encdisc`, and `docs/s3rch-check.d.ts`. The same see-vector tests fail when `typescript/src` imports `node:crypto` or `crypto`. WebCrypto and comments stay allowed. The scan includes `.mjs`, `.cjs`, `.mts`, and `.cts`. `vectors/mesh/access-request.json`, `vectors/mesh/post-grant.json`, and `vectors/mesh/principals.json` are gone. `principals.json` was the old label suite.
 

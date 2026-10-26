@@ -1,9 +1,9 @@
 # Gun adapter
 
-Authority-plane mapping for GunDB. This is not the s3r.ch product surface.
+Signed mesh ownership and permission checks for GunDB.
 
 The TypeScript package's `exports` map defines its supported import boundary:
-`sociacl`, `sociacl/gun`, `sociacl/group`, and `sociacl/ir`. Files under
+`sociacl`, `sociacl/gun`, and `sociacl/group`. Files under
 `src/internal` are implementation details, not API. Consumers must not bypass
 the export map with absolute paths, bundler aliases, or source-tree imports.
 Those files hold mutable admission maps: deleting a cancel there can permit an
@@ -11,6 +11,34 @@ older signed grant to be admitted again. Public inspection APIs return copies;
 the mutation hooks used to test this boundary live under `tests/` and are not
 shipped. This boundary assumes trusted code in the JavaScript process; it is
 not a sandbox for hostile code sharing that process.
+
+## Signed ownership boundary
+
+Gun ownership comes only from a verified `sociacl-object-v2` record. TypeScript
+callers use `putObject(graph, record, resolver)` from `sociacl/gun`; Rust callers
+use `MeshSeeGraph::put_object(record, resolver, context)`. Supply authenticated
+identity history and a current verification context. Both check the object's
+embedded principal, the owner's signature, and signing-key history before
+admission. A valid id, an author label, a derived `claim_` or `ext_` id, or a core
+`Plane` owner does not establish mesh ownership. The current signed object
+format requires a minted id with an embedded principal; derived ids remain
+feed/claim identifiers and cannot acquire an owner through these APIs.
+
+[#81](https://github.com/FyberLabs/SociACL/issues/81) removes the unsigned
+`sociacl/ir` entry and `MemoryDelegateAcl.putObject(object, owner)`. It also
+removes the Rust core-plane adapter's `add_principal`, `add_claim`, `add_item`,
+`add_feed_node`, `apply_see_grant`, free `check*`, `cancel`, `remint`, `elect_*`,
+and `client_*` functions and `GunCheckResult`. Use signed `MeshSeeGraph`
+admission and checks. There is no conversion from an unsigned core plane.
+
+The corresponding C `sociacl_gun_check`, `sociacl_gun_check_see_grant`,
+`sociacl_gun_remint`, `sociacl_gun_cancel`, and `sociacl_gun_elect` exports and
+Python `Plane.check_gun`, `check_see_grant`, `remint_gun`, `cancel_gun`, and
+`elect_gun` methods are removed. C/Python retain hint encode/decode and URL
+normalization; they do not yet bind the signed mesh. Generic core-plane APIs
+are separate trusted application state and are not a substitute for Gun record
+verification. The AImmune/Brewnix copyable logical-site contract is still a
+product contract, not an exported signed-identity implementation.
 
 Request approval validates see/post rows on a private graph and publishes them
 without calling caller code between the two writes. Resolver callbacks and
@@ -24,25 +52,25 @@ nonnegative safe integers in both TypeScript and Rust.
 
 The consume contract they reimplement is **[s3rch-check.d.ts](s3rch-check.d.ts)** ([s3rch-check.md](s3rch-check.md)). Copy the file or re-type the names. Do not `npm install sociacl`. The Gun adapter surface for that product is **light Check + `delegate` only**.
 
-This crate maps the fixed s3r.ch Gun graph onto existing SociACL Check predicates and the keep-operating `delegate` grant. It does not add a Gun-only verb. It does not fork that graph.
+This crate verifies signed object and ACL records in the fixed s3r.ch Gun graph, then checks admitted ownership and grants. It does not fork that graph.
 
 ## Product split
 
 | Piece | Owner | Lives |
 | --- | --- | --- |
 | Graph, named predicates, Check, `delegate` | SociACL | `crates/sociacl-core` |
-| Soul / URL / handoff types and dest Check | SociACL | `crates/sociacl-gun` |
-| C accept / Check / remint / cancel | SociACL | `crates/sociacl-c` |
+| Signed mesh admission / Check and transport types | SociACL | `crates/sociacl-gun` |
+| C hint encode/decode and URL normalization | SociACL | `crates/sociacl-c` |
 | Feed, UX, Gun peers, TypeScript graph | s3r.ch | s3r.ch PR #7 |
 | Elect, wills, devices, Case C mint | SociACL core only | not on the s3r.ch Gun surface |
 
 s3r.ch stores **only Gun-native objects** under this adapter. In-graph Gun data is the native ACL. Check evaluates graph relations on stored ids.
 
-A Check **object** is an `ObjectId`: a minted id with the creator's genesis principal, a `claim_` derived id, or an `ext_` derived id. The accessor is a `PrincipalId`. A wallet and a `s3rch/users/<wallet>` path are not principals. Lighter Check is `CHECK(see, object, accessor)` at now. Hopcap 1. Grants are jointly stated. Revoke is immediate. SociACL never launched, so there is no pre-v2 ACL row to migrate.
+A Check **object** is an `ObjectId` backed by an admitted signed record. Only minted ids embed the owner principal required by that record; derived claim/feed ids alone are data. The accessor is a `PrincipalId`. A wallet and a `s3rch/users/<wallet>` path are not principals. Lighter Check is `CHECK(see, object, accessor)` at now. Hopcap 1. Grants are jointly stated. Revoke is immediate. SociACL never launched, so there is no pre-v2 ACL row to migrate.
 
 Non-Gun data is a URL. RSS3 GI, RSS/Atom, KYC / email / phone issuer HTTP calls are **leaf pointers**, not Gun nodes and not grants. Crossing them (`/api/ingest`, seeder) is an **untrusted handoff**. Destination re-authorizes on the way back, then may `put` a native object into `items`. A URL 200 is not `see`.
 
-Execute-without-read is the existing `delegate` primitive (action mask `execute` without `read`). Elect from a hop, hint, or delegate remains refuse-closed.
+The generic core plane has execute-without-read, Elect, and Case C operations. Those operations are not exposed as Gun adapter authority.
 
 A Social Light hop can factor Check. It cannot mint. The consume contract names this `HopFactor` on `checkSee(..., hint?, hop?)`. Decode (`acceptHop` / `decodeHop`) does not verify and does not mint. See [social-light.md](social-light.md).
 
@@ -50,14 +78,14 @@ Mesh see grants are Gun-native dest-ACL nodes under `grantSoul`: `s3rch/acl/<own
 
 Wrapped-key grants, recipient-side discovery, and rotation on revoke are specified in [encrypted-discovery.md](encrypted-discovery.md). `crates/sociacl-encdisc` implements that path. This crate evaluates plaintext `MeshSeeGrant` rows, plaintext `MeshPostGrant` rows (`checkPost`), and direct `same-group` / `named-circle` edges. A wrap is not a grant. A hop, a hint, a wrap, a request, or an inbox delivery never mints. SEA `priv` and `epriv` never go on Gun. SociACL runs no index. A per-contact inbox lane, when a product stores one, is indexed by its lane id hex alone, never under a principal soul or a `~pub` path. The contact-lane secret stays off Gun. The disclosed base lane id is not that secret. This crate does not wire that index. See [encrypted-discovery.md](encrypted-discovery.md). s3r.ch product draft: [FyberLabs/s3r.ch#108](https://github.com/FyberLabs/s3r.ch/pull/108). This repo does not edit s3r.ch.
 
-Case C may Check a frozen bundle the way the rest of SociACL does. The client has no mint path for new Gun grants.
+Case C remains a generic core-plane feature. The signed mesh does not accept ownership from a frozen core bundle.
 
 ## Fixed s3r.ch graph (consume, do not fork)
 
 Gun root: `s3rch`.
 
 ```
-gun.get('s3rch').get('items').get(<item key>)  → GunFeedNode (UX). Check id is ext_
+gun.get('s3rch').get('items').get(<item key>)  → GunFeedNode (UX). Derived ext_ identifies feed data
 gun.get('s3rch').get('meta')                     → seed meta (not a Check object)
 s3rch/acl/<owner key>/<object>/<accessor key>    → MeshSeeGrant (grantSoul)
 s3rch/acl/<owner key>/post/<object>/<accessor key> → MeshPostGrant (postSoul)
@@ -75,11 +103,14 @@ The item key escapes `~ . # $ [ ]` and leaves `/` alone. That escape is a closed
 
 `FeedTab` is `"public" | "mine" | "network"`. UX only. Not a Check object.
 
-`GunUserNode` (fixed): `{ id, indicators: string[], provenance, ts }`. It is not a core-plane principal, and this crate does not build `s3rch/users/<wallet>`. `indicators` list held-claim text (`ens:…` / `unstoppable:…` / `fc:…` / `lens:…` / `rss3:…`). The Check id is `claim_` derived from that text. Indicators are a comma-separated string on the Gun wire, same as tags. Overlay uses this same shape until s3r.ch `prepareShare*`. Do not invent a second user node. Do not invent `s3rch/users/<wallet>/claims/…`.
+`GunUserNode` (fixed): `{ id, indicators: string[], provenance, ts }`. It is not a core-plane principal, and this crate does not build `s3rch/users/<wallet>`. `indicators` list held-claim text (`ens:…` / `unstoppable:…` / `fc:…` / `lens:…` / `rss3:…`). The `claim_` id identifies that claim text; it does not establish an owner. Indicators are a comma-separated string on the Gun wire, same as tags. Overlay uses this same shape until s3r.ch `prepareShare*`. Do not invent a second user node. Do not invent `s3rch/users/<wallet>/claims/…`.
 
 `IdentityClaimKind`: `wallet | rss3 | ens | kyc_attestation | email | phone`. Issuers prove a claim to the holder. They are not grants.
 
-`IdentitySeeGrant`: `{ object, accessor, from, until }` with an `ObjectId` and a `PrincipalId`. Maps onto keep-operating `delegate` read with `until`. hopcap 1. Jointly stated. Revoke immediate. Not Elect. Dest Check `until` is exclusive (existing `delegate`). `from` is inclusive and is **not** on the dest edge — `check_see_grant` ANDs dest Check with `now ∈ [from, until)`. `CHECK(see, object, accessor)` at now.
+`IdentitySeeGrant`: `{ object, accessor, from, until }` is an unsigned data
+shape. Its time-window helpers do not authorize anything. Signed mesh grant
+rows enter through `admitRow` / `MeshSeeGraph::admit_row`, alongside an admitted
+object record. A grant alone cannot create an object owner.
 
 Arrays cannot live in Gun. Tags (and later indicators) are a comma-separated string on the wire.
 
@@ -132,19 +163,17 @@ Max string 4096. Fail closed on a bad magic, version, or length.
 | s3r.ch / Gun | SociACL |
 | --- | --- |
 | `see` | Check `read` on a Gun-native object |
-| object | `GunFeedNode` or a held claim (same Check) |
+| object | admitted signed object record on a minted `ObjectId` |
 | accessor | `PrincipalId` |
-| execute-without-view | `delegate` mask `execute` without `read` |
-| `IdentitySeeGrant` | `delegate` read + `until`; `check_see_grant` ANDs `[from, until)` at now; cancel is undelegate |
-| cancel | owner `undelegate` / unstate on the dest object |
-| remint | refresh only if the current ACL already names the principal |
+| `IdentitySeeGrant` | unsigned data only; admission requires signed mesh rows |
+| cancel | verified signed cancel on the destination ACL |
 | permalink / RSS3 / RSS / KYC HTTP | `UrlLeaf` (handoff, not a node) |
 | handoff | `HandoffHint` (untrusted factor) |
 | hop | `HopFactor` (Social Light SLHP; optional; never a grant) |
 | dest ACL grant | `MeshSeeGrant` / `GunAclEdge` at `s3rch/acl/…` |
 | hopcap | 1. No friend-of-friend |
 
-`see` is an adapter alias for `read`. `ActionMask` still matches `read` / `write` / `execute`. The adapter maps `see` before dest Check.
+`see` is an adapter alias for `read`. `ActionMask` still matches `read` / `write` / `execute`. The pure `map_action` helper maps that spelling; it does not admit an object or run a core-plane Check.
 
 ## File layout
 
@@ -155,11 +184,11 @@ docs/encrypted-discovery.md    spec: wrapped keys, private rows, group predicate
 docs/gun.md                    this page (Rust adapter map)
 docs/social-light.md           SLHP hop factor Check may consume
 crates/sociacl-gun             reference implementation (MeshSeeGraph + hop)
-crates/sociacl-c/include       C encode / accept / Check / see-grant / remint / cancel
+crates/sociacl-c/include       C hint encode / accept and URL normalization
 python/sociacl                 thin ctypes of the C ABI
 ```
 
-Elect is visible and always fails (`sociacl_gun_elect`). Case C mint is visible and always fails (`client_mint_grant`).
+Elect and Case C mint have no Gun adapter entry points.
 
 ## What this does not do
 

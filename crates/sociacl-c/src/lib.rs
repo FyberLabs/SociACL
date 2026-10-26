@@ -11,11 +11,7 @@ use sociacl_core::{
     AttestationSig, AuthnState, CensureReason, CheckRequest, Client, EnrollmentKind, HolderSecret,
     IssuerSecret, NodeId, Plane, PredicateId, Relation, SocialLightStatement, Timestamp, VerifyKey,
 };
-use sociacl_gun::{
-    accept_hint_bytes, cancel as gun_cancel, check as gun_check,
-    check_see_grant as gun_check_see_grant, elect_from_hint, remint as gun_remint,
-    HandoffHint, IdentitySeeGrant, UrlLeaf,
-};
+use sociacl_gun::{accept_hint_bytes, HandoffHint, UrlLeaf};
 
 #[allow(non_camel_case_types)]
 pub struct sociacl_plane {
@@ -1641,230 +1637,6 @@ pub extern "C" fn sociacl_gun_hint_accept(
 }
 
 #[no_mangle]
-pub extern "C" fn sociacl_gun_check(
-    plane: *mut sociacl_plane,
-    action: *const c_char,
-    claim: *const c_char,
-    accessor: *const c_char,
-    hint: *const u8,
-    hint_len: usize,
-    hop: *const u8,
-    hop_len: usize,
-    reason_out: *mut c_char,
-    reason_len: usize,
-) -> c_int {
-    let (Some(action), Some(claim), Some(accessor)) = (cstr(action), cstr(claim), cstr(accessor))
-    else {
-        write_reason(reason_out, reason_len, "invalid-argument");
-        return -1;
-    };
-    let parsed_hint = if hint_len == 0 || hint.is_null() {
-        None
-    } else {
-        let Some(bytes) = frame_slice(hint, hint_len) else {
-            write_reason(reason_out, reason_len, "invalid-argument");
-            return -1;
-        };
-        match accept_hint_bytes(bytes) {
-            Ok(h) => Some(h),
-            Err(e) => {
-                write_reason(reason_out, reason_len, &e.to_string());
-                return -1;
-            }
-        }
-    };
-    with_plane(plane, |p| {
-        let hop_stmt = if hop_len == 0 || hop.is_null() {
-            None
-        } else {
-            let Some(bytes) = frame_slice(hop, hop_len) else {
-                write_reason(reason_out, reason_len, "invalid-argument");
-                return -1;
-            };
-            match SocialLightStatement::decode(bytes) {
-                Ok(s) => Some(s),
-                Err(e) => {
-                    write_reason(reason_out, reason_len, &e.to_string());
-                    return -1;
-                }
-            }
-        };
-        match gun_check(
-            p,
-            action,
-            claim,
-            accessor,
-            parsed_hint.as_ref(),
-            hop_stmt.as_ref(),
-        ) {
-            Ok(result) => {
-                write_reason(reason_out, reason_len, result.reason.as_str());
-                if result.allowed {
-                    1
-                } else {
-                    0
-                }
-            }
-            Err(e) => {
-                write_reason(reason_out, reason_len, &e.to_string());
-                -1
-            }
-        }
-    })
-}
-
-/// Dest Check AND `IdentitySeeGrant` `[from, until)` at plane now.
-/// Returns 1 allow, 0 deny, -1 error.
-#[no_mangle]
-pub extern "C" fn sociacl_gun_check_see_grant(
-    plane: *mut sociacl_plane,
-    claim_id: *const c_char,
-    grant_accessor: *const c_char,
-    from: u64,
-    until: u64,
-    object: *const c_char,
-    accessor: *const c_char,
-    hint: *const u8,
-    hint_len: usize,
-    reason_out: *mut c_char,
-    reason_len: usize,
-) -> c_int {
-    let (Some(claim_id), Some(grant_accessor), Some(object), Some(accessor)) = (
-        cstr(claim_id),
-        cstr(grant_accessor),
-        cstr(object),
-        cstr(accessor),
-    ) else {
-        write_reason(reason_out, reason_len, "invalid-argument");
-        return -1;
-    };
-    let Ok(object_id) = sociacl_ids::parse_object_id(claim_id) else {
-        write_reason(reason_out, reason_len, "bad-alphabet");
-        return -1;
-    };
-    let Ok(accessor_id) = sociacl_ids::parse_principal_id(grant_accessor) else {
-        write_reason(reason_out, reason_len, "bad-alphabet");
-        return -1;
-    };
-    let grant = IdentitySeeGrant {
-        object: object_id,
-        accessor: accessor_id,
-        from: Timestamp(from),
-        until: Timestamp(until),
-    };
-    let parsed_hint = if hint_len == 0 || hint.is_null() {
-        None
-    } else {
-        let Some(bytes) = frame_slice(hint, hint_len) else {
-            write_reason(reason_out, reason_len, "invalid-argument");
-            return -1;
-        };
-        match accept_hint_bytes(bytes) {
-            Ok(h) => Some(h),
-            Err(e) => {
-                write_reason(reason_out, reason_len, &e.to_string());
-                return -1;
-            }
-        }
-    };
-    with_plane(plane, |p| {
-        match gun_check_see_grant(p, &grant, object, accessor, parsed_hint.as_ref()) {
-            Ok(result) => {
-                write_reason(reason_out, reason_len, result.reason.as_str());
-                if result.allowed {
-                    1
-                } else {
-                    0
-                }
-            }
-            Err(e) => {
-                write_reason(reason_out, reason_len, &e.to_string());
-                -1
-            }
-        }
-    })
-}
-
-#[no_mangle]
-pub extern "C" fn sociacl_gun_remint(
-    plane: *mut sociacl_plane,
-    claim: *const c_char,
-    principal: *const c_char,
-    reason_out: *mut c_char,
-    reason_len: usize,
-) -> c_int {
-    let (Some(claim), Some(principal)) = (cstr(claim), cstr(principal)) else {
-        write_reason(reason_out, reason_len, "invalid-argument");
-        return -1;
-    };
-    with_plane(plane, |p| match gun_remint(p, claim, principal, None) {
-        Ok(_) => {
-            write_reason(reason_out, reason_len, "remint");
-            1
-        }
-        Err(e) => {
-            write_reason(reason_out, reason_len, &e.to_string());
-            -1
-        }
-    })
-}
-
-#[no_mangle]
-pub extern "C" fn sociacl_gun_cancel(
-    plane: *mut sociacl_plane,
-    owner: *const c_char,
-    principal: *const c_char,
-    claim: *const c_char,
-) -> c_int {
-    let (Some(owner), Some(principal), Some(claim)) = (cstr(owner), cstr(principal), cstr(claim))
-    else {
-        return -1;
-    };
-    with_plane(plane, |p| {
-        if gun_cancel(p, owner, principal, claim).is_err() {
-            return -1;
-        }
-        0
-    })
-}
-
-#[no_mangle]
-pub extern "C" fn sociacl_gun_elect(
-    plane: *mut sociacl_plane,
-    claim: *const c_char,
-    hint: *const u8,
-    hint_len: usize,
-    reason_out: *mut c_char,
-    reason_len: usize,
-) -> c_int {
-    let Some(claim) = cstr(claim) else {
-        write_reason(reason_out, reason_len, "invalid-argument");
-        return -1;
-    };
-    let Some(bytes) = frame_slice(hint, hint_len) else {
-        write_reason(reason_out, reason_len, "invalid-argument");
-        return -1;
-    };
-    let parsed = match accept_hint_bytes(bytes) {
-        Ok(h) => h,
-        Err(e) => {
-            write_reason(reason_out, reason_len, &e.to_string());
-            return -1;
-        }
-    };
-    with_plane(plane, |p| match elect_from_hint(p, claim, &parsed) {
-        Ok(_) => {
-            write_reason(reason_out, reason_len, "elect-must-not-succeed");
-            -1
-        }
-        Err(e) => {
-            write_reason(reason_out, reason_len, &e.to_string());
-            -1
-        }
-    })
-}
-
-#[no_mangle]
 pub extern "C" fn sociacl_gun_normalize_url(
     url: *const c_char,
     dst: *mut c_char,
@@ -2692,34 +2464,15 @@ mod tests {
     }
 
     #[test]
-    fn ffi_gun_hint_is_not_a_grant_dest_check_is() {
-        let plane = sociacl_plane_new();
-        let alice = "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU".to_string();
-        let bob = "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E".to_string();
-        let claim = sociacl_ids::derive_claim_id("claim-1").unwrap();
-        let claim = claim.as_ref().to_string();
-        assert_eq!(sociacl_add_person(plane, c(&alice).as_ptr()), 0);
-        assert_eq!(sociacl_add_person(plane, c(&bob).as_ptr()), 0);
-        assert_eq!(
-            sociacl_add_object(plane, c(&claim).as_ptr(), c(&alice).as_ptr()),
-            0
-        );
-        assert_eq!(
-            sociacl_set_object_property(
-                plane,
-                c(&claim).as_ptr(),
-                c("predicate").as_ptr(),
-                c("delegate").as_ptr()
-            ),
-            0
-        );
-
+    fn ffi_gun_hint_transport() {
+        let bob = "untrusted-principal";
+        let claim = "untrusted-target";
         let mut reason = [0i8; 128];
         let mut written = 0usize;
         assert_eq!(
             sociacl_gun_hint_encode(
-                c(&bob).as_ptr(),
-                c(&claim).as_ptr(),
+                c(bob).as_ptr(),
+                c(claim).as_ptr(),
                 c("see").as_ptr(),
                 ptr::null(),
                 ptr::null_mut(),
@@ -2733,8 +2486,8 @@ mod tests {
         let mut hint = vec![0u8; written];
         assert_eq!(
             sociacl_gun_hint_encode(
-                c(&bob).as_ptr(),
-                c(&claim).as_ptr(),
+                c(bob).as_ptr(),
+                c(claim).as_ptr(),
                 c("see").as_ptr(),
                 ptr::null(),
                 hint.as_mut_ptr(),
@@ -2750,173 +2503,11 @@ mod tests {
             sociacl_gun_hint_accept(hint.as_ptr(), written, reason.as_mut_ptr(), reason.len()),
             0
         );
+        assert!(text(&reason).contains("untrusted-principal"));
         assert_eq!(
-            sociacl_gun_check(
-                plane,
-                c("see").as_ptr(),
-                c(&claim).as_ptr(),
-                c(&bob).as_ptr(),
-                hint.as_ptr(),
-                written,
-                ptr::null(),
-                0,
-                reason.as_mut_ptr(),
-                reason.len(),
-            ),
-            0,
-            "hint alone fails closed"
-        );
-        assert_eq!(
-            sociacl_delegate(
-                plane,
-                c(&alice).as_ptr(),
-                c(&bob).as_ptr(),
-                c(&claim).as_ptr(),
-                c("read").as_ptr(),
-                0
-            ),
-            0
-        );
-        assert_eq!(
-            sociacl_gun_check(
-                plane,
-                c("see").as_ptr(),
-                c(&claim).as_ptr(),
-                c(&bob).as_ptr(),
-                hint.as_ptr(),
-                written,
-                ptr::null(),
-                0,
-                reason.as_mut_ptr(),
-                reason.len(),
-            ),
-            1
-        );
-        assert_eq!(
-            sociacl_gun_check_see_grant(
-                plane,
-                c(&claim).as_ptr(),
-                c(&bob).as_ptr(),
-                40,
-                80,
-                c(&claim).as_ptr(),
-                c(&bob).as_ptr(),
-                ptr::null(),
-                0,
-                reason.as_mut_ptr(),
-                reason.len(),
-            ),
-            0,
-            "from window denies even when dest Check allows"
-        );
-        assert_eq!(
-            sociacl_gun_check_see_grant(
-                plane,
-                c(&claim).as_ptr(),
-                c(&bob).as_ptr(),
-                0,
-                80,
-                c(&claim).as_ptr(),
-                c(&bob).as_ptr(),
-                ptr::null(),
-                0,
-                reason.as_mut_ptr(),
-                reason.len(),
-            ),
-            1
-        );
-        assert_eq!(
-            sociacl_gun_elect(
-                plane,
-                c(&claim).as_ptr(),
-                hint.as_ptr(),
-                written,
-                reason.as_mut_ptr(),
-                reason.len()
-            ),
+            sociacl_gun_hint_accept(b"bad".as_ptr(), 3, reason.as_mut_ptr(), reason.len()),
             -1
         );
-        assert_eq!(
-            sociacl_gun_cancel(
-                plane,
-                c(&alice).as_ptr(),
-                c(&bob).as_ptr(),
-                c(&claim).as_ptr()
-            ),
-            0
-        );
-        assert_eq!(
-            sociacl_gun_check(
-                plane,
-                c("see").as_ptr(),
-                c(&claim).as_ptr(),
-                c(&bob).as_ptr(),
-                ptr::null(),
-                0,
-                ptr::null(),
-                0,
-                reason.as_mut_ptr(),
-                reason.len(),
-            ),
-            0
-        );
-        assert_eq!(
-            sociacl_delegate(
-                plane,
-                c(&alice).as_ptr(),
-                c(&bob).as_ptr(),
-                c(&claim).as_ptr(),
-                c("x").as_ptr(),
-                0
-            ),
-            0
-        );
-        assert_eq!(
-            sociacl_gun_check(
-                plane,
-                c("execute").as_ptr(),
-                c(&claim).as_ptr(),
-                c(&bob).as_ptr(),
-                ptr::null(),
-                0,
-                ptr::null(),
-                0,
-                reason.as_mut_ptr(),
-                reason.len(),
-            ),
-            1
-        );
-        assert_eq!(
-            sociacl_gun_check(
-                plane,
-                c("see").as_ptr(),
-                c(&claim).as_ptr(),
-                c(&bob).as_ptr(),
-                ptr::null(),
-                0,
-                ptr::null(),
-                0,
-                reason.as_mut_ptr(),
-                reason.len(),
-            ),
-            0
-        );
-        let mut url = [0i8; 64];
-        assert_eq!(
-            sociacl_gun_normalize_url(
-                c("https://Example.COM/item/1/#x").as_ptr(),
-                url.as_mut_ptr(),
-                url.len(),
-                reason.as_mut_ptr(),
-                reason.len(),
-            ),
-            0
-        );
-        let normalized = unsafe { CStr::from_ptr(url.as_ptr()) }
-            .to_string_lossy()
-            .into_owned();
-        assert_eq!(normalized, "https://example.com/item/1");
-        sociacl_plane_free(plane);
     }
 
     #[test]
