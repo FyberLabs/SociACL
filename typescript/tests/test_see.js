@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { execFileSync } from "node:child_process";
 import { readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import * as ids from "../ids/src/index.js";
@@ -198,19 +199,10 @@ test("checkSee on a primitive graph is bad-record", () => {
   assert.deepEqual(checkSee(null, "chat", "bob", 0), { allowed: false, reason: "bad-record" });
 });
 
-test("typescript/src does not reference node:crypto", () => {
-  const root = fileURLToPath(new URL("../../", import.meta.url));
-  const files = [
-    ...filesForGlob(root, "typescript/src/**/*.js"),
-    ...filesForGlob(root, "typescript/src/**/*.ts"),
-  ];
-  assert.ok(files.length > 0);
-  for (const name of ["node:crypto", "crypto"]) {
-    const needle = new RegExp(`(^|[^A-Za-z0-9_])${name}([^A-Za-z0-9_]|$)`);
-    for (const path of files) {
-      assert.equal(needle.test(readFileSync(path, "utf8")), false, `${name} in ${path}`);
-    }
-  }
+test("typescript/src does not import node:crypto", () => {
+  // Exercise the production CLI, including syntax regressions and runtime files.
+  // There is no second lexer or parser implementation in the test runner.
+  execFileSync(process.execPath, [fileURLToPath(new URL("../../scripts/audit-forbidden-names.mjs", import.meta.url))]);
 });
 
 test("see forbidden names are absent", () => {

@@ -10,6 +10,7 @@ test('hostile link-map values and retained-link arrays never run getters',()=>{
   const hostile={get issuedAt(){reads++;throw Error('getter');},get principal(){reads++;throw Error('getter');}};
   for(const raw of [hostile,new Proxy({},{ownKeys(){throw Error('proxy');}})]) {
     const links=new Map([[rotation.authorizer.link,raw]]);
+    assert.deepEqual(ids.prepareRetainedLinksNow([rotation.authorizer.link],{...ctx,links}),{ok:false,reason:'missing-history'});
     assert.deepEqual(ids.verifyRotate(rotation,ctx.currentKey,{...ctx,links}),{ok:false,reason:'missing-history'});
     const r=ids.resolveCurrentKey(ctx.genesis,[rotation],{...ctx,links});
     assert.equal(r.ok,false);assert.equal(r.reason,'missing-history');assert.equal(r.diagnostics[0].reason,'missing-history');assert.equal('value' in r,false);
@@ -27,7 +28,7 @@ test('runtime collection checks and explicit verifier history',()=>{
   assert.deepEqual(ids.verifyRotate(rotation,ctx.currentKey,{...ctx,history:undefined}),{ok:false,reason:'missing-history'});
 });
 
-test('optional revoke witness never invokes getters and history aliases stay witness-only',()=>{
+test('optional revoke witness never invokes getters and historical apis stay witness-only',()=>{
   const offline=f.accept.find(c=>c.name==='offline-current-key-revoke').input;
   const w=f.accept.find(c=>c.name==='wallet').input;
   let reads=0;
@@ -36,9 +37,9 @@ test('optional revoke witness never invokes getters and history aliases stay wit
   const result=ids.resolveWalletLinkNow(w.address,[w],[hostile],ctx);
   assert.equal(result.ok,true);assert.deepEqual(result.diagnostics.map(d=>d.reason),['bad-record']);
   assert.equal(reads,0);
-  const historical=ids.resolveWalletLinkAtKey(w.address,[w],[offline],{...ctx,present:true});
+  const historical=ids.resolveWalletLink(w.address,[w],[offline],{...ctx,present:true});
   assert.equal(historical.ok,true);assert.deepEqual(historical.diagnostics.map(d=>d.reason),['bad-attestation']);
-  assert.equal(ids.verifyRotateAtKey(rotation,ctx.currentKey,{...ctx,revocations:[offline],present:true}).ok,true);
+  assert.equal(ids.verifyRotate(rotation,ctx.currentKey,{...ctx,revocations:[offline],present:true}).ok,true);
   const present=ids.resolveWalletLinkNow(w.address,[w],[offline],ctx);
   assert.equal(present.ok,false);assert.equal(present.reason,'revoked-link');
 });
@@ -53,6 +54,48 @@ test('damaged duplicate rotation proof getters cannot run or veto a valid copy',
     assert.equal(r.ok,true);assert.equal(r.value.currentKey,rotation.nextKey);
     assert.deepEqual(r.diagnostics.map(d=>d.reason),['missing-history']);
     assert.deepEqual(r.value.rotations,[rotation]);
+  }
+  assert.equal(reads,0);
+});
+
+test('future retained links fail before consulting history, regardless of skew',()=>{
+  for (const name of ['wallet','oidc']) {
+    const link=f.accept.find(c=>c.name===name).input;
+    const id=ids.linkId(link).value;
+    let calls=0;
+    const future={...ctx,now:link.issuedAt-1,policy:{...ctx.policy,clockSkewSeconds:60},links:new Map([[id,link]]),history(){calls++;throw Error('future link reached history');}};
+    assert.deepEqual(ids.prepareRetainedLinksNow([id],future),{ok:false,reason:'future-record'});
+    assert.equal(calls,0);
+  }
+});
+
+test('direct rotation verifiers bound every context collection before history lookup',()=>{
+  const oversized=Array.from({length:1025},()=>({}));
+  for (const patch of [
+    {links:new Map(oversized.map((row,index)=>[String(index),row]))},
+    {revocations:oversized},
+    {genesisEpubBindings:oversized},
+  ]) {
+    const bounded={...ctx,...patch,history(){throw Error('oversized input reached history');}};
+    for (const verify of [ids.verifyRotate,ids.verifyRotationRequest]) {
+      assert.deepEqual(verify(rotation,ctx.currentKey,bounded),{ok:false,reason:'too-long'});
+    }
+  }
+});
+
+test('v4 proof getters cannot restore a retired key or veto its verified copy',()=>{
+  const v4=f.accept.find(c=>c.name==='rotate-v3-resolve').input[0];
+  let reads=0;
+  const damaged={...v4,authorizer:{...v4.authorizer,siwe:{
+    get message(){reads++;throw Error('getter');},signature:'0x'+'00'.repeat(65),
+  }}};
+  const missing=ids.resolveCurrentKey(ctx.genesis,[damaged],ctx);
+  assert.equal(missing.ok,false);assert.equal(missing.reason,'missing-history');
+  assert.equal('value' in missing,false);
+  for(const copies of [[damaged,v4],[v4,damaged]]) {
+    const r=ids.resolveCurrentKey(ctx.genesis,copies,ctx);
+    assert.equal(r.ok,true);assert.equal(r.value.currentKey,v4.nextKey);
+    assert.deepEqual(r.diagnostics.map(d=>d.reason),['missing-history']);
   }
   assert.equal(reads,0);
 });

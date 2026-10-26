@@ -1883,10 +1883,6 @@ pub extern "C" fn sociacl_gun_normalize_url(
                 return -1;
             }
             let normalized = leaf.normalized();
-            if normalized.len() > 256 {
-                write_reason(reason_out, reason_len, "too-long");
-                return -1;
-            }
             if dst_len < normalized.len() + 1 {
                 write_reason(reason_out, reason_len, "buffer-too-small");
                 return -1;

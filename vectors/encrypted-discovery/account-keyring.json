@@ -78,7 +78,7 @@
   "unsafeContentEpoch": 9007199254740992,
   "maxContentEpoch": 9007199254740991,
   "witnessed": {
-    "rotationName": "rotate-v3-wallet",
+    "rotationName": "rotate-v4-wallet",
     "genesisScalar": 1,
     "genesisEpubScalar": 9,
     "currentScalar": 2,

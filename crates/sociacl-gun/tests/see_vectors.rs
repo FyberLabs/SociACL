@@ -982,20 +982,6 @@ fn signed_owner_reaches_group_until_history_drops_it() {
 }
 
 #[test]
-fn typescript_src_does_not_reference_node_crypto() {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let mut files = files_for_glob(&root, "typescript/src/**/*.js");
-    files.extend(files_for_glob(&root, "typescript/src/**/*.ts"));
-    assert!(!files.is_empty());
-    for path in files {
-        let text = fs::read_to_string(&path).unwrap();
-        for name in ["node:crypto", "crypto"] {
-            assert!(!ident_present(&text, name), "{name} in {}", path.display());
-        }
-    }
-}
-
-#[test]
 fn see_forbidden_names_are_absent() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let list: Value = serde_json::from_str(

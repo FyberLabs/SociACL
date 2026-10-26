@@ -1,10 +1,12 @@
 // Close-out audit. Whole-token match, the same boundary rg uses.
 // Fails when a forbidden name appears in its scope, or when
-// typescript/src contains node:crypto or the bare "crypto" specifier.
+// typescript/src imports "crypto" or "node:crypto". WebCrypto stays allowed.
 // *.js also covers .mjs and .cjs. *.ts also covers .mts and .cts.
 import { readFileSync, readdirSync, statSync } from "node:fs";
+import assert from "node:assert/strict";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { importsNodeCrypto } from "./crypto-imports.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const doc = JSON.parse(readFileSync(join(root, "vectors/mesh/forbidden-names.json"), "utf8"));
@@ -101,15 +103,27 @@ for (const glob of doc.scopes) {
   }
 }
 
-const cryptoNames = ["node:crypto", "crypto"];
+const cryptoVectors = JSON.parse(readFileSync(join(root, "vectors/mesh/crypto-import.json"), "utf8"));
+for (const row of cryptoVectors.invalid) {
+  assert.throws(() => importsNodeCrypto(row.source), SyntaxError, row.name);
+}
+for (const row of cryptoVectors.allowed) {
+  if (importsNodeCrypto(row.source)) {
+    console.error(`allowed crypto snippet flagged: ${row.name}`);
+    failed = true;
+  }
+}
+for (const row of cryptoVectors.banned) {
+  if (!importsNodeCrypto(row.source)) {
+    console.error(`banned crypto snippet missed: ${row.name}`);
+    failed = true;
+  }
+}
 for (const glob of ["typescript/src/**/*.js", "typescript/src/**/*.ts"]) {
   for (const path of filesForGlob(glob)) {
-    const text = readFileSync(path, "utf8");
-    for (const name of cryptoNames) {
-      if (present(text, name)) {
-        console.error(`${name} in ${path}`);
-        failed = true;
-      }
+    if (importsNodeCrypto(readFileSync(path, "utf8"), path)) {
+      console.error(`crypto import in ${path}`);
+      failed = true;
     }
   }
 }

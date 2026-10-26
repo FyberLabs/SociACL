@@ -9,6 +9,25 @@ use std::collections::{BTreeMap, BTreeSet};
 use zeroize::Zeroizing;
 
 const MAX_SAFE: u64 = 9_007_199_254_740_991;
+/// Each resolution list, link map, and revocation list stops at this length.
+/// Longer input is [`Reason::TooLong`] and is not truncated.
+pub const MAX_RESOLUTION_INPUT: usize = 1024;
+
+fn bounded(len: usize) -> Result<(), Reason> {
+    if len > MAX_RESOLUTION_INPUT {
+        Err(Reason::TooLong)
+    } else {
+        Ok(())
+    }
+}
+
+fn siwe_proof_hash(siwe: &Siwe) -> String {
+    hex(&Sha256::digest(lp(&[
+        "sociacl-siwe-proof-v1",
+        &siwe.message,
+        &siwe.signature,
+    ])))
+}
 macro_rules! rx {
     ($pattern:literal) => {{
         static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
@@ -1012,11 +1031,6 @@ pub fn verify_wallet_link(
     wallet_witness(w, jwks, policy, now)?;
     Ok(w.clone())
 }
-#[deprecated(
-    since = "0.6.0",
-    note = "Use verify_wallet_link; this alias retains historical verification semantics"
-)]
-pub use verify_wallet_link as verify_wallet_link_at_key;
 pub fn verify_oidc_link(
     v: &Value,
     jwks: &Jwks,
@@ -1082,12 +1096,6 @@ pub fn verify_revoke(
     }
     Ok(rev)
 }
-#[deprecated(
-    since = "0.6.0",
-    note = "Use verify_oidc_link; this alias retains historical verification semantics"
-)]
-pub use verify_oidc_link as verify_oidc_link_at_key;
-
 /// Use only with authenticated history complete through `until`.
 pub fn history_state(genesis: &PrincipalId, history: &[Rotate], at: u64, until: u64) -> KeyState {
     let past: Vec<_> = history.iter().filter(|r| r.issued_at <= until).collect();
@@ -1192,6 +1200,9 @@ pub fn verify_rotate(
     current_key: &PrincipalId,
     ctx: &ResolutionContext<'_>,
 ) -> Result<Rotate, Reason> {
+    bounded(ctx.links.len())?;
+    bounded(ctx.revocations.len())?;
+    bounded(ctx.genesis_epub_bindings.len())?;
     check_rotate(v, current_key, ctx, &mut Vec::new())
 }
 // A missing/malformed unsigned SIWE proof must not hide an authenticated transition.
@@ -1287,13 +1298,14 @@ fn verified_bindings(
         .map(|(index, binding, _)| (index, binding))
         .collect())
 }
-/// Exact Panopticon rotation claim, including auth, linkId, and retainedLinks.
-fn rotation_claims_match(rot: &Rotate, c: &Value) -> bool {
-    let (auth, link) = match &rot.authorizer {
-        Authorizer::Wallet { link, .. } => ("wallet", link.as_str()),
-        Authorizer::OidcFreshLogin { link } => ("oidc-fresh-login", link.as_str()),
+/// Authenticate the transition independently of its replaceable SIWE proof copy.
+fn rotation_transition_claims_match(rot: &Rotate, c: &Value) -> bool {
+    let (auth, link, siwe) = match &rot.authorizer {
+        Authorizer::Wallet { link, siwe } => ("wallet", link.as_str(), Some(siwe)),
+        Authorizer::OidcFreshLogin { link } => ("oidc-fresh-login", link.as_str(), None),
     };
-    let v3 = rot.next_epub.is_some();
+    let epub = rot.next_epub.is_some();
+    let wallet = epub && siwe.is_some();
     let mut attest_keys = vec![
         "typ",
         "principal",
@@ -1305,20 +1317,32 @@ fn rotation_claims_match(rot: &Rotate, c: &Value) -> bool {
         "linkId",
         "retainedLinks",
     ];
-    if v3 {
+    if epub {
         attest_keys.push("nextEpub");
+    }
+    if wallet {
+        attest_keys.push("siweHash");
     }
     let epub_matches = match &rot.next_epub {
         Some(epub) => c["nextEpub"] == epub.as_ref(),
         None => true,
     };
+    let typ = if !epub {
+        "sociacl-rotate-attest-v2"
+    } else if wallet {
+        "sociacl-rotate-attest-v4"
+    } else {
+        "sociacl-rotate-attest-v3"
+    };
+    let hash_ok = !wallet
+        || c["siweHash"].as_str().is_some_and(|hash| {
+            hash.len() == 64
+                && hash
+                    .bytes()
+                    .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+        });
     only(c, &attest_keys)
-        && c["typ"]
-            == if v3 {
-                "sociacl-rotate-attest-v3"
-            } else {
-                "sociacl-rotate-attest-v2"
-            }
+        && c["typ"] == typ
         && c["principal"] == rot.principal.as_ref()
         && c["nextKey"] == rot.next_key.as_ref()
         && epub_matches
@@ -1327,6 +1351,17 @@ fn rotation_claims_match(rot: &Rotate, c: &Value) -> bool {
         && c["auth"] == auth
         && c["linkId"] == link
         && c["retainedLinks"] == serde_json::json!(rot.retained_links)
+        && hash_ok
+}
+/// Direct verification also binds the exact presented SIWE proof.
+fn rotation_claims_match(rot: &Rotate, c: &Value) -> bool {
+    rotation_transition_claims_match(rot, c)
+        && match (&rot.next_epub, &rot.authorizer) {
+            (Some(_), Authorizer::Wallet { siwe, .. }) => {
+                c["siweHash"].as_str() == Some(siwe_proof_hash(siwe).as_str())
+            }
+            _ => true,
+        }
 }
 /// A sibling counts only when its next-key signature and Panopticon attestation both verify.
 fn authenticated_sibling(raw: &Value, ctx: &ResolutionContext<'_>) -> Option<Rotate> {
@@ -1344,7 +1379,7 @@ fn authenticated_sibling(raw: &Value, ctx: &ResolutionContext<'_>) -> Option<Rot
         ctx.policy.clock_skew_seconds,
     )
     .ok()?;
-    if !rotation_claims_match(&row, &c) {
+    if !rotation_transition_claims_match(&row, &c) {
         return None;
     }
     Some(row)
@@ -1593,6 +1628,9 @@ pub fn verify_rotation_request(
     current_key: &PrincipalId,
     ctx: &ResolutionContext<'_>,
 ) -> Result<Rotate, Reason> {
+    bounded(ctx.links.len())?;
+    bounded(ctx.revocations.len())?;
+    bounded(ctx.genesis_epub_bindings.len())?;
     if v["kind"] != "rotate" || v.get("attest").is_some() || v.get("nextEpub").is_none() {
         return Err(Reason::BadRecord);
     }
@@ -1823,12 +1861,6 @@ fn check_rotate_record(
     }
     Ok(rot.clone())
 }
-#[deprecated(
-    since = "0.6.0",
-    note = "Use verify_rotate; this alias retains historical verification semantics"
-)]
-pub use verify_rotate as verify_rotate_at_key;
-
 /// Copies share signing-byte identity: any fully verified copy satisfies that rotation ID.
 /// Unresolved authenticated evidence still fails closed.
 pub fn resolve_current_key(
@@ -1838,6 +1870,10 @@ pub fn resolve_current_key(
 ) -> Resolution<ResolvedAccount> {
     let mut diagnostics = Vec::new();
     let result = (|| {
+        bounded(rotations.len())?;
+        bounded(ctx.links.len())?;
+        bounded(ctx.revocations.len())?;
+        bounded(ctx.genesis_epub_bindings.len())?;
         if ctx.now > MAX_SAFE {
             return Err(Reason::MissingHistory);
         }
@@ -1921,6 +1957,15 @@ pub fn resolve_current_key(
                     .map_err(|e| {
                         if e == Reason::WalletRequired {
                             Reason::RotationConflict
+                        } else if e == Reason::BadAttestation
+                            && authenticated_sibling(
+                                &IdentityRecord::Rotate(raw.clone()).value(),
+                                &candidate,
+                            )
+                            .is_some()
+                        {
+                            // Preserve a witnessed transition whose v4 SIWE copy is damaged.
+                            Reason::MissingHistory
                         } else {
                             e
                         }
@@ -2066,6 +2111,9 @@ fn resolve_wallet(
 ) -> Resolution<WalletLink> {
     let mut diagnostics = Vec::new();
     let result = (|| {
+        bounded(links.len())?;
+        bounded(revocations.len())?;
+        bounded(ctx.links.len())?;
         if ctx.now > MAX_SAFE {
             return Err(Reason::MissingHistory);
         }
@@ -2130,11 +2178,213 @@ fn resolve_wallet(
         diagnostics,
     }
 }
-#[deprecated(
-    since = "0.6.0",
-    note = "Use resolve_wallet_link; this alias retains historical verification semantics"
-)]
-pub use resolve_wallet_link as resolve_wallet_link_at_key;
+/// Present OIDC eligibility. Matches issuer, tenant, and subject.
+pub fn resolve_oidc_link_now(
+    cred: &Value,
+    links: &[Value],
+    revocations: &[Value],
+    ctx: &ResolutionContext<'_>,
+) -> Resolution<OidcLink> {
+    let mut diagnostics = Vec::new();
+    let cred = match parse_oidc_credential(cred) {
+        Ok(cred) => cred,
+        Err(reason) => {
+            return Resolution {
+                result: Err(reason),
+                diagnostics,
+            };
+        }
+    };
+    let result = (|| {
+        bounded(links.len())?;
+        bounded(revocations.len())?;
+        bounded(ctx.links.len())?;
+        if ctx.now > MAX_SAFE {
+            return Err(Reason::MissingHistory);
+        }
+        let mut valid = BTreeMap::new();
+        for (index, raw) in links.iter().enumerate() {
+            let p = match record(raw, false) {
+                Ok(p) => p,
+                Err(e) => {
+                    diagnostic(&mut diagnostics, "link", index, e);
+                    continue;
+                }
+            };
+            let IdentityRecord::Oidc(link) = &p else {
+                continue;
+            };
+            if link.cred != cred {
+                continue;
+            }
+            match historical_link(&p, ctx, ctx.now) {
+                Ok(IdentityRecord::Oidc(link)) => {
+                    valid.insert(link_id(&IdentityRecord::Oidc(link.clone()))?, link);
+                }
+                Ok(_) => unreachable!("historical link preserves kind"),
+                Err(e) => {
+                    diagnostic(&mut diagnostics, "link", index, e);
+                    if matches!(
+                        e,
+                        Reason::MissingHistory | Reason::RotationFork | Reason::RotationConflict
+                    ) {
+                        return Err(e);
+                    }
+                }
+            }
+        }
+        let mut sorted: Vec<_> = valid.into_iter().collect();
+        sorted.sort_by(|a, b| b.1.issued_at.cmp(&a.1.issued_at).then(a.0.cmp(&b.0)));
+        let (_, newest) = sorted.first().ok_or(Reason::UnknownLink)?;
+        if sorted
+            .get(1)
+            .is_some_and(|(_, link)| link.issued_at == newest.issued_at)
+        {
+            return Err(Reason::AmbiguousLink);
+        }
+        let h = (ctx.history)(&newest.principal, newest.issued_at, ctx.now)?;
+        let revoked = revoked_at(
+            &IdentityRecord::Oidc(newest.clone()),
+            revocations,
+            &h.current_key,
+            ctx.now,
+            ctx.jwks,
+            &mut diagnostics,
+            RevocationMode::Present,
+        );
+        if revoked {
+            Err(Reason::RevokedLink)
+        } else {
+            Ok(newest.clone())
+        }
+    })();
+    Resolution {
+        result,
+        diagnostics,
+    }
+}
+
+/// Authenticate candidate link ids and drop those revoked under the final current key.
+/// Does not issue an attestation. Missing history fails the call.
+pub fn prepare_retained_links_now(
+    candidates: &[Value],
+    ctx: &ResolutionContext<'_>,
+) -> Result<Vec<String>, Reason> {
+    bounded(candidates.len())?;
+    bounded(ctx.revocations.len())?;
+    bounded(ctx.links.len())?;
+    if ctx.now > MAX_SAFE {
+        return Err(Reason::MissingHistory);
+    }
+    let mut retained = Vec::new();
+    for id_value in candidates {
+        let id = id_value.as_str().ok_or(Reason::BadRecord)?;
+        if retained.iter().any(|seen| seen == id) {
+            continue;
+        }
+        let raw = ctx.links.get(id).ok_or(Reason::MissingHistory)?;
+        let parsed = record(raw, false)?;
+        let principal = parsed.principal().clone();
+        let issued_at = parsed.issued_at();
+        if issued_at > ctx.now {
+            return Err(Reason::FutureRecord);
+        }
+        let state = (ctx.history)(&principal, issued_at, ctx.now)?;
+        let proof = match &parsed {
+            IdentityRecord::Wallet(_) => IdentityRecord::Wallet(verify_wallet_link(
+                raw, ctx.jwks, ctx.policy, issued_at, &state,
+            )?),
+            IdentityRecord::Oidc(_) => IdentityRecord::Oidc(verify_oidc_link(
+                raw,
+                ctx.jwks,
+                ctx.pinned_iss,
+                issued_at,
+                &state,
+            )?),
+            _ => return Err(Reason::BadRecord),
+        };
+        if link_id(&proof)? != id {
+            return Err(Reason::MissingHistory);
+        }
+        let revoked = ctx.revocations.iter().any(|raw| {
+            let Ok(IdentityRecord::Revoke(revoke)) = record(raw, false) else {
+                return false;
+            };
+            if revoke.principal != principal || revoke.link_id != id || revoke.issued_at < issued_at
+            {
+                return false;
+            }
+            verify_revoke_now(raw, &state.current_key, ctx.now).is_ok()
+        });
+        if !revoked {
+            retained.push(id.to_owned());
+        }
+    }
+    retained.sort();
+    Ok(retained)
+}
+
+/// Group untrusted link copies by signing-byte id and keep one that verifies.
+/// A tampered sibling does not drop that id. An id whose copies all fail closed
+/// on missing history still fails the call. Other failures omit the id.
+pub fn verifying_link_map(
+    copies: &[Value],
+    ctx: &ResolutionContext<'_>,
+) -> Result<BTreeMap<String, Value>, Reason> {
+    bounded(copies.len())?;
+    bounded(ctx.links.len())?;
+    if ctx.now > MAX_SAFE {
+        return Err(Reason::MissingHistory);
+    }
+    let mut groups: BTreeMap<String, Vec<&Value>> = BTreeMap::new();
+    for raw in copies {
+        let Ok(parsed) = record(raw, false) else {
+            continue;
+        };
+        if !matches!(parsed, IdentityRecord::Wallet(_) | IdentityRecord::Oidc(_)) {
+            continue;
+        }
+        groups
+            .entry(hex(&Sha256::digest(bytes(&parsed))))
+            .or_default()
+            .push(raw);
+    }
+    let mut kept = BTreeMap::new();
+    for (id, list) in groups {
+        let mut fatal = None;
+        let mut winner = None;
+        for raw in list {
+            let parsed = match record(raw, false) {
+                Ok(parsed) => parsed,
+                Err(_) => continue,
+            };
+            match historical_link(&parsed, ctx, ctx.now) {
+                Ok(_) => {
+                    winner = Some(raw.clone());
+                    break;
+                }
+                Err(reason)
+                    if fatal.is_none()
+                        && matches!(
+                            reason,
+                            Reason::MissingHistory
+                                | Reason::RotationFork
+                                | Reason::RotationConflict
+                        ) =>
+                {
+                    fatal = Some(reason);
+                }
+                Err(_) => {}
+            }
+        }
+        if let Some(raw) = winner {
+            kept.insert(id, raw);
+        } else if let Some(reason) = fatal {
+            return Err(reason);
+        }
+    }
+    Ok(kept)
+}
 
 /// SEA P-256 ECDSA over SHA-256. Raw r||s, base64url. High-S and low-S both verify.
 pub fn verify_key_signature(key: &PrincipalId, sig: &str, message: &[u8]) -> Result<(), Reason> {
