@@ -258,7 +258,8 @@ const wraps = new MemoryKeyWrapStore(resolvePublishedAccount, floor);
 Keep that floor for the lifetime of the paired stores. Replacing a store also
 requires retaining its rows and write generations; sharing a floor alone does
 not preserve them. A fresh floor is appropriate only for an independent store
-domain, not to clear a rollback rejection. These reference stores retain state in memory; production adapters
+domain, not to clear a rollback rejection. These reference stores retain state in memory;
+production adapters
 must persist the shared per-principal floor along with their write state. This
 constructor change does not implement durable storage for an adapter.
 
