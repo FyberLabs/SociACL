@@ -1298,8 +1298,8 @@ fn verified_bindings(
         .map(|(index, binding, _)| (index, binding))
         .collect())
 }
-/// Exact Panopticon rotation claim, including auth, linkId, and retainedLinks.
-fn rotation_claims_match(rot: &Rotate, c: &Value) -> bool {
+/// Authenticate the transition independently of its replaceable SIWE proof copy.
+fn rotation_transition_claims_match(rot: &Rotate, c: &Value) -> bool {
     let (auth, link, siwe) = match &rot.authorizer {
         Authorizer::Wallet { link, siwe } => ("wallet", link.as_str(), Some(siwe)),
         Authorizer::OidcFreshLogin { link } => ("oidc-fresh-login", link.as_str(), None),
@@ -1334,11 +1334,13 @@ fn rotation_claims_match(rot: &Rotate, c: &Value) -> bool {
     } else {
         "sociacl-rotate-attest-v3"
     };
-    let hash_ok = match (wallet, siwe) {
-        (true, Some(proof)) => c["siweHash"].as_str() == Some(siwe_proof_hash(proof).as_str()),
-        (true, None) => false,
-        _ => true,
-    };
+    let hash_ok = !wallet
+        || c["siweHash"].as_str().is_some_and(|hash| {
+            hash.len() == 64
+                && hash
+                    .bytes()
+                    .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+        });
     only(c, &attest_keys)
         && c["typ"] == typ
         && c["principal"] == rot.principal.as_ref()
@@ -1350,6 +1352,16 @@ fn rotation_claims_match(rot: &Rotate, c: &Value) -> bool {
         && c["linkId"] == link
         && c["retainedLinks"] == serde_json::json!(rot.retained_links)
         && hash_ok
+}
+/// Direct verification also binds the exact presented SIWE proof.
+fn rotation_claims_match(rot: &Rotate, c: &Value) -> bool {
+    rotation_transition_claims_match(rot, c)
+        && match (&rot.next_epub, &rot.authorizer) {
+            (Some(_), Authorizer::Wallet { siwe, .. }) => {
+                c["siweHash"].as_str() == Some(siwe_proof_hash(siwe).as_str())
+            }
+            _ => true,
+        }
 }
 /// A sibling counts only when its next-key signature and Panopticon attestation both verify.
 fn authenticated_sibling(raw: &Value, ctx: &ResolutionContext<'_>) -> Option<Rotate> {
@@ -1367,7 +1379,7 @@ fn authenticated_sibling(raw: &Value, ctx: &ResolutionContext<'_>) -> Option<Rot
         ctx.policy.clock_skew_seconds,
     )
     .ok()?;
-    if !rotation_claims_match(&row, &c) {
+    if !rotation_transition_claims_match(&row, &c) {
         return None;
     }
     Some(row)
@@ -1945,6 +1957,15 @@ pub fn resolve_current_key(
                     .map_err(|e| {
                         if e == Reason::WalletRequired {
                             Reason::RotationConflict
+                        } else if e == Reason::BadAttestation
+                            && authenticated_sibling(
+                                &IdentityRecord::Rotate(raw.clone()).value(),
+                                &candidate,
+                            )
+                            .is_some()
+                        {
+                            // Preserve a witnessed transition whose v4 SIWE copy is damaged.
+                            Reason::MissingHistory
                         } else {
                             e
                         }
@@ -2271,11 +2292,7 @@ pub fn prepare_retained_links_now(
         let state = (ctx.history)(&principal, issued_at, ctx.now)?;
         let proof = match &parsed {
             IdentityRecord::Wallet(_) => IdentityRecord::Wallet(verify_wallet_link(
-                raw,
-                ctx.jwks,
-                ctx.policy,
-                issued_at,
-                &state,
+                raw, ctx.jwks, ctx.policy, issued_at, &state,
             )?),
             IdentityRecord::Oidc(_) => IdentityRecord::Oidc(verify_oidc_link(
                 raw,
@@ -2293,9 +2310,7 @@ pub fn prepare_retained_links_now(
             let Ok(IdentityRecord::Revoke(revoke)) = record(raw, false) else {
                 return false;
             };
-            if revoke.principal != principal
-                || revoke.link_id != id
-                || revoke.issued_at < issued_at
+            if revoke.principal != principal || revoke.link_id != id || revoke.issued_at < issued_at
             {
                 return false;
             }
@@ -2352,7 +2367,9 @@ pub fn verifying_link_map(
                     if fatal.is_none()
                         && matches!(
                             reason,
-                            Reason::MissingHistory | Reason::RotationFork | Reason::RotationConflict
+                            Reason::MissingHistory
+                                | Reason::RotationFork
+                                | Reason::RotationConflict
                         ) =>
                 {
                     fatal = Some(reason);

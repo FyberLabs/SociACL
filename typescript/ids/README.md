@@ -325,6 +325,14 @@ wallet attestation, or a hash that does not match the proof, is
 rotation without `nextEpub` stays v2. The rotation signing bytes stay
 `sociacl-rotate-v3` when `nextEpub` is present.
 
+V4 wallet rotation recovery treats the witnessed transition separately from its
+replaceable SIWE proof copy. If the next-key signature and transition attestation
+verify but the SIWE copy does not match `siweHash`, resolution fails with
+`missing-history` unless another copy of the same signing-byte ID fully verifies.
+Direct `verifyRotate` still returns `bad-attestation` for a mismatched proof.
+An unrelated valid rotation cannot satisfy the missing ID. Publication also
+counts a damaged but authenticated different sibling as a fork.
+
 `Reason` additionally includes `missing-history`, `unretained-link`, and
 `wallet-required` and `rotation-conflict`, alongside proof, ordering, fork, revocation, ambiguity,
 unsupported-wallet and RNG errors.

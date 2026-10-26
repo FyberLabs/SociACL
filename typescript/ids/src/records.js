@@ -405,9 +405,9 @@ export function verifyRotationRequest(x, currentKey, ctx) {
   if (!checked.ok) return checked;
   return ok(/** @type {Rotate} */ ({ ...checked.value, attest: '' }));
 }
-/** Exact Panopticon rotation claim, including auth, linkId, and retainedLinks.
+/** Authenticate the transition independently of its replaceable SIWE proof copy.
  * @param {Rotate} r @param {Record<string, unknown>} c */
-function rotationClaimsMatch(r, c) {
+function rotationTransitionClaimsMatch(r, c) {
   const epub = hasNextEpub(r);
   const wallet = epub && r.authorizer.kind === 'wallet';
   const attestKeys = ['typ','principal','nextKey','seq','iat','exp','auth','linkId','retainedLinks'];
@@ -415,7 +415,13 @@ function rotationClaimsMatch(r, c) {
   if (wallet) attestKeys.push('siweHash');
   const typ = !epub ? 'sociacl-rotate-attest-v2' : wallet ? 'sociacl-rotate-attest-v4' : 'sociacl-rotate-attest-v3';
   if (!(only(c, attestKeys) && c.typ === typ && c.principal === r.principal && c.nextKey === r.nextKey && (!epub || c.nextEpub === r.nextEpub) && c.seq === r.seq && c.iat === r.issuedAt && c.auth === r.authorizer.kind && c.linkId === r.authorizer.link && JSON.stringify(c.retainedLinks) === JSON.stringify(r.retainedLinks))) return false;
-  return !wallet || c.siweHash === siweProofHash(r.authorizer.siwe);
+  return !wallet || (typeof c.siweHash === 'string' && /^[0-9a-f]{64}$/.test(c.siweHash));
+}
+/** Direct verification also binds the exact presented SIWE proof.
+ * @param {Rotate} r @param {Record<string, unknown>} c */
+function rotationClaimsMatch(r, c) {
+  return rotationTransitionClaimsMatch(r, c) &&
+    (!hasNextEpub(r) || r.authorizer.kind !== 'wallet' || c.siweHash === siweProofHash(r.authorizer.siwe));
 }
 /** @param {Rotate} r @param {PrincipalId} currentKey @param {ResolutionContext} ctx @param {Diagnostic[]} diagnostics @param {boolean} requireAttest @returns {Result<Rotate>} */
 function checkRotateBody(r, currentKey, ctx, diagnostics, requireAttest) {
@@ -543,7 +549,7 @@ function authenticatedSibling(raw, ctx) {
   if (!keyVerify(row.nextKey, row.nextSig, bytes(row))) return null;
   const a = attestVerify(row.attest, ctx.jwks, row.issuedAt, ctx.policy.clockSkewSeconds ?? 0);
   if (!a.ok) return null;
-  if (!rotationClaimsMatch(row, a.value)) return null;
+  if (!rotationTransitionClaimsMatch(row, a.value)) return null;
   return row;
 }
 /** Structural draft the keyring builder checks before a signature exists.
@@ -695,6 +701,8 @@ export function resolveCurrentKey(genesis, rotations, ctx) {
         result = checkRotate(raw,current,candidate,diagnostics);
         // A witnessed OIDC rotation contradicted by an active wallet cannot be skipped.
         if (!result.ok && result.reason === 'wallet-required') result = fail('rotation-conflict');
+        // A valid transition witness survives damage to its separately carried v4 SIWE.
+        if (!result.ok && result.reason === 'bad-attestation' && authenticatedSibling(raw, candidate)) result = fail('missing-history');
         if (result.ok && raw.authorizer.kind === 'wallet') {
           const own = record(ctx.links.get(raw.authorizer.link));
           if (!own.ok || own.value.kind !== 'wallet') result = fail('missing-history');

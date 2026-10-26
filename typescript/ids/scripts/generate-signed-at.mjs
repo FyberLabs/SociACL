@@ -149,5 +149,19 @@ add('acl-attest-linkId', 'verify-acl-attest', claim({ typ: 'sociacl-acl-attest-v
 add('acl-attest-recordId-upper', 'verify-acl-attest', claim({ typ: 'sociacl-acl-attest-v1', ...baseClaim, recordId: baseClaim.recordId.toUpperCase() }), { ok: false, reason: 'bad-attestation' });
 add('sign-with-keyring-bad', 'sign-with-keyring', { seaPriv: b64(new Uint8Array(32)), expectedKey: p, bytes: present.bytes, raw: present.raw }, { ok: false, reason: 'bad-key' });
 add('sign-with-keyring-wrong-key', 'sign-with-keyring', { seaPriv, expectedKey: p2, bytes: present.bytes, raw: present.raw }, { ok: false, reason: 'bad-key' });
+// A damaged v4 wallet proof must not make the retired signer current again.
+const r4 = {...rot, nextEpub:principal(6)};
+const siwe4 = siwe(r4);
+const v4 = {...r4, nextSig:keySig(r4,2), authorizer:{...r4.authorizer,siwe:siwe4},
+  attest:jws({typ:'sociacl-rotate-attest-v4',principal:p,nextKey:p2,nextEpub:r4.nextEpub,seq:r4.seq,iat:r4.issuedAt,exp:r4.issuedAt+600,auth:'wallet',linkId:wid,retainedLinks:[wid],
+    siweHash:hex(sha256(val(ids.lengthPrefixed(['sociacl-siwe-proof-v1',siwe4.message,siwe4.signature]))))})};
+for (const [name,siweProof] of [['changed',{...siwe4,signature:'0x'+'00'.repeat(65)}],['missing',undefined]]) {
+  const damaged={...v4,authorizer:{kind:'wallet',link:wid,...(siweProof?{siwe:siweProof}:{})}};
+  add('v4-damaged-history-denies-retired-'+name,'verify-signed-at',row(at+10,1,'v4-retired'),{ok:false,reason:'missing-history'},{rotations:[damaged]});
+  for (const [order,copies] of [['first',[damaged,v4]],['last',[v4,damaged]]]) {
+    add('v4-verified-copy-denies-retired-'+name+'-'+order,'verify-signed-at',row(at+10,1,'v4-retired'),retired,{rotations:copies});
+    add('v4-verified-copy-allows-current-'+name+'-'+order,'verify-signed-at',row(at+40,2,'v4-current'),seen(at+40,p2,'present'),{rotations:copies});
+  }
+}
 writeFileSync(new URL('../../../vectors/ids/signed-at.json', import.meta.url), JSON.stringify({ v: 1, family: 'signed-at', context, accept, reject }, null, 2) + '\n');
 console.log(`signed-at accept ${accept.length} reject ${reject.length}`);

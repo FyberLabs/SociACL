@@ -82,3 +82,20 @@ test('direct rotation verifiers bound every context collection before history lo
     }
   }
 });
+
+test('v4 proof getters cannot restore a retired key or veto its verified copy',()=>{
+  const v4=f.accept.find(c=>c.name==='rotate-v3-resolve').input[0];
+  let reads=0;
+  const damaged={...v4,authorizer:{...v4.authorizer,siwe:{
+    get message(){reads++;throw Error('getter');},signature:'0x'+'00'.repeat(65),
+  }}};
+  const missing=ids.resolveCurrentKey(ctx.genesis,[damaged],ctx);
+  assert.equal(missing.ok,false);assert.equal(missing.reason,'missing-history');
+  assert.equal('value' in missing,false);
+  for(const copies of [[damaged,v4],[v4,damaged]]) {
+    const r=ids.resolveCurrentKey(ctx.genesis,copies,ctx);
+    assert.equal(r.ok,true);assert.equal(r.value.currentKey,v4.nextKey);
+    assert.deepEqual(r.diagnostics.map(d=>d.reason),['missing-history']);
+  }
+  assert.equal(reads,0);
+});

@@ -647,7 +647,7 @@ accept('records','publish-v4',{candidate:rot4,siblings:[],prior:[]},p,{operation
 const tamperedV4 = { ...rot4, authorizer: { ...rot4.authorizer, siwe: { ...rot4.authorizer.siwe, message: rot4.authorizer.siwe.message.replace('Chain ID: 1', 'Chain ID: 5') } } };
 bad('rotate-v4-tampered-siwe',tamperedV4,'bad-attestation','rotate');
 for (const [order, copies] of [['valid-first',[rot4,tamperedV4]],['valid-last',[tamperedV4,rot4]]]) {
-  accept('records','rotate-v4-tampered-duplicate-'+order,copies,p2,{operation:'resolve',currentEpub:principal(6),diagnosticReasons:['bad-attestation']});
+  accept('records','rotate-v4-tampered-duplicate-'+order,copies,p2,{operation:'resolve',currentEpub:principal(6),diagnosticReasons:['missing-history']});
 }
 const boundary = ids.historyState(p, [rot], rot.issuedAt, now);
 const sameSecondNewKey = walletLink(p, rot.issuedAt, 2);
@@ -672,6 +672,30 @@ reject('signing-bytes','length-prefixed-null',[null],'not-string',{operation:'le
 reject('signing-bytes','length-prefixed-number',[1],'not-string',{operation:'length-prefixed'});
 reject('signing-bytes','length-prefixed-object',[{toString:'no coercion'}],'not-string',{operation:'length-prefixed'});
 reject('signing-bytes','length-prefixed-surrogate',['\ud800'],'unpaired-surrogate',{operation:'length-prefixed'});
+// A witnessed v4 transition remains known even when its only SIWE copy is damaged.
+const v4Damage = [
+  ['message', {...rot4.authorizer.siwe, message: rot4.authorizer.siwe.message + '\nchanged'}],
+  ['signature', {...rot4.authorizer.siwe, signature: '0x' + '00'.repeat(65)}],
+  ['missing', undefined], ['null', null], ['empty', {}],
+  ['wrong-message-type', {...rot4.authorizer.siwe, message: 1}],
+];
+for (const [name, siwe] of v4Damage) {
+  const damaged = {...rot4, authorizer: {kind:'wallet', link:wid, ...(siwe === undefined ? {} : {siwe})}};
+  bad('v4-damaged-only-'+name,[damaged],'missing-history','resolve',{diagnosticReasons:['missing-history']});
+  for (const [order,copies] of [['first',[damaged,rot4]],['last',[rot4,damaged]]]) {
+    accept('records','v4-damaged-copy-'+name+'-'+order,copies,p2,{operation:'resolve',currentEpub:principal(6),diagnosticReasons:['missing-history']});
+  }
+}
+const v4Fork = rotationV4(p3,3);
+const damagedV4Fork = damagedRotation(v4Fork);
+for (const copies of [[rot4,damagedV4Fork],[damagedV4Fork,rot4]]) {
+  bad('v4-distinct-id-needs-proof-'+(copies[0]===rot4?'last':'first'),copies,'missing-history','resolve',{diagnosticReasons:['missing-history']});
+}
+bad('v4-damaged-sibling-still-blocks-publish',{candidate:rot4,siblings:[damagedV4Fork],prior:[]},'rotation-fork','publish-check');
+for (const [name,patch,reason] of [['next-signature',{nextSig:zero},'bad-signature'],['attestation',{attest:'broken'},'bad-attestation']]) {
+  accept('records','v4-untrusted-damaged-'+name,[{...tamperedV4,...patch}],p,{operation:'resolve',diagnosticReasons:[reason]});
+}
+
 const root = new URL('../../../vectors/ids/',import.meta.url); mkdirSync(root,{recursive:true});
 for(const [name,value] of families) writeFileSync(new URL(name+'.json',root),JSON.stringify(value,null,2).replace(/"issuedAt": 1700000000,/g, name==='edges'?'"issuedAt": 1700000000,':'"issuedAt": 1700000000.0,')+'\n');
 writeFileSync(new URL('test-keys.json',new URL('../test/',import.meta.url)),JSON.stringify({p,p2,p3,wallet,tenant,obj,network,source,secretScalars:[1,2,3,4,5]},null,2)+'\n');
