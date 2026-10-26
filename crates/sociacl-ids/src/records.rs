@@ -1797,7 +1797,7 @@ fn check_rotate_record(
             &w.address,
             &bytes(r),
             rot.issued_at,
-            ctx.now,
+            if require_attest { rot.issued_at } else { ctx.now },
             ctx.policy,
             None,
         )
