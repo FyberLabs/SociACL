@@ -35,27 +35,32 @@ export function sealReaderWrap(
   if (!parsed.ok) throw new Error(parsed.reason);
   if (!/^[0-9a-f]{64}$/u.test(revisionId)) throw new Error("bad-revision");
   const dek = hexToBytes(dekHex);
-  if (dek.length !== 32 || ephemeral.length !== 32 || nonce.length !== 12) throw new Error("bad-key");
-  const plain = lengthPrefixed([
-    DOMAIN_WRAPPED_KEY,
-    "item-dek",
-    canonicalDecimal(epoch),
-    "reader-epub",
-    epub,
-    parsed.value,
-    "",
-    revisionId,
-    bytesToHex(dek),
-  ]);
-  dek.fill(0);
-  const point = p256.getPublicKey(ephemeral, false);
-  const ct = aesEncrypt(contentKdf(sharedX(ephemeral, uncompressedFromSea(epub))), nonce, plain);
-  const blob = new Uint8Array(1 + point.length + nonce.length + ct.length);
-  blob[0] = 1;
-  blob.set(point, 1);
-  blob.set(nonce, 1 + point.length);
-  blob.set(ct, 1 + point.length + nonce.length);
-  return bytesToHex(blob);
+  let plain: Uint8Array | undefined;
+  try {
+    if (dek.length !== 32 || ephemeral.length !== 32 || nonce.length !== 12) throw new Error("bad-key");
+    plain = lengthPrefixed([
+      DOMAIN_WRAPPED_KEY,
+      "item-dek",
+      canonicalDecimal(epoch),
+      "reader-epub",
+      epub,
+      parsed.value,
+      "",
+      revisionId,
+      bytesToHex(dek),
+    ]);
+    const point = p256.getPublicKey(ephemeral, false);
+    const ct = aesEncrypt(contentKdf(sharedX(ephemeral, uncompressedFromSea(epub))), nonce, plain);
+    const blob = new Uint8Array(1 + point.length + nonce.length + ct.length);
+    blob[0] = 1;
+    blob.set(point, 1);
+    blob.set(nonce, 1 + point.length);
+    blob.set(ct, 1 + point.length + nonce.length);
+    return bytesToHex(blob);
+  } finally {
+    dek.fill(0);
+    plain?.fill(0);
+  }
 }
 
 export function openReaderWrap(
@@ -71,7 +76,12 @@ export function openReaderWrap(
   try {
     if (seaPoint(scalar) !== epub) throw new Error("wrap-rejected");
     if (wrappedHex.length > MAX_WRAP_HEX || wrappedHex.length % 2 !== 0) throw new Error("wrap-rejected");
-    const blob = hexToBytes(wrappedHex);
+    let blob: Uint8Array;
+    try {
+      blob = hexToBytes(wrappedHex);
+    } catch {
+      throw new Error("wrap-rejected");
+    }
     if (blob[0] !== 1 || blob.length < 1 + 65 + 12 + 16) throw new Error("wrap-rejected");
     const ephemeral = blob.slice(1, 66);
     const nonce = blob.slice(66, 78);
@@ -97,6 +107,7 @@ export function openReaderWrap(
       fields[5] !== objectId ||
       fields[6] !== "" ||
       fields[7] !== revisionId ||
+      !/^[0-9a-f]{64}$/u.test(fields[7] ?? "") ||
       !/^[0-9a-f]{64}$/u.test(fields[8] ?? "")
     ) {
       throw new Error("wrap-rejected");

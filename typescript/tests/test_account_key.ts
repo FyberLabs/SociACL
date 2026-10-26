@@ -48,6 +48,7 @@ const vector = JSON.parse(readFileSync(new URL("../../vectors/encrypted-discover
   gunDocument: string;
   nonIdentities: { name: string; input: string; reason: string }[];
   deliveries: string[];
+  contentWrapRejects: { name: string; revisionId: string; wrappedKey: string; error: string }[];
   backupSignatureRejects: { name: string; signature: string; error: string }[];
   backupWrap: {
     transportScalarHex: string;
@@ -651,5 +652,43 @@ test("genesis sealing rejects missing or altered read-back rows", () => {
     ), (error: unknown) => error instanceof Error && error.message === "store-rejected");
     // The put can have succeeded; failure must not pretend to roll it back.
     assert.equal(store.writeGeneration(genesis.principal), 1);
+  }
+});
+
+
+test("reader wrap rejects match shared malformed blob and authenticated revision cases", () => {
+  for (const row of vector.contentWrapRejects) {
+    assert.throws(() => contentWrap.openReaderWrap(
+      vector.epriv, vector.epub, row.wrappedKey, vector.contentWrap.epoch,
+      vector.contentWrap.objectId, row.revisionId,
+    ), (error: unknown) => error instanceof Error && error.message === row.error, row.name);
+  }
+});
+
+test("reader sealing wipes decoded DEK and encoded plaintext on success and failure", () => {
+  const fill = Uint8Array.prototype.fill;
+  for (const fail of [false, true]) {
+    const wiped: { before: string; bytes: Uint8Array }[] = [];
+    Uint8Array.prototype.fill = function(value: number, start?: number, end?: number) {
+      if (value === 0) wiped.push({ before: Buffer.from(this).toString("hex"), bytes: this });
+      return fill.call(this, value, start, end);
+    };
+    try {
+      const run = () => contentWrap.sealReaderWrap(
+        vector.epub, vector.contentWrap.dekHex, vector.contentWrap.epoch,
+        vector.contentWrap.objectId, vector.contentWrap.revisionId,
+        fail ? new Uint8Array(32) : new Uint8Array(Buffer.from(vector.contentWrap.ephemeralScalarHex, "hex")),
+        new Uint8Array(Buffer.from(vector.contentWrap.nonceHex, "hex")),
+      );
+      if (fail) assert.throws(run); else assert.equal(run(), vector.contentWrap.wrappedKey);
+    } finally {
+      Uint8Array.prototype.fill = fill;
+    }
+    const dek = wiped.find(row => row.before === vector.contentWrap.dekHex);
+    const plain = wiped.find(row => row.before.includes(Buffer.from("s3rch-wrapped-key-v1").toString("hex")));
+    assert.ok(dek);
+    assert.ok(plain);
+    assert.ok(dek.bytes.every(byte => byte === 0));
+    assert.ok(plain.bytes.every(byte => byte === 0));
   }
 });
