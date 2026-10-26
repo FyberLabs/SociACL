@@ -48,6 +48,7 @@ const vector = JSON.parse(readFileSync(new URL("../../vectors/encrypted-discover
   gunDocument: string;
   nonIdentities: { name: string; input: string; reason: string }[];
   deliveries: string[];
+  backupSignatureRejects: { name: string; signature: string; error: string }[];
   backupWrap: {
     transportScalarHex: string;
     transportPub: string;
@@ -404,6 +405,14 @@ test("public transport key seal matches the shared vector", () => {
   );
   assert.equal(wrap.ciphertextHex, vector.backupWrap.ciphertextHex);
   assert.equal(wrap.signature, vector.backupWrap.signature);
+  for (const row of vector.backupSignatureRejects) {
+    assert.throws(
+      () => openAccountBackup(vector.backupWrap.transportScalarHex, { ...wrap, signature: row.signature }, genesis.principal, [], context),
+      (error: unknown) => error instanceof Error && error.message === row.error,
+      row.name,
+    );
+  }
+
   const opened = openAccountBackup(vector.backupWrap.transportScalarHex, wrap, genesis.principal, [], context);
   assert.equal(opened.principal, genesis.principal);
   assert.equal(opened.priv, genesis.priv);

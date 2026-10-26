@@ -864,7 +864,8 @@ pub fn open_account_backup(
         transport.sea_pub(),
         wrap_id.as_ref(),
     )?;
-    sea::verify_sea(current.as_ref(), &message, &wrap.signature)?;
+    sea::verify_sea(current.as_ref(), &message, &wrap.signature)
+        .map_err(|_| EncDiscError::WrapRejected)?;
     let ephemeral_sea = sea::sea_pub_from_point(&ephemeral)?;
     let secret = transport.secret_key()?;
     let shared = ecdh_x(&secret, &ephemeral)?;
@@ -1428,6 +1429,19 @@ mod tests {
             v["backupWrap"]["signature"].as_str().unwrap()
         );
         assert_eq!(wrap.epub, account.epub());
+        for row in v["backupSignatureRejects"].as_array().unwrap() {
+            let mut bad = wrap.clone();
+            bad.signature = row["signature"].as_str().unwrap().to_string();
+            assert_eq!(row["error"].as_str().unwrap(), "wrap-rejected");
+            assert_eq!(
+                open_account_backup(&transport, &bad, account.principal(), &[], &context)
+                    .unwrap_err(),
+                EncDiscError::WrapRejected,
+                "{}",
+                row["name"].as_str().unwrap(),
+            );
+        }
+
         let signing = sea::signing_key(account.local_priv()).unwrap();
         let encryption = sea::ecdh_secret(account.local_epriv()).unwrap();
         let sign_hex = crate::hexutil::encode_secret_hex(signing.to_bytes().as_slice());
@@ -1803,7 +1817,7 @@ mod tests {
         assert_eq!(
             open_account_backup(&transport, &wrap, account.principal(), &rotations, &context)
                 .unwrap_err(),
-            EncDiscError::SignatureRejected
+            EncDiscError::WrapRejected
         );
     }
 

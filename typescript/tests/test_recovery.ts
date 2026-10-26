@@ -135,6 +135,7 @@ const recoveryVector = JSON.parse(readFileSync(new URL("../../vectors/encrypted-
   envelopeHex: string;
   rejects: RejectRow[];
   delivery: {
+    backupOpenError: string;
     transportScalarHex: string;
     transportPub: string;
     ephemeralScalarHex: string;
@@ -661,7 +662,7 @@ test("delivered keyring matches the shared vector and does not mint", async () =
   );
   assert.equal(
     await errorMessage(() => openAccountBackup(recoveryVector.delivery.transportScalarHex, wrap, keyring.principal, [], context)),
-    "wrap-rejected",
+    recoveryVector.delivery.backupOpenError,
   );
   assert.equal(
     await errorMessage(() => delivery.openDeliveredKeyring(scalarHex(5), wrap, keyring.principal, 0, [], context)),
