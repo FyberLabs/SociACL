@@ -171,7 +171,7 @@ test("labels are not accounts and credentials are not identities", () => {
     if (!parsed.ok) assert.equal(parsed.reason, row.reason, row.name);
     assert.throws(() => importGenesis(
       vector.laneId, row.input, vector.signingPriv, vector.epub, vector.epriv,
-    ), undefined, `cannot construct an account from ${row.name}`);
+    ), `cannot construct an account from ${row.name}`);
   }
   const wallet = records.accept.find((row) => row.name === "wallet");
   const oidc = records.accept.find((row) => row.name === "oidc");
