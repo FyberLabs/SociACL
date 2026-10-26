@@ -158,8 +158,18 @@ pub struct MemoryRecoveryStore<C> {
 }
 
 impl<C> MemoryRecoveryStore<C> {
-    pub fn new(chain: C) -> Self {
-        Self::sharing(chain, crate::store_write::HeadFloor::new())
+    /// Supply the same floor (or its clone) to the wrap store. Reads and
+    /// rejected writes in either store must protect both against rollback.
+    ///
+    /// ```compile_fail,E0061
+    /// use sociacl_encdisc::{EncDiscError, MemoryRecoveryStore};
+    /// fn chain(_: &sociacl_ids::PrincipalId) -> Result<sociacl_ids::ResolvedAccount, EncDiscError> {
+    ///     Err(EncDiscError::StoreRejected)
+    /// }
+    /// let store = MemoryRecoveryStore::new(chain);
+    /// ```
+    pub fn new(chain: C, head_floor: crate::store_write::HeadFloor) -> Self {
+        Self::sharing(chain, head_floor)
     }
 
     /// `head_floor` is shared with a wrap store that should enforce the same
@@ -1537,7 +1547,7 @@ mod tests {
         let held = hold();
         let ctx = context_of(&held);
         let keyring = genesis_keyring();
-        let mut store = MemoryRecoveryStore::new(watch(&[], &ctx));
+        let mut store = MemoryRecoveryStore::new(watch(&[], &ctx), crate::HeadFloor::new());
         let started = std::time::Instant::now();
         let sealed = seal_recovery_copy_with(
             &keyring,
@@ -1801,7 +1811,7 @@ mod tests {
         let keyring = genesis_keyring();
         let held = hold();
         let ctx = context_of(&held);
-        let mut store = MemoryRecoveryStore::new(watch(&[], &ctx));
+        let mut store = MemoryRecoveryStore::new(watch(&[], &ctx), crate::HeadFloor::new());
         let salt = hexutil::decode_hex(v["saltHex"].as_str().unwrap()).unwrap();
         let nonce = hexutil::decode_hex(v["nonceHex"].as_str().unwrap()).unwrap();
         let envelope = seal_recovery_copy_with(
@@ -1892,7 +1902,7 @@ mod tests {
         let keyring = genesis_keyring();
         let held = hold();
         let ctx = context_of(&held);
-        let mut store = MemoryRecoveryStore::new(watch(&[], &ctx));
+        let mut store = MemoryRecoveryStore::new(watch(&[], &ctx), crate::HeadFloor::new());
         let (signing_pub, epub) = genesis_pubs();
         let old = RecoveryEnvelope {
             principal: keyring.principal().clone(),
@@ -1984,7 +1994,7 @@ mod tests {
         let principal = keyring.principal().clone();
         let held = hold();
         let ctx = context_of(&held);
-        let mut store = MemoryRecoveryStore::new(watch(&[], &ctx));
+        let mut store = MemoryRecoveryStore::new(watch(&[], &ctx), crate::HeadFloor::new());
         let mut older =
             dummy_envelope(&principal, 0, keyring.current_pub(), keyring.current_epub());
         let original = older.bytes.clone();
@@ -2044,7 +2054,7 @@ mod tests {
             store.get_copy(&principal, 1).unwrap().unwrap().bytes,
             newer.bytes
         );
-        let mut high = MemoryRecoveryStore::new(watch(&[], &ctx));
+        let mut high = MemoryRecoveryStore::new(watch(&[], &ctx), crate::HeadFloor::new());
         let refused = put_as(
             &mut high,
             &dummy_envelope(&principal, 2, keyring.current_pub(), keyring.current_epub()),
@@ -2055,7 +2065,7 @@ mod tests {
             recovery()["retention"]["downgrade"].as_str().unwrap()
         );
         assert!(high.get_copy(&principal, 2).unwrap().is_none());
-        let mut gap = MemoryRecoveryStore::new(watch(&[], &ctx));
+        let mut gap = MemoryRecoveryStore::new(watch(&[], &ctx), crate::HeadFloor::new());
         put_as(
             &mut gap,
             &dummy_envelope(&principal, 0, keyring.current_pub(), keyring.current_epub()),
@@ -2116,7 +2126,7 @@ mod tests {
                 &[0x11; 16],
                 &[0x22; 12],
                 keyring.current_priv(),
-                &mut MemoryRecoveryStore::new(watch(&[], &ctx)),
+                &mut MemoryRecoveryStore::new(watch(&[], &ctx), crate::HeadFloor::new()),
                 None,
             )
             .unwrap_err();
@@ -2135,7 +2145,7 @@ mod tests {
             &[0x11; 16],
             &[0x22; 12],
             keyring.current_priv(),
-            &mut MemoryRecoveryStore::new(watch(&[], &ctx)),
+            &mut MemoryRecoveryStore::new(watch(&[], &ctx), crate::HeadFloor::new()),
             None,
         )
         .unwrap_err();
@@ -2259,7 +2269,7 @@ mod tests {
             &[prior_contact],
         )
         .unwrap();
-        let mut store = MemoryRecoveryStore::new(watch(&rotations, &base));
+        let mut store = MemoryRecoveryStore::new(watch(&rotations, &base), crate::HeadFloor::new());
         let salt = hexutil::decode_hex(v["saltHex"].as_str().unwrap()).unwrap();
         let nonce = hexutil::decode_hex(v["nonceHex"].as_str().unwrap()).unwrap();
         let envelope = seal_recovery_copy_with(
@@ -2304,7 +2314,7 @@ mod tests {
                 .result
                 .map_err(|_| EncDiscError::StoreRejected)
         };
-        let mut forward = MemoryRecoveryStore::new(chain);
+        let mut forward = MemoryRecoveryStore::new(chain, crate::HeadFloor::new());
         put_as(
             &mut forward,
             &dummy_envelope(keyring.principal(), 0, &genesis_point, &genesis_encryption),
@@ -2330,7 +2340,7 @@ mod tests {
             genesis_priv.as_str(),
         );
         assert!(matches!(older, Err(EncDiscError::StoreRejected)));
-        let mut stuck = MemoryRecoveryStore::new(watch(&[], &base));
+        let mut stuck = MemoryRecoveryStore::new(watch(&[], &base), crate::HeadFloor::new());
         put_as(
             &mut stuck,
             &dummy_envelope(keyring.principal(), 0, &genesis_point, &genesis_encryption),
@@ -2358,7 +2368,7 @@ mod tests {
                 .result
                 .map_err(|_| EncDiscError::StoreRejected)
         };
-        let mut fork = MemoryRecoveryStore::new(chain);
+        let mut fork = MemoryRecoveryStore::new(chain, crate::HeadFloor::new());
         put_as(
             &mut fork,
             &dummy_envelope(keyring.principal(), 0, &genesis_point, &genesis_encryption),
@@ -2449,7 +2459,7 @@ mod tests {
         let e1 = parse_principal_id(&e1_pub).unwrap();
         let e2 = parse_principal_id(&e2_pub).unwrap();
 
-        let mut honest = MemoryRecoveryStore::new(watch(&chain, &base));
+        let mut honest = MemoryRecoveryStore::new(watch(&chain, &base), crate::HeadFloor::new());
         let current = dummy_envelope(&principal, 2, &k2, &e2);
         put_as(&mut honest, &current, k0_priv.as_str()).unwrap_err();
         put_as(&mut honest, &current, k2_priv.as_str()).unwrap();
@@ -2486,7 +2496,7 @@ mod tests {
                 .result
                 .map_err(|_| EncDiscError::StoreRejected)
         };
-        let mut floored = MemoryRecoveryStore::new(floor_chain);
+        let mut floored = MemoryRecoveryStore::new(floor_chain, crate::HeadFloor::new());
         put_as(&mut floored, &current, k2_priv.as_str()).unwrap();
         let generation = floored.write_generation(&principal);
         let hash = recovery_envelope_hash(&current).unwrap();
@@ -2530,7 +2540,7 @@ mod tests {
                 .result
                 .map_err(|_| EncDiscError::StoreRejected)
         };
-        let mut between = MemoryRecoveryStore::new(mid_chain);
+        let mut between = MemoryRecoveryStore::new(mid_chain, crate::HeadFloor::new());
         let kept = dummy_envelope(&principal, 1, &k1, &e1);
         put_as(&mut between, &kept, k1_priv.as_str()).unwrap();
         let mut waiting = dummy_envelope(&principal, 2, &k2, &e2);
@@ -2552,7 +2562,7 @@ mod tests {
             waiting.bytes
         );
 
-        let mut early = MemoryRecoveryStore::new(watch(&chain[..1], &base));
+        let mut early = MemoryRecoveryStore::new(watch(&chain[..1], &base), crate::HeadFloor::new());
         put_as(&mut early, &kept, k1_priv.as_str()).unwrap();
         put_as(&mut early, &waiting, k1_priv.as_str()).unwrap();
         let early_account = early.published_account(&principal).unwrap();
@@ -2591,7 +2601,7 @@ mod tests {
         );
         assert!(early.get_copy(&principal, 2).unwrap().is_none());
 
-        let mut live = MemoryRecoveryStore::new(watch(&chain, &base));
+        let mut live = MemoryRecoveryStore::new(watch(&chain, &base), crate::HeadFloor::new());
         let mut first = dummy_envelope(&principal, 2, &k2, &e2);
         first.bytes[40] = 0x11;
         let sig1 = sign_recovery_put(&live, k2_priv.as_str(), &first).unwrap();
@@ -2622,7 +2632,7 @@ mod tests {
                 .result
                 .map_err(|_| EncDiscError::StoreRejected)
         };
-        let mut pending_store = MemoryRecoveryStore::new(staged);
+        let mut pending_store = MemoryRecoveryStore::new(staged, crate::HeadFloor::new());
         put_as(
             &mut pending_store,
             &dummy_envelope(&principal, 0, &k0, &k0),
@@ -2672,7 +2682,7 @@ mod tests {
                 .result
                 .map_err(|_| EncDiscError::StoreRejected)
         };
-        let mut rejected_commit = MemoryRecoveryStore::new(lagged);
+        let mut rejected_commit = MemoryRecoveryStore::new(lagged, crate::HeadFloor::new());
         let genesis_row = dummy_envelope(&principal, 0, &k0, &k0);
         put_as(&mut rejected_commit, &genesis_row, k0_priv.as_str()).unwrap();
         let mut old_pending = dummy_envelope(&principal, 1, &k1, &e1);
@@ -2720,7 +2730,7 @@ mod tests {
         let ctx = context_of(&held);
         let keyring = genesis_keyring();
         let (signing, encryption) = genesis_pubs();
-        let mut store = MemoryRecoveryStore::new(watch(&[], &ctx));
+        let mut store = MemoryRecoveryStore::new(watch(&[], &ctx), crate::HeadFloor::new());
         let current = dummy_envelope(keyring.principal(), 0, &signing, &encryption);
         put_as(&mut store, &current, keyring.current_priv()).unwrap();
         let mut pending = dummy_envelope(keyring.principal(), 1, &signing, &encryption);
@@ -2823,7 +2833,7 @@ mod tests {
                 .map_err(|_| EncDiscError::StoreRejected)
         };
         let floor = crate::HeadFloor::new();
-        let mut recovery = MemoryRecoveryStore::sharing(seen, floor.clone());
+        let mut recovery = MemoryRecoveryStore::new(seen, floor.clone());
         let envelope = dummy_envelope(
             &principal,
             2,
@@ -2860,7 +2870,7 @@ mod tests {
         ));
         assert_eq!(recovery.write_generation(&principal), 0);
 
-        let mut wraps = crate::MemoryKeyWrapStore::sharing(watch(&[], &base), floor);
+        let mut wraps = crate::MemoryKeyWrapStore::new(watch(&[], &base), floor);
         let wrap_id =
             sociacl_ids::parse_object_id("wrap_p_60fed4ba255a9d31c961eb74c6356d68c049b8923b61fa6ce669622e60f29fb67903fe1008b8bc99a41ae9e95628bc64f2f1b20c2d7e9f5177a3c294d4462299_00112233445566778899aabbccddee11").unwrap();
         let wrap = crate::EncryptedAccountWrap {
@@ -2903,10 +2913,10 @@ mod tests {
 
         let shared = crate::HeadFloor::new();
         let long = watch(&chain, &base);
-        let wrap_seen = crate::MemoryKeyWrapStore::sharing(long, shared.clone());
+        let wrap_seen = crate::MemoryKeyWrapStore::new(long, shared.clone());
         wrap_seen.published_account(&principal).unwrap();
         assert_eq!(wrap_seen.write_generation(&principal), 0);
-        let mut recovery_stale = MemoryRecoveryStore::sharing(watch(&[], &base), shared);
+        let mut recovery_stale = MemoryRecoveryStore::new(watch(&[], &base), shared);
         assert!(matches!(
             put_as(
                 &mut recovery_stale,

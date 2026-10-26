@@ -355,7 +355,7 @@ test("passphrase strength matches the shared vector and stays off open", async (
   }
   const keyring = genesisKeyring();
   const context = witnessedContext();
-  const store = new MemoryRecoveryStore(watch([], context));
+  const store = new MemoryRecoveryStore(watch([], context), new HeadFloor());
   const started = Date.now();
   await assert.rejects(
     () =>
@@ -468,7 +468,7 @@ test("an empty or whitespace passphrase is recovery-params before the kdf", asyn
 test("recovery copy matches the shared vector and stays off gun", { timeout: 180_000 }, async () => {
   const keyring = genesisKeyring();
   const context = witnessedContext();
-  const store = new MemoryRecoveryStore(watch([], context));
+  const store = new MemoryRecoveryStore(watch([], context), new HeadFloor());
   const passphrase = new TextEncoder().encode(recoveryVector.passphraseUtf8);
   const envelope = await sealRecoveryCopyWith(
     keyring,
@@ -527,7 +527,7 @@ test("recovery copy matches the shared vector and stays off gun", { timeout: 180
 test("rotation reseals a new version and writes only the adapter", { timeout: 180_000 }, async () => {
   const keyring = genesisKeyring();
   const context = witnessedContext();
-  const store = new MemoryRecoveryStore(watch([], context));
+  const store = new MemoryRecoveryStore(watch([], context), new HeadFloor());
   const passphrase = new TextEncoder().encode(recoveryVector.passphraseUtf8);
   putRecovery(
     store,
@@ -582,7 +582,7 @@ test("rotation reseals a new version and writes only the adapter", { timeout: 18
 test("delivered keyring matches the shared vector and does not mint", async () => {
   const keyring = genesisKeyring();
   const context = witnessedContext();
-  const store = new MemoryKeyWrapStore(watch([], context));
+  const store = new MemoryKeyWrapStore(watch([], context), new HeadFloor());
   const wrap = deliverKeyringWith(
     keyring,
     recoveryVector.delivery.transportPub,
@@ -851,7 +851,7 @@ test("the store copies envelopes and keeps only the latest", () => {
   const keyring = genesisKeyring();
   const principal = keyring.principal;
   const context = witnessedContext();
-  const store = new MemoryRecoveryStore(watch([], context));
+  const store = new MemoryRecoveryStore(watch([], context), new HeadFloor());
   const older = dummyEnvelope(principal, 0, keyring.pub, keyring.epub);
   const original = new Uint8Array(older.bytes);
   putRecovery(store, older, keyring.currentPriv());
@@ -888,14 +888,14 @@ test("the store copies envelopes and keeps only the latest", () => {
   assert.equal(store.get(principal, 99), undefined);
   putRecovery(store, dummyEnvelope(principal, 1, pending.signingPub, pending.epub), keyring.currentPriv());
   assert.ok(store.pending(principal));
-  const high = new MemoryRecoveryStore(watch([], context));
+  const high = new MemoryRecoveryStore(watch([], context), new HeadFloor());
   assert.throws(
     () => putRecovery(high, dummyEnvelope(principal, 2, keyring.pub, keyring.epub), keyring.currentPriv()),
     (error: unknown) => error instanceof Error && error.message === recoveryVector.retention.downgrade,
   );
   assert.equal(high.get(principal, 2), undefined);
   assert.equal(recoveryVector.retention.higherSeq, "pending-only-head-plus-one");
-  const gap = new MemoryRecoveryStore(watch([], context));
+  const gap = new MemoryRecoveryStore(watch([], context), new HeadFloor());
   putRecovery(gap, dummyEnvelope(principal, 0, keyring.pub, keyring.epub), keyring.currentPriv());
   assert.throws(
     () => putRecovery(gap, dummyEnvelope(principal, 2, keyring.pub, keyring.epub), keyring.currentPriv()),
@@ -972,7 +972,7 @@ test("a recovery copy opens after rotation against its chain", { timeout: 180_00
     ring.witnessContact.secret,
     ring.witnessContact.prior,
   );
-  const store = new MemoryRecoveryStore(watch([rotation.input], context));
+  const store = new MemoryRecoveryStore(watch([rotation.input], context), new HeadFloor());
   const envelope = await recovery.sealRecoveryCopyFromString(
     keyring,
     recoveryVector.passphraseUtf8,
@@ -1001,7 +1001,7 @@ test("a recovery copy opens after rotation against its chain", { timeout: 180_00
     const resolved = resolveCurrentKey(principal, published.rotations, context);
     if (!resolved.ok) throw new Error("store-rejected");
     return resolved.value;
-  });
+  }, new HeadFloor());
   putRecovery(forward, dummyEnvelope(keyring.principal, 0, genesisPoint, genesisEncryption), genesis.priv);
   putRecovery(forward, dummyEnvelope(keyring.principal, 1, currentPoint, currentEncryption), genesis.priv);
   published.rotations = [rotation.input];
@@ -1017,7 +1017,7 @@ test("a recovery copy opens after rotation against its chain", { timeout: 180_00
     () => putRecovery(forward, dummyEnvelope(keyring.principal, 0, genesisPoint, genesisEncryption), genesis.priv),
     (error: unknown) => error instanceof Error && error.message === "store-rejected",
   );
-  const stuck = new MemoryRecoveryStore(watch([], context));
+  const stuck = new MemoryRecoveryStore(watch([], context), new HeadFloor());
   putRecovery(stuck, dummyEnvelope(keyring.principal, 0, genesisPoint, genesisEncryption), genesis.priv);
   putRecovery(stuck, dummyEnvelope(keyring.principal, 1, currentPoint, currentEncryption), genesis.priv);
   assert.equal(
@@ -1031,7 +1031,7 @@ test("a recovery copy opens after rotation against its chain", { timeout: 180_00
     const resolved = resolveCurrentKey(principal, forkChain.rotations, context);
     if (!resolved.ok) throw new Error("store-rejected");
     return resolved.value;
-  });
+  }, new HeadFloor());
   const minted = mintPubs();
   putRecovery(fork, dummyEnvelope(keyring.principal, 0, genesisPoint, genesisEncryption), genesis.priv);
   putRecovery(fork, dummyEnvelope(keyring.principal, 1, minted.signingPub, minted.epub), genesis.priv);
@@ -1050,7 +1050,7 @@ test("a recovery copy opens after rotation against its chain", { timeout: 180_00
 test("two devices and the genesis backup share the store", () => {
   const keyring = genesisKeyring();
   const context = witnessedContext();
-  const store = new MemoryKeyWrapStore(watch([], context));
+  const store = new MemoryKeyWrapStore(watch([], context), new HeadFloor());
   const account = importGenesis(
     ring.genesis.laneId,
     ring.genesis.signingPub,
@@ -1121,7 +1121,7 @@ test("two devices and the genesis backup share the store", () => {
 test("wrap rows are capped and a class sticks to its id", () => {
   const principal = principalOf();
   const context = witnessedContext();
-  const store = new MemoryKeyWrapStore(watch([], context));
+  const store = new MemoryKeyWrapStore(watch([], context), new HeadFloor());
   const signer = ring.genesis.signingPriv;
   const ids: ReturnType<typeof parseWrapObject>[] = [];
   for (let n = 0; n < MAX_WRAPS_PER_PRINCIPAL; n += 1) {
@@ -1195,7 +1195,7 @@ test("a rotated delivery needs its chain and a stale seq wins", () => {
     ring.witnessContact.secret,
     ring.witnessContact.prior,
   );
-  const store = new MemoryKeyWrapStore(watch([rotation.input], context));
+  const store = new MemoryKeyWrapStore(watch([rotation.input], context), new HeadFloor());
   const transport = scalarSea(4);
   const wrap = deliverKeyringWith(
     keyring,
@@ -1330,7 +1330,7 @@ test("retired keys cannot write and replays do not restore", () => {
   const e1p = asPrincipal(e1.pub);
   const e2p = asPrincipal(e2.pub);
 
-  const honest = new MemoryRecoveryStore(watch(chain, context));
+  const honest = new MemoryRecoveryStore(watch(chain, context), new HeadFloor());
   const current = dummyEnvelope(principal, 2, k2p, e2p);
   assert.equal(messageSync(() => putRecovery(honest, current, k0.priv)), "store-rejected");
   putRecovery(honest, current, k2.priv);
@@ -1350,7 +1350,7 @@ test("retired keys cannot write and replays do not restore", () => {
   assert.deepEqual(honest.get(principal, 2)?.bytes, current.bytes);
 
   const published = { rotations: chain.slice() as unknown[] };
-  const floored = new MemoryRecoveryStore(resolver(published, context));
+  const floored = new MemoryRecoveryStore(resolver(published, context), new HeadFloor());
   putRecovery(floored, current, k2.priv);
   const generation = floored.writeGeneration(principal);
   const hash = recoveryEnvelopeHash(current);
@@ -1373,7 +1373,7 @@ test("retired keys cannot write and replays do not restore", () => {
   assert.ok(floored.get(principal, 2));
 
   const mid = { rotations: [chain[0]] as unknown[] };
-  const between = new MemoryRecoveryStore(resolver(mid, context));
+  const between = new MemoryRecoveryStore(resolver(mid, context), new HeadFloor());
   const kept = dummyEnvelope(principal, 1, k1p, e1p);
   putRecovery(between, kept, k1.priv);
   const waiting = dummyEnvelope(principal, 2, k2p, e2p);
@@ -1386,7 +1386,7 @@ test("retired keys cannot write and replays do not restore", () => {
   assert.deepEqual(between.get(principal, 1)?.bytes, kept.bytes);
   assert.equal(between.get(principal, 2)?.bytes[40], 0x21);
 
-  const early = new MemoryRecoveryStore(watch(chain.slice(0, 1), context));
+  const early = new MemoryRecoveryStore(watch(chain.slice(0, 1), context), new HeadFloor());
   putRecovery(early, kept, k1.priv);
   putRecovery(early, waiting, k1.priv);
   const earlyAccount = early.publishedAccount(principal);
@@ -1417,7 +1417,7 @@ test("retired keys cannot write and replays do not restore", () => {
   assert.deepEqual(early.get(principal, 1)?.bytes, stolen.bytes);
   assert.equal(early.get(principal, 2), undefined);
 
-  const live = new MemoryRecoveryStore(watch(chain, context));
+  const live = new MemoryRecoveryStore(watch(chain, context), new HeadFloor());
   const first = dummyEnvelope(principal, 2, k2p, e2p);
   first.bytes[40] = 0x11;
   const sig1 = signRecoveryOp(live, k2.priv, principal, "put", 2, recoveryEnvelopeHash(first), REPLACED_NONE);
@@ -1433,7 +1433,7 @@ test("retired keys cannot write and replays do not restore", () => {
   assert.equal(live.get(principal, 2), undefined);
 
   const stage = { rotations: [] as unknown[] };
-  const pendingStore = new MemoryRecoveryStore(resolver(stage, context));
+  const pendingStore = new MemoryRecoveryStore(resolver(stage, context), new HeadFloor());
   putRecovery(pendingStore, dummyEnvelope(principal, 0, k0p, k0p), k0.priv);
   const capturedEnv = dummyEnvelope(principal, 1, k1p, e1p);
   capturedEnv.bytes[40] = 0x44;
@@ -1461,7 +1461,7 @@ test("retired keys cannot write and replays do not restore", () => {
   assert.equal(pendingStore.get(principal, 1)?.bytes[40], 0x55);
 
   const lag = { rotations: [] as unknown[] };
-  const rejectedCommit = new MemoryRecoveryStore(resolver(lag, context));
+  const rejectedCommit = new MemoryRecoveryStore(resolver(lag, context), new HeadFloor());
   const genesisRow = dummyEnvelope(principal, 0, k0p, k0p);
   putRecovery(rejectedCommit, genesisRow, k0.priv);
   const oldPending = dummyEnvelope(principal, 1, k1p, e1p);
@@ -1487,7 +1487,7 @@ test("an abandoned pending copy does not freeze recovery writes", () => {
   const context = witnessedContext();
   const signing = keyring.pub;
   const encryption = keyring.epub;
-  const store = new MemoryRecoveryStore(watch([], context));
+  const store = new MemoryRecoveryStore(watch([], context), new HeadFloor());
   const current = dummyEnvelope(keyring.principal, 0, signing, encryption);
   putRecovery(store, current, keyring.currentPriv());
   const pending = dummyEnvelope(keyring.principal, 1, signing, encryption);
@@ -1505,6 +1505,22 @@ test("an abandoned pending copy does not freeze recovery writes", () => {
   putRecovery(store, passphraseChange, keyring.currentPriv());
   assert.equal(store.get(keyring.principal, 0)?.bytes[40], 0x33);
   assert.equal(store.get(keyring.principal, 1), undefined);
+});
+
+test("stores require an explicit head floor at type and runtime boundaries", () => {
+  const chain = watch([], probeContext());
+  for (const Store of [MemoryKeyWrapStore, MemoryRecoveryStore]) {
+    assert.equal(messageSync(() => {
+      // @ts-expect-error A store must not silently allocate a private floor.
+      new Store(chain);
+    }), "store-rejected");
+    for (const invalid of [undefined, null, {}]) {
+      assert.equal(messageSync(() => {
+        // @ts-expect-error JavaScript callers must supply a real HeadFloor.
+        new Store(chain, invalid);
+      }), "store-rejected");
+    }
+  }
 });
 
 test("a resolved head raises the shared floor", () => {
@@ -1586,7 +1602,7 @@ test("a retired key cannot fill or relabel wraps", () => {
   const k0 = scalarSea(1);
   const k2 = scalarSea(3);
   const principal = asPrincipal(k0.pub);
-  const store = new MemoryKeyWrapStore(watch(chain, context));
+  const store = new MemoryKeyWrapStore(watch(chain, context), new HeadFloor());
   for (let n = 0; n < MAX_WRAPS_PER_PRINCIPAL; n += 1) {
     const wrapId = mintedWrap(principal, n);
     assert.equal(
@@ -1604,7 +1620,7 @@ test("a retired key cannot fill or relabel wraps", () => {
   );
   assert.equal(store.get(principal, wrapId)?.ciphertextHex, "aa");
 
-  const labeled = new MemoryKeyWrapStore(watch(chain, context));
+  const labeled = new MemoryKeyWrapStore(watch(chain, context), new HeadFloor());
   const hash = wrapCiphertextHash("aa");
   const signature = signStoreWrite(
     k2.priv,

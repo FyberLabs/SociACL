@@ -241,6 +241,28 @@ A new device receives the keyring through its own sealed wrap. The KDF and assoc
 
 Open checks the current-key signature before it parses the plaintext. `recovery-stale` is returned only when the plaintext `rotationSeq` is older than the expected sequence and the signature also verifies under the key that was valid at that older sequence. That key is the current key of the rotation records whose own `seq` is less than or equal to the delivered sequence. Array position is not a sequence. Sequence 0 is the genesis principal. `recovery-stale` is not proof the delivery is genuine: a signature under a key the rotation was meant to cut off still returns `recovery-stale`, and no key material is accepted. A bad signature, a sequence that is not older, and a codec failure on this path are `wrap-rejected`. A forged wrap cannot choose among `recovery-stale`, `recovery-rejected`, and `wrap-rejected`. The transport scalar is wiped if key agreement throws, including on an attacker-chosen ephemeral point. Rust copies that scalar into a temporary P-256 secret that zeros on drop, and drops the secret as soon as the shared secret is derived. The caller's transport key stays. The transport public key must not be the principal, the genesis epub, the current pub, the current epub, or a retired epub. Opening a delivery blob with the genesis backup opener fails closed. TypeScript returns `wrap-rejected`. Rust returns `signature-rejected`, the result `open_account_backup` already uses when the current-key signature does not verify.
 
+The memory-store constructors require an explicit `HeadFloor`; neither creates
+one implicitly. Construct it once for an application's recovery and wrap stores,
+and pass that same instance to both. In Rust, pass `floor.clone()` to one and
+`floor` to the other; cloning shares the underlying map. The existing Rust
+`sharing` constructors remain equivalent explicit entry points. TypeScript
+rejects an omitted or invalid floor with `store-rejected`, including calls from
+JavaScript. Rust and TypeScript typechecking reject the old one-argument call.
+
+```typescript
+const floor = new HeadFloor();
+const recovery = new MemoryRecoveryStore(resolvePublishedAccount, floor);
+const wraps = new MemoryKeyWrapStore(resolvePublishedAccount, floor);
+```
+
+Keep that floor for the lifetime of the paired stores. Replacing a store also
+requires retaining its rows and write generations; sharing a floor alone does
+not preserve them. A fresh floor is appropriate only for an independent store
+domain, not to clear a rollback rejection. These reference stores retain state in memory;
+production adapters
+must persist the shared per-principal floor along with their write state. This
+constructor change does not implement durable storage for an adapter.
+
 The wrap store holds at most 64 rows per principal, `MAX_WRAPS_PER_PRINCIPAL`. A new wrap id at that cap is `store-rejected`. Replacing an existing id does not count as a new row. Each row has a class, `genesis` or `delivery`. The same class and the same wrap id may replace that row. A different class on an existing wrap id is `store-rejected` and the old row stays, so a delivery cannot take the genesis backup's wrap id. The class is a field of the `sociacl-store-write-v1` signature. Openers ignore it. Every put and delete carries that signature by the current chain-head key the store's resolver reports. The message is the principal, the operation, the wrap id, the SHA-256 of the ciphertext bytes, the published head, the hash of the row being replaced or `none`, the class, and the write generation. That signature is separate from the wrap's own signature. The store reads the published chain itself and verifies the signature before it writes. The same head floor applies, shared with the recovery store for that principal. A write is `store-rejected` when its resolved head is below a head either store has already been shown, whether or not that head accepted a write. A retired key cannot fill the cap, delete a delivery row, or store a delivery signature under the genesis class. An unsigned row is `store-rejected` and does not count toward the cap. Session authentication is not this check. Adapters, Panopticon included, must verify before they write. `delete` / `delete_account_wrap` removes a delivery row under that same signature. The genesis backup can be replaced by another genesis row with the same wrap id, and it cannot be deleted. A rejected write, including a genesis delete and a class change, leaves the stored rows and the write generation unchanged. The TypeScript memory store copies a row on put, get, and list.
 
 ## Epoch manifest
