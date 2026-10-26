@@ -40,10 +40,7 @@ jobs:
         with:
           tool: cargo-llvm-cov
 
-      - name: Audit forbidden names and node:crypto
-        run: node scripts/audit-forbidden-names.mjs
-
-      - name: Test all languages
+      - name: Audit sources and test all languages
         run: ./scripts/test-all.sh
 
       - name: Production install can load sociacl/gun

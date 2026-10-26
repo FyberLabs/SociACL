@@ -16,6 +16,7 @@ SociACL never launched. There is no persisted graph, no pre-v2 ACL row, and noth
 | Browser package and optional Zod entry point | Implemented | Merged in #57. Tag not published | Strict types, browser bundle, installed-tarball consumer |
 | Shared-vector accounting and release workflow | Implemented | Tag not published | CI compares both execution manifests to the vectors |
 | SociACL permission callers | Implemented | #55 PRs 1–6 merged. PR 7 dropped. This close-out is PR 8 | Branded `ObjectId` and `PrincipalId`. Alias, fold, and chain-accessor helpers deleted. Forbidden-names guard and the `typescript/src` `node:crypto` audit |
+| PR #84 review hardening | Implemented | [PR #84](https://github.com/FyberLabs/SociACL/pull/84) awaits review and merge | Damaged v4 proof copies cannot restore retired keys; shared resolution and signed-at regressions. One parser-based crypto import audit replaces three hand-written scanners |
 | Panopticon credential attestation | Planned | Separate work | Pinned ES256 attestations after a wallet proof or a fresh OIDC login |
 | s3r.ch account enrollment and recovery | Planned | Separate product work. Not a SociACL graph migration | One genesis per account |
 | s3r.ch objects, permissions and Views | Planned | Separate product work. Mint new ids there | Exact object grants on stored ids |

@@ -1,9 +1,20 @@
 {
   "notes": [
-    "typescript/src may use WebCrypto. The audit flags import, export from, require, dynamic import(), createRequire, and process.getBuiltinModule of the specifiers crypto and node:crypto, including multi-line forms and template literals. Strings and comments are ignored.",
+    "typescript/src may use WebCrypto. The audit flags import, export from, require, dynamic import(), createRequire, and process.getBuiltinModule of the specifiers crypto and node:crypto, including multi-line forms and template literals. The pinned TypeScript parser distinguishes strings, comments, regex literals, and division. Invalid syntax fails the audit.",
     "Template text is ignored; executable substitutions are scanned, including nested templates. Scanning resumes after the closing backtick."
   ],
+  "invalid": [
+    {"name": "unclosed-regex", "source": "const re = /unterminated"},
+    {"name": "unclosed-string", "source": "const s = \"unterminated"},
+    {"name": "unclosed-comment", "source": "/* unterminated"}
+  ],
   "allowed": [
+    {"name": "regex-holds-import", "source": "const re = /import \"node:crypto\"/;"},
+    {"name": "regex-holds-require", "source": "const re = /require('crypto')/;"},
+    {"name": "regex-quotes-and-backticks", "source": "const re = /['\"`]/g;"},
+    {"name": "ordinary-division", "source": "const x = 20 / 4 / 5;"},
+    {"name": "regex-inside-template", "source": "const s = `${/}/.test(value)}`;"},
+    {"name": "comment-after-regex", "source": "const re = /\"/; // import \"crypto\";"},
     {"name": "deeply-nested-template", "source": "const s = `outer ${`outer ${`outer ${`outer ${`outer ${`outer ${`outer ${`outer ${`outer ${`outer ${`outer ${`outer ${`outer ${`outer ${`outer ${`outer ${`outer ${`outer ${`outer ${`outer ${`outer ${`outer ${`outer ${`outer ${`outer ${`outer ${`outer ${`outer ${`outer ${`outer ${`outer ${`outer ${`outer ${`outer ${`outer ${`outer ${`outer ${`outer ${`outer ${`outer ${`outer ${`outer ${`outer ${`outer ${`outer ${`outer ${`outer ${`outer ${value}`}`}`}`}`}`}`}`}`}`}`}`}`}`}`}`}`}`}`}`}`}`}`}`}`}`}`}`}`}`}`}`}`}`}`}`}`}`}`}`}`}`}`}`}`}`}`}`;"},
     {"name": "webcrypto-global", "source": "const bytes = globalThis.crypto.getRandomValues(new Uint8Array(16));"},
     {"name": "webcrypto-subtle", "source": "await crypto.subtle.digest('SHA-256', bytes);"},
@@ -19,6 +30,24 @@
     {"name": "unicode-expression", "source": "const s = `${π}`; const π2 = 2;"}
   ],
   "banned": [
+    {"name": "import-after-double-quote-regex", "source": "const re = /\"/; import \"node:crypto\";"},
+    {"name": "require-after-backtick-regex", "source": "const re = /`/; require(\"crypto\");"},
+    {"name": "export-after-single-quote-regex", "source": "const re = /'/; export * from 'crypto';"},
+    {"name": "import-after-regex-class", "source": "const re = /[\\/'\"`]/gu; import(\"crypto\");"},
+    {"name": "import-after-regex-escape", "source": "const re = /\\\"/; import(\"node:crypto\");"},
+    {"name": "import-after-division", "source": "const x = numerator / denominator; import(\"crypto\");"},
+    {"name": "import-after-regex-control-condition", "source": "if (value) /\"/.test(value); import(\"crypto\");"},
+    {"name": "import-after-regex-return", "source": "function f() { return /\"/; } import(\"crypto\");"},
+    {"name": "import-after-regex-block", "source": "if (value) {} /`/.test(value); import(\"crypto\");"},
+    {"name": "import-after-regex-in-interpolation", "source": "const s = `${/}/.test(value)}`; import(\"crypto\");"},
+    {"name": "import-after-regex-in-nested-template", "source": "const s = `${`${/}/.test(value)}`}`; import(\"crypto\");"},
+    {"name": "require-inside-template-after-regex", "source": "const s = `${/}/.test(value) && require(\"crypto\")}`;"},
+    {"name": "import-escaped-specifier", "source": "import \"node:\\u0063rypto\";"},
+    {"name": "escaped-require-identifier", "source": "requ\\u0069re(\"crypto\");"},
+    {"name": "parenthesized-specifier", "source": "require((\"crypto\"));"},
+    {"name": "computed-builtin", "source": "process[\"getBuiltinModule\"](\"crypto\");"},
+    {"name": "ts-import-equals", "source": "import crypto = require(\"crypto\");"},
+    {"name": "ts-import-type", "source": "type C = typeof import(\"crypto\");"},
     {"name": "commented-dynamic-import", "source": "import(/* webpackIgnore: true */ \"node:crypto\")"},
     {"name": "commented-require", "source": "require(/* comment */ \"crypto\")"},
     {"name": "commented-side-effect-import", "source": "import /* comment */ \"node:crypto\";"},

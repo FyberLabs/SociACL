@@ -72,6 +72,12 @@ Requires Rust 1.83+ (edition 2021) and **Node.js 24+** (20 and 22 are not suppor
 ./scripts/coverage.sh
 ```
 
+The full script installs the pinned TypeScript development dependencies before
+running the source audit. To run only that audit, use `npm ci --prefix typescript`
+then `node scripts/audit-forbidden-names.mjs`. The audit uses the TypeScript
+parser for JavaScript/TypeScript syntax and fails on parse errors. The parser is
+build tooling and is not shipped in the browser runtime.
+
 The same steps, expanded:
 
 ```bash
