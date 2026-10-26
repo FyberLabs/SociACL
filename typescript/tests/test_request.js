@@ -6,7 +6,7 @@ import { admitMembership, admitObjectSet, membershipAssentBytes, MemoryGroupGrap
 import { admittedPost, checkPost, factorGrants } from "../src/post.js";
 import * as postApi from "../src/post.js";
 import { grantApprovedRequest } from "../src/request.js";
-import { movePostRowForTest, moveSeeRowForTest, plantPlainPostForTest, plantPlainSeeForTest } from "../src/internal/row-test.js";
+import { movePostRowForTest, moveSeeRowForTest, plantPlainPostForTest, plantPlainSeeForTest } from "./row-test.js";
 import { admitRow, admittedView, checkSee, isVerifiedRow, putObject } from "../src/see.js";
 import * as seeApi from "../src/see.js";
 import * as gunApi from "../src/gun.js";
@@ -636,5 +636,75 @@ test("a throw while reading the resolver context writes neither grant", () => {
       assert.equal(checkPost(direct, chat.value, p2, now).allowed, true);
     }
     assert.equal(Boolean(directSee), Boolean(directPost));
+  }
+});
+
+test("nested policy getters never observe a partial grant pair, including on throw", () => {
+  const request = signRequest({ requester: p2, object: chat.value, scope: "read+post", status: "pending", message: "", issuedAt: now }, 2);
+  for (const direct of [false, true]) {
+    for (const failAt of [1, 2, 3, 4, 5, 6, 7, 8, Infinity]) {
+      const graph = {};
+      assert.equal(putObject(graph, objectRecord(), { rotations: () => [], ctx: context() }).ok, true);
+      let reads = 0;
+      const ctx = context();
+      Object.defineProperty(ctx.policy, "clockSkewSeconds", { get() {
+        reads += 1;
+        assert.equal(admittedView(graph, chat.value, p2), undefined);
+        assert.equal(admittedPost(graph, chat.value, p2), undefined);
+        assert.equal(checkSee(graph, chat.value, p2, now).allowed, false);
+        assert.equal(checkPost(graph, chat.value, p2, now).allowed, false);
+        if (reads === failAt) throw new Error("injected nested policy");
+        return 0;
+      } });
+      const resolver = { rotations: () => [], ctx };
+      try {
+        const got = direct
+          ? seeApi.admitGrantPair(graph, signGrant(ids.seeGrantBytes), signGrant(ids.postGrantBytes), resolver)
+          : grantApprovedRequest(graph, p, request, { from: at, until: now + 100 }, null, { scalar: secret(1), resolver });
+        assert.equal(direct ? got.ok : got.granted, true);
+        assert.equal(checkSee(graph, chat.value, p2, now).allowed, true);
+        assert.equal(checkPost(graph, chat.value, p2, now).allowed, true);
+      } catch (error) {
+        assert.equal(error.message, "injected nested policy");
+        assert.equal(admittedView(graph, chat.value, p2), undefined);
+        assert.equal(admittedPost(graph, chat.value, p2), undefined);
+      }
+      assert.ok(reads > 0);
+    }
+  }
+});
+
+test("a reentrant cancel or ownership removal aborts the pair without undoing that change", () => {
+  for (const change of ["cancel-see", "cancel-post", "remove-owner"]) {
+    const graph = {};
+    const stable = { rotations: () => [], ctx: context() };
+    assert.equal(putObject(graph, objectRecord(), stable).ok, true);
+    const ctx = context();
+    let reads = 0;
+    Object.defineProperty(ctx.policy, "clockSkewSeconds", { get() {
+      if (++reads === 2) {
+        if (change === "cancel-see") {
+          assert.equal(admitRow(graph, signGrant(ids.seeGrantBytes, { stated: 0, hamState: 2 }), stable).kept, true);
+        } else if (change === "cancel-post") {
+          assert.equal(postApi.admitPost(graph, signGrant(ids.postGrantBytes, { stated: 0, hamState: 2 }), stable).kept, true);
+        } else {
+          seeApi.reverifyPrincipal(graph, p, { rotations: () => undefined, ctx: context() });
+        }
+      }
+      return 0;
+    } });
+    const got = seeApi.admitGrantPair(graph, signGrant(ids.seeGrantBytes), signGrant(ids.postGrantBytes), { rotations: () => [], ctx });
+    assert.deepEqual(got, { ok: false, reason: "not-kept" });
+    assert.equal(checkSee(graph, chat.value, p2, now).allowed, false);
+    assert.equal(checkPost(graph, chat.value, p2, now).allowed, false);
+    if (change === "cancel-see") assert.equal(admittedView(graph, chat.value, p2)?.stated, 0);
+    if (change === "cancel-post") assert.equal(admittedPost(graph, chat.value, p2)?.stated, 0);
+    if (change === "remove-owner") assert.equal(seeApi.admittedOwner(graph, chat.value), undefined);
+  }
+});
+
+test("package imports cannot reach private admission maps or test hooks", async () => {
+  for (const path of ["sociacl/src/internal/see-rows.js", "sociacl/src/internal/post-rows.js", "sociacl/tests/row-test.js"]) {
+    await assert.rejects(import(path), { code: "ERR_PACKAGE_PATH_NOT_EXPORTED" });
   }
 });
