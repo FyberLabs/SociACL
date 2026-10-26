@@ -554,10 +554,11 @@ function requireContactSet(
   laneId: string,
   priorLanes: readonly string[],
 ): void {
-  if (!/^[0-9a-f]{64}$/u.test(secret) || secret === laneId || priorLanes.includes(secret)) throw new Error("bad-lane");
+  const disclosed = new Set<string>([laneId, ...priorLanes]);
+  if (!/^[0-9a-f]{64}$/u.test(secret) || disclosed.has(secret)) throw new Error("bad-lane");
   const seen = new Set<string>([secret]);
   for (const held of prior) {
-    if (!/^[0-9a-f]{64}$/u.test(held) || seen.has(held) || held === laneId || priorLanes.includes(held)) {
+    if (!/^[0-9a-f]{64}$/u.test(held) || seen.has(held) || disclosed.has(held)) {
       throw new Error("bad-lane");
     }
     seen.add(held);

@@ -1,0 +1,64 @@
+{
+  "v": 1,
+  "family": "keyring-history-import",
+  "rule": "Generate prior lanes as 64-digit lowercase hex integers 1..count and prior contact secrets as count+1..2*count. Apply case overrides to the last element or current value. The valid history reaches chain confirmation and returns pub-mismatch against an empty history; invalid histories return bad-lane first.",
+  "count": 4096,
+  "laneId": "0000000000000000000000000000000000000000000000000000000000000000",
+  "contactSecret": "0000000000000000000000000000000000000000000000000000000000002001",
+  "cases": [
+    {
+      "name": "disjoint-history",
+      "error": "pub-mismatch"
+    },
+    {
+      "name": "duplicate-prior-lane",
+      "priorLaneLast": "0000000000000000000000000000000000000000000000000000000000000001",
+      "error": "bad-lane"
+    },
+    {
+      "name": "prior-lane-reuses-current",
+      "priorLaneLast": "0000000000000000000000000000000000000000000000000000000000000000",
+      "error": "bad-lane"
+    },
+    {
+      "name": "duplicate-prior-contact",
+      "priorContactLast": "0000000000000000000000000000000000000000000000000000000000001001",
+      "error": "bad-lane"
+    },
+    {
+      "name": "prior-contact-reuses-current",
+      "priorContactLast": "0000000000000000000000000000000000000000000000000000000000002001",
+      "error": "bad-lane"
+    },
+    {
+      "name": "prior-contact-is-prior-lane",
+      "priorContactLast": "0000000000000000000000000000000000000000000000000000000000001000",
+      "error": "bad-lane"
+    },
+    {
+      "name": "prior-contact-is-current-lane",
+      "priorContactLast": "0000000000000000000000000000000000000000000000000000000000000000",
+      "error": "bad-lane"
+    },
+    {
+      "name": "current-contact-is-prior-lane",
+      "contactSecret": "0000000000000000000000000000000000000000000000000000000000001000",
+      "error": "bad-lane"
+    },
+    {
+      "name": "current-contact-is-current-lane",
+      "contactSecret": "0000000000000000000000000000000000000000000000000000000000000000",
+      "error": "bad-lane"
+    },
+    {
+      "name": "malformed-prior-lane",
+      "priorLaneLast": "gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+      "error": "bad-lane"
+    },
+    {
+      "name": "malformed-prior-contact",
+      "priorContactLast": "gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+      "error": "bad-lane"
+    }
+  ]
+}

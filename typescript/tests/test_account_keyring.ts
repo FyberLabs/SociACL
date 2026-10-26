@@ -1201,3 +1201,25 @@ test("create then restore keeps lanes and a missing history is refused", () => {
     );
   }
 });
+
+
+test("shared large-history imports reject duplicates and disclosed contact secrets", () => {
+  const history = JSON.parse(readFileSync(new URL("../../vectors/encrypted-discovery/keyring-history-import.json", import.meta.url), "utf8")) as {
+    count: number; laneId: string; contactSecret: string;
+    cases: { name: string; priorLaneLast?: string; priorContactLast?: string; contactSecret?: string; error: string }[];
+  };
+  for (const row of history.cases) {
+    const lanes = Array.from({ length: history.count }, (_, i) => (i + 1).toString(16).padStart(64, "0"));
+    const contacts = Array.from({ length: history.count }, (_, i) => (history.count + i + 1).toString(16).padStart(64, "0"));
+    if (row.priorLaneLast !== undefined) lanes[history.count - 1] = row.priorLaneLast;
+    if (row.priorContactLast !== undefined) contacts[history.count - 1] = row.priorContactLast;
+    assert.equal(message(() => AccountKeyring.import(
+      vector.genesis.principal, vector.genesis.epub,
+      vector.mint.signingPub, vector.mint.signingPriv,
+      vector.mint.epub, vector.mint.epriv,
+      [{ epub: vector.genesis.epub, epriv: vector.genesis.epriv }],
+      history.laneId, 1, history.count, [], emptyContext(), lanes,
+      row.contactSecret ?? history.contactSecret, contacts,
+    )), row.error, row.name);
+  }
+});
