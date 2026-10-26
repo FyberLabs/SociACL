@@ -22,7 +22,10 @@ fi
 rustup component add llvm-tools-preview >/dev/null
 cargo test --workspace --locked -- --list > target/coverage/rust-test-list.txt
 cargo llvm-cov --workspace --locked --lcov --output-path target/coverage/rust.lcov \
-  > target/coverage/rust-tests.txt
+  > target/coverage/rust-tests.txt 2>&1 || {
+  cat target/coverage/rust-tests.txt
+  exit 1
+}
 cargo llvm-cov report --summary-only > target/coverage/rust-summary.txt
 
 echo "==> Python"
