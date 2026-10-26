@@ -12,6 +12,8 @@ use sociacl_ids::{
 use crate::mesh::{MeshSeeGraph, VerifiedRow};
 use crate::{GroupPredicate, MESH_REASON_OWNER};
 
+const MAX_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
+
 /// Rows written for one approved request. `post` is absent for scope `read`.
 #[derive(Clone, Debug)]
 pub struct ApprovedRequest {
@@ -92,12 +94,19 @@ impl MeshSeeGraph {
         let Some(owner_history) = resolver(owner) else {
             return Err(Reason::MissingHistory);
         };
-        let Some(requester_history) = resolver(&req.requester) else {
-            return Err(Reason::MissingHistory);
+        let separate_history;
+        let requester_history = if &req.requester == owner {
+            &owner_history
+        } else {
+            let Some(history) = resolver(&req.requester) else {
+                return Err(Reason::MissingHistory);
+            };
+            separate_history = history;
+            &separate_history
         };
         verify_signed_at(
             &req.requester,
-            &requester_history,
+            requester_history,
             ctx,
             &bytes,
             &req.sig,
@@ -123,6 +132,9 @@ impl MeshSeeGraph {
                 .as_ref()
                 .is_some_and(|row| same_live(row, owner, &req.object, &req.requester, from, until));
         if let Some((predicate, now)) = members {
+            if now > MAX_SAFE_INTEGER {
+                return Err(Reason::BadRecord);
+            }
             let Some(signed_owner) = self.object_owner(&req.object) else {
                 return Err(Reason::NotMember);
             };

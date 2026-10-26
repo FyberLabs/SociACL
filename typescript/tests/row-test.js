@@ -1,10 +1,10 @@
 /**
- * Test-only map edits. The package files list omits this module.
+ * Test-only map edits. Tests are outside the published package.
  * Check still requires the signed object and accessor, and a row that
  * was not sealed never allows.
  */
-import { postMap, postTables } from './post-rows.js';
-import { seeStore } from './see-rows.js';
+import { postMap, postTables } from '../src/internal/post-rows.js';
+import { seeStore } from '../src/internal/see-rows.js';
 
 /** @param {object} graph @param {string} fromKey @param {string} toKey */
 export function moveSeeRowForTest(graph, fromKey, toKey) {

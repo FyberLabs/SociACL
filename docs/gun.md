@@ -2,6 +2,24 @@
 
 Authority-plane mapping for GunDB. This is not the s3r.ch product surface.
 
+The TypeScript package's `exports` map defines its supported import boundary:
+`sociacl`, `sociacl/gun`, `sociacl/group`, and `sociacl/ir`. Files under
+`src/internal` are implementation details, not API. Consumers must not bypass
+the export map with absolute paths, bundler aliases, or source-tree imports.
+Those files hold mutable admission maps: deleting a cancel there can permit an
+older signed grant to be admitted again. Public inspection APIs return copies;
+the mutation hooks used to test this boundary live under `tests/` and are not
+shipped. This boundary assumes trusted code in the JavaScript process; it is
+not a sandbox for hostile code sharing that process.
+
+Request approval validates see/post rows on a private graph and publishes them
+without calling caller code between the two writes. Resolver callbacks and
+nested context getters see the previously committed state. A throw publishes
+neither grant; a reentrant change to either destination row or its admitted
+owner aborts the pair and preserves that change. Histories are resolved once
+per distinct principal, including self-requests. Members timestamps are
+nonnegative safe integers in both TypeScript and Rust.
+
 [FyberLabs/s3r.ch](https://github.com/FyberLabs/s3r.ch) owns feed, UX, and the TypeScript graph. That work lives on s3r.ch PR #7 (`cursor/gundb-feed-rearchitecture-9b12`). s3r.ch does **not** import this Rust crate, NAPI, or WASM. Check runs in the browser on the Gun mesh. WASM later is optional and is **not** the lab-feed path.
 
 The consume contract they reimplement is **[s3rch-check.d.ts](s3rch-check.d.ts)** ([s3rch-check.md](s3rch-check.md)). Copy the file or re-type the names. Do not `npm install sociacl`. The Gun adapter surface for that product is **light Check + `delegate` only**.

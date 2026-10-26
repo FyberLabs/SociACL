@@ -15,6 +15,8 @@ fi
 node "${root}/scripts/audit-forbidden-names.mjs"
 
 cargo build --workspace --locked
+# Test dependencies enable `vectors`; also compile the public library without it.
+cargo rustc -p sociacl-gun --lib --locked -- -D warnings
 mkdir -p target/ids
 mkdir -p target/mesh
 IDS_VECTOR_REPORT="${root}/target/ids/rust-vectors.txt" MESH_VECTOR_REPORT="${root}/target/mesh/rust-vectors.txt" cargo test --workspace --locked

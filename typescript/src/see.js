@@ -35,13 +35,16 @@ import {
   parsePrincipalId,
   parseObjectRecord,
   parseSeeGrant,
+  parsePostGrant,
+  postSoul,
   resolveCurrentKey,
   verifyAclAttestation,
   verifyObjectRecord,
   verifySeeGrant,
 } from '../ids/src/index.js';
 import { seeStore } from './internal/see-rows.js';
-import { admitResolvedPost, postKeeps, reverifyPosts } from './post.js';
+import { postMap } from './internal/post-rows.js';
+import { admitResolvedPost, reverifyPosts } from './post.js';
 
 const verified = new WeakSet();
 
@@ -342,24 +345,11 @@ function admitResolvedSee(graph, row, rotations, ctx) {
 }
 
 /**
- * Put the previous see row back when the post write does not finish.
- * @param {object} graph
- * @param {{ ok: true, wrote: SealedRow | null, prev: SealedRow | null } | { ok: false, reason: string } | null} seeWrote
- */
-function rollbackSee(graph, seeWrote) {
-  if (!seeWrote || !seeWrote.ok || !seeWrote.wrote) return;
-  const held = store(graph);
-  const grant = seeWrote.wrote.grant;
-  const key = grantSoul(grant.owner, grant.object, grant.accessor);
-  if (held.rows.get(key) !== seeWrote.wrote) return;
-  if (seeWrote.prev) held.rows.set(key, seeWrote.prev);
-  else held.rows.delete(key);
-}
-
-/**
  * Verify the see row and the post row, then write both.
  * A null row is left as stored. A row that would not replace writes neither.
- * History comes from the resolver. The context is copied once before either write.
+ * Validation uses a private graph so getters and resolver callbacks cannot
+ * observe either pending grant. Reentrant changes to the destination abort
+ * the pair. Publishing the sealed rows invokes no caller code.
  * The caller passes no kept flag, soul key, ticket, or history array.
  * @param {object} graph
  * @param {unknown} seeRow
@@ -368,8 +358,33 @@ function rollbackSee(graph, seeWrote) {
  * @returns {{ ok: true, see: unknown, post: unknown } | { ok: false, reason: string }}
  */
 export function admitGrantPair(graph, seeRow, postRow, resolver) {
-  if (!resolverReady(resolver)) return { ok: false, reason: 'missing-history' };
+  if (!graphObject(graph) || !resolverReady(resolver)) return { ok: false, reason: 'missing-history' };
   const ctx = snapshotContext(resolver.ctx);
+  const seeParsed = seeRow == null ? null : parseSeeGrant(seeRow);
+  if (seeParsed && !seeParsed.ok) return seeParsed;
+  const postParsed = postRow == null ? null : parsePostGrant(postRow);
+  if (postParsed && !postParsed.ok) return postParsed;
+  const seeGrant = seeParsed?.value.grant;
+  const postGrant = postParsed?.value.grant;
+  const seeKey = seeGrant ? grantSoul(seeGrant.owner, seeGrant.object, seeGrant.accessor) : null;
+  const postKey = postGrant ? postSoul(postGrant.owner, postGrant.object, postGrant.accessor) : null;
+  const held = store(graph);
+  const posts = postMap(graph);
+  const prevSee = seeKey === null ? undefined : held.rows.get(seeKey);
+  const prevPost = postKey === null ? undefined : posts.get(postKey);
+  const staged = {};
+  const pending = store(staged);
+  const pendingPosts = postMap(staged);
+  /** @type {Map<string, StoredOwner | undefined>} */
+  const owners = new Map();
+  for (const grant of [seeGrant, postGrant]) {
+    if (!grant) continue;
+    const owner = held.owners.get(grant.object);
+    owners.set(grant.object, owner);
+    if (owner) pending.owners.set(grant.object, owner);
+  }
+  if (seeKey !== null && prevSee) pending.rows.set(seeKey, prevSee);
+  if (postKey !== null && prevPost) pendingPosts.set(postKey, prevPost);
   /** @type {Map<string, readonly unknown[] | undefined>} */
   const cache = new Map();
   const rotationsOf = (/** @type {PrincipalId} */ owner) => {
@@ -379,35 +394,22 @@ export function admitGrantPair(graph, seeRow, postRow, resolver) {
     return rows;
   };
   const stable = { rotations: rotationsOf, ctx };
-  const seeReady = seeRow == null ? null : openSee(seeRow, stable);
+  const seeReady = seeGrant ? openSee(seeGrant, stable) : null;
   if (seeReady && !seeReady.ok) return seeReady;
-  const see = seeReady && seeReady.ok ? evaluateSee(graph, seeRow, seeReady.rotations, ctx) : null;
+  const see = seeReady && seeReady.ok ? admitResolvedSee(staged, seeGrant, seeReady.rotations, ctx) : null;
   if (see && !see.ok) return { ok: false, reason: see.reason };
-  const post = postRow == null ? null : postKeeps(graph, postRow, stable);
+  const post = postGrant ? admitResolvedPost(staged, postGrant, stable) : null;
   if (post && !post.ok) return { ok: false, reason: post.reason };
   if ((see && !see.kept) || (post && !post.kept)) return { ok: false, reason: 'not-kept' };
-  const seeWrote = see ? commitEvaluatedSee(see) : null;
-  if (seeWrote && !seeWrote.ok) return seeWrote;
-  if (seeWrote && !seeWrote.kept) {
-    rollbackSee(graph, seeWrote);
+  if ((seeKey !== null && held.rows.get(seeKey) !== prevSee)
+      || (postKey !== null && posts.get(postKey) !== prevPost)
+      || [...owners].some(([id, owner]) => held.owners.get(id) !== owner)) {
     return { ok: false, reason: 'not-kept' };
   }
-  try {
-    const postWrote = postRow == null ? null : admitResolvedPost(graph, postRow, stable);
-    if (postWrote && (!postWrote.ok || !postWrote.kept)) {
-      rollbackSee(graph, seeWrote);
-      if (postWrote && !postWrote.ok) return postWrote;
-      return { ok: false, reason: 'not-kept' };
-    }
-    return {
-      ok: true,
-      see: seeWrote ? seeWrote.value : null,
-      post: postWrote ? postWrote.value : null,
-    };
-  } catch (error) {
-    rollbackSee(graph, seeWrote);
-    throw error;
-  }
+  const sealedSee = seeKey === null ? undefined : pending.rows.get(seeKey);
+  if (seeKey !== null && sealedSee) held.rows.set(seeKey, sealedSee);
+  if (postKey !== null) posts.set(postKey, pendingPosts.get(postKey));
+  return { ok: true, see: see ? see.value : null, post: post ? post.value : null };
 }
 
 /**

@@ -83,14 +83,20 @@ export function runRequestCase(steps, options) {
       continue;
     }
     if (step.op === 'grant') {
+      const resolver = resolverFor(step);
+      let calls = 0;
       const got = grantApprovedRequest(
         graph,
         step.owner,
         step.request,
         step.window,
         step.members ?? null,
-        { scalar: scalarOf(step.signer), resolver: resolverFor(step) },
+        { scalar: scalarOf(step.signer), resolver: {
+          ctx: resolver.ctx,
+          rotations: (principal) => { calls += 1; return resolver.rotations(principal); },
+        } },
       );
+      if (step.resolverCalls !== undefined && calls !== step.resolverCalls) failStep(step, { calls });
       if (step.granted === true) {
         if (!got.granted) failStep(step, got);
         if (step.requestId && got.requestId !== step.requestId) failStep(step, got.requestId);

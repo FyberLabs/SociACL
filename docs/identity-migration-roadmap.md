@@ -34,7 +34,7 @@ These are not a data migration:
 
 SociACL follow-ups that this close-out does not take:
 
-- [#77](https://github.com/FyberLabs/SociACL/issues/77) request-path leftovers
+- [#77](https://github.com/FyberLabs/SociACL/issues/77): request pairs now validate privately and publish together, with reentrant cancels and owner removal aborting the pair. Rust self-requests reuse one history lookup and members timestamps share the JavaScript safe-integer limit. Shared vectors cover missing request fields, self-resolution counts, and the timestamp limit. The KDF rejection test counts calls rather than elapsed time; the feature-off adapter build rejects warnings. Test hooks live outside the package, and the package import boundary is documented. These changes are in [PR #85](https://github.com/FyberLabs/SociACL/pull/85), awaiting review and merge. The old public owner bind/unbind functions were already removed on master. Group-policy questions remain in #79.
 - [#79](https://github.com/FyberLabs/SociACL/issues/79) group-predicate leftovers that are not the incoming-predicate vector, the cancel-only tombstone snapshot, or the Rust `mutate-row` note
 - [#81](https://github.com/FyberLabs/SociACL/issues/81) signed `sociacl-object-v2` ownership for `sociacl/ir` `putObject` and the Rust adapter core-plane owner
 
