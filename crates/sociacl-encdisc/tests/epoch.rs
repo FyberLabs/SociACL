@@ -3,8 +3,7 @@
 //! A manifest, a finalization, a status proof, and a wrap are not grants.
 //! Privilege-down does not wait for the settle window.
 
-#![allow(deprecated)]
-
+use sociacl_encdisc::GenesisAccount;
 use sociacl_encdisc::{
     acl_snapshot_id, epoch_finalization_id, epoch_finalization_sig_bytes, epoch_manifest_sig_bytes,
     epoch_revision_id, epoch_step_current, epoch_winner, group_epoch_config_bytes,
@@ -256,7 +255,7 @@ fn settle_window_defaults_to_one_day_inside_the_bounds() {
     assert_eq!(SETTLE_WINDOW_MIN_MS, 3_600_000);
     assert_eq!(SETTLE_WINDOW_DEFAULT_MS, 86_400_000);
     assert_eq!(SETTLE_WINDOW_MAX_MS, 259_200_000);
-    let owner = AccountSeaSecret::generate("0xalice").unwrap();
+    let owner = GenesisAccount::generate().unwrap().into_secret();
     let snapshot = empty_acl();
     for window in [SETTLE_WINDOW_MIN_MS - 1, SETTLE_WINDOW_MAX_MS + 1, 0] {
         let manifest =
@@ -311,7 +310,7 @@ fn unsigned_manifest(
 
 #[test]
 fn two_devices_converge_on_the_smaller_finalization_id() {
-    let owner = AccountSeaSecret::generate("0xalice").unwrap();
+    let owner = GenesisAccount::generate().unwrap().into_secret();
     let snapshot = empty_acl();
     let laptop = manifest_for(
         &owner,
@@ -400,7 +399,7 @@ fn two_devices_converge_on_the_smaller_finalization_id() {
 
 #[test]
 fn a_smaller_parent_drops_descendants_and_needs_a_higher_grant_revision() {
-    let owner = AccountSeaSecret::generate("0xalice").unwrap();
+    let owner = GenesisAccount::generate().unwrap().into_secret();
     let snapshot = empty_acl();
     let first = manifest_for(
         &owner,
@@ -483,7 +482,7 @@ fn a_smaller_parent_drops_descendants_and_needs_a_higher_grant_revision() {
 
 #[test]
 fn manifest_and_finalization_signatures_cover_the_ids() {
-    let owner = AccountSeaSecret::generate("0xalice").unwrap();
+    let owner = GenesisAccount::generate().unwrap().into_secret();
     let snapshot = empty_acl();
     let mut manifest = manifest_for(
         &owner,
@@ -530,8 +529,8 @@ fn manifest_and_finalization_signatures_cover_the_ids() {
 
 #[test]
 fn group_window_follows_the_highest_config_revision() {
-    let owner = AccountSeaSecret::generate("0xalice").unwrap();
-    let other = AccountSeaSecret::generate("0xbob").unwrap();
+    let owner = GenesisAccount::generate().unwrap().into_secret();
+    let other = GenesisAccount::generate().unwrap().into_secret();
     let low = signed_config(&owner, 1, SETTLE_WINDOW_DEFAULT_MS);
     let high = signed_config(&owner, 2, 7_200_000);
     let stale = signed_config(&owner, 1, 7_200_000);
@@ -819,9 +818,9 @@ fn settled_key_closes_on_expiry_cancel_pending_and_a_tighter_window() {
 
 #[test]
 fn rotate_on_revoke_is_immediate_for_both_cipher_modes() {
-    let owner = AccountSeaSecret::generate("0xalice").unwrap();
-    let bob = AccountSeaSecret::generate("0xbob").unwrap();
-    let carol = AccountSeaSecret::generate("0xcarol").unwrap();
+    let owner = GenesisAccount::generate().unwrap().into_secret();
+    let bob = GenesisAccount::generate().unwrap().into_secret();
+    let carol = GenesisAccount::generate().unwrap().into_secret();
     let mut entries = vec![
         direct_entry(bob.account(), 2, GrantStated::Cancelled),
         direct_entry(carol.account(), 1, GrantStated::Live),
@@ -993,8 +992,8 @@ fn rotate_on_revoke_is_immediate_for_both_cipher_modes() {
 
 #[test]
 fn a_plaintext_edge_does_not_cancel_a_private_row() {
-    let owner = AccountSeaSecret::generate("0xalice").unwrap();
-    let bob = AccountSeaSecret::generate("0xbob").unwrap();
+    let owner = GenesisAccount::generate().unwrap().into_secret();
+    let bob = GenesisAccount::generate().unwrap().into_secret();
     let snapshot = AclSnapshotBody {
         object_set: None,
         entries: vec![direct_entry(bob.account(), 5, GrantStated::Cancelled)],
@@ -1103,9 +1102,9 @@ fn a_plaintext_edge_does_not_cancel_a_private_row() {
 
 #[test]
 fn a_group_epoch_wrap_follows_the_signed_window_and_skips_the_revoked_member() {
-    let owner = AccountSeaSecret::generate("0xalice").unwrap();
-    let bob = AccountSeaSecret::generate("0xbob").unwrap();
-    let carol = AccountSeaSecret::generate("0xcarol").unwrap();
+    let owner = GenesisAccount::generate().unwrap().into_secret();
+    let bob = GenesisAccount::generate().unwrap().into_secret();
+    let carol = GenesisAccount::generate().unwrap().into_secret();
     let mut entries = vec![
         AclSnapshotEntry {
             accessor: bob.account().to_string(),
@@ -1209,7 +1208,7 @@ fn a_group_epoch_wrap_follows_the_signed_window_and_skips_the_revoked_member() {
 
 #[test]
 fn every_candidate_resolves_and_a_child_names_the_parent_epoch() {
-    let owner = AccountSeaSecret::generate("0xalice").unwrap();
+    let owner = GenesisAccount::generate().unwrap().into_secret();
     let snapshot = empty_acl();
     let first = manifest_for(
         &owner,

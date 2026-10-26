@@ -1,5 +1,4 @@
-#![allow(deprecated)]
-
+use sociacl_encdisc::GenesisAccount;
 use sociacl_encdisc::{
     open_group_epoch_wrap, open_reader_wrap, wrap_group_key_to_members,
     wrap_item_dek_to_group_epoch, wrap_item_dek_to_readers, AccountSeaSecret, EncDiscError,
@@ -10,14 +9,14 @@ const FIXTURE: &str = include_str!("../../../vectors/encrypted-discovery/sea-fix
 
 fn alice() -> AccountSeaSecret {
     let fixture: serde_json::Value = serde_json::from_str(FIXTURE).unwrap();
-    AccountSeaSecret::import_local(
-        "0xalice",
+    GenesisAccount::import(
         fixture["laneId"].as_str().unwrap(),
         fixture["signing"]["pub"].as_str().unwrap(),
         fixture["signing"]["priv"].as_str().unwrap(),
         fixture["encryption"]["epub"].as_str().unwrap(),
         fixture["encryption"]["epriv"].as_str().unwrap(),
     )
+    .map(GenesisAccount::into_secret)
     .unwrap()
 }
 
@@ -116,7 +115,7 @@ fn a_swapped_revision_label_does_not_open() {
 #[test]
 fn unnamed_reader_fails_the_whole_call() {
     let alice = alice();
-    let bob = AccountSeaSecret::generate("0xbob").unwrap();
+    let bob = GenesisAccount::generate().unwrap().into_secret();
     let dek = ItemDek::generate();
     let granted = NamedSet::try_from_accessors([alice.account()]).unwrap();
     let readers = [
@@ -151,8 +150,8 @@ fn unnamed_reader_fails_the_whole_call() {
 #[test]
 fn group_epoch_key_wraps_per_member_and_the_item_dek_wraps_once() {
     let alice = alice();
-    let bob = AccountSeaSecret::generate("0xbob").unwrap();
-    let carol = AccountSeaSecret::generate("0xcarol").unwrap();
+    let bob = GenesisAccount::generate().unwrap().into_secret();
+    let carol = GenesisAccount::generate().unwrap().into_secret();
     let group_key = GroupEpochKey::from_bytes([8u8; 32]);
     let dek = ItemDek::from_bytes([5u8; 32]);
     let members = [

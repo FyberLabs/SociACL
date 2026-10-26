@@ -1,6 +1,5 @@
-#![allow(deprecated)]
-
 use serde::Deserialize;
+use sociacl_encdisc::GenesisAccount;
 use sociacl_encdisc::{
     accept_migration, apply_protocol_migration, open_migrated_item, open_reader_wrap,
     prepare_protocol_migration, seal_blinded_row, sign_sea, sign_wrap_receipt, wrap_receipt_sha256,
@@ -381,10 +380,10 @@ fn wrap_receipt_bytes_match_the_canonical_vector() {
 
 #[test]
 fn owner_migration_drops_plaintext_per_reader_and_does_not_grant() {
-    let owner = principal_account("0xalice");
-    let bob = principal_account("0xbob");
-    let carol = principal_account("0xcarol");
-    let dave = principal_account("0xdave");
+    let owner = principal_account();
+    let bob = principal_account();
+    let carol = principal_account();
+    let dave = principal_account();
     let plaintext = b"existing-body";
     let (view, snapshot) = settled_view("item_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111", 1, REV);
     let epoch_view = migration_epoch(&view, &snapshot);
@@ -691,9 +690,9 @@ fn owner_migration_drops_plaintext_per_reader_and_does_not_grant() {
 
 #[test]
 fn stale_soul_epoch_wrap_and_future_grant_fail_closed() {
-    let owner = principal_account("0xalice");
-    let bob = principal_account("0xbob");
-    let dave = principal_account("0xdave");
+    let owner = principal_account();
+    let bob = principal_account();
+    let dave = principal_account();
     let plaintext = b"existing-body";
     let (view, snapshot) = settled_view("item_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111", 1, REV);
     let epoch_view = migration_epoch(&view, &snapshot);
@@ -967,17 +966,8 @@ fn migration_epoch<'a>(
 }
 
 
-fn principal_account(label: &str) -> AccountSeaSecret {
-    let secret = AccountSeaSecret::generate(label).unwrap();
-    AccountSeaSecret::import_local(
-        secret.sea_pub(),
-        secret.lane_id(),
-        secret.sea_pub(),
-        secret.local_priv(),
-        secret.epub(),
-        secret.local_epriv(),
-    )
-    .unwrap()
+fn principal_account() -> AccountSeaSecret {
+    GenesisAccount::generate().unwrap().into_secret()
 }
 
 fn edge(

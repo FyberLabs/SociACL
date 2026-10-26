@@ -3,8 +3,7 @@
 //! A hop, a hint, or an opened wrap never sets `allowed`. A forbidden
 //! hop fails closed. The visible row has no owner pub and no blinding.
 
-#![allow(deprecated)]
-
+use sociacl_encdisc::GenesisAccount;
 use sociacl_encdisc::{
     binding_for, check_presented_grant, commit_grant, decode_grant_bytes, epoch_step_current,
     grant_commitment_hash, grant_payload_bytes, grant_payload_digest, open_commitment,
@@ -92,27 +91,27 @@ struct World {
     blinding: String,
 }
 
-fn secret_from(account: &str, signing: bool) -> AccountSeaSecret {
+fn secret_from(signing: bool) -> AccountSeaSecret {
     let fixture: serde_json::Value = serde_json::from_str(FIXTURE).unwrap();
     if signing {
-        return AccountSeaSecret::import_local(
-            account,
+        return GenesisAccount::import(
             fixture["laneId"].as_str().unwrap(),
             fixture["signing"]["pub"].as_str().unwrap(),
             fixture["signing"]["priv"].as_str().unwrap(),
             fixture["encryption"]["epub"].as_str().unwrap(),
             fixture["encryption"]["epriv"].as_str().unwrap(),
         )
+        .map(GenesisAccount::into_secret)
         .unwrap();
     }
-    AccountSeaSecret::generate(account).unwrap()
+    GenesisAccount::generate().unwrap().into_secret()
 }
 
 fn world() -> World {
     let fixture: serde_json::Value = serde_json::from_str(FIXTURE).unwrap();
-    let alice = secret_from("0xalice", true);
-    let bob = secret_from("0xbob", false);
-    let carol = secret_from("0xcarol", false);
+    let alice = secret_from(true);
+    let bob = secret_from(false);
+    let carol = secret_from(false);
     let mut objects = std::collections::BTreeMap::new();
     objects.insert(
         "item-1".to_string(),

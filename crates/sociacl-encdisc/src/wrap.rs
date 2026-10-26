@@ -795,13 +795,12 @@ fn read_field<'a>(input: &mut &'a [u8]) -> Result<&'a str, EncDiscError> {
 }
 
 #[cfg(test)]
-#[allow(deprecated)]
 mod tests {
     use super::{
         decode_blob, decrypt, kdf_group, seal_group, wrap_item_dek_to_group_epoch_with,
         wrap_item_dek_to_readers_with, DetachedEphemeral, Plan,
     };
-    use crate::account::{AccountSeaSecret, EnrolledSeaPub};
+    use crate::account::EnrolledSeaPub;
     use crate::error::EncDiscError;
     use crate::wrap::{
         open_group_epoch_wrap, open_reader_wrap, GroupEpochKey, ItemDek, NamedSet, WrapScope,
@@ -881,14 +880,14 @@ mod tests {
             "../../../vectors/encrypted-discovery/wrap.json"
         ))
         .unwrap();
-        let alice = AccountSeaSecret::import_local(
-            "0xalice",
+        let alice = crate::GenesisAccount::import(
             fixture["laneId"].as_str().unwrap(),
             fixture["signing"]["pub"].as_str().unwrap(),
             fixture["signing"]["priv"].as_str().unwrap(),
             fixture["encryption"]["epub"].as_str().unwrap(),
             fixture["encryption"]["epriv"].as_str().unwrap(),
         )
+        .map(crate::GenesisAccount::into_secret)
         .unwrap();
         let dek = ItemDek::from_bytes([0x11; 32]);
         let granted = NamedSet::try_from_accessors([alice.account()]).unwrap();

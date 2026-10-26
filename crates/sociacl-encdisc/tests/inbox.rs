@@ -4,8 +4,7 @@
 //! name fails closed. The accepting relay learns the writer. A replica
 //! of the row does not.
 
-#![allow(deprecated)]
-
+use sociacl_encdisc::GenesisAccount;
 use sociacl_encdisc::{
     filter_inbox_append, inbox_body_of, inbox_entry_bytes, inbox_entry_id, inbox_pow_bytes,
     inbox_pow_digest, inbox_pow_sha256, inbox_stamp_bytes, inbox_stamp_sha256, lane_id_is_opaque,
@@ -30,14 +29,14 @@ const HASH_B: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 
 fn alice() -> AccountSeaSecret {
     let fixture: serde_json::Value = serde_json::from_str(FIXTURE).unwrap();
-    AccountSeaSecret::import_local(
-        "0xalice",
+    GenesisAccount::import(
         fixture["laneId"].as_str().unwrap(),
         fixture["signing"]["pub"].as_str().unwrap(),
         fixture["signing"]["priv"].as_str().unwrap(),
         fixture["encryption"]["epub"].as_str().unwrap(),
         fixture["encryption"]["epriv"].as_str().unwrap(),
     )
+    .map(GenesisAccount::into_secret)
     .unwrap()
 }
 
@@ -132,8 +131,8 @@ struct Desk {
 
 fn desk() -> Desk {
     let reader = alice();
-    let bob = AccountSeaSecret::generate("0xbob").unwrap();
-    let carol = AccountSeaSecret::generate("0xcarol").unwrap();
+    let bob = GenesisAccount::generate().unwrap().into_secret();
+    let carol = GenesisAccount::generate().unwrap().into_secret();
     let entry = row(&reader.inbox().lane_id, "ct-1", HASH_A, None);
     Desk {
         reader,
@@ -174,7 +173,7 @@ fn one_lane_per_reader_and_not_per_device() {
     lanes.admit(&laptop.inbox()).unwrap();
     assert_eq!(lanes.len(), 1);
     assert_eq!(
-        lanes.lane_for("0xalice"),
+        lanes.lane_for(secret.account()),
         Some(phone.inbox().lane_id.as_str())
     );
 
@@ -185,7 +184,7 @@ fn one_lane_per_reader_and_not_per_device() {
         EncDiscError::InboxRejected
     );
 
-    let bob = AccountSeaSecret::generate("0xbob").unwrap();
+    let bob = GenesisAccount::generate().unwrap().into_secret();
     let shared = RecipientInbox {
         accessor: bob.account().to_string(),
         lane_id: phone.inbox().lane_id.clone(),
@@ -597,7 +596,7 @@ fn writer_auth_runs_before_quotas_and_the_allowlist() {
     assert_eq!(bare.decision.filter, InboxWriteFilter::WriterAuth);
     assert_unchanged(&state, &bare);
 
-    let other = AccountSeaSecret::generate("0xother").unwrap();
+    let other = GenesisAccount::generate().unwrap().into_secret();
     let forged = WriterAppendProof {
         writer: desk.bob.account().to_string(),
         writer_pub: other.sea_pub().to_string(),
@@ -673,7 +672,7 @@ fn accepting_relay_learns_the_writer_and_a_replica_does_not() {
         Some(&pow("nonce-a", "0")),
     )
     .unwrap();
-    assert_eq!(result.learned_writer(), Some("0xbob"));
+    assert_eq!(result.learned_writer(), Some(desk.bob.account()));
     assert!(replicated_row_admitted(&desk.entry, &result.state));
     let mut swapped_body = desk.entry.clone();
     swapped_body.grant_ciphertext = "ct-other".to_string();
@@ -690,7 +689,7 @@ fn accepting_relay_learns_the_writer_and_a_replica_does_not() {
     assert!(writer_from_stored_row(&desk.entry).is_none());
     assert!(!stored_row_reveals_writer(
         &desk.entry,
-        "0xbob",
+        desk.bob.account(),
         desk.bob.sea_pub()
     ));
     let rendered = format!("{:?}", desk.entry);

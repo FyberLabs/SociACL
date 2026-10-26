@@ -23,10 +23,10 @@
     "itar"
   ],
   "possession": {
-    "writer": "0xalice",
+    "writer": "YP7UuiVanTHJYet0xjVtaMBJuJI7Yfps5mliLmDyn7Y.eQP-EAi4vJmkGunpVii8ZPLxsgwtfp9Rd6PClNRGIpk",
     "writerPub": "YP7UuiVanTHJYet0xjVtaMBJuJI7Yfps5mliLmDyn7Y.eQP-EAi4vJmkGunpVii8ZPLxsgwtfp9Rd6PClNRGIpk",
-    "signature": "a3ad008e9bf8673ee39eae59db4bfe6845b409fb124183e53e4a5343f39542e024eb2abd905e187c79d46af4a55e6e9d722d6be70b4338a69cd7b503f4e5d8d9",
-    "sha256": "905478d3ae2e2d996fbbc7496cf075aedcd90c408a530449cfc69896301b19b6",
-    "encodedLen": 38
+    "signature": "39fb3e63b5bb45fe3f73d8f8c2392ca750d84f3cf5dfddad5ca56ccc2d8c876c7959ad8775a0b5c80f89e7fb829bf63672524531020cd42b1bc4121fa67f8213",
+    "sha256": "3273c12ed95b83df5134492a7a97c7bfee004afae32f09e3cd160571195d5168",
+    "encodedLen": 118
   }
 }

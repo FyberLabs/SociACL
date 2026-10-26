@@ -8,16 +8,25 @@
 //!
 //! `identityPub` is that same SEA `pub`, not a second keypair.
 
-use rand::rngs::OsRng;
-use rand::RngCore;
-use zeroize::{Zeroize, Zeroizing};
+use sociacl_ids::PrincipalId;
+use zeroize::Zeroizing;
 
 use crate::canonical::{self, ItemAuthFields};
 use crate::error::EncDiscError;
-use crate::hexutil::encode_secret_hex;
 use crate::sea::{self, ecdh_secret, signing_key};
 
-/// Device-local account key. `priv` and `epriv` are not on the Gun view.
+/// Device-local genesis account key. `priv` and `epriv` are not on the Gun view.
+/// Obtain it from [`crate::GenesisAccount::into_secret`]; arbitrary account
+/// labels and independent account/key pairs cannot construct this type.
+///
+/// ```compile_fail,E0599
+/// use sociacl_encdisc::AccountSeaSecret;
+/// let secret = AccountSeaSecret::generate("alice");
+/// ```
+/// ```compile_fail,E0624
+/// use sociacl_encdisc::AccountSeaSecret;
+/// let secret = AccountSeaSecret::import_local("alice", "lane", "pub", "priv", "epub", "epriv");
+/// ```
 #[derive(Clone)]
 pub struct AccountSeaSecret {
     account: String,
@@ -91,35 +100,18 @@ pub struct AcceptedIntro {
 }
 
 impl AccountSeaSecret {
-    /// Mint the one keypair for a new account, and one lane id.
-    #[deprecated(note = "label-as-account; use GenesisAccount/PrincipalId, see #65")]
-    pub fn generate(account: &str) -> Result<Self, EncDiscError> {
-        if account.is_empty() {
-            return Err(EncDiscError::EmptyAccount);
-        }
-        let mut rng = OsRng;
-        let signing = p256::ecdsa::SigningKey::random(&mut rng);
-        let encryption = p256::SecretKey::random(&mut rng);
-        let mut lane = [0u8; 32];
-        rng.fill_bytes(&mut lane);
-        let lane_hex = encode_secret_hex(&lane);
-        lane.zeroize();
-        Self::from_generated(account, lane_hex.as_str(), &signing, &encryption)
-    }
-
-    /// Restore a device-local copy. Rejects a `pub` that does not match
-    /// `priv`, or an `epub` that does not match `epriv`.
-    #[deprecated(note = "label-as-account; use GenesisAccount/PrincipalId, see #65")]
-    pub fn import_local(
-        account: &str,
+    /// Internal constructor for a validated genesis identity. Rejects any
+    /// account/key mismatch as well as mismatched public/private key pairs.
+    pub(crate) fn import_local(
+        account: &PrincipalId,
         lane_id: &str,
         sea_pub: &str,
         sea_priv: &str,
         epub: &str,
         epriv: &str,
     ) -> Result<Self, EncDiscError> {
-        if account.is_empty() {
-            return Err(EncDiscError::EmptyAccount);
+        if account.as_ref() != sea_pub {
+            return Err(EncDiscError::PubMismatch);
         }
         require_lane(lane_id)?;
         let signing = signing_key(sea_priv)?;
@@ -244,20 +236,6 @@ impl AccountSeaSecret {
         canonical::require_revision_id(&fields.revision_id)?;
         let message = canonical::item_auth_bytes(fields)?;
         sea::sign_sea(&self.sea_priv, &message)
-    }
-
-    #[allow(deprecated)]
-    fn from_generated(
-        account: &str,
-        lane_id: &str,
-        signing: &p256::ecdsa::SigningKey,
-        encryption: &p256::SecretKey,
-    ) -> Result<Self, EncDiscError> {
-        let sea_pub = sea::sea_pub_from_signing(signing)?;
-        let sea_priv = sea::sea_priv_from_signing(signing)?;
-        let epub = sea::sea_pub_from_secret(encryption)?;
-        let epriv = sea::sea_priv_from_secret(encryption)?;
-        Self::import_local(account, lane_id, &sea_pub, &sea_priv, &epub, &epriv)
     }
 }
 

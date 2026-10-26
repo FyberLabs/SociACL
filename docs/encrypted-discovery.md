@@ -152,7 +152,21 @@ A device enrolled to the same account holds the same SEA keypair, so it can unwr
 
 Each account has one SEA keypair. The account **is** its genesis signing `pub`: the `sociacl-ids` `PrincipalId` (SEA `base64url(x).base64url(y)`). `principalFromSec1` / `principal_from_sec1` takes a 65-byte uncompressed SEC1 point (`0x04 || x || y`). The path key is `formatPrincipalKey` (`p_` plus the lowercase hex of the 64 coordinate bytes), not an escaped copy of the pub. `pub` and `epub` may sit on the user node (`userSoul(principal)`). `priv` and `epriv` never go on Gun, in any encoding.
 
-`AccountSeaSecret::generate` and `import_local` still take a free label; that path is deprecated in favor of `GenesisAccount` / `PrincipalId` ([SociACL#65](https://github.com/FyberLabs/SociACL/issues/65)).
+Rust account creation and restoration use `GenesisAccount::generate()` and
+`GenesisAccount::import(lane_id, pub, priv, epub, epriv)`. There is no separate
+account label: import derives and checks the `PrincipalId` against the signing
+key and verifies the encryption key pair. The former public
+`AccountSeaSecret::generate(label)` and `import_local` constructors are removed
+([SociACL#65](https://github.com/FyberLabs/SociACL/issues/65)). Existing content,
+epoch, introduction, and inbox operations take the validated device-local
+secret returned by `GenesisAccount::into_secret()`. Conversion moves the same
+keypair and lane; it does not mint another identity. To retain the genesis
+handle as well, clone it before conversion. These operations are for the
+genesis key; a rotated account uses `AccountKeyring` with authenticated history.
+TypeScript already uses `importGenesis` without a separate account label.
+Both languages reject the shared wallet, handle, OIDC-subject, and label inputs
+at that constructor boundary. Existing reader-wrap bytes remain unchanged:
+they bind the encryption key and content labels, not a free account label.
 
 Devices do not mint a second SEA keypair and do not mint an identity. A device inherits that one keypair through enrollment. The sealing device encrypts to the new device's transport public key. That public key arrives out of band: the existing device scans a QR code, or the two devices compare a short code. Panopticon stores the ciphertext and the index. It must not be the only channel that delivers the transport public key. The transport key is not a `PrincipalId` and it is not stored as an account. The opener keeps the transport scalar and passes the expected account `PrincipalId`. The wrap's KDF info and AES-GCM associated data bind that principal, the wrap id, the transport public key, and the ephemeral public key under `sociacl-account-key-bind-v1` (not the content-wrap domain). The account's current signing key, from `resolveCurrentKey`, signs the wrap. Open verifies that signature before import. Enrollment does not write `priv` or `epriv` to Gun, and it does not mint a grant. The encrypted backup of the keypair lives in a Panopticon index and wrap store. That store is an adapter. It is not the authority and it does not choose the current key. The inbox lane stays one per account, not one per device. Wraps for that account use the account `epub`.
 

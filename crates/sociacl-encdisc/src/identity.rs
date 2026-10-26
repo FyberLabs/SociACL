@@ -263,9 +263,8 @@ impl GenesisAccount {
         if epub == sea_pub {
             return Err(EncDiscError::EpubMismatch);
         }
-        #[allow(deprecated)]
         let secret = AccountSeaSecret::import_local(
-            principal.as_ref(),
+            &principal,
             lane_id,
             sea_pub,
             sea_priv,
@@ -277,6 +276,13 @@ impl GenesisAccount {
 
     pub fn principal(&self) -> &PrincipalId {
         &self.principal
+    }
+
+    /// Move the validated genesis key into the encrypted-discovery operations.
+    /// The account id remains its genesis signing pub. For rotated credentials,
+    /// use [`crate::AccountKeyring`] with authenticated identity history.
+    pub fn into_secret(self) -> AccountSeaSecret {
+        self.secret
     }
 
     pub fn sea_pub(&self) -> &str {
