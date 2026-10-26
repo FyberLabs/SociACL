@@ -590,6 +590,12 @@ fn run_case(file: &Value, case: &Value) -> MeshSeeGraph {
                     });
                 let from = step["window"]["from"].as_u64().unwrap_or(0);
                 let until = step["window"]["until"].as_u64().unwrap_or(0);
+                let calls = std::cell::Cell::new(0u64);
+                let resolver = resolver_for(rotations);
+                let counted = |principal: &PrincipalId| {
+                    calls.set(calls.get() + 1);
+                    resolver(principal)
+                };
                 let got = match sociacl_gun::request_owner(&step["owner"]) {
                     Ok(owner) => graph.grant_approved_request(
                         &owner,
@@ -598,11 +604,14 @@ fn run_case(file: &Value, case: &Value) -> MeshSeeGraph {
                         until,
                         members,
                         &scalar,
-                        &resolver_for(rotations),
+                        &counted,
                         &rc,
                     ),
                     Err(reason) => Err(reason),
                 };
+                if let Some(expected) = step["resolverCalls"].as_u64() {
+                    assert_eq!(calls.get(), expected, "{name}");
+                }
                 if step["granted"] == true {
                     let row = got.unwrap_or_else(|reason| panic!("{name} {reason}"));
                     if let Some(id) = step.get("requestId").and_then(Value::as_str) {
@@ -880,7 +889,12 @@ fn glob_match_source(glob: &str, path: &str) -> bool {
     if glob_match(glob, path) {
         return true;
     }
-    for (from, to) in [(".js", ".mjs"), (".js", ".cjs"), (".ts", ".mts"), (".ts", ".cts")] {
+    for (from, to) in [
+        (".js", ".mjs"),
+        (".js", ".cjs"),
+        (".ts", ".mts"),
+        (".ts", ".cts"),
+    ] {
         if glob.ends_with(&format!("*{from}")) && path.ends_with(to) {
             let rewritten = format!("{}{from}", &path[..path.len() - to.len()]);
             if glob_match(glob, &rewritten) {

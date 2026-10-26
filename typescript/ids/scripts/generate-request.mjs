@@ -241,6 +241,14 @@ add('reject', 'wrong-owner-key', [
   { op: 'view', object: chatA, accessor: p2, absent: true },
 ]);
 const fieldSteps = [];
+for (const [field, missingReason] of [['requestId', 'bad-record'], ['sig', 'legacy-row']]) {
+  for (const value of [undefined, null, 1, {}]) {
+    const row = pending();
+    if (value === undefined) delete row[field];
+    else row[field] = value;
+    fieldSteps.push(grant(row, { granted: false, reason: value === undefined ? missingReason : 'not-string' }));
+  }
+}
 for (const field of ['scope', 'status', 'message', 'requester', 'object']) {
   for (const value of [undefined, null, 1, {}]) {
     const row = pending();
@@ -283,6 +291,18 @@ add('accept', 'approve-read-then-post-keeps-see', [
 ]);
 const live = { from: at, until: now + 100 };
 const members = { predicate: 'same-group', now };
+add('reject', 'members-time-exceeds-safe-integer', [
+  put(),
+  join,
+  grant(pending(), { members: { ...members, now: hamMax + 1 }, granted: false, reason: 'bad-record' }),
+  { op: 'view', object: chatA, accessor: p2, absent: true },
+  { op: 'view-post', object: chatA, accessor: p2, absent: true },
+]);
+add('accept', 'self-request-resolves-history-once', [
+  put(),
+  grant(accessRow({ requester: p, object: chatA, scope: 'read+post', status: 'pending', message: '', issuedAt: now }, 1),
+    { granted: true, hamState: 1, post: true, postHam: 1, resolverCalls: 1 }),
+]);
 add('reject', 'members-approval-does-not-revive-cancel', [
   put(),
   join,

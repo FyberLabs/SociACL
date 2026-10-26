@@ -1231,6 +1231,11 @@ fn recovery_aad(
     ])
 }
 
+#[cfg(test)]
+std::thread_local! {
+    static KDF_CALLS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 fn derive_key(
     passphrase: &[u8],
     salt: &[u8],
@@ -1239,6 +1244,8 @@ fn derive_key(
     parallelism: u32,
     hash_length: u32,
 ) -> Result<Zeroizing<[u8; 32]>, EncDiscError> {
+    #[cfg(test)]
+    KDF_CALLS.with(|calls| calls.set(calls.get() + 1));
     if !params_allowed(
         ARGON2ID_LIMITS.version.floor,
         memory_kib,
@@ -1618,7 +1625,7 @@ mod tests {
                 continue;
             }
             let name = row["name"].as_str().unwrap();
-            let started = std::time::Instant::now();
+            let kdf_calls = KDF_CALLS.with(std::cell::Cell::get);
             let (signing_pub, epub) = genesis_pubs();
             let envelope = if let Some(bytes) = row["envelopeBytes"].as_u64() {
                 RecoveryEnvelope {
@@ -1634,7 +1641,11 @@ mod tests {
                 crafted(row, 16, &principal)
             };
             let error = open_recovery_copy(b"x", &envelope, &principal, 0, &[], &ctx).unwrap_err();
-            assert!(started.elapsed().as_millis() < 200, "{name} ran the KDF");
+            assert_eq!(
+                KDF_CALLS.with(std::cell::Cell::get),
+                kdf_calls,
+                "{name} ran the KDF"
+            );
             assert_eq!(token(&error), row["error"].as_str().unwrap(), "{name}");
         }
     }

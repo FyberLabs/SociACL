@@ -160,7 +160,6 @@ struct StoredAssent {
     sig: String,
     attest: Option<String>,
     observed: Vec<String>,
-    mode: SignedAtMode,
 }
 
 #[derive(Clone, Debug)]
@@ -189,7 +188,6 @@ struct MembershipRecord {
 #[derive(Clone, Debug)]
 struct ObjectSetRecord {
     owner: PrincipalId,
-    object: ObjectId,
     predicate: GroupPredicate,
     set: ObjectId,
     assent: Option<StoredAssent>,
@@ -251,6 +249,7 @@ pub(crate) struct GroupRows {
 impl GroupRows {
     /// Incoming assents and cancels are checked against the history the
     /// caller passes. Rows already in this graph are not rechecked.
+    #[cfg(feature = "vectors")]
     pub(crate) fn merge_from(
         &mut self,
         other: &Self,
@@ -259,8 +258,18 @@ impl GroupRows {
         ctx: &ResolutionContext<'_>,
     ) {
         for (soul, incoming) in &other.memberships {
-            let member_assent = fresh_assent(&incoming.member, incoming.member_assent.as_ref(), resolver, ctx);
-            let set_assent = fresh_assent(&incoming.set_owner, incoming.set_assent.as_ref(), resolver, ctx);
+            let member_assent = fresh_assent(
+                &incoming.member,
+                incoming.member_assent.as_ref(),
+                resolver,
+                ctx,
+            );
+            let set_assent = fresh_assent(
+                &incoming.set_owner,
+                incoming.set_assent.as_ref(),
+                resolver,
+                ctx,
+            );
             let cancels = fresh_cancels(&incoming.cancels, resolver, ctx);
             match self.memberships.get_mut(soul) {
                 None => {
@@ -282,12 +291,20 @@ impl GroupRows {
                 }
                 Some(local) => {
                     if let Some(next) = member_assent {
-                        if local.member_assent.as_ref().is_none_or(|prev| replaces(prev, &next)) {
+                        if local
+                            .member_assent
+                            .as_ref()
+                            .is_none_or(|prev| replaces(prev, &next))
+                        {
                             local.member_assent = Some(next);
                         }
                     }
                     if let Some(next) = set_assent {
-                        if local.set_assent.as_ref().is_none_or(|prev| replaces(prev, &next)) {
+                        if local
+                            .set_assent
+                            .as_ref()
+                            .is_none_or(|prev| replaces(prev, &next))
+                        {
                             local.set_assent = Some(next);
                         }
                     }
@@ -321,7 +338,10 @@ impl GroupRows {
             // A different set or predicate keeps only the winner's cancels.
             let same_edge = local.set == incoming.set && local.predicate == incoming.predicate;
             let incoming_wins = assent.as_ref().is_some_and(|next| {
-                local.assent.as_ref().is_none_or(|prev| replaces(prev, next))
+                local
+                    .assent
+                    .as_ref()
+                    .is_none_or(|prev| replaces(prev, next))
             });
             if incoming_wins {
                 let mut next = incoming.clone();
@@ -407,6 +427,7 @@ fn membership_removed(row: &MembershipRecord) -> bool {
         || row.set_assent.as_ref().is_some_and(uncovered)
 }
 
+#[cfg(feature = "vectors")]
 fn party_ok(
     principal: &PrincipalId,
     bytes: &[u8],
@@ -418,9 +439,13 @@ fn party_ok(
     ctx: &ResolutionContext<'_>,
 ) -> Option<SignedAtMode> {
     let rotations = resolver(principal)?;
-    verify_party(principal, &rotations, ctx, bytes, sig, issued_at, stated, attest).ok()
+    verify_party(
+        principal, &rotations, ctx, bytes, sig, issued_at, stated, attest,
+    )
+    .ok()
 }
 
+#[cfg(feature = "vectors")]
 fn fresh_assent(
     principal: &PrincipalId,
     assent: Option<&StoredAssent>,
@@ -428,7 +453,7 @@ fn fresh_assent(
     ctx: &ResolutionContext<'_>,
 ) -> Option<StoredAssent> {
     let assent = assent?;
-    let mode = party_ok(
+    party_ok(
         principal,
         &assent.bytes,
         &assent.sig,
@@ -438,11 +463,10 @@ fn fresh_assent(
         resolver,
         ctx,
     )?;
-    let mut copy = assent.clone();
-    copy.mode = mode;
-    Some(copy)
+    Some(assent.clone())
 }
 
+#[cfg(feature = "vectors")]
 fn fresh_cancels(
     cancels: &BTreeMap<String, StoredCancel>,
     resolver: &dyn Fn(&PrincipalId) -> Option<Vec<Value>>,
@@ -818,7 +842,6 @@ fn stored_assent(
     sig: String,
     attest: Option<String>,
     observed: Vec<String>,
-    mode: SignedAtMode,
 ) -> StoredAssent {
     StoredAssent {
         stated,
@@ -828,7 +851,6 @@ fn stored_assent(
         sig,
         attest,
         observed,
-        mode,
     }
 }
 
@@ -872,7 +894,7 @@ impl MeshSeeGraph {
         let Some(rotations) = resolver(signer) else {
             return Err(Reason::MissingHistory);
         };
-        let mode = verify_party(
+        verify_party(
             signer,
             &rotations,
             ctx,
@@ -897,7 +919,6 @@ impl MeshSeeGraph {
             assent.sig,
             assent.attest,
             assent.cancels,
-            mode,
         );
         let held = self
             .group
@@ -940,7 +961,7 @@ impl MeshSeeGraph {
         let Some(rotations) = resolver(&edge.owner) else {
             return Err(Reason::MissingHistory);
         };
-        let mode = verify_party(
+        verify_party(
             &edge.owner,
             &rotations,
             ctx,
@@ -958,7 +979,6 @@ impl MeshSeeGraph {
             edge.sig,
             edge.attest,
             edge.cancels,
-            mode,
         );
         let id = edge.object.as_ref().to_string();
         // A different set or predicate starts empty. The previous edge's cancels do not follow.
@@ -980,7 +1000,6 @@ impl MeshSeeGraph {
             id,
             ObjectSetRecord {
                 owner: edge.owner,
-                object: edge.object,
                 predicate: edge.predicate,
                 set: edge.set,
                 assent: Some(next),

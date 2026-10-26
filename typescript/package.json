@@ -16,8 +16,7 @@
   },
   "files": [
     "src",
-    "ids/src",
-    "!src/internal/row-test.js"
+    "ids/src"
   ],
   "scripts": {
     "typecheck": "tsc --strict --noEmit -p tsconfig.json && tsc --strict --noEmit -p tsconfig.see.json"
