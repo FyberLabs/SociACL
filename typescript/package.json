@@ -11,8 +11,7 @@
   "exports": {
     ".": "./src/index.js",
     "./gun": "./src/gun.js",
-    "./group": "./src/group.js",
-    "./ir": "./src/ir.js"
+    "./group": "./src/group.js"
   },
   "files": [
     "src",

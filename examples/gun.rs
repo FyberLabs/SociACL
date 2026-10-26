@@ -1,97 +1,63 @@
-//! Gun adapter: hint is not a grant. Destination Check is.
-//!
-//! alice holds a claim. bob presents a handoff hint. Dest re-check
-//! issues a `delegate` read. A Social Light hop may factor Check;
-//! it cannot mint. Execute-without-read is the existing mask.
-//! Elect from a hint fails. A permalink is a URL leaf.
-//!
-//! Run: `cargo run --locked -p sociacl-gun --example gun`
+//! Signed Gun ownership. Run: `cargo run -p sociacl-gun --example gun`.
+//! The public test fixture supplies a signed object and authenticated genesis
+//! history. A product must supply its own records and trusted current history.
 
-use sociacl_core::{ActionMask, PredicateId};
-use sociacl_gun::{
-    accept_hint, add_claim, add_item, add_principal, cancel, check_execute, check_see,
-    elect_from_hint, FeedItem, FeedSource, HandoffHint, UrlLeaf, SEE,
-};
-use sociacl_ids::{PrincipalId, SourceKey};
-
-fn principal(text: &str) -> PrincipalId {
-    text.parse().expect("principal")
-}
+use serde_json::Value;
+use sociacl_gun::{accept_hint, HandoffHint, MeshSeeGraph, UrlLeaf, SEE};
+use sociacl_ids::{history_state, ObjectId, PrincipalId, Reason, ResolutionContext};
+use std::collections::{BTreeMap, BTreeSet};
 
 fn main() {
-    let mut plane = sociacl_core::Plane::new();
-    let alice = add_principal(
-        &mut plane,
-        &principal("axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU"),
-    );
-    let bob = add_principal(
-        &mut plane,
-        &principal("fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E"),
-    );
-    let claim = add_claim(&mut plane, "claim-1", &alice).unwrap();
-    plane
-        .set_object_property(&claim, "predicate", PredicateId::DELEGATE)
+    let fixture: Value = serde_json::from_str(include_str!("../vectors/mesh/v2/see.json")).unwrap();
+    let case = fixture["accept"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["name"] == "owner-path-needs-exact-principal")
         .unwrap();
-
-    let hint = HandoffHint::parse(bob.as_str(), claim.as_str(), Some(SEE), Some("edge")).unwrap();
-    let accepted = accept_hint(hint.clone());
-    let hinted = check_see(&plane, &claim, &bob, Some(&accepted)).unwrap();
-    println!(
-        "hint alone: allowed={} hint_is_grant={}",
-        hinted.allowed,
-        hinted.hint_is_grant()
-    );
-
-    plane
-        .jointly_delegate(&alice, &bob, &claim, ActionMask::read(), None)
-        .unwrap();
-    let granted = check_see(&plane, &claim, &bob, Some(&hint)).unwrap();
-    println!(
-        "dest re-check: allowed={} reason={}",
-        granted.allowed, granted.reason
-    );
-
-    cancel(&mut plane, &alice, &bob, &claim).unwrap();
-    plane
-        .jointly_delegate(&alice, &bob, &claim, ActionMask::execute(), None)
-        .unwrap();
-    let exec = check_execute(&plane, &claim, &bob, None).unwrap();
-    let see = check_see(&plane, &claim, &bob, None).unwrap();
-    println!(
-        "execute-without-read: execute={} see={}",
-        exec.allowed, see.allowed
-    );
-
-    match elect_from_hint(&mut plane, &claim, &hint) {
-        Ok(_) => println!("elect-must-not-succeed"),
-        Err(e) => println!("elect from hint: {e}"),
-    }
-
-    let leaf = UrlLeaf::parse("https://gi.rss3.io/decentralized/0xalice").unwrap();
-    println!(
-        "url leaf: normalized={} gun_node={}",
-        leaf.normalized(),
-        leaf.is_gun_node()
-    );
-
-    let item = FeedItem {
-        id: "rss3:act/1#x".into(),
-        source: FeedSource::Rss3,
-        kind: "social".into(),
-        author: "0xalice".into(),
-        body: "hello".into(),
-        ts: 1,
-        permalink: leaf.normalized().to_string(),
-        tags: vec!["social".into()],
-        provenance: "rss3:gi".into(),
+    let record = &case["steps"][0]["record"];
+    let owner: PrincipalId = record["owner"].as_str().unwrap().parse().unwrap();
+    let object: ObjectId = record["object"].as_str().unwrap().parse().unwrap();
+    let raw = &fixture["context"];
+    let jwks = serde_json::from_value(raw["jwks"].clone()).unwrap();
+    let policy = serde_json::from_value(raw["policy"].clone()).unwrap();
+    let links = BTreeMap::new();
+    let pinned = BTreeSet::new();
+    // This fixture authenticates only the owner's genesis history.
+    let history = |principal: &PrincipalId, at, until| {
+        if principal != &owner {
+            return Err(Reason::MissingHistory);
+        }
+        Ok(history_state(principal, &[], at, until))
     };
-    let source: SourceKey = "sr1:rss/https%3A%2F%2Fs3r.ch/feed%2F%CE%B1%231/feed"
-        .parse()
-        .unwrap();
-    let feed = add_item(&mut plane, &item, &source, &alice).unwrap();
-    plane
-        .set_object_property(&feed, "predicate", PredicateId::OWNER)
-        .unwrap();
-    let feed_see = check_see(&plane, &feed, &alice, None).unwrap();
-    println!("feed item: soul={} see={}", feed, feed_see.allowed);
+    let resolver = |principal: &PrincipalId| (principal == &owner).then(Vec::new);
+    let ctx = ResolutionContext {
+        jwks: &jwks,
+        links: &links,
+        revocations: &[],
+        now: raw["now"].as_u64().unwrap(),
+        policy: &policy,
+        pinned_iss: &pinned,
+        history: &history,
+        genesis_epub_bindings: &[],
+    };
+    let mut graph = MeshSeeGraph::new();
+    let hint =
+        accept_hint(HandoffHint::parse(owner.as_ref(), object.as_ref(), Some(SEE), None).unwrap());
+    assert!(
+        !graph
+            .check_see(&object, &owner, ctx.now, Some(&hint), None)
+            .allowed
+    );
+    graph.put_object(record, &resolver, &ctx).unwrap();
+    let checked = graph.check_see(&object, &owner, ctx.now, Some(&hint), None);
+    assert!(checked.allowed);
+    assert!(!checked.hint_is_grant());
+    println!(
+        "signed object: allowed={} reason={}",
+        checked.allowed, checked.reason
+    );
+    let leaf = UrlLeaf::parse("https://Example.COM/item/1/#fragment").unwrap();
+    assert!(!leaf.is_gun_node());
+    println!("URL leaf: {}", leaf.normalized());
 }

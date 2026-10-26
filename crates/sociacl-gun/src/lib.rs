@@ -1,32 +1,35 @@
-//! GunDB adapter for the SociACL authority plane.
+//! GunDB signed mesh admission, Check, and transport types.
 //!
-//! In-graph Gun data is the native ACL. A Check object is an
-//! `ext_` id derived from a feed item, a `claim_` id derived from
-//! a held claim, or a later opaque post/room id. Dest
-//! ACL grants HAM-merge under `s3rch/acl/…` and do not fork items
-//! or users. Non-Gun data is a [`UrlLeaf`]: RSS3, RSS/Atom, and
-//! issuer HTTP calls are not Gun nodes and not grants. A Social
-//! Light hop may factor Check. It cannot mint.
+//! Ownership enters only through [`MeshSeeGraph::put_object`], which verifies a
+//! signed `sociacl-object-v2` record with authenticated identity history. Checks
+//! use that admitted record; neither a caller-supplied owner nor a core
+//! [`sociacl_core::Plane`] can supply mesh authority. Feed ids, hints, and URL
+//! leaves remain data. A hop, hint, wrap, request, or inbox delivery never grants.
 //!
-//! This crate maps Gun types onto existing [`sociacl_core`] Check
-//! predicates and the keep-operating [`sociacl_core::Relation::Delegate`]
-//! grant. It does not add a Gun-only verb and it does not fork the
-//! locked s3r.ch graph.
+//! The former core-plane adapter is removed. Use `MeshSeeGraph` for signed Gun
+//! objects and grants. The generic core plane remains a separate trusted API.
+//! C/Python expose Gun hint transport and URL normalization only; there is no
+//! signed mesh C/Python binding yet. See [docs/gun.md](../../docs/gun.md).
 //!
-//! `same-group` and `named-circle` are direct edges on the mesh
-//! graph. Hopcap is 1. A post grant is a separate dest-ACL row from
-//! the see grant. An access request is an untrusted hint. A hop, a hint,
-//! a wrap, a request, or an inbox delivery never mints.
-//!
-//! s3r.ch copies [docs/s3rch-check.d.ts](../../docs/s3rch-check.d.ts)
-//! and runs light Check in the browser. It does not import this crate.
-//! The Gun adapter surface for that product is Check + `delegate`
-//! only. Elect, wills, and Case C mint stay off that surface. This
-//! crate may Check a Case C [`sociacl_core::Client`] the way the rest
-//! of SociACL does.
-//!
-//! See [docs/s3rch-check.md](../../docs/s3rch-check.md) and
-//! [docs/gun.md](../../docs/gun.md).
+//! Unsigned ownership and core-plane checks are deliberately unavailable:
+//! ```compile_fail,E0432
+//! use sociacl_gun::add_claim;
+//! ```
+//! ```compile_fail,E0432
+//! use sociacl_gun::add_item;
+//! ```
+//! ```compile_fail,E0432
+//! use sociacl_gun::add_feed_node;
+//! ```
+//! ```compile_fail,E0432
+//! use sociacl_gun::check;
+//! ```
+//! ```compile_fail,E0432
+//! use sociacl_gun::check_see;
+//! ```
+//! ```compile_fail,E0432
+//! use sociacl_gun::client_check;
+//! ```
 
 mod adapter;
 mod error;
@@ -40,12 +43,7 @@ mod post;
 mod request;
 mod soul;
 
-pub use adapter::{
-    accept_hint, accept_hint_bytes, add_claim, add_feed_node, add_item, add_principal,
-    apply_see_grant, cancel, check, check_execute, check_see, check_see_grant, check_see_hop,
-    client_check, client_elect_from_hint, client_mint_grant, client_remint, elect_from_delegate,
-    elect_from_hint, map_action, remint, GunCheckResult,
-};
+pub use adapter::{accept_hint, accept_hint_bytes, map_action};
 pub use error::GunError;
 pub use feed::{
     from_gun_node, to_gun_node, FeedItem, FeedMeta, FeedSource, FeedTab, GunFeedNode, GunUserNode,
@@ -69,9 +67,8 @@ pub use sociacl_ids::{membership_soul, object_set_soul};
 pub use soul::{GunNode, GunNodeKind, GunSoul, S3RCH_ACL, S3RCH_META, S3RCH_ROOT};
 
 /// Lighter s3r.ch Check: `CHECK(see, object, accessor)` at now.
-/// Object is a Gun-native feed item, a held claim id itself
-/// (`ens:…` / `fc:…` / … linked from the user node), or an opaque
-/// post/room id. Mapped onto Check `read`. Hop is an optional factor.
+/// Object must have an admitted signed object record. A derived feed or claim
+/// id alone does not establish ownership. Hop is an optional factor.
 pub const SEE: &str = "see";
 
 #[cfg(test)]

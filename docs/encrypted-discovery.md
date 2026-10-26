@@ -322,7 +322,7 @@ Check then evaluates only the named predicate. Both edges in a group or circle c
 | Predicate | Holds when |
 | --- | --- |
 | `owner` | The accessor is the object's owner. Unchanged. |
-| `delegate` | A live `IdentitySeeGrant` / `MeshSeeGrant` names this accessor, and `now` is in `[from, until)`. This is today's per-accessor see path. |
+| `delegate` | An admitted signed mesh grant names this accessor on an admitted signed object, and `now` is in `[from, until)`. `IdentitySeeGrant` alone is unsigned data. |
 | `same-group` | `ObjectSetName` names a group, stated 1. The accessor has a jointly stated direct `member-of` edge to that group (`MeshMembership`). |
 | `named-circle` | `ObjectSetName` names a circle, stated 1. The accessor has a jointly stated direct `in-circle` edge to that circle. |
 

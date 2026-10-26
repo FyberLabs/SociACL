@@ -227,7 +227,8 @@ impl IdentityClaimKind {
     }
 }
 
-/// Jointly stated see grant. hopcap 1. Privilege-down is immediate.
+/// Unsigned see-grant data. This value does not establish ownership or admit
+/// a grant. Use signed mesh rows and an admitted object record for Check.
 /// The object and the accessor are already-parsed ids. A wallet string
 /// is not an accessor. A Gun item path is not the object.
 #[derive(Clone, Debug, Eq, PartialEq)]

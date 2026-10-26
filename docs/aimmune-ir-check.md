@@ -6,6 +6,13 @@ This is the artifact the AImmune Next console (Brewnix/auto-defense) reimplement
 
 The Next app runs Check **in the browser** on logical site objects. It does **not** import this Rust crate, NAPI, or WASM. Do not `npm install sociacl`. Copy the `.d.ts` or re-type the same names. Same consume rules as [s3rch-check.d.ts](s3rch-check.d.ts). WASM later is optional and is **not** the IR light path.
 
+The former `sociacl/ir` package entry and unsigned in-memory owner setter are
+removed by [#81](https://github.com/FyberLabs/SociACL/issues/81). This copyable
+logical-site contract remains product-owned; it is not a signed Gun identity
+implementation. Gun objects must use the signed record admission described in
+[gun.md](gun.md#signed-ownership-boundary). `site:*` names cannot be passed as
+canonical signed Gun object ids.
+
 `crates/sociacl-core` in this repo is the primitive source of truth ([PR #11](https://github.com/FyberLabs/SociACL/pull/11) delegate, [PR #13](https://github.com/FyberLabs/SociACL/pull/13) / [s3rch-check.d.ts](s3rch-check.d.ts) light see, [verbs.md](verbs.md)). It is not a runtime they load.
 
 The Brewnix object/mask table lives in [Brewnix/inference-iface `docs/sociacl-ir-binding-v0.md`](https://github.com/Brewnix/inference-iface/blob/main/docs/sociacl-ir-binding-v0.md). Do not fork those primitives here. This file is the TypeScript consume surface they copy.
