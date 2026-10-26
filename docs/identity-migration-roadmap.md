@@ -12,6 +12,7 @@ SociACL never launched. There is no persisted graph, no pre-v2 ACL row, and noth
 | --- | --- | --- | --- |
 | Canonical ids and keys in TS/Rust | Implemented | Merged in #57. Tag `ids-v0.10.0` is not published | Shared grammar, path, and soul vectors |
 | Wallet/OIDC proofs, rotation and revocation | Implemented | Merged in #57. Tag not published | Fixed-key records and the history, revocation, and fork vectors |
+| Present credential lookup and retained-link preparation | Implemented | [PR #84](https://github.com/FyberLabs/SociACL/pull/84) under review; covers #58 and #59 | Shared future/issuance-boundary, duplicate-copy, revocation, and input-limit vectors. Retention rejects future links before history lookup |
 | Browser package and optional Zod entry point | Implemented | Merged in #57. Tag not published | Strict types, browser bundle, installed-tarball consumer |
 | Shared-vector accounting and release workflow | Implemented | Tag not published | CI compares both execution manifests to the vectors |
 | SociACL permission callers | Implemented | #55 PRs 1–6 merged. PR 7 dropped. This close-out is PR 8 | Branded `ObjectId` and `PrincipalId`. Alias, fold, and chain-accessor helpers deleted. Forbidden-names guard and the `typescript/src` `node:crypto` audit |

@@ -2265,6 +2265,9 @@ pub fn prepare_retained_links_now(
         let parsed = record(raw, false)?;
         let principal = parsed.principal().clone();
         let issued_at = parsed.issued_at();
+        if issued_at > ctx.now {
+            return Err(Reason::FutureRecord);
+        }
         let state = (ctx.history)(&principal, issued_at, ctx.now)?;
         let proof = match &parsed {
             IdentityRecord::Wallet(_) => IdentityRecord::Wallet(verify_wallet_link(

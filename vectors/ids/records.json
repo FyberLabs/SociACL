@@ -4071,6 +4071,28 @@
       "operation": "prepare-retained-links-now"
     },
     {
+      "name": "retention-at-issuance-wallet",
+      "input": [
+        "a90854a50712c3e090e4076385bec9d30c6831d5f04838c0589442ca23e74b1b"
+      ],
+      "canonical": [
+        "a90854a50712c3e090e4076385bec9d30c6831d5f04838c0589442ca23e74b1b"
+      ],
+      "operation": "prepare-retained-links-now",
+      "now": 1700000000
+    },
+    {
+      "name": "retention-at-issuance-oidc",
+      "input": [
+        "d7ff77ea259836c5e94024932ffa9fddf27025a1fac573ed07df438e2a5c3fe6"
+      ],
+      "canonical": [
+        "d7ff77ea259836c5e94024932ffa9fddf27025a1fac573ed07df438e2a5c3fe6"
+      ],
+      "operation": "prepare-retained-links-now",
+      "now": 1700000000
+    },
+    {
       "name": "build-rotation-excluding-offline-revoked-oidc",
       "input": [
         {
@@ -11601,6 +11623,24 @@
       "reason": "missing-history",
       "operation": "prepare-retained-links-now",
       "now": 9007199254740992
+    },
+    {
+      "name": "retention-future-wallet",
+      "input": [
+        "a90854a50712c3e090e4076385bec9d30c6831d5f04838c0589442ca23e74b1b"
+      ],
+      "reason": "future-record",
+      "operation": "prepare-retained-links-now",
+      "now": 1699999999
+    },
+    {
+      "name": "retention-future-oidc",
+      "input": [
+        "d7ff77ea259836c5e94024932ffa9fddf27025a1fac573ed07df438e2a5c3fe6"
+      ],
+      "reason": "future-record",
+      "operation": "prepare-retained-links-now",
+      "now": 1699999999
     },
     {
       "name": "panopticon-present-check-refuses-offline-revoked-wallet",

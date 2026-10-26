@@ -803,11 +803,12 @@ export function prepareRetainedLinksNow(candidates, ctx) {
     const parsed = record(link);
     if (!parsed.ok || (parsed.value.kind !== 'wallet' && parsed.value.kind !== 'oidc')) return fail('missing-history');
     const row = /** @type {WalletLink|OidcLink} */ (parsed.value);
+    if (row.issuedAt > ctx.now) return fail('future-record');
     const looked = state(ctx.history, row.principal, row.issuedAt, ctx.now);
     if (!looked.ok) return looked;
     const proof = row.kind === 'wallet'
-      ? verifyWalletLink(link, ctx.jwks, ctx.policy, row.issuedAt, looked.value)
-      : verifyOidcLink(link, ctx.jwks, ctx.pinnedIss, row.issuedAt, looked.value);
+      ? verifyWalletLink(row, ctx.jwks, ctx.policy, row.issuedAt, looked.value)
+      : verifyOidcLink(row, ctx.jwks, ctx.pinnedIss, row.issuedAt, looked.value);
     if (!proof.ok) return proof;
     const computed = linkId(proof.value);
     if (!computed.ok || computed.value !== id) return fail('missing-history');
@@ -816,7 +817,7 @@ export function prepareRetainedLinksNow(candidates, ctx) {
       if (!candidate.ok || candidate.value.kind !== 'revoke') return false;
       const revoke = candidate.value;
       if (revoke.principal !== proof.value.principal || revoke.linkId !== id || revoke.issuedAt < proof.value.issuedAt) return false;
-      return verifyRevokeNow(raw, looked.value.currentKey, ctx.now).ok;
+      return verifyRevokeNow(revoke, looked.value.currentKey, ctx.now).ok;
     });
     if (!revoked) retained.push(id);
   }

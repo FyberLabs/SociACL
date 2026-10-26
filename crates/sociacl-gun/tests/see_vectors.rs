@@ -826,14 +826,22 @@ fn imports_node_crypto(source: &str) -> bool {
     let word_at = |at: usize, word: &str| {
         let end = at + word.len();
         end <= n
-            && &source[at..end] == word
+            && &bytes[at..end] == word.as_bytes()
             && (at == 0 || !is_ident(bytes[at - 1]))
             && (end == n || !is_ident(bytes[end]))
     };
-    let read_string = |at: usize| -> (Option<String>, usize) {
+    let nested_crypto = std::cell::Cell::new(false);
+    fn read_string(
+        source: &str,
+        at: usize,
+        nested_crypto: &std::cell::Cell<bool>,
+    ) -> (Option<String>, usize) {
+        let bytes = source.as_bytes();
+        let n = bytes.len();
         let quote = bytes[at];
         let mut j = at + 1;
         let mut value = Vec::new();
+        let mut interpolated = false;
         while j < n {
             let c = bytes[j];
             if c == b'\\' {
@@ -844,26 +852,50 @@ fn imports_node_crypto(source: &str) -> bool {
                 continue;
             }
             if quote == b'`' && c == b'$' && j + 1 < n && bytes[j + 1] == b'{' {
-                return (None, j);
+                interpolated = true;
+                let end = skip_balanced(source, j + 1, b'{', b'}', nested_crypto);
+                let content_end = if bytes.get(end.wrapping_sub(1)) == Some(&b'}') {
+                    end - 1
+                } else {
+                    end
+                };
+                if imports_node_crypto(&source[j + 2..content_end]) {
+                    nested_crypto.set(true);
+                }
+                j = end;
+                continue;
             }
             if c == quote {
-                return (String::from_utf8(value).ok(), j + 1);
+                return (
+                    if interpolated {
+                        None
+                    } else {
+                        String::from_utf8(value).ok()
+                    },
+                    j + 1,
+                );
             }
             value.push(c);
             j += 1;
         }
-        (String::from_utf8(value).ok(), n)
-    };
-    let specifier_at = |at: usize| {
-        if at >= n || !matches!(bytes[at], b'\'' | b'"' | b'`') {
-            return false;
-        }
-        matches!(
-            read_string(at).0.as_deref(),
-            Some("crypto" | "node:crypto")
+        (
+            if interpolated {
+                None
+            } else {
+                String::from_utf8(value).ok()
+            },
+            n,
         )
-    };
-    let skip_balanced = |at: usize| {
+    }
+    fn skip_balanced(
+        source: &str,
+        at: usize,
+        open: u8,
+        close: u8,
+        nested_crypto: &std::cell::Cell<bool>,
+    ) -> usize {
+        let bytes = source.as_bytes();
+        let n = bytes.len();
         let mut depth = 0;
         let mut j = at;
         while j < n {
@@ -884,12 +916,12 @@ fn imports_node_crypto(source: &str) -> bool {
                 continue;
             }
             if matches!(c, b'\'' | b'"' | b'`') {
-                j = read_string(j).1;
+                j = read_string(source, j, nested_crypto).1;
                 continue;
             }
-            if c == b'(' {
+            if c == open {
                 depth += 1;
-            } else if c == b')' {
+            } else if c == close {
                 depth -= 1;
                 if depth == 0 {
                     return j + 1;
@@ -898,6 +930,15 @@ fn imports_node_crypto(source: &str) -> bool {
             j += 1;
         }
         n
+    }
+    let specifier_at = |at: usize| {
+        if at >= n || !matches!(bytes[at], b'\'' | b'"' | b'`') {
+            return false;
+        }
+        matches!(
+            read_string(source, at, &nested_crypto).0.as_deref(),
+            Some("crypto" | "node:crypto")
+        )
     };
     while i < n {
         if !source.is_char_boundary(i) {
@@ -921,7 +962,7 @@ fn imports_node_crypto(source: &str) -> bool {
             continue;
         }
         if matches!(c, b'\'' | b'"' | b'`') {
-            i = read_string(i).1;
+            i = read_string(source, i, &nested_crypto).1;
             continue;
         }
         if c == b';' {
@@ -960,7 +1001,7 @@ fn imports_node_crypto(source: &str) -> bool {
         if word_at(i, "createRequire") {
             let mut j = skip_space(i + 13);
             if j < n && bytes[j] == b'(' {
-                j = skip_space(skip_balanced(j));
+                j = skip_space(skip_balanced(source, j, b'(', b')', &nested_crypto));
                 if j < n && bytes[j] == b'(' && specifier_at(skip_space(j + 1)) {
                     return true;
                 }
@@ -983,7 +1024,7 @@ fn imports_node_crypto(source: &str) -> bool {
         }
         i += 1;
     }
-    false
+    nested_crypto.get()
 }
 
 fn ident_present(text: &str, name: &str) -> bool {
@@ -1059,7 +1100,12 @@ fn glob_match_source(glob: &str, path: &str) -> bool {
     if glob_match(glob, path) {
         return true;
     }
-    for (from, to) in [(".js", ".mjs"), (".js", ".cjs"), (".ts", ".mts"), (".ts", ".cts")] {
+    for (from, to) in [
+        (".js", ".mjs"),
+        (".js", ".cjs"),
+        (".ts", ".mts"),
+        (".ts", ".cts"),
+    ] {
         if glob.ends_with(&format!("*{from}")) && path.ends_with(to) {
             let rewritten = format!("{}{from}", &path[..path.len() - to.len()]);
             if glob_match(glob, &rewritten) {

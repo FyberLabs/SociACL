@@ -477,6 +477,10 @@ accept('records','retention-ignores-retired-key-offline-revoke',[wid],[wid],{ope
 bad('retention-cannot-use-missing-history',[wid],'missing-history','prepare-retained-links-now',{missingHistory:true});
 accept('records','retention-dedupes-ids',[wid,wid],[wid],{operation:'prepare-retained-links-now'});
 bad('retention-unsafe-now',[wid],'missing-history','prepare-retained-links-now',{now:9007199254740992});
+for (const [kind, id] of [['wallet', wid], ['oidc', oid]]) {
+  bad('retention-future-'+kind,[id],'future-record','prepare-retained-links-now',{now:at-1});
+  accept('records','retention-at-issuance-'+kind,[id],[id],{operation:'prepare-retained-links-now',now:at});
+}
 bad('panopticon-present-check-refuses-offline-revoked-wallet',[w],'revoked-link','wallet-resolve-now',{address:wallet,revocations:[offlineRev]});
 accept('records','build-rotation-excluding-offline-revoked-oidc',[rot],p2,{operation:'resolve',revocations:[offline(revokedOidc)]});
 bad('excluded-offline-revoked-oidc-remains-unusable',oidc,'unretained-link','oidc-link',{directState:{key:p,currentKey:p2,retainedLinks:[wid]}});

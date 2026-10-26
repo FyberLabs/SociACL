@@ -184,6 +184,10 @@ API for a historical query or choose its current key from `issuedAt`.
 Panopticon and clients **MUST exclude present-revoked links from `retainedLinks`**
 when constructing a rotation. Call `prepareRetainedLinksNow(candidates, context)`.
 It authenticates each candidate, drops ids revoked under the final current key, and returns each id once.
+A candidate issued after `context.now` fails with `future-record` before history
+lookup or proof verification, even within the clock-skew allowance. A link issued
+exactly at `now` is eligible. Historical proof validity does not make a future
+credential eligible for present retention.
 It does not issue an attestation. Panopticon **MUST check present revocation before
 attesting any rotation or login**. For wallet authorization, use
 `resolveWalletLinkNow` and require the selected link ID to equal the authorizer

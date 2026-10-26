@@ -208,6 +208,7 @@ function isIdent(c) {
 function importsNodeCrypto(source) {
   const n = source.length;
   let i = 0;
+  let nestedCrypto = false;
   let stmt = null;
   const skipSpace = (at) => {
     while (at < n && /\s/.test(source[at])) at += 1;
@@ -218,6 +219,7 @@ function importsNodeCrypto(source) {
     const quote = source[at];
     let j = at + 1;
     let value = "";
+    let interpolated = false;
     while (j < n) {
       const c = source[j];
       if (c === "\\") {
@@ -225,14 +227,21 @@ function importsNodeCrypto(source) {
         j += 2;
         continue;
       }
-      if (quote === "`" && c === "$" && source[j + 1] === "{") return { value: null, end: j };
-      if (c === quote) return { value, end: j + 1 };
+      if (quote === "`" && c === "$" && source[j + 1] === "{") {
+        interpolated = true;
+        const end = skipBalanced(j + 1, "{", "}");
+        const contentEnd = source[end - 1] === "}" ? end - 1 : end;
+        if (importsNodeCrypto(source.slice(j + 2, contentEnd))) nestedCrypto = true;
+        j = end;
+        continue;
+      }
+      if (c === quote) return { value: interpolated ? null : value, end: j + 1 };
       value += c;
       j += 1;
     }
-    return { value, end: n };
+    return { value: interpolated ? null : value, end: n };
   };
-  const skipBalanced = (at) => {
+  const skipBalanced = (at, open = "(", close = ")") => {
     let depth = 0;
     let j = at;
     while (j < n) {
@@ -252,8 +261,8 @@ function importsNodeCrypto(source) {
         j = readString(j).end;
         continue;
       }
-      if (c === "(") depth += 1;
-      else if (c === ")") {
+      if (c === open) depth += 1;
+      else if (c === close) {
         depth -= 1;
         if (depth === 0) return j + 1;
       }
@@ -328,7 +337,7 @@ function importsNodeCrypto(source) {
     }
     i += 1;
   }
-  return false;
+  return nestedCrypto;
 }
 
 test("typescript/src does not import node:crypto", () => {

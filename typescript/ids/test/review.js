@@ -10,6 +10,7 @@ test('hostile link-map values and retained-link arrays never run getters',()=>{
   const hostile={get issuedAt(){reads++;throw Error('getter');},get principal(){reads++;throw Error('getter');}};
   for(const raw of [hostile,new Proxy({},{ownKeys(){throw Error('proxy');}})]) {
     const links=new Map([[rotation.authorizer.link,raw]]);
+    assert.deepEqual(ids.prepareRetainedLinksNow([rotation.authorizer.link],{...ctx,links}),{ok:false,reason:'missing-history'});
     assert.deepEqual(ids.verifyRotate(rotation,ctx.currentKey,{...ctx,links}),{ok:false,reason:'missing-history'});
     const r=ids.resolveCurrentKey(ctx.genesis,[rotation],{...ctx,links});
     assert.equal(r.ok,false);assert.equal(r.reason,'missing-history');assert.equal(r.diagnostics[0].reason,'missing-history');assert.equal('value' in r,false);
@@ -55,4 +56,29 @@ test('damaged duplicate rotation proof getters cannot run or veto a valid copy',
     assert.deepEqual(r.value.rotations,[rotation]);
   }
   assert.equal(reads,0);
+});
+
+test('future retained links fail before consulting history, regardless of skew',()=>{
+  for (const name of ['wallet','oidc']) {
+    const link=f.accept.find(c=>c.name===name).input;
+    const id=ids.linkId(link).value;
+    let calls=0;
+    const future={...ctx,now:link.issuedAt-1,policy:{...ctx.policy,clockSkewSeconds:60},links:new Map([[id,link]]),history(){calls++;throw Error('future link reached history');}};
+    assert.deepEqual(ids.prepareRetainedLinksNow([id],future),{ok:false,reason:'future-record'});
+    assert.equal(calls,0);
+  }
+});
+
+test('direct rotation verifiers bound every context collection before history lookup',()=>{
+  const oversized=Array.from({length:1025},()=>({}));
+  for (const patch of [
+    {links:new Map(oversized.map((row,index)=>[String(index),row]))},
+    {revocations:oversized},
+    {genesisEpubBindings:oversized},
+  ]) {
+    const bounded={...ctx,...patch,history(){throw Error('oversized input reached history');}};
+    for (const verify of [ids.verifyRotate,ids.verifyRotationRequest]) {
+      assert.deepEqual(verify(rotation,ctx.currentKey,bounded),{ok:false,reason:'too-long'});
+    }
+  }
 });
