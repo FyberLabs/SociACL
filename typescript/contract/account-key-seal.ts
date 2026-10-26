@@ -8,7 +8,7 @@ import { p256 } from "@noble/curves/nist.js";
 import { parseObjectId, resolveCurrentKey, type ObjectId, type PrincipalId, type ResolutionContext } from "../ids/src/index.js";
 import type { EncryptedAccountWrap, GenesisAccount, KeyWrapStore } from "./account-key.ts";
 import { canonicalDecimal, lengthPrefixed } from "./canonical.ts";
-import { REPLACED_NONE, signStoreWrite, wrapCiphertextHash } from "./store-write.ts";
+import { REPLACED_NONE, signStoreWrite, wrapRowHash } from "./store-write.ts";
 
 const DOMAIN_ACCOUNT_WRAP = "sociacl-account-key-wrap-v1";
 const DOMAIN_ACCOUNT_BIND = "sociacl-account-key-bind-v1";
@@ -87,7 +87,7 @@ export function encryptAccountBackup(
     ciphertextHex,
     signature,
   };
-  const hash = wrapCiphertextHash(wrap.ciphertextHex);
+  const hash = wrapRowHash(wrap);
   const accountHead = store.publishedAccount(wrap.principal);
   const existing = store.get(wrap.principal, wrap.wrapId);
   const storeSignature = signStoreWrite(
@@ -97,7 +97,7 @@ export function encryptAccountBackup(
     wrap.wrapId,
     hash,
     canonicalDecimal(accountHead.rotations.length),
-    existing ? wrapCiphertextHash(existing.ciphertextHex) : REPLACED_NONE,
+    existing ? wrapRowHash(existing) : REPLACED_NONE,
     wrap.class,
     canonicalDecimal(store.writeGeneration(wrap.principal)),
   );
@@ -106,6 +106,8 @@ export function encryptAccountBackup(
     wrap,
     storeSignature,
   );
+  const stored = store.get(wrap.principal, wrap.wrapId);
+  if (!stored || wrapRowHash(stored) !== hash) throw new Error("store-rejected");
   return wrap;
 }
 

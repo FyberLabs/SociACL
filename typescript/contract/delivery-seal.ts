@@ -23,7 +23,7 @@ import { AccountKeyring as Keyring } from "./account-keyring.ts";
 import { decodeKeyring, encodeKeyring } from "./keyring-codec.ts";
 import { DELIVERY_BLOB_MAX, KEYRING_SERIAL_MAX } from "./keyring-limits.ts";
 import { canonicalDecimal } from "./canonical.ts";
-import { REPLACED_NONE, signStoreWrite, wrapCiphertextHash } from "./store-write.ts";
+import { REPLACED_NONE, signStoreWrite, wrapRowHash } from "./store-write.ts";
 
 const DOMAIN_DELIVERY_BIND = "sociacl-keyring-delivery-v1";
 const DOMAIN_DELIVERY_SIG = "sociacl-keyring-delivery-sig-v1";
@@ -70,7 +70,7 @@ export function deliverKeyringWith(
       ciphertextHex: bytesToHex(blob),
       signature,
     };
-    const hash = wrapCiphertextHash(wrap.ciphertextHex);
+    const hash = wrapRowHash(wrap);
     const account = store.publishedAccount(wrap.principal);
     const existing = store.get(wrap.principal, wrap.wrapId);
     const storeSignature = signStoreWrite(
@@ -80,7 +80,7 @@ export function deliverKeyringWith(
       wrap.wrapId,
       hash,
       canonicalDecimal(account.rotations.length),
-      existing ? wrapCiphertextHash(existing.ciphertextHex) : REPLACED_NONE,
+      existing ? wrapRowHash(existing) : REPLACED_NONE,
       wrap.class,
       canonicalDecimal(store.writeGeneration(wrap.principal)),
     );

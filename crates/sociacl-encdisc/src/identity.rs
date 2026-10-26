@@ -30,7 +30,7 @@ use crate::canonical;
 use crate::error::EncDiscError;
 use crate::hexutil::{self, encode_hex, encode_secret_hex};
 use crate::sea::{self, ecdh_secret, ecdh_x, uncompressed_point};
-use crate::store_write::{sign_store_write, verify_store_write, wrap_ciphertext_hash};
+use crate::store_write::{sign_store_write, verify_store_write, wrap_row_hash};
 use crate::wrap::{self, ItemDek, NamedSet, WrappedKey};
 
 const DOMAIN_ACCOUNT_WRAP: &str = "sociacl-account-key-wrap-v1";
@@ -535,10 +535,10 @@ impl<C: crate::store_write::PublishedChain> KeyWrapStore for MemoryKeyWrapStore<
             .and_then(|rows| rows.get(wrap.wrap_id.as_ref()))
             .cloned();
         let replaced = match &existing {
-            Some(row) => wrap_ciphertext_hash(&row.ciphertext_hex)?,
+            Some(row) => wrap_row_hash(&row)?,
             None => crate::store_write::REPLACED_NONE.to_string(),
         };
-        let hash = wrap_ciphertext_hash(&wrap.ciphertext_hex)?;
+        let hash = wrap_row_hash(&wrap)?;
         verify_store_write(
             &wrap.principal,
             "put",
@@ -583,7 +583,7 @@ impl<C: crate::store_write::PublishedChain> KeyWrapStore for MemoryKeyWrapStore<
             .and_then(|rows| rows.get(wrap_id.as_ref()))
             .cloned()
             .ok_or(EncDiscError::StoreRejected)?;
-        let hash = wrap_ciphertext_hash(&row.ciphertext_hex)?;
+        let hash = wrap_row_hash(&row)?;
         verify_store_write(
             principal,
             "delete",
@@ -769,16 +769,22 @@ fn seal_account_backup_with(
         wrap_id: wrap.wrap_id.clone(),
         epub: wrap.epub.clone(),
     };
-    let hash = wrap_ciphertext_hash(&wrap.ciphertext_hex)?;
+    let hash = wrap_row_hash(&wrap)?;
     let store_signature = sign_wrap_write(store, account.local_priv(), &wrap, "put", &hash)?;
     store.put_wrap(&index, &wrap, &store_signature)?;
+    let stored = store
+        .get_wrap(&wrap.principal, &wrap.wrap_id)?
+        .ok_or(EncDiscError::StoreRejected)?;
+    if wrap_row_hash(&stored)? != hash {
+        return Err(EncDiscError::StoreRejected);
+    }
     Ok(wrap)
 }
 
 /// Delete a delivery row. The genesis backup can only be replaced.
 ///
 /// `signer_priv` is the current chain-head key. The signature covers the
-/// stored ciphertext. A missing row and a genesis row are
+/// complete stored row. A missing row and a genesis row are
 /// [`EncDiscError::StoreRejected`]. The genesis row stays.
 pub fn delete_account_wrap(
     principal: &PrincipalId,
@@ -789,7 +795,7 @@ pub fn delete_account_wrap(
     let row = store
         .get_wrap(principal, wrap_id)?
         .ok_or(EncDiscError::StoreRejected)?;
-    let hash = wrap_ciphertext_hash(&row.ciphertext_hex)?;
+    let hash = wrap_row_hash(&row)?;
     let signature = sign_wrap_write(store, signer_priv, &row, "delete", &hash)?;
     store.delete_wrap(principal, wrap_id, &signature)
 }
@@ -805,7 +811,7 @@ fn sign_wrap_write(
     let head = account.rotations.len() as u64;
     let generation = store.write_generation(&wrap.principal);
     let replaced = match store.get_wrap(&wrap.principal, &wrap.wrap_id)? {
-        Some(existing) => wrap_ciphertext_hash(&existing.ciphertext_hex)?,
+        Some(existing) => wrap_row_hash(&existing)?,
         None => crate::store_write::REPLACED_NONE.to_string(),
     };
     let replaced = if operation == "delete" {
@@ -1302,6 +1308,85 @@ mod tests {
     }
 
     #[test]
+    fn backup_seal_checks_the_read_back_row() {
+        struct Faulty<S> {
+            inner: S,
+            mode: u8,
+        }
+        impl<S: KeyWrapStore> KeyWrapStore for Faulty<S> {
+            fn published_account(
+                &self,
+                p: &PrincipalId,
+            ) -> Result<sociacl_ids::ResolvedAccount, EncDiscError> {
+                self.inner.published_account(p)
+            }
+            fn write_generation(&self, p: &PrincipalId) -> u64 {
+                self.inner.write_generation(p)
+            }
+            fn put_wrap(
+                &mut self,
+                i: &WrapIndex,
+                w: &EncryptedAccountWrap,
+                sig: &str,
+            ) -> Result<(), EncDiscError> {
+                self.inner.put_wrap(i, w, sig)
+            }
+            fn delete_wrap(
+                &mut self,
+                p: &PrincipalId,
+                id: &ObjectId,
+                sig: &str,
+            ) -> Result<(), EncDiscError> {
+                self.inner.delete_wrap(p, id, sig)
+            }
+            fn get_wrap(
+                &self,
+                p: &PrincipalId,
+                id: &ObjectId,
+            ) -> Result<Option<EncryptedAccountWrap>, EncDiscError> {
+                let row = self.inner.get_wrap(p, id)?;
+                Ok(row.and_then(|mut row| {
+                    match self.mode {
+                        0 => return None,
+                        1 => row.epub = p.as_ref().to_string(),
+                        _ => row.signature = "cd".repeat(64),
+                    }
+                    Some(row)
+                }))
+            }
+            fn list_wraps(
+                &self,
+                p: &PrincipalId,
+            ) -> Result<Vec<EncryptedAccountWrap>, EncDiscError> {
+                self.inner.list_wraps(p)
+            }
+        }
+        let v = vector();
+        let account = fixture_account(&v);
+        let wrap_id = parse_wrap_object(v["backupWrap"]["wrapId"].as_str().unwrap()).unwrap();
+        let parts = empty_resolution();
+        let context = parts.context();
+        for mode in 0..3 {
+            let mut store = Faulty {
+                inner: MemoryKeyWrapStore::new(watch(&[], &context), crate::HeadFloor::new()),
+                mode,
+            };
+            assert!(matches!(
+                seal_account_backup(
+                    &account,
+                    v["backupWrap"]["transportPub"].as_str().unwrap(),
+                    &wrap_id,
+                    &[],
+                    &context,
+                    &mut store,
+                ),
+                Err(EncDiscError::StoreRejected)
+            ));
+            assert_eq!(store.write_generation(account.principal()), 1);
+        }
+    }
+
+    #[test]
     fn backup_wrap_is_stored_not_authoritative_and_devices_share_one_epub() {
         let v = vector();
         let account = fixture_account(&v);
@@ -1498,7 +1583,7 @@ mod tests {
             open_account_backup(&transport, &huge, attacker.principal(), &[], &context).is_err()
         );
         // The adapter accepts a keyring-sized wrap. Genesis open still stops at 8192.
-        let huge_hash = wrap_ciphertext_hash(&huge.ciphertext_hex).unwrap();
+        let huge_hash = wrap_row_hash(&huge).unwrap();
         let huge_sig =
             sign_wrap_write(&store, attacker.local_priv(), &huge, "put", &huge_hash).unwrap();
         assert!(store

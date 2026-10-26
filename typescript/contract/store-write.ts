@@ -150,7 +150,22 @@ export function verifyStoreWrite(
   if (!ok) throw new Error("store-rejected");
 }
 
-/** SHA-256 of the wrap ciphertext bytes. The hex alphabet is not the hashed message. */
+/** Domain-separated commitment to every stored wrap field. */
+export function wrapRowHash(wrap: {
+  principal: string;
+  wrapId: string;
+  epub: string;
+  class: string;
+  ciphertextHex: string;
+  signature: string;
+}): string {
+  return sha256Hex(lengthPrefixed([
+    "sociacl-wrap-row-v1", wrap.principal, wrap.wrapId, wrap.epub, wrap.class,
+    wrap.ciphertextHex, wrap.signature,
+  ]));
+}
+
+/** Legacy ciphertext digest only; use wrapRowHash for store-write authorization. */
 export function wrapCiphertextHash(ciphertextHex: string): string {
   return sha256Hex(hexToBytes(ciphertextHex));
 }

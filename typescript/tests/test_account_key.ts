@@ -622,3 +622,25 @@ function flipHex(signature: string): string {
   const first = signature[0] === "a" ? "b" : "a";
   return first + signature.slice(1);
 }
+
+
+test("genesis sealing rejects missing or altered read-back rows", () => {
+  const genesis = account();
+  const context = emptyContext();
+  const wrapId = parseWrapObject(vector.backupWrap.wrapId);
+  for (const mode of ["missing", "epub", "signature"] as const) {
+    class FaultyStore extends MemoryKeyWrapStore {
+      override get(principal: PrincipalId, id: typeof wrapId): EncryptedAccountWrap | undefined {
+        const row = super.get(principal, id);
+        if (!row || mode === "missing") return undefined;
+        return { ...row, [mode]: mode === "signature" ? "cd".repeat(64) : genesis.pub };
+      }
+    }
+    const store = new FaultyStore(watch([], context), new HeadFloor());
+    assert.throws(() => sealAccountBackup(
+      genesis, vector.backupWrap.transportPub, wrapId, store, [], context,
+    ), (error: unknown) => error instanceof Error && error.message === "store-rejected");
+    // The put can have succeeded; failure must not pretend to roll it back.
+    assert.equal(store.writeGeneration(genesis.principal), 1);
+  }
+});
