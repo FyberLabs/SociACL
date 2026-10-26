@@ -335,12 +335,12 @@ test("passphrase strength matches the shared vector and stays off open", async (
   for (const row of gate.cases) {
     const bytes = new TextEncoder().encode(row.passphrase);
     if (row.result === "pass") {
-      checkRecoveryPassphrase(bytes, principal, row.handle);
+      await checkRecoveryPassphrase(bytes, principal, row.handle);
       continue;
     }
     let caught: unknown;
     try {
-      checkRecoveryPassphrase(bytes, principal, row.handle);
+      await checkRecoveryPassphrase(bytes, principal, row.handle);
     } catch (error) {
       caught = error;
     }

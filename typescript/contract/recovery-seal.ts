@@ -325,7 +325,6 @@ export async function sealRecoveryCopyWith(
 ): Promise<RecoveryEnvelope> {
   if (keyring.priorLanes().length !== keyring.rotationSeq) throw new Error("bad-lane");
   if (passphraseRejected(passphrase)) throw new Error("recovery-params");
-  checkRecoveryPassphrase(passphrase, keyring.principal, handle);
   if (
     salt.length < ARGON2ID_LIMITS.saltLength.floor ||
     salt.length > ARGON2ID_LIMITS.saltLength.ceiling ||
@@ -333,12 +332,16 @@ export async function sealRecoveryCopyWith(
   ) {
     throw new Error("recovery-params");
   }
+  // The async strength gate and KDF must consume the same bytes even if the
+  // caller mutates its buffer while the estimator is loading.
+  const checkedPassphrase = new Uint8Array(passphrase);
   let plain: Uint8Array | undefined;
   let key: Uint8Array | undefined;
   try {
+    await checkRecoveryPassphrase(checkedPassphrase, keyring.principal, handle);
     plain = encodeKeyring(keyring);
     key = await deriveKey(
-      passphrase,
+      checkedPassphrase,
       salt,
       ARGON2ID_LIMITS.memoryKiB.floor,
       ARGON2ID_LIMITS.iterations.floor,
@@ -396,6 +399,7 @@ export async function sealRecoveryCopyWith(
     store.put(envelope, signature);
     return envelope;
   } finally {
+    checkedPassphrase.fill(0);
     plain?.fill(0);
     key?.fill(0);
   }
