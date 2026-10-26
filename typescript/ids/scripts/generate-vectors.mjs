@@ -717,6 +717,28 @@ for (const [name,patch,reason] of [['next-signature',{nextSig:zero},'bad-signatu
   accept('records','v4-untrusted-damaged-'+name,[{...tamperedV4,...patch}],p,{operation:'resolve',diagnosticReasons:[reason]});
 }
 
+// A next-key holder can re-sign a changed prevKey without changing witness claims.
+// Only siblings extending the resolved current key may freeze publication/drafting.
+for (const seq of [1, 2]) {
+  const current = seq === 1 ? p : p2;
+  const prior = seq === 1 ? [] : [rot4];
+  const candidate = rotationV4(p3, 3, seq, current, at + 40, [wid], principal(7));
+  const { nextSig, authorizer, attest, ...draft } = candidate;
+  for (const [version, sibling] of [
+    ['v2', rotation('wallet', principal(8), 8, seq, current, at + 40)],
+    ['v3', rotationV3('wallet', principal(8), 8, seq, current, at + 40, [wid], principal(11))],
+    ['v4', rotationV4(principal(8), 8, seq, current, at + 40, [wid], principal(11))],
+  ]) {
+    const changed = { ...sibling, prevKey: principal(9) };
+    const unrelated = { ...changed, nextSig: keySig(changed, 8) };
+    for (const [operation, input] of [['publish-check', candidate], ['draft-check', draft]]) {
+      const name = `sibling-current-key-${version}-seq${seq}-${operation}`;
+      accept('records', name, { candidate: input, siblings: [unrelated], prior }, p, { operation });
+      bad(name + '-genuine-fork', { candidate: input, siblings: [unrelated, sibling], prior }, 'rotation-fork', operation);
+    }
+  }
+}
+
 const root = new URL('../../../vectors/ids/',import.meta.url); mkdirSync(root,{recursive:true});
 for(const [name,value] of families) writeFileSync(new URL(name+'.json',root),JSON.stringify(value,null,2).replace(/"issuedAt": 1700000000,/g, name==='edges'?'"issuedAt": 1700000000,':'"issuedAt": 1700000000.0,')+'\n');
 writeFileSync(new URL('test-keys.json',new URL('../test/',import.meta.url)),JSON.stringify({p,p2,p3,wallet,tenant,obj,network,source,secretScalars:[1,2,3,4,5]},null,2)+'\n');

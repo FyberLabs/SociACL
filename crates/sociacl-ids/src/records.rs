@@ -1472,6 +1472,10 @@ fn publish_tail(
     ctx: &ResolutionContext<'_>,
     draft: bool,
 ) -> Result<Rotate, Reason> {
+    let current = history
+        .last()
+        .map(|row| row.next_key.clone())
+        .unwrap_or_else(|| genesis.clone());
     let candidate_id = if draft {
         String::new()
     } else {
@@ -1481,7 +1485,7 @@ fn publish_tail(
         let Some(other) = authenticated_sibling(sibling, ctx) else {
             continue;
         };
-        if other.principal != raw.principal || other.seq != raw.seq {
+        if other.principal != raw.principal || other.seq != raw.seq || other.prev_key != current {
             continue;
         }
         if draft {
@@ -1495,10 +1499,6 @@ fn publish_tail(
         }
     }
     let seq = history.len() as u64 + 1;
-    let current = history
-        .last()
-        .map(|row| row.next_key.clone())
-        .unwrap_or_else(|| genesis.clone());
     let last_time = history.last().map(|row| row.issued_at);
     let timed = !draft || raw.issued_at != 0;
     if raw.seq != seq
