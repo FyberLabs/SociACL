@@ -409,3 +409,28 @@ The source audit and persisted-ID inventory prerequisite are recorded in the
 [migration roadmap](identity-migration-roadmap.md). Consumer migrations and
 Panopticon attestation endpoints remain separate reviewable deliveries after
 this package contract is approved and released.
+
+
+## Draft checks and current-key compromise
+
+`checkRotationDraft` / `check_rotation_draft` is never an attestation gate.
+Success checks a builder's draft, not authorization to sign a witness record.
+Panopticon must use `checkRotationPublish` / `check_rotation_publish` on the
+signed request and apply its own issuance policy.
+
+A thief holding the authenticated current signing key can sign revokes of that
+account's recovery links. A witness cannot distinguish that signature from one
+made by the owner. Present-only revokes can remove recovery eligibility even
+while a witness is unavailable; they do not remain effective after that key
+retires unless historical verification has the required timestamp evidence.
+A timestamp records when a signed revoke existed, not whether the owner intended
+it. Do not treat witness availability or a retained wallet/OIDC link as protection
+against a thief who still holds the current key.
+
+For an unattested rotation request, the present-revocation path evaluates the
+current-key signature through `now + clockSkewSeconds`. A witnessed revoke
+inside that horizon also counts through this present path: its witness is not
+required or certified by `verifyRevokeNow`. This does not admit a future revoke
+into authenticated history. Historical witnessed checks and direct
+`verifyRevokeNow` calls at unadjusted `now` remain skew-free. A retired key's
+signature cannot use this present-only path to revoke a link.

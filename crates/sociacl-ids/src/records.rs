@@ -1513,6 +1513,8 @@ fn publish_tail(
     Ok(raw)
 }
 /// Structural draft the keyring builder checks before a signature exists.
+/// Never an attestation gate: success does not authorize a witness signature.
+/// Witnesses must use [`check_rotation_publish`] on the signed request.
 ///
 /// An unsigned draft has no `nextSig`, `authorizer`, `attest`, or required
 /// `issuedAt`. `retainedLinks` uses the signed-record rule. An identical

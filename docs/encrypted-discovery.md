@@ -213,6 +213,10 @@ This crate does not wire Panopticon or Gun, and it does not open a first-contact
 
 ## Passphrase recovery copy
 
+[Recovery store operations](recovery-store-operations.md) defines the trusted
+resolver boundary, the unknown-genesis-epub storage limitation, and the operator
+restoration procedure. It does not authorize lowering an observed head floor.
+
 The account keyring can be sealed under a passphrase the user keeps. The passphrase is an argument to seal and open. It is not stored, not sent, and not written to Gun. The ciphertext goes to a `RecoveryCopyStore`. That store is an adapter of the same kind as `KeyWrapStore`. Panopticon may be that adapter. It stores the envelope and the index. It is not the authority, it does not see the passphrase, and it does not see the plaintext. `priv`, `epriv`, retired `epriv` values, and lane ids stay out of the envelope's cleartext and out of `gunDocument`.
 
 The domain is `sociacl-recovery-copy-v1`. The envelope version byte is 1. The header is little-endian: Argon2 version, memory in KiB, iterations, parallelism, hash length, salt length, then the keyring version as a u64. The keyring version is `rotationSeq`. Salt follows the header, then a 12-byte AES-GCM nonce, then the ciphertext and tag. Seal draws the salt and the nonce internally. A caller does not pass them.

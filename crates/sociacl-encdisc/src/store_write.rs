@@ -90,6 +90,9 @@ impl HeadFloor {
 }
 
 /// The published account a store reads for itself. The writer does not supply it.
+/// Trusted resolver boundary. Implementations must run resolve_current_key
+/// over authenticated history, not construct a result from writer assertions.
+/// See docs/recovery-store-operations.md for freshness and restoration rules.
 pub trait PublishedChain {
     fn published_account(
         &self,

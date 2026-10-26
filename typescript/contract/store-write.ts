@@ -56,6 +56,9 @@ export class HeadFloor {
   }
 }
 
+/** Trusted resolver output, not a proof. Adapters must resolve authenticated
+ * history with resolveCurrentKey; never construct this from writer assertions.
+ * See docs/recovery-store-operations.md for freshness and restoration rules. */
 export type StoreWriteAccount = {
   readonly currentKey: PrincipalId;
   readonly currentEpub: PrincipalId | null;

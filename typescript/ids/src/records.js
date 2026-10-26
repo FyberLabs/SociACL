@@ -553,6 +553,8 @@ function authenticatedSibling(raw, ctx) {
   return row;
 }
 /** Structural draft the keyring builder checks before a signature exists.
+ * Never an attestation gate: success does not authorize a witness signature.
+ * Witnesses must use `checkRotationPublish` on the signed request.
  * @param {unknown} x @returns {Result<Rotate>} */
 function draftRotation(x) {
   const d = data(x); if (!d.ok) return d;
@@ -607,6 +609,8 @@ function publishTail(raw, siblings, genesis, history, bindingEpub, ctx, draft) {
   return ok(raw);
 }
 /** Structural draft the keyring builder checks before a signature exists.
+ * Never an attestation gate: success does not authorize a witness signature.
+ * Witnesses must use `checkRotationPublish` on the signed request.
  * An unsigned draft has no `nextSig`, `authorizer`, `attest`, or required
  * `issuedAt`. `retainedLinks` uses the signed-record rule. An identical
  * attested sibling of the same transition is a retry and is not a fork.
