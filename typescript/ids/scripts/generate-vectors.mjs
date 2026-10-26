@@ -640,6 +640,27 @@ const rotationV4 = (next = p2, n = 2, seq = 1, prev = p, issuedAt = at + 30, ret
   const siweHash = siweHashOf(signed.authorizer.siwe);
   return { ...signed, attest: jws({ typ: 'sociacl-rotate-attest-v4', principal: p, nextKey: next, nextEpub, seq, iat: issuedAt, exp: issuedAt + 600, auth: 'wallet', linkId: wid, retainedLinks, siweHash }) };
 };
+// Historical SIWE expiry is evaluated at issuance, like its witness.
+for (const [version, base] of [['v2', rotation()], ['v4', rotationV4()]]) {
+  const withProof = options => {
+    const proof = siwe(base, options);
+    const changed = { ...base, authorizer: { ...base.authorizer, siwe: proof } };
+    if (version === 'v4') {
+      const claims = JSON.parse(Buffer.from(base.attest.split('.')[1], 'base64url').toString());
+      changed.attest = jws({ ...claims, siweHash: siweHashOf(proof) });
+    }
+    return changed;
+  };
+  const historical = withProof(`\nExpiration Time: ${date(base.issuedAt + 10)}`);
+  accept('records', `siwe-expiry-${version}-historical`, historical, p, { operation: 'rotate', now: at + 100000 });
+  accept('records', `siwe-expiry-${version}-resolve`, [historical], p2, { operation: 'resolve', now: at + 100000, currentEpub: version === 'v4' ? base.nextEpub : null });
+  bad(`siwe-expiry-${version}-invalid-at-issuance`, withProof(`\nExpiration Time: ${date(base.issuedAt)}`), 'missing-history', 'rotate', { now: at + 100000 });
+  bad(`siwe-expiry-${version}-not-yet-valid`, withProof(`\nNot Before: ${date(base.issuedAt + 1)}`), 'missing-history', 'rotate', { now: at + 100000 });
+  if (version === 'v4') {
+    const { attest, ...request } = historical;
+    bad('siwe-expiry-request-still-stale', request, 'expired', 'rotation-request', { now: at + 100000 });
+  }
+}
 const rot4 = rotationV4();
 accept('records','rotate-v4-wallet',rot4,p,{operation:'rotate',nextEpub:principal(6)});
 accept('records','rotate-v4-resolve',[rot4],p2,{operation:'resolve',currentEpub:principal(6)});

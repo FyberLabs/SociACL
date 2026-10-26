@@ -434,3 +434,12 @@ required or certified by `verifyRevokeNow`. This does not admit a future revoke
 into authenticated history. Historical witnessed checks and direct
 `verifyRevokeNow` calls at unadjusted `now` remain skew-free. A retired key's
 signature cannot use this present-only path to revoke a link.
+
+## Historical rotation SIWE lifetime
+
+For an attested wallet rotation, both the witness and authorizing SIWE proof are
+verified as of the rotation's `issuedAt`. Later SIWE expiry must not make an
+accepted transition disappear or restore a retired signing key. The SIWE expiry
+must be strictly after issuance, and its not-before time cannot be after issuance.
+Malformed proofs, policy mismatches, and witness/proof hash mismatches still fail.
+Unattested rotation requests retain current-time freshness and SIWE expiry checks.

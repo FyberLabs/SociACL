@@ -452,7 +452,7 @@ function checkRotateBody(r, currentKey, ctx, diagnostics, requireAttest) {
   const authorizer=/** @type {WalletLink|OidcLink} */ (checked.get(r.authorizer.link));
   if (r.authorizer.kind === 'wallet') {
     if (authorizer.kind !== 'wallet') return fail('missing-history');
-    const s=siweVerify(r.authorizer.siwe,authorizer.address,bytes(r),r.issuedAt,ctx.now,ctx.policy); if (!s.ok) return fail('missing-history');
+    const s=siweVerify(r.authorizer.siwe,authorizer.address,bytes(r),r.issuedAt,requireAttest ? r.issuedAt : ctx.now,ctx.policy); if (!s.ok) return fail('missing-history');
   } else {
     if (authorizer.kind !== 'oidc') return fail('missing-history');
     // OIDC recovery is restricted to accounts with no active wallet, including wallets the candidate drops.
