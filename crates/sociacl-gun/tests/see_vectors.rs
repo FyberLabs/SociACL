@@ -827,8 +827,36 @@ fn imports_node_crypto(source: &str) -> bool {
     let mut i = 0;
     let mut stmt: Option<&str> = None;
     let skip_space = |mut at: usize| {
-        while at < n && bytes[at].is_ascii_whitespace() {
-            at += 1;
+        while at < n {
+            if bytes[at].is_ascii_whitespace() {
+                at += 1;
+                continue;
+            }
+            if bytes[at..].starts_with(b"//") {
+                at += 2;
+                while at < n
+                    && !matches!(bytes[at], b'\n' | b'\r')
+                    && !bytes[at..].starts_with("\u{2028}".as_bytes())
+                    && !bytes[at..].starts_with("\u{2029}".as_bytes())
+                {
+                    at += 1;
+                }
+                if bytes[at..].starts_with("\u{2028}".as_bytes())
+                    || bytes[at..].starts_with("\u{2029}".as_bytes())
+                {
+                    at += 3;
+                }
+                continue;
+            }
+            if bytes[at..].starts_with(b"/*") {
+                at += 2;
+                while at + 1 < n && !bytes[at..].starts_with(b"*/") {
+                    at += 1;
+                }
+                at = (at + 2).min(n);
+                continue;
+            }
+            break;
         }
         at
     };

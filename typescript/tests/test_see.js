@@ -211,7 +211,20 @@ function importsNodeCrypto(source) {
   let nestedCrypto = false;
   let stmt = null;
   const skipSpace = (at) => {
-    while (at < n && /\s/.test(source[at])) at += 1;
+    while (at < n) {
+      if (/\s/.test(source[at])) { at += 1; continue; }
+      if (source.startsWith("//", at)) {
+        at += 2;
+        while (at < n && !/[\n\r\u2028\u2029]/.test(source[at])) at += 1;
+        continue;
+      }
+      if (source.startsWith("/*", at)) {
+        const end = source.indexOf("*/", at + 2);
+        at = end < 0 ? n : end + 2;
+        continue;
+      }
+      break;
+    }
     return at;
   };
   const wordAt = (at, word) => source.startsWith(word, at) && !isIdent(source[at - 1]) && !isIdent(source[at + word.length]);
