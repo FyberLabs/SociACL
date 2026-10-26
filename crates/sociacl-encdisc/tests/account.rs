@@ -1,5 +1,4 @@
-#![allow(deprecated)]
-
+use sociacl_encdisc::GenesisAccount;
 use sociacl_encdisc::{
     accept_first_contact, account_binding_bytes, length_prefixed, sign_sea, verify_item_auth,
     verify_sea, AccountKeyBinding, AccountSeaSecret, EncDiscError, EnrolledSeaPub,
@@ -10,14 +9,14 @@ const FIXTURE: &str = include_str!("../../../vectors/encrypted-discovery/sea-fix
 
 fn alice() -> AccountSeaSecret {
     let fixture: serde_json::Value = serde_json::from_str(FIXTURE).unwrap();
-    AccountSeaSecret::import_local(
-        "0xalice",
+    GenesisAccount::import(
         fixture["laneId"].as_str().unwrap(),
         fixture["signing"]["pub"].as_str().unwrap(),
         fixture["signing"]["priv"].as_str().unwrap(),
         fixture["encryption"]["epub"].as_str().unwrap(),
         fixture["encryption"]["epriv"].as_str().unwrap(),
     )
+    .map(GenesisAccount::into_secret)
     .unwrap()
 }
 
@@ -43,7 +42,9 @@ fn one_keypair_is_inherited_and_stays_off_gun() {
     assert_eq!(phone.secret().local_priv(), laptop.secret().local_priv());
     assert_eq!(phone.secret().local_epriv(), laptop.secret().local_epriv());
     assert_eq!(phone.inbox(), laptop.inbox());
-    assert_eq!(phone.inbox().accessor, "0xalice");
+    assert_eq!(phone.inbox().accessor, secret.sea_pub());
+    assert_eq!(secret.account(), secret.sea_pub());
+    assert!(sociacl_ids::parse_principal_id(secret.account()).is_ok());
     assert!(!phone.grants_see());
     assert!(secret.enroll("").is_err());
 
@@ -51,7 +52,8 @@ fn one_keypair_is_inherited_and_stays_off_gun() {
     assert_eq!(
         json,
         format!(
-            "{{\"account\":\"0xalice\",\"pub\":\"{}\",\"epub\":\"{}\"}}",
+            "{{\"account\":\"{}\",\"pub\":\"{}\",\"epub\":\"{}\"}}",
+            secret.account(),
             secret.sea_pub(),
             secret.epub()
         )
@@ -78,17 +80,50 @@ fn one_keypair_is_inherited_and_stays_off_gun() {
 #[test]
 fn import_rejects_a_pub_that_does_not_match_priv() {
     let secret = alice();
-    let err = AccountSeaSecret::import_local(
-        "0xalice",
+    let err = GenesisAccount::import(
         &secret.inbox().lane_id,
         secret.epub(),
         secret.local_priv(),
         secret.epub(),
         secret.local_epriv(),
     )
+    .map(GenesisAccount::into_secret)
     .unwrap_err();
     assert_eq!(err, EncDiscError::PubMismatch);
-    assert!(AccountSeaSecret::generate("").is_err());
+}
+
+#[test]
+fn genesis_conversion_preserves_identity_and_private_material() {
+    let account = GenesisAccount::generate().unwrap();
+    let principal = account.principal().clone();
+    let enrolled = account.enrolled_pub();
+    let lane = account.lane_id().to_string();
+    let signing = account.local_priv().to_string();
+    let encryption = account.local_epriv().to_string();
+    let secret = account.into_secret();
+    assert_eq!(secret.account(), principal.as_ref());
+    assert_eq!(EnrolledSeaPub::from_account(&secret), enrolled);
+    assert_eq!(secret.lane_id(), lane);
+    assert_eq!(secret.local_priv(), signing);
+    assert_eq!(secret.local_epriv(), encryption);
+}
+
+#[test]
+fn shared_non_identity_vectors_cannot_construct_account_secrets() {
+    let vector: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../vectors/encrypted-discovery/account-key.json"
+    ))
+    .unwrap();
+    for row in vector["nonIdentities"].as_array().unwrap() {
+        let result = GenesisAccount::import(
+            vector["laneId"].as_str().unwrap(),
+            row["input"].as_str().unwrap(),
+            vector["signingPriv"].as_str().unwrap(),
+            vector["epub"].as_str().unwrap(),
+            vector["epriv"].as_str().unwrap(),
+        );
+        assert!(result.is_err(), "{}", row["name"]);
+    }
 }
 
 #[test]
@@ -143,7 +178,7 @@ fn introduction_without_epub_fails_closed() {
 #[test]
 fn swapped_epub_fails_closed() {
     let secret = alice();
-    let other = AccountSeaSecret::generate("0xbob").unwrap();
+    let other = GenesisAccount::generate().unwrap().into_secret();
     let mut enrolled = EnrolledSeaPub::from_account(&secret);
     enrolled.epub = other.epub().to_string();
     assert_eq!(
@@ -228,7 +263,7 @@ fn self_signature_is_not_an_account_binding() {
 #[test]
 fn identity_pub_must_be_the_one_sea_pub() {
     let secret = alice();
-    let other = AccountSeaSecret::generate("0xbob").unwrap();
+    let other = GenesisAccount::generate().unwrap().into_secret();
     let mut enrolled = EnrolledSeaPub::from_account(&secret);
     enrolled.identity_pub = other.sea_pub().to_string();
     assert_eq!(
@@ -253,7 +288,7 @@ fn identity_pub_must_be_the_one_sea_pub() {
 #[test]
 fn item_auth_signature_covers_the_canonical_tuple() {
     let secret = alice();
-    let reader = AccountSeaSecret::generate("0xbob").unwrap();
+    let reader = GenesisAccount::generate().unwrap().into_secret();
     let fields = ItemAuthFields {
         object: "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111".to_string(),
         epoch: 1,

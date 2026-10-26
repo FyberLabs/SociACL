@@ -1296,7 +1296,6 @@ fn is_lower_hex(value: &str) -> bool {
 }
 
 #[cfg(test)]
-#[allow(deprecated)]
 mod tests {
     use super::*;
 
@@ -1345,8 +1344,8 @@ mod tests {
 
     #[test]
     fn a_reader_holding_the_dek_cannot_forge_the_body() {
-        let owner = AccountSeaSecret::generate("0xalice").unwrap();
-        let reader = AccountSeaSecret::generate("0xbob").unwrap();
+        let owner = crate::GenesisAccount::generate().unwrap().into_secret();
+        let reader = crate::GenesisAccount::generate().unwrap().into_secret();
         let dek = ItemDek::generate();
         let revision = "11".repeat(32);
         let signature = sign_item(&owner, "item-1", 1, 2, b"body", &revision).unwrap();
