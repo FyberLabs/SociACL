@@ -52,13 +52,7 @@ pub fn check_recovery_passphrase(
             Vec::new(),
         ));
     }
-    let principal_text = principal.as_ref();
-    let mut inputs = vec![principal_text];
-    if let Some(handle) = handle {
-        if !handle.is_empty() && !handle.eq_ignore_ascii_case(principal_text) {
-            inputs.push(handle);
-        }
-    }
+    let inputs = strength_inputs(principal.as_ref(), handle);
     let entropy = zxcvbn::zxcvbn(nfc.as_str(), &inputs);
     let score = u8::from(entropy.score());
     if score >= MIN_SCORE {
@@ -87,5 +81,44 @@ fn weak(score: u8, warning: impl Into<String>, suggestions: Vec<String>) -> EncD
         score,
         warning: warning.into(),
         suggestions,
+    }
+}
+
+// ASCII-only comparison matches TypeScript; retain distinct Unicode handles verbatim.
+fn strength_inputs<'a>(principal: &'a str, handle: Option<&'a str>) -> Vec<&'a str> {
+    let mut inputs = vec![principal];
+    if let Some(handle) = handle {
+        if !handle.is_empty() && !handle.eq_ignore_ascii_case(principal) {
+            inputs.push(handle);
+        }
+    }
+    inputs
+}
+
+#[cfg(test)]
+mod tests {
+    use super::strength_inputs;
+
+    #[test]
+    fn shared_strength_inputs_use_ascii_handle_deduplication() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../vectors/encrypted-discovery/strength-inputs.json"
+        ))
+        .unwrap();
+        let principal = fixture["principal"].as_str().unwrap();
+        for row in fixture["cases"].as_array().unwrap() {
+            let expected: Vec<&str> = row["inputs"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|value| value.as_str().unwrap())
+                .collect();
+            assert_eq!(
+                strength_inputs(principal, row["handle"].as_str()),
+                expected,
+                "{}",
+                row["name"]
+            );
+        }
     }
 }

@@ -1,0 +1,58 @@
+{
+  "v": 1,
+  "rule": "Drop empty handles and ASCII-case-insensitive duplicates of the principal; retain all other handles verbatim.",
+  "principal": "YP7UuiVanTHJYet0xjVtaMBJuJI7Yfps5mliLmDyn7Y.eQP-EAi4vJmkGunpVii8ZPLxsgwtfp9Rd6PClNRGIpk",
+  "cases": [
+    {
+      "name": "absent",
+      "inputs": [
+        "YP7UuiVanTHJYet0xjVtaMBJuJI7Yfps5mliLmDyn7Y.eQP-EAi4vJmkGunpVii8ZPLxsgwtfp9Rd6PClNRGIpk"
+      ]
+    },
+    {
+      "name": "empty",
+      "handle": "",
+      "inputs": [
+        "YP7UuiVanTHJYet0xjVtaMBJuJI7Yfps5mliLmDyn7Y.eQP-EAi4vJmkGunpVii8ZPLxsgwtfp9Rd6PClNRGIpk"
+      ]
+    },
+    {
+      "name": "exact",
+      "handle": "YP7UuiVanTHJYet0xjVtaMBJuJI7Yfps5mliLmDyn7Y.eQP-EAi4vJmkGunpVii8ZPLxsgwtfp9Rd6PClNRGIpk",
+      "inputs": [
+        "YP7UuiVanTHJYet0xjVtaMBJuJI7Yfps5mliLmDyn7Y.eQP-EAi4vJmkGunpVii8ZPLxsgwtfp9Rd6PClNRGIpk"
+      ]
+    },
+    {
+      "name": "ascii-case",
+      "handle": "yp7uUIvANthjyET0XJvTAmbjUji7yFPS5MLIlMdYN7y.Eqp-eaI4VjMKgUNPvII8zplXSGWTFP9rD6pcLnrgiPK",
+      "inputs": [
+        "YP7UuiVanTHJYet0xjVtaMBJuJI7Yfps5mliLmDyn7Y.eQP-EAi4vJmkGunpVii8ZPLxsgwtfp9Rd6PClNRGIpk"
+      ]
+    },
+    {
+      "name": "kelvin-sign-distinct",
+      "handle": "YP7UuiVanTHJYet0xjVtaMBJuJI7Yfps5mliLmDyn7Y.eQP-EAi4vJmKGunpVii8ZPLxsgwtfp9Rd6PClNRGIpk",
+      "inputs": [
+        "YP7UuiVanTHJYet0xjVtaMBJuJI7Yfps5mliLmDyn7Y.eQP-EAi4vJmkGunpVii8ZPLxsgwtfp9Rd6PClNRGIpk",
+        "YP7UuiVanTHJYet0xjVtaMBJuJI7Yfps5mliLmDyn7Y.eQP-EAi4vJmKGunpVii8ZPLxsgwtfp9Rd6PClNRGIpk"
+      ]
+    },
+    {
+      "name": "unicode-handle",
+      "handle": "café",
+      "inputs": [
+        "YP7UuiVanTHJYet0xjVtaMBJuJI7Yfps5mliLmDyn7Y.eQP-EAi4vJmkGunpVii8ZPLxsgwtfp9Rd6PClNRGIpk",
+        "café"
+      ]
+    },
+    {
+      "name": "different-ascii",
+      "handle": "some-handle",
+      "inputs": [
+        "YP7UuiVanTHJYet0xjVtaMBJuJI7Yfps5mliLmDyn7Y.eQP-EAi4vJmkGunpVii8ZPLxsgwtfp9Rd6PClNRGIpk",
+        "some-handle"
+      ]
+    }
+  ]
+}
