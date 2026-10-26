@@ -665,7 +665,11 @@ mod tests {
         assert!(!gun.contains(opened.lane_id()));
         let backup = crate::open_account_backup(&transport, &wrap, keyring.principal(), &[], &ctx)
             .unwrap_err();
-        assert!(matches!(backup, EncDiscError::SignatureRejected));
+        assert_eq!(
+            recovery()["delivery"]["backupOpenError"].as_str().unwrap(),
+            "wrap-rejected"
+        );
+        assert!(matches!(backup, EncDiscError::WrapRejected));
         let wrong_scalar = TransportKey::from_scalar_hex(&format!("{:064x}", 5u32)).unwrap();
         let wrong_device =
             open_delivered_keyring(&wrong_scalar, &wrap, keyring.principal(), 0, &[], &ctx)
