@@ -1279,6 +1279,33 @@ mod tests {
     }
 
     #[test]
+    fn reader_wrap_rejections_match_shared_vectors() {
+        let v = vector();
+        let account = fixture_account(&v);
+        for row in v["contentWrapRejects"].as_array().unwrap() {
+            let wrap = crate::WrappedKey {
+                scope: crate::WrapScope::ItemDek,
+                epoch: v["contentWrap"]["epoch"].as_u64().unwrap(),
+                target: crate::WrapTarget::ReaderEpub,
+                target_id: account.epub().to_string(),
+                object: Some(v["contentWrap"]["objectId"].as_str().unwrap().to_string()),
+                group: None,
+                revision_id: row["revisionId"].as_str().unwrap().to_string(),
+                wrapped_key: row["wrappedKey"].as_str().unwrap().to_string(),
+            };
+            assert_eq!(row["error"].as_str().unwrap(), "wrap-rejected");
+            assert!(
+                matches!(
+                    crate::open_reader_wrap(&wrap, account.local_epriv(), account.epub()),
+                    Err(EncDiscError::WrapRejected)
+                ),
+                "{}",
+                row["name"]
+            );
+        }
+    }
+
+    #[test]
     fn rotation_uses_the_package_current_key() {
         let v = vector();
         let account = fixture_account(&v);
