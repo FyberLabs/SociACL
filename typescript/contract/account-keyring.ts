@@ -20,7 +20,7 @@ import {
   type PrincipalId,
   type ResolutionContext,
 } from "../ids/src/index.js";
-import type { GenesisAccount } from "./account-key.ts";
+import { importGenesis, type GenesisAccount } from "./account-key.ts";
 import { bytesToHex, seaPoint, unb64 } from "./account-key-seal.ts";
 import { openReaderWrap, sealReaderWrap } from "./content-wrap.ts";
 
@@ -129,10 +129,14 @@ export class AccountKeyring {
 
   /**
    * Create a brand-new account at sequence 0. This is the only path that
-   * mints a contact-lane secret.
+   * generates the genesis keys and mints their contact-lane secret together.
+   * Existing accounts must restore their saved contact-lane secret instead.
    */
-  static createAccount(account: GenesisAccount): AccountKeyring {
-    return AccountKeyring.fromGenesis(account, randomDisjoint([account.laneId]));
+  static createAccount(): AccountKeyring {
+    if (arguments.length !== 0) throw new Error("bad-construction");
+    const mint = mintRotation();
+    const account = importGenesis(mint.laneId, mint.signingPub, mint.signingPriv, mint.epub, mint.epriv);
+    return AccountKeyring.fromGenesis(account, mint.contactLaneSecret);
   }
 
   /**

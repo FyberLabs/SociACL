@@ -151,15 +151,24 @@ pub struct KeyringRotation {
 
 impl AccountKeyring {
     /// Create a brand-new account at sequence 0. This is the only path that
-    /// mints a contact-lane secret.
-    pub fn create_account(account: &crate::GenesisAccount) -> Result<Self, EncDiscError> {
+    /// generates the genesis keys and mints their contact-lane secret together.
+    /// Existing accounts must restore their saved contact-lane secret instead.
+    ///
+    /// ```compile_fail,E0061
+    /// use sociacl_encdisc::{AccountKeyring, GenesisAccount};
+    /// let existing = GenesisAccount::generate().unwrap();
+    /// let forked = AccountKeyring::create_account(&existing);
+    /// ```
+    pub fn create_account() -> Result<Self, EncDiscError> {
+        let account = crate::GenesisAccount::generate()?;
         let secret = random_disjoint(&[account.lane_id()])?;
-        Self::from_genesis_with_contact_secret(account, &secret)
+        Self::from_genesis_with_contact_secret(&account, &secret)
     }
 
     /// Does not mint a contact-lane secret. A second device does not get one
     /// from the genesis backup. Creation is [`Self::create_account`]. Restore
     /// of a sequence-0 keyring is [`Self::from_genesis_with_contact_secret`].
+    #[deprecated(note = "always refuses; restore with from_genesis_with_contact_secret")]
     pub fn from_genesis(account: &crate::GenesisAccount) -> Result<Self, EncDiscError> {
         let _ = account;
         Err(EncDiscError::KeyringRejected)
@@ -191,6 +200,7 @@ impl AccountKeyring {
     /// Device import without a contact-lane history. Refused.
     /// Restore goes through [`Self::import_with_contact_secrets`].
     /// `rotation_seq` is checked before anything else.
+    #[deprecated(note = "always refuses; restore with import_with_contact_secrets")]
     pub fn import(
         principal: &str,
         genesis_epub: &str,
@@ -225,6 +235,7 @@ impl AccountKeyring {
     /// Device import of disclosed lanes without a contact-lane history.
     /// Refused. A later mint still cannot reuse `prior_lanes`; the restoring
     /// path is [`Self::import_with_contact_secrets`].
+    #[deprecated(note = "always refuses; restore with import_with_contact_secrets")]
     pub fn import_with_prior_lanes(
         principal: &str,
         genesis_epub: &str,
@@ -1139,7 +1150,11 @@ mod tests {
     fn rotation_matches_the_shared_vector_and_keeps_secrets_off_gun() {
         let v = ring();
         let account = genesis_of(&v);
-        let keyring = AccountKeyring::create_account(&account).unwrap();
+        let keyring = AccountKeyring::from_genesis_with_contact_secret(
+            &account,
+            v["genesis"]["contactLaneSecret"].as_str().unwrap(),
+        )
+        .unwrap();
         let hold = witness_hold(&v);
         let ctx = witness_context(&hold);
         let names = trusted(&v);
@@ -1280,7 +1295,11 @@ mod tests {
         let empty = empty_ctx();
         let ctx = context_of(&empty);
         let v = ring();
-        let keyring = AccountKeyring::create_account(&genesis_of(&v)).unwrap();
+        let keyring = AccountKeyring::from_genesis_with_contact_secret(
+            &genesis_of(&v),
+            v["genesis"]["contactLaneSecret"].as_str().unwrap(),
+        )
+        .unwrap();
         let names = trusted(&v);
         let lost = v["lost"].as_str().unwrap();
         let genesis_epub = || RotationMint {
@@ -1412,7 +1431,11 @@ mod tests {
     fn null_current_epub_refuses_the_seal_and_ignores_gun() {
         let v = ring();
         let account = genesis_of(&v);
-        let keyring = AccountKeyring::create_account(&account).unwrap();
+        let keyring = AccountKeyring::from_genesis_with_contact_secret(
+            &account,
+            v["genesis"]["contactLaneSecret"].as_str().unwrap(),
+        )
+        .unwrap();
         let empty = empty_ctx();
         let context = context_of(&empty);
         let dek = ItemDek::from_bytes([1u8; 32]);
@@ -1759,7 +1782,11 @@ mod tests {
     fn a_fresh_mint_is_v3_and_leaves_the_principal_in_place() {
         let v = ring();
         let account = genesis_of(&v);
-        let keyring = AccountKeyring::create_account(&account).unwrap();
+        let keyring = AccountKeyring::from_genesis_with_contact_secret(
+            &account,
+            v["genesis"]["contactLaneSecret"].as_str().unwrap(),
+        )
+        .unwrap();
         let names = trusted(&v);
         let hold = witness_hold(&v);
         let ctx = witness_context(&hold);
@@ -1815,7 +1842,11 @@ mod tests {
             v["mint"]["epriv"].as_str().unwrap(),
         )
         .unwrap();
-        let keyring = AccountKeyring::create_account(&mismatched).unwrap();
+        let keyring = AccountKeyring::from_genesis_with_contact_secret(
+            &mismatched,
+            v["genesis"]["contactLaneSecret"].as_str().unwrap(),
+        )
+        .unwrap();
         let (signing_pub, signing_priv) = scalar_sea(5);
         let (epub, epriv) = scalar_sea(4);
         let names = trusted(&v);
@@ -2497,10 +2528,22 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn create_then_restore_keeps_lanes_and_a_missing_history_is_refused() {
         let v = ring();
-        let account = genesis_of(&v);
-        let created = AccountKeyring::create_account(&account).unwrap();
+        let created = AccountKeyring::create_account().unwrap();
+        let another = AccountKeyring::create_account().unwrap();
+        assert_ne!(created.principal(), another.principal());
+        assert_ne!(created.contact_lane_secret(), another.contact_lane_secret());
+        assert_ne!(created.lane_id(), another.lane_id());
+        let account = GenesisAccount::import(
+            created.lane_id(),
+            created.current_pub().as_ref(),
+            created.current_priv(),
+            created.current_epub().as_ref(),
+            created.current_epriv(),
+        )
+        .unwrap();
         assert_eq!(created.rotation_seq(), 0);
         assert_eq!(
             AccountKeyring::from_genesis(&account)
