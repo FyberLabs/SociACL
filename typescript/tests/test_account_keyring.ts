@@ -221,7 +221,7 @@ function recordsContext(bindings: readonly unknown[] = []): ResolutionContext {
 }
 
 test("rotation matches the shared vector and keeps secrets off gun", () => {
-  const keyring = AccountKeyring.createAccount(genesis());
+  const keyring = AccountKeyring.fromGenesis(genesis(), vector.genesis.contactLaneSecret);
   const outcome = rotateKeyring(keyring, vector.trusted, vector.lost, [], witnessedContext(), vectorMint);
   const expected = vector.expected;
   assert.equal(outcome.keyring.principal, expected.principal);
@@ -275,7 +275,7 @@ test("rotation matches the shared vector and keeps secrets off gun", () => {
 });
 
 test("builder refuses a held epub and a bad device", () => {
-  const keyring = AccountKeyring.createAccount(genesis());
+  const keyring = AccountKeyring.fromGenesis(genesis(), vector.genesis.contactLaneSecret);
   const genesisEpubMint = () => ({
     signingPub: vector.mint.signingPub,
     signingPriv: vector.mint.signingPriv,
@@ -338,7 +338,7 @@ test("builder refuses a held epub and a bad device", () => {
 });
 
 test("null currentEpub refuses the seal and ignores gun", () => {
-  const keyring = AccountKeyring.createAccount(genesis());
+  const keyring = AccountKeyring.fromGenesis(genesis(), vector.genesis.contactLaneSecret);
   const context = emptyContext();
   assert.equal(
     message(() => keyring.sealContent(
@@ -559,7 +559,7 @@ test("witnessed import seals only the resolved epub", () => {
 
 test("a fresh mint is v3 and leaves the principal in place", () => {
   const account = genesis();
-  const keyring = AccountKeyring.createAccount(account);
+  const keyring = AccountKeyring.fromGenesis(account, vector.genesis.contactLaneSecret);
   const outcome = rotateKeyring(keyring, vector.trusted, vector.lost, [], witnessedContext(), mintRotation);
   assert.equal(outcome.keyring.principal, account.principal);
   assert.equal(outcome.draft.version, 3);
@@ -636,11 +636,11 @@ test("genesis-only import accepts the witnessed binding", () => {
 });
 
 test("builder confirms the witnessed epub before rotating", () => {
-  const keyring = AccountKeyring.createAccount({
+  const keyring = AccountKeyring.fromGenesis({
     ...genesis(),
     epub: vector.mint.epub,
     epriv: vector.mint.epriv,
-  });
+  }, vector.genesis.contactLaneSecret);
   const fresh = scalarSea(4);
   const signing = scalarSea(5);
   assert.equal(
@@ -1120,8 +1120,16 @@ test("a lane id cannot be reused across later rotations", () => {
 });
 
 test("create then restore keeps lanes and a missing history is refused", () => {
-  const account = genesis();
-  const created = AccountKeyring.createAccount(account);
+  const created = AccountKeyring.createAccount();
+  const another = AccountKeyring.createAccount();
+  assert.notEqual(created.principal, another.principal);
+  assert.notEqual(created.contactLaneSecret(), another.contactLaneSecret());
+  assert.notEqual(created.laneId(), another.laneId());
+  const account = importGenesis(created.laneId(), created.pub, created.currentPriv(), created.epub, created.currentEpriv());
+  assert.equal(message(() => {
+    // @ts-expect-error Existing accounts cannot mint another contact secret.
+    AccountKeyring.createAccount(account);
+  }), "bad-construction");
   assert.equal(created.rotationSeq, 0);
   assert.equal(message(() => AccountKeyring.fromGenesis(account)), vector.errors.keyringRejected);
   const restored = AccountKeyring.fromGenesis(account, created.contactLaneSecret());
@@ -1170,7 +1178,7 @@ test("create then restore keeps lanes and a missing history is refused", () => {
     )),
     vector.errors.keyringRejected,
   );
-  for (const seq of [Infinity, Number.MAX_VALUE, vector.unsafeContentEpoch]) {
+  for (const seq of [NaN, -1, 0.5, Infinity, Number.MAX_VALUE, vector.unsafeContentEpoch]) {
     assert.equal(
       message(() => AccountKeyring.import(
         account.principal,
