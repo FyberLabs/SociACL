@@ -844,6 +844,7 @@ fn imports_node_crypto(source: &str) -> bool {
         source: &str,
         at: usize,
         nested_crypto: &std::cell::Cell<bool>,
+        scan_expressions: bool,
     ) -> (Option<String>, usize) {
         let bytes = source.as_bytes();
         let n = bytes.len();
@@ -868,7 +869,7 @@ fn imports_node_crypto(source: &str) -> bool {
                 } else {
                     end
                 };
-                if imports_node_crypto(&source[j + 2..content_end]) {
+                if scan_expressions && imports_node_crypto(&source[j + 2..content_end]) {
                     nested_crypto.set(true);
                 }
                 j = end;
@@ -925,7 +926,8 @@ fn imports_node_crypto(source: &str) -> bool {
                 continue;
             }
             if matches!(c, b'\'' | b'"' | b'`') {
-                j = read_string(source, j, nested_crypto).1;
+                // Only balance here; the enclosing expression scan visits this code.
+                j = read_string(source, j, nested_crypto, false).1;
                 continue;
             }
             if c == open {
@@ -945,7 +947,7 @@ fn imports_node_crypto(source: &str) -> bool {
             return false;
         }
         matches!(
-            read_string(source, at, &nested_crypto).0.as_deref(),
+            read_string(source, at, &nested_crypto, true).0.as_deref(),
             Some("crypto" | "node:crypto")
         )
     };
@@ -971,7 +973,7 @@ fn imports_node_crypto(source: &str) -> bool {
             continue;
         }
         if matches!(c, b'\'' | b'"' | b'`') {
-            i = read_string(source, i, &nested_crypto).1;
+            i = read_string(source, i, &nested_crypto, true).1;
             continue;
         }
         if c == b';' {

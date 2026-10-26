@@ -121,7 +121,7 @@ function importsNodeCrypto(source) {
     return at;
   };
   const wordAt = (at, word) => source.startsWith(word, at) && !isIdent(source[at - 1]) && !isIdent(source[at + word.length]);
-  const readString = (at) => {
+  const readString = (at, scanExpressions = true) => {
     const quote = source[at];
     let j = at + 1;
     let value = "";
@@ -137,7 +137,7 @@ function importsNodeCrypto(source) {
         interpolated = true;
         const end = skipBalanced(j + 1, "{", "}");
         const contentEnd = source[end - 1] === "}" ? end - 1 : end;
-        if (importsNodeCrypto(source.slice(j + 2, contentEnd))) nestedCrypto = true;
+        if (scanExpressions && importsNodeCrypto(source.slice(j + 2, contentEnd))) nestedCrypto = true;
         j = end;
         continue;
       }
@@ -164,7 +164,8 @@ function importsNodeCrypto(source) {
         continue;
       }
       if (c === "'" || c === '"' || c === "`") {
-        j = readString(j).end;
+        // Balance nested strings without scanning their expressions twice.
+        j = readString(j, false).end;
         continue;
       }
       if (c === open) depth += 1;
