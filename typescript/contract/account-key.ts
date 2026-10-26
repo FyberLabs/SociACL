@@ -124,7 +124,9 @@ export class MemoryKeyWrapStore implements KeyWrapStore {
   readonly #generation = new Map<string, number>();
   readonly #chain: (principal: PrincipalId) => StoreWriteAccount;
 
-  constructor(chain: (principal: PrincipalId) => StoreWriteAccount, floor: HeadFloor = new HeadFloor()) {
+  /** Share this floor with the recovery store for the same principals. */
+  constructor(chain: (principal: PrincipalId) => StoreWriteAccount, floor: HeadFloor) {
+    if (!(floor instanceof HeadFloor)) throw new Error("store-rejected");
     this.#chain = chain;
     this.#floor = floor;
   }

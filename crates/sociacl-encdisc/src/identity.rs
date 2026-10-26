@@ -173,8 +173,19 @@ pub struct MemoryKeyWrapStore<C> {
 }
 
 impl<C> MemoryKeyWrapStore<C> {
-    pub fn new(chain: C) -> Self {
-        Self::sharing(chain, crate::store_write::HeadFloor::new())
+    /// Supply the same floor (or its clone) to the recovery store. There is
+    /// no implicit private floor; constructing another store must not forget
+    /// a head already observed by its companion.
+    ///
+    /// ```compile_fail,E0061
+    /// use sociacl_encdisc::{EncDiscError, MemoryKeyWrapStore};
+    /// fn chain(_: &sociacl_ids::PrincipalId) -> Result<sociacl_ids::ResolvedAccount, EncDiscError> {
+    ///     Err(EncDiscError::StoreRejected)
+    /// }
+    /// let store = MemoryKeyWrapStore::new(chain);
+    /// ```
+    pub fn new(chain: C, head_floor: crate::store_write::HeadFloor) -> Self {
+        Self::sharing(chain, head_floor)
     }
 
     /// `head_floor` is shared with a recovery store that should enforce the
@@ -1309,7 +1320,7 @@ mod tests {
         let wrap_id = parse_wrap_object(v["backupWrap"]["wrapId"].as_str().unwrap()).unwrap();
         let parts = empty_resolution();
         let context = parts.context();
-        let mut store = MemoryKeyWrapStore::new(watch(&[], &context));
+        let mut store = MemoryKeyWrapStore::new(watch(&[], &context), crate::HeadFloor::new());
         assert!(!store.is_authority());
         assert!(!store.mints_grant());
         let wrap = seal_account_backup_with(
@@ -1345,7 +1356,7 @@ mod tests {
                 &wrap_id,
                 &[],
                 &context,
-                &mut MemoryKeyWrapStore::new(watch(&[], &context)),
+                &mut MemoryKeyWrapStore::new(watch(&[], &context), crate::HeadFloor::new()),
             )
             .unwrap_err(),
             EncDiscError::IdentityRejected("transport".into())
@@ -1357,7 +1368,7 @@ mod tests {
                 &wrap_id,
                 &[],
                 &context,
-                &mut MemoryKeyWrapStore::new(watch(&[], &context)),
+                &mut MemoryKeyWrapStore::new(watch(&[], &context), crate::HeadFloor::new()),
             )
             .unwrap_err(),
             EncDiscError::IdentityRejected("transport".into())
@@ -1451,7 +1462,7 @@ mod tests {
         let wrap_id = parse_wrap_object(v["substitution"]["wrapId"].as_str().unwrap()).unwrap();
         let parts = empty_resolution();
         let context = parts.context();
-        let mut store = MemoryKeyWrapStore::new(watch(&[], &context));
+        let mut store = MemoryKeyWrapStore::new(watch(&[], &context), crate::HeadFloor::new());
         let wrap = seal_account_backup_with(
             &attacker,
             transport.sea_pub(),
@@ -1526,7 +1537,7 @@ mod tests {
         let wrap_id = parse_wrap_object(v["backupWrap"]["wrapId"].as_str().unwrap()).unwrap();
         let parts = empty_resolution();
         let context = parts.context();
-        let mut store = MemoryKeyWrapStore::new(watch(&[], &context));
+        let mut store = MemoryKeyWrapStore::new(watch(&[], &context), crate::HeadFloor::new());
         let first = seal_account_backup(
             &account,
             transport.sea_pub(),
@@ -1536,7 +1547,7 @@ mod tests {
             &mut store,
         )
         .unwrap();
-        let mut other = MemoryKeyWrapStore::new(watch(&[], &context));
+        let mut other = MemoryKeyWrapStore::new(watch(&[], &context), crate::HeadFloor::new());
         let second = seal_account_backup(
             &account,
             transport.sea_pub(),
@@ -1566,7 +1577,7 @@ mod tests {
             &wrap_id,
             &[],
             &context,
-            &mut MemoryKeyWrapStore::new(watch(&[], &context)),
+            &mut MemoryKeyWrapStore::new(watch(&[], &context), crate::HeadFloor::new()),
         )
         .unwrap_err();
         assert_eq!(err, EncDiscError::BadKey);
@@ -1594,7 +1605,7 @@ mod tests {
                 &wrap_id,
                 &[],
                 &context,
-                &mut MemoryKeyWrapStore::new(watch(&[], &context)),
+                &mut MemoryKeyWrapStore::new(watch(&[], &context), crate::HeadFloor::new()),
             )
             .unwrap_err();
             assert_eq!(err, EncDiscError::BadKey, "len {}", transport_pub.len());
@@ -1673,7 +1684,7 @@ mod tests {
         let ephemeral = secret_from_hex(row["ephemeralScalarHex"].as_str().unwrap());
         let nonce = nonce_from_hex(row["nonceHex"].as_str().unwrap());
         let wrap_id = parse_wrap_object(row["wrapId"].as_str().unwrap()).unwrap();
-        let mut store = MemoryKeyWrapStore::new(watch(&[], &context));
+        let mut store = MemoryKeyWrapStore::new(watch(&[], &context), crate::HeadFloor::new());
         let wrap = seal_account_backup_with(
             &account,
             transport.sea_pub(),
@@ -1691,7 +1702,7 @@ mod tests {
             open_account_backup(&transport, &wrap, account.principal(), &[], &context).unwrap();
         assert_eq!(opened.local_priv(), account.local_priv());
         let rotations = [rotate["input"].clone()];
-        let mut refused = MemoryKeyWrapStore::new(watch(&[], &context));
+        let mut refused = MemoryKeyWrapStore::new(watch(&[], &context), crate::HeadFloor::new());
         assert_eq!(
             seal_account_backup(
                 &account,

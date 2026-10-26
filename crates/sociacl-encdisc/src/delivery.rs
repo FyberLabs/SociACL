@@ -526,7 +526,7 @@ mod tests {
         let keyring = genesis_keyring();
         let held = hold();
         let ctx = context_of(&held);
-        let mut store = MemoryKeyWrapStore::new(watch(&[], &ctx));
+        let mut store = MemoryKeyWrapStore::new(watch(&[], &ctx), crate::HeadFloor::new());
         let ephemeral = p256::SecretKey::from_slice(
             &hexutil::decode_hex(delivery["ephemeralScalarHex"].as_str().unwrap()).unwrap(),
         )
@@ -697,7 +697,7 @@ mod tests {
             open_delivered_keyring(&transport, &wrong_epub, keyring.principal(), 0, &[], &ctx)
                 .unwrap_err();
         assert!(matches!(epub, EncDiscError::WrapRejected));
-        let _unused = MemoryRecoveryStore::new(watch(&[], &ctx));
+        let _unused = MemoryRecoveryStore::new(watch(&[], &ctx), crate::HeadFloor::new());
     }
 
     #[test]
@@ -706,7 +706,7 @@ mod tests {
         let keyring = genesis_keyring();
         let held = hold();
         let ctx = context_of(&held);
-        let mut store = MemoryKeyWrapStore::new(watch(&[], &ctx));
+        let mut store = MemoryKeyWrapStore::new(watch(&[], &ctx), crate::HeadFloor::new());
         let g = &ring()["genesis"];
         let account = GenesisAccount::import(
             g["laneId"].as_str().unwrap(),
@@ -839,7 +839,7 @@ mod tests {
         let ctx = context_of(&held);
         let records = ring();
         let signer = records["genesis"]["signingPriv"].as_str().unwrap();
-        let mut store = MemoryKeyWrapStore::new(watch(&[], &ctx));
+        let mut store = MemoryKeyWrapStore::new(watch(&[], &ctx), crate::HeadFloor::new());
         let mut ids = Vec::new();
         for n in 0..crate::limits::MAX_WRAPS_PER_PRINCIPAL {
             let wrap_id = minted_wrap(&principal, n);
@@ -1007,7 +1007,7 @@ mod tests {
             &[prior_contact],
         )
         .unwrap();
-        let mut store = MemoryKeyWrapStore::new(watch(&rotations, &base));
+        let mut store = MemoryKeyWrapStore::new(watch(&rotations, &base), crate::HeadFloor::new());
         let transport = TransportKey::from_scalar_hex(&format!("{:064x}", 4u32)).unwrap();
         let ephemeral =
             p256::SecretKey::from_slice(&hexutil::decode_hex(&format!("{:064x}", 7u32)).unwrap())
@@ -1112,7 +1112,7 @@ mod tests {
         let principal = sociacl_ids::parse_principal_id(&k0_pub).unwrap();
         let ring = ring();
         let epub = ring["genesis"]["epub"].as_str().unwrap();
-        let mut store = MemoryKeyWrapStore::new(watch(&chain, &base));
+        let mut store = MemoryKeyWrapStore::new(watch(&chain, &base), crate::HeadFloor::new());
         for n in 0..crate::limits::MAX_WRAPS_PER_PRINCIPAL {
             let wrap_id = minted_wrap(&principal, n);
             let refused = put_dummy(
@@ -1153,7 +1153,7 @@ mod tests {
             "aa"
         );
 
-        let mut labeled = MemoryKeyWrapStore::new(watch(&chain, &base));
+        let mut labeled = MemoryKeyWrapStore::new(watch(&chain, &base), crate::HeadFloor::new());
         let delivery = dummy_wrap(&principal, &wrap_id, epub, WrapClass::Delivery, "aa");
         let hash = crate::store_write::wrap_ciphertext_hash(&delivery.ciphertext_hex).unwrap();
         let signature = crate::store_write::sign_store_write(
