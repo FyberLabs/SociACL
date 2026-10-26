@@ -9,6 +9,8 @@
 //! `resolve_current_key`. A null `current_epub` is not a match and is not
 //! Gun's `user.epub`. New rotations are v3 and mint a fresh epub.
 
+use std::collections::BTreeSet;
+
 use sociacl_ids::{
     parse_eip55, parse_principal_id, principal_from_sec1, user_soul, PrincipalId, Reason,
 };
@@ -791,13 +793,12 @@ where
 
 fn require_lane_set(lane_id: &str, prior_lanes: &[&str]) -> Result<(), EncDiscError> {
     require_lane(lane_id)?;
-    let mut seen = vec![lane_id.to_string()];
+    let mut seen = BTreeSet::from([lane_id]);
     for prior in prior_lanes {
         require_lane(prior)?;
-        if seen.iter().any(|held| held == prior) {
+        if !seen.insert(*prior) {
             return Err(EncDiscError::BadLane);
         }
-        seen.push((*prior).to_string());
     }
     Ok(())
 }
@@ -830,19 +831,19 @@ fn require_contact_set(
     prior_lanes: &[&str],
 ) -> Result<(), EncDiscError> {
     require_lane(secret)?;
-    if secret == lane_id || prior_lanes.iter().any(|lane| *lane == secret) {
+    // Borrow secret strings; validation must not leave extra unwiped copies.
+    let disclosed: BTreeSet<&str> = std::iter::once(lane_id)
+        .chain(prior_lanes.iter().copied())
+        .collect();
+    if disclosed.contains(secret) {
         return Err(EncDiscError::BadLane);
     }
-    let mut seen = vec![secret.to_string()];
+    let mut seen = BTreeSet::from([secret]);
     for held in prior {
         require_lane(held)?;
-        if seen.iter().any(|item| item == held)
-            || *held == lane_id
-            || prior_lanes.iter().any(|lane| lane == held)
-        {
+        if !seen.insert(*held) || disclosed.contains(held) {
             return Err(EncDiscError::BadLane);
         }
-        seen.push((*held).to_string());
     }
     Ok(())
 }
@@ -1425,6 +1426,61 @@ mod tests {
             "epubReuse",
             rotate_keyring(&outcome.keyring, &names, lost, &[], &ctx, || Ok(again)).unwrap_err(),
         );
+    }
+
+    #[test]
+    fn shared_large_history_imports_reject_duplicates_and_disclosed_secrets() {
+        let history: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../vectors/encrypted-discovery/keyring-history-import.json"
+        ))
+        .unwrap();
+        let v = ring();
+        let count = history["count"].as_u64().unwrap();
+        let empty = empty_ctx();
+        let context = context_of(&empty);
+        for row in history["cases"].as_array().unwrap() {
+            let mut lanes: Vec<String> = (1..=count).map(|i| format!("{i:064x}")).collect();
+            let mut contacts: Vec<String> = (count + 1..=2 * count)
+                .map(|i| format!("{i:064x}"))
+                .collect();
+            if let Some(value) = row["priorLaneLast"].as_str() {
+                *lanes.last_mut().unwrap() = value.to_string();
+            }
+            if let Some(value) = row["priorContactLast"].as_str() {
+                *contacts.last_mut().unwrap() = value.to_string();
+            }
+            let lanes: Vec<&str> = lanes.iter().map(String::as_str).collect();
+            let contacts: Vec<&str> = contacts.iter().map(String::as_str).collect();
+            let error = AccountKeyring::import_with_contact_secrets(
+                v["genesis"]["principal"].as_str().unwrap(),
+                v["genesis"]["epub"].as_str().unwrap(),
+                v["mint"]["signingPub"].as_str().unwrap(),
+                v["mint"]["signingPriv"].as_str().unwrap(),
+                v["mint"]["epub"].as_str().unwrap(),
+                v["mint"]["epriv"].as_str().unwrap(),
+                &[(
+                    v["genesis"]["epub"].as_str().unwrap(),
+                    v["genesis"]["epriv"].as_str().unwrap(),
+                )],
+                history["laneId"].as_str().unwrap(),
+                1,
+                count,
+                &[],
+                &context,
+                &lanes,
+                row["contactSecret"]
+                    .as_str()
+                    .unwrap_or_else(|| history["contactSecret"].as_str().unwrap()),
+                &contacts,
+            )
+            .unwrap_err();
+            assert_eq!(
+                token(&error),
+                row["error"].as_str().unwrap(),
+                "{}",
+                row["name"]
+            );
+        }
     }
 
     #[test]
