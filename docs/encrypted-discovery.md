@@ -263,7 +263,26 @@ production adapters
 must persist the shared per-principal floor along with their write state. This
 constructor change does not implement durable storage for an adapter.
 
-The wrap store holds at most 64 rows per principal, `MAX_WRAPS_PER_PRINCIPAL`. A new wrap id at that cap is `store-rejected`. Replacing an existing id does not count as a new row. Each row has a class, `genesis` or `delivery`. The same class and the same wrap id may replace that row. A different class on an existing wrap id is `store-rejected` and the old row stays, so a delivery cannot take the genesis backup's wrap id. The class is a field of the `sociacl-store-write-v1` signature. Openers ignore it. Every put and delete carries that signature by the current chain-head key the store's resolver reports. The message is the principal, the operation, the wrap id, the SHA-256 of the ciphertext bytes, the published head, the hash of the row being replaced or `none`, the class, and the write generation. That signature is separate from the wrap's own signature. The store reads the published chain itself and verifies the signature before it writes. The same head floor applies, shared with the recovery store for that principal. A write is `store-rejected` when its resolved head is below a head either store has already been shown, whether or not that head accepted a write. A retired key cannot fill the cap, delete a delivery row, or store a delivery signature under the genesis class. An unsigned row is `store-rejected` and does not count toward the cap. Session authentication is not this check. Adapters, Panopticon included, must verify before they write. `delete` / `delete_account_wrap` removes a delivery row under that same signature. The genesis backup can be replaced by another genesis row with the same wrap id, and it cannot be deleted. A rejected write, including a genesis delete and a class change, leaves the stored rows and the write generation unchanged. The TypeScript memory store copies a row on put, get, and list.
+`wrapRowHash` / `wrap_row_hash` is SHA-256 over the length-prefixed fields
+`sociacl-wrap-row-v1`, principal, wrap id, epub, class, ciphertext hex,
+and inner-signature hex (both hex fields use lowercase), in that order. Both the target and predecessor
+commitments use this full-row hash for wrap puts and deletes. Changing any field
+requires a new store-write signature. Existing ciphertext-only write signatures
+are rejected; callers must read the current row and generation and re-sign using
+the full-row commitment. Stored encrypted blobs and their inner signatures do
+not change. The legacy ciphertext-hash helper is not a write authorization hash.
+
+Genesis sealing reads the stored row back and compares its full-row commitment
+with the row it submitted. A missing or changed row is `store-rejected`; the put
+may already have succeeded, so this error does not imply rollback. The recipient
+must fetch and test-open the stored backup using its transport private key before
+relying on it or discarding another recovery path. The sender's seal API only has
+the transport public key and cannot perform that recipient test. The paired Rust
+and TypeScript backup tests fetch and open the stored row. On a failed write or
+read-back check, re-read the generation and predecessor row before signing a
+retry. A read-back check does not guarantee future availability or durability.
+
+The wrap store holds at most 64 rows per principal, `MAX_WRAPS_PER_PRINCIPAL`. A new wrap id at that cap is `store-rejected`. Replacing an existing id does not count as a new row. Each row has a class, `genesis` or `delivery`. The same class and the same wrap id may replace that row. A different class on an existing wrap id is `store-rejected` and the old row stays, so a delivery cannot take the genesis backup's wrap id. The class is a field of the `sociacl-store-write-v1` signature. Openers ignore it. Every put and delete carries that signature by the current chain-head key the store's resolver reports. The message is the principal, the operation, the wrap id, the full wrap-row hash, the published head, the hash of the row being replaced or `none`, the class, and the write generation. That signature is separate from the wrap's own signature. The store reads the published chain itself and verifies the signature before it writes. The same head floor applies, shared with the recovery store for that principal. A write is `store-rejected` when its resolved head is below a head either store has already been shown, whether or not that head accepted a write. A retired key cannot fill the cap, delete a delivery row, or store a delivery signature under the genesis class. An unsigned row is `store-rejected` and does not count toward the cap. Session authentication is not this check. Adapters, Panopticon included, must verify before they write. `delete` / `delete_account_wrap` removes a delivery row under that same signature. The genesis backup can be replaced by another genesis row with the same wrap id, and it cannot be deleted. A rejected write, including a genesis delete and a class change, leaves the stored rows and the write generation unchanged. The TypeScript memory store copies a row on put, get, and list.
 
 ## Epoch manifest
 

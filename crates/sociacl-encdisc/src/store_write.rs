@@ -190,8 +190,21 @@ pub fn verify_store_write(
         .map_err(|_| EncDiscError::StoreRejected)
 }
 
-/// SHA-256 of the wrap ciphertext bytes. The hex alphabet of the stored
-/// string is not the hashed message.
+/// Domain-separated commitment to every stored wrap field.
+pub fn wrap_row_hash(wrap: &crate::identity::EncryptedAccountWrap) -> Result<String, EncDiscError> {
+    let message = canonical::length_prefixed(&[
+        "sociacl-wrap-row-v1",
+        wrap.principal.as_ref(),
+        wrap.wrap_id.as_ref(),
+        &wrap.epub,
+        crate::identity::wrap_class_label(wrap.class),
+        &wrap.ciphertext_hex,
+        &wrap.signature,
+    ])?;
+    Ok(canonical::sha256_hex(&message))
+}
+
+/// Legacy ciphertext digest only; use [`wrap_row_hash`] for store-write authorization.
 pub fn wrap_ciphertext_hash(ciphertext_hex: &str) -> Result<String, EncDiscError> {
     let bytes =
         crate::hexutil::decode_hex(ciphertext_hex).map_err(|_| EncDiscError::StoreRejected)?;

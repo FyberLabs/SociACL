@@ -32,7 +32,7 @@ import { deriveContactLane } from "../contract/contact-lane.ts";
 import { decodeKeyring, DOMAIN_KEYRING_PLAIN } from "../contract/keyring-codec.ts";
 import { checkRecoveryPassphrase, RecoveryWeakPassphraseError } from "../contract/passphrase-strength.ts";
 import { encodePassphrase, MemoryRecoveryStore, openRecoveryCopy, signRecoveryOp, type RecoveryEnvelope } from "../contract/recovery-seal.ts";
-import { DOMAIN_STORE_WRITE, HeadFloor, recoveryEnvelopeHash, REPLACED_NONE, signStoreWrite, storeWriteMessage, STORE_CLASS_DELIVERY, STORE_CLASS_GENESIS, verifyStoreWrite, wrapCiphertextHash } from "../contract/store-write.ts";
+import { DOMAIN_STORE_WRITE, HeadFloor, recoveryEnvelopeHash, REPLACED_NONE, signStoreWrite, storeWriteMessage, STORE_CLASS_DELIVERY, STORE_CLASS_GENESIS, verifyStoreWrite, wrapRowHash, wrapCiphertextHash } from "../contract/store-write.ts";
 import { deliverKeyringWith, sealRecoveryCopyWith } from "./support/recovery-deterministic.ts";
 import {
   historyState,
@@ -109,6 +109,8 @@ const recoveryVector = JSON.parse(readFileSync(new URL("../../vectors/encrypted-
       wrapId: string;
       wrapCiphertextHex: string;
       wrapCiphertextHash: string;
+      wrapRow: import("../contract/account-key.ts").EncryptedAccountWrap;
+      wrapRowHash: string;
       messages: Record<
         string,
         {
@@ -386,6 +388,10 @@ test("store-write bytes match the shared vector", () => {
   });
   assert.equal(hashed, sample.envelopeHash);
   assert.equal(wrapCiphertextHash(sample.wrapCiphertextHex), sample.wrapCiphertextHash);
+  assert.equal(wrapRowHash(sample.wrapRow), sample.wrapRowHash);
+  for (const field of ["principal", "wrapId", "epub", "class", "ciphertextHex", "signature"] as const) {
+    assert.notEqual(wrapRowHash({ ...sample.wrapRow, [field]: sample.wrapRow[field] + "a" }), sample.wrapRowHash);
+  }
   for (const [name, row] of Object.entries(sample.messages)) {
     const message = storeWriteMessage(
       sample.principal,
@@ -823,7 +829,7 @@ function putWrap(
     ciphertextHex,
     signature: "ab".repeat(64),
   };
-  const hash = wrapCiphertextHash(ciphertextHex);
+  const hash = wrapRowHash(wrap);
   const account = store.publishedAccount(principal);
   const existing = store.get(principal, wrapId);
   const signature = signStoreWrite(
@@ -833,7 +839,7 @@ function putWrap(
     wrapId,
     hash,
     canonicalDecimal(account.rotations.length),
-    existing ? wrapCiphertextHash(existing.ciphertextHex) : REPLACED_NONE,
+    existing ? wrapRowHash(existing) : REPLACED_NONE,
     wrapClass === "genesis" ? STORE_CLASS_GENESIS : STORE_CLASS_DELIVERY,
     canonicalDecimal(store.writeGeneration(principal)),
   );
@@ -1570,7 +1576,7 @@ test("a resolved head raises the shared floor", () => {
     principal,
     "put",
     wrapId,
-    wrapCiphertextHash("aa"),
+    wrapRowHash(wrap),
     "0",
     REPLACED_NONE,
     STORE_CLASS_DELIVERY,
@@ -1621,7 +1627,15 @@ test("a retired key cannot fill or relabel wraps", () => {
   assert.equal(store.get(principal, wrapId)?.ciphertextHex, "aa");
 
   const labeled = new MemoryKeyWrapStore(watch(chain, context), new HeadFloor());
-  const hash = wrapCiphertextHash("aa");
+  const deliveryRow = {
+    principal,
+    wrapId,
+    epub: ring.genesis.epub,
+    class: "delivery" as const,
+    ciphertextHex: "aa",
+    signature: "ab".repeat(64),
+  };
+  const hash = wrapRowHash(deliveryRow);
   const signature = signStoreWrite(
     k2.priv,
     principal,
@@ -1633,14 +1647,6 @@ test("a retired key cannot fill or relabel wraps", () => {
     STORE_CLASS_DELIVERY,
     "0",
   );
-  const deliveryRow = {
-    principal,
-    wrapId,
-    epub: ring.genesis.epub,
-    class: "delivery" as const,
-    ciphertextHex: "aa",
-    signature: "ab".repeat(64),
-  };
   assert.equal(
     messageSync(() =>
       labeled.put(
@@ -1652,6 +1658,24 @@ test("a retired key cannot fill or relabel wraps", () => {
     "store-rejected",
   );
   assert.equal(labeled.get(principal, wrapId), undefined);
+  for (const changed of [
+    { ...deliveryRow, epub: ring.mint.epub },
+    { ...deliveryRow, signature: "cd".repeat(64) },
+  ]) {
+    assert.equal(messageSync(() => labeled.put(
+      { principal, wrapId, epub: changed.epub }, changed, signature,
+    )), "store-rejected");
+    assert.equal(labeled.get(principal, wrapId), undefined);
+    assert.equal(labeled.writeGeneration(principal), 0);
+  }
+  const legacySignature = signStoreWrite(
+    k2.priv, principal, "put", wrapId, wrapCiphertextHash(deliveryRow.ciphertextHex),
+    "2", REPLACED_NONE, STORE_CLASS_DELIVERY, "0",
+  );
+  assert.equal(messageSync(() => labeled.put(
+    { principal, wrapId, epub: deliveryRow.epub }, deliveryRow, legacySignature,
+  )), "store-rejected");
+  assert.equal(labeled.writeGeneration(principal), 0);
   labeled.put({ principal, wrapId, epub: ring.genesis.epub }, deliveryRow, signature);
   assert.equal(labeled.get(principal, wrapId)?.class, "delivery");
   deleteAccountWrap(principal, wrapId, k2.priv, labeled);

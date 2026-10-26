@@ -1604,6 +1604,41 @@ mod tests {
                 .unwrap(),
             sample["wrapCiphertextHash"].as_str().unwrap()
         );
+        let row = &sample["wrapRow"];
+        let wrap = crate::EncryptedAccountWrap {
+            principal: parse_principal_id(row["principal"].as_str().unwrap()).unwrap(),
+            wrap_id: sociacl_ids::parse_object_id(row["wrapId"].as_str().unwrap()).unwrap(),
+            epub: row["epub"].as_str().unwrap().to_string(),
+            class: crate::WrapClass::Delivery,
+            ciphertext_hex: row["ciphertextHex"].as_str().unwrap().to_string(),
+            signature: row["signature"].as_str().unwrap().to_string(),
+        };
+        assert_eq!(
+            crate::wrap_row_hash(&wrap).unwrap(),
+            sample["wrapRowHash"].as_str().unwrap()
+        );
+        for field in 0..6 {
+            let mut changed = wrap.clone();
+            match field {
+                0 => changed.principal = parse_principal_id(&wrap.epub).unwrap(),
+                1 => {
+                    changed.wrap_id = sociacl_ids::parse_object_id(&format!(
+                        "{}00",
+                        &wrap.wrap_id.as_ref()[..wrap.wrap_id.as_ref().len() - 2]
+                    ))
+                    .unwrap()
+                }
+                2 => changed.epub.push('a'),
+                3 => changed.class = crate::WrapClass::Genesis,
+                4 => changed.ciphertext_hex.push_str("00"),
+                _ => changed.signature = "cd".repeat(64),
+            }
+            assert_ne!(
+                crate::wrap_row_hash(&changed).unwrap(),
+                sample["wrapRowHash"].as_str().unwrap()
+            );
+        }
+
         for (name, row) in sample["messages"].as_object().unwrap() {
             let message = crate::store_write::store_write_message(
                 sample["principal"].as_str().unwrap(),
@@ -2881,7 +2916,7 @@ mod tests {
             signature: "ab".repeat(64),
             class: crate::WrapClass::Delivery,
         };
-        let hash = crate::store_write::wrap_ciphertext_hash(&wrap.ciphertext_hex).unwrap();
+        let hash = crate::store_write::wrap_row_hash(&wrap).unwrap();
         let signature = crate::store_write::sign_store_write(
             k0_priv.as_str(),
             &principal,

@@ -126,12 +126,12 @@ pub(crate) fn deliver_keyring_with(
         wrap_id: wrap.wrap_id.clone(),
         epub: wrap.epub.clone(),
     };
-    let hash = crate::store_write::wrap_ciphertext_hash(&wrap.ciphertext_hex)?;
+    let hash = crate::store_write::wrap_row_hash(&wrap)?;
     let account = store.published_account(&wrap.principal)?;
     let head = account.rotations.len() as u64;
     let generation = store.write_generation(&wrap.principal);
     let replaced = match store.get_wrap(&wrap.principal, &wrap.wrap_id)? {
-        Some(existing) => crate::store_write::wrap_ciphertext_hash(&existing.ciphertext_hex)?,
+        Some(existing) => crate::store_write::wrap_row_hash(&existing)?,
         None => crate::store_write::REPLACED_NONE.to_string(),
     };
     let store_signature = crate::store_write::sign_store_write(
@@ -1155,7 +1155,7 @@ mod tests {
 
         let mut labeled = MemoryKeyWrapStore::new(watch(&chain, &base), crate::HeadFloor::new());
         let delivery = dummy_wrap(&principal, &wrap_id, epub, WrapClass::Delivery, "aa");
-        let hash = crate::store_write::wrap_ciphertext_hash(&delivery.ciphertext_hex).unwrap();
+        let hash = crate::store_write::wrap_row_hash(&delivery).unwrap();
         let signature = crate::store_write::sign_store_write(
             k2_priv.as_str(),
             &principal,
@@ -1168,6 +1168,50 @@ mod tests {
             "0",
         )
         .unwrap();
+        for change_signature in [false, true] {
+            let mut changed = delivery.clone();
+            if change_signature {
+                changed.signature = "cd".repeat(64);
+            } else {
+                changed.epub = principal.as_ref().to_string();
+            }
+            let index = WrapIndex {
+                principal: principal.clone(),
+                wrap_id: wrap_id.clone(),
+                epub: changed.epub.clone(),
+            };
+            assert!(matches!(
+                labeled.put_wrap(&index, &changed, &signature),
+                Err(EncDiscError::StoreRejected)
+            ));
+            assert!(labeled.get_wrap(&principal, &wrap_id).unwrap().is_none());
+            assert_eq!(labeled.write_generation(&principal), 0);
+        }
+        let legacy_signature = crate::sign_store_write(
+            k2_priv.as_str(),
+            &principal,
+            "put",
+            wrap_id.as_ref(),
+            &crate::wrap_ciphertext_hash(&delivery.ciphertext_hex).unwrap(),
+            "2",
+            crate::store_write::REPLACED_NONE,
+            crate::store_write::STORE_CLASS_DELIVERY,
+            "0",
+        )
+        .unwrap();
+        assert!(matches!(
+            labeled.put_wrap(
+                &WrapIndex {
+                    principal: principal.clone(),
+                    wrap_id: wrap_id.clone(),
+                    epub: delivery.epub.clone(),
+                },
+                &delivery,
+                &legacy_signature
+            ),
+            Err(EncDiscError::StoreRejected)
+        ));
+        assert_eq!(labeled.write_generation(&principal), 0);
         let mut as_genesis = delivery.clone();
         as_genesis.class = WrapClass::Genesis;
         assert!(matches!(
@@ -1218,12 +1262,12 @@ mod tests {
         signer: &str,
     ) -> Result<(), EncDiscError> {
         let wrap = dummy_wrap(principal, wrap_id, epub, class, ciphertext_hex);
-        let hash = crate::store_write::wrap_ciphertext_hash(&wrap.ciphertext_hex)?;
+        let hash = crate::store_write::wrap_row_hash(&wrap)?;
         let account = store.published_account(principal)?;
         let head = account.rotations.len() as u64;
         let generation = store.write_generation(principal);
         let replaced = match store.get_wrap(principal, wrap_id)? {
-            Some(existing) => crate::store_write::wrap_ciphertext_hash(&existing.ciphertext_hex)?,
+            Some(existing) => crate::store_write::wrap_row_hash(&existing)?,
             None => crate::store_write::REPLACED_NONE.to_string(),
         };
         let signature = crate::store_write::sign_store_write(

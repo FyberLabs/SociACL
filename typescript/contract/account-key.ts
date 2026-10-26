@@ -37,7 +37,7 @@ import {
   REPLACED_NONE,
   signStoreWrite,
   verifyStoreWrite,
-  wrapCiphertextHash,
+  wrapRowHash,
   type StoreWriteAccount,
 } from "./store-write.ts";
 import {
@@ -162,8 +162,8 @@ export class MemoryKeyWrapStore implements KeyWrapStore {
     const head = account.rotations.length;
     const rows = this.#wraps.get(index.principal) ?? new Map<string, EncryptedAccountWrap>();
     const existing = rows.get(index.wrapId);
-    const replaced = existing ? wrapCiphertextHash(existing.ciphertextHex) : REPLACED_NONE;
-    const hash = wrapCiphertextHash(wrap.ciphertextHex);
+    const replaced = existing ? wrapRowHash(existing) : REPLACED_NONE;
+    const hash = wrapRowHash(wrap);
     const generation = this.writeGeneration(wrap.principal);
     verifyStoreWrite(
       wrap.principal,
@@ -193,7 +193,7 @@ export class MemoryKeyWrapStore implements KeyWrapStore {
     const head = account.rotations.length;
     const row = this.#wraps.get(principal)?.get(wrapId);
     if (!row) throw new Error("store-rejected");
-    const hash = wrapCiphertextHash(row.ciphertextHex);
+    const hash = wrapRowHash(row);
     const generation = this.writeGeneration(principal);
     verifyStoreWrite(
       principal,
@@ -375,7 +375,7 @@ export function deleteAccountWrap(
 ): void {
   const row = store.get(principal, wrapId);
   if (!row) throw new Error("store-rejected");
-  const hash = wrapCiphertextHash(row.ciphertextHex);
+  const hash = wrapRowHash(row);
   const account = store.publishedAccount(principal);
   const signature = signStoreWrite(
     signerPriv,
