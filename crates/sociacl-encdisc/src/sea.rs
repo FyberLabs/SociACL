@@ -13,7 +13,7 @@
 use base64ct::{Base64UrlUnpadded, Encoding};
 use p256::ecdsa::signature::{Signer, Verifier};
 use p256::ecdsa::{Signature, SigningKey, VerifyingKey};
-use p256::elliptic_curve::sec1::ToEncodedPoint;
+use p256::elliptic_curve::sec1::ToSec1Point;
 use p256::{PublicKey, SecretKey};
 use zeroize::{Zeroize, Zeroizing};
 
@@ -26,7 +26,7 @@ pub fn sign_sea(sea_priv: &str, message: &[u8]) -> Result<String, EncDiscError> 
         .try_sign(message)
         .map_err(|_| EncDiscError::SignatureRejected)?;
     // RFC 6979 can emit a high s. Low-s is the only encoding we accept.
-    let signature = signature.normalize_s().unwrap_or(signature);
+    let signature = signature.normalize_s();
     Ok(encode_hex(signature.to_bytes().as_slice()))
 }
 
@@ -37,7 +37,7 @@ pub fn verify_sea(sea_pub: &str, message: &[u8], signature_hex: &str) -> Result<
     let bytes =
         crate::hexutil::decode_hex(signature_hex).map_err(|_| EncDiscError::SignatureRejected)?;
     let signature = Signature::from_slice(&bytes).map_err(|_| EncDiscError::SignatureRejected)?;
-    if signature.normalize_s().is_some() {
+    if signature.normalize_s() != signature {
         return Err(EncDiscError::SignatureRejected);
     }
     let verifying = verifying_key(sea_pub)?;
@@ -47,7 +47,7 @@ pub fn verify_sea(sea_pub: &str, message: &[u8], signature_hex: &str) -> Result<
 }
 
 pub fn sea_pub_from_signing(signing: &SigningKey) -> Result<String, EncDiscError> {
-    point_to_sea(&signing.verifying_key().to_encoded_point(false))
+    point_to_sea(&signing.verifying_key().to_sec1_point(false))
 }
 
 pub fn sea_priv_from_signing(signing: &SigningKey) -> Result<Zeroizing<String>, EncDiscError> {
@@ -58,11 +58,11 @@ pub fn sea_priv_from_signing(signing: &SigningKey) -> Result<Zeroizing<String>, 
 }
 
 pub fn sea_pub_from_secret(secret: &SecretKey) -> Result<String, EncDiscError> {
-    point_to_sea(&secret.public_key().to_encoded_point(false))
+    point_to_sea(&secret.public_key().to_sec1_point(false))
 }
 
 pub(crate) fn sea_pub_from_point(point: &PublicKey) -> Result<String, EncDiscError> {
-    point_to_sea(&point.to_encoded_point(false))
+    point_to_sea(&point.to_sec1_point(false))
 }
 
 pub fn sea_priv_from_secret(secret: &SecretKey) -> Result<Zeroizing<String>, EncDiscError> {
@@ -109,7 +109,7 @@ pub fn ecdh_x(secret: &SecretKey, peer: &PublicKey) -> Result<Zeroizing<[u8; 32]
 }
 
 pub fn uncompressed_point(public: &PublicKey) -> Result<[u8; 65], EncDiscError> {
-    let encoded = public.to_encoded_point(false);
+    let encoded = public.to_sec1_point(false);
     let bytes = encoded.as_bytes();
     if bytes.len() != 65 || bytes[0] != 0x04 {
         return Err(EncDiscError::BadKey);
@@ -121,11 +121,11 @@ pub fn uncompressed_point(public: &PublicKey) -> Result<[u8; 65], EncDiscError> 
 
 fn verifying_key(sea_pub: &str) -> Result<VerifyingKey, EncDiscError> {
     let public = parse_sea_point(sea_pub)?;
-    VerifyingKey::from_sec1_bytes(public.to_encoded_point(false).as_bytes())
+    VerifyingKey::from_sec1_bytes(public.to_sec1_point(false).as_bytes())
         .map_err(|_| EncDiscError::BadKey)
 }
 
-fn point_to_sea(encoded: &p256::EncodedPoint) -> Result<String, EncDiscError> {
+fn point_to_sea(encoded: &p256::Sec1Point) -> Result<String, EncDiscError> {
     let x = encoded.x().ok_or(EncDiscError::BadKey)?;
     let y = encoded.y().ok_or(EncDiscError::BadKey)?;
     if x.len() != 32 || y.len() != 32 {

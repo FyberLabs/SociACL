@@ -11,6 +11,7 @@ use std::collections::BTreeMap;
 
 use aes_gcm::aead::{Aead, KeyInit, Payload};
 use aes_gcm::{Aes256Gcm, Nonce};
+use p256::elliptic_curve::Generate;
 use rand::rngs::OsRng;
 use rand::RngCore;
 use sociacl_ids::{
@@ -225,8 +226,8 @@ impl GenesisAccount {
     /// Mint one keypair. The account id is the genesis signing pub.
     pub fn generate() -> Result<Self, EncDiscError> {
         let mut rng = OsRng;
-        let signing = p256::ecdsa::SigningKey::random(&mut rng);
-        let encryption = p256::SecretKey::random(&mut rng);
+        let signing = p256::ecdsa::SigningKey::generate();
+        let encryption = p256::SecretKey::generate();
         let mut lane = [0u8; 32];
         rng.fill_bytes(&mut lane);
         let lane_hex = encode_secret_hex(&lane);
@@ -254,7 +255,7 @@ impl GenesisAccount {
         }
         let point = uncompressed_point(
             &p256::PublicKey::from_sec1_bytes(
-                signing.verifying_key().to_encoded_point(false).as_bytes(),
+                signing.verifying_key().to_sec1_point(false).as_bytes(),
             )
             .map_err(|_| EncDiscError::BadKey)?,
         )?;
@@ -421,7 +422,7 @@ impl std::fmt::Debug for InheritedDevice {
 
 impl TransportKey {
     pub fn generate() -> Result<Self, EncDiscError> {
-        let secret = p256::SecretKey::random(&mut OsRng);
+        let secret = p256::SecretKey::generate();
         Self::from_secret(secret)
     }
 
@@ -738,7 +739,7 @@ pub fn seal_account_backup(
     context: &sociacl_ids::ResolutionContext<'_>,
     store: &mut impl KeyWrapStore,
 ) -> Result<EncryptedAccountWrap, EncDiscError> {
-    let ephemeral = p256::SecretKey::random(&mut OsRng);
+    let ephemeral = p256::SecretKey::generate();
     let mut nonce = [0u8; 12];
     OsRng.fill_bytes(&mut nonce);
     seal_account_backup_with(

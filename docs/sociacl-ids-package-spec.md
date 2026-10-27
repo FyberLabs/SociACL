@@ -282,9 +282,9 @@ Subpath export `sociacl-ids/zod`, with `zod` as a **peerDependency** so the core
 - Functions mirror §4.2–4.6 in snake_case and return `Result<T, Reason>`. `Reason` is an enum whose kebab-case names are identical to the TS strings.
 - **String semantics:** reject on the Unicode-scalar level the same way TS does. Do not use `str::trim` or `char::is_whitespace` anywhere, since Rust's notion of whitespace differs from JS `trim()` on `U+FEFF`.
 - Crates:
-  - `p256` (ecdsa, arithmetic): the workspace already pins `=0.13.2` in `crates/sociacl-encdisc/Cargo.toml:18`; reuse that pin.
+  - `p256` (ecdsa, arithmetic): the workspace pins `=0.14.0` in `crates/sociacl-encdisc/Cargo.toml` and `crates/sociacl-ids/Cargo.toml`; reuse that pin.
   - `sha2`: already in the workspace.
-  - `k256` (ecdsa, for secp256k1 recovery) and `sha3` (Keccak-256), for SIWE.
+  - `k256` 0.14.0 (ecdsa, for secp256k1 recovery) and `sha3` (Keccak-256), for SIWE.
   - A JWS/JWK verifier for ES256: use `p256` directly with a minimal compact-JWS parser.
   - `serde` / `serde_json`: already present.
   - `getrandom` for minting.

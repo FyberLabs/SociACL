@@ -13,13 +13,13 @@ description = "Encrypted-discovery reference slice: account key, blinded rows, e
 deterministic-wrap = []
 
 [dependencies]
-# Keep cryptographic dependency upgrades separate from the time security fix.
 aes-gcm = { version = "=0.10.3", default-features = false, features = ["alloc", "aes", "std", "zeroize"] }
 hmac = "=0.12.1"
 argon2 = { version = "=0.5.3", default-features = false, features = ["alloc", "std", "zeroize"] }
 unicode-normalization = "=0.1.24"
 base64ct = "=1.6.0"
-p256 = { version = "=0.13.2", default-features = false, features = ["arithmetic", "ecdh", "ecdsa", "std"] }
+# 0.14 follows elliptic-curve 0.14.3, which resolves crypto-bigint >= 0.7.6 (RUSTSEC-2026-0387).
+p256 = { version = "=0.14.0", default-features = false, features = ["arithmetic", "ecdh", "ecdsa", "std"] }
 rand = "0.8"
 sha2 = "0.10"
 thiserror = "2"

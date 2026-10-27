@@ -12,6 +12,7 @@
 
 use aes_gcm::aead::{Aead, KeyInit, Payload};
 use aes_gcm::{Aes256Gcm, Nonce};
+use p256::elliptic_curve::Generate;
 use rand::rngs::OsRng;
 use rand::RngCore;
 use sociacl_ids::{parse_principal_id, ObjectId, PrincipalId};
@@ -49,7 +50,7 @@ pub fn deliver_keyring(
     context: &sociacl_ids::ResolutionContext<'_>,
     store: &mut impl KeyWrapStore,
 ) -> Result<EncryptedAccountWrap, EncDiscError> {
-    let ephemeral = p256::SecretKey::random(&mut OsRng);
+    let ephemeral = p256::SecretKey::generate();
     let mut nonce = [0u8; 12];
     OsRng.fill_bytes(&mut nonce);
     deliver_keyring_with(

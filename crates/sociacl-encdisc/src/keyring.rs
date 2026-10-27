@@ -628,11 +628,12 @@ pub fn epub_for_new_seal(
 
 /// Mint a signing pair, an encryption pair, and a new lane id.
 pub fn mint_rotation() -> Result<RotationMint, EncDiscError> {
+    use p256::elliptic_curve::Generate;
     use rand::rngs::OsRng;
     use rand::RngCore;
     let mut rng = OsRng;
-    let signing = p256::ecdsa::SigningKey::random(&mut rng);
-    let encryption = p256::SecretKey::random(&mut rng);
+    let signing = p256::ecdsa::SigningKey::generate();
+    let encryption = p256::SecretKey::generate();
     let mut lane = [0u8; 32];
     rng.fill_bytes(&mut lane);
     let mut contact = [0u8; 32];
@@ -917,7 +918,7 @@ fn signing_point(
         return Err(EncDiscError::PubMismatch);
     }
     let public = p256::PublicKey::from_sec1_bytes(
-        signing.verifying_key().to_encoded_point(false).as_bytes(),
+        signing.verifying_key().to_sec1_point(false).as_bytes(),
     )
     .map_err(|_| EncDiscError::BadKey)?;
     let point = uncompressed_point(&public)?;

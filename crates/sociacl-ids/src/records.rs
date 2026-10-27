@@ -773,20 +773,17 @@ fn siwe_verify(
     let mut id = k256::ecdsa::RecoveryId::from_byte(recovery).ok_or(Reason::BadSignature)?;
     let mut signature =
         k256::ecdsa::Signature::from_slice(&sig[..64]).map_err(|_| Reason::BadSignature)?;
-    if let Some(normalized) = signature.normalize_s() {
-        signature = normalized;
+    if signature.normalize_s() != signature {
+        signature = signature.normalize_s();
         id = k256::ecdsa::RecoveryId::from_byte(recovery ^ 1).ok_or(Reason::BadSignature)?;
     }
     let mut preimage =
         format!("\x19Ethereum Signed Message:\n{}", proof.message.len()).into_bytes();
     preimage.extend(proof.message.as_bytes());
-    let key = k256::ecdsa::VerifyingKey::recover_from_prehash(
-        &Keccak256::digest(preimage),
-        &signature,
-        id,
-    )
-    .map_err(|_| Reason::BadSignature)?;
-    let hash = Keccak256::digest(&key.to_encoded_point(false).as_bytes()[1..]);
+    let prehash = Keccak256::digest(preimage);
+    let key = k256::ecdsa::VerifyingKey::recover_from_prehash(prehash.as_slice(), &signature, id)
+        .map_err(|_| Reason::BadSignature)?;
+    let hash = Keccak256::digest(&key.to_sec1_point(false).as_bytes()[1..]);
     if checksum(&format!("0x{}", hex(&hash[12..]))) != address.as_ref() {
         return Err(Reason::BadSignature);
     }
@@ -2429,7 +2426,7 @@ pub fn sign_with_keyring(
     let mut held = Zeroizing::new([0u8; 32]);
     held.copy_from_slice(scalar);
     let signing = SigningKey::from_slice(held.as_ref()).map_err(|_| Reason::BadKey)?;
-    let point = signing.verifying_key().to_encoded_point(false);
+    let point = signing.verifying_key().to_sec1_point(false);
     let derived = principal_from_sec1(point.as_bytes()).map_err(|_| Reason::BadKey)?;
     if derived != *expected_key {
         return Err(Reason::BadKey);

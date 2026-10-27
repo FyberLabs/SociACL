@@ -12,6 +12,7 @@
 
 use aes_gcm::aead::{Aead, KeyInit};
 use aes_gcm::{Aes256Gcm, Nonce};
+use p256::elliptic_curve::Generate;
 use rand::rngs::OsRng;
 use rand::RngCore;
 use zeroize::{Zeroize, Zeroizing};
@@ -609,7 +610,7 @@ fn fresh_seals(count: usize) -> Result<Vec<ReaderSeal>, EncDiscError> {
     let mut rng = OsRng;
     let mut seals = Vec::with_capacity(count);
     for _ in 0..count {
-        let secret = p256::SecretKey::random(&mut rng);
+        let secret = p256::SecretKey::generate();
         let mut nonce = [0u8; 12];
         rng.fill_bytes(&mut nonce);
         seals.push(ReaderSeal {
