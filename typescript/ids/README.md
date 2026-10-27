@@ -390,12 +390,7 @@ present/historical revocation boundary. The browser check
 bundles the runtime dependency graph and rejects Node imports. Node built-ins
 are used only in build/test tooling, outside the shipped runtime.
 
-After review and merge, tag `ids-v0.10.0`. That is the tag #60 publishes once `master` is protected. The release job waits for the full test
-job, requires a protected `master` and verifies the tag commit is its ancestor.
-A read-only job installs dependencies with scripts disabled, explicitly builds,
-and checks the tag against `package.json`. A separate write-token job only
-downloads the resulting artifact, checks its SHA-256, and attaches
-`sociacl-ids-0.10.0.tgz` and its SHA-256 file. Consumers then install:
+A push to protected `master` creates `ids-v` plus the `typescript/ids` version when that tag is absent. The job uses `github.token` and the Git refs API. If `master` is not protected, it records a notice and exits without creating the tag, because the pack job would refuse it ([#60](https://github.com/FyberLabs/SociACL/issues/60)). A tag that already points at another commit is left unchanged. A tag that already points at this commit is not recreated; pack still runs so an unpublished release can finish. Pack waits for `test` and `msrv`, requires protected `master`, requires ancestry of `origin/master`, and requires the tag to resolve to this commit and to `ids-v` plus the package version. It installs with scripts disabled, builds, and records a SHA-256. The release job does not check out source. It checks that digest, attests build provenance for the tarball, and attaches `sociacl-ids-0.10.0.tgz` and its SHA-256 file when the GitHub release is absent. A maintainer can still push `ids-v*` directly. The workspace crates use the same automation on `sociacl-v*`. Consumers then install:
 
 ```sh
 npm install https://github.com/FyberLabs/SociACL/releases/download/ids-v0.10.0/sociacl-ids-0.10.0.tgz

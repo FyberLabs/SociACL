@@ -50,7 +50,7 @@ Permission callers are on stored ids. A passing ids suite is not the permission-
 
 These are not a data migration:
 
-1. **Publish `ids-v0.10.0`.** [#60](https://github.com/FyberLabs/SociACL/issues/60) is the protected-`master` gate for that release. The tag name is `ids-v0.10.0`. After review, publish through the release workflow and record the asset URL and SHA-256. Consumers pin lockfile integrity.
+1. **Publish `ids-v0.10.0`.** [#60](https://github.com/FyberLabs/SociACL/issues/60) is the protected-`master` gate. The next push to protected `master` creates `ids-v0.10.0` when that tag is absent and publishes the tarball. Until `master` is protected, the tag job exits without creating it. Record the asset URL and SHA-256 once the release exists. Consumers pin lockfile integrity.
 2. **Panopticon proofs and key backups.** Wallet and revoke timestamp attestations, tenant-scoped OIDC link attestation, and v2 rotation attestation stay at those endpoints. Panopticon assigns the issuance timestamp and the retained set from authenticated history. Use `resolveWalletLinkNow` for present wallet login and `verifyRevokeNow` for OIDC revocations. Do not infer a persistent revocation from a claimed time.
 3. **s3r.ch account identity.** First enrollment mints one genesis identity. Later devices enroll into it. Never synthesize a principal from a wallet.
 4. **s3r.ch permission and object callers.** Use the package in that product's check, rooms, chat, forum, and Views. Mint native object ids at creation. Do not keep a legacy object read-only and do not join on a label or a handle.
