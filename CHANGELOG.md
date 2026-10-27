@@ -2,6 +2,7 @@
 
 ## sociacl/gun — unreleased
 
+- Forum souls on the locked graph. Status is `s3rch/forums/<forumId>/agents/<seaPubkey>` with per-agent `started`, `tokens`, and `runtime`. The template is `distinct-principals` or `role-labels`. Chat is a `GunFeedNode` under `s3rch/items` tagged `forum:<forumId>`. The global alarm is status-tile fan-in and a pinned need at `…/alarm`. Resolve is a dest-ACL write and does not elect. Identity stays the GunDB SEA pubkey. Vectors: `vectors/mesh/forums.json`.
 - Pushes to protected `master` create an absent `ids-v*` or `sociacl-v*` tag with `github.token`, then pack and attest that family's npm tarball. `sociacl-v*` does not pack crates or Python. Python has no package version. Tag and pack jobs are not in a concurrency group, so a later push cannot cancel the pack for the commit that created the tag. An unprotected `master` skips the tag ([#60](https://github.com/FyberLabs/SociACL/issues/60)). A tag that already names another commit stays where it is.
 - **Breaking:** `FeedItem::canonical_key` does not trim the provider item id before `derive_external_id`. `"x"` and `" x"` do not share an `ext_` id. The spaced id is `whitespace`. The vector is `vectors/mesh/strict-id.json`.
 - **Breaking:** `sociacl_gun_normalize_url` returns `too-long` when the normalized form exceeds 256 bytes and `buffer-too-small` when the destination cannot hold it. It does not truncate. The Python caller sizes the destination to the input and surfaces that reason. The same vector covers the C and Python callers.

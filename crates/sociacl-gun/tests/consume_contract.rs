@@ -154,6 +154,63 @@ fn consume_contract_hop_never_mints() {
 }
 
 #[test]
+fn consume_contract_locks_forums() {
+    let dts = read(contract_path());
+    let md = read(doc_path());
+    let gun = read(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../docs/gun.md"));
+    for text in [&dts, &md, &gun] {
+        assert!(text.contains("s3rch/forums/"), "missing forum souls");
+        assert!(text.contains("/agents/"), "missing per-agent status soul");
+        assert!(text.contains("started"), "missing per-agent started");
+        assert!(text.contains("tokens"), "missing per-agent tokens");
+        assert!(text.contains("runtime"), "missing per-agent runtime");
+        assert!(
+            text.contains("distinct-principals"),
+            "missing distinct principals"
+        );
+        assert!(text.contains("role-labels"), "missing role labels");
+        assert!(text.contains("forum:"), "missing forum chat tag");
+        assert!(text.contains("s3rch/items"), "chat stays on items");
+        assert!(text.contains("pinned"), "missing pinned emergency");
+        assert!(text.contains("emergency"), "missing emergency");
+        assert!(
+            text.contains("GunDB SEA pubkey") || text.contains("GunDB SEA pubkey"),
+            "identity is the SEA pubkey"
+        );
+        assert!(
+            text.contains("linked credential"),
+            "wallet and oauth stay linked"
+        );
+        assert!(
+            text.contains("s3rch/chat"),
+            "must name the refused chat soul"
+        );
+    }
+    assert!(dts.contains("ForumAgentStatus"));
+    assert!(dts.contains("ForumNeed"));
+    assert!(dts.contains("ForumAlarm"));
+    assert!(dts.contains("ForumRoleMode"));
+    assert!(dts.contains("ForumChatItem"));
+    assert!(dts.contains("forumAgentSoul"));
+    assert!(dts.contains("forumChatTag"));
+    assert!(md.contains("vectors/mesh/forums.json"));
+    assert!(gun.contains("resolve-need-does-not-elect"));
+    assert!(gun.contains("check-deny-without-dest-acl"));
+    assert!(gun.contains("cancel-visible-on-next-check"));
+    assert!(gun.contains("sgh1-hint-alone-fails-closed"));
+    assert!(gun.contains("chat-via-tagged-items"));
+    let lower_dts = dts.to_ascii_lowercase();
+    let lower_md = md.to_ascii_lowercase();
+    for text in [&lower_dts, &lower_md] {
+        assert!(
+            !text.contains("elect"),
+            "consume contract must not name elect"
+        );
+        assert!(!text.contains("stripe"), "forums pilot has no payments");
+    }
+}
+
+#[test]
 fn consume_contract_locks_held_claim_souls() {
     let dts = read(contract_path());
     let md = read(doc_path());

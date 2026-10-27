@@ -9,6 +9,9 @@ pub const S3RCH_META: &str = "meta";
 /// Dest ACL collection. Sibling of items/users/meta. Not a Check
 /// object. Grants HAM-merge here; they do not fork items or users.
 pub const S3RCH_ACL: &str = "acl";
+/// Forum collection. Status, needs, and role rows live here.
+/// Chat does not. A forum path is not a dest-ACL grant soul.
+pub const S3RCH_FORUMS: &str = "forums";
 
 /// Gun soul path. Maps onto an existing [`NodeId`].
 /// A parsed path is not a Check object id.
@@ -49,14 +52,17 @@ impl GunSoul {
         &self.segments
     }
 
+    /// Slash form of the parsed segments. Nothing is trimmed.
+    pub fn join(&self) -> String {
+        self.segments.join("/")
+    }
+
     pub fn as_node_id(&self) -> NodeId {
         NodeId::new(self.segments.join("/"))
     }
 
     pub fn is_s3rch_user(&self) -> bool {
-        self.segments.len() == 3
-            && self.segments[0] == S3RCH_ROOT
-            && self.segments[1] == "users"
+        self.segments.len() == 3 && self.segments[0] == S3RCH_ROOT && self.segments[1] == "users"
     }
 
     pub fn is_s3rch_item(&self) -> bool {

@@ -45,6 +45,31 @@ A held claim's Check id is `claim_` derived from the claim text (`ens:…` / `un
 
 The Rust crate in this repo remains the full plane. See [gun.md](gun.md) for that map. Social Light hop wire: [social-light.md](social-light.md).
 
+## Forums
+
+The account identity is the GunDB SEA pubkey (`PrincipalId`). A wallet and a Panopticon OAuth subject are linked credentials. They are not the agent key and not a second identity plane. Copy the forum names from [s3rch-check.d.ts](s3rch-check.d.ts). Soul keys are `forumAgentSoul`, `forumNeedSoul`, `forumAlarmSoul`, `forumTemplateSoul`, `forumRoleSoul`, `forumSubtaskSoul`, `forumUpdateSoul`, and `forumChatTag`. Acceptance file: [vectors/mesh/forums.json](../vectors/mesh/forums.json).
+
+```
+s3rch/forums/<forumId>/agents/<seaPubkey>                 → ForumAgentStatus
+s3rch/forums/<forumId>/needs/<needId>                     → ForumNeed
+s3rch/forums/<forumId>/alarm                              → ForumAlarm (pinned emergency)
+s3rch/forums/<forumId>/template                           → ForumTemplate
+s3rch/forums/<forumId>/roles/<roleToken>/<seaPubkey>      → ForumRoleMembership
+gun.get('s3rch').get('items').get(<item key>)             → ForumChatItem (a GunFeedNode)
+```
+
+`forumId` is a minted object id of kind `forum`. `seaPubkey` is the SEA pubkey, not a `p_` key and not a wallet. `<needId>` is a minted object id of kind `need`. Check `see` uses the admitted object id. The soul is the Gun location. State is data, not a grant.
+
+Per-agent status stores `task`, `result`, `needs`, `progress`, `state`, `lastPrompt`, `lastUpdate`, `type`, `started`, `tokens`, and `runtime`. `started`, `tokens`, and `runtime` are that agent's counters. `tokens` is not a transfer. Optional `hb`, `batt`, and `link` are vitals on the same node. `needs` and `artifacts` are comma-separated object ids. Subtasks and updates are child souls under the agent, or feed item ids in `artifacts`.
+
+The template mode is `distinct-principals` or `role-labels`. Distinct principals: each role token names a different SEA principal. Role labels: one SEA principal wears several role tokens. The role token is lowercase letters, digits, and hyphen. A display title is not the token. A role token is not a Check predicate. An `@role` in chat is addressing, not authority.
+
+Chat is a `GunFeedNode` under `s3rch/items`. `ForumChatItem` is that type. `tags` includes `forum:<forumId>`. There is no `s3rch/chat` soul and no `s3rch/forums/<forumId>/chat` soul. `GunFeedNode` does not gain a field.
+
+The global alarm reads status tiles whose `state` is `emergency` and the pinned need at `forumAlarmSoul`. The pin counts when that need is an open emergency (`severity` `emergency`, `stated` 1). Either input is enough. The alarm node is not a grant.
+
+Resolve on a need is an owner or delegate dest-ACL write: `stated` 0 and a `hamState` bump, or a grant for who may write. The admitted object owner stays the owner. A missing dest-ACL row denies Check. A cancel is visible on the next Check. An SGH1 hint alone fails closed. A status node, a chat tag, and a hint do not mint.
+
 ## Mesh
 
 This is the cut the s3r.ch design engineer wires after held-claims land.
