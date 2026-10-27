@@ -104,6 +104,7 @@ fn decide(
         answered,
         &provider_pub,
         &signature,
+        "provider:acct",
         statement,
     )
 }
@@ -470,6 +471,7 @@ fn current_key_fails_closed() {
         true,
         &provider_pub,
         &signature,
+        "provider:acct",
         "sea-next",
     ) {
         CurrentKeyDecision::Accept { key_pub } => assert_eq!(key_pub, "sea-next"),
@@ -483,6 +485,7 @@ fn current_key_fails_closed() {
             false,
             &provider_pub,
             &signature,
+            "provider:acct",
             "sea-next"
         ),
         CurrentKeyDecision::Refuse("no-answer")
@@ -495,6 +498,7 @@ fn current_key_fails_closed() {
             true,
             &provider_pub,
             &signature,
+            "provider:acct",
             "sea-next"
         ),
         CurrentKeyDecision::Refuse("missing-head")
@@ -511,6 +515,7 @@ fn current_key_fails_closed() {
             true,
             &provider_pub,
             "00",
+            "provider:acct",
             "sea-next"
         ),
         CurrentKeyDecision::Refuse("head-mismatch")
@@ -616,7 +621,66 @@ fn current_key_fails_closed() {
             true,
             &sea_pub,
             &sea_sig,
+            "provider:acct",
             &provider_pub
+        ),
+        CurrentKeyDecision::Refuse("head-mismatch")
+    ));
+    let attacker_genesis = AccountKeyLogEntry {
+        account: "provider:other".to_string(),
+        key_pub: "sea-attacker-0".to_string(),
+        seq: 0,
+        prev: "none".to_string(),
+    };
+    let attacker_next = AccountKeyLogEntry {
+        account: "provider:other".to_string(),
+        key_pub: "sea-attacker".to_string(),
+        seq: 1,
+        prev: account_key_entry_hash(&attacker_genesis).unwrap(),
+    };
+    let attacker_head = AccountKeyLogHead {
+        account: "provider:other".to_string(),
+        seq: 1,
+        entry_hash: account_key_entry_hash(&attacker_next).unwrap(),
+    };
+    let (attacker_pub, attacker_sig) = sign_head(&attacker_head);
+    let attacker_entries = [attacker_genesis, attacker_next];
+    assert!(matches!(
+        accept_current_key(
+            Some(&attacker_head),
+            &attacker_entries,
+            None,
+            true,
+            &attacker_pub,
+            &attacker_sig,
+            "provider:acct",
+            "sea-attacker",
+        ),
+        CurrentKeyDecision::Refuse("head-mismatch")
+    ));
+    match accept_current_key(
+        Some(&attacker_head),
+        &attacker_entries,
+        None,
+        true,
+        &attacker_pub,
+        &attacker_sig,
+        "provider:other",
+        "sea-attacker",
+    ) {
+        CurrentKeyDecision::Accept { key_pub } => assert_eq!(key_pub, "sea-attacker"),
+        other => panic!("{other:?}"),
+    }
+    assert!(matches!(
+        accept_current_key(
+            Some(&head),
+            &entries,
+            None,
+            true,
+            &provider_pub,
+            &signature,
+            "",
+            "sea-next",
         ),
         CurrentKeyDecision::Refuse("head-mismatch")
     ));

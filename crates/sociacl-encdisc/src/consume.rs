@@ -510,6 +510,7 @@ pub fn accept_current_key(
     provider_answered: bool,
     provider_pub: &str,
     head_signature: &str,
+    expected_account: &str,
     statement_key_pub: &str,
 ) -> CurrentKeyDecision {
     if !provider_answered {
@@ -521,10 +522,13 @@ pub fn accept_current_key(
     if !head_signature_ok(provider_pub, head, head_signature) {
         return CurrentKeyDecision::Refuse("head-mismatch");
     }
-    if head.account.is_empty() || digest_hex(&head.entry_hash).is_err() {
+    if expected_account.is_empty()
+        || head.account != expected_account
+        || digest_hex(&head.entry_hash).is_err()
+    {
         return CurrentKeyDecision::Refuse("head-mismatch");
     }
-    let start = match unique_index(entries, &head.account, head.seq) {
+    let start = match unique_index(entries, expected_account, head.seq) {
         Ok(Some(index)) => index,
         Ok(None) => return CurrentKeyDecision::Refuse("unlinked"),
         Err(()) => return CurrentKeyDecision::Refuse("head-mismatch"),
@@ -542,6 +546,9 @@ pub fn accept_current_key(
     let mut linked = false;
     for _ in 0..ACCOUNT_KEY_WALK_LIMIT {
         let entry = &entries[index];
+        if entry.account != expected_account {
+            return CurrentKeyDecision::Refuse("head-mismatch");
+        }
         let Ok(entry_hash) = account_key_entry_hash(entry) else {
             return CurrentKeyDecision::Refuse("prev-mismatch");
         };
@@ -558,7 +565,7 @@ pub fn accept_current_key(
             linked = true;
             break;
         }
-        let parent = match unique_index(entries, &entry.account, entry.seq - 1) {
+        let parent = match unique_index(entries, expected_account, entry.seq - 1) {
             Ok(Some(parent)) => parent,
             Ok(None) => return CurrentKeyDecision::Refuse("unlinked"),
             Err(()) => return CurrentKeyDecision::Refuse("head-mismatch"),

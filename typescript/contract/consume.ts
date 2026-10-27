@@ -443,6 +443,7 @@ export function acceptCurrentKey(input: {
   providerAnswered: boolean;
   providerPub: string;
   headSignature: string;
+  expectedAccount: string;
   statementKeyPub: string;
 }): CurrentKeyDecision {
   if (!input.providerAnswered) return { ok: false, reason: "no-answer" };
@@ -451,12 +452,16 @@ export function acceptCurrentKey(input: {
   if (!headSignatureOk(input.providerPub, head, input.headSignature)) {
     return { ok: false, reason: "head-mismatch" };
   }
-  if (head.account.length === 0 || !/^[0-9a-f]{64}$/.test(head.entryHash)) {
+  if (
+    input.expectedAccount.length === 0 ||
+    head.account !== input.expectedAccount ||
+    !/^[0-9a-f]{64}$/.test(head.entryHash)
+  ) {
     return { ok: false, reason: "head-mismatch" };
   }
   let start: number | undefined;
   try {
-    start = uniqueIndex(input.entries, head.account, head.seq);
+    start = uniqueIndex(input.entries, input.expectedAccount, head.seq);
   } catch {
     return { ok: false, reason: "head-mismatch" };
   }
@@ -478,6 +483,7 @@ export function acceptCurrentKey(input: {
   for (let step = 0; step < ACCOUNT_KEY_WALK_LIMIT; step += 1) {
     const entry = input.entries[index];
     if (entry === undefined) return { ok: false, reason: "unlinked" };
+    if (entry.account !== input.expectedAccount) return { ok: false, reason: "head-mismatch" };
     let entryHash: string;
     try {
       entryHash = accountKeyEntryHash(entry);
@@ -496,7 +502,7 @@ export function acceptCurrentKey(input: {
     }
     let parent: number | undefined;
     try {
-      parent = uniqueIndex(input.entries, entry.account, entry.seq - 1);
+      parent = uniqueIndex(input.entries, input.expectedAccount, entry.seq - 1);
     } catch {
       return { ok: false, reason: "head-mismatch" };
     }

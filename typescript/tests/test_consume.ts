@@ -357,6 +357,7 @@ test("status authority, group inbox, and current key", () => {
       providerAnswered: true,
       providerPub: document.inputs.providerPub,
       headSignature: document.inputs.headSignature,
+      expectedAccount: "provider:acct",
       statementKeyPub: "sea-next",
     }),
     { ok: true, keyPub: "sea-next" },
@@ -368,6 +369,7 @@ test("status authority, group inbox, and current key", () => {
       providerAnswered: false,
       providerPub: signed.providerPub,
       headSignature: signed.headSignature,
+      expectedAccount: "provider:acct",
       statementKeyPub: "sea-next",
     }),
     { ok: false, reason: "no-answer" },
@@ -379,6 +381,7 @@ test("status authority, group inbox, and current key", () => {
       providerAnswered: true,
       providerPub: signed.providerPub,
       headSignature: "00",
+      expectedAccount: "provider:acct",
       statementKeyPub: "sea-next",
     }),
     { ok: false, reason: "head-mismatch" },
@@ -388,6 +391,7 @@ test("status authority, group inbox, and current key", () => {
       head,
       entries: [first, second],
       providerAnswered: true,
+      expectedAccount: "provider:acct",
       ...signed,
       statementKeyPub: "sea-current",
     }),
@@ -398,6 +402,7 @@ test("status authority, group inbox, and current key", () => {
       head,
       entries: [{ ...first, keyPub: "sea-forged" }, second],
       providerAnswered: true,
+      expectedAccount: "provider:acct",
       ...signed,
       statementKeyPub: "sea-next",
     }),
@@ -410,6 +415,7 @@ test("status authority, group inbox, and current key", () => {
       entries: [second],
       anchor,
       providerAnswered: true,
+      expectedAccount: "provider:acct",
       ...signed,
       statementKeyPub: "sea-next",
     }),
@@ -432,6 +438,7 @@ test("status authority, group inbox, and current key", () => {
       entries: [first, jumped],
       anchor,
       providerAnswered: true,
+      expectedAccount: "provider:acct",
       ...signHead(jumpedHead),
       statementKeyPub: "sea-nine",
     }),
@@ -461,6 +468,7 @@ test("status authority, group inbox, and current key", () => {
       entries: [other, crossed],
       anchor: { account: "provider:other", seq: 0, hash: otherHash },
       providerAnswered: true,
+      expectedAccount: "provider:acct",
       ...signHead(crossedHead),
       statementKeyPub: "sea-a",
     }),
@@ -482,8 +490,60 @@ test("status authority, group inbox, and current key", () => {
       head: seaHead,
       entries: [seaEntry],
       providerAnswered: true,
+      expectedAccount: "provider:acct",
       ...signHead(seaHead),
       statementKeyPub: signed.providerPub,
+    }),
+    { ok: false, reason: "head-mismatch" },
+  );
+  const attackerGenesis: AccountKeyLogEntry = {
+    account: "provider:other",
+    keyPub: "sea-attacker-0",
+    seq: 0,
+    prev: "none",
+  };
+  const attackerNext: AccountKeyLogEntry = {
+    account: "provider:other",
+    keyPub: "sea-attacker",
+    seq: 1,
+    prev: accountKeyEntryHash(attackerGenesis),
+  };
+  const attackerHead = {
+    account: "provider:other",
+    seq: 1,
+    entryHash: accountKeyEntryHash(attackerNext),
+  };
+  const attackerSigned = signHead(attackerHead);
+  assert.deepEqual(
+    acceptCurrentKey({
+      head: attackerHead,
+      entries: [attackerGenesis, attackerNext],
+      providerAnswered: true,
+      expectedAccount: "provider:acct",
+      ...attackerSigned,
+      statementKeyPub: "sea-attacker",
+    }),
+    { ok: false, reason: "head-mismatch" },
+  );
+  assert.deepEqual(
+    acceptCurrentKey({
+      head: attackerHead,
+      entries: [attackerGenesis, attackerNext],
+      providerAnswered: true,
+      expectedAccount: "provider:other",
+      ...attackerSigned,
+      statementKeyPub: "sea-attacker",
+    }),
+    { ok: true, keyPub: "sea-attacker" },
+  );
+  assert.deepEqual(
+    acceptCurrentKey({
+      head,
+      entries: [first, second],
+      providerAnswered: true,
+      ...signed,
+      expectedAccount: "",
+      statementKeyPub: "sea-next",
     }),
     { ok: false, reason: "head-mismatch" },
   );
@@ -500,6 +560,7 @@ test("status authority, group inbox, and current key", () => {
       head: limitHead,
       entries,
       providerAnswered: true,
+      expectedAccount: "provider:acct",
       ...signHead(limitHead),
       statementKeyPub: `sea-${KEYRING_HISTORY_MAX}`,
     }),

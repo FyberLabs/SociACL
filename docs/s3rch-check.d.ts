@@ -2857,14 +2857,16 @@ export type AccountKeyAnchor = {
 
 /**
  * Fail closed. The verifier checks a signature over accountKeyHeadBytes
- * under the provider or wallet key. The account SEA pub does not sign
- * that head. The hash chain links the head to seq 0 or to an anchor
- * already accepted for the same account. The anchor shortcut requires
- * entry.seq == anchor.seq + 1. The walk covers a head at
- * KEYRING_HISTORY_MAX. A missing head, a signature that does not
- * verify, a chain that does not link, a prev mismatch, or no answer
- * from the provider or wallet refuses. The highest cached seq is not
- * the current key. A superseded keyPub does not authenticate.
+ * under the provider or wallet key. expectedAccount is the owner or
+ * member being resolved. head.account and every chain entry must equal
+ * it. A valid head for another account is refused. The account SEA pub
+ * does not sign that head. The hash chain links the head to seq 0 or
+ * to an anchor already accepted for the same account. The anchor
+ * shortcut requires entry.seq == anchor.seq + 1. The walk covers a
+ * head at KEYRING_HISTORY_MAX. A missing head, a signature that does
+ * not verify, a chain that does not link, a prev mismatch, or no
+ * answer from the provider or wallet refuses. The highest cached seq
+ * is not the current key. A superseded keyPub does not authenticate.
  */
 export function acceptCurrentKey(input: {
   head?: AccountKeyLogHead;
@@ -2873,6 +2875,7 @@ export function acceptCurrentKey(input: {
   providerAnswered: boolean;
   providerPub: string;
   headSignature: string;
+  expectedAccount: string;
   statementKeyPub: string;
 }): { ok: true; keyPub: string } | { ok: false; reason: string };
 
@@ -3006,4 +3009,5 @@ export type EncryptedDiscoveryVector =
   | "account-key-anchor-wrong-account"
   | "account-key-log-at-limit"
   | "account-key-head-signature"
+  | "account-key-head-wrong-account"
   | "consume-statement-does-not-mint";
