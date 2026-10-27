@@ -68,6 +68,124 @@ export type GunFeedNode = {
 };
 
 /**
+ * Account identity for a forum agent is the GunDB SEA pubkey
+ * (`PrincipalId`). A wallet and a Panopticon OAuth subject are
+ * linked credentials. They are not this key and not a second
+ * identity plane.
+ *
+ * Status soul, not a grant soul:
+ * gun.get('s3rch').get('forums').get(<forumId>).get('agents').get(<seaPubkey>)
+ * `forumId` is a minted object id of kind `forum`.
+ * `seaPubkey` is that SEA pubkey, not a `p_` key and not a wallet.
+ * Check `see` on the admitted object id stored in `id`.
+ * State is data, not a grant.
+ * `started`, `tokens`, and `runtime` are this agent's counters.
+ * `tokens` is not a transfer.
+ */
+export type ForumAgentState = "idle" | "working" | "needs" | "emergency";
+
+export type ForumAgentStatus = {
+  /** Minted object id of kind `status`. The embedded principal is `seaPubkey`. */
+  id: ObjectId;
+  forumId: ObjectId;
+  seaPubkey: PrincipalId;
+  task: string;
+  result: string;
+  /** Comma-separated need object ids. Gun has no arrays. */
+  needs: string;
+  progress: number;
+  state: ForumAgentState;
+  lastPrompt: string;
+  lastUpdate: number;
+  type: string;
+  started: number;
+  tokens: number;
+  runtime: number;
+  /** Optional robotics vitals. A UX toggle. Not a grant. */
+  hb?: number;
+  batt?: number;
+  link?: number;
+  /** Comma-separated feed item ids attached to the drawer. Not a chat tree. */
+  artifacts?: string;
+};
+
+/**
+ * Need object. Soul:
+ * s3rch/forums/<forumId>/needs/<needId>
+ * `stated` 1 is open. `stated` 0 is resolved.
+ * Resolve is an owner or delegate dest-ACL write (privilege-down
+ * or a grant for who may write). A stated or hamState update is
+ * accepted only when Check see allows the writer on this need id.
+ * A missing admission does not accept the update. The admitted
+ * object owner stays the owner. A status node, a chat item, and a
+ * hint do not mint.
+ */
+export type ForumNeedSeverity = "need" | "emergency";
+
+export type ForumNeed = {
+  /** Minted object id of kind `need`. */
+  id: ObjectId;
+  forumId: ObjectId;
+  /**
+   * SEA pubkey the need is about. Not compared to the forum id or
+   * to the principal embedded in that id. Not a role token.
+   */
+  subject: PrincipalId;
+  severity: ForumNeedSeverity;
+  body: string;
+  stated: 0 | 1;
+  hamState: number;
+  ts: number;
+};
+
+/**
+ * Pinned emergency for the global alarm.
+ * Soul: s3rch/forums/<forumId>/alarm
+ * `pinned` is 1. The header alarm is also the fan-in of status
+ * tiles whose `state` is `emergency`. Either input is enough.
+ * This node is data. It is not a grant.
+ */
+export type ForumAlarm = {
+  forumId: ObjectId;
+  need: ObjectId;
+  pinned: 1;
+};
+
+/**
+ * Forum template. The template chooses one mode for the whole forum.
+ * distinct-principals: each role token is a different SEA principal.
+ * role-labels: one SEA principal wears several role tokens.
+ * A role token is not a Check predicate and not a principal.
+ * Soul: s3rch/forums/<forumId>/template
+ */
+export type ForumRoleMode = "distinct-principals" | "role-labels";
+
+export type ForumTemplate = {
+  forumId: ObjectId;
+  mode: ForumRoleMode;
+};
+
+/**
+ * One role token on one SEA principal.
+ * Soul: s3rch/forums/<forumId>/roles/<roleToken>/<seaPubkey>
+ * `role` is a lowercase token (letters, digits, hyphen). A display
+ * title is not this token. The token is not a Check predicate.
+ */
+export type ForumRoleMembership = {
+  forumId: ObjectId;
+  role: string;
+  principal: PrincipalId;
+};
+
+/**
+ * Forum chat statement. Same [`GunFeedNode`] under `s3rch/items`.
+ * `tags` includes `forum:<forumId>`. There is no `s3rch/chat` soul
+ * and no `s3rch/forums/<forumId>/chat` soul. An @role in the body
+ * is addressing. It is not authority.
+ */
+export type ForumChatItem = GunFeedNode;
+
+/**
  * UX only. tags is a list. Mapping is toGunNode / fromGunNode.
  * Dedupe: canonical id, else normalized permalink.
  */
@@ -389,6 +507,54 @@ export function grantSoul(
   object: CheckObjectId,
   accessor: AccessorId,
 ): string | null;
+
+/**
+ * Forum soul helpers. The consumer implements these names.
+ * This file declares them. Filled strings are in
+ * `vectors/mesh/forums.json`. Not a grant soul. Not a chat soul.
+ *
+ * Status soul: `s3rch/forums/<forumId>/agents/<seaPubkey>`.
+ */
+export function forumAgentSoul(forumId: ObjectId, seaPubkey: PrincipalId): string;
+
+/** `s3rch/forums/<forumId>/needs/<needId>`. */
+export function forumNeedSoul(forumId: ObjectId, needId: ObjectId): string;
+
+/** `s3rch/forums/<forumId>/alarm`. Pinned emergency. Not a grant. */
+export function forumAlarmSoul(forumId: ObjectId): string;
+
+/** `s3rch/forums/<forumId>/template`. */
+export function forumTemplateSoul(forumId: ObjectId): string;
+
+/**
+ * `s3rch/forums/<forumId>/roles/<roleToken>/<seaPubkey>`.
+ * The role token is not a Check predicate.
+ */
+export function forumRoleSoul(
+  forumId: ObjectId,
+  roleToken: string,
+  seaPubkey: PrincipalId,
+): string;
+
+/** Child soul under the agent status node. Not a chat tree. */
+export function forumSubtaskSoul(
+  forumId: ObjectId,
+  seaPubkey: PrincipalId,
+  subtaskId: ObjectId,
+): string;
+
+/** Child soul under the agent status node. Not a chat tree. */
+export function forumUpdateSoul(
+  forumId: ObjectId,
+  seaPubkey: PrincipalId,
+  updateId: ObjectId,
+): string;
+
+/**
+ * Tag for a forum chat statement on a GunFeedNode.
+ * Spelling: `forum:<forumId>`. Not a soul.
+ */
+export function forumChatTag(forumId: ObjectId): string;
 
 /**
  * In-graph see grant. HAM-merges across peers.

@@ -30,10 +30,17 @@
 //! ```compile_fail,E0432
 //! use sociacl_gun::client_check;
 //! ```
+//!
+//! Forum resolve does not elect an owner. The mesh graph has no elect method.
+//! ```compile_fail,E0599
+//! let mut graph = sociacl_gun::MeshSeeGraph::new();
+//! let _ = graph.elect("need");
+//! ```
 
 mod adapter;
 mod error;
 mod feed;
+mod forum;
 mod group;
 mod hint;
 mod hop;
@@ -48,6 +55,13 @@ pub use error::GunError;
 pub use feed::{
     from_gun_node, to_gun_node, FeedItem, FeedMeta, FeedSource, FeedTab, GunFeedNode, GunUserNode,
     IdentityClaimKind, IdentitySeeGrant, OffGraphKind,
+};
+pub use forum::{
+    accept_need_transition, forum_agent_soul, forum_alarm_soul, forum_chat_tag,
+    forum_chat_tag_present, forum_chat_tags, forum_emergency_alarm, forum_need_soul,
+    forum_role_soul, forum_roles_match, forum_subtask_soul, forum_template_soul, forum_update_soul,
+    is_separate_chat_soul, ForumAgentState, ForumAgentStatus, ForumAlarm, ForumNeed,
+    ForumNeedSeverity, ForumRoleMembership, ForumRoleMode, ForumTemplate,
 };
 pub use group::{
     DecodedGroupPayload, GroupPredicate, GroupPresentation, GroupSnapshotMember,
@@ -64,7 +78,7 @@ pub use mesh::{
 pub use post::MESH_REASON_POST;
 pub use request::{request_owner, ApprovedRequest};
 pub use sociacl_ids::{membership_soul, object_set_soul};
-pub use soul::{GunNode, GunNodeKind, GunSoul, S3RCH_ACL, S3RCH_META, S3RCH_ROOT};
+pub use soul::{GunNode, GunNodeKind, GunSoul, S3RCH_ACL, S3RCH_FORUMS, S3RCH_META, S3RCH_ROOT};
 
 /// Lighter s3r.ch Check: `CHECK(see, object, accessor)` at now.
 /// Object must have an admitted signed object record. A derived feed or claim

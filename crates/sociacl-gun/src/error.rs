@@ -41,6 +41,8 @@ pub enum GunError {
     SignerNotEnrolled,
     #[error("row signature is not valid")]
     RowSignature,
+    #[error("forum soul rejected")]
+    ForumSoul,
     #[error("check rejected: {0}")]
     Check(CheckError),
     #[error("{0}")]

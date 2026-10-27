@@ -1,0 +1,220 @@
+{
+  "v": 1,
+  "family": "forums",
+  "identity": "GunDB SEA pubkey is the account. A wallet and a Panopticon OAuth subject are linked credentials only.",
+  "seeCase": "equal-ham-cancel-wins",
+  "subjectRule": "ForumNeed.subject is the SEA pubkey the need is about. It is not compared to the forum id and not compared to the principal embedded in the forum id.",
+  "consumer": "The consumer implements the forum soul helpers declared in docs/s3rch-check.d.ts. Filled strings are the souls object in this file.",
+  "cases": [
+    "check-deny-without-dest-acl",
+    "cancel-visible-on-next-check",
+    "sgh1-hint-alone-fails-closed",
+    "resolve-need-does-not-elect",
+    "chat-via-tagged-items"
+  ],
+  "forumId": "forum_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_01010101010101010101010101010101",
+  "needId": "need_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_02020202020202020202020202020202",
+  "statusId": "status_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_03030303030303030303030303030303",
+  "wrongForumId": "forum_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_04040404040404040404040404040404",
+  "seaPubkey": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+  "secondPubkey": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+  "linkedWallet": "0x1efF47bc3a10a45D4B230B5d10E37751FE6AA718",
+  "souls": {
+    "agent": "s3rch/forums/forum_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_01010101010101010101010101010101/agents/axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+    "need": "s3rch/forums/forum_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_01010101010101010101010101010101/needs/need_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_02020202020202020202020202020202",
+    "alarm": "s3rch/forums/forum_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_01010101010101010101010101010101/alarm",
+    "template": "s3rch/forums/forum_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_01010101010101010101010101010101/template",
+    "role": "s3rch/forums/forum_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_01010101010101010101010101010101/roles/treasurer/axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+    "subtask": "s3rch/forums/forum_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_01010101010101010101010101010101/agents/axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU/subtasks/status_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_03030303030303030303030303030303",
+    "update": "s3rch/forums/forum_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_01010101010101010101010101010101/agents/axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU/updates/need_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_02020202020202020202020202020202",
+    "chatTag": "forum:forum_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_01010101010101010101010101010101"
+  },
+  "chatCollection": "s3rch/items",
+  "refusedChatSouls": [
+    "s3rch/chat",
+    "s3rch/forums/forum_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_01010101010101010101010101010101/chat"
+  ],
+  "roleModes": [
+    "distinct-principals",
+    "role-labels"
+  ],
+  "chat": {
+    "extra": [
+      "report"
+    ],
+    "joined": "forum:forum_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_01010101010101010101010101010101,report",
+    "duplicateExtra": [
+      "report",
+      "report"
+    ],
+    "duplicateJoined": "forum:forum_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_01010101010101010101010101010101,report",
+    "reject": [
+      "Urgent",
+      "chat",
+      "s3rch/chat/1",
+      "Report",
+      "report,chat"
+    ]
+  },
+  "resolve": {
+    "name": "resolve-need-does-not-elect",
+    "forumId": "forum_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_01010101010101010101010101010101",
+    "needId": "need_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_02020202020202020202020202020202",
+    "subject": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+    "severity": "emergency",
+    "open": {
+      "stated": 1,
+      "hamState": 1
+    },
+    "resolved": {
+      "stated": 0,
+      "hamState": 2
+    },
+    "soul": "s3rch/forums/forum_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_01010101010101010101010101010101/needs/need_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_02020202020202020202020202020202",
+    "pinsOpen": true,
+    "pinsResolved": false,
+    "admittedOwner": null,
+    "alarmForumId": "forum_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_01010101010101010101010101010101",
+    "needForumId": "forum_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_01010101010101010101010101010101",
+    "pinned": 1
+  },
+  "alarm": [
+    {
+      "name": "open-emergency-same-forum",
+      "alarmForumId": "forum_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_01010101010101010101010101010101",
+      "needForumId": "forum_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_01010101010101010101010101010101",
+      "needId": "need_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_02020202020202020202020202020202",
+      "subject": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+      "severity": "emergency",
+      "stated": 1,
+      "pinned": 1,
+      "tiles": [
+        "idle"
+      ],
+      "pins": true,
+      "alarm": true
+    },
+    {
+      "name": "resolved-same-forum",
+      "alarmForumId": "forum_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_01010101010101010101010101010101",
+      "needForumId": "forum_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_01010101010101010101010101010101",
+      "needId": "need_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_02020202020202020202020202020202",
+      "subject": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+      "severity": "emergency",
+      "stated": 0,
+      "pinned": 1,
+      "tiles": [
+        "idle"
+      ],
+      "pins": false,
+      "alarm": false
+    },
+    {
+      "name": "resolved-plus-emergency-tile",
+      "alarmForumId": "forum_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_01010101010101010101010101010101",
+      "needForumId": "forum_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_01010101010101010101010101010101",
+      "needId": "need_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_02020202020202020202020202020202",
+      "subject": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+      "severity": "emergency",
+      "stated": 0,
+      "pinned": 1,
+      "tiles": [
+        "emergency"
+      ],
+      "pins": false,
+      "alarm": true
+    },
+    {
+      "name": "wrong-forum-open-emergency",
+      "alarmForumId": "forum_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_04040404040404040404040404040404",
+      "needForumId": "forum_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_01010101010101010101010101010101",
+      "needId": "need_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_02020202020202020202020202020202",
+      "subject": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+      "severity": "emergency",
+      "stated": 1,
+      "pinned": 1,
+      "tiles": [
+        "idle"
+      ],
+      "pins": false,
+      "alarm": false
+    },
+    {
+      "name": "invalid-stated-does-not-pin",
+      "alarmForumId": "forum_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_01010101010101010101010101010101",
+      "needForumId": "forum_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_01010101010101010101010101010101",
+      "needId": "need_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_02020202020202020202020202020202",
+      "subject": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+      "severity": "emergency",
+      "stated": 2,
+      "pinned": 1,
+      "tiles": [
+        "idle"
+      ],
+      "pins": false,
+      "alarm": false
+    }
+  ],
+  "roles": [
+    {
+      "name": "distinct-two-principals",
+      "mode": "distinct-principals",
+      "rows": [
+        {
+          "role": "treasurer",
+          "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU"
+        },
+        {
+          "role": "secretary",
+          "principal": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E"
+        }
+      ],
+      "accept": true
+    },
+    {
+      "name": "distinct-pair-rejected-as-role-labels",
+      "mode": "role-labels",
+      "rows": [
+        {
+          "role": "treasurer",
+          "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU"
+        },
+        {
+          "role": "secretary",
+          "principal": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E"
+        }
+      ],
+      "accept": false
+    },
+    {
+      "name": "role-labels-one-principal",
+      "mode": "role-labels",
+      "rows": [
+        {
+          "role": "treasurer",
+          "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU"
+        },
+        {
+          "role": "secretary",
+          "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU"
+        }
+      ],
+      "accept": true
+    },
+    {
+      "name": "role-labels-pair-rejected-as-distinct",
+      "mode": "distinct-principals",
+      "rows": [
+        {
+          "role": "treasurer",
+          "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU"
+        },
+        {
+          "role": "secretary",
+          "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU"
+        }
+      ],
+      "accept": false
+    }
+  ]
+}

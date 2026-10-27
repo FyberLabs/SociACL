@@ -89,6 +89,11 @@ gun.get('s3rch').get('items').get(<item key>)  → GunFeedNode (UX). Derived ext
 gun.get('s3rch').get('meta')                     → seed meta (not a Check object)
 s3rch/acl/<owner key>/<object>/<accessor key>    → MeshSeeGrant (grantSoul)
 s3rch/acl/<owner key>/post/<object>/<accessor key> → MeshPostGrant (postSoul)
+s3rch/forums/<forumId>/agents/<seaPubkey>        → forum agent status (not a grant soul)
+s3rch/forums/<forumId>/needs/<needId>            → need object, including a pinned emergency
+s3rch/forums/<forumId>/alarm                     → pinned emergency need (data, not a grant)
+s3rch/forums/<forumId>/template                  → distinct-principals or role-labels
+s3rch/forums/<forumId>/roles/<roleToken>/<seaPubkey> → role membership
 ```
 
 The item key escapes `~ . # $ [ ]` and leaves `/` alone. That escape is a closed UX detail, not a public helper and not a Check id. Dest-ACL souls are the ids builders above. `room.alpha`, `room_alpha`, and `room/alpha` are three strings and none of them is an object id. A wallet, `s3rch/users/<wallet>`, a Gun chain, `.`, `..`, and `...` are not principals. `/ # $ [ ] ~`, an inner space, a control, Unicode whitespace, a format character, and `.get(` are rejected. Longer than 256 scalar values is rejected. TypeScript also rejects an unpaired surrogate. A failed parse is not a soul segment. An object id with leading or trailing whitespace is rejected, including tab, space, U+0085, U+00A0, U+3000, U+2028, and U+FEFF. It does not alias to the inner id. Group see and group presentation reject that id before lookup and do not trim it. A wallet, a Gun chain, and a label do not parse. Live rows are `vectors/mesh/v2/`. Protocol migration uses the same principal rejection, including `...`. Peer merge drops a post row whose owner or accessor does not parse. `s3rch/acl` is dest ACL, not a Check object. This crate does not build `s3rch/users/<wallet>` or `s3rch/items/<id>`.
@@ -115,6 +120,22 @@ object record. A grant alone cannot create an object owner.
 Arrays cannot live in Gun. Tags (and later indicators) are a comma-separated string on the wire.
 
 Graphs: public cache vs personal overlay vs later explicit share-into-mesh. Observing public traces is not dumping a private overlay.
+
+## Forums
+
+Identity stays the GunDB SEA pubkey (`PrincipalId`). A wallet and a Panopticon OAuth subject are linked credentials in the header only. They are not the agent soul key and not a second identity plane. `s3rch:forum:<owner>` stays rejected. A forum id is a minted object id of kind `forum` (it has a nonce). Soul builders live in `crates/sociacl-gun` (`forum_agent_soul`, `forum_need_soul`, `forum_alarm_soul`, `forum_template_soul`, `forum_role_soul`, `forum_subtask_soul`, `forum_update_soul`, `forum_chat_tag`). The ids package `parse_soul` does not accept these paths. They are not dest-ACL grant souls.
+
+1. **Per-agent drawer metrics.** The status node stores `task`, `result`, `needs`, `progress`, `state` (`idle` / `working` / `needs` / `emergency`), `lastPrompt`, `lastUpdate`, `type`, `started`, `tokens`, and `runtime`. `started`, `tokens`, and `runtime` belong to that agent. `tokens` is a counter on the node. It is not a transfer. Optional `hb`, `batt`, and `link` are vitals on the same node. Drawer subtasks and updates are child souls under the agent (`…/subtasks/<objectId>`, `…/updates/<objectId>`) or feed item ids in `artifacts`. Check `see` reads the admitted object. State is data, not a grant. The status object's embedded principal is the agent SEA pubkey.
+
+2. **Role windows, both template modes.** `s3rch/forums/<forumId>/template` is `distinct-principals` or `role-labels`. Distinct principals: each role token names a different SEA principal, and each principal wears one token. Role labels: one SEA principal wears several role tokens. The membership soul is `s3rch/forums/<forumId>/roles/<roleToken>/<seaPubkey>` in both modes. The role token is lowercase letters, digits, and hyphen, 1 to 32 characters. A display title is not the token. A role token is not a Check predicate. Authority stays dest ACL and direct `same-group` / `named-circle` edges.
+
+3. **Chat is tagged `s3rch/items`.** A statement is a `GunFeedNode` (`ForumChatItem` is that same shape). `tags` includes `forum:<forumId>` (`forum_chat_tag`). Extra tags stay as written. A tag that is not already lowercase is rejected, and so is the tag `chat`. A comma in one extra tag is rejected, so the tag does not split into two on read. Tags are not lowercased on write. There is no `s3rch/chat` soul and no `s3rch/forums/<forumId>/chat` soul. An `@role` in the body is addressing, not authority. Check `see` is the item's admitted id. The tag does not mint.
+
+4. **Global emergency alarm, both inputs.** A status tile with `state: emergency` fans in. The forum also pins one need at `s3rch/forums/<forumId>/alarm` (`pinned: 1`). The pin raises the alarm when that need is an open emergency (`severity: emergency`, `stated: 1`). Either input is enough. The alarm is data, not a grant.
+
+A need lives at `s3rch/forums/<forumId>/needs/<needId>`. `subject` is the SEA pubkey the need is about. It is not required to equal the forum id, and it is not required to equal the principal embedded in that id. `stated` 1 is open. `stated` 0 is resolved. Who may resolve is a dest-ACL grant on that need's admitted object. `accept_need_transition` accepts a stated or ham update only when Check see allows the writer on that need id. The writer is the admitted owner or a live delegate. A missing admission does not accept the update, so a higher ham from another peer does not clear the pin. Resolve is owner or delegate privilege-down, or a grant write. It does not Elect. The admitted object owner stays the owner. A board sighting, a status node, a chat item, and a hop do not Elect. Acceptance vectors: `vectors/mesh/forums.json` (`check-deny-without-dest-acl`, `cancel-visible-on-next-check`, `sgh1-hint-alone-fails-closed`, `resolve-need-does-not-elect`, `chat-via-tagged-items`). That file has a filled soul string for each builder, a need-resolve row, alarm pin rows for an open emergency, a resolved need, and a wrong forum, and accept or reject rows for both role modes.
+
+`GunFeedNode` and `GunUserNode` stay as they are. Forum chat adds a tag. It does not add a field.
 
 ## Group and circle rows
 
@@ -171,6 +192,10 @@ Max string 4096. Fail closed on a bad magic, version, or length.
 | handoff | `HandoffHint` (untrusted factor) |
 | hop | `HopFactor` (Social Light SLHP; optional; never a grant) |
 | dest ACL grant | `MeshSeeGrant` / `GunAclEdge` at `s3rch/acl/…` |
+| forum agent status | `s3rch/forums/<forumId>/agents/<seaPubkey>` data; Check on the admitted id |
+| forum need / pinned alarm | need soul plus `…/alarm`; Resolve is dest ACL, not Elect |
+| forum role | template mode plus role soul; the token is not a predicate |
+| forum chat | tagged `GunFeedNode` at `s3rch/items`; tag `forum:<forumId>` |
 | hopcap | 1. No friend-of-friend |
 
 `see` is an adapter alias for `read`. `ActionMask` still matches `read` / `write` / `execute`. The pure `map_action` helper maps that spelling; it does not admit an object or run a core-plane Check.
@@ -200,5 +225,8 @@ Elect and Case C mint have no Gun adapter entry points.
 - Treat a seeder or `/api/ingest` fetch as a grant
 - Put lease tickets on this plane
 - Bolt Elect, wills, or devices onto the s3r.ch Gun surface
+- Elect from a forum board sighting, a status node, a chat item, or a hop
+- Treat a forum role token, a status state, or a pinned alarm as a grant
+- Put payments or a token transfer on the forum status node
 - Host accounts, add SaaS, or invent tokenomics
 - Implement signal-based identification
