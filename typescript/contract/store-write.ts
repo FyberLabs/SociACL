@@ -21,7 +21,7 @@
  * principal.
  */
 import { p256 } from "@noble/curves/nist.js";
-import type { PrincipalId } from "../ids/src/index.js";
+import { resolveCurrentKey, type Diagnostic, type PrincipalId, type ResolutionContext } from "../ids/src/index.js";
 import { canonicalDecimal, lengthPrefixed, sha256Hex } from "./canonical.ts";
 
 export const DOMAIN_STORE_WRITE = "sociacl-store-write-v1";
@@ -64,6 +64,21 @@ export type StoreWriteAccount = {
   readonly currentEpub: PrincipalId | null;
   readonly rotations: readonly { readonly seq: number }[];
 };
+
+/** Resolve untrusted records before a store observes their head. Diagnostics are
+ * appended even on failure. The adapter supplies trusted policy/history context
+ * and enforces snapshot freshness; this helper cannot establish completeness. */
+export function resolveStoreAccount(
+  principal: PrincipalId,
+  rotations: readonly unknown[],
+  context: ResolutionContext,
+  diagnostics: Diagnostic[],
+): StoreWriteAccount {
+  const resolved = resolveCurrentKey(principal, rotations, context);
+  for (const diagnostic of resolved.diagnostics) diagnostics.push(diagnostic);
+  if (!resolved.ok) throw new Error("store-rejected");
+  return resolved.value;
+}
 
 export function storeWriteMessage(
   principal: string,

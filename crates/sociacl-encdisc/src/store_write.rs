@@ -112,6 +112,20 @@ where
     }
 }
 
+/// Resolve untrusted records before a store observes their head. Diagnostics are
+/// appended even on failure. The adapter supplies trusted policy/history context
+/// and enforces snapshot freshness; this helper cannot establish completeness.
+pub fn resolve_store_account(
+    principal: &PrincipalId,
+    rotations: &[serde_json::Value],
+    context: &sociacl_ids::ResolutionContext<'_>,
+    diagnostics: &mut Vec<sociacl_ids::Diagnostic>,
+) -> Result<sociacl_ids::ResolvedAccount, EncDiscError> {
+    let resolved = sociacl_ids::resolve_current_key(principal, rotations, context);
+    diagnostics.extend(resolved.diagnostics);
+    resolved.result.map_err(|_| EncDiscError::StoreRejected)
+}
+
 pub fn store_write_message(
     principal: &str,
     operation: &str,

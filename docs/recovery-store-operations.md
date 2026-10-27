@@ -23,6 +23,48 @@ still tracked in #68 F14; durable state is F16. Both stores for a principal must
 share the same monotonic floor. A resolver read, including one during a rejected
 write, can raise that floor.
 
+## Shared resolution helper
+
+Use `resolveStoreAccount` (exported from the TypeScript recovery and account-key
+modules) or Rust `resolve_store_account` when adapting a loaded history snapshot
+to the store's resolver callback. The helper runs the identity package's complete
+`resolveCurrentKey` / `resolve_current_key` verifier. It returns only the accepted
+head and maps resolution failure, including a valid fork, to `store-rejected`.
+Invalid entries are skipped under the identity resolver's normal rules; their
+claimed sequence never becomes a head. Diagnostics are appended to the caller's
+collection on both success and failure. Use a fresh collection for each operation
+and report it through the adapter's diagnostic channel.
+
+```typescript
+import { resolveStoreAccount, MemoryRecoveryStore } from "./recovery.ts";
+// loadSnapshot is adapter-owned, not a request-body parser. It must enforce
+// authenticated policy, history availability, and freshness before returning.
+const chain = (principal: PrincipalId) => {
+  const { rotations, context } = loadSnapshot(principal);
+  const diagnostics: Diagnostic[] = [];
+  try {
+    return resolveStoreAccount(principal, rotations, context, diagnostics);
+  } finally {
+    reportDiagnostics(diagnostics);
+  }
+};
+const recoveryStore = new MemoryRecoveryStore(chain, sharedFloor);
+// Pass the same chain and sharedFloor to the wrap store.
+```
+
+This is integration pseudocode: `loadSnapshot`, `reportDiagnostics`, and the shared
+floor belong to the adapter. Rust callbacks can likewise call
+`resolve_store_account(principal, &rotations, &context, &mut diagnostics)` and
+report diagnostics before returning the result.
+
+The helper does not fetch history, authenticate policy configuration, or prove
+snapshot completeness/freshness. An empty snapshot can resolve to genesis; only
+the adapter's trusted source and saved floor can establish whether that snapshot
+is sufficient. Do not accept a request-supplied context or replace the saved floor.
+Existing low-level resolver callbacks remain trusted interfaces for compatibility;
+this helper does not make arbitrary callbacks safe. Production adapter adoption
+remains F14, and atomic durable storage remains F16.
+
 ## Unknown genesis encryption key
 
 At the resolved head, a recovery put requires the envelope's signing public key
