@@ -173,7 +173,7 @@ pub use keyring::{
     KeyringRotation, RetiredEpriv, RotationDraft, RotationMint,
 };
 pub use limits::{
-    Argon2Bound, Argon2IdLimits, ARGON2ID_LIMITS, DELIVERY_BLOB_MAX, KEYRING_SERIAL_MAX,
+    Argon2Bound, Argon2IdLimits, ARGON2ID_LIMITS, DELIVERY_BLOB_MAX, KEYRING_HISTORY_MAX, KEYRING_SERIAL_MAX,
     MAX_WRAPS_PER_PRINCIPAL, RECOVERY_ABSOLUTE_MAX, RECOVERY_ENVELOPE_MAX,
 };
 pub use migration::{

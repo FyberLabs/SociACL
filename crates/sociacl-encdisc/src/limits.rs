@@ -7,8 +7,8 @@
 //! `KEYRING_SERIAL_MAX` is 256 KiB. The constant is unchanged. A retired
 //! pair is 138 bytes. A prior base lane and a prior contact-lane secret
 //! are 68 bytes each. 1024 of each list plus 1024 retired keys is about
-//! 281237 bytes and does not fit. This cap rejects that encoding. Counting
-//! prior lanes and prior contact-lane secrets is #68 and is not this cap.
+//! 281237 bytes and does not fit. This cap rejects that encoding. Complete
+//! histories are capped separately; the serialization-policy gap remains #68 F22.
 
 /// Inclusive floor and ceiling for one Argon2id parameter.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -61,6 +61,9 @@ pub const ARGON2ID_LIMITS: Argon2IdLimits = Argon2IdLimits {
 
 /// Fixed cap on the serialized keyring plaintext. 256 KiB. Unchanged by the contact-lane secret.
 pub const KEYRING_SERIAL_MAX: usize = 262_144;
+
+/// Maximum rotation sequence and entries in each complete lane history. No pruning.
+pub const KEYRING_HISTORY_MAX: usize = 1024;
 
 /// Version byte, uncompressed P-256 point, 12-byte nonce, and the GCM tag.
 pub const DELIVERY_BLOB_MAX: usize = 1 + 65 + 12 + KEYRING_SERIAL_MAX + 16;

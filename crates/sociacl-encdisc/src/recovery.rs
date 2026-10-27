@@ -24,7 +24,7 @@ use crate::error::EncDiscError;
 use crate::hexutil::encode_hex;
 use crate::keyring::{rotate_keyring, AccountKeyring, KeyringRotation, RotationMint};
 use crate::limits::{
-    in_bound, ARGON2ID_LIMITS, KEYRING_SERIAL_MAX, RECOVERY_ABSOLUTE_MAX, RECOVERY_HEADER_LEN,
+    in_bound, ARGON2ID_LIMITS, KEYRING_HISTORY_MAX, KEYRING_SERIAL_MAX, RECOVERY_ABSOLUTE_MAX, RECOVERY_HEADER_LEN,
     RECOVERY_NONCE_LEN, RECOVERY_TAG_LEN,
 };
 use crate::store_write::{sign_store_write, verify_store_write};
@@ -930,6 +930,12 @@ pub(crate) struct KeyringFields {
 }
 
 pub(crate) fn encode_keyring(keyring: &AccountKeyring) -> Result<Zeroizing<Vec<u8>>, EncDiscError> {
+    if keyring.prior_lanes().len() > KEYRING_HISTORY_MAX
+        || keyring.prior_contact_secrets().len() > KEYRING_HISTORY_MAX
+        || keyring.rotation_seq() > KEYRING_HISTORY_MAX as u64
+    {
+        return Err(EncDiscError::KeyringTooLarge);
+    }
     let retired_count = canonical::canonical_decimal(keyring.retired().len() as u64)?;
     let prior_count = canonical::canonical_decimal(keyring.prior_lanes().len() as u64)?;
     let contact_prior_count =
@@ -1033,6 +1039,9 @@ pub(crate) fn decode_keyring(bytes: &[u8]) -> Result<KeyringFields, EncDiscError
     let lane_id = cursor.next_string()?;
     let prior_count = canonical::parse_canonical_decimal(cursor.next_string()?.as_str())
         .map_err(|_| EncDiscError::RecoveryRejected)?;
+    if prior_count > KEYRING_HISTORY_MAX as u64 {
+        return Err(EncDiscError::KeyringTooLarge);
+    }
     if prior_count.saturating_mul(4) > cursor.remaining() as u64 {
         return Err(EncDiscError::RecoveryRejected);
     }
@@ -1043,6 +1052,9 @@ pub(crate) fn decode_keyring(bytes: &[u8]) -> Result<KeyringFields, EncDiscError
     let contact_lane_secret = cursor.next_string()?;
     let contact_prior_count = canonical::parse_canonical_decimal(cursor.next_string()?.as_str())
         .map_err(|_| EncDiscError::RecoveryRejected)?;
+    if contact_prior_count > KEYRING_HISTORY_MAX as u64 {
+        return Err(EncDiscError::KeyringTooLarge);
+    }
     if contact_prior_count.saturating_mul(4) > cursor.remaining() as u64 {
         return Err(EncDiscError::RecoveryRejected);
     }
@@ -1054,6 +1066,9 @@ pub(crate) fn decode_keyring(bytes: &[u8]) -> Result<KeyringFields, EncDiscError
         .map_err(|_| EncDiscError::RecoveryRejected)?;
     let rotation_seq = canonical::parse_canonical_decimal(cursor.next_string()?.as_str())
         .map_err(|_| EncDiscError::RecoveryRejected)?;
+    if rotation_seq > KEYRING_HISTORY_MAX as u64 {
+        return Err(EncDiscError::KeyringTooLarge);
+    }
     if cursor.remaining() != 0 {
         return Err(EncDiscError::RecoveryRejected);
     }
@@ -3032,4 +3047,46 @@ mod tests {
             crate::sea::sea_priv_from_secret(&secret).unwrap(),
         )
     }
+
+    #[test]
+    fn shared_codec_history_bounds_reject_counts_before_payload() {
+        let fixture: Value = serde_json::from_str(include_str!(
+            "../../../vectors/encrypted-discovery/keyring-history-import.json"
+        )).unwrap();
+        for row in fixture["codecCases"].as_array().unwrap() {
+            let lanes = row["laneCount"].as_u64().unwrap();
+            let contacts = row["contactCount"].as_u64().unwrap();
+            let mut bytes = Vec::new();
+            for field in [DOMAIN_KEYRING_PLAIN, "principal", "genesisEpub", "pub", "priv", "epub", "epriv", "0", "lane"] {
+                write_field(&mut bytes, field);
+            }
+            write_field(&mut bytes, &lanes.to_string());
+            if row["truncateAfter"] != "lanes" {
+                for i in 1..=lanes {
+                    write_field(&mut bytes, &format!("{i:064x}"));
+                }
+                write_field(&mut bytes, "contact");
+                write_field(&mut bytes, &contacts.to_string());
+                if row["truncateAfter"] != "contacts" {
+                    for i in 1025..1025 + contacts {
+                        write_field(&mut bytes, &format!("{i:064x}"));
+                    }
+                    write_field(&mut bytes, "0");
+                    write_field(&mut bytes, &row["rotationSeq"].as_u64().unwrap().to_string());
+                }
+            }
+            let result = decode_keyring(&bytes);
+            if let Some(expected) = row["error"].as_str() {
+                let Err(error) = result else { panic!("{} accepted", row["name"]); };
+                assert_eq!(token(&error), expected, "{}", row["name"]);
+            } else {
+                // Structural decoding; import separately authenticates keys and history.
+                let decoded = result.unwrap();
+                assert_eq!(decoded.prior_lanes.len(), KEYRING_HISTORY_MAX);
+                assert_eq!(decoded.prior_contact_secrets.len(), KEYRING_HISTORY_MAX);
+                assert_eq!(decoded.rotation_seq, KEYRING_HISTORY_MAX as u64);
+            }
+        }
+    }
+
 }

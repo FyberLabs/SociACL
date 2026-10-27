@@ -10,12 +10,14 @@ import {
 } from "../contract/account-key.ts";
 import {
   AccountKeyring,
+  KEYRING_HISTORY_MAX,
   draftDocument,
   epubForNewSeal,
   mintRotation,
   rotateKeyring,
 } from "../contract/account-keyring.ts";
 import { bytesToHex, seaPoint, sharedX, uncompressedFromSea } from "../contract/account-key-seal.ts";
+import { decodeKeyring, DOMAIN_KEYRING_PLAIN } from "../contract/keyring-codec.ts";
 import { lengthPrefixed } from "../contract/canonical.ts";
 import { openReaderWrap } from "../contract/content-wrap.ts";
 import { deriveContactLane } from "../contract/contact-lane.ts";
@@ -1206,20 +1208,56 @@ test("create then restore keeps lanes and a missing history is refused", () => {
 test("shared large-history imports reject duplicates and disclosed contact secrets", () => {
   const history = JSON.parse(readFileSync(new URL("../../vectors/encrypted-discovery/keyring-history-import.json", import.meta.url), "utf8")) as {
     count: number; laneId: string; contactSecret: string;
-    cases: { name: string; priorLaneLast?: string; priorContactLast?: string; contactSecret?: string; error: string }[];
+    cases: { rotationSeq?: number; laneCount?: number; contactCount?: number; name: string; priorLaneLast?: string; priorContactLast?: string; contactSecret?: string; error: string }[];
   };
   for (const row of history.cases) {
-    const lanes = Array.from({ length: history.count }, (_, i) => (i + 1).toString(16).padStart(64, "0"));
-    const contacts = Array.from({ length: history.count }, (_, i) => (history.count + i + 1).toString(16).padStart(64, "0"));
-    if (row.priorLaneLast !== undefined) lanes[history.count - 1] = row.priorLaneLast;
-    if (row.priorContactLast !== undefined) contacts[history.count - 1] = row.priorContactLast;
+    const lanes = Array.from({ length: row.laneCount ?? history.count }, (_, i) => (i + 1).toString(16).padStart(64, "0"));
+    const contacts = Array.from({ length: row.contactCount ?? history.count }, (_, i) => (history.count + i + 1).toString(16).padStart(64, "0"));
+    if (row.priorLaneLast !== undefined) lanes[lanes.length - 1] = row.priorLaneLast;
+    if (row.priorContactLast !== undefined) contacts[contacts.length - 1] = row.priorContactLast;
     assert.equal(message(() => AccountKeyring.import(
       vector.genesis.principal, vector.genesis.epub,
       vector.mint.signingPub, vector.mint.signingPriv,
       vector.mint.epub, vector.mint.epriv,
       [{ epub: vector.genesis.epub, epriv: vector.genesis.epriv }],
-      history.laneId, 1, history.count, [], emptyContext(), lanes,
+      history.laneId, 1, row.rotationSeq ?? history.count, [], emptyContext(), lanes,
       row.contactSecret ?? history.contactSecret, contacts,
     )), row.error, row.name);
+  }
+});
+
+
+test("history limit refuses rotation before invoking the mint", () => {
+  // Isolate the preflight boundary: no private key state should be read here.
+  const full = { rotationSeq: KEYRING_HISTORY_MAX } as AccountKeyring;
+  assert.throws(() => rotateKeyring(full, ["phone"], "phone", [], emptyContext(), () => {
+    assert.fail("mint must not run at the history limit");
+  }), { message: "keyring-too-large" });
+});
+
+
+test("shared codec history bounds reject counts before reading their payload", () => {
+  const fixture = JSON.parse(readFileSync(new URL("../../vectors/encrypted-discovery/keyring-history-import.json", import.meta.url), "utf8")) as {
+    codecCases: { name: string; laneCount: number; contactCount: number; rotationSeq: number; truncateAfter?: string; error?: string }[];
+  };
+  for (const row of fixture.codecCases) {
+    const fields = [DOMAIN_KEYRING_PLAIN, "principal", "genesisEpub", "pub", "priv", "epub", "epriv", "0", "lane", String(row.laneCount)];
+    if (row.truncateAfter !== "lanes") {
+      fields.push(...Array.from({ length: row.laneCount }, (_, i) => (i + 1).toString(16).padStart(64, "0")));
+      fields.push("contact", String(row.contactCount));
+      if (row.truncateAfter !== "contacts") {
+        fields.push(...Array.from({ length: row.contactCount }, (_, i) => (i + 1025).toString(16).padStart(64, "0")));
+        fields.push("0", String(row.rotationSeq));
+      }
+    }
+    const bytes = lengthPrefixed(fields);
+    if (row.error) assert.throws(() => decodeKeyring(bytes), { message: row.error }, row.name);
+    else {
+      // Structural decoding only; AccountKeyring.import authenticates keys and history.
+      const decoded = decodeKeyring(bytes);
+      assert.equal(decoded.priorLanes.length, KEYRING_HISTORY_MAX);
+      assert.equal(decoded.priorContactSecrets.length, KEYRING_HISTORY_MAX);
+      assert.equal(decoded.rotationSeq, KEYRING_HISTORY_MAX);
+    }
   }
 });

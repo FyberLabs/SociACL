@@ -4,7 +4,7 @@
  */
 import type { AccountKeyring } from "./account-keyring.ts";
 import { canonicalDecimal, lengthPrefixed } from "./canonical.ts";
-import { KEYRING_SERIAL_MAX } from "./keyring-limits.ts";
+import { KEYRING_HISTORY_MAX, KEYRING_SERIAL_MAX } from "./keyring-limits.ts";
 
 const DOMAIN_KEYRING_PLAIN_V1 = "sociacl-keyring-plain-v1";
 export const DOMAIN_KEYRING_PLAIN = "sociacl-keyring-plain-v2";
@@ -29,6 +29,8 @@ export function encodeKeyring(keyring: AccountKeyring): Uint8Array {
   const retired = keyring.retired();
   const prior = keyring.priorLanes();
   const priorContact = keyring.priorContactSecrets();
+  if (prior.length > KEYRING_HISTORY_MAX || priorContact.length > KEYRING_HISTORY_MAX
+    || keyring.rotationSeq > KEYRING_HISTORY_MAX) throw new Error("keyring-too-large");
   const fields = [
     DOMAIN_KEYRING_PLAIN,
     keyring.principal,
@@ -73,16 +75,19 @@ export function decodeKeyring(bytes: Uint8Array): KeyringFields {
   }
   const laneId = cursor.nextString();
   const priorCount = decimal(cursor.nextString());
+  if (priorCount > KEYRING_HISTORY_MAX) throw new Error("keyring-too-large");
   if (priorCount * 4 > cursor.remaining()) throw new Error("recovery-rejected");
   const priorLanes: string[] = [];
   for (let i = 0; i < priorCount; i += 1) priorLanes.push(cursor.nextString());
   const contactLaneSecret = cursor.nextString();
   const contactPriorCount = decimal(cursor.nextString());
+  if (contactPriorCount > KEYRING_HISTORY_MAX) throw new Error("keyring-too-large");
   if (contactPriorCount * 4 > cursor.remaining()) throw new Error("recovery-rejected");
   const priorContactSecrets: string[] = [];
   for (let i = 0; i < contactPriorCount; i += 1) priorContactSecrets.push(cursor.nextString());
   const contentEpoch = decimal(cursor.nextString());
   const rotationSeq = decimal(cursor.nextString());
+  if (rotationSeq > KEYRING_HISTORY_MAX) throw new Error("keyring-too-large");
   if (cursor.remaining() !== 0) throw new Error("recovery-rejected");
   return {
     principal,

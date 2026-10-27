@@ -8,8 +8,8 @@
  * `KEYRING_SERIAL_MAX` is 256 KiB. The constant is unchanged. A retired
  * pair is 138 bytes. A prior base lane and a prior contact-lane secret
  * are 68 bytes each. 1024 of each list plus 1024 retired keys is about
- * 281237 bytes and does not fit. This cap rejects that encoding. Counting
- * prior lanes and prior contact-lane secrets is #68 and is not this cap.
+ * 281237 bytes and does not fit. This cap rejects that encoding. Complete
+ * histories are capped separately; the serialization-policy gap remains #68 F22.
  */
 export const ARGON2ID_LIMITS = {
   version: { floor: 0x13, ceiling: 0x13 },
@@ -22,6 +22,9 @@ export const ARGON2ID_LIMITS = {
 
 /** Fixed cap on the serialized keyring plaintext. 256 KiB. Unchanged by the contact-lane secret. */
 export const KEYRING_SERIAL_MAX = 262144;
+
+/** Maximum rotation sequence and entries in each complete lane history. No pruning. */
+export const KEYRING_HISTORY_MAX = 1024;
 
 /** Version byte, uncompressed P-256 point, 12-byte nonce, and the GCM tag. */
 export const DELIVERY_BLOB_MAX = 1 + 65 + 12 + KEYRING_SERIAL_MAX + 16;

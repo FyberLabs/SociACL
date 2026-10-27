@@ -1,10 +1,10 @@
 {
   "v": 1,
   "family": "keyring-history-import",
-  "rule": "Generate prior lanes as 64-digit lowercase hex integers 1..count and prior contact secrets as count+1..2*count. Apply case overrides to the last element or current value. The valid history reaches chain confirmation and returns pub-mismatch against an empty history; invalid histories return bad-lane first.",
-  "count": 4096,
+  "rule": "Generate prior lanes as 64-digit lowercase hex integers 1..count and prior contact secrets as count+1..2*count. Apply case overrides to the last element or current value. The valid history reaches chain confirmation and returns pub-mismatch against an empty history; invalid histories return bad-lane first. Histories and rotationSeq are capped at 1024; count overrides exercise early rejection, before contents or account validation.",
+  "count": 1024,
   "laneId": "0000000000000000000000000000000000000000000000000000000000000000",
-  "contactSecret": "0000000000000000000000000000000000000000000000000000000000002001",
+  "contactSecret": "0000000000000000000000000000000000000000000000000000000000000801",
   "cases": [
     {
       "name": "disjoint-history",
@@ -22,17 +22,17 @@
     },
     {
       "name": "duplicate-prior-contact",
-      "priorContactLast": "0000000000000000000000000000000000000000000000000000000000001001",
+      "priorContactLast": "0000000000000000000000000000000000000000000000000000000000000401",
       "error": "bad-lane"
     },
     {
       "name": "prior-contact-reuses-current",
-      "priorContactLast": "0000000000000000000000000000000000000000000000000000000000002001",
+      "priorContactLast": "0000000000000000000000000000000000000000000000000000000000000801",
       "error": "bad-lane"
     },
     {
       "name": "prior-contact-is-prior-lane",
-      "priorContactLast": "0000000000000000000000000000000000000000000000000000000000001000",
+      "priorContactLast": "0000000000000000000000000000000000000000000000000000000000000400",
       "error": "bad-lane"
     },
     {
@@ -42,7 +42,7 @@
     },
     {
       "name": "current-contact-is-prior-lane",
-      "contactSecret": "0000000000000000000000000000000000000000000000000000000000001000",
+      "contactSecret": "0000000000000000000000000000000000000000000000000000000000000400",
       "error": "bad-lane"
     },
     {
@@ -59,6 +59,81 @@
       "name": "malformed-prior-contact",
       "priorContactLast": "gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
       "error": "bad-lane"
+    },
+    {
+      "name": "sequence-over-limit",
+      "rotationSeq": 1025,
+      "laneCount": 0,
+      "contactCount": 0,
+      "error": "keyring-too-large"
+    },
+    {
+      "name": "lanes-over-limit-before-contents",
+      "rotationSeq": 0,
+      "laneCount": 1025,
+      "contactCount": 0,
+      "priorLaneLast": "invalid",
+      "error": "keyring-too-large"
+    },
+    {
+      "name": "contacts-over-limit-before-count-mismatch",
+      "rotationSeq": 0,
+      "laneCount": 0,
+      "contactCount": 1025,
+      "priorContactLast": "invalid",
+      "error": "keyring-too-large"
+    },
+    {
+      "name": "both-histories-over-limit",
+      "rotationSeq": 1024,
+      "laneCount": 1025,
+      "contactCount": 1025,
+      "error": "keyring-too-large"
+    },
+    {
+      "name": "large-safe-sequence",
+      "rotationSeq": 9007199254740991,
+      "laneCount": 0,
+      "contactCount": 0,
+      "error": "keyring-too-large"
+    },
+    {
+      "name": "unsafe-sequence",
+      "rotationSeq": 9007199254740992,
+      "laneCount": 0,
+      "contactCount": 0,
+      "error": "keyring-rejected"
+    }
+  ],
+  "codecCases": [
+    {
+      "name": "maximum-complete-histories",
+      "laneCount": 1024,
+      "contactCount": 1024,
+      "rotationSeq": 1024
+    },
+    {
+      "name": "lane-count-over-limit-before-payload",
+      "laneCount": 1025,
+      "contactCount": 0,
+      "rotationSeq": 0,
+      "truncateAfter": "lanes",
+      "error": "keyring-too-large"
+    },
+    {
+      "name": "contact-count-over-limit-before-payload",
+      "laneCount": 0,
+      "contactCount": 1025,
+      "rotationSeq": 0,
+      "truncateAfter": "contacts",
+      "error": "keyring-too-large"
+    },
+    {
+      "name": "decoded-sequence-over-limit",
+      "laneCount": 0,
+      "contactCount": 0,
+      "rotationSeq": 1025,
+      "error": "keyring-too-large"
     }
   ]
 }
