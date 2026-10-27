@@ -1571,7 +1571,8 @@ export type EpochManifest = {
   aclSnapshot: string;
   /**
    * Designated status SEA pub for this head. Omitted from the
-   * canonical body when absent. When present it is the last field
+   * canonical body when absent. An empty string is rejected.
+   * When present it is the last field
    * of epochRevisionId. It is not an account identity. A status
    * proof signed by any other key verifies only when that key
    * equals this pub and the same pub on StatusAuthorityBinding,
@@ -2588,6 +2589,7 @@ export type ItemLocator = {
 /**
  * Signed manifest body at ManifestSoul.
  * statusAuthPub is omitted from the canonical bytes when absent.
+ * An empty statusAuthPub is rejected.
  * The node is { v: 1, manifest, msig } and carries no account pub.
  * Not a grant.
  */
@@ -2700,6 +2702,7 @@ export function envDigest(
 
 /**
  * Canonical revision manifest. statusAuthPub is omitted when absent.
+ * An empty statusAuthPub is rejected.
  * msig is the current account SEA signature over these bytes.
  * Fields: "s3rch-revision-manifest-v1", itemId, decimal e, rev, parent,
  * keyId, envDigest, and statusAuthPub when present.
@@ -2810,16 +2813,18 @@ export function acceptRevisionManifest(input: {
 /**
  * A status proof signed by the current account key is accepted on its own.
  * Any other key verifies only when it equals statusAuthPub on the binding
- * and on the manifest, the binding signature verifies under the current
- * account key, and seq is the log head. A missing binding refuses every
- * other signer. purpose "manifest", "grant", and "binding" accept only
- * the current account key. The proof does not mint.
+ * and on the manifest, the binding account equals the log head account,
+ * the binding signature verifies under the current account key, and seq
+ * is the log head. A missing binding refuses every other signer.
+ * purpose "manifest", "grant", and "binding" accept only the current
+ * account key. The proof does not mint.
  */
 export function acceptStatusSigner(input: {
   signingPub: string;
   currentAccountPub: string;
   binding?: StatusAuthorityBinding;
   manifestStatusAuthPub?: string;
+  logHeadAccount?: string;
   logHeadSeq?: number;
   bindingSignedByCurrent: boolean;
   purpose: "status" | "manifest" | "grant" | "binding";
@@ -2841,17 +2846,33 @@ export function acceptGroupInboxSender(input: {
 }): { ok: true } | { ok: false; reason: string };
 
 /**
- * Fail closed. The verifier has fetched the head and a hash chain that
- * links it to seq 0 or to anchorHash, an entry already accepted.
- * A missing head, a chain that does not link, a prev mismatch, or no
- * answer from the provider or wallet refuses. The highest cached seq
- * is not the current key. A superseded keyPub does not authenticate.
+ * An entry already accepted on an earlier check.
+ * A later entry may stop here only for this account at seq + 1.
+ */
+export type AccountKeyAnchor = {
+  account: string;
+  seq: number;
+  hash: string;
+};
+
+/**
+ * Fail closed. The verifier checks a signature over accountKeyHeadBytes
+ * under the provider or wallet key. The account SEA pub does not sign
+ * that head. The hash chain links the head to seq 0 or to an anchor
+ * already accepted for the same account. The anchor shortcut requires
+ * entry.seq == anchor.seq + 1. The walk covers a head at
+ * KEYRING_HISTORY_MAX. A missing head, a signature that does not
+ * verify, a chain that does not link, a prev mismatch, or no answer
+ * from the provider or wallet refuses. The highest cached seq is not
+ * the current key. A superseded keyPub does not authenticate.
  */
 export function acceptCurrentKey(input: {
   head?: AccountKeyLogHead;
   entries: readonly AccountKeyLogEntry[];
-  anchorHash?: string;
+  anchor?: AccountKeyAnchor;
   providerAnswered: boolean;
+  providerPub: string;
+  headSignature: string;
   statementKeyPub: string;
 }): { ok: true; keyPub: string } | { ok: false; reason: string };
 
@@ -2981,4 +3002,8 @@ export type EncryptedDiscoveryVector =
   | "group-inbox-writer-key-refused"
   | "account-key-fail-closed"
   | "account-key-superseded"
+  | "account-key-anchor-non-adjacent"
+  | "account-key-anchor-wrong-account"
+  | "account-key-log-at-limit"
+  | "account-key-head-signature"
   | "consume-statement-does-not-mint";

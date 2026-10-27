@@ -101,7 +101,8 @@ export function epochRevisionBytes(body: EpochManifestBody): Uint8Array {
     body.aclSnapshot,
   ];
   const statusAuthPub = body.statusAuthPub;
-  if (statusAuthPub !== undefined && statusAuthPub.length > 0) {
+  if (statusAuthPub !== undefined) {
+    if (statusAuthPub.length === 0) throw new Error("bad revision");
     fields.push(statusAuthPub);
   }
   return lengthPrefixed(fields);

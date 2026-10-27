@@ -234,9 +234,10 @@ pub fn epoch_revision_bytes(body: &EpochManifestBody) -> Result<Vec<u8>, EncDisc
         body.acl_snapshot.clone(),
     ];
     if let Some(status_auth_pub) = body.status_auth_pub.as_deref() {
-        if !status_auth_pub.is_empty() {
-            fields.push(status_auth_pub.to_string());
+        if status_auth_pub.is_empty() {
+            return Err(EncDiscError::BadEncoding);
         }
+        fields.push(status_auth_pub.to_string());
     }
     let refs: Vec<&str> = fields.iter().map(String::as_str).collect();
     length_prefixed(&refs)

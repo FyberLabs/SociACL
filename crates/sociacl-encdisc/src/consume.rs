@@ -12,6 +12,11 @@
 
 use crate::canonical::{canonical_decimal, length_prefixed, sha256_hex};
 use crate::error::EncDiscError;
+use crate::limits::KEYRING_HISTORY_MAX;
+use crate::sea::verify_sea;
+
+/// Steps from a head at `KEYRING_HISTORY_MAX` down through seq 0.
+const ACCOUNT_KEY_WALK_LIMIT: usize = KEYRING_HISTORY_MAX + 1;
 
 pub const DOMAIN_ENV_DIGEST: &str = "s3rch-env-digest-v1";
 pub const DOMAIN_REVISION_MANIFEST: &str = "s3rch-revision-manifest-v1";
@@ -83,6 +88,17 @@ pub struct AccountKeyLogHead {
     pub account: String,
     pub seq: u64,
     pub entry_hash: String,
+}
+
+/// An entry already accepted on an earlier check.
+///
+/// A later entry may stop at this anchor only when it names the same
+/// account and its seq is this seq plus one.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AccountKeyAnchor {
+    pub account: String,
+    pub seq: u64,
+    pub hash: String,
 }
 
 fn path_segment(value: &str) -> Result<(), EncDiscError> {
@@ -176,11 +192,7 @@ pub fn revision_manifest_bytes(manifest: &RevisionManifest) -> Result<Vec<u8>, E
         manifest.key_id.clone(),
         manifest.env_digest.clone(),
     ];
-    if let Some(status_auth_pub) = manifest.status_auth_pub.as_deref() {
-        if !status_auth_pub.is_empty() {
-            fields.push(status_auth_pub.to_string());
-        }
-    }
+    push_status_auth(&mut fields, manifest.status_auth_pub.as_deref())?;
     let refs: Vec<&str> = fields.iter().map(String::as_str).collect();
     prefixed(&refs)
 }
@@ -374,6 +386,7 @@ pub fn accept_status_signer(
     current_account_pub: &str,
     binding: Option<&StatusAuthorityBinding>,
     manifest_status_auth_pub: Option<&str>,
+    log_head_account: Option<&str>,
     log_head_seq: Option<u64>,
     binding_signed_by_current: bool,
     purpose: &str,
@@ -397,10 +410,13 @@ pub fn accept_status_signer(
     let Some(manifest_pub) = manifest_status_auth_pub.filter(|pub_key| !pub_key.is_empty()) else {
         return ConsumeDecision::Refuse("missing-binding");
     };
+    let Some(head_account) = log_head_account.filter(|account| !account.is_empty()) else {
+        return ConsumeDecision::Refuse("missing-binding");
+    };
     let Some(head_seq) = log_head_seq else {
         return ConsumeDecision::Refuse("missing-binding");
     };
-    if binding.account.is_empty()
+    if binding.account != head_account
         || binding.account_pub != current_account_pub
         || binding.status_auth_pub != signing_pub
         || manifest_pub != signing_pub
@@ -451,11 +467,49 @@ fn unique_index(
     Ok(found)
 }
 
+fn push_status_auth(
+    fields: &mut Vec<String>,
+    status_auth_pub: Option<&str>,
+) -> Result<(), EncDiscError> {
+    if let Some(status_auth_pub) = status_auth_pub {
+        if status_auth_pub.is_empty() {
+            return Err(EncDiscError::BadEncoding);
+        }
+        fields.push(status_auth_pub.to_string());
+    }
+    Ok(())
+}
+
+fn anchor_links(entry: &AccountKeyLogEntry, entry_hash: &str, anchor: &AccountKeyAnchor) -> bool {
+    if entry.account != anchor.account {
+        return false;
+    }
+    if entry_hash == anchor.hash && entry.seq == anchor.seq {
+        return true;
+    }
+    match anchor.seq.checked_add(1) {
+        Some(next) => entry.seq == next && entry.prev == anchor.hash,
+        None => false,
+    }
+}
+
+fn head_signature_ok(provider_pub: &str, head: &AccountKeyLogHead, signature: &str) -> bool {
+    if provider_pub.is_empty() || signature.is_empty() {
+        return false;
+    }
+    let Ok(message) = account_key_head_bytes(head) else {
+        return false;
+    };
+    verify_sea(provider_pub, &message, signature).is_ok()
+}
+
 pub fn accept_current_key(
     head: Option<&AccountKeyLogHead>,
     entries: &[AccountKeyLogEntry],
-    anchor_hash: Option<&str>,
+    anchor: Option<&AccountKeyAnchor>,
     provider_answered: bool,
+    provider_pub: &str,
+    head_signature: &str,
     statement_key_pub: &str,
 ) -> CurrentKeyDecision {
     if !provider_answered {
@@ -464,6 +518,9 @@ pub fn accept_current_key(
     let Some(head) = head else {
         return CurrentKeyDecision::Refuse("missing-head");
     };
+    if !head_signature_ok(provider_pub, head, head_signature) {
+        return CurrentKeyDecision::Refuse("head-mismatch");
+    }
     if head.account.is_empty() || digest_hex(&head.entry_hash).is_err() {
         return CurrentKeyDecision::Refuse("head-mismatch");
     }
@@ -478,15 +535,18 @@ pub fn accept_current_key(
     if start_hash != head.entry_hash || entries[start].key_pub.is_empty() {
         return CurrentKeyDecision::Refuse("head-mismatch");
     }
+    if provider_pub == entries[start].key_pub {
+        return CurrentKeyDecision::Refuse("head-mismatch");
+    }
     let mut index = start;
     let mut linked = false;
-    for _ in 0..1024 {
+    for _ in 0..ACCOUNT_KEY_WALK_LIMIT {
         let entry = &entries[index];
         let Ok(entry_hash) = account_key_entry_hash(entry) else {
             return CurrentKeyDecision::Refuse("prev-mismatch");
         };
-        if let Some(anchor) = anchor_hash {
-            if entry_hash == anchor || entry.prev == anchor {
+        if let Some(anchor) = anchor {
+            if anchor_links(entry, &entry_hash, anchor) {
                 linked = true;
                 break;
             }

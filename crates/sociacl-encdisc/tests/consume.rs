@@ -10,9 +10,9 @@ use sociacl_encdisc::{
     consume_statement_mints, env_digest, epoch_revision_bytes, epoch_revision_id,
     grant_manifest_bytes, group_inbox_body_hash, group_inbox_sig_bytes, group_inbox_soul,
     item_revision_soul, item_root_soul, length_prefixed, manifest_soul, revision_manifest_bytes,
-    sha256_hex, status_authority_bytes, AccountKeyLogEntry, AccountKeyLogHead, ConsumeDecision,
-    CurrentKeyDecision, EpochManifestBody, GroupInboxWriteSig, RevisionManifest,
-    StatusAuthorityBinding,
+    sha256_hex, sign_sea, status_authority_bytes, AccountKeyAnchor, AccountKeyLogEntry,
+    AccountKeyLogHead, ConsumeDecision, CurrentKeyDecision, EpochManifestBody, GroupInboxWriteSig,
+    RevisionManifest, StatusAuthorityBinding, KEYRING_HISTORY_MAX,
 };
 
 const FIXTURE: &str = include_str!("../../../vectors/encrypted-discovery/consume.json");
@@ -66,6 +66,46 @@ fn next(prev: &str) -> AccountKeyLogEntry {
         seq: 1,
         prev: prev.to_string(),
     }
+}
+
+fn provider_keys() -> (String, String) {
+    let document: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../vectors/encrypted-discovery/sea-fixture.json"
+    ))
+    .unwrap();
+    let signing = &document["signing"];
+    (
+        signing["pub"].as_str().unwrap().to_string(),
+        signing["priv"].as_str().unwrap().to_string(),
+    )
+}
+
+fn sign_head(head: &AccountKeyLogHead) -> (String, String) {
+    let (provider_pub, provider_priv) = provider_keys();
+    let signature = sign_sea(&provider_priv, &account_key_head_bytes(head).unwrap()).unwrap();
+    (provider_pub, signature)
+}
+
+fn decide(
+    head: Option<&AccountKeyLogHead>,
+    entries: &[AccountKeyLogEntry],
+    anchor: Option<&AccountKeyAnchor>,
+    answered: bool,
+    statement: &str,
+) -> CurrentKeyDecision {
+    let (provider_pub, signature) = match head {
+        Some(head) => sign_head(head),
+        None => (String::new(), String::new()),
+    };
+    accept_current_key(
+        head,
+        entries,
+        anchor,
+        answered,
+        &provider_pub,
+        &signature,
+        statement,
+    )
 }
 
 #[test]
@@ -160,6 +200,12 @@ fn canonical_consume_vectors_match() {
         epoch_revision_id(&absent).unwrap(),
         "d068c39be0391bb64791839b21a21413392abe28f4e8f824d524884f07bd486f"
     );
+    let mut empty_epoch = absent.clone();
+    empty_epoch.status_auth_pub = Some(String::new());
+    assert!(epoch_revision_bytes(&empty_epoch).is_err());
+    let mut empty_manifest = plain;
+    empty_manifest.status_auth_pub = Some(String::new());
+    assert!(revision_manifest_bytes(&empty_manifest).is_err());
 }
 
 #[test]
@@ -288,6 +334,7 @@ fn status_authority_and_group_inbox() {
             None,
             None,
             None,
+            None,
             false,
             "status"
         ),
@@ -297,6 +344,7 @@ fn status_authority_and_group_inbox() {
         accept_status_signer(
             "sea-status",
             "sea-account",
+            None,
             None,
             None,
             None,
@@ -311,6 +359,7 @@ fn status_authority_and_group_inbox() {
             "sea-account",
             Some(&binding),
             Some("sea-status"),
+            Some("provider:acct"),
             Some(4),
             true,
             "status",
@@ -323,7 +372,21 @@ fn status_authority_and_group_inbox() {
             "sea-account",
             Some(&binding),
             Some("sea-status"),
+            Some("provider:acct"),
             Some(3),
+            true,
+            "status",
+        ),
+        ConsumeDecision::Refuse("authority-key")
+    );
+    assert_eq!(
+        accept_status_signer(
+            "sea-status",
+            "sea-account",
+            Some(&binding),
+            Some("sea-status"),
+            Some("provider:other"),
+            Some(4),
             true,
             "status",
         ),
@@ -336,6 +399,7 @@ fn status_authority_and_group_inbox() {
                 "sea-account",
                 Some(&binding),
                 Some("sea-status"),
+                Some("provider:acct"),
                 Some(4),
                 true,
                 purpose,
@@ -349,6 +413,7 @@ fn status_authority_and_group_inbox() {
                 "sea-account",
                 Some(&binding),
                 Some("sea-status"),
+                Some("provider:acct"),
                 Some(4),
                 true,
                 purpose,
@@ -388,26 +453,72 @@ fn current_key_fails_closed() {
         entry_hash: next_hash.clone(),
     };
     let entries = [genesis.clone(), next.clone()];
-    match accept_current_key(Some(&head), &entries, None, true, "sea-next") {
+    let (provider_pub, signature) = sign_head(&head);
+    let document: serde_json::Value = serde_json::from_str(FIXTURE).unwrap();
+    assert_eq!(
+        provider_pub,
+        document["inputs"]["providerPub"].as_str().unwrap()
+    );
+    assert_eq!(
+        signature,
+        document["inputs"]["headSignature"].as_str().unwrap()
+    );
+    match accept_current_key(
+        Some(&head),
+        &entries,
+        None,
+        true,
+        &provider_pub,
+        &signature,
+        "sea-next",
+    ) {
         CurrentKeyDecision::Accept { key_pub } => assert_eq!(key_pub, "sea-next"),
         other => panic!("{other:?}"),
     }
     assert!(matches!(
-        accept_current_key(Some(&head), &entries, None, false, "sea-next"),
+        accept_current_key(
+            Some(&head),
+            &entries,
+            None,
+            false,
+            &provider_pub,
+            &signature,
+            "sea-next"
+        ),
         CurrentKeyDecision::Refuse("no-answer")
     ));
     assert!(matches!(
-        accept_current_key(None, &entries, None, true, "sea-next"),
+        accept_current_key(
+            None,
+            &entries,
+            None,
+            true,
+            &provider_pub,
+            &signature,
+            "sea-next"
+        ),
         CurrentKeyDecision::Refuse("missing-head")
     ));
     assert!(matches!(
-        accept_current_key(Some(&head), &entries, None, true, "sea-current"),
+        decide(Some(&head), &entries, None, true, "sea-current"),
         CurrentKeyDecision::Refuse("superseded")
+    ));
+    assert!(matches!(
+        accept_current_key(
+            Some(&head),
+            &entries,
+            None,
+            true,
+            &provider_pub,
+            "00",
+            "sea-next"
+        ),
+        CurrentKeyDecision::Refuse("head-mismatch")
     ));
     let mut broken_parent = genesis.clone();
     broken_parent.key_pub = "sea-forged".to_string();
     assert!(matches!(
-        accept_current_key(
+        decide(
             Some(&head),
             &[broken_parent, next.clone()],
             None,
@@ -416,28 +527,106 @@ fn current_key_fails_closed() {
         ),
         CurrentKeyDecision::Refuse("prev-mismatch")
     ));
-    let anchored = AccountKeyLogHead {
+    let anchor = AccountKeyAnchor {
         account: "provider:acct".to_string(),
-        seq: 1,
-        entry_hash: next_hash,
+        seq: 0,
+        hash: genesis_hash.clone(),
     };
-    match accept_current_key(
-        Some(&anchored),
+    match decide(
+        Some(&head),
         &[next.clone()],
-        Some(&genesis_hash),
+        Some(&anchor),
         true,
         "sea-next",
     ) {
         CurrentKeyDecision::Accept { key_pub } => assert_eq!(key_pub, "sea-next"),
         other => panic!("{other:?}"),
     }
+    let jumped = AccountKeyLogEntry {
+        account: "provider:acct".to_string(),
+        key_pub: "sea-nine".to_string(),
+        seq: 9,
+        prev: genesis_hash.clone(),
+    };
+    let jumped_head = AccountKeyLogHead {
+        account: "provider:acct".to_string(),
+        seq: 9,
+        entry_hash: account_key_entry_hash(&jumped).unwrap(),
+    };
+    assert!(matches!(
+        decide(
+            Some(&jumped_head),
+            &[genesis.clone(), jumped],
+            Some(&anchor),
+            true,
+            "sea-nine"
+        ),
+        CurrentKeyDecision::Refuse("unlinked")
+    ));
+    let other = AccountKeyLogEntry {
+        account: "provider:other".to_string(),
+        key_pub: "sea-b".to_string(),
+        seq: 0,
+        prev: "none".to_string(),
+    };
+    let other_hash = account_key_entry_hash(&other).unwrap();
+    let crossed = AccountKeyLogEntry {
+        account: "provider:acct".to_string(),
+        key_pub: "sea-a".to_string(),
+        seq: 1,
+        prev: other_hash.clone(),
+    };
+    let crossed_head = AccountKeyLogHead {
+        account: "provider:acct".to_string(),
+        seq: 1,
+        entry_hash: account_key_entry_hash(&crossed).unwrap(),
+    };
+    let other_anchor = AccountKeyAnchor {
+        account: "provider:other".to_string(),
+        seq: 0,
+        hash: other_hash,
+    };
+    assert!(matches!(
+        decide(
+            Some(&crossed_head),
+            &[other, crossed],
+            Some(&other_anchor),
+            true,
+            "sea-a"
+        ),
+        CurrentKeyDecision::Refuse("unlinked")
+    ));
+    let sea_entry = AccountKeyLogEntry {
+        account: "provider:acct".to_string(),
+        key_pub: provider_pub.clone(),
+        seq: 0,
+        prev: "none".to_string(),
+    };
+    let sea_head = AccountKeyLogHead {
+        account: "provider:acct".to_string(),
+        seq: 0,
+        entry_hash: account_key_entry_hash(&sea_entry).unwrap(),
+    };
+    let (sea_pub, sea_sig) = sign_head(&sea_head);
+    assert!(matches!(
+        accept_current_key(
+            Some(&sea_head),
+            &[sea_entry],
+            None,
+            true,
+            &sea_pub,
+            &sea_sig,
+            &provider_pub
+        ),
+        CurrentKeyDecision::Refuse("head-mismatch")
+    ));
     let higher = AccountKeyLogEntry {
         account: "provider:acct".to_string(),
         key_pub: "sea-later".to_string(),
         seq: 9,
         prev: genesis_hash,
     };
-    match accept_current_key(
+    match decide(
         Some(&head),
         &[genesis, next, higher],
         None,
@@ -451,5 +640,31 @@ fn current_key_fails_closed() {
         "hop", "status", "chat", "manifest", "binding", "ssig", "log", "envelope",
     ] {
         assert!(!consume_statement_mints(kind), "{kind}");
+    }
+}
+
+#[test]
+fn account_key_log_accepts_the_keyring_limit() {
+    let mut prev = "none".to_string();
+    let mut entries = Vec::new();
+    for seq in 0..=KEYRING_HISTORY_MAX as u64 {
+        let entry = AccountKeyLogEntry {
+            account: "provider:acct".to_string(),
+            key_pub: format!("sea-{seq}"),
+            seq,
+            prev,
+        };
+        prev = account_key_entry_hash(&entry).unwrap();
+        entries.push(entry);
+    }
+    let head = AccountKeyLogHead {
+        account: "provider:acct".to_string(),
+        seq: KEYRING_HISTORY_MAX as u64,
+        entry_hash: prev,
+    };
+    let statement = format!("sea-{KEYRING_HISTORY_MAX}");
+    match decide(Some(&head), &entries, None, true, &statement) {
+        CurrentKeyDecision::Accept { key_pub } => assert_eq!(key_pub, statement),
+        other => panic!("{other:?}"),
     }
 }

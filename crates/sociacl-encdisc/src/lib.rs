@@ -140,8 +140,8 @@ pub use consume::{
     account_key_head_bytes, account_key_head_signed_by_sea, account_key_log_bytes,
     consume_statement_mints, env_digest, grant_manifest_bytes, group_inbox_body_hash,
     group_inbox_sig_bytes, group_inbox_soul, item_revision_soul, item_root_soul, manifest_soul,
-    revision_manifest_bytes, status_authority_bytes, AccountKeyLogEntry, AccountKeyLogHead,
-    ConsumeDecision, CurrentKeyDecision, GroupInboxWriteSig, RevisionManifest,
+    revision_manifest_bytes, status_authority_bytes, AccountKeyAnchor, AccountKeyLogEntry,
+    AccountKeyLogHead, ConsumeDecision, CurrentKeyDecision, GroupInboxWriteSig, RevisionManifest,
     StatusAuthorityBinding,
 };
 pub use contact_lane::{

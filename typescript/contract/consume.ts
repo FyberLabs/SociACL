@@ -6,7 +6,13 @@
  * is fetched from the revision soul. The grant names the manifest soul.
  * A hop, a status statement, and a chat node do not mint.
  */
+import { p256 } from "@noble/curves/nist.js";
 import { canonicalDecimal, lengthPrefixed, sha256Hex } from "./canonical.ts";
+import { hexToBytes, uncompressedFromSea } from "./account-key-seal.ts";
+import { KEYRING_HISTORY_MAX } from "./keyring-limits.ts";
+
+/** Steps from a head at KEYRING_HISTORY_MAX down through seq 0. */
+const ACCOUNT_KEY_WALK_LIMIT = KEYRING_HISTORY_MAX + 1;
 
 export const DOMAIN_ENV_DIGEST = "s3rch-env-digest-v1";
 export const DOMAIN_REVISION_MANIFEST = "s3rch-revision-manifest-v1";
@@ -60,6 +66,13 @@ export type AccountKeyLogHead = {
   account: string;
   seq: number;
   entryHash: string;
+};
+
+/** An entry already accepted. A shortcut requires this account and seq + 1. */
+export type AccountKeyAnchor = {
+  account: string;
+  seq: number;
+  hash: string;
 };
 
 function pathSegment(value: string): void {
@@ -149,10 +162,8 @@ export function revisionManifestBytes(manifest: RevisionManifest): Uint8Array {
     manifest.keyId,
     manifest.envDigest,
   ];
-  const statusAuthPub = manifest.statusAuthPub;
-  if (statusAuthPub !== undefined && statusAuthPub.length > 0) {
-    fields.push(statusAuthPub);
-  }
+  const statusAuthPub = requireStatusAuth(manifest.statusAuthPub);
+  if (statusAuthPub !== undefined) fields.push(statusAuthPub);
   return lengthPrefixed(fields);
 }
 
@@ -332,6 +343,7 @@ export function acceptStatusSigner(input: {
   currentAccountPub: string;
   binding?: StatusAuthorityBinding;
   manifestStatusAuthPub?: string;
+  logHeadAccount?: string;
   logHeadSeq?: number;
   bindingSignedByCurrent: boolean;
   purpose: string;
@@ -349,12 +361,14 @@ export function acceptStatusSigner(input: {
     binding === undefined ||
     manifestPub === undefined ||
     manifestPub.length === 0 ||
+    input.logHeadAccount === undefined ||
+    input.logHeadAccount.length === 0 ||
     input.logHeadSeq === undefined
   ) {
     return refuse("missing-binding");
   }
   if (
-    binding.account.length === 0 ||
+    binding.account !== input.logHeadAccount ||
     binding.accountPub !== input.currentAccountPub ||
     binding.statusAuthPub !== input.signingPub ||
     manifestPub !== input.signingPub ||
@@ -398,16 +412,45 @@ function uniqueIndex(
   return found;
 }
 
+function requireStatusAuth(statusAuthPub: string | undefined): string | undefined {
+  if (statusAuthPub === undefined) return undefined;
+  if (statusAuthPub.length === 0) throw new Error("bad revision");
+  return statusAuthPub;
+}
+
+function anchorLinks(entry: AccountKeyLogEntry, entryHash: string, anchor: AccountKeyAnchor): boolean {
+  if (entry.account !== anchor.account) return false;
+  if (entryHash === anchor.hash && entry.seq === anchor.seq) return true;
+  return entry.prev === anchor.hash && entry.seq === anchor.seq + 1;
+}
+
+function headSignatureOk(providerPub: string, head: AccountKeyLogHead, signature: string): boolean {
+  if (providerPub.length === 0 || signature.length === 0) return false;
+  try {
+    return p256.verify(hexToBytes(signature), accountKeyHeadBytes(head), uncompressedFromSea(providerPub), {
+      lowS: true,
+      prehash: true,
+    });
+  } catch {
+    return false;
+  }
+}
+
 export function acceptCurrentKey(input: {
   head?: AccountKeyLogHead;
   entries: readonly AccountKeyLogEntry[];
-  anchorHash?: string;
+  anchor?: AccountKeyAnchor;
   providerAnswered: boolean;
+  providerPub: string;
+  headSignature: string;
   statementKeyPub: string;
 }): CurrentKeyDecision {
   if (!input.providerAnswered) return { ok: false, reason: "no-answer" };
   const head = input.head;
   if (head === undefined) return { ok: false, reason: "missing-head" };
+  if (!headSignatureOk(input.providerPub, head, input.headSignature)) {
+    return { ok: false, reason: "head-mismatch" };
+  }
   if (head.account.length === 0 || !/^[0-9a-f]{64}$/.test(head.entryHash)) {
     return { ok: false, reason: "head-mismatch" };
   }
@@ -429,9 +472,10 @@ export function acceptCurrentKey(input: {
   if (startHash !== head.entryHash || startEntry.keyPub.length === 0) {
     return { ok: false, reason: "head-mismatch" };
   }
+  if (input.providerPub === startEntry.keyPub) return { ok: false, reason: "head-mismatch" };
   let index = start;
   let linked = false;
-  for (let step = 0; step < 1024; step += 1) {
+  for (let step = 0; step < ACCOUNT_KEY_WALK_LIMIT; step += 1) {
     const entry = input.entries[index];
     if (entry === undefined) return { ok: false, reason: "unlinked" };
     let entryHash: string;
@@ -440,8 +484,8 @@ export function acceptCurrentKey(input: {
     } catch {
       return { ok: false, reason: "prev-mismatch" };
     }
-    const anchor = input.anchorHash;
-    if (anchor !== undefined && (entryHash === anchor || entry.prev === anchor)) {
+    const anchor = input.anchor;
+    if (anchor !== undefined && anchorLinks(entry, entryHash, anchor)) {
       linked = true;
       break;
     }

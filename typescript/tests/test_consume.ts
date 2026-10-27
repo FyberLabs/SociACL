@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
+import { p256 } from "@noble/curves/nist.js";
 import type { EpochManifestBody } from "../../docs/s3rch-check.js";
+import { bytesToHex, unb64 } from "../contract/account-key-seal.ts";
 import { epochRevisionBytes, epochRevisionId, lengthPrefixed, sha256Hex } from "../contract/canonical.ts";
+import { KEYRING_HISTORY_MAX } from "../contract/keyring-limits.ts";
 import {
   acceptCurrentKey,
   acceptEnvelope,
@@ -26,13 +29,21 @@ import {
   manifestSoul,
   revisionManifestBytes,
   statusAuthorityBytes,
+  type AccountKeyAnchor,
   type AccountKeyLogEntry,
+  type AccountKeyLogHead,
   type RevisionManifest,
 } from "../contract/consume.ts";
 
 const document = JSON.parse(
   readFileSync(new URL("../../vectors/encrypted-discovery/consume.json", import.meta.url), "utf8"),
-) as { cases: { name: string; encodedLen: number; sha256: string }[] };
+) as {
+  cases: { name: string; encodedLen: number; sha256: string }[];
+  inputs: { providerPub: string; headSignature: string };
+};
+const signing = JSON.parse(
+  readFileSync(new URL("../../vectors/encrypted-discovery/sea-fixture.json", import.meta.url), "utf8"),
+).signing as { pub: string; priv: string };
 
 function expectHash(name: string, bytes: Uint8Array, hash: string): void {
   const row = document.cases.find((item) => item.name === name);
@@ -56,6 +67,13 @@ function manifest(env: string, statusAuthPub?: string): RevisionManifest {
 
 function genesis(): AccountKeyLogEntry {
   return { account: "provider:acct", keyPub: "sea-current", seq: 0, prev: "none" };
+}
+
+function signHead(head: AccountKeyLogHead): { providerPub: string; headSignature: string } {
+  const headSignature = bytesToHex(
+    p256.sign(accountKeyHeadBytes(head), unb64(signing.priv), { lowS: true, prehash: true }),
+  );
+  return { providerPub: signing.pub, headSignature };
 }
 
 test("canonical consume vectors match the shared fixture", () => {
@@ -138,6 +156,8 @@ test("canonical consume vectors match the shared fixture", () => {
     epochRevisionId(absent),
     "d068c39be0391bb64791839b21a21413392abe28f4e8f824d524884f07bd486f",
   );
+  assert.throws(() => epochRevisionBytes({ ...absent, statusAuthPub: "" }));
+  assert.throws(() => revisionManifestBytes(manifest(envDigest("itema", 1, "rev1", "aes-gcm", "aabb", "ccdd"), "")));
 });
 
 test("envelope path and manifest soul", () => {
@@ -250,11 +270,25 @@ test("status authority, group inbox, and current key", () => {
       currentAccountPub: "sea-account",
       binding,
       manifestStatusAuthPub: "sea-status",
+      logHeadAccount: "provider:acct",
       logHeadSeq: 4,
       bindingSignedByCurrent: true,
       purpose: "status",
     }),
     { ok: true },
+  );
+  assert.deepEqual(
+    acceptStatusSigner({
+      signingPub: "sea-status",
+      currentAccountPub: "sea-account",
+      binding,
+      manifestStatusAuthPub: "sea-status",
+      logHeadAccount: "provider:other",
+      logHeadSeq: 4,
+      bindingSignedByCurrent: true,
+      purpose: "status",
+    }),
+    { ok: false, reason: "authority-key" },
   );
   for (const purpose of ["manifest", "grant", "binding"]) {
     assert.deepEqual(
@@ -263,6 +297,7 @@ test("status authority, group inbox, and current key", () => {
         currentAccountPub: "sea-account",
         binding,
         manifestStatusAuthPub: "sea-status",
+        logHeadAccount: "provider:acct",
         logHeadSeq: 4,
         bindingSignedByCurrent: true,
         purpose,
@@ -312,11 +347,16 @@ test("status authority, group inbox, and current key", () => {
   };
   const secondHash = accountKeyEntryHash(second);
   const head = { account: "provider:acct", seq: 1, entryHash: secondHash };
+  const signed = signHead(head);
+  assert.equal(signed.providerPub, document.inputs.providerPub);
+  assert.equal(signed.headSignature, document.inputs.headSignature);
   assert.deepEqual(
     acceptCurrentKey({
       head,
       entries: [first, second],
       providerAnswered: true,
+      providerPub: document.inputs.providerPub,
+      headSignature: document.inputs.headSignature,
       statementKeyPub: "sea-next",
     }),
     { ok: true, keyPub: "sea-next" },
@@ -326,6 +366,8 @@ test("status authority, group inbox, and current key", () => {
       head,
       entries: [first, second],
       providerAnswered: false,
+      providerPub: signed.providerPub,
+      headSignature: signed.headSignature,
       statementKeyPub: "sea-next",
     }),
     { ok: false, reason: "no-answer" },
@@ -335,6 +377,18 @@ test("status authority, group inbox, and current key", () => {
       head,
       entries: [first, second],
       providerAnswered: true,
+      providerPub: signed.providerPub,
+      headSignature: "00",
+      statementKeyPub: "sea-next",
+    }),
+    { ok: false, reason: "head-mismatch" },
+  );
+  assert.deepEqual(
+    acceptCurrentKey({
+      head,
+      entries: [first, second],
+      providerAnswered: true,
+      ...signed,
       statementKeyPub: "sea-current",
     }),
     { ok: false, reason: "superseded" },
@@ -344,19 +398,112 @@ test("status authority, group inbox, and current key", () => {
       head,
       entries: [{ ...first, keyPub: "sea-forged" }, second],
       providerAnswered: true,
+      ...signed,
       statementKeyPub: "sea-next",
     }),
     { ok: false, reason: "prev-mismatch" },
   );
+  const anchor: AccountKeyAnchor = { account: "provider:acct", seq: 0, hash: firstHash };
   assert.deepEqual(
     acceptCurrentKey({
       head,
       entries: [second],
-      anchorHash: firstHash,
+      anchor,
       providerAnswered: true,
+      ...signed,
       statementKeyPub: "sea-next",
     }),
     { ok: true, keyPub: "sea-next" },
+  );
+  const jumped: AccountKeyLogEntry = {
+    account: "provider:acct",
+    keyPub: "sea-nine",
+    seq: 9,
+    prev: firstHash,
+  };
+  const jumpedHead = {
+    account: "provider:acct",
+    seq: 9,
+    entryHash: accountKeyEntryHash(jumped),
+  };
+  assert.deepEqual(
+    acceptCurrentKey({
+      head: jumpedHead,
+      entries: [first, jumped],
+      anchor,
+      providerAnswered: true,
+      ...signHead(jumpedHead),
+      statementKeyPub: "sea-nine",
+    }),
+    { ok: false, reason: "unlinked" },
+  );
+  const other: AccountKeyLogEntry = {
+    account: "provider:other",
+    keyPub: "sea-b",
+    seq: 0,
+    prev: "none",
+  };
+  const otherHash = accountKeyEntryHash(other);
+  const crossed: AccountKeyLogEntry = {
+    account: "provider:acct",
+    keyPub: "sea-a",
+    seq: 1,
+    prev: otherHash,
+  };
+  const crossedHead = {
+    account: "provider:acct",
+    seq: 1,
+    entryHash: accountKeyEntryHash(crossed),
+  };
+  assert.deepEqual(
+    acceptCurrentKey({
+      head: crossedHead,
+      entries: [other, crossed],
+      anchor: { account: "provider:other", seq: 0, hash: otherHash },
+      providerAnswered: true,
+      ...signHead(crossedHead),
+      statementKeyPub: "sea-a",
+    }),
+    { ok: false, reason: "unlinked" },
+  );
+  const seaEntry: AccountKeyLogEntry = {
+    account: "provider:acct",
+    keyPub: signed.providerPub,
+    seq: 0,
+    prev: "none",
+  };
+  const seaHead = {
+    account: "provider:acct",
+    seq: 0,
+    entryHash: accountKeyEntryHash(seaEntry),
+  };
+  assert.deepEqual(
+    acceptCurrentKey({
+      head: seaHead,
+      entries: [seaEntry],
+      providerAnswered: true,
+      ...signHead(seaHead),
+      statementKeyPub: signed.providerPub,
+    }),
+    { ok: false, reason: "head-mismatch" },
+  );
+  const entries: AccountKeyLogEntry[] = [];
+  let prev = "none";
+  for (let seq = 0; seq <= KEYRING_HISTORY_MAX; seq += 1) {
+    const entry = { account: "provider:acct", keyPub: `sea-${seq}`, seq, prev };
+    prev = accountKeyEntryHash(entry);
+    entries.push(entry);
+  }
+  const limitHead = { account: "provider:acct", seq: KEYRING_HISTORY_MAX, entryHash: prev };
+  assert.deepEqual(
+    acceptCurrentKey({
+      head: limitHead,
+      entries,
+      providerAnswered: true,
+      ...signHead(limitHead),
+      statementKeyPub: `sea-${KEYRING_HISTORY_MAX}`,
+    }),
+    { ok: true, keyPub: `sea-${KEYRING_HISTORY_MAX}` },
   );
   for (const kind of ["hop", "status", "chat", "manifest", "binding", "ssig", "log"]) {
     assert.equal(consumeStatementMints(kind), false, kind);

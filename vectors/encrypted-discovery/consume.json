@@ -3,7 +3,8 @@
     "Length-prefixed SHA-256 for the encrypted-discovery consume checks.",
     "statusAuthPub is omitted from the revision manifest and from epochRevisionId when absent.",
     "account-key-next.prev is the genesis entry hash. The head names the next entry.",
-    "The SEA key does not sign the head."
+    "The SEA key does not sign the head.",
+    "headSignature is the provider signing key over account-key-head. The account SEA pub is not that key."
   ],
   "inputs": {
     "itemId": "itema",
@@ -31,7 +32,9 @@
     "keyCommitment": "opaque-commitment",
     "settleWindowMs": 86400000,
     "aclSnapshot": "f9ac289c45e5e277cf0ecee22616a46b07d5ff92b83df0b13cacf8a9b5097449",
-    "absentEpoch": "d068c39be0391bb64791839b21a21413392abe28f4e8f824d524884f07bd486f"
+    "absentEpoch": "d068c39be0391bb64791839b21a21413392abe28f4e8f824d524884f07bd486f",
+    "providerPub": "YP7UuiVanTHJYet0xjVtaMBJuJI7Yfps5mliLmDyn7Y.eQP-EAi4vJmkGunpVii8ZPLxsgwtfp9Rd6PClNRGIpk",
+    "headSignature": "ab28a26dc91a63d2716323bb6aa2b66ebf9fd81cf1e2ba015c3acf7274260ccd1575489af972fa8cf674396f7e4e0043e77f033bc27d5dbafb33c0ec688d794f"
   },
   "cases": [
     {
