@@ -68,7 +68,7 @@ Chat is a `GunFeedNode` under `s3rch/items`. `ForumChatItem` is that type. `tags
 
 The global alarm reads status tiles whose `state` is `emergency` and the pinned need at `forumAlarmSoul`. The pin counts when that need is an open emergency (`severity` `emergency`, `stated` 1). Either input is enough. The alarm node is not a grant.
 
-Resolve on a need is an owner or delegate dest-ACL write: `stated` 0 and a `hamState` bump, or a grant for who may write. The update is accepted only when Check see allows the writer on that need id. A missing admission does not accept the update. The admitted object owner stays the owner. A missing dest-ACL row denies Check. A cancel is visible on the next Check. An SGH1 hint alone fails closed. A status node, a chat tag, and a hint do not mint.
+Anyone with Check see on a need may resolve it (`stated` or `hamState` update). The update is accepted only when that Check allows the writer on that need id. A missing admission does not accept the update. The admitted object owner stays the owner. A missing dest-ACL row denies Check. A cancel is visible on the next Check. An SGH1 hint alone fails closed. A status node, a chat tag, a hop, and a hint do not mint.
 
 ## Mesh
 

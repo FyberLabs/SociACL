@@ -133,7 +133,7 @@ Identity stays the GunDB SEA pubkey (`PrincipalId`). A wallet and a Panopticon O
 
 4. **Global emergency alarm, both inputs.** A status tile with `state: emergency` fans in. The forum also pins one need at `s3rch/forums/<forumId>/alarm` (`pinned: 1`). The pin raises the alarm when that need is an open emergency (`severity: emergency`, `stated: 1`). Either input is enough. The alarm is data, not a grant.
 
-A need lives at `s3rch/forums/<forumId>/needs/<needId>`. `subject` is the SEA pubkey the need is about. It is not required to equal the forum id, and it is not required to equal the principal embedded in that id. `stated` 1 is open. `stated` 0 is resolved. Who may resolve is a dest-ACL grant on that need's admitted object. `accept_need_transition` accepts a stated or ham update only when Check see allows the writer on that need id. The writer is the admitted owner or a live delegate. A missing admission does not accept the update, so a higher ham from another peer does not clear the pin. Resolve is owner or delegate privilege-down, or a grant write. It does not Elect. The admitted object owner stays the owner. A board sighting, a status node, a chat item, and a hop do not Elect. Acceptance vectors: `vectors/mesh/forums.json` (`check-deny-without-dest-acl`, `cancel-visible-on-next-check`, `sgh1-hint-alone-fails-closed`, `resolve-need-does-not-elect`, `chat-via-tagged-items`). That file has a filled soul string for each builder, a need-resolve row, alarm pin rows for an open emergency, a resolved need, and a wrong forum, and accept or reject rows for both role modes.
+A need lives at `s3rch/forums/<forumId>/needs/<needId>`. `subject` is the SEA pubkey the need is about. It is not required to equal the forum id, and it is not required to equal the principal embedded in that id. `stated` 1 is open. `stated` 0 is resolved. Anyone with Check see on that need may resolve it (a stated or ham update). `accept_need_transition` accepts the update only when that Check allows the writer on that need id. A missing admission does not accept the update, so a higher ham from another peer does not clear the pin. Resolve does not Elect. The admitted object owner stays the owner. A board sighting, a status node, a chat item, and a hop do not Elect. Acceptance vectors: `vectors/mesh/forums.json` (`check-deny-without-dest-acl`, `cancel-visible-on-next-check`, `sgh1-hint-alone-fails-closed`, `resolve-need-does-not-elect`, `chat-via-tagged-items`). That file has a filled soul string for each builder, a need-resolve row, alarm pin rows for an open emergency, a resolved need, and a wrong forum, and accept or reject rows for both role modes.
 
 `GunFeedNode` and `GunUserNode` stay as they are. Forum chat adds a tag. It does not add a field.
 
@@ -193,7 +193,7 @@ Max string 4096. Fail closed on a bad magic, version, or length.
 | hop | `HopFactor` (Social Light SLHP; optional; never a grant) |
 | dest ACL grant | `MeshSeeGrant` / `GunAclEdge` at `s3rch/acl/…` |
 | forum agent status | `s3rch/forums/<forumId>/agents/<seaPubkey>` data; Check on the admitted id |
-| forum need / pinned alarm | need soul plus `…/alarm`; Resolve is dest ACL, not Elect |
+| forum need / pinned alarm | need soul plus `…/alarm`; anyone with Check see may resolve; not Elect |
 | forum role | template mode plus role soul; the token is not a predicate |
 | forum chat | tagged `GunFeedNode` at `s3rch/items`; tag `forum:<forumId>` |
 | hopcap | 1. No friend-of-friend |
