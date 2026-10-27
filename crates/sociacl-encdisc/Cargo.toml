@@ -2,6 +2,7 @@
 name = "sociacl-encdisc"
 version.workspace = true
 edition.workspace = true
+rust-version = "1.88"
 license.workspace = true
 repository.workspace = true
 description = "Encrypted-discovery reference slice: account key, blinded rows, epoch admission, rotation, inbox admission, in-place migration"
@@ -12,7 +13,7 @@ description = "Encrypted-discovery reference slice: account key, blinded rows, e
 deterministic-wrap = []
 
 [dependencies]
-# Pinned for Rust 1.83. Newer aead and p256 releases set edition 2024.
+# Keep cryptographic dependency upgrades separate from the time security fix.
 aes-gcm = { version = "=0.10.3", default-features = false, features = ["alloc", "aes", "std", "zeroize"] }
 hmac = "=0.12.1"
 argon2 = { version = "=0.5.3", default-features = false, features = ["alloc", "std", "zeroize"] }
@@ -24,9 +25,8 @@ sha2 = "0.10"
 thiserror = "2"
 zeroize = { version = "=1.8.1", features = ["alloc"] }
 serde_json = "1"
-# zxcvbn 3.1.1 depends on time. Later 0.3 releases pull crates this
-# toolchain cannot parse, so the compatible release is pinned here.
-time = "=0.3.41"
+# zxcvbn depends on time. 0.3.47 fixes RUSTSEC-2026-0009 and requires Rust 1.88.
+time = "=0.3.47"
 zxcvbn = { version = "=3.1.1", default-features = false }
 sociacl-gun = { path = "../sociacl-gun" }
 sociacl-ids = { path = "../sociacl-ids" }

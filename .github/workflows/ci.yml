@@ -11,6 +11,15 @@ permissions:
   contents: read
 
 jobs:
+  msrv:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: dtolnay/rust-toolchain@1.88.0
+      - uses: Swatinem/rust-cache@v2.9.2
+      - name: Check workspace on minimum supported Rust
+        run: cargo check --workspace --all-targets --locked
+
   test:
     # Public pull_request and push CI must not run on the org self-hosted
     # runner. A fork PR would execute untrusted code on that machine.
@@ -103,7 +112,7 @@ jobs:
 
   pack-ids:
     if: startsWith(github.ref, 'refs/tags/ids-v')
-    needs: test
+    needs: [test, msrv]
     runs-on: ubuntu-latest
     permissions:
       contents: read
