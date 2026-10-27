@@ -5,12 +5,16 @@ set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root"
 
+python3 "${root}/scripts/check-release-versions.py"
+
 if [[ -f "$HOME/.cargo/env" ]]; then
   # shellcheck source=/dev/null
   . "$HOME/.cargo/env"
 fi
 # shellcheck source=/dev/null
 . "${root}/scripts/require-node.sh"
+
+bash "${root}/scripts/release-automation.test.sh"
 
 # The dependency audit uses the pinned TypeScript parser (tooling only).
 npm ci --prefix typescript

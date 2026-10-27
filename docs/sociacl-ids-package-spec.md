@@ -346,7 +346,7 @@ Property tests (fast-check in TS, proptest in Rust; at least 10k cases per prope
   - `tsc --strict --noEmit` on `typescript/ids`.
   - A browser-compat check: bundle with esbuild for `--platform=browser` and fail if `node:` imports appear.
   - A vector check that fails if any `vectors/ids/*.json` case isn't loaded by both suites. Each suite emits the vector names it ran, and CI compares the two sets.
-  - Release job on tag: `npm pack`, attach the tgz to the release, and publish a sha256 of the tgz.
+  - Release job on `ids-v*`, and on a push to protected `master` that creates that tag: `npm pack`, attach the tgz, and publish a sha256 of the tgz. Unprotected `master` does not create the tag ([#60](https://github.com/FyberLabs/SociACL/issues/60)).
 
 ## 8. Non-goals (this PR)
 

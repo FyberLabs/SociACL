@@ -50,6 +50,8 @@ After a cut, `export_bundle` freezes what a remaining principal already held. Th
 
 CI (`.github/workflows/ci.yml`) runs `./scripts/test-all.sh` then `./scripts/coverage.sh` on `ubuntu-latest`. Same commands refresh this snapshot.
 
+A push to protected `master` tags `ids-v*` (`typescript/ids` and `crates/sociacl-ids`) and `sociacl-v*` (the `sociacl` package and the workspace crates on `workspace.package.version`) when that version has no tag. `github.token` creates the tag through the Git refs API. The same run packs the npm tarball, uploads it with a SHA-256, and attests build provenance. If `master` is not protected, tagging exits without a ref ([#60](https://github.com/FyberLabs/SociACL/issues/60)). A tag that already names another commit is left in place. A maintainer can still push either tag family directly.
+
 <!-- coverage:start -->
 Measured **2026-10-16** by `scripts/coverage.sh`. CI publishes the same table on the job summary.
 
