@@ -12,5 +12,5 @@
     "noUncheckedIndexedAccess": true,
     "skipLibCheck": true
   },
-  "files": ["canonical.ts", "presenter.ts", "writer.ts", "inbox.ts", "epoch.ts", "migration.ts", "account-key.ts", "account-keyring.ts", "keyring-limits.ts", "keyring-codec.ts", "recovery-seal.ts", "recovery.ts", "delivery-seal.ts", "delivery.ts", "contact-lane.ts", "contact-lane-seal.ts", "../tests/test_encdisc_vectors.ts", "../tests/test_presentation.ts", "../tests/test_inbox.ts", "../tests/test_epoch.ts", "../tests/test_migration.ts", "../tests/test_account_key.ts", "../tests/test_account_keyring.ts", "../tests/test_recovery.ts", "../tests/test_contact_lane.ts"]
+  "files": ["canonical.ts", "consume.ts", "presenter.ts", "writer.ts", "inbox.ts", "epoch.ts", "migration.ts", "account-key.ts", "account-keyring.ts", "keyring-limits.ts", "keyring-codec.ts", "recovery-seal.ts", "recovery.ts", "delivery-seal.ts", "delivery.ts", "contact-lane.ts", "contact-lane-seal.ts", "../tests/test_encdisc_vectors.ts", "../tests/test_presentation.ts", "../tests/test_inbox.ts", "../tests/test_epoch.ts", "../tests/test_migration.ts", "../tests/test_account_key.ts", "../tests/test_account_keyring.ts", "../tests/test_recovery.ts", "../tests/test_contact_lane.ts", "../tests/test_consume.ts"]
 }

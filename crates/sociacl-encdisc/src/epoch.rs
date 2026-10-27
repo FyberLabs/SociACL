@@ -568,6 +568,8 @@ pub struct EpochManifest {
     pub key_commitment: String,
     pub settle_window_ms: u64,
     pub acl_snapshot: String,
+    /// Designated status SEA pub. Absent, only the account key signs status.
+    pub status_auth_pub: Option<String>,
     pub signature: String,
 }
 
@@ -581,6 +583,7 @@ impl EpochManifest {
             key_commitment: self.key_commitment.clone(),
             settle_window_ms: self.settle_window_ms,
             acl_snapshot: self.acl_snapshot.clone(),
+            status_auth_pub: self.status_auth_pub.clone(),
         }
     }
 

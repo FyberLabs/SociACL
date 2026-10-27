@@ -123,6 +123,7 @@ fn canonical_vectors_match_the_shared_fixture() {
                     key_commitment: parsed.key_commitment,
                     settle_window_ms: parsed.settle_window_ms,
                     acl_snapshot: parsed.acl_snapshot,
+                    status_auth_pub: None,
                 };
                 let bytes = sociacl_encdisc::epoch_revision_bytes(&body).unwrap();
                 (epoch_revision_id(&body).unwrap(), bytes.len())

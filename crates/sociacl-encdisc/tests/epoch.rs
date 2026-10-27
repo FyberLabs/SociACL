@@ -74,6 +74,7 @@ fn manifest_for(
         key_commitment: commitment.to_string(),
         settle_window_ms: window,
         acl_snapshot: acl.clone(),
+        status_auth_pub: None,
     })
     .unwrap();
     EpochManifest {
@@ -85,6 +86,7 @@ fn manifest_for(
         key_commitment: commitment.to_string(),
         settle_window_ms: window,
         acl_snapshot: acl,
+        status_auth_pub: None,
         signature: owner.sign_epoch_manifest(&revision_id).unwrap(),
     }
 }
