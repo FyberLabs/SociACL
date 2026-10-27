@@ -85,8 +85,9 @@ export async function checkRecoveryPassphrase(
     throw new RecoveryWeakPassphraseError(0, "passphrase needs at least 12 visible characters", []);
   }
   const inputs = [principal];
-  if (handle && handle.length > 0 && asciiLower(handle) !== asciiLower(principal)) {
-    inputs.push(handle);
+  const scoringHandle = handle?.replace(/\uFE0F/gu, "");
+  if (scoringHandle && asciiLower(scoringHandle) !== asciiLower(principal)) {
+    inputs.push(scoringHandle);
   }
   const estimator = await loadEstimator();
   const result = estimator.check(visible.join(""), inputs);

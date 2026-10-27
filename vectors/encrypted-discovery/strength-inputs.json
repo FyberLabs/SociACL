@@ -1,6 +1,6 @@
 {
   "v": 1,
-  "rule": "Drop empty handles and ASCII-case-insensitive duplicates of the principal; retain all other handles verbatim.",
+  "rule": "Remove U+FE0F from the strength-only handle hint, then drop empty handles and ASCII-case-insensitive duplicates of the principal; retain other characters verbatim.",
   "principal": "YP7UuiVanTHJYet0xjVtaMBJuJI7Yfps5mliLmDyn7Y.eQP-EAi4vJmkGunpVii8ZPLxsgwtfp9Rd6PClNRGIpk",
   "cases": [
     {
@@ -52,6 +52,14 @@
       "inputs": [
         "YP7UuiVanTHJYet0xjVtaMBJuJI7Yfps5mliLmDyn7Y.eQP-EAi4vJmkGunpVii8ZPLxsgwtfp9Rd6PClNRGIpk",
         "some-handle"
+      ]
+    },
+    {
+      "name": "emoji-presentation-hint",
+      "handle": "my-heart-❤️",
+      "inputs": [
+        "YP7UuiVanTHJYet0xjVtaMBJuJI7Yfps5mliLmDyn7Y.eQP-EAi4vJmkGunpVii8ZPLxsgwtfp9Rd6PClNRGIpk",
+        "my-heart-❤"
       ]
     }
   ]

@@ -396,6 +396,12 @@
         "result": "fail",
         "score": 0,
         "warning": "passphrase contains a hidden character"
+      },
+      {
+        "name": "emoji-handle-is-passphrase",
+        "passphrase": "flint-parcel-quantum-marble-92❤️",
+        "handle": "flint-parcel-quantum-marble-92❤️",
+        "result": "fail"
       }
     ]
   }
