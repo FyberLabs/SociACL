@@ -9,6 +9,7 @@
  *
  * Passphrase recovery lives in recovery.ts.
  */
+import { KEYRING_HISTORY_MAX } from "./keyring-limits.ts";
 import { randomBytes } from "node:crypto";
 import { p256 } from "@noble/curves/nist.js";
 import {
@@ -23,6 +24,8 @@ import {
 import { importGenesis, type GenesisAccount } from "./account-key.ts";
 import { bytesToHex, seaPoint, unb64 } from "./account-key-seal.ts";
 import { openReaderWrap, sealReaderWrap } from "./content-wrap.ts";
+
+export { KEYRING_HISTORY_MAX };
 
 export type RetiredEpriv = {
   readonly epub: PrincipalId;
@@ -107,6 +110,7 @@ export class AccountKeyring {
     if (seal !== keyringSeal) throw new Error("bad-construction");
     if (retired.length > 1024) throw new Error("too-many-keys");
     requireBoundedRotationSeq(rotationSeq);
+    requireHistoryCounts(priorLanes.length, priorContactSecrets.length);
     if (!Number.isSafeInteger(contentEpoch) || contentEpoch < 0) throw new Error("content-epoch");
     requireLaneSet(laneId, priorLanes);
     if (priorLanes.length !== rotationSeq) throw new Error("bad-lane");
@@ -170,7 +174,8 @@ export class AccountKeyring {
    * `priorContactSecrets` are required, and `priorContactSecrets.length`
    * must equal `rotationSeq`. A missing history is `keyring-rejected`.
    * `rotationSeq` must be a safe non-negative integer. That check runs
-   * before any other work.
+   * before any other work. Sequence and both histories are capped at
+   * KEYRING_HISTORY_MAX; exceeding it is keyring-too-large.
    */
   static import(
     principal: string,
@@ -190,6 +195,7 @@ export class AccountKeyring {
     priorContactSecrets?: readonly string[],
   ): AccountKeyring {
     requireBoundedRotationSeq(rotationSeq);
+    requireHistoryCounts(priorLanes.length, priorContactSecrets?.length ?? 0);
     if (
       contactLaneSecret === undefined ||
       priorContactSecrets === undefined ||
@@ -373,6 +379,7 @@ export function rotateKeyring(
     seen.add(localId);
     requireDevice(localId);
   }
+  if (keyring.rotationSeq >= KEYRING_HISTORY_MAX) throw new Error("keyring-too-large");
   const minted = mint();
   const contactLaneSecret = minted.contactLaneSecret ?? randomDisjoint([
     minted.laneId,
@@ -487,6 +494,7 @@ function hold(
   rotationSeq: number,
 ): AccountKeyring {
   requireBoundedRotationSeq(rotationSeq);
+  requireHistoryCounts(priorLanes.length, priorContactSecrets.length);
   if (retired.length > 1024) throw new Error("too-many-keys");
   if (!Number.isSafeInteger(contentEpoch) || contentEpoch < 0) throw new Error("content-epoch");
   requireLaneSet(laneId, priorLanes);
@@ -574,6 +582,11 @@ function randomDisjoint(banned: readonly string[]): string {
 
 function requireBoundedRotationSeq(rotationSeq: number): void {
   if (!Number.isSafeInteger(rotationSeq) || rotationSeq < 0) throw new Error("keyring-rejected");
+  if (rotationSeq > KEYRING_HISTORY_MAX) throw new Error("keyring-too-large");
+}
+
+function requireHistoryCounts(lanes: number, contacts: number): void {
+  if (lanes > KEYRING_HISTORY_MAX || contacts > KEYRING_HISTORY_MAX) throw new Error("keyring-too-large");
 }
 
 function holdsPoint(keyring: AccountKeyring, point: PrincipalId): boolean {

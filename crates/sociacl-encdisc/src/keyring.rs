@@ -17,6 +17,7 @@ use sociacl_ids::{
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::account::{self, require_lane, EnrolledSeaPub};
+use crate::limits::KEYRING_HISTORY_MAX;
 use crate::error::EncDiscError;
 use crate::sea::{self, uncompressed_point};
 use crate::wrap::{self, ItemDek, NamedSet, OpenedWrap, WrappedKey};
@@ -274,7 +275,9 @@ impl AccountKeyring {
     /// Restore a keyring including the contact-lane secret and its prior list.
     /// `prior_contact_secrets.len()` must equal `rotation_seq`. A missing
     /// history is [`EncDiscError::KeyringRejected`]. `rotation_seq` must be
-    /// a safe non-negative integer, and that check runs first.
+    /// a safe non-negative integer, and that check runs first. Sequence and
+    /// both histories are capped at KEYRING_HISTORY_MAX; exceeding it is
+    /// [`EncDiscError::KeyringTooLarge`].
     pub fn import_with_contact_secrets(
         principal: &str,
         genesis_epub: &str,
@@ -293,6 +296,7 @@ impl AccountKeyring {
         prior_contact_secrets: &[&str],
     ) -> Result<Self, EncDiscError> {
         require_bounded_rotation_seq(rotation_seq)?;
+        require_history_counts(prior_lanes.len(), prior_contact_secrets.len())?;
         if prior_contact_secrets.len() as u64 != rotation_seq {
             return Err(EncDiscError::KeyringRejected);
         }
@@ -509,6 +513,7 @@ impl AccountKeyring {
         rotation_seq: u64,
     ) -> Result<Self, EncDiscError> {
         require_bounded_rotation_seq(rotation_seq)?;
+        require_history_counts(prior_lanes.len(), prior_contact_secrets.len())?;
         require_lane_set(lane_id, prior_lanes)?;
         if prior_lanes.len() as u64 != rotation_seq {
             return Err(EncDiscError::BadLane);
@@ -677,6 +682,9 @@ where
             return Err(EncDiscError::IdentityRejected("duplicate-device".into()));
         }
         require_device(local_id)?;
+    }
+    if keyring.rotation_seq >= KEYRING_HISTORY_MAX as u64 {
+        return Err(EncDiscError::KeyringTooLarge);
     }
     let minted = mint()?;
     let (next_key, next_priv) = signing_point(&minted.signing_pub, minted.signing_priv.as_str())?;
@@ -852,6 +860,16 @@ fn require_bounded_rotation_seq(rotation_seq: u64) -> Result<(), EncDiscError> {
     if rotation_seq > crate::canonical::JS_SAFE_INTEGER_MAX {
         return Err(EncDiscError::KeyringRejected);
     }
+    if rotation_seq > KEYRING_HISTORY_MAX as u64 {
+        return Err(EncDiscError::KeyringTooLarge);
+    }
+    Ok(())
+}
+
+fn require_history_counts(lanes: usize, contacts: usize) -> Result<(), EncDiscError> {
+    if lanes > KEYRING_HISTORY_MAX || contacts > KEYRING_HISTORY_MAX {
+        return Err(EncDiscError::KeyringTooLarge);
+    }
     Ok(())
 }
 
@@ -982,6 +1000,7 @@ mod tests {
             EncDiscError::IdentityRejected(reason) => reason.clone(),
             EncDiscError::EpochRejected => "content-epoch".into(),
             EncDiscError::KeyringRejected => "keyring-rejected".into(),
+            EncDiscError::KeyringTooLarge => "keyring-too-large".into(),
             other => panic!("unexpected {other}"),
         }
     }
@@ -1429,6 +1448,25 @@ mod tests {
     }
 
     #[test]
+    fn history_limit_refuses_rotation_before_mint() {
+        let v = ring();
+        let account = genesis_of(&v);
+        let mut keyring = AccountKeyring::from_genesis_with_contact_secret(
+            &account,
+            v["genesis"]["contactLaneSecret"].as_str().unwrap(),
+        )
+        .unwrap();
+        keyring.rotation_seq = KEYRING_HISTORY_MAX as u64;
+        let empty = empty_ctx();
+        let context = context_of(&empty);
+        let error = rotate_keyring(&keyring, &["phone"], "phone", &[], &context, || {
+            panic!("mint must not run at the history limit");
+        })
+        .unwrap_err();
+        assert!(matches!(error, EncDiscError::KeyringTooLarge));
+    }
+
+    #[test]
     fn shared_large_history_imports_reject_duplicates_and_disclosed_secrets() {
         let history: serde_json::Value = serde_json::from_str(include_str!(
             "../../../vectors/encrypted-discovery/keyring-history-import.json"
@@ -1439,8 +1477,10 @@ mod tests {
         let empty = empty_ctx();
         let context = context_of(&empty);
         for row in history["cases"].as_array().unwrap() {
-            let mut lanes: Vec<String> = (1..=count).map(|i| format!("{i:064x}")).collect();
-            let mut contacts: Vec<String> = (count + 1..=2 * count)
+            let lane_count = row["laneCount"].as_u64().unwrap_or(count);
+            let contact_count = row["contactCount"].as_u64().unwrap_or(count);
+            let mut lanes: Vec<String> = (1..=lane_count).map(|i| format!("{i:064x}")).collect();
+            let mut contacts: Vec<String> = (count + 1..=count + contact_count)
                 .map(|i| format!("{i:064x}"))
                 .collect();
             if let Some(value) = row["priorLaneLast"].as_str() {
@@ -1464,7 +1504,7 @@ mod tests {
                 )],
                 history["laneId"].as_str().unwrap(),
                 1,
-                count,
+                row["rotationSeq"].as_u64().unwrap_or(count),
                 &[],
                 &context,
                 &lanes,
