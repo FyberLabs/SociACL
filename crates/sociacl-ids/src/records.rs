@@ -159,6 +159,17 @@ pub struct Jwk {
     pub alg: Option<String>,
     pub r#use: Option<String>,
     pub key_ops: Option<Vec<String>>,
+    /// Trusted issuance bounds in Unix seconds. Missing bounds fail verification.
+    #[serde(default, rename = "notBefore", deserialize_with = "deserialize_key_time")]
+    pub not_before: Option<u64>,
+    #[serde(default, rename = "notAfter", deserialize_with = "deserialize_key_time")]
+    pub not_after: Option<u64>,
+}
+// Keep invalid or absent metadata unusable, while accepting integral JSON
+// numbers regardless of spelling, just like the TypeScript verifier.
+fn deserialize_key_time<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<u64>, D::Error> {
+    let value = Value::deserialize(d)?;
+    Ok(number(&value).ok())
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Jwks {
@@ -898,6 +909,13 @@ fn attest_verify(jws: &str, jwks: &Jwks, now: u64, skew: u64) -> Result<Value, R
     let iat = number(&c["iat"]).map_err(|_| Reason::BadAttestation)?;
     let exp = number(&c["exp"]).map_err(|_| Reason::BadAttestation)?;
     if now > MAX_SAFE || exp <= iat || exp - iat > 900 {
+        return Err(Reason::BadAttestation);
+    }
+    // Historical verification uses signed issuance, not the lookup clock.
+    // Skew does not expand the trusted key's authorization window.
+    let start = k.not_before.ok_or(Reason::BadAttestation)?;
+    let end = k.not_after.ok_or(Reason::BadAttestation)?;
+    if start >= end || end > MAX_SAFE || iat < start || iat >= end {
         return Err(Reason::BadAttestation);
     }
     if iat > now.saturating_add(skew) {

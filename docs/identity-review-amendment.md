@@ -40,6 +40,47 @@ specified below; it must not restore the retired key. Issuing a witnessed revoke
 or a rotation requires Panopticon availability. Present-time revocation has the
 separate contract below.
 
+## Witness key validity windows
+
+The unreleased 0.10 verifier requires each trusted Panopticon JWK to carry
+`notBefore` and `notAfter`, nonnegative safe-integer Unix seconds. Require
+`notBefore < notAfter` and `notBefore <= iat < notAfter` for every witnessed
+proof, including wallet/OIDC links, rotations, revokes, genesis epub bindings,
+and signed-at ACL proofs. Missing, null, malformed, reversed, or out-of-range
+bounds fail closed with `bad-attestation`. No record or JWS signing domain
+changes. TypeScript requires the fields in `Jwks`; Rust represents missing or
+invalid decoded bounds as `None`, which cannot verify a witness.
+
+The bounds come from caller-pinned trust configuration, authenticated by the
+same administrative authority as the key itself. Do not import them from JWS
+headers, claims, client input, or an untrusted graph. A publisher must assign
+issuance from its own clock and stop signing at `notAfter`. A new issuance
+period uses a new key and unique `kid`; do not reopen or widen a retired key's
+window. A duplicate `kid` remains invalid even if the windows do not overlap.
+Clients must reject stale trust-policy updates rather than allowing an attacker
+to roll back a shortened window or key removal. The package does not fetch,
+persist, or authenticate trust-policy updates.
+
+The interval bounds **issuance**, not the verifier's current clock or the
+attestation's `exp`. The ordinary maximum lifetime of 900 seconds and request
+expiry checks remain. Clock skew never expands the key interval. Historical
+verification can therefore accept a proof issued during the key's window after
+both key retirement and request expiry. Keep old public keys and their original
+windows available for this purpose; removing a key invalidates its proofs.
+
+These windows bound the damage from a leaked key; they do not prove when a
+signature was made. A thief can still sign a new proof with an `iat` inside
+that key's historical window. Shortening a window cannot distinguish such a
+forgery from a legitimate proof at the same time, and can invalidate genuine
+history. Compromise response requires an explicit trust-policy decision and,
+where history must survive, independently authenticated checkpoints or
+additional witnesses. Do not claim that windows alone prevent all backdating.
+
+Package enforcement and shared vectors address the SociACL portion of #68 F4.
+Panopticon key publication, signing cutoffs, authenticated policy distribution,
+rollback resistance, and compromise handling remain integration acceptance
+work; a package merge does not establish those properties in production.
+
 ## Present-time offline revocation
 
 `verifyRevokeNow(record, currentKey, now)` verifies the revoke's structure, time

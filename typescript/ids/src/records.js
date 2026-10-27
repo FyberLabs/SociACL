@@ -248,6 +248,11 @@ function attestVerify(jws, jwks, now, skew = 0) {
     if (!key.ok || !keyVerify(key.value, parts[2], utf8.encode(parts[0] + '.' + parts[1]))) return fail('bad-attestation');
     if (!integer(c.value.iat) || !integer(c.value.exp) || !integer(now) || /** @type {number} */ (c.value.exp) <= /** @type {number} */ (c.value.iat)) return fail('bad-attestation');
     if (/** @type {number} */ (c.value.exp) - /** @type {number} */ (c.value.iat) > 900) return fail('bad-attestation');
+    // Trusted key metadata bounds issuance, including historical verification.
+    // Clock skew never expands the witness key's authorization window.
+    if (!integer(k.notBefore) || !integer(k.notAfter) || k.notBefore >= k.notAfter
+      || /** @type {number} */ (c.value.iat) < k.notBefore
+      || /** @type {number} */ (c.value.iat) >= k.notAfter) return fail('bad-attestation');
     if (/** @type {number} */ (c.value.iat) > now + skew) return fail('future-record');
     if (/** @type {number} */ (c.value.exp) <= now - skew) return fail('expired');
     return c;

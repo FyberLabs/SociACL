@@ -375,6 +375,174 @@
       ]
     },
     {
+      "name": "witness-window-at-start",
+      "input": {
+        "v": 1,
+        "kind": "oidc",
+        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+        "cred": {
+          "iss": "https://id.fyberlabs.com/realms/test",
+          "tenant": "01234567-89ab-cdef-0123-456789abcdef",
+          "sub": "Case-Sensitive/Subject"
+        },
+        "issuedAt": 1700000000.0,
+        "nonce": "fixtureNonce456",
+        "keySig": "ovDofjFHtz9N9S8OsQy1zNr1GpwBSUd-ENySQBEiyeUUZa4yvudlBt_u5r-z7Gasig4t83Z2uFiMygL4yJpmsQ",
+        "attest": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImZpeHR1cmUtMSIsInR5cCI6IkpXVCJ9.eyJ0eXAiOiJzb2NpYWNsLW9pZGMtYXR0ZXN0LXYxIiwiaXNzIjoiaHR0cHM6Ly9pZC5meWJlcmxhYnMuY29tL3JlYWxtcy90ZXN0IiwidGVuYW50IjoiMDEyMzQ1NjctODlhYi1jZGVmLTAxMjMtNDU2Nzg5YWJjZGVmIiwic3ViIjoiQ2FzZS1TZW5zaXRpdmUvU3ViamVjdCIsInByaW5jaXBhbCI6ImF4ZlI4dUVzUWtmNHZPYmxZNlJBOG5jRGZZRXQ2ek9nOUtFNVJkaVl3cFkuVC1OQzR2NGFmNXVPNS10S2ZBLWVGaXZPTTFkck1WN095N1pBYURlX1VmVSIsImlhdCI6MTcwMDAwMDAwMCwiZXhwIjoxNzAwMDAwNjAwLCJub25jZSI6ImZpeHR1cmVOb25jZTQ1NiJ9.eHXh5Cr5_HuJxOAqvuh7_mF6TKGws01yzgOklDRwgc_kzV6A-0Rze0nNQiZnV8AldeAuwZSZEGuaed_W_mM6gA"
+      },
+      "canonical": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+      "operation": "oidc-link",
+      "jwks": {
+        "keys": [
+          {
+            "kty": "EC",
+            "crv": "P-256",
+            "kid": "fixture-1",
+            "x": "UVkLelFRQNLXhMhWCGaP3--Mgv0fW-UkIVVKDcPQM-0",
+            "y": "4MF9qJBKcn2K4b82v4p5Jg0BLwDU2AiI0dC7RP2hbaQ",
+            "alg": "ES256",
+            "use": "sig",
+            "key_ops": [
+              "verify"
+            ],
+            "notBefore": 1700000000.0,
+            "notAfter": 1700000001
+          }
+        ]
+      }
+    },
+    {
+      "name": "witness-window-last-second",
+      "input": {
+        "v": 1,
+        "kind": "oidc",
+        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+        "cred": {
+          "iss": "https://id.fyberlabs.com/realms/test",
+          "tenant": "01234567-89ab-cdef-0123-456789abcdef",
+          "sub": "Case-Sensitive/Subject"
+        },
+        "issuedAt": 1700000000.0,
+        "nonce": "fixtureNonce456",
+        "keySig": "ovDofjFHtz9N9S8OsQy1zNr1GpwBSUd-ENySQBEiyeUUZa4yvudlBt_u5r-z7Gasig4t83Z2uFiMygL4yJpmsQ",
+        "attest": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImZpeHR1cmUtMSIsInR5cCI6IkpXVCJ9.eyJ0eXAiOiJzb2NpYWNsLW9pZGMtYXR0ZXN0LXYxIiwiaXNzIjoiaHR0cHM6Ly9pZC5meWJlcmxhYnMuY29tL3JlYWxtcy90ZXN0IiwidGVuYW50IjoiMDEyMzQ1NjctODlhYi1jZGVmLTAxMjMtNDU2Nzg5YWJjZGVmIiwic3ViIjoiQ2FzZS1TZW5zaXRpdmUvU3ViamVjdCIsInByaW5jaXBhbCI6ImF4ZlI4dUVzUWtmNHZPYmxZNlJBOG5jRGZZRXQ2ek9nOUtFNVJkaVl3cFkuVC1OQzR2NGFmNXVPNS10S2ZBLWVGaXZPTTFkck1WN095N1pBYURlX1VmVSIsImlhdCI6MTcwMDAwMDAwMCwiZXhwIjoxNzAwMDAwNjAwLCJub25jZSI6ImZpeHR1cmVOb25jZTQ1NiJ9.eHXh5Cr5_HuJxOAqvuh7_mF6TKGws01yzgOklDRwgc_kzV6A-0Rze0nNQiZnV8AldeAuwZSZEGuaed_W_mM6gA"
+      },
+      "canonical": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+      "operation": "oidc-link",
+      "jwks": {
+        "keys": [
+          {
+            "kty": "EC",
+            "crv": "P-256",
+            "kid": "fixture-1",
+            "x": "UVkLelFRQNLXhMhWCGaP3--Mgv0fW-UkIVVKDcPQM-0",
+            "y": "4MF9qJBKcn2K4b82v4p5Jg0BLwDU2AiI0dC7RP2hbaQ",
+            "alg": "ES256",
+            "use": "sig",
+            "key_ops": [
+              "verify"
+            ],
+            "notBefore": 1699999900,
+            "notAfter": 1700000001
+          }
+        ]
+      }
+    },
+    {
+      "name": "witness-window-historical-rotation",
+      "input": {
+        "v": 1,
+        "kind": "rotate",
+        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+        "seq": 1,
+        "prevKey": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+        "nextKey": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+        "issuedAt": 1700000030,
+        "retainedLinks": [
+          "a90854a50712c3e090e4076385bec9d30c6831d5f04838c0589442ca23e74b1b"
+        ],
+        "authorizer": {
+          "kind": "wallet",
+          "link": "a90854a50712c3e090e4076385bec9d30c6831d5f04838c0589442ca23e74b1b",
+          "siwe": {
+            "message": "s3r.ch wants you to sign in with your Ethereum account:\n0x1efF47bc3a10a45D4B230B5d10E37751FE6AA718\n\nSociACL link: 01164ac28b53b75b70c3a885ac6221e24d8b124e064bbcaac300262d1a267e38\n\nURI: https://s3r.ch/identity/link\nVersion: 1\nChain ID: 1\nNonce: rotation1234\nIssued At: 2023-11-14T22:13:50Z",
+            "signature": "0xd2b1dc6c76c6c71537e43160954b2e4f4b0a75f082f11a8fb28528cd17c257266088289470b9f725d8a7a29119fee04904740f5f6ca05852ae42c820e9ee66061c"
+          }
+        },
+        "nextSig": "mi0XktDFRJM1rDkLe8H-gf3n6FkpoXB1bTV63Qnp1xoOhx6qMShoMOxYH9NyqE7LgoCpA9X2Qzpe8qw4JLVPDg",
+        "attest": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImZpeHR1cmUtMSIsInR5cCI6IkpXVCJ9.eyJ0eXAiOiJzb2NpYWNsLXJvdGF0ZS1hdHRlc3QtdjIiLCJwcmluY2lwYWwiOiJheGZSOHVFc1FrZjR2T2JsWTZSQThuY0RmWUV0NnpPZzlLRTVSZGlZd3BZLlQtTkM0djRhZjV1TzUtdEtmQS1lRml2T00xZHJNVjdPeTdaQWFEZV9VZlUiLCJuZXh0S2V5IjoiZlBKN0dJMERUMzZLVWpnREJMVWF3OENKYWVKMzhoczFwZ3RJX0VkbW1YZy5CM2RWRU51TzBFQXBQWnJHbjNRdzI3cDlyZVk4NllJcG5nUzNuU0o0YzlFIiwic2VxIjoxLCJpYXQiOjE3MDAwMDAwMzAsImV4cCI6MTcwMDAwMDYzMCwiYXV0aCI6IndhbGxldCIsImxpbmtJZCI6ImE5MDg1NGE1MDcxMmMzZTA5MGU0MDc2Mzg1YmVjOWQzMGM2ODMxZDVmMDQ4MzhjMDU4OTQ0MmNhMjNlNzRiMWIiLCJyZXRhaW5lZExpbmtzIjpbImE5MDg1NGE1MDcxMmMzZTA5MGU0MDc2Mzg1YmVjOWQzMGM2ODMxZDVmMDQ4MzhjMDU4OTQ0MmNhMjNlNzRiMWIiXX0.BqL_3eFkH64k2RsZhUXZp4nSk65Te4lQ97rExVm3wQObF-jko3gi3wQslcA4lBOMo7coproAPB4iaSAFCK5IGw"
+      },
+      "canonical": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+      "operation": "rotate",
+      "now": 1700050000,
+      "jwks": {
+        "keys": [
+          {
+            "kty": "EC",
+            "crv": "P-256",
+            "kid": "fixture-1",
+            "x": "UVkLelFRQNLXhMhWCGaP3--Mgv0fW-UkIVVKDcPQM-0",
+            "y": "4MF9qJBKcn2K4b82v4p5Jg0BLwDU2AiI0dC7RP2hbaQ",
+            "alg": "ES256",
+            "use": "sig",
+            "key_ops": [
+              "verify"
+            ],
+            "notBefore": 1700000000.0,
+            "notAfter": 1700000031
+          }
+        ]
+      }
+    },
+    {
+      "name": "witness-window-historical-resolution",
+      "input": [
+        {
+          "v": 1,
+          "kind": "rotate",
+          "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "seq": 1,
+          "prevKey": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "nextKey": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "issuedAt": 1700000030,
+          "retainedLinks": [
+            "a90854a50712c3e090e4076385bec9d30c6831d5f04838c0589442ca23e74b1b"
+          ],
+          "authorizer": {
+            "kind": "wallet",
+            "link": "a90854a50712c3e090e4076385bec9d30c6831d5f04838c0589442ca23e74b1b",
+            "siwe": {
+              "message": "s3r.ch wants you to sign in with your Ethereum account:\n0x1efF47bc3a10a45D4B230B5d10E37751FE6AA718\n\nSociACL link: 01164ac28b53b75b70c3a885ac6221e24d8b124e064bbcaac300262d1a267e38\n\nURI: https://s3r.ch/identity/link\nVersion: 1\nChain ID: 1\nNonce: rotation1234\nIssued At: 2023-11-14T22:13:50Z",
+              "signature": "0xd2b1dc6c76c6c71537e43160954b2e4f4b0a75f082f11a8fb28528cd17c257266088289470b9f725d8a7a29119fee04904740f5f6ca05852ae42c820e9ee66061c"
+            }
+          },
+          "nextSig": "mi0XktDFRJM1rDkLe8H-gf3n6FkpoXB1bTV63Qnp1xoOhx6qMShoMOxYH9NyqE7LgoCpA9X2Qzpe8qw4JLVPDg",
+          "attest": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImZpeHR1cmUtMSIsInR5cCI6IkpXVCJ9.eyJ0eXAiOiJzb2NpYWNsLXJvdGF0ZS1hdHRlc3QtdjIiLCJwcmluY2lwYWwiOiJheGZSOHVFc1FrZjR2T2JsWTZSQThuY0RmWUV0NnpPZzlLRTVSZGlZd3BZLlQtTkM0djRhZjV1TzUtdEtmQS1lRml2T00xZHJNVjdPeTdaQWFEZV9VZlUiLCJuZXh0S2V5IjoiZlBKN0dJMERUMzZLVWpnREJMVWF3OENKYWVKMzhoczFwZ3RJX0VkbW1YZy5CM2RWRU51TzBFQXBQWnJHbjNRdzI3cDlyZVk4NllJcG5nUzNuU0o0YzlFIiwic2VxIjoxLCJpYXQiOjE3MDAwMDAwMzAsImV4cCI6MTcwMDAwMDYzMCwiYXV0aCI6IndhbGxldCIsImxpbmtJZCI6ImE5MDg1NGE1MDcxMmMzZTA5MGU0MDc2Mzg1YmVjOWQzMGM2ODMxZDVmMDQ4MzhjMDU4OTQ0MmNhMjNlNzRiMWIiLCJyZXRhaW5lZExpbmtzIjpbImE5MDg1NGE1MDcxMmMzZTA5MGU0MDc2Mzg1YmVjOWQzMGM2ODMxZDVmMDQ4MzhjMDU4OTQ0MmNhMjNlNzRiMWIiXX0.BqL_3eFkH64k2RsZhUXZp4nSk65Te4lQ97rExVm3wQObF-jko3gi3wQslcA4lBOMo7coproAPB4iaSAFCK5IGw"
+        }
+      ],
+      "canonical": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+      "operation": "resolve",
+      "now": 1700050000,
+      "jwks": {
+        "keys": [
+          {
+            "kty": "EC",
+            "crv": "P-256",
+            "kid": "fixture-1",
+            "x": "UVkLelFRQNLXhMhWCGaP3--Mgv0fW-UkIVVKDcPQM-0",
+            "y": "4MF9qJBKcn2K4b82v4p5Jg0BLwDU2AiI0dC7RP2hbaQ",
+            "alg": "ES256",
+            "use": "sig",
+            "key_ops": [
+              "verify"
+            ],
+            "notBefore": 1700000000.0,
+            "notAfter": 1700000031
+          }
+        ]
+      }
+    },
+    {
       "name": "p256-opposite-s",
       "input": {
         "v": 1,
@@ -8634,7 +8802,9 @@
             "use": "sig",
             "key_ops": [
               "verify"
-            ]
+            ],
+            "notBefore": 1699999000,
+            "notAfter": 1700010000
           },
           {
             "kty": "EC",
@@ -8646,7 +8816,811 @@
             "use": "sig",
             "key_ops": [
               "verify"
-            ]
+            ],
+            "notBefore": 1699999000,
+            "notAfter": 1700010000
+          }
+        ]
+      }
+    },
+    {
+      "name": "witness-window-missing-start",
+      "input": {
+        "v": 1,
+        "kind": "oidc",
+        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+        "cred": {
+          "iss": "https://id.fyberlabs.com/realms/test",
+          "tenant": "01234567-89ab-cdef-0123-456789abcdef",
+          "sub": "Case-Sensitive/Subject"
+        },
+        "issuedAt": 1700000000.0,
+        "nonce": "fixtureNonce456",
+        "keySig": "ovDofjFHtz9N9S8OsQy1zNr1GpwBSUd-ENySQBEiyeUUZa4yvudlBt_u5r-z7Gasig4t83Z2uFiMygL4yJpmsQ",
+        "attest": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImZpeHR1cmUtMSIsInR5cCI6IkpXVCJ9.eyJ0eXAiOiJzb2NpYWNsLW9pZGMtYXR0ZXN0LXYxIiwiaXNzIjoiaHR0cHM6Ly9pZC5meWJlcmxhYnMuY29tL3JlYWxtcy90ZXN0IiwidGVuYW50IjoiMDEyMzQ1NjctODlhYi1jZGVmLTAxMjMtNDU2Nzg5YWJjZGVmIiwic3ViIjoiQ2FzZS1TZW5zaXRpdmUvU3ViamVjdCIsInByaW5jaXBhbCI6ImF4ZlI4dUVzUWtmNHZPYmxZNlJBOG5jRGZZRXQ2ek9nOUtFNVJkaVl3cFkuVC1OQzR2NGFmNXVPNS10S2ZBLWVGaXZPTTFkck1WN095N1pBYURlX1VmVSIsImlhdCI6MTcwMDAwMDAwMCwiZXhwIjoxNzAwMDAwNjAwLCJub25jZSI6ImZpeHR1cmVOb25jZTQ1NiJ9.eHXh5Cr5_HuJxOAqvuh7_mF6TKGws01yzgOklDRwgc_kzV6A-0Rze0nNQiZnV8AldeAuwZSZEGuaed_W_mM6gA"
+      },
+      "reason": "bad-attestation",
+      "operation": "oidc-link",
+      "jwks": {
+        "keys": [
+          {
+            "kty": "EC",
+            "crv": "P-256",
+            "kid": "fixture-1",
+            "x": "UVkLelFRQNLXhMhWCGaP3--Mgv0fW-UkIVVKDcPQM-0",
+            "y": "4MF9qJBKcn2K4b82v4p5Jg0BLwDU2AiI0dC7RP2hbaQ",
+            "alg": "ES256",
+            "use": "sig",
+            "key_ops": [
+              "verify"
+            ],
+            "notAfter": 1700000100
+          }
+        ]
+      }
+    },
+    {
+      "name": "witness-window-missing-end",
+      "input": {
+        "v": 1,
+        "kind": "oidc",
+        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+        "cred": {
+          "iss": "https://id.fyberlabs.com/realms/test",
+          "tenant": "01234567-89ab-cdef-0123-456789abcdef",
+          "sub": "Case-Sensitive/Subject"
+        },
+        "issuedAt": 1700000000.0,
+        "nonce": "fixtureNonce456",
+        "keySig": "ovDofjFHtz9N9S8OsQy1zNr1GpwBSUd-ENySQBEiyeUUZa4yvudlBt_u5r-z7Gasig4t83Z2uFiMygL4yJpmsQ",
+        "attest": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImZpeHR1cmUtMSIsInR5cCI6IkpXVCJ9.eyJ0eXAiOiJzb2NpYWNsLW9pZGMtYXR0ZXN0LXYxIiwiaXNzIjoiaHR0cHM6Ly9pZC5meWJlcmxhYnMuY29tL3JlYWxtcy90ZXN0IiwidGVuYW50IjoiMDEyMzQ1NjctODlhYi1jZGVmLTAxMjMtNDU2Nzg5YWJjZGVmIiwic3ViIjoiQ2FzZS1TZW5zaXRpdmUvU3ViamVjdCIsInByaW5jaXBhbCI6ImF4ZlI4dUVzUWtmNHZPYmxZNlJBOG5jRGZZRXQ2ek9nOUtFNVJkaVl3cFkuVC1OQzR2NGFmNXVPNS10S2ZBLWVGaXZPTTFkck1WN095N1pBYURlX1VmVSIsImlhdCI6MTcwMDAwMDAwMCwiZXhwIjoxNzAwMDAwNjAwLCJub25jZSI6ImZpeHR1cmVOb25jZTQ1NiJ9.eHXh5Cr5_HuJxOAqvuh7_mF6TKGws01yzgOklDRwgc_kzV6A-0Rze0nNQiZnV8AldeAuwZSZEGuaed_W_mM6gA"
+      },
+      "reason": "bad-attestation",
+      "operation": "oidc-link",
+      "jwks": {
+        "keys": [
+          {
+            "kty": "EC",
+            "crv": "P-256",
+            "kid": "fixture-1",
+            "x": "UVkLelFRQNLXhMhWCGaP3--Mgv0fW-UkIVVKDcPQM-0",
+            "y": "4MF9qJBKcn2K4b82v4p5Jg0BLwDU2AiI0dC7RP2hbaQ",
+            "alg": "ES256",
+            "use": "sig",
+            "key_ops": [
+              "verify"
+            ],
+            "notBefore": 1699999900
+          }
+        ]
+      }
+    },
+    {
+      "name": "witness-window-null-start",
+      "input": {
+        "v": 1,
+        "kind": "oidc",
+        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+        "cred": {
+          "iss": "https://id.fyberlabs.com/realms/test",
+          "tenant": "01234567-89ab-cdef-0123-456789abcdef",
+          "sub": "Case-Sensitive/Subject"
+        },
+        "issuedAt": 1700000000.0,
+        "nonce": "fixtureNonce456",
+        "keySig": "ovDofjFHtz9N9S8OsQy1zNr1GpwBSUd-ENySQBEiyeUUZa4yvudlBt_u5r-z7Gasig4t83Z2uFiMygL4yJpmsQ",
+        "attest": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImZpeHR1cmUtMSIsInR5cCI6IkpXVCJ9.eyJ0eXAiOiJzb2NpYWNsLW9pZGMtYXR0ZXN0LXYxIiwiaXNzIjoiaHR0cHM6Ly9pZC5meWJlcmxhYnMuY29tL3JlYWxtcy90ZXN0IiwidGVuYW50IjoiMDEyMzQ1NjctODlhYi1jZGVmLTAxMjMtNDU2Nzg5YWJjZGVmIiwic3ViIjoiQ2FzZS1TZW5zaXRpdmUvU3ViamVjdCIsInByaW5jaXBhbCI6ImF4ZlI4dUVzUWtmNHZPYmxZNlJBOG5jRGZZRXQ2ek9nOUtFNVJkaVl3cFkuVC1OQzR2NGFmNXVPNS10S2ZBLWVGaXZPTTFkck1WN095N1pBYURlX1VmVSIsImlhdCI6MTcwMDAwMDAwMCwiZXhwIjoxNzAwMDAwNjAwLCJub25jZSI6ImZpeHR1cmVOb25jZTQ1NiJ9.eHXh5Cr5_HuJxOAqvuh7_mF6TKGws01yzgOklDRwgc_kzV6A-0Rze0nNQiZnV8AldeAuwZSZEGuaed_W_mM6gA"
+      },
+      "reason": "bad-attestation",
+      "operation": "oidc-link",
+      "jwks": {
+        "keys": [
+          {
+            "kty": "EC",
+            "crv": "P-256",
+            "kid": "fixture-1",
+            "x": "UVkLelFRQNLXhMhWCGaP3--Mgv0fW-UkIVVKDcPQM-0",
+            "y": "4MF9qJBKcn2K4b82v4p5Jg0BLwDU2AiI0dC7RP2hbaQ",
+            "alg": "ES256",
+            "use": "sig",
+            "key_ops": [
+              "verify"
+            ],
+            "notBefore": null,
+            "notAfter": 1700000100
+          }
+        ]
+      }
+    },
+    {
+      "name": "witness-window-null-end",
+      "input": {
+        "v": 1,
+        "kind": "oidc",
+        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+        "cred": {
+          "iss": "https://id.fyberlabs.com/realms/test",
+          "tenant": "01234567-89ab-cdef-0123-456789abcdef",
+          "sub": "Case-Sensitive/Subject"
+        },
+        "issuedAt": 1700000000.0,
+        "nonce": "fixtureNonce456",
+        "keySig": "ovDofjFHtz9N9S8OsQy1zNr1GpwBSUd-ENySQBEiyeUUZa4yvudlBt_u5r-z7Gasig4t83Z2uFiMygL4yJpmsQ",
+        "attest": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImZpeHR1cmUtMSIsInR5cCI6IkpXVCJ9.eyJ0eXAiOiJzb2NpYWNsLW9pZGMtYXR0ZXN0LXYxIiwiaXNzIjoiaHR0cHM6Ly9pZC5meWJlcmxhYnMuY29tL3JlYWxtcy90ZXN0IiwidGVuYW50IjoiMDEyMzQ1NjctODlhYi1jZGVmLTAxMjMtNDU2Nzg5YWJjZGVmIiwic3ViIjoiQ2FzZS1TZW5zaXRpdmUvU3ViamVjdCIsInByaW5jaXBhbCI6ImF4ZlI4dUVzUWtmNHZPYmxZNlJBOG5jRGZZRXQ2ek9nOUtFNVJkaVl3cFkuVC1OQzR2NGFmNXVPNS10S2ZBLWVGaXZPTTFkck1WN095N1pBYURlX1VmVSIsImlhdCI6MTcwMDAwMDAwMCwiZXhwIjoxNzAwMDAwNjAwLCJub25jZSI6ImZpeHR1cmVOb25jZTQ1NiJ9.eHXh5Cr5_HuJxOAqvuh7_mF6TKGws01yzgOklDRwgc_kzV6A-0Rze0nNQiZnV8AldeAuwZSZEGuaed_W_mM6gA"
+      },
+      "reason": "bad-attestation",
+      "operation": "oidc-link",
+      "jwks": {
+        "keys": [
+          {
+            "kty": "EC",
+            "crv": "P-256",
+            "kid": "fixture-1",
+            "x": "UVkLelFRQNLXhMhWCGaP3--Mgv0fW-UkIVVKDcPQM-0",
+            "y": "4MF9qJBKcn2K4b82v4p5Jg0BLwDU2AiI0dC7RP2hbaQ",
+            "alg": "ES256",
+            "use": "sig",
+            "key_ops": [
+              "verify"
+            ],
+            "notBefore": 1699999900,
+            "notAfter": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "witness-window-empty",
+      "input": {
+        "v": 1,
+        "kind": "oidc",
+        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+        "cred": {
+          "iss": "https://id.fyberlabs.com/realms/test",
+          "tenant": "01234567-89ab-cdef-0123-456789abcdef",
+          "sub": "Case-Sensitive/Subject"
+        },
+        "issuedAt": 1700000000.0,
+        "nonce": "fixtureNonce456",
+        "keySig": "ovDofjFHtz9N9S8OsQy1zNr1GpwBSUd-ENySQBEiyeUUZa4yvudlBt_u5r-z7Gasig4t83Z2uFiMygL4yJpmsQ",
+        "attest": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImZpeHR1cmUtMSIsInR5cCI6IkpXVCJ9.eyJ0eXAiOiJzb2NpYWNsLW9pZGMtYXR0ZXN0LXYxIiwiaXNzIjoiaHR0cHM6Ly9pZC5meWJlcmxhYnMuY29tL3JlYWxtcy90ZXN0IiwidGVuYW50IjoiMDEyMzQ1NjctODlhYi1jZGVmLTAxMjMtNDU2Nzg5YWJjZGVmIiwic3ViIjoiQ2FzZS1TZW5zaXRpdmUvU3ViamVjdCIsInByaW5jaXBhbCI6ImF4ZlI4dUVzUWtmNHZPYmxZNlJBOG5jRGZZRXQ2ek9nOUtFNVJkaVl3cFkuVC1OQzR2NGFmNXVPNS10S2ZBLWVGaXZPTTFkck1WN095N1pBYURlX1VmVSIsImlhdCI6MTcwMDAwMDAwMCwiZXhwIjoxNzAwMDAwNjAwLCJub25jZSI6ImZpeHR1cmVOb25jZTQ1NiJ9.eHXh5Cr5_HuJxOAqvuh7_mF6TKGws01yzgOklDRwgc_kzV6A-0Rze0nNQiZnV8AldeAuwZSZEGuaed_W_mM6gA"
+      },
+      "reason": "bad-attestation",
+      "operation": "oidc-link",
+      "jwks": {
+        "keys": [
+          {
+            "kty": "EC",
+            "crv": "P-256",
+            "kid": "fixture-1",
+            "x": "UVkLelFRQNLXhMhWCGaP3--Mgv0fW-UkIVVKDcPQM-0",
+            "y": "4MF9qJBKcn2K4b82v4p5Jg0BLwDU2AiI0dC7RP2hbaQ",
+            "alg": "ES256",
+            "use": "sig",
+            "key_ops": [
+              "verify"
+            ],
+            "notBefore": 1700000000.0,
+            "notAfter": 1700000000
+          }
+        ]
+      }
+    },
+    {
+      "name": "witness-window-reversed",
+      "input": {
+        "v": 1,
+        "kind": "oidc",
+        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+        "cred": {
+          "iss": "https://id.fyberlabs.com/realms/test",
+          "tenant": "01234567-89ab-cdef-0123-456789abcdef",
+          "sub": "Case-Sensitive/Subject"
+        },
+        "issuedAt": 1700000000.0,
+        "nonce": "fixtureNonce456",
+        "keySig": "ovDofjFHtz9N9S8OsQy1zNr1GpwBSUd-ENySQBEiyeUUZa4yvudlBt_u5r-z7Gasig4t83Z2uFiMygL4yJpmsQ",
+        "attest": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImZpeHR1cmUtMSIsInR5cCI6IkpXVCJ9.eyJ0eXAiOiJzb2NpYWNsLW9pZGMtYXR0ZXN0LXYxIiwiaXNzIjoiaHR0cHM6Ly9pZC5meWJlcmxhYnMuY29tL3JlYWxtcy90ZXN0IiwidGVuYW50IjoiMDEyMzQ1NjctODlhYi1jZGVmLTAxMjMtNDU2Nzg5YWJjZGVmIiwic3ViIjoiQ2FzZS1TZW5zaXRpdmUvU3ViamVjdCIsInByaW5jaXBhbCI6ImF4ZlI4dUVzUWtmNHZPYmxZNlJBOG5jRGZZRXQ2ek9nOUtFNVJkaVl3cFkuVC1OQzR2NGFmNXVPNS10S2ZBLWVGaXZPTTFkck1WN095N1pBYURlX1VmVSIsImlhdCI6MTcwMDAwMDAwMCwiZXhwIjoxNzAwMDAwNjAwLCJub25jZSI6ImZpeHR1cmVOb25jZTQ1NiJ9.eHXh5Cr5_HuJxOAqvuh7_mF6TKGws01yzgOklDRwgc_kzV6A-0Rze0nNQiZnV8AldeAuwZSZEGuaed_W_mM6gA"
+      },
+      "reason": "bad-attestation",
+      "operation": "oidc-link",
+      "jwks": {
+        "keys": [
+          {
+            "kty": "EC",
+            "crv": "P-256",
+            "kid": "fixture-1",
+            "x": "UVkLelFRQNLXhMhWCGaP3--Mgv0fW-UkIVVKDcPQM-0",
+            "y": "4MF9qJBKcn2K4b82v4p5Jg0BLwDU2AiI0dC7RP2hbaQ",
+            "alg": "ES256",
+            "use": "sig",
+            "key_ops": [
+              "verify"
+            ],
+            "notBefore": 1700000100,
+            "notAfter": 1699999900
+          }
+        ]
+      }
+    },
+    {
+      "name": "witness-window-negative-start",
+      "input": {
+        "v": 1,
+        "kind": "oidc",
+        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+        "cred": {
+          "iss": "https://id.fyberlabs.com/realms/test",
+          "tenant": "01234567-89ab-cdef-0123-456789abcdef",
+          "sub": "Case-Sensitive/Subject"
+        },
+        "issuedAt": 1700000000.0,
+        "nonce": "fixtureNonce456",
+        "keySig": "ovDofjFHtz9N9S8OsQy1zNr1GpwBSUd-ENySQBEiyeUUZa4yvudlBt_u5r-z7Gasig4t83Z2uFiMygL4yJpmsQ",
+        "attest": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImZpeHR1cmUtMSIsInR5cCI6IkpXVCJ9.eyJ0eXAiOiJzb2NpYWNsLW9pZGMtYXR0ZXN0LXYxIiwiaXNzIjoiaHR0cHM6Ly9pZC5meWJlcmxhYnMuY29tL3JlYWxtcy90ZXN0IiwidGVuYW50IjoiMDEyMzQ1NjctODlhYi1jZGVmLTAxMjMtNDU2Nzg5YWJjZGVmIiwic3ViIjoiQ2FzZS1TZW5zaXRpdmUvU3ViamVjdCIsInByaW5jaXBhbCI6ImF4ZlI4dUVzUWtmNHZPYmxZNlJBOG5jRGZZRXQ2ek9nOUtFNVJkaVl3cFkuVC1OQzR2NGFmNXVPNS10S2ZBLWVGaXZPTTFkck1WN095N1pBYURlX1VmVSIsImlhdCI6MTcwMDAwMDAwMCwiZXhwIjoxNzAwMDAwNjAwLCJub25jZSI6ImZpeHR1cmVOb25jZTQ1NiJ9.eHXh5Cr5_HuJxOAqvuh7_mF6TKGws01yzgOklDRwgc_kzV6A-0Rze0nNQiZnV8AldeAuwZSZEGuaed_W_mM6gA"
+      },
+      "reason": "bad-attestation",
+      "operation": "oidc-link",
+      "jwks": {
+        "keys": [
+          {
+            "kty": "EC",
+            "crv": "P-256",
+            "kid": "fixture-1",
+            "x": "UVkLelFRQNLXhMhWCGaP3--Mgv0fW-UkIVVKDcPQM-0",
+            "y": "4MF9qJBKcn2K4b82v4p5Jg0BLwDU2AiI0dC7RP2hbaQ",
+            "alg": "ES256",
+            "use": "sig",
+            "key_ops": [
+              "verify"
+            ],
+            "notBefore": -1,
+            "notAfter": 1700000100
+          }
+        ]
+      }
+    },
+    {
+      "name": "witness-window-fractional-end",
+      "input": {
+        "v": 1,
+        "kind": "oidc",
+        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+        "cred": {
+          "iss": "https://id.fyberlabs.com/realms/test",
+          "tenant": "01234567-89ab-cdef-0123-456789abcdef",
+          "sub": "Case-Sensitive/Subject"
+        },
+        "issuedAt": 1700000000.0,
+        "nonce": "fixtureNonce456",
+        "keySig": "ovDofjFHtz9N9S8OsQy1zNr1GpwBSUd-ENySQBEiyeUUZa4yvudlBt_u5r-z7Gasig4t83Z2uFiMygL4yJpmsQ",
+        "attest": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImZpeHR1cmUtMSIsInR5cCI6IkpXVCJ9.eyJ0eXAiOiJzb2NpYWNsLW9pZGMtYXR0ZXN0LXYxIiwiaXNzIjoiaHR0cHM6Ly9pZC5meWJlcmxhYnMuY29tL3JlYWxtcy90ZXN0IiwidGVuYW50IjoiMDEyMzQ1NjctODlhYi1jZGVmLTAxMjMtNDU2Nzg5YWJjZGVmIiwic3ViIjoiQ2FzZS1TZW5zaXRpdmUvU3ViamVjdCIsInByaW5jaXBhbCI6ImF4ZlI4dUVzUWtmNHZPYmxZNlJBOG5jRGZZRXQ2ek9nOUtFNVJkaVl3cFkuVC1OQzR2NGFmNXVPNS10S2ZBLWVGaXZPTTFkck1WN095N1pBYURlX1VmVSIsImlhdCI6MTcwMDAwMDAwMCwiZXhwIjoxNzAwMDAwNjAwLCJub25jZSI6ImZpeHR1cmVOb25jZTQ1NiJ9.eHXh5Cr5_HuJxOAqvuh7_mF6TKGws01yzgOklDRwgc_kzV6A-0Rze0nNQiZnV8AldeAuwZSZEGuaed_W_mM6gA"
+      },
+      "reason": "bad-attestation",
+      "operation": "oidc-link",
+      "jwks": {
+        "keys": [
+          {
+            "kty": "EC",
+            "crv": "P-256",
+            "kid": "fixture-1",
+            "x": "UVkLelFRQNLXhMhWCGaP3--Mgv0fW-UkIVVKDcPQM-0",
+            "y": "4MF9qJBKcn2K4b82v4p5Jg0BLwDU2AiI0dC7RP2hbaQ",
+            "alg": "ES256",
+            "use": "sig",
+            "key_ops": [
+              "verify"
+            ],
+            "notBefore": 1699999900,
+            "notAfter": 1700000000.5
+          }
+        ]
+      }
+    },
+    {
+      "name": "witness-window-string-start",
+      "input": {
+        "v": 1,
+        "kind": "oidc",
+        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+        "cred": {
+          "iss": "https://id.fyberlabs.com/realms/test",
+          "tenant": "01234567-89ab-cdef-0123-456789abcdef",
+          "sub": "Case-Sensitive/Subject"
+        },
+        "issuedAt": 1700000000.0,
+        "nonce": "fixtureNonce456",
+        "keySig": "ovDofjFHtz9N9S8OsQy1zNr1GpwBSUd-ENySQBEiyeUUZa4yvudlBt_u5r-z7Gasig4t83Z2uFiMygL4yJpmsQ",
+        "attest": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImZpeHR1cmUtMSIsInR5cCI6IkpXVCJ9.eyJ0eXAiOiJzb2NpYWNsLW9pZGMtYXR0ZXN0LXYxIiwiaXNzIjoiaHR0cHM6Ly9pZC5meWJlcmxhYnMuY29tL3JlYWxtcy90ZXN0IiwidGVuYW50IjoiMDEyMzQ1NjctODlhYi1jZGVmLTAxMjMtNDU2Nzg5YWJjZGVmIiwic3ViIjoiQ2FzZS1TZW5zaXRpdmUvU3ViamVjdCIsInByaW5jaXBhbCI6ImF4ZlI4dUVzUWtmNHZPYmxZNlJBOG5jRGZZRXQ2ek9nOUtFNVJkaVl3cFkuVC1OQzR2NGFmNXVPNS10S2ZBLWVGaXZPTTFkck1WN095N1pBYURlX1VmVSIsImlhdCI6MTcwMDAwMDAwMCwiZXhwIjoxNzAwMDAwNjAwLCJub25jZSI6ImZpeHR1cmVOb25jZTQ1NiJ9.eHXh5Cr5_HuJxOAqvuh7_mF6TKGws01yzgOklDRwgc_kzV6A-0Rze0nNQiZnV8AldeAuwZSZEGuaed_W_mM6gA"
+      },
+      "reason": "bad-attestation",
+      "operation": "oidc-link",
+      "jwks": {
+        "keys": [
+          {
+            "kty": "EC",
+            "crv": "P-256",
+            "kid": "fixture-1",
+            "x": "UVkLelFRQNLXhMhWCGaP3--Mgv0fW-UkIVVKDcPQM-0",
+            "y": "4MF9qJBKcn2K4b82v4p5Jg0BLwDU2AiI0dC7RP2hbaQ",
+            "alg": "ES256",
+            "use": "sig",
+            "key_ops": [
+              "verify"
+            ],
+            "notBefore": "1700000000",
+            "notAfter": 1700000100
+          }
+        ]
+      }
+    },
+    {
+      "name": "witness-window-boolean-end",
+      "input": {
+        "v": 1,
+        "kind": "oidc",
+        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+        "cred": {
+          "iss": "https://id.fyberlabs.com/realms/test",
+          "tenant": "01234567-89ab-cdef-0123-456789abcdef",
+          "sub": "Case-Sensitive/Subject"
+        },
+        "issuedAt": 1700000000.0,
+        "nonce": "fixtureNonce456",
+        "keySig": "ovDofjFHtz9N9S8OsQy1zNr1GpwBSUd-ENySQBEiyeUUZa4yvudlBt_u5r-z7Gasig4t83Z2uFiMygL4yJpmsQ",
+        "attest": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImZpeHR1cmUtMSIsInR5cCI6IkpXVCJ9.eyJ0eXAiOiJzb2NpYWNsLW9pZGMtYXR0ZXN0LXYxIiwiaXNzIjoiaHR0cHM6Ly9pZC5meWJlcmxhYnMuY29tL3JlYWxtcy90ZXN0IiwidGVuYW50IjoiMDEyMzQ1NjctODlhYi1jZGVmLTAxMjMtNDU2Nzg5YWJjZGVmIiwic3ViIjoiQ2FzZS1TZW5zaXRpdmUvU3ViamVjdCIsInByaW5jaXBhbCI6ImF4ZlI4dUVzUWtmNHZPYmxZNlJBOG5jRGZZRXQ2ek9nOUtFNVJkaVl3cFkuVC1OQzR2NGFmNXVPNS10S2ZBLWVGaXZPTTFkck1WN095N1pBYURlX1VmVSIsImlhdCI6MTcwMDAwMDAwMCwiZXhwIjoxNzAwMDAwNjAwLCJub25jZSI6ImZpeHR1cmVOb25jZTQ1NiJ9.eHXh5Cr5_HuJxOAqvuh7_mF6TKGws01yzgOklDRwgc_kzV6A-0Rze0nNQiZnV8AldeAuwZSZEGuaed_W_mM6gA"
+      },
+      "reason": "bad-attestation",
+      "operation": "oidc-link",
+      "jwks": {
+        "keys": [
+          {
+            "kty": "EC",
+            "crv": "P-256",
+            "kid": "fixture-1",
+            "x": "UVkLelFRQNLXhMhWCGaP3--Mgv0fW-UkIVVKDcPQM-0",
+            "y": "4MF9qJBKcn2K4b82v4p5Jg0BLwDU2AiI0dC7RP2hbaQ",
+            "alg": "ES256",
+            "use": "sig",
+            "key_ops": [
+              "verify"
+            ],
+            "notBefore": 1699999900,
+            "notAfter": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "witness-window-object-start",
+      "input": {
+        "v": 1,
+        "kind": "oidc",
+        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+        "cred": {
+          "iss": "https://id.fyberlabs.com/realms/test",
+          "tenant": "01234567-89ab-cdef-0123-456789abcdef",
+          "sub": "Case-Sensitive/Subject"
+        },
+        "issuedAt": 1700000000.0,
+        "nonce": "fixtureNonce456",
+        "keySig": "ovDofjFHtz9N9S8OsQy1zNr1GpwBSUd-ENySQBEiyeUUZa4yvudlBt_u5r-z7Gasig4t83Z2uFiMygL4yJpmsQ",
+        "attest": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImZpeHR1cmUtMSIsInR5cCI6IkpXVCJ9.eyJ0eXAiOiJzb2NpYWNsLW9pZGMtYXR0ZXN0LXYxIiwiaXNzIjoiaHR0cHM6Ly9pZC5meWJlcmxhYnMuY29tL3JlYWxtcy90ZXN0IiwidGVuYW50IjoiMDEyMzQ1NjctODlhYi1jZGVmLTAxMjMtNDU2Nzg5YWJjZGVmIiwic3ViIjoiQ2FzZS1TZW5zaXRpdmUvU3ViamVjdCIsInByaW5jaXBhbCI6ImF4ZlI4dUVzUWtmNHZPYmxZNlJBOG5jRGZZRXQ2ek9nOUtFNVJkaVl3cFkuVC1OQzR2NGFmNXVPNS10S2ZBLWVGaXZPTTFkck1WN095N1pBYURlX1VmVSIsImlhdCI6MTcwMDAwMDAwMCwiZXhwIjoxNzAwMDAwNjAwLCJub25jZSI6ImZpeHR1cmVOb25jZTQ1NiJ9.eHXh5Cr5_HuJxOAqvuh7_mF6TKGws01yzgOklDRwgc_kzV6A-0Rze0nNQiZnV8AldeAuwZSZEGuaed_W_mM6gA"
+      },
+      "reason": "bad-attestation",
+      "operation": "oidc-link",
+      "jwks": {
+        "keys": [
+          {
+            "kty": "EC",
+            "crv": "P-256",
+            "kid": "fixture-1",
+            "x": "UVkLelFRQNLXhMhWCGaP3--Mgv0fW-UkIVVKDcPQM-0",
+            "y": "4MF9qJBKcn2K4b82v4p5Jg0BLwDU2AiI0dC7RP2hbaQ",
+            "alg": "ES256",
+            "use": "sig",
+            "key_ops": [
+              "verify"
+            ],
+            "notBefore": {},
+            "notAfter": 1700000100
+          }
+        ]
+      }
+    },
+    {
+      "name": "witness-window-array-end",
+      "input": {
+        "v": 1,
+        "kind": "oidc",
+        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+        "cred": {
+          "iss": "https://id.fyberlabs.com/realms/test",
+          "tenant": "01234567-89ab-cdef-0123-456789abcdef",
+          "sub": "Case-Sensitive/Subject"
+        },
+        "issuedAt": 1700000000.0,
+        "nonce": "fixtureNonce456",
+        "keySig": "ovDofjFHtz9N9S8OsQy1zNr1GpwBSUd-ENySQBEiyeUUZa4yvudlBt_u5r-z7Gasig4t83Z2uFiMygL4yJpmsQ",
+        "attest": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImZpeHR1cmUtMSIsInR5cCI6IkpXVCJ9.eyJ0eXAiOiJzb2NpYWNsLW9pZGMtYXR0ZXN0LXYxIiwiaXNzIjoiaHR0cHM6Ly9pZC5meWJlcmxhYnMuY29tL3JlYWxtcy90ZXN0IiwidGVuYW50IjoiMDEyMzQ1NjctODlhYi1jZGVmLTAxMjMtNDU2Nzg5YWJjZGVmIiwic3ViIjoiQ2FzZS1TZW5zaXRpdmUvU3ViamVjdCIsInByaW5jaXBhbCI6ImF4ZlI4dUVzUWtmNHZPYmxZNlJBOG5jRGZZRXQ2ek9nOUtFNVJkaVl3cFkuVC1OQzR2NGFmNXVPNS10S2ZBLWVGaXZPTTFkck1WN095N1pBYURlX1VmVSIsImlhdCI6MTcwMDAwMDAwMCwiZXhwIjoxNzAwMDAwNjAwLCJub25jZSI6ImZpeHR1cmVOb25jZTQ1NiJ9.eHXh5Cr5_HuJxOAqvuh7_mF6TKGws01yzgOklDRwgc_kzV6A-0Rze0nNQiZnV8AldeAuwZSZEGuaed_W_mM6gA"
+      },
+      "reason": "bad-attestation",
+      "operation": "oidc-link",
+      "jwks": {
+        "keys": [
+          {
+            "kty": "EC",
+            "crv": "P-256",
+            "kid": "fixture-1",
+            "x": "UVkLelFRQNLXhMhWCGaP3--Mgv0fW-UkIVVKDcPQM-0",
+            "y": "4MF9qJBKcn2K4b82v4p5Jg0BLwDU2AiI0dC7RP2hbaQ",
+            "alg": "ES256",
+            "use": "sig",
+            "key_ops": [
+              "verify"
+            ],
+            "notBefore": 1699999900,
+            "notAfter": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "witness-window-unsafe-start",
+      "input": {
+        "v": 1,
+        "kind": "oidc",
+        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+        "cred": {
+          "iss": "https://id.fyberlabs.com/realms/test",
+          "tenant": "01234567-89ab-cdef-0123-456789abcdef",
+          "sub": "Case-Sensitive/Subject"
+        },
+        "issuedAt": 1700000000.0,
+        "nonce": "fixtureNonce456",
+        "keySig": "ovDofjFHtz9N9S8OsQy1zNr1GpwBSUd-ENySQBEiyeUUZa4yvudlBt_u5r-z7Gasig4t83Z2uFiMygL4yJpmsQ",
+        "attest": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImZpeHR1cmUtMSIsInR5cCI6IkpXVCJ9.eyJ0eXAiOiJzb2NpYWNsLW9pZGMtYXR0ZXN0LXYxIiwiaXNzIjoiaHR0cHM6Ly9pZC5meWJlcmxhYnMuY29tL3JlYWxtcy90ZXN0IiwidGVuYW50IjoiMDEyMzQ1NjctODlhYi1jZGVmLTAxMjMtNDU2Nzg5YWJjZGVmIiwic3ViIjoiQ2FzZS1TZW5zaXRpdmUvU3ViamVjdCIsInByaW5jaXBhbCI6ImF4ZlI4dUVzUWtmNHZPYmxZNlJBOG5jRGZZRXQ2ek9nOUtFNVJkaVl3cFkuVC1OQzR2NGFmNXVPNS10S2ZBLWVGaXZPTTFkck1WN095N1pBYURlX1VmVSIsImlhdCI6MTcwMDAwMDAwMCwiZXhwIjoxNzAwMDAwNjAwLCJub25jZSI6ImZpeHR1cmVOb25jZTQ1NiJ9.eHXh5Cr5_HuJxOAqvuh7_mF6TKGws01yzgOklDRwgc_kzV6A-0Rze0nNQiZnV8AldeAuwZSZEGuaed_W_mM6gA"
+      },
+      "reason": "bad-attestation",
+      "operation": "oidc-link",
+      "jwks": {
+        "keys": [
+          {
+            "kty": "EC",
+            "crv": "P-256",
+            "kid": "fixture-1",
+            "x": "UVkLelFRQNLXhMhWCGaP3--Mgv0fW-UkIVVKDcPQM-0",
+            "y": "4MF9qJBKcn2K4b82v4p5Jg0BLwDU2AiI0dC7RP2hbaQ",
+            "alg": "ES256",
+            "use": "sig",
+            "key_ops": [
+              "verify"
+            ],
+            "notBefore": 9007199254740992,
+            "notAfter": 9007199254740992
+          }
+        ]
+      }
+    },
+    {
+      "name": "witness-window-unsafe-end",
+      "input": {
+        "v": 1,
+        "kind": "oidc",
+        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+        "cred": {
+          "iss": "https://id.fyberlabs.com/realms/test",
+          "tenant": "01234567-89ab-cdef-0123-456789abcdef",
+          "sub": "Case-Sensitive/Subject"
+        },
+        "issuedAt": 1700000000.0,
+        "nonce": "fixtureNonce456",
+        "keySig": "ovDofjFHtz9N9S8OsQy1zNr1GpwBSUd-ENySQBEiyeUUZa4yvudlBt_u5r-z7Gasig4t83Z2uFiMygL4yJpmsQ",
+        "attest": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImZpeHR1cmUtMSIsInR5cCI6IkpXVCJ9.eyJ0eXAiOiJzb2NpYWNsLW9pZGMtYXR0ZXN0LXYxIiwiaXNzIjoiaHR0cHM6Ly9pZC5meWJlcmxhYnMuY29tL3JlYWxtcy90ZXN0IiwidGVuYW50IjoiMDEyMzQ1NjctODlhYi1jZGVmLTAxMjMtNDU2Nzg5YWJjZGVmIiwic3ViIjoiQ2FzZS1TZW5zaXRpdmUvU3ViamVjdCIsInByaW5jaXBhbCI6ImF4ZlI4dUVzUWtmNHZPYmxZNlJBOG5jRGZZRXQ2ek9nOUtFNVJkaVl3cFkuVC1OQzR2NGFmNXVPNS10S2ZBLWVGaXZPTTFkck1WN095N1pBYURlX1VmVSIsImlhdCI6MTcwMDAwMDAwMCwiZXhwIjoxNzAwMDAwNjAwLCJub25jZSI6ImZpeHR1cmVOb25jZTQ1NiJ9.eHXh5Cr5_HuJxOAqvuh7_mF6TKGws01yzgOklDRwgc_kzV6A-0Rze0nNQiZnV8AldeAuwZSZEGuaed_W_mM6gA"
+      },
+      "reason": "bad-attestation",
+      "operation": "oidc-link",
+      "jwks": {
+        "keys": [
+          {
+            "kty": "EC",
+            "crv": "P-256",
+            "kid": "fixture-1",
+            "x": "UVkLelFRQNLXhMhWCGaP3--Mgv0fW-UkIVVKDcPQM-0",
+            "y": "4MF9qJBKcn2K4b82v4p5Jg0BLwDU2AiI0dC7RP2hbaQ",
+            "alg": "ES256",
+            "use": "sig",
+            "key_ops": [
+              "verify"
+            ],
+            "notBefore": 1699999900,
+            "notAfter": 9007199254740992
+          }
+        ]
+      }
+    },
+    {
+      "name": "witness-window-before-start",
+      "input": {
+        "v": 1,
+        "kind": "oidc",
+        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+        "cred": {
+          "iss": "https://id.fyberlabs.com/realms/test",
+          "tenant": "01234567-89ab-cdef-0123-456789abcdef",
+          "sub": "Case-Sensitive/Subject"
+        },
+        "issuedAt": 1700000000.0,
+        "nonce": "fixtureNonce456",
+        "keySig": "ovDofjFHtz9N9S8OsQy1zNr1GpwBSUd-ENySQBEiyeUUZa4yvudlBt_u5r-z7Gasig4t83Z2uFiMygL4yJpmsQ",
+        "attest": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImZpeHR1cmUtMSIsInR5cCI6IkpXVCJ9.eyJ0eXAiOiJzb2NpYWNsLW9pZGMtYXR0ZXN0LXYxIiwiaXNzIjoiaHR0cHM6Ly9pZC5meWJlcmxhYnMuY29tL3JlYWxtcy90ZXN0IiwidGVuYW50IjoiMDEyMzQ1NjctODlhYi1jZGVmLTAxMjMtNDU2Nzg5YWJjZGVmIiwic3ViIjoiQ2FzZS1TZW5zaXRpdmUvU3ViamVjdCIsInByaW5jaXBhbCI6ImF4ZlI4dUVzUWtmNHZPYmxZNlJBOG5jRGZZRXQ2ek9nOUtFNVJkaVl3cFkuVC1OQzR2NGFmNXVPNS10S2ZBLWVGaXZPTTFkck1WN095N1pBYURlX1VmVSIsImlhdCI6MTcwMDAwMDAwMCwiZXhwIjoxNzAwMDAwNjAwLCJub25jZSI6ImZpeHR1cmVOb25jZTQ1NiJ9.eHXh5Cr5_HuJxOAqvuh7_mF6TKGws01yzgOklDRwgc_kzV6A-0Rze0nNQiZnV8AldeAuwZSZEGuaed_W_mM6gA"
+      },
+      "reason": "bad-attestation",
+      "operation": "oidc-link",
+      "jwks": {
+        "keys": [
+          {
+            "kty": "EC",
+            "crv": "P-256",
+            "kid": "fixture-1",
+            "x": "UVkLelFRQNLXhMhWCGaP3--Mgv0fW-UkIVVKDcPQM-0",
+            "y": "4MF9qJBKcn2K4b82v4p5Jg0BLwDU2AiI0dC7RP2hbaQ",
+            "alg": "ES256",
+            "use": "sig",
+            "key_ops": [
+              "verify"
+            ],
+            "notBefore": 1700000001,
+            "notAfter": 1700000100
+          }
+        ]
+      }
+    },
+    {
+      "name": "witness-window-at-end",
+      "input": {
+        "v": 1,
+        "kind": "oidc",
+        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+        "cred": {
+          "iss": "https://id.fyberlabs.com/realms/test",
+          "tenant": "01234567-89ab-cdef-0123-456789abcdef",
+          "sub": "Case-Sensitive/Subject"
+        },
+        "issuedAt": 1700000000.0,
+        "nonce": "fixtureNonce456",
+        "keySig": "ovDofjFHtz9N9S8OsQy1zNr1GpwBSUd-ENySQBEiyeUUZa4yvudlBt_u5r-z7Gasig4t83Z2uFiMygL4yJpmsQ",
+        "attest": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImZpeHR1cmUtMSIsInR5cCI6IkpXVCJ9.eyJ0eXAiOiJzb2NpYWNsLW9pZGMtYXR0ZXN0LXYxIiwiaXNzIjoiaHR0cHM6Ly9pZC5meWJlcmxhYnMuY29tL3JlYWxtcy90ZXN0IiwidGVuYW50IjoiMDEyMzQ1NjctODlhYi1jZGVmLTAxMjMtNDU2Nzg5YWJjZGVmIiwic3ViIjoiQ2FzZS1TZW5zaXRpdmUvU3ViamVjdCIsInByaW5jaXBhbCI6ImF4ZlI4dUVzUWtmNHZPYmxZNlJBOG5jRGZZRXQ2ek9nOUtFNVJkaVl3cFkuVC1OQzR2NGFmNXVPNS10S2ZBLWVGaXZPTTFkck1WN095N1pBYURlX1VmVSIsImlhdCI6MTcwMDAwMDAwMCwiZXhwIjoxNzAwMDAwNjAwLCJub25jZSI6ImZpeHR1cmVOb25jZTQ1NiJ9.eHXh5Cr5_HuJxOAqvuh7_mF6TKGws01yzgOklDRwgc_kzV6A-0Rze0nNQiZnV8AldeAuwZSZEGuaed_W_mM6gA"
+      },
+      "reason": "bad-attestation",
+      "operation": "oidc-link",
+      "jwks": {
+        "keys": [
+          {
+            "kty": "EC",
+            "crv": "P-256",
+            "kid": "fixture-1",
+            "x": "UVkLelFRQNLXhMhWCGaP3--Mgv0fW-UkIVVKDcPQM-0",
+            "y": "4MF9qJBKcn2K4b82v4p5Jg0BLwDU2AiI0dC7RP2hbaQ",
+            "alg": "ES256",
+            "use": "sig",
+            "key_ops": [
+              "verify"
+            ],
+            "notBefore": 1699999900,
+            "notAfter": 1700000000
+          }
+        ]
+      }
+    },
+    {
+      "name": "witness-window-after-end",
+      "input": {
+        "v": 1,
+        "kind": "oidc",
+        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+        "cred": {
+          "iss": "https://id.fyberlabs.com/realms/test",
+          "tenant": "01234567-89ab-cdef-0123-456789abcdef",
+          "sub": "Case-Sensitive/Subject"
+        },
+        "issuedAt": 1700000000.0,
+        "nonce": "fixtureNonce456",
+        "keySig": "ovDofjFHtz9N9S8OsQy1zNr1GpwBSUd-ENySQBEiyeUUZa4yvudlBt_u5r-z7Gasig4t83Z2uFiMygL4yJpmsQ",
+        "attest": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImZpeHR1cmUtMSIsInR5cCI6IkpXVCJ9.eyJ0eXAiOiJzb2NpYWNsLW9pZGMtYXR0ZXN0LXYxIiwiaXNzIjoiaHR0cHM6Ly9pZC5meWJlcmxhYnMuY29tL3JlYWxtcy90ZXN0IiwidGVuYW50IjoiMDEyMzQ1NjctODlhYi1jZGVmLTAxMjMtNDU2Nzg5YWJjZGVmIiwic3ViIjoiQ2FzZS1TZW5zaXRpdmUvU3ViamVjdCIsInByaW5jaXBhbCI6ImF4ZlI4dUVzUWtmNHZPYmxZNlJBOG5jRGZZRXQ2ek9nOUtFNVJkaVl3cFkuVC1OQzR2NGFmNXVPNS10S2ZBLWVGaXZPTTFkck1WN095N1pBYURlX1VmVSIsImlhdCI6MTcwMDAwMDAwMCwiZXhwIjoxNzAwMDAwNjAwLCJub25jZSI6ImZpeHR1cmVOb25jZTQ1NiJ9.eHXh5Cr5_HuJxOAqvuh7_mF6TKGws01yzgOklDRwgc_kzV6A-0Rze0nNQiZnV8AldeAuwZSZEGuaed_W_mM6gA"
+      },
+      "reason": "bad-attestation",
+      "operation": "oidc-link",
+      "jwks": {
+        "keys": [
+          {
+            "kty": "EC",
+            "crv": "P-256",
+            "kid": "fixture-1",
+            "x": "UVkLelFRQNLXhMhWCGaP3--Mgv0fW-UkIVVKDcPQM-0",
+            "y": "4MF9qJBKcn2K4b82v4p5Jg0BLwDU2AiI0dC7RP2hbaQ",
+            "alg": "ES256",
+            "use": "sig",
+            "key_ops": [
+              "verify"
+            ],
+            "notBefore": 1699999900,
+            "notAfter": 1699999999
+          }
+        ]
+      }
+    },
+    {
+      "name": "witness-window-skew-before-start",
+      "input": {
+        "v": 1,
+        "kind": "wallet",
+        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+        "address": "0x1efF47bc3a10a45D4B230B5d10E37751FE6AA718",
+        "issuedAt": 1700000000.0,
+        "nonce": "fixtureNonce123",
+        "keySig": "iGXFYXbObvjtpzvvcJNRvvtTUMBsAmGZTGE7-ad8z7nRrW3jpyOLjUEBtoWqBWcx-jQ9QFDI7q9mA87wjAx9Og",
+        "siwe": {
+          "message": "s3r.ch wants you to sign in with your Ethereum account:\n0x1efF47bc3a10a45D4B230B5d10E37751FE6AA718\n\nSociACL link: a90854a50712c3e090e4076385bec9d30c6831d5f04838c0589442ca23e74b1b\n\nURI: https://s3r.ch/identity/link\nVersion: 1\nChain ID: 1\nNonce: fixtureNonce123\nIssued At: 2023-11-14T22:13:20Z",
+          "signature": "0x84f6351b818c4597a06fbd9ae610321829dd7f9772701523c81e0023ee3738de53b9ea0083ce42b57e0bb525e6760b07cfc370a3e1d52f021f235b1acdfc0da31c"
+        },
+        "attest": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImZpeHR1cmUtMSIsInR5cCI6IkpXVCJ9.eyJ0eXAiOiJzb2NpYWNsLXdhbGxldC1hdHRlc3QtdjEiLCJwcmluY2lwYWwiOiJheGZSOHVFc1FrZjR2T2JsWTZSQThuY0RmWUV0NnpPZzlLRTVSZGlZd3BZLlQtTkM0djRhZjV1TzUtdEtmQS1lRml2T00xZHJNVjdPeTdaQWFEZV9VZlUiLCJsaW5rSWQiOiJhOTA4NTRhNTA3MTJjM2UwOTBlNDA3NjM4NWJlYzlkMzBjNjgzMWQ1ZjA0ODM4YzA1ODk0NDJjYTIzZTc0YjFiIiwiaWF0IjoxNzAwMDAwMDAwLCJleHAiOjE3MDAwMDA2MDB9.DbQ76adinFQJrdClbGXh_FwZd9KeYKAVSQirRzvG-4yP2xbuVLZZLkmSK3ljqUyg51AqPhdXQvvmnOb2axKcbg"
+      },
+      "reason": "bad-attestation",
+      "operation": "wallet-link",
+      "jwks": {
+        "keys": [
+          {
+            "kty": "EC",
+            "crv": "P-256",
+            "kid": "fixture-1",
+            "x": "UVkLelFRQNLXhMhWCGaP3--Mgv0fW-UkIVVKDcPQM-0",
+            "y": "4MF9qJBKcn2K4b82v4p5Jg0BLwDU2AiI0dC7RP2hbaQ",
+            "alg": "ES256",
+            "use": "sig",
+            "key_ops": [
+              "verify"
+            ],
+            "notBefore": 1700000001,
+            "notAfter": 1700000100
+          }
+        ]
+      },
+      "policy": {
+        "allowedDomains": [
+          "s3r.ch"
+        ],
+        "allowedUris": [
+          "https://s3r.ch/identity/link"
+        ],
+        "allowedChainIds": [
+          "1"
+        ],
+        "clockSkewSeconds": 300
+      }
+    },
+    {
+      "name": "witness-window-skew-at-end",
+      "input": {
+        "v": 1,
+        "kind": "wallet",
+        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+        "address": "0x1efF47bc3a10a45D4B230B5d10E37751FE6AA718",
+        "issuedAt": 1700000000.0,
+        "nonce": "fixtureNonce123",
+        "keySig": "iGXFYXbObvjtpzvvcJNRvvtTUMBsAmGZTGE7-ad8z7nRrW3jpyOLjUEBtoWqBWcx-jQ9QFDI7q9mA87wjAx9Og",
+        "siwe": {
+          "message": "s3r.ch wants you to sign in with your Ethereum account:\n0x1efF47bc3a10a45D4B230B5d10E37751FE6AA718\n\nSociACL link: a90854a50712c3e090e4076385bec9d30c6831d5f04838c0589442ca23e74b1b\n\nURI: https://s3r.ch/identity/link\nVersion: 1\nChain ID: 1\nNonce: fixtureNonce123\nIssued At: 2023-11-14T22:13:20Z",
+          "signature": "0x84f6351b818c4597a06fbd9ae610321829dd7f9772701523c81e0023ee3738de53b9ea0083ce42b57e0bb525e6760b07cfc370a3e1d52f021f235b1acdfc0da31c"
+        },
+        "attest": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImZpeHR1cmUtMSIsInR5cCI6IkpXVCJ9.eyJ0eXAiOiJzb2NpYWNsLXdhbGxldC1hdHRlc3QtdjEiLCJwcmluY2lwYWwiOiJheGZSOHVFc1FrZjR2T2JsWTZSQThuY0RmWUV0NnpPZzlLRTVSZGlZd3BZLlQtTkM0djRhZjV1TzUtdEtmQS1lRml2T00xZHJNVjdPeTdaQWFEZV9VZlUiLCJsaW5rSWQiOiJhOTA4NTRhNTA3MTJjM2UwOTBlNDA3NjM4NWJlYzlkMzBjNjgzMWQ1ZjA0ODM4YzA1ODk0NDJjYTIzZTc0YjFiIiwiaWF0IjoxNzAwMDAwMDAwLCJleHAiOjE3MDAwMDA2MDB9.DbQ76adinFQJrdClbGXh_FwZd9KeYKAVSQirRzvG-4yP2xbuVLZZLkmSK3ljqUyg51AqPhdXQvvmnOb2axKcbg"
+      },
+      "reason": "bad-attestation",
+      "operation": "wallet-link",
+      "jwks": {
+        "keys": [
+          {
+            "kty": "EC",
+            "crv": "P-256",
+            "kid": "fixture-1",
+            "x": "UVkLelFRQNLXhMhWCGaP3--Mgv0fW-UkIVVKDcPQM-0",
+            "y": "4MF9qJBKcn2K4b82v4p5Jg0BLwDU2AiI0dC7RP2hbaQ",
+            "alg": "ES256",
+            "use": "sig",
+            "key_ops": [
+              "verify"
+            ],
+            "notBefore": 1699999900,
+            "notAfter": 1700000000
+          }
+        ]
+      },
+      "policy": {
+        "allowedDomains": [
+          "s3r.ch"
+        ],
+        "allowedUris": [
+          "https://s3r.ch/identity/link"
+        ],
+        "allowedChainIds": [
+          "1"
+        ],
+        "clockSkewSeconds": 300
+      }
+    },
+    {
+      "name": "witness-window-rotation-at-end",
+      "input": {
+        "v": 1,
+        "kind": "rotate",
+        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+        "seq": 1,
+        "prevKey": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+        "nextKey": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+        "issuedAt": 1700000030,
+        "retainedLinks": [
+          "a90854a50712c3e090e4076385bec9d30c6831d5f04838c0589442ca23e74b1b"
+        ],
+        "authorizer": {
+          "kind": "wallet",
+          "link": "a90854a50712c3e090e4076385bec9d30c6831d5f04838c0589442ca23e74b1b",
+          "siwe": {
+            "message": "s3r.ch wants you to sign in with your Ethereum account:\n0x1efF47bc3a10a45D4B230B5d10E37751FE6AA718\n\nSociACL link: 01164ac28b53b75b70c3a885ac6221e24d8b124e064bbcaac300262d1a267e38\n\nURI: https://s3r.ch/identity/link\nVersion: 1\nChain ID: 1\nNonce: rotation1234\nIssued At: 2023-11-14T22:13:50Z",
+            "signature": "0xd2b1dc6c76c6c71537e43160954b2e4f4b0a75f082f11a8fb28528cd17c257266088289470b9f725d8a7a29119fee04904740f5f6ca05852ae42c820e9ee66061c"
+          }
+        },
+        "nextSig": "mi0XktDFRJM1rDkLe8H-gf3n6FkpoXB1bTV63Qnp1xoOhx6qMShoMOxYH9NyqE7LgoCpA9X2Qzpe8qw4JLVPDg",
+        "attest": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImZpeHR1cmUtMSIsInR5cCI6IkpXVCJ9.eyJ0eXAiOiJzb2NpYWNsLXJvdGF0ZS1hdHRlc3QtdjIiLCJwcmluY2lwYWwiOiJheGZSOHVFc1FrZjR2T2JsWTZSQThuY0RmWUV0NnpPZzlLRTVSZGlZd3BZLlQtTkM0djRhZjV1TzUtdEtmQS1lRml2T00xZHJNVjdPeTdaQWFEZV9VZlUiLCJuZXh0S2V5IjoiZlBKN0dJMERUMzZLVWpnREJMVWF3OENKYWVKMzhoczFwZ3RJX0VkbW1YZy5CM2RWRU51TzBFQXBQWnJHbjNRdzI3cDlyZVk4NllJcG5nUzNuU0o0YzlFIiwic2VxIjoxLCJpYXQiOjE3MDAwMDAwMzAsImV4cCI6MTcwMDAwMDYzMCwiYXV0aCI6IndhbGxldCIsImxpbmtJZCI6ImE5MDg1NGE1MDcxMmMzZTA5MGU0MDc2Mzg1YmVjOWQzMGM2ODMxZDVmMDQ4MzhjMDU4OTQ0MmNhMjNlNzRiMWIiLCJyZXRhaW5lZExpbmtzIjpbImE5MDg1NGE1MDcxMmMzZTA5MGU0MDc2Mzg1YmVjOWQzMGM2ODMxZDVmMDQ4MzhjMDU4OTQ0MmNhMjNlNzRiMWIiXX0.BqL_3eFkH64k2RsZhUXZp4nSk65Te4lQ97rExVm3wQObF-jko3gi3wQslcA4lBOMo7coproAPB4iaSAFCK5IGw"
+      },
+      "reason": "bad-attestation",
+      "operation": "rotate",
+      "jwks": {
+        "keys": [
+          {
+            "kty": "EC",
+            "crv": "P-256",
+            "kid": "fixture-1",
+            "x": "UVkLelFRQNLXhMhWCGaP3--Mgv0fW-UkIVVKDcPQM-0",
+            "y": "4MF9qJBKcn2K4b82v4p5Jg0BLwDU2AiI0dC7RP2hbaQ",
+            "alg": "ES256",
+            "use": "sig",
+            "key_ops": [
+              "verify"
+            ],
+            "notBefore": 1699999900,
+            "notAfter": 1700000030
+          }
+        ]
+      }
+    },
+    {
+      "name": "witness-window-revoke-at-end",
+      "input": {
+        "v": 1,
+        "kind": "revoke",
+        "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+        "linkId": "a90854a50712c3e090e4076385bec9d30c6831d5f04838c0589442ca23e74b1b",
+        "issuedAt": 1700000020,
+        "keySig": "pHHN9eC_0UxEflRA-aUtAl-AEPJKk_r7ddAeWArvc2gNLaKKm3k6KVAS-V6Al9IjNgmw57zbvU-4c3AOZRCoFQ",
+        "attest": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImZpeHR1cmUtMSIsInR5cCI6IkpXVCJ9.eyJ0eXAiOiJzb2NpYWNsLXJldm9rZS1hdHRlc3QtdjEiLCJwcmluY2lwYWwiOiJheGZSOHVFc1FrZjR2T2JsWTZSQThuY0RmWUV0NnpPZzlLRTVSZGlZd3BZLlQtTkM0djRhZjV1TzUtdEtmQS1lRml2T00xZHJNVjdPeTdaQWFEZV9VZlUiLCJyZWNvcmRJZCI6IjlmYmNjMzM5OTk0N2FmOGY5NGExNWJiZDBkOTBjZTcyZWY4OWMxMTIxNzk5Y2Q3NzI0YTc4MmI0OTAyYmU1MjciLCJpYXQiOjE3MDAwMDAwMjAsImV4cCI6MTcwMDAwMDYyMH0.ZhzXgH608ljlJVVPAEy_e662jPZGH8fCx7wr83RB-9DXbbqw5I4L9JOMSA-hK6jQ4EfR0WGORzl1h9mkoQuoBA"
+      },
+      "reason": "bad-attestation",
+      "operation": "revoke",
+      "jwks": {
+        "keys": [
+          {
+            "kty": "EC",
+            "crv": "P-256",
+            "kid": "fixture-1",
+            "x": "UVkLelFRQNLXhMhWCGaP3--Mgv0fW-UkIVVKDcPQM-0",
+            "y": "4MF9qJBKcn2K4b82v4p5Jg0BLwDU2AiI0dC7RP2hbaQ",
+            "alg": "ES256",
+            "use": "sig",
+            "key_ops": [
+              "verify"
+            ],
+            "notBefore": 1699999900,
+            "notAfter": 1700000020
           }
         ]
       }
@@ -23035,7 +24009,9 @@
           "use": "sig",
           "key_ops": [
             "verify"
-          ]
+          ],
+          "notBefore": 1699999000,
+          "notAfter": 1700010000
         }
       ]
     },

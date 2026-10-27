@@ -22,7 +22,7 @@ const date = n => new Date(n * 1000).toISOString().replace('.000Z', 'Z');
 const bytes = r => val(ids.signingBytes(r));
 const keySig = (r, n = 1) => b64(p256.sign(bytes(r), secret(n), { lowS: false }));
 const jwkPrincipal = principal(5);
-const jwks = { keys: [{ kty: 'EC', crv: 'P-256', kid: 'fixture-1', x: jwkPrincipal.slice(0, 43), y: jwkPrincipal.slice(44), alg: 'ES256', use: 'sig', key_ops: ['verify'] }] };
+const jwks = { keys: [{ kty: 'EC', crv: 'P-256', kid: 'fixture-1', x: jwkPrincipal.slice(0, 43), y: jwkPrincipal.slice(44), alg: 'ES256', use: 'sig', key_ops: ['verify'], notBefore: 1699999000, notAfter: 1700010000 }] };
 const jwsRaw = (header, claims) => {
   const body = b64(utf8.encode(header)) + '.' + b64(utf8.encode(claims));
   return body + '.' + b64(p256.sign(utf8.encode(body), secret(5), { lowS: false }));
@@ -199,6 +199,37 @@ bad('wrong-tenant',{...oidc,attest:jws({...oc,tenant:'11234567-89ab-cdef-0123-45
 bad('duplicate-jws-member',{...oidc,attest:jwsRaw('{"alg":"none","alg":"ES256","kid":"fixture-1"}',JSON.stringify(oc))},'bad-attestation','oidc-link');
 bad('untrusted-alg',{...oidc,attest:jwsRaw('{"alg":"HS256","kid":"fixture-1"}',JSON.stringify(oc))},'bad-attestation','oidc-link');
 bad('duplicate-kid',oidc,'bad-attestation','oidc-link',{jwks:{keys:[...jwks.keys,...jwks.keys]}});
+// F4: a valid signature does not authorize issuance outside trusted key bounds.
+const windowKeys = (notBefore, notAfter) => ({jwks:{keys:[{...jwks.keys[0],notBefore,notAfter}]}});
+for (const [name, start, end] of [
+  ['missing-start',undefined,at+100], ['missing-end',at-100,undefined],
+  ['null-start',null,at+100], ['null-end',at-100,null],
+  ['empty',at,at], ['reversed',at+100,at-100],
+  ['negative-start',-1,at+100], ['fractional-end',at-100,at+0.5],
+  ['string-start',String(at),at+100], ['boolean-end',at-100,true],
+  ['object-start',{},at+100], ['array-end',at-100,[]],
+  ['unsafe-start',9007199254740992,9007199254740993],
+  ['unsafe-end',at-100,9007199254740992],
+  ['before-start',at+1,at+100], ['at-end',at-100,at],
+  ['after-end',at-100,at-1],
+]) bad('witness-window-'+name,oidc,'bad-attestation','oidc-link',windowKeys(start,end));
+for (const [name, start, end] of [['at-start',at,at+1],['last-second',at-100,at+1]]) {
+  accept('records','witness-window-'+name,oidc,p,{operation:'oidc-link',...windowKeys(start,end)});
+}
+for (const [name, start, end] of [['before-start',at+1,at+100],['at-end',at-100,at]]) {
+  bad('witness-window-skew-'+name,w,'bad-attestation','wallet-link',{
+    ...windowKeys(start,end),policy:{...context.policy,clockSkewSeconds:300},
+  });
+}
+bad('witness-window-rotation-at-end',rot,'bad-attestation','rotate',windowKeys(at-100,rot.issuedAt));
+bad('witness-window-revoke-at-end',rev,'bad-attestation','revoke',windowKeys(at-100,rev.issuedAt));
+// The key has retired and the request JWT expired, but issuance was authorized.
+accept('records','witness-window-historical-rotation',rot,p,{
+  operation:'rotate',now:at+50000,...windowKeys(at,rot.issuedAt+1),
+});
+accept('records','witness-window-historical-resolution',[rot],p2,{
+  operation:'resolve',now:at+50000,...windowKeys(at,rot.issuedAt+1),
+});
 bad('no-attestation',{...rot,attest:''},'empty','rotate');
 bad('revoke-wrong-key',{...rev,keySig:keySig(rev,2)},'bad-signature','revoke');
 // Both P-256 S encodings must verify and retain the same record identity.
@@ -740,6 +771,6 @@ for (const seq of [1, 2]) {
 }
 
 const root = new URL('../../../vectors/ids/',import.meta.url); mkdirSync(root,{recursive:true});
-for(const [name,value] of families) writeFileSync(new URL(name+'.json',root),JSON.stringify(value,null,2).replace(/"issuedAt": 1700000000,/g, name==='edges'?'"issuedAt": 1700000000,':'"issuedAt": 1700000000.0,')+'\n');
+for(const [name,value] of families) writeFileSync(new URL(name+'.json',root),JSON.stringify(value,null,2).replace(/"issuedAt": 1700000000,/g, name==='edges'?'"issuedAt": 1700000000,':'"issuedAt": 1700000000.0,').replace(/"notBefore": 1700000000,/g, '"notBefore": 1700000000.0,')+'\n');
 writeFileSync(new URL('test-keys.json',new URL('../test/',import.meta.url)),JSON.stringify({p,p2,p3,wallet,tenant,obj,network,source,secretScalars:[1,2,3,4,5]},null,2)+'\n');
 console.log(`Wrote ${families.size} vector families`);

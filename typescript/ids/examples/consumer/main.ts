@@ -46,6 +46,8 @@ const fixture = {
         "kty": "EC",
         "crv": "P-256",
         "kid": "fixture-1",
+        "notBefore": 1699999000,
+        "notAfter": 1700010000,
         "x": "UVkLelFRQNLXhMhWCGaP3--Mgv0fW-UkIVVKDcPQM-0",
         "y": "4MF9qJBKcn2K4b82v4p5Jg0BLwDU2AiI0dC7RP2hbaQ",
         "alg": "ES256",
