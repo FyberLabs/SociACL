@@ -8,6 +8,10 @@
 //! disagree near the threshold. The shared vector pins clear pass and fail
 //! rows only.
 //!
+//! The dependency caches a clock-derived reference year. Scores are not stable
+//! protocol values; opening a copy never uses them. See the year-aware policy
+//! in docs/encrypted-discovery.md.
+//!
 //! The error carries the score and feedback for the UI. It does not carry
 //! the passphrase. Callers must not log the passphrase.
 

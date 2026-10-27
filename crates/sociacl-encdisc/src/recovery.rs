@@ -1932,6 +1932,44 @@ mod tests {
     }
 
     #[test]
+    fn legacy_backup_opens_after_strength_policy_changes_but_cannot_reseal_weakly() {
+        let fixture: Value = serde_json::from_str(include_str!(
+            "../../../vectors/encrypted-discovery/recovery-legacy-strength.json"
+        ))
+        .unwrap();
+        let keyring = genesis_keyring();
+        let held = hold();
+        let context = context_of(&held);
+        let passphrase = fixture["passphraseUtf8"].as_str().unwrap();
+        let weak =
+            crate::check_recovery_passphrase(passphrase.as_bytes(), keyring.principal(), None)
+                .unwrap_err();
+        assert_eq!(token(&weak), fixture["sealError"].as_str().unwrap());
+        let envelope = RecoveryEnvelope {
+            principal: keyring.principal().clone(),
+            rotation_seq: 0,
+            signing_pub: keyring.current_pub().clone(),
+            epub: keyring.current_epub().clone(),
+            bytes: hexutil::decode_hex(fixture["envelopeHex"].as_str().unwrap()).unwrap(),
+        };
+        assert_eq!(fixture["openResult"], "pass");
+        let opened =
+            open_recovery_copy_str(passphrase, &envelope, keyring.principal(), 0, &[], &context)
+                .unwrap();
+        assert_eq!(opened.current_priv(), keyring.current_priv());
+        assert_eq!(opened.current_epriv(), keyring.current_epriv());
+        assert_eq!(opened.contact_lane_secret(), keyring.contact_lane_secret());
+        assert_eq!(opened.lane_id(), keyring.lane_id());
+        let mut store = MemoryRecoveryStore::new(watch(&[], &context), crate::HeadFloor::new());
+        let err = seal_recovery_copy(&opened, passphrase.as_bytes(), &mut store, None).unwrap_err();
+        assert_eq!(token(&err), fixture["sealError"].as_str().unwrap());
+        assert!(store.current_copy(keyring.principal()).unwrap().is_none());
+        let wrong = open_recovery_copy(b"wrong", &envelope, keyring.principal(), 0, &[], &context)
+            .unwrap_err();
+        assert_eq!(token(&wrong), "recovery-rejected");
+    }
+
+    #[test]
     fn recovery_copy_matches_the_shared_vector_and_stays_off_gun() {
         let v = recovery();
         let keyring = genesis_keyring();

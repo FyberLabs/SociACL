@@ -1748,3 +1748,35 @@ test("authenticated store resolver skips poison without raising the floor and re
   assert.equal(store.writeGeneration(principal), 0);
   assert.equal(store.current(principal), undefined);
 });
+
+
+test("legacy backup opens after strength policy changes but cannot reseal weakly", async (t) => {
+  const fixture = JSON.parse(readFileSync(new URL("../../vectors/encrypted-discovery/recovery-legacy-strength.json", import.meta.url), "utf8"));
+  const keyring = genesisKeyring();
+  const context = witnessedContext();
+  const passphrase = new TextEncoder().encode(fixture.passphraseUtf8);
+  await assert.rejects(() => checkRecoveryPassphrase(passphrase, keyring.principal), { message: fixture.sealError });
+  const envelope: RecoveryEnvelope = {
+    principal: keyring.principal, rotationSeq: 0, signingPub: keyring.pub,
+    epub: keyring.epub, bytes: hexToBytes(fixture.envelopeHex),
+  };
+  assert.equal(fixture.openResult, "pass");
+  // Scoring time is not account-history verification time. Keep the trusted
+  // resolution context fixed while moving the application's wall clock.
+  t.mock.timers.enable({ apis: ["Date"], now: Date.UTC(2000, 0, 1) });
+  for (const year of [2000, 2099]) {
+    t.mock.timers.setTime(Date.UTC(year, 0, 1));
+    const opened = await recovery.openRecoveryCopyFromString(
+      fixture.passphraseUtf8, envelope, keyring.principal, 0, [], context,
+    );
+    assert.equal(opened.currentPriv(), keyring.currentPriv());
+    assert.equal(opened.currentEpriv(), keyring.currentEpriv());
+    assert.equal(opened.contactLaneSecret(), keyring.contactLaneSecret());
+    assert.equal(opened.laneId(), keyring.laneId());
+    const store = new MemoryRecoveryStore(watch([], context), new HeadFloor());
+    await assert.rejects(() => recovery.sealRecoveryCopy(opened, passphrase, store), { message: fixture.sealError });
+    assert.equal(store.current(keyring.principal), undefined);
+    assert.equal(store.writeGeneration(keyring.principal), 0);
+  }
+  await assert.rejects(() => openRecoveryCopy(new TextEncoder().encode("wrong"), envelope, keyring.principal, 0, [], context), { message: "recovery-rejected" });
+});
