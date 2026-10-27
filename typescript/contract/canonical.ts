@@ -90,7 +90,7 @@ export function inboxEntryId(body: InboxEntryBody): string {
 }
 
 export function epochRevisionBytes(body: EpochManifestBody): Uint8Array {
-  return lengthPrefixed([
+  const fields = [
     DOMAIN_EPOCH,
     body.object,
     canonicalDecimal(body.epoch),
@@ -99,7 +99,12 @@ export function epochRevisionBytes(body: EpochManifestBody): Uint8Array {
     body.keyCommitment,
     canonicalDecimal(body.settleWindowMs),
     body.aclSnapshot,
-  ]);
+  ];
+  const statusAuthPub = body.statusAuthPub;
+  if (statusAuthPub !== undefined && statusAuthPub.length > 0) {
+    fields.push(statusAuthPub);
+  }
+  return lengthPrefixed(fields);
 }
 
 export function epochRevisionId(body: EpochManifestBody): string {

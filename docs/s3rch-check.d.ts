@@ -11,7 +11,9 @@
  *   crates/sociacl-encdisc — encrypted-discovery slice
  *     (account SEA key, enrollment, wrap edge, canonical ids,
  *      blinded rows, presenter binding, inbox admission,
- *      epoch admission, rotateOnRevoke)
+ *      epoch admission, rotateOnRevoke,
+ *      envelope path, manifest soul, status authority,
+ *      group-inbox ssig, account-key log)
  */
 declare const sociaclObjectId: unique symbol;
 declare const sociaclPrincipalId: unique symbol;
@@ -990,6 +992,11 @@ export type ItemContentAuth = {
  * that revision fails closed. Arrival order does not pick
  * the payload.
  * Not a merge field on the lane entry. Not a grant by itself.
+ * An encrypted item also names manifest, the soul
+ * s3rch/items/<itemId>/m/<rev>. That field is grantManifestBytes.
+ * It is outside this v1 payload encoding. CHECK rejects a missing
+ * soul or a soul that is not that item and rev. An author-lane
+ * copy does not satisfy the grantee.
  */
 export type SignedGrantPayload = {
   object: CheckObjectId;
@@ -1539,8 +1546,10 @@ export type FirstContactIntro = {
  * The owner re-encrypts those writes under the new winner.
  * Every WrappedKey for that epoch carries the same revisionId
  * inside the authenticated payload.
- * Self-wrap in the author lane, or inside the encrypted item.
- * Not an owner pub on a visible grant row. Not a grant.
+ * A grantee accepts the manifest at ManifestSoul. An author-lane
+ * copy, or a copy inside the ciphertext, does not satisfy that
+ * grantee. statusAuthPub, when present, is covered by revisionId.
+ * It is not an account identity. Not a grant.
  */
 export type EpochManifest = {
   object: CheckObjectId;
@@ -1561,12 +1570,22 @@ export type EpochManifest = {
    */
   aclSnapshot: string;
   /**
+   * Designated status SEA pub for this head. Omitted from the
+   * canonical body when absent. When present it is the last field
+   * of epochRevisionId. It is not an account identity. A status
+   * proof signed by any other key verifies only when that key
+   * equals this pub and the same pub on StatusAuthorityBinding,
+   * and the binding seq is the account-key log head.
+   */
+  statusAuthPub?: string;
+  /**
    * Owner signature over revisionId, not over keyCommitment
    * alone. Signed bytes, length-prefixed:
    * 1. "s3rch-epoch-manifest-sig-v1"
    * 2. revisionId
    * revisionId already covers object, epoch, previousEpoch,
-   * deviceId, keyCommitment, settleWindowMs, and aclSnapshot.
+   * deviceId, keyCommitment, settleWindowMs, aclSnapshot, and
+   * statusAuthPub when that field is present.
    * A signature over keyCommitment alone does not verify.
    */
   signature: string;
@@ -1586,6 +1605,11 @@ export type EpochManifestBody = {
   settleWindowMs: number;
   /** aclSnapshotId of the per-accessor cancel rows. */
   aclSnapshot: string;
+  /**
+   * Omitted from the encoding when absent or empty.
+   * Present, it is one more length-prefixed field.
+   */
+  statusAuthPub?: string;
 };
 
 /**
@@ -1688,6 +1712,7 @@ export function aclSnapshotId(body: AclSnapshotBody): string;
  * 6. keyCommitment
  * 7. decimal settleWindowMs
  * 8. aclSnapshot
+ * 9. statusAuthPub, only when present
  */
 export function epochRevisionId(body: EpochManifestBody): string;
 
@@ -2544,6 +2569,293 @@ export function applyProtocolMigration(
 ): MigrationAdmission;
 
 /**
+ * Ciphertext envelope, including the first revision.
+ * Not a second Check object. The root locator is not this path.
+ */
+export type ItemRevisionSoul = `s3rch/items/${string}/r/${string}`;
+
+/**
+ * Write-once locator at s3rch/items/<itemId>.
+ * first names the first rev. The node has no ciphertext.
+ * Not a Check object and not a grant.
+ */
+export type ItemLocator = {
+  v: 2;
+  enc: 1;
+  first: string;
+};
+
+/**
+ * Signed manifest body at ManifestSoul.
+ * statusAuthPub is omitted from the canonical bytes when absent.
+ * The node is { v: 1, manifest, msig } and carries no account pub.
+ * Not a grant.
+ */
+export type RevisionManifest = {
+  itemId: string;
+  e: number;
+  rev: string;
+  parent: string;
+  keyId: string;
+  envDigest: string;
+  statusAuthPub?: string;
+};
+
+/** Grant-tuple field. Soul of the manifest for this item and rev. */
+export type ManifestSoul = `s3rch/items/${string}/m/${string}`;
+
+/**
+ * Current-account designation of the status authority.
+ * Signed by the current account SEA pub. Not an identity. Not a grant.
+ * The authority pub cannot sign a manifest, a grant proof, or a
+ * replacement binding.
+ */
+export type StatusAuthorityBinding = {
+  /** provider:encoded-id */
+  account: string;
+  /** Current SEA pub. */
+  accountPub: string;
+  /** Designated SEA pub. */
+  statusAuthPub: string;
+  /** Account-key log head. */
+  seq: number;
+};
+
+/**
+ * Group-inbox sender authentication.
+ * ssig covers these fields. The signing key is the sender's current
+ * account SEA pub. A key derived from the group epoch key is refused
+ * before unwrap. Not a grant and not a membership.
+ */
+export type GroupInboxWriteSig = {
+  tag: string;
+  entryId: string;
+  senderPub: string;
+  /** SHA-256 of the length-prefixed ephemeral, ciphertext, and iv. */
+  bodyHash: string;
+};
+
+/**
+ * v2 group-inbox entry at s3rch/ginbox/<tag>/<entryId>.
+ * ssig is the sender's current account SEA signature. Not a grant.
+ */
+export type GroupInboxEntry = {
+  v: 1;
+  senderPub: string;
+  eph: string;
+  ct: string;
+  iv: string;
+  ssig: string;
+};
+
+/**
+ * Append-only account-key log entry. Identity for the five statement
+ * checks is keyPub, the current SEA pub at this seq.
+ * prev is the hash of the previous entry, or "none" at seq 0.
+ * Not a grant.
+ */
+export type AccountKeyLogEntry = {
+  account: string;
+  keyPub: string;
+  seq: number;
+  prev: string;
+};
+
+/**
+ * Head signed by the login provider or the wallet.
+ * The SEA key does not sign these bytes.
+ */
+export type AccountKeyLogHead = {
+  account: string;
+  seq: number;
+  entryHash: string;
+};
+
+/** s3rch/items/<itemId>/r/<rev>. The first revision uses this path. */
+export function itemRevisionSoul(itemId: string, rev: string): ItemRevisionSoul;
+
+/** s3rch/items/<itemId>/m/<rev>. Not a grant. */
+export function manifestSoul(itemId: string, rev: string): ManifestSoul;
+
+/** s3rch/items/<itemId>. Write-once locator. Not ciphertext. */
+export function itemRootSoul(itemId: string): string;
+
+/** s3rch/ginbox/<tag>/<entryId>. */
+export function groupInboxSoul(tag: string, entryId: string): string;
+
+/**
+ * SHA-256 lowercase hex of the length-prefixed fields
+ * "s3rch-env-digest-v1", itemId, decimal e, rev, alg, iv, ct.
+ * This is H(itemId || e || rev || alg || iv || ct).
+ * Checked against the revision node before the body is accepted.
+ */
+export function envDigest(
+  itemId: string,
+  e: number,
+  rev: string,
+  alg: string,
+  iv: string,
+  ct: string,
+): string;
+
+/**
+ * Canonical revision manifest. statusAuthPub is omitted when absent.
+ * msig is the current account SEA signature over these bytes.
+ * Fields: "s3rch-revision-manifest-v1", itemId, decimal e, rev, parent,
+ * keyId, envDigest, and statusAuthPub when present.
+ */
+export function revisionManifestBytes(manifest: RevisionManifest): Uint8Array;
+
+/**
+ * Signed grant-tuple field. Outside s3rch-grant-payload-v1.
+ * Fields: "s3rch-grant-manifest-v1", itemId, rev, manifest soul.
+ */
+export function grantManifestBytes(
+  itemId: string,
+  rev: string,
+  manifest: ManifestSoul,
+): Uint8Array;
+
+/**
+ * Fields: "s3rch-status-authority-v1", account, accountPub,
+ * statusAuthPub, decimal seq. The current account SEA pub signs this.
+ */
+export function statusAuthorityBytes(binding: StatusAuthorityBinding): Uint8Array;
+
+/** SHA-256 of "s3rch-group-inbox-body-v1", eph, ct, iv. */
+export function groupInboxBodyHash(eph: string, ct: string, iv: string): string;
+
+/**
+ * Fields: "s3rch-group-inbox-ssig-v1", tag, entryId, senderPub, bodyHash.
+ * The sender's current account SEA pub signs this.
+ */
+export function groupInboxSigBytes(sig: GroupInboxWriteSig): Uint8Array;
+
+/**
+ * Fields: "s3rch-account-key-log-v1", account, keyPub, decimal seq, prev.
+ * The entry hash is SHA-256 of these bytes.
+ */
+export function accountKeyLogBytes(entry: AccountKeyLogEntry): Uint8Array;
+
+/** SHA-256 of accountKeyLogBytes. */
+export function accountKeyEntryHash(entry: AccountKeyLogEntry): string;
+
+/**
+ * Fields: "s3rch-account-key-head-v1", account, decimal seq, entryHash.
+ * The provider or the wallet signs this. The SEA key does not.
+ */
+export function accountKeyHeadBytes(head: AccountKeyLogHead): Uint8Array;
+
+/** The SEA key does not sign the account-key log head. */
+export function accountKeyHeadSignedBySea(): boolean;
+
+/**
+ * A hop, a status statement, a chat node, a manifest, a binding,
+ * an ssig, a log entry, and an envelope do not mint a grant.
+ */
+export function consumeStatementMints(kind: string): boolean;
+
+/**
+ * Root locator. hasCiphertext refuses. first must equal the first rev.
+ * The locator is not a Check object and not a grant.
+ */
+export function acceptItemLocator(
+  v: 2,
+  enc: 1,
+  first: string,
+  expectedFirst: string,
+  hasCiphertext: boolean,
+): { ok: true } | { ok: false; reason: string };
+
+/**
+ * Fetch path is the revision soul. There is no root-ciphertext fallback.
+ * envDigest must match the envelope at that soul before the body is accepted.
+ */
+export function acceptEnvelope(input: {
+  itemId: string;
+  e: number;
+  rev: string;
+  fetchedSoul: string;
+  rootHasCiphertext: boolean;
+  alg: string;
+  iv: string;
+  ct: string;
+  envDigest: string;
+}): { ok: true } | { ok: false; reason: string };
+
+/**
+ * CHECK rejects a missing soul or a soul that is not this item and rev.
+ * An author-lane copy does not satisfy a grantee.
+ */
+export function acceptGrantManifest(input: {
+  manifest?: string;
+  itemId: string;
+  rev: string;
+  authorLaneOnly: boolean;
+}): { ok: true } | { ok: false; reason: string };
+
+/**
+ * The manifest node carries no account pub. envDigest must equal the
+ * envelope digest. The manifest is not a grant.
+ */
+export function acceptRevisionManifest(input: {
+  nodeV: number;
+  manifest: RevisionManifest;
+  itemId: string;
+  rev: string;
+  envelopeDigest: string;
+  carriesAccountPub: boolean;
+}): { ok: true } | { ok: false; reason: string };
+
+/**
+ * A status proof signed by the current account key is accepted on its own.
+ * Any other key verifies only when it equals statusAuthPub on the binding
+ * and on the manifest, the binding signature verifies under the current
+ * account key, and seq is the log head. A missing binding refuses every
+ * other signer. purpose "manifest", "grant", and "binding" accept only
+ * the current account key. The proof does not mint.
+ */
+export function acceptStatusSigner(input: {
+  signingPub: string;
+  currentAccountPub: string;
+  binding?: StatusAuthorityBinding;
+  manifestStatusAuthPub?: string;
+  logHeadSeq?: number;
+  bindingSignedByCurrent: boolean;
+  purpose: "status" | "manifest" | "grant" | "binding";
+}): { ok: true } | { ok: false; reason: string };
+
+/**
+ * ssig is checked under senderPub before unwrap. senderPub must be a
+ * current-epoch member and that account's current SEA pub. A signature
+ * under a key derived from the group epoch key, including
+ * derive(ECDH(member, groupEpub), "writer"), is refused. ssig does not
+ * mint see or a membership. The group key encrypts only.
+ */
+export function acceptGroupInboxSender(input: {
+  senderPub: string;
+  currentAccountPub: string;
+  member: boolean;
+  signatureUnderSender: boolean;
+  derivedFromGroupKey: boolean;
+}): { ok: true } | { ok: false; reason: string };
+
+/**
+ * Fail closed. The verifier has fetched the head and a hash chain that
+ * links it to seq 0 or to anchorHash, an entry already accepted.
+ * A missing head, a chain that does not link, a prev mismatch, or no
+ * answer from the provider or wallet refuses. The highest cached seq
+ * is not the current key. A superseded keyPub does not authenticate.
+ */
+export function acceptCurrentKey(input: {
+  head?: AccountKeyLogHead;
+  entries: readonly AccountKeyLogEntry[];
+  anchorHash?: string;
+  providerAnswered: boolean;
+  statementKeyPub: string;
+}): { ok: true; keyPub: string } | { ok: false; reason: string };
+
+/**
  * Not a Check object. SociACL runs no index and does not store this.
  * public: one index, public content only.
  * private-group: that group's own index.
@@ -2658,4 +2970,15 @@ export type EncryptedDiscoveryVector =
   | "presenter-expired-challenge"
   | "presenter-forged-channel"
   | "presenter-channel-wrong-principal"
-  | "presenter-binding-not-a-grant";
+  | "presenter-binding-not-a-grant"
+  | "envelope-revision-path"
+  | "envelope-root-refused"
+  | "grant-manifest-soul"
+  | "grant-manifest-author-lane"
+  | "status-authority-binding"
+  | "status-authority-not-identity"
+  | "group-inbox-ssig"
+  | "group-inbox-writer-key-refused"
+  | "account-key-fail-closed"
+  | "account-key-superseded"
+  | "consume-statement-does-not-mint";

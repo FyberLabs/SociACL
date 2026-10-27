@@ -68,6 +68,8 @@ pub struct EpochManifestBody {
     pub key_commitment: String,
     pub settle_window_ms: u64,
     pub acl_snapshot: String,
+    /// Designated status SEA pub. Omitted from the encoding when absent.
+    pub status_auth_pub: Option<String>,
 }
 
 /// Item-auth tuple. The signature covers these fields and is not one of them.
@@ -221,16 +223,23 @@ pub fn epoch_revision_bytes(body: &EpochManifestBody) -> Result<Vec<u8>, EncDisc
     let epoch = canonical_decimal(body.epoch)?;
     let previous = canonical_decimal(body.previous_epoch)?;
     let window = canonical_decimal(body.settle_window_ms)?;
-    length_prefixed(&[
-        DOMAIN_EPOCH,
-        &body.object,
-        &epoch,
-        &previous,
-        &body.device_id,
-        &body.key_commitment,
-        &window,
-        &body.acl_snapshot,
-    ])
+    let mut fields = vec![
+        DOMAIN_EPOCH.to_string(),
+        body.object.clone(),
+        epoch,
+        previous,
+        body.device_id.clone(),
+        body.key_commitment.clone(),
+        window,
+        body.acl_snapshot.clone(),
+    ];
+    if let Some(status_auth_pub) = body.status_auth_pub.as_deref() {
+        if !status_auth_pub.is_empty() {
+            fields.push(status_auth_pub.to_string());
+        }
+    }
+    let refs: Vec<&str> = fields.iter().map(String::as_str).collect();
+    length_prefixed(&refs)
 }
 
 pub fn epoch_revision_id(body: &EpochManifestBody) -> Result<String, EncDiscError> {

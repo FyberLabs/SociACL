@@ -84,11 +84,12 @@
 
 #![forbid(unsafe_code)]
 
-mod emoji_variation;
 mod account;
 mod canonical;
+mod consume;
 mod contact_lane;
 mod delivery;
+mod emoji_variation;
 mod epoch;
 mod error;
 mod grant;
@@ -133,6 +134,16 @@ pub use canonical::{
     DOMAIN_PRESENTER_BINDING, DOMAIN_SEA_SECRET, DOMAIN_WRAPPED_KEY, DOMAIN_WRAP_RECEIPT,
     DOMAIN_WRITER_APPEND, DOMAIN_WRITER_CHANNEL, JS_SAFE_INTEGER_MAX,
 };
+pub use consume::{
+    accept_current_key, accept_envelope, accept_grant_manifest, accept_group_inbox_sender,
+    accept_item_locator, accept_revision_manifest, accept_status_signer, account_key_entry_hash,
+    account_key_head_bytes, account_key_head_signed_by_sea, account_key_log_bytes,
+    consume_statement_mints, env_digest, grant_manifest_bytes, group_inbox_body_hash,
+    group_inbox_sig_bytes, group_inbox_soul, item_revision_soul, item_root_soul, manifest_soul,
+    revision_manifest_bytes, status_authority_bytes, AccountKeyLogEntry, AccountKeyLogHead,
+    ConsumeDecision, CurrentKeyDecision, GroupInboxWriteSig, RevisionManifest,
+    StatusAuthorityBinding,
+};
 pub use contact_lane::{
     derive_contact_lane, lane_lookup_key, open_contact_lane_grant, regrant_contact_lanes,
     resolve_contact_lane, seal_contact_lane_grant, ContactLaneGrant, ContactTarget,
@@ -155,10 +166,10 @@ pub use grant::{
     MeshSeeGrant, SignedGrantPayload,
 };
 pub use identity::{
-    account_id_from_label, current_signing_key, delete_account_wrap,
-    delivery_mints_grant, open_account_backup, parse_wrap_object, seal_account_backup,
-    EncryptedAccountWrap, GenesisAccount, InheritedDevice, KeyWrapStore, LinkedCredential,
-    MemoryKeyWrapStore, TransportKey, WrapClass, WrapIndex,
+    account_id_from_label, current_signing_key, delete_account_wrap, delivery_mints_grant,
+    open_account_backup, parse_wrap_object, seal_account_backup, EncryptedAccountWrap,
+    GenesisAccount, InheritedDevice, KeyWrapStore, LinkedCredential, MemoryKeyWrapStore,
+    TransportKey, WrapClass, WrapIndex,
 };
 pub use inbox::{
     filter_inbox_append, lane_id_is_opaque, lanes_per_device, replicated_row_admitted,
@@ -173,8 +184,9 @@ pub use keyring::{
     KeyringRotation, RetiredEpriv, RotationDraft, RotationMint,
 };
 pub use limits::{
-    Argon2Bound, Argon2IdLimits, ARGON2ID_LIMITS, DELIVERY_BLOB_MAX, KEYRING_HISTORY_MAX, KEYRING_SERIAL_MAX,
-    KEYRING_SERIAL_V2_MAX, MAX_WRAPS_PER_PRINCIPAL, RECOVERY_ABSOLUTE_MAX, RECOVERY_ENVELOPE_MAX,
+    Argon2Bound, Argon2IdLimits, ARGON2ID_LIMITS, DELIVERY_BLOB_MAX, KEYRING_HISTORY_MAX,
+    KEYRING_SERIAL_MAX, KEYRING_SERIAL_V2_MAX, MAX_WRAPS_PER_PRINCIPAL, RECOVERY_ABSOLUTE_MAX,
+    RECOVERY_ENVELOPE_MAX,
 };
 pub use migration::{
     accept_migration, apply_protocol_migration, open_migrated_item, prepare_protocol_migration,
@@ -207,9 +219,9 @@ pub use see::{
 };
 pub use store_write::{
     resolve_store_account, sign_store_write, store_write_message, verify_store_write,
-    wrap_ciphertext_hash, wrap_row_hash,
-    HeadFloor, PublishedChain, DOMAIN_STORE_WRITE, REPLACED_NONE, STORE_CLASS_DELIVERY,
-    STORE_CLASS_GENESIS, STORE_CLASS_NONE, STORE_GENERATION_MAX,
+    wrap_ciphertext_hash, wrap_row_hash, HeadFloor, PublishedChain, DOMAIN_STORE_WRITE,
+    REPLACED_NONE, STORE_CLASS_DELIVERY, STORE_CLASS_GENESIS, STORE_CLASS_NONE,
+    STORE_GENERATION_MAX,
 };
 pub use wrap::{
     open_group_epoch_wrap, open_reader_wrap, wrap_group_key_to_members,

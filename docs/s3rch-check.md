@@ -213,4 +213,20 @@ Applying a new protocol version encrypts existing data in place. The reference c
 
 SociACL runs no index. One public index for public content. Each private group runs its own. Individuals push and pull, then index a small set on device. An index hit is not a grant.
 
+### Encrypted item consume checks
+
+Identity for a manifest, a grant proof, a status statement, a `StatusAuthorityBinding`, and a group-inbox `ssig` is the current account SEA pub. A hop, a status statement, and a chat node do not mint a grant.
+
+The Check object id stays the item. Every ciphertext envelope, including the first revision, is fetched from `s3rch/items/<itemId>/r/<rev>`. There is no root-ciphertext fallback. The root is a write-once locator `{ v: 2, enc: 1, first }`. It is not a Check object and not a grant. `envDigest` is the SHA-256 of the length-prefixed fields `s3rch-env-digest-v1`, item id, decimal epoch, rev, alg, iv, and ciphertext. The destination checks it against that revision node before accepting the body.
+
+The signed grant tuple includes `manifest`, the soul `s3rch/items/<itemId>/m/<rev>`. Those bytes are `s3rch-grant-manifest-v1`. They sit outside `s3rch-grant-payload-v1`, so existing payload digests stay. CHECK rejects a missing soul or a soul that is not that item and rev. The node is `{ v: 1, manifest, msig }`. `manifest` is `{ itemId, e, rev, parent, keyId, envDigest, statusAuthPub? }`. `statusAuthPub` is omitted from the canonical manifest when it is absent. `msig` is the current account SEA signature over that encoding. The node carries no account pub. An author-lane copy does not satisfy a grantee. The manifest is not a grant.
+
+`EpochManifest` gains optional `statusAuthPub`. Absent, `epochRevisionId` is unchanged. Present, the pub is the last field of that id. A status proof signed by the current account key stands on its own. A proof signed by any other key verifies only when that key equals `statusAuthPub` on `StatusAuthorityBinding` and on the manifest for that rev, the binding signature verifies under the current account key, and `seq` is the account-key log head. A missing binding refuses every other signer. The authority pub cannot sign a manifest, a grant proof, or a replacement binding. It is not an account identity. The proof does not mint.
+
+A v2 group-inbox entry at `s3rch/ginbox/<tag>/<entryId>` is `{ v: 1, senderPub, eph, ct, iv, ssig }`. `ssig` is the sender's current account SEA signature over `(tag, entryId, senderPub, H(eph || ct || iv))`. A signature under a key derived from the group epoch key is refused before unwrap. `senderPub` must be in the current epoch's member set and must be that account's current SEA pub. `ssig` does not mint `see` or a membership. The group key encrypts only.
+
+`AccountKeyLogEntry` is `{ account, keyPub, seq, prev }`. `seq` starts at 0 and then increases by 1. `prev` is the hash of the previous entry, or `none` at seq 0. The provider or the wallet signs the head `{ account, seq, entryHash }`. The SEA key does not sign that head. Before any of the five statements above is accepted, the verifier fetches the head and a hash chain that links it to seq 0 or to an entry already accepted. A missing head, a chain that does not link, a `prev` mismatch, or no answer refuses the statement. The highest cached `seq` is not the current key. A superseded `keyPub` does not authenticate a new statement. The log entry is not a grant. The ids-plane account id remains the genesis `PrincipalId`. Keyring import still uses `resolveCurrentKey`.
+
+Vectors: `vectors/encrypted-discovery/consume.json`.
+
 Group epoch length, whether plaintext `MeshSeeGrant` stays for public content, and group search tokens are open. See the spec.

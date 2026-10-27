@@ -1,0 +1,93 @@
+{
+  "notes": [
+    "Length-prefixed SHA-256 for the encrypted-discovery consume checks.",
+    "statusAuthPub is omitted from the revision manifest and from epochRevisionId when absent.",
+    "account-key-next.prev is the genesis entry hash. The head names the next entry.",
+    "The SEA key does not sign the head."
+  ],
+  "inputs": {
+    "itemId": "itema",
+    "rev": "rev1",
+    "e": 1,
+    "alg": "aes-gcm",
+    "iv": "aabb",
+    "ct": "ccdd",
+    "parent": "none",
+    "keyId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "statusAuthPub": "sea-status-pub",
+    "account": "provider:acct",
+    "accountPub": "sea-account",
+    "bindingSeq": 2,
+    "eph": "eph",
+    "groupCt": "ct",
+    "groupIv": "iv",
+    "tag": "gtag",
+    "entryId": "entry1",
+    "senderPub": "sea-sender",
+    "currentKey": "sea-current",
+    "nextKey": "sea-next",
+    "epochObject": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+    "deviceId": "device-1",
+    "keyCommitment": "opaque-commitment",
+    "settleWindowMs": 86400000,
+    "aclSnapshot": "f9ac289c45e5e277cf0ecee22616a46b07d5ff92b83df0b13cacf8a9b5097449",
+    "absentEpoch": "d068c39be0391bb64791839b21a21413392abe28f4e8f824d524884f07bd486f"
+  },
+  "cases": [
+    {
+      "name": "env-digest",
+      "encodedLen": 72,
+      "sha256": "8238ddcea4517f4660cafa61287bb5d12df5545e360298d02848b212ff8795ee"
+    },
+    {
+      "name": "revision-manifest",
+      "encodedLen": 196,
+      "sha256": "95b96a92f0a1a2c87d59cb6861f2c25a0ff9db291ce9a38e4d6e8e2f1fd9c29e"
+    },
+    {
+      "name": "revision-manifest-auth",
+      "encodedLen": 214,
+      "sha256": "8dc183632bf69c082612c2ae74d02459292c036199bd2723dcc5a1c53f766a14"
+    },
+    {
+      "name": "grant-manifest",
+      "encodedLen": 72,
+      "sha256": "e8ae51a394493289e71f43bcd8f88d5ded9e7a557829ca84cfc1e07fe0345bac"
+    },
+    {
+      "name": "status-authority",
+      "encodedLen": 84,
+      "sha256": "f6ea5a776e43764c7f2606602973a686317d71b03293da82473c01d2099a0ba8"
+    },
+    {
+      "name": "group-inbox-body",
+      "encodedLen": 48,
+      "sha256": "1ac6ab401c4d8a86ff61c2106af6046ac42157f8ddc3420942ff90a9b7cebe6d"
+    },
+    {
+      "name": "group-inbox-ssig",
+      "encodedLen": 129,
+      "sha256": "c38815175ed16d61ae22c575646a77856ade8448c8e9d52c915d6853564be39d"
+    },
+    {
+      "name": "account-key-genesis",
+      "encodedLen": 73,
+      "sha256": "81e0da25dfef9427ae3bb3747867942f825d7410218551f5545dc59a1b22b508"
+    },
+    {
+      "name": "account-key-next",
+      "encodedLen": 130,
+      "sha256": "83417e3c5f4c64a4e5849976fbd9123eb648b96bb19e7d0148ad2d9b8ce36799"
+    },
+    {
+      "name": "account-key-head",
+      "encodedLen": 119,
+      "sha256": "ff9ddf92843f649cbb70318692a7fb5c7b3857aef54960cb7de4b26ada6adf30"
+    },
+    {
+      "name": "epoch-status-auth",
+      "encodedLen": 340,
+      "sha256": "30f211e0f93701810483c7d4aa7f6e0f4997f16f76c65dfe464f18263b4b42d1"
+    }
+  ]
+}
