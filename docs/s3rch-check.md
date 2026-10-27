@@ -47,18 +47,19 @@ The Rust crate in this repo remains the full plane. See [gun.md](gun.md) for tha
 
 ## Forums
 
-The account identity is the GunDB SEA pubkey (`PrincipalId`). A wallet and a Panopticon OAuth subject are linked credentials. They are not the agent key and not a second identity plane. Copy the forum names from [s3rch-check.d.ts](s3rch-check.d.ts). The consumer implements `forumAgentSoul`, `forumNeedSoul`, `forumAlarmSoul`, `forumTemplateSoul`, `forumRoleSoul`, `forumSubtaskSoul`, `forumUpdateSoul`, and `forumChatTag`. Filled soul strings are in [vectors/mesh/forums.json](../vectors/mesh/forums.json). That file also has the need-resolve row, alarm pin rows (open, resolved, wrong forum), and accept or reject rows for both role modes.
+The account identity is the GunDB SEA pubkey (`PrincipalId`). A wallet and a Panopticon OAuth subject are linked credentials. They are not the agent key and not a second identity plane. Copy the forum names from [s3rch-check.d.ts](s3rch-check.d.ts). The consumer implements `forumAgentSoul`, `forumNeedSoul`, `forumOfferSoul`, `forumAlarmSoul`, `forumTemplateSoul`, `forumRoleSoul`, `forumSubtaskSoul`, `forumUpdateSoul`, and `forumChatTag`. Filled soul strings are in [vectors/mesh/forums.json](../vectors/mesh/forums.json). That file also has the need-resolve row, the offer soul, alarm pin rows (open, resolved, wrong forum), and accept or reject rows for both role modes.
 
 ```
 s3rch/forums/<forumId>/agents/<seaPubkey>                 → ForumAgentStatus
 s3rch/forums/<forumId>/needs/<needId>                     → ForumNeed
+s3rch/forums/<forumId>/needs/<needId>/offers/<offerId>   → ForumOffer
 s3rch/forums/<forumId>/alarm                              → ForumAlarm (pinned emergency)
 s3rch/forums/<forumId>/template                           → ForumTemplate
 s3rch/forums/<forumId>/roles/<roleToken>/<seaPubkey>      → ForumRoleMembership
 gun.get('s3rch').get('items').get(<item key>)             → ForumChatItem (a GunFeedNode)
 ```
 
-`forumId` is a minted object id of kind `forum`. `seaPubkey` is the SEA pubkey, not a `p_` key and not a wallet. `<needId>` is a minted object id of kind `need`. `ForumNeed.subject` is the SEA pubkey the need is about. It is not compared to the forum id or to the principal embedded in that id. Check `see` uses the admitted object id. The soul is the Gun location. State is data, not a grant.
+`forumId` is a minted object id of kind `forum`. `seaPubkey` is the SEA pubkey, not a `p_` key and not a wallet. `<needId>` is a minted object id of kind `need`. `<offerId>` is a minted object id of kind `offer`. The embedded principal is the helper. `ForumNeed.subject` is the SEA pubkey the need is about. It is not compared to the forum id or to the principal embedded in that id. Check `see` uses the admitted object id. The soul is the Gun location. State is data, not a grant.
 
 Per-agent status stores `task`, `result`, `needs`, `progress`, `state`, `lastPrompt`, `lastUpdate`, `type`, `started`, `tokens`, and `runtime`. `started`, `tokens`, and `runtime` are that agent's counters. `tokens` is not a transfer. Optional `hb`, `batt`, and `link` are vitals on the same node. `needs` and `artifacts` are comma-separated object ids. Subtasks and updates are child souls under the agent, or feed item ids in `artifacts`.
 
@@ -68,7 +69,7 @@ Chat is a `GunFeedNode` under `s3rch/items`. `ForumChatItem` is that type. `tags
 
 The global alarm reads status tiles whose `state` is `emergency` and the pinned need at `forumAlarmSoul`. The pin counts when that need is an open emergency (`severity` `emergency`, `stated` 1). Either input is enough. The alarm node is not a grant.
 
-Anyone with Check see on a need may resolve it (`stated` or `hamState` update). The update is accepted only when that Check allows the writer on that need id. A missing admission does not accept the update. The admitted object owner stays the owner. A missing dest-ACL row denies Check. A cancel is visible on the next Check. An SGH1 hint alone fails closed. A status node, a chat tag, a hop, and a hint do not mint.
+Anyone with Check see on a need may post a `ForumOffer`. The helper owns that offer and may withdraw it (`stated` 0). The need's owner, or the subject the need is about, accepts one live offer. That accept sets `acceptedOffer` and `stated` 0. Cancelling an offer, or leaving it, keeps the need open. Only the owner reopens (`stated` 1) and clears `acceptedOffer`. Earlier offers stay. `body` and `severity` stay as posted. `spec`, when set, is an object id of a function contract and stays as posted. A ham update that keeps `stated` and `acceptedOffer` is accepted only when Check see allows the writer on that need id. A missing admission does not accept the update. The admitted object owner stays the owner. A missing dest-ACL row denies the offer post. A cancel of that row is visible on the next Check. An SGH1 hint alone fails closed. A status node, a chat tag, a hop, and a hint do not mint. Hopcap is 1. An offer does not spend the status `tokens` counter.
 
 ## Mesh
 

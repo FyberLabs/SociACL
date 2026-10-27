@@ -4,9 +4,11 @@
 //! Panopticon OAuth subject are linked credentials. They are not this key.
 //!
 //! Chat is a tagged [`crate::GunFeedNode`] under `s3rch/items`. These
-//! builders do not create a chat tree. A stated or ham update on a need
-//! is accepted only when Check see allows the writer on that need.
-//! It does not elect an owner.
+//! builders do not create a chat tree. Anyone with Check see on a need
+//! may post an offer. The need's owner or subject accepts one live
+//! offer. Only the owner reopens. A ham update is accepted only when
+//! Check see allows the writer. Accepting an offer does not elect an
+//! owner. A hop, a status node, a chat tag, and a hint do not mint.
 
 use std::collections::BTreeSet;
 
@@ -18,8 +20,8 @@ use crate::GunError;
 
 const ROLE_TOKEN_MAX: usize = 32;
 const RESERVED_ROLE_TOKENS: &[&str] = &[
-    "acl", "agents", "alarm", "chat", "forums", "items", "meta", "needs", "roles", "s3rch",
-    "subtasks", "template", "updates", "users",
+    "acl", "agents", "alarm", "chat", "forums", "items", "meta", "needs", "offers", "roles",
+    "s3rch", "subtasks", "template", "updates", "users",
 ];
 
 /// How a forum template assigns role windows.
@@ -186,10 +188,10 @@ impl ForumAgentStatus {
 /// does not compare it to `forum_id` or to the principal embedded in
 /// that id.
 ///
-/// Anyone with Check see on this need may resolve it. The stated or
-/// `ham_state` update is accepted only by [`accept_need_transition`].
-/// A missing admission does not accept the update. The admitted owner
-/// stays the owner.
+/// `body`, `severity`, and `spec` stay as posted. `accepted_offer` is
+/// set only when `stated` is 0. Anyone with Check see may post an offer.
+/// The owner or `subject` accepts one live offer. Only the owner
+/// reopens. [`accept_need_transition`] does not admit an owner.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ForumNeed {
     pub id: ObjectId,
@@ -197,15 +199,29 @@ pub struct ForumNeed {
     pub subject: PrincipalId,
     pub severity: ForumNeedSeverity,
     pub body: String,
+    /// `1` open. `0` resolved. Any other value is invalid.
     pub stated: u8,
     pub ham_state: u64,
     pub ts: u64,
+    /// Offer accepted by the owner or `subject`. Present only when
+    /// `stated` is 0. Cleared when the owner reopens.
+    pub accepted_offer: Option<ObjectId>,
+    /// Object id of a function contract. Absent on a free-form need.
+    pub spec: Option<ObjectId>,
 }
 
 impl ForumNeed {
     pub fn validate(&self) -> Result<(), GunError> {
         if self.stated > 1 {
             return Err(GunError::ForumSoul);
+        }
+        match (&self.accepted_offer, self.stated) {
+            (Some(offer), 0) => require_kind(offer, "offer")?,
+            (None, 1) => {}
+            _ => return Err(GunError::ForumSoul),
+        }
+        if let Some(spec) = &self.spec {
+            require_minted(spec)?;
         }
         require_kind(&self.id, "need")?;
         require_kind(&self.forum_id, "forum")?;
@@ -218,36 +234,191 @@ impl ForumNeed {
     }
 }
 
-/// Accept `next` as the stored need only when Check see allows `writer`
-/// on `current.id`. Anyone that Check allows may resolve. A missing
-/// admission does not. `next.ham_state` must be strictly greater.
-/// `id`, `forum_id`, and `subject` stay. This does not admit an owner
-/// and it does not read a hint or a hop.
+/// Offer under a need. The helper owns it.
+///
+/// Soul: `s3rch/forums/<forumId>/needs/<needId>/offers/<offerId>`.
+/// `stated` 1 is live. `stated` 0 is withdrawn or cancelled.
+/// `artifacts` is a comma-separated list of object ids. It is not key
+/// material. The offer does not spend tokens and it does not elect.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ForumOffer {
+    pub id: ObjectId,
+    pub need: ObjectId,
+    pub forum_id: ObjectId,
+    pub helper: PrincipalId,
+    pub body: String,
+    pub artifacts: String,
+    pub stated: u8,
+}
+
+impl ForumOffer {
+    pub fn validate(&self) -> Result<(), GunError> {
+        if self.stated > 1 {
+            return Err(GunError::ForumSoul);
+        }
+        require_kind(&self.id, "offer")?;
+        let embedded = object_principal(&self.id).map_err(|_| GunError::ForumSoul)?;
+        if embedded != self.helper {
+            return Err(GunError::ForumSoul);
+        }
+        require_kind(&self.need, "need")?;
+        require_kind(&self.forum_id, "forum")?;
+        csv_object_ids(&self.artifacts, None)?;
+        forum_offer_soul(&self.forum_id, &self.need, &self.id).map(|_| ())
+    }
+
+    pub fn soul(&self) -> Result<GunSoul, GunError> {
+        self.validate()?;
+        forum_offer_soul(&self.forum_id, &self.need, &self.id)
+    }
+}
+
+/// Post or withdraw an offer.
+///
+/// `current` absent and `next.stated` 1 posts. The writer is the helper
+/// and must pass Check see on the open need. A missing admission does
+/// not post. `current` live and `next.stated` 0 withdraws. The helper
+/// may withdraw their own offer. The need's owner or subject may cancel
+/// it. That cancel does not resolve the need and it does not delete the
+/// offer. A cancelled offer is not posted again. This does not admit an
+/// owner and it does not read a hint or a hop.
+pub fn accept_offer_transition(
+    graph: &MeshSeeGraph,
+    need: &ForumNeed,
+    current: Option<&ForumOffer>,
+    next: &ForumOffer,
+    writer: &PrincipalId,
+    now: u64,
+) -> Result<ForumOffer, GunError> {
+    need.validate()?;
+    next.validate()?;
+    if next.need != need.id || next.forum_id != need.forum_id {
+        return Err(GunError::ForumSoul);
+    }
+    match current {
+        None => {
+            if next.stated != 1 || need.stated != 1 || writer != &next.helper {
+                return Err(GunError::ForumSoul);
+            }
+            let seen = graph.check_see(&need.id, writer, now, None, None);
+            if !seen.allowed {
+                return Err(if seen.reason == "unknown" {
+                    GunError::ObjectNotInGraph
+                } else {
+                    GunError::ForumSoul
+                });
+            }
+            Ok(next.clone())
+        }
+        Some(current) => {
+            current.validate()?;
+            if current.id != next.id
+                || current.need != next.need
+                || current.forum_id != next.forum_id
+                || current.helper != next.helper
+                || current.body != next.body
+                || current.artifacts != next.artifacts
+                || current.stated != 1
+                || next.stated != 0
+            {
+                return Err(GunError::ForumSoul);
+            }
+            if writer == &current.helper {
+                return Ok(next.clone());
+            }
+            let owner = admitted_owner(graph, &need.id)?;
+            if writer == owner || writer == &need.subject {
+                Ok(next.clone())
+            } else {
+                Err(GunError::ForumSoul)
+            }
+        }
+    }
+}
+
+/// Accept `next` as the stored need.
+///
+/// `id`, `forum_id`, `subject`, `body`, `severity`, and `spec` stay.
+/// `next.ham_state` must be strictly greater. A missing admission does
+/// not. Stated 1 to 0 accepts `offer`: the writer is the admitted owner
+/// or `subject`, `accepted_offer` names that live offer, and the need
+/// resolves. Stated 0 to 1 reopens: the writer is the admitted owner,
+/// and `accepted_offer` is cleared. Offers already posted stay. A ham
+/// update that keeps `stated` and `accepted_offer` is a Check see write.
+/// This does not admit an owner and it does not read a hint or a hop.
 pub fn accept_need_transition(
     graph: &MeshSeeGraph,
     current: &ForumNeed,
     next: &ForumNeed,
+    offer: Option<&ForumOffer>,
     writer: &PrincipalId,
     now: u64,
 ) -> Result<ForumNeed, GunError> {
     current.validate()?;
     next.validate()?;
-    if next.id != current.id || next.forum_id != current.forum_id || next.subject != current.subject
+    if next.id != current.id
+        || next.forum_id != current.forum_id
+        || next.subject != current.subject
+        || next.body != current.body
+        || next.severity != current.severity
+        || next.spec != current.spec
     {
         return Err(GunError::ForumSoul);
     }
     if next.ham_state <= current.ham_state {
         return Err(GunError::ForumSoul);
     }
-    let seen = graph.check_see(&current.id, writer, now, None, None);
-    if !seen.allowed {
-        return Err(if seen.reason == "unknown" {
-            GunError::ObjectNotInGraph
-        } else {
-            GunError::ForumSoul
-        });
+    let owner = admitted_owner(graph, &current.id)?;
+    let resolving = current.stated == 1 && next.stated == 0;
+    let reopening = current.stated == 0 && next.stated == 1;
+    if resolving {
+        let Some(offer) = offer else {
+            return Err(GunError::ForumSoul);
+        };
+        offer.validate()?;
+        if offer.stated != 1
+            || offer.need != current.id
+            || offer.forum_id != current.forum_id
+            || next.accepted_offer.as_ref() != Some(&offer.id)
+        {
+            return Err(GunError::ForumSoul);
+        }
+        if writer != owner && writer != &current.subject {
+            return Err(GunError::ForumSoul);
+        }
+        return Ok(next.clone());
     }
-    Ok(next.clone())
+    if reopening {
+        if offer.is_some() || next.accepted_offer.is_some() || writer != owner {
+            return Err(GunError::ForumSoul);
+        }
+        return Ok(next.clone());
+    }
+    if current.stated == next.stated && current.accepted_offer == next.accepted_offer {
+        if offer.is_some() {
+            return Err(GunError::ForumSoul);
+        }
+        let seen = graph.check_see(&current.id, writer, now, None, None);
+        if !seen.allowed {
+            return Err(if seen.reason == "unknown" {
+                GunError::ObjectNotInGraph
+            } else {
+                GunError::ForumSoul
+            });
+        }
+        return Ok(next.clone());
+    }
+    Err(GunError::ForumSoul)
+}
+
+fn admitted_owner<'a>(
+    graph: &'a MeshSeeGraph,
+    object: &ObjectId,
+) -> Result<&'a PrincipalId, GunError> {
+    match graph.admitted_owner(object) {
+        Some((owner, _)) => Ok(owner),
+        None => Err(GunError::ObjectNotInGraph),
+    }
 }
 
 /// Pinned emergency need for one forum.
@@ -336,6 +507,26 @@ pub fn forum_need_soul(forum: &ObjectId, need: &ObjectId) -> Result<GunSoul, Gun
         forum.as_ref(),
         "needs",
         need.as_ref(),
+    ]))
+}
+
+/// `s3rch/forums/<forumId>/needs/<needId>/offers/<offerId>`.
+pub fn forum_offer_soul(
+    forum: &ObjectId,
+    need: &ObjectId,
+    offer: &ObjectId,
+) -> Result<GunSoul, GunError> {
+    require_kind(forum, "forum")?;
+    require_kind(need, "need")?;
+    require_kind(offer, "offer")?;
+    Ok(soul([
+        S3RCH_ROOT,
+        S3RCH_FORUMS,
+        forum.as_ref(),
+        "needs",
+        need.as_ref(),
+        "offers",
+        offer.as_ref(),
     ]))
 }
 
@@ -549,6 +740,29 @@ impl GunSoul {
         Some((forum, need))
     }
 
+    /// Parsed offer soul: forum, need, offer.
+    pub fn as_forum_offer(&self) -> Option<(ObjectId, ObjectId, ObjectId)> {
+        let segments = self.segments();
+        if segments.len() != 7
+            || segments[0] != S3RCH_ROOT
+            || segments[1] != S3RCH_FORUMS
+            || segments[3] != "needs"
+            || segments[5] != "offers"
+        {
+            return None;
+        }
+        let forum = parse_object_id(&segments[2]).ok()?;
+        let need = parse_object_id(&segments[4]).ok()?;
+        let offer = parse_object_id(&segments[6]).ok()?;
+        if object_kind(&forum) != Some("forum")
+            || object_kind(&need) != Some("need")
+            || object_kind(&offer) != Some("offer")
+        {
+            return None;
+        }
+        Some((forum, need, offer))
+    }
+
     /// Forum id named by an alarm soul.
     pub fn as_forum_alarm(&self) -> Option<ObjectId> {
         let segments = self.segments();
@@ -609,6 +823,10 @@ fn require_kind(id: &ObjectId, kind: &str) -> Result<(), GunError> {
     if object_kind(id) != Some(kind) {
         return Err(GunError::ForumSoul);
     }
+    require_minted(id)
+}
+
+fn require_minted(id: &ObjectId) -> Result<(), GunError> {
     object_principal(id)
         .map(|_| ())
         .map_err(|_| GunError::ForumSoul)

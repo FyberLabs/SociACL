@@ -9,7 +9,7 @@ pub const S3RCH_META: &str = "meta";
 /// Dest ACL collection. Sibling of items/users/meta. Not a Check
 /// object. Grants HAM-merge here; they do not fork items or users.
 pub const S3RCH_ACL: &str = "acl";
-/// Forum collection. Status, needs, and role rows live here.
+/// Forum collection. Status, needs, offers, and role rows live here.
 /// Chat does not. A forum path is not a dest-ACL grant soul.
 pub const S3RCH_FORUMS: &str = "forums";
 

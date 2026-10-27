@@ -115,11 +115,15 @@ export type ForumAgentStatus = {
  * Need object. Soul:
  * s3rch/forums/<forumId>/needs/<needId>
  * `stated` 1 is open. `stated` 0 is resolved.
- * Anyone with Check see on this need may resolve (`stated` or
- * hamState update). The update is accepted only when that Check
- * allows the writer on this need id. A missing admission does not
- * accept the update. The admitted object owner stays the owner.
- * A status node, a chat item, a hop, and a hint do not mint.
+ * `body`, `severity`, and `spec` stay as posted.
+ * Anyone with Check see on this need may post a ForumOffer.
+ * The need's owner, or `subject`, accepts one live offer. That
+ * accept sets `acceptedOffer` and `stated` 0. Cancelling an offer,
+ * or leaving it, keeps the need open. Only the owner reopens
+ * (`stated` 1) and clears `acceptedOffer`. Earlier offers stay.
+ * A missing admission does not accept the update. The admitted
+ * object owner stays the owner. A status node, a chat item, a hop,
+ * and a hint do not mint. Hopcap is 1.
  */
 export type ForumNeedSeverity = "need" | "emergency";
 
@@ -133,10 +137,43 @@ export type ForumNeed = {
    */
   subject: PrincipalId;
   severity: ForumNeedSeverity;
+  /** Free-form text. Stays as posted. */
   body: string;
   stated: 0 | 1;
   hamState: number;
   ts: number;
+  /**
+   * Offer accepted by the owner or `subject`. Present only when
+   * `stated` is 0. Cleared when the owner reopens.
+   */
+  acceptedOffer?: ObjectId;
+  /**
+   * Object id of a function contract. Absent when the body is
+   * free-form only. Stays as posted.
+   */
+  spec?: ObjectId;
+};
+
+/**
+ * Offer under a need. The helper owns it.
+ * Soul: s3rch/forums/<forumId>/needs/<needId>/offers/<offerId>
+ * `stated` 1 is live. `stated` 0 is withdrawn or cancelled.
+ * Anyone with Check see on the need may post one. The helper may
+ * withdraw it. The need's owner or subject may cancel it. That
+ * cancel does not resolve the need. `artifacts` are object ids,
+ * not key material. An offer does not spend tokens.
+ */
+export type ForumOffer = {
+  /** Minted object id of kind `offer`. The embedded principal is the helper. */
+  id: ObjectId;
+  need: ObjectId;
+  forumId: ObjectId;
+  /** SEA pubkey that owns this offer. */
+  helper: PrincipalId;
+  body: string;
+  /** Comma-separated object ids. Not key material. */
+  artifacts: string;
+  stated: 0 | 1;
 };
 
 /**
@@ -520,6 +557,13 @@ export function forumAgentSoul(forumId: ObjectId, seaPubkey: PrincipalId): strin
 
 /** `s3rch/forums/<forumId>/needs/<needId>`. */
 export function forumNeedSoul(forumId: ObjectId, needId: ObjectId): string;
+
+/** `s3rch/forums/<forumId>/needs/<needId>/offers/<offerId>`. */
+export function forumOfferSoul(
+  forumId: ObjectId,
+  needId: ObjectId,
+  offerId: ObjectId,
+): string;
 
 /** `s3rch/forums/<forumId>/alarm`. Pinned emergency. Not a grant. */
 export function forumAlarmSoul(forumId: ObjectId): string;
