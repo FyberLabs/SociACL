@@ -127,6 +127,24 @@ and nonce must all match. A rotation always requires Panopticon attestation,
 including when a wallet authorizes it. This package performs no token fetching,
 login, storage, nonce consumption or enrollment.
 
+Every pinned witness JWK now requires `notBefore` and `notAfter`: safe,
+nonnegative integer Unix seconds with `notBefore < notAfter`. The shared
+verifier requires `notBefore <= iat < notAfter`; missing or invalid metadata
+and issuance outside this window return `bad-attestation`. These are trusted
+configuration fields, never values copied from an incoming proof. Clock skew
+does not expand the key window. Historical verification checks issuance, so
+normal key retirement does not erase older proofs. `exp` may extend past the
+key window, but the existing 900-second lifetime and request expiry checks
+still apply. This is a required caller-configuration change in the unreleased
+0.10 package; record signing bytes and JWS claims are unchanged.
+
+Publishers must provide authoritative windows before clients adopt this gate.
+Retain old public keys and their original bounds for history; use a new key and
+`kid` for each new issuance period. Bounds limit backdating, but a compromised
+key can still forge any timestamp within its permitted window. Independent
+authenticated checkpoints or additional witnesses are needed to distinguish
+such forgeries. See the [witness trust policy](../../docs/identity-review-amendment.md#witness-key-validity-windows).
+
 The 0.6 contract requires wallet timestamp attestations and witnessed revokes
 for history, and permits current-key offline revokes for present lookups. Rotation
 retention commitments and an enrolled credential are bound into the v2 rotation

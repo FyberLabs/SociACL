@@ -14,7 +14,9 @@
           "use": "sig",
           "key_ops": [
             "verify"
-          ]
+          ],
+          "notBefore": 1699999000,
+          "notAfter": 1700010000
         }
       ]
     },

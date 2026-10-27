@@ -16,7 +16,7 @@ const date = n => new Date(n * 1000).toISOString().replace('.000Z', 'Z');
 const bytesOf = r => val(ids.signingBytes(r));
 const keySig = (r, n = 1) => b64(p256.sign(bytesOf(r), secret(n), { lowS: false }));
 const jwkPrincipal = principal(5);
-const jwks = { keys: [{ kty: 'EC', crv: 'P-256', kid: 'fixture-1', x: jwkPrincipal.slice(0, 43), y: jwkPrincipal.slice(44), alg: 'ES256', use: 'sig', key_ops: ['verify'] }] };
+const jwks = { keys: [{ kty: 'EC', crv: 'P-256', kid: 'fixture-1', x: jwkPrincipal.slice(0, 43), y: jwkPrincipal.slice(44), alg: 'ES256', use: 'sig', key_ops: ['verify'], notBefore: 1699999000, notAfter: 1700010000 }] };
 const jwsRaw = (header, claims) => {
   const body = b64(utf8.encode(header)) + '.' + b64(utf8.encode(claims));
   return body + '.' + b64(p256.sign(utf8.encode(body), secret(5), { lowS: false }));

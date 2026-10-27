@@ -67,6 +67,8 @@ export type UnsignedRecord = Omit<WalletLink, 'keySig' | 'siwe' | 'attest'> | Om
   | (Omit<Rotate, 'nextSig' | 'authorizer' | 'attest'> & {authorizer: {kind:'wallet'|'oidc-fresh-login';link:string}})
   | Omit<Revoke, 'keySig' | 'attest'> | Omit<GenesisEpub, 'keySig' | 'attest'>;
 export type Jwks = Readonly<{ keys: readonly Readonly<{ kty: 'EC'; crv: 'P-256'; kid: string;
+  /** Trusted issuance window in Unix seconds: notBefore <= iat < notAfter. */
+  notBefore: number; notAfter: number;
   x: string; y: string; alg?: 'ES256'; use?: 'sig'; key_ops?: readonly string[] }>[] }>;
 export type SiwePolicy = Readonly<{ allowedDomains: readonly string[]; allowedUris: readonly string[]; allowedChainIds: readonly string[]; clockSkewSeconds?: number }>;
 // Authenticated at `until`, key active strictly before `at`. null means no later rotation;
