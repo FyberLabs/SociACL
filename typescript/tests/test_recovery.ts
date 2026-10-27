@@ -780,9 +780,7 @@ function dummyEnvelope(
 
 function watch(rotations: readonly unknown[], context: ResolutionContext) {
   return (principal: PrincipalId) => {
-    const resolved = resolveCurrentKey(principal, rotations, context);
-    if (!resolved.ok) throw new Error("store-rejected");
-    return resolved.value;
+    return recovery.resolveStoreAccount(principal, rotations, context, []);
   };
 }
 
@@ -1726,4 +1724,27 @@ test("emoji presentation is retained in recovery key derivation", async () => {
   const restored = await openRecoveryCopy(passphrase, sealed, keyring.principal, 0, [], context);
   assert.equal(restored.currentPriv(), keyring.currentPriv());
   await assert.rejects(openRecoveryCopy(encodePassphrase(text.replace("\uFE0F", "")), sealed, keyring.principal, 0, [], context));
+});
+
+
+test("authenticated store resolver skips poison without raising the floor and rejects forks", () => {
+  const parsed = parsePrincipalId(records.context.genesis);
+  assert.ok(parsed.ok);
+  const principal = parsed.value;
+  const context = witnessedContext();
+  const fixture = JSON.parse(readFileSync(new URL("../../vectors/ids/records.json", import.meta.url), "utf8"));
+  const floor = new HeadFloor();
+  let rotations: readonly unknown[] = [{ seq: 1000000, currentKey: records.context.genesis }];
+  const diagnostics: import("../ids/src/index.js").Diagnostic[] = [];
+  const store = new MemoryRecoveryStore((p) => recovery.resolveStoreAccount(p, rotations, context, diagnostics), floor);
+  assert.equal(store.publishedAccount(principal).rotations.length, 0);
+  assert.ok(diagnostics.length > 0);
+  rotations = fixture.reject.find((row: { name: string }) => row.name === "forgery-does-not-hide-valid-fork").input;
+  const before = diagnostics.length;
+  assert.throws(() => store.publishedAccount(principal), /store-rejected/);
+  assert.ok(diagnostics.length > before);
+  rotations = [];
+  assert.equal(store.publishedAccount(principal).currentKey, principal);
+  assert.equal(store.writeGeneration(principal), 0);
+  assert.equal(store.current(principal), undefined);
 });

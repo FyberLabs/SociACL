@@ -154,3 +154,5 @@ export async function rotateAndReseal(
     nonce.fill(0);
   }
 }
+
+export { resolveStoreAccount } from "./store-write.ts";

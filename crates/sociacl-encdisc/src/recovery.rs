@@ -1881,10 +1881,54 @@ mod tests {
         context: &'a ResolutionContext<'a>,
     ) -> impl Fn(&PrincipalId) -> Result<sociacl_ids::ResolvedAccount, EncDiscError> + 'a {
         move |principal: &PrincipalId| {
-            resolve_current_key(principal, rotations, context)
-                .result
-                .map_err(|_| EncDiscError::StoreRejected)
+            crate::resolve_store_account(principal, rotations, context, &mut Vec::new())
         }
+    }
+
+    #[test]
+    fn authenticated_store_resolver_skips_poison_and_rejects_forks() {
+        let held = hold();
+        let context = context_of(&held);
+        let fixture: Value = serde_json::from_str(RECORDS).unwrap();
+        let principal =
+            &sociacl_ids::parse_principal_id(fixture["context"]["genesis"].as_str().unwrap())
+                .unwrap();
+        let rotations = std::cell::RefCell::new(vec![serde_json::json!({"seq": 1000000})]);
+        let diagnostics = std::cell::RefCell::new(Vec::new());
+        let store = MemoryRecoveryStore::new(
+            |p: &PrincipalId| {
+                crate::resolve_store_account(
+                    p,
+                    &rotations.borrow(),
+                    &context,
+                    &mut diagnostics.borrow_mut(),
+                )
+            },
+            crate::HeadFloor::new(),
+        );
+        assert_eq!(
+            store.published_account(principal).unwrap().rotations.len(),
+            0
+        );
+        assert!(!diagnostics.borrow().is_empty());
+        let fork = fixture["reject"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["name"] == "forgery-does-not-hide-valid-fork")
+            .unwrap();
+        *rotations.borrow_mut() = fork["input"].as_array().unwrap().clone();
+        let before = diagnostics.borrow().len();
+        assert!(matches!(
+            store.published_account(principal),
+            Err(EncDiscError::StoreRejected)
+        ));
+        assert!(diagnostics.borrow().len() > before);
+        rotations.borrow_mut().clear();
+        assert_eq!(
+            store.published_account(principal).unwrap().current_key,
+            *principal
+        );
     }
 
     #[test]

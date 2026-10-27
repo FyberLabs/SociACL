@@ -206,7 +206,8 @@ pub use see::{
     HopFactor, IdentitySeeGrant, MeshMembership, ObjectSetName, PresentedGroup, SeeGraph,
 };
 pub use store_write::{
-    sign_store_write, store_write_message, verify_store_write, wrap_ciphertext_hash, wrap_row_hash,
+    resolve_store_account, sign_store_write, store_write_message, verify_store_write,
+    wrap_ciphertext_hash, wrap_row_hash,
     HeadFloor, PublishedChain, DOMAIN_STORE_WRITE, REPLACED_NONE, STORE_CLASS_DELIVERY,
     STORE_CLASS_GENESIS, STORE_CLASS_NONE,
 };

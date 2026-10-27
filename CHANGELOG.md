@@ -200,6 +200,8 @@
 
 ## Encrypted discovery — unreleased
 
+- Add `resolveStoreAccount` / `resolve_store_account` for adapter resolver callbacks. They verify raw history through the identity resolver, preserve diagnostics, and map failed resolution to `store-rejected` before a store observes a head. Production source freshness, trusted policy, and durable floor enforcement remain adapter responsibilities (#68 F14/F16).
+
 - The see path takes stored ids only. `checkSee` / `check_see` have no string
   parameter and no label fallback. A string is the edge parser's reject.
   `CheckObjectId` is `ObjectId` and `AccessorId` is `PrincipalId`. The

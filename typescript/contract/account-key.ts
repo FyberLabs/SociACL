@@ -458,3 +458,5 @@ export function contentWrapHex(
 function jsonString(value: string): string {
   return JSON.stringify(value);
 }
+
+export { resolveStoreAccount } from "./store-write.ts";
