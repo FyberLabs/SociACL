@@ -732,3 +732,83 @@ fn account_key_log_accepts_the_keyring_limit() {
         other => panic!("{other:?}"),
     }
 }
+
+fn log_entry(key_pub: &str, seq: u64, prev: &str) -> AccountKeyLogEntry {
+    AccountKeyLogEntry {
+        account: "provider:acct".to_string(),
+        key_pub: key_pub.to_string(),
+        seq,
+        prev: prev.to_string(),
+    }
+}
+
+#[test]
+fn account_key_anchor_is_a_floor() {
+    let genesis = log_entry("k0", 0, "none");
+    let genesis_hash = account_key_entry_hash(&genesis).unwrap();
+    let first = log_entry("k1", 1, &genesis_hash);
+    let first_hash = account_key_entry_hash(&first).unwrap();
+    let second = log_entry("k2", 2, &first_hash);
+    let second_hash = account_key_entry_hash(&second).unwrap();
+    let fork_first = log_entry("kf1", 1, &genesis_hash);
+    let fork_second = log_entry("kf2", 2, &account_key_entry_hash(&fork_first).unwrap());
+    let floor = AccountKeyAnchor {
+        account: "provider:acct".to_string(),
+        seq: 2,
+        hash: second_hash.clone(),
+    };
+    let old_head = AccountKeyLogHead {
+        account: "provider:acct".to_string(),
+        seq: 1,
+        entry_hash: first_hash.clone(),
+    };
+    assert!(matches!(
+        decide(
+            Some(&old_head),
+            &[genesis.clone(), first.clone(), second.clone()],
+            Some(&floor),
+            true,
+            "k1",
+        ),
+        CurrentKeyDecision::Refuse("superseded")
+    ));
+    let real_floor = AccountKeyAnchor {
+        account: "provider:acct".to_string(),
+        seq: 1,
+        hash: first_hash,
+    };
+    let fork_head = AccountKeyLogHead {
+        account: "provider:acct".to_string(),
+        seq: 2,
+        entry_hash: account_key_entry_hash(&fork_second).unwrap(),
+    };
+    assert!(matches!(
+        decide(
+            Some(&fork_head),
+            &[genesis.clone(), fork_first, fork_second.clone()],
+            Some(&real_floor),
+            true,
+            "kf2",
+        ),
+        CurrentKeyDecision::Refuse("unlinked")
+    ));
+    let current = AccountKeyLogHead {
+        account: "provider:acct".to_string(),
+        seq: 2,
+        entry_hash: second_hash,
+    };
+    match decide(Some(&current), &[second], Some(&floor), true, "k2") {
+        CurrentKeyDecision::Accept { key_pub } => assert_eq!(key_pub, "k2"),
+        other => panic!("{other:?}"),
+    }
+    match decide(
+        Some(&fork_head),
+        &[fork_second],
+        Some(&real_floor),
+        true,
+        "kf2",
+    ) {
+        CurrentKeyDecision::Refuse(reason) => assert_eq!(reason, "unlinked"),
+        other => panic!("{other:?}"),
+    }
+}

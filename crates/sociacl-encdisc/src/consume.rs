@@ -542,6 +542,14 @@ pub fn accept_current_key(
     if provider_pub == entries[start].key_pub {
         return CurrentKeyDecision::Refuse("head-mismatch");
     }
+    if let Some(anchor) = anchor {
+        if anchor.account != expected_account {
+            return CurrentKeyDecision::Refuse("unlinked");
+        }
+        if head.seq < anchor.seq {
+            return CurrentKeyDecision::Refuse("superseded");
+        }
+    }
     let mut index = start;
     let mut linked = false;
     for _ in 0..ACCOUNT_KEY_WALK_LIMIT {
@@ -557,8 +565,14 @@ pub fn accept_current_key(
                 linked = true;
                 break;
             }
+            if entry.seq <= anchor.seq {
+                return CurrentKeyDecision::Refuse("unlinked");
+            }
         }
         if entry.seq == 0 {
+            if anchor.is_some() {
+                return CurrentKeyDecision::Refuse("unlinked");
+            }
             if entry.prev != PREV_NONE {
                 return CurrentKeyDecision::Refuse("prev-mismatch");
             }

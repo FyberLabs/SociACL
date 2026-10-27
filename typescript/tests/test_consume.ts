@@ -570,3 +570,84 @@ test("status authority, group inbox, and current key", () => {
     assert.equal(consumeStatementMints(kind), false, kind);
   }
 });
+
+test("account key anchor is a floor", () => {
+  const genesisEntry: AccountKeyLogEntry = {
+    account: "provider:acct",
+    keyPub: "k0",
+    seq: 0,
+    prev: "none",
+  };
+  const genesisHash = accountKeyEntryHash(genesisEntry);
+  const first: AccountKeyLogEntry = {
+    account: "provider:acct",
+    keyPub: "k1",
+    seq: 1,
+    prev: genesisHash,
+  };
+  const firstHash = accountKeyEntryHash(first);
+  const second: AccountKeyLogEntry = {
+    account: "provider:acct",
+    keyPub: "k2",
+    seq: 2,
+    prev: firstHash,
+  };
+  const secondHash = accountKeyEntryHash(second);
+  const forkFirst: AccountKeyLogEntry = {
+    account: "provider:acct",
+    keyPub: "kf1",
+    seq: 1,
+    prev: genesisHash,
+  };
+  const forkSecond: AccountKeyLogEntry = {
+    account: "provider:acct",
+    keyPub: "kf2",
+    seq: 2,
+    prev: accountKeyEntryHash(forkFirst),
+  };
+  const oldHead = { account: "provider:acct", seq: 1, entryHash: firstHash };
+  const floor = { account: "provider:acct", seq: 2, hash: secondHash };
+  assert.deepEqual(
+    acceptCurrentKey({
+      head: oldHead,
+      entries: [genesisEntry, first, second],
+      anchor: floor,
+      providerAnswered: true,
+      expectedAccount: "provider:acct",
+      ...signHead(oldHead),
+      statementKeyPub: "k1",
+    }),
+    { ok: false, reason: "superseded" },
+  );
+  const forkHead = {
+    account: "provider:acct",
+    seq: 2,
+    entryHash: accountKeyEntryHash(forkSecond),
+  };
+  const realFloor = { account: "provider:acct", seq: 1, hash: firstHash };
+  assert.deepEqual(
+    acceptCurrentKey({
+      head: forkHead,
+      entries: [genesisEntry, forkFirst, forkSecond],
+      anchor: realFloor,
+      providerAnswered: true,
+      expectedAccount: "provider:acct",
+      ...signHead(forkHead),
+      statementKeyPub: "kf2",
+    }),
+    { ok: false, reason: "unlinked" },
+  );
+  const current = { account: "provider:acct", seq: 2, entryHash: secondHash };
+  assert.deepEqual(
+    acceptCurrentKey({
+      head: current,
+      entries: [second],
+      anchor: floor,
+      providerAnswered: true,
+      expectedAccount: "provider:acct",
+      ...signHead(current),
+      statementKeyPub: "k2",
+    }),
+    { ok: true, keyPub: "k2" },
+  );
+});

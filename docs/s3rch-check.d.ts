@@ -2846,8 +2846,11 @@ export function acceptGroupInboxSender(input: {
 }): { ok: true } | { ok: false; reason: string };
 
 /**
- * An entry already accepted on an earlier check.
- * A later entry may stop here only for this account at seq + 1.
+ * An entry already accepted on an earlier check. A floor.
+ * head.seq below this seq is refused. The walk must reach this
+ * account, seq, and hash. The entry itself counts. The same-account
+ * shortcut counts when entry.seq is this seq plus one and prev is
+ * this hash. Reaching seq 0 does not replace this entry.
  */
 export type AccountKeyAnchor = {
   account: string;
@@ -2860,9 +2863,11 @@ export type AccountKeyAnchor = {
  * under the provider or wallet key. expectedAccount is the owner or
  * member being resolved. head.account and every chain entry must equal
  * it. A valid head for another account is refused. The account SEA pub
- * does not sign that head. The hash chain links the head to seq 0 or
- * to an anchor already accepted for the same account. The anchor
- * shortcut requires entry.seq == anchor.seq + 1. The walk covers a
+ * does not sign that head. The hash chain links the head to seq 0, or
+ * to an anchor already accepted for the same account. That anchor is
+ * a floor: head.seq is at least anchor.seq, and the walk reaches that
+ * exact entry. entry.seq == anchor.seq + 1 with prev equal to the
+ * anchor hash still counts. Seq 0 alone does not. The walk covers a
  * head at KEYRING_HISTORY_MAX. A missing head, a signature that does
  * not verify, a chain that does not link, a prev mismatch, or no
  * answer from the provider or wallet refuses. The highest cached seq
@@ -3007,6 +3012,8 @@ export type EncryptedDiscoveryVector =
   | "account-key-superseded"
   | "account-key-anchor-non-adjacent"
   | "account-key-anchor-wrong-account"
+  | "account-key-anchor-rollback"
+  | "account-key-anchor-fork"
   | "account-key-log-at-limit"
   | "account-key-head-signature"
   | "account-key-head-wrong-account"

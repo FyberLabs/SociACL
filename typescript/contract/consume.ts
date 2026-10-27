@@ -478,6 +478,11 @@ export function acceptCurrentKey(input: {
     return { ok: false, reason: "head-mismatch" };
   }
   if (input.providerPub === startEntry.keyPub) return { ok: false, reason: "head-mismatch" };
+  const anchor = input.anchor;
+  if (anchor !== undefined) {
+    if (anchor.account !== input.expectedAccount) return { ok: false, reason: "unlinked" };
+    if (head.seq < anchor.seq) return { ok: false, reason: "superseded" };
+  }
   let index = start;
   let linked = false;
   for (let step = 0; step < ACCOUNT_KEY_WALK_LIMIT; step += 1) {
@@ -490,12 +495,15 @@ export function acceptCurrentKey(input: {
     } catch {
       return { ok: false, reason: "prev-mismatch" };
     }
-    const anchor = input.anchor;
-    if (anchor !== undefined && anchorLinks(entry, entryHash, anchor)) {
-      linked = true;
-      break;
+    if (anchor !== undefined) {
+      if (anchorLinks(entry, entryHash, anchor)) {
+        linked = true;
+        break;
+      }
+      if (entry.seq <= anchor.seq) return { ok: false, reason: "unlinked" };
     }
     if (entry.seq === 0) {
+      if (anchor !== undefined) return { ok: false, reason: "unlinked" };
       if (entry.prev !== PREV_NONE) return { ok: false, reason: "prev-mismatch" };
       linked = true;
       break;
