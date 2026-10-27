@@ -119,9 +119,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    concurrency:
-      group: ids-release
-      cancel-in-progress: false
+    # No concurrency group. See pack-ids.
     outputs:
       tag: ${{ steps.tag.outputs.tag }}
       created: ${{ steps.tag.outputs.created }}
@@ -139,6 +137,7 @@ jobs:
       # not start another workflow, so pack-ids publishes only when publish=true.
       # Unprotected master exits 0 without a tag (#60). An existing tag that
       # names another commit stays put; publish stays false until the version changes.
+      # A lost create is HTTP 422. The script re-reads the ref and does not move it.
       - name: Tag ids release
         id: tag
         env:
@@ -152,9 +151,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    concurrency:
-      group: sociacl-release
-      cancel-in-progress: false
+    # No concurrency group. See pack-ids.
     outputs:
       tag: ${{ steps.tag.outputs.tag }}
       created: ${{ steps.tag.outputs.created }}
@@ -181,9 +178,10 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    concurrency:
-      group: ids-release
-      cancel-in-progress: false
+    # No concurrency group. A group shared with tag-ids keeps one running job
+    # and one pending job, and a third master push cancels the pending one.
+    # If that pending job is this pack, the tag already exists and later runs
+    # set publish=false, so the version never gets a release.
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
@@ -225,9 +223,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    concurrency:
-      group: sociacl-release
-      cancel-in-progress: false
+    # No concurrency group. See pack-ids.
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
@@ -270,8 +266,10 @@ jobs:
       contents: write
       id-token: write
       attestations: write
+    # Queue only this tag's publish. A later commit does not enter the group
+    # unless it is publishing the same tag.
     concurrency:
-      group: ids-release
+      group: release-${{ needs.tag-ids.outputs.tag || github.ref_name }}
       cancel-in-progress: false
     env:
       GH_TOKEN: ${{ github.token }}
@@ -327,7 +325,7 @@ jobs:
       id-token: write
       attestations: write
     concurrency:
-      group: sociacl-release
+      group: release-${{ needs.tag-sociacl.outputs.tag || github.ref_name }}
       cancel-in-progress: false
     env:
       GH_TOKEN: ${{ github.token }}

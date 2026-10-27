@@ -61,6 +61,11 @@ if [[ "$args" == *"--method POST"* ]]; then
       printf '%s\n' '{"status":"500"}'
       exit 1
       ;;
+    post-422-same|post-422-other)
+      echo "gh: Validation Failed (HTTP 422)" >&2
+      printf '%s\n' '{"message":"Reference already exists","status":"422"}'
+      exit 1
+      ;;
     *)
       posted=""
       for arg in "$@"; do
@@ -106,6 +111,20 @@ if [[ "$args" == *"/git/ref/tags/"* ]]; then
       printf '%s\n' '{"status":"500"}'
       echo "gh: Internal Server Error (HTTP 500)" >&2
       exit 1
+      ;;
+    post-422-same|post-422-other)
+      # First lookup is the absent tag. The lookup after HTTP 422 sees the winner.
+      refs="$(grep -c '/git/ref/tags/' "${TAG_TEST_LOG}" || true)"
+      if [[ "$refs" -eq 1 ]]; then
+        printf '%s\n' '{"message":"Not Found","status":"404"}'
+        echo "gh: Not Found (HTTP 404)" >&2
+        exit 1
+      fi
+      if [[ "$scenario" == "post-422-same" ]]; then
+        printf '{"object":{"sha":"%s","type":"commit"}}\n' "$TAG_TEST_SHA"
+      else
+        printf '{"object":{"sha":"%s","type":"commit"}}\n' "$TAG_TEST_OTHER"
+      fi
       ;;
     *)
       echo "unhandled ref lookup scenario ${scenario}" >&2
@@ -220,6 +239,26 @@ assert_eq "$status" 1 "post-mismatch status"
 
 run_tag post-fail
 assert_eq "$status" 1 "post-fail status"
+
+# Three quick master pushes strand a release if tag and pack share a
+# concurrency group: A creates the tag, A's pack is the single pending job and
+# is cancelled when C queues, then every later push sees the tag on A's commit
+# and sets publish=false. Those jobs have no group. A lost create is HTTP 422;
+# this re-read publishes only when the winning ref names this commit.
+run_tag post-422-same
+assert_eq "$status" 0 "post-422-same status"
+assert_eq "$(output_of created)" false "post-422-same created"
+assert_eq "$(output_of publish)" true "post-422-same publish"
+posts="$(grep -c -- '--method POST' "$TAG_TEST_LOG" || true)"
+assert_eq "$posts" 1 "post-422-same posts"
+
+run_tag post-422-other
+assert_eq "$status" 0 "post-422-other status"
+assert_eq "$(output_of created)" false "post-422-other created"
+assert_eq "$(output_of publish)" false "post-422-other publish"
+posts="$(grep -c -- '--method POST' "$TAG_TEST_LOG" || true)"
+assert_eq "$posts" 1 "post-422-other posts"
+grep -q 'Release tag unchanged' "$tmp/stdout"
 
 run_tag absent sociacl
 assert_eq "$status" 0 "sociacl status"
