@@ -158,6 +158,7 @@ fn forum_vector_names_the_cases() {
     assert!(rule.contains("body and severity stay as posted"));
     assert!(rule.contains("helper must still pass Check see"));
     assert!(rule.contains("refuses withdrawal of the offer it names"));
+    assert!(rule.contains("live offer stored when that helper posted it"));
 }
 
 #[test]
@@ -1060,7 +1061,14 @@ fn accept_requires_the_helper_to_still_pass_see() {
     let subject = world.subject.clone();
     let offer = world.offer(&helper, 0x51, "unposted", "");
     assert_eq!(
-        accept_offer_transition(&world.graph, &world.open, None, &offer, &helper, world.now),
+        accept_offer_transition(
+            &mut world.graph,
+            &world.open,
+            None,
+            &offer,
+            &helper,
+            world.now
+        ),
         Err(GunError::ForumSoul)
     );
     let take = accepting(&world.open, &offer, 2);
@@ -1088,9 +1096,15 @@ fn accept_requires_the_helper_to_still_pass_see() {
     );
 
     world.grant(&helper, 1, 4);
-    let posted =
-        accept_offer_transition(&world.graph, &world.open, None, &offer, &helper, world.now)
-            .unwrap();
+    let posted = accept_offer_transition(
+        &mut world.graph,
+        &world.open,
+        None,
+        &offer,
+        &helper,
+        world.now,
+    )
+    .unwrap();
     world.grant(&helper, 0, 5);
     let take_posted = accepting(&world.open, &posted, 3);
     assert_eq!(
@@ -1124,6 +1138,91 @@ fn accept_requires_the_helper_to_still_pass_see() {
     assert!(world.graph.admitted_owner(&posted.id).is_none());
 }
 
+#[test]
+fn accept_rejects_a_fabricated_offer() {
+    let mut world = World::open();
+    let helper = world.helper.clone();
+    let owner = world.owner.clone();
+    let subject = world.subject.clone();
+    world.grant(&helper, 1, 4);
+    assert!(
+        world
+            .graph
+            .check_see(&world.need_id, &helper, world.now, None, None)
+            .allowed
+    );
+    let fabricated = world.offer(&helper, 0x51, "never posted", "");
+    let take = accepting(&world.open, &fabricated, 2);
+    assert_eq!(
+        accept_need_transition(
+            &world.graph,
+            &world.open,
+            &take,
+            Some(&fabricated),
+            &owner,
+            world.now
+        ),
+        Err(GunError::ForumSoul)
+    );
+    assert_eq!(
+        accept_need_transition(
+            &world.graph,
+            &world.open,
+            &take,
+            Some(&fabricated),
+            &subject,
+            world.now
+        ),
+        Err(GunError::ForumSoul)
+    );
+    assert_eq!(world.open.stated, 1);
+    assert!(world.open.accepted_offer.is_none());
+    assert!(world.alarm().pins_open_emergency(&world.open));
+    assert_eq!(
+        world.graph.admitted_owner(&world.need_id).unwrap().0,
+        &owner
+    );
+
+    let posted = accept_offer_transition(
+        &mut world.graph,
+        &world.open,
+        None,
+        &fabricated,
+        &helper,
+        world.now,
+    )
+    .unwrap();
+    let mut rewritten = posted.clone();
+    rewritten.body = "not the posted body".into();
+    assert_eq!(
+        accept_need_transition(
+            &world.graph,
+            &world.open,
+            &accepting(&world.open, &rewritten, 3),
+            Some(&rewritten),
+            &owner,
+            world.now
+        ),
+        Err(GunError::ForumSoul)
+    );
+    let accepted = accept_need_transition(
+        &world.graph,
+        &world.open,
+        &accepting(&world.open, &posted, 4),
+        Some(&posted),
+        &owner,
+        world.now,
+    )
+    .unwrap();
+    assert_eq!(accepted.stated, 0);
+    assert_eq!(accepted.accepted_offer.as_ref(), Some(&posted.id));
+    assert!(world.graph.admitted_owner(&posted.id).is_none());
+    assert_eq!(
+        world.graph.admitted_owner(&world.need_id).unwrap().0,
+        &owner
+    );
+}
+
 fn case_named(name: &str) {
     let doc = vector();
     assert!(doc["cases"]
@@ -1141,13 +1240,20 @@ fn see_gated_offer_post() {
     let other = world.other.clone();
     let stranger = world.stranger.clone();
     let offer = world.offer(&helper, 0x51, "I can help", "");
-    let bare = MeshSeeGraph::new();
+    let mut bare = MeshSeeGraph::new();
     assert_eq!(
-        accept_offer_transition(&bare, &world.open, None, &offer, &helper, world.now),
+        accept_offer_transition(&mut bare, &world.open, None, &offer, &helper, world.now),
         Err(GunError::ObjectNotInGraph)
     );
     assert_eq!(
-        accept_offer_transition(&world.graph, &world.open, None, &offer, &helper, world.now),
+        accept_offer_transition(
+            &mut world.graph,
+            &world.open,
+            None,
+            &offer,
+            &helper,
+            world.now
+        ),
         Err(GunError::ForumSoul)
     );
     let hint = HandoffHint::parse(
@@ -1178,7 +1284,7 @@ fn see_gated_offer_post() {
     let stranger_offer = world.offer(&stranger, 0x59, "sighting", "");
     assert_eq!(
         accept_offer_transition(
-            &world.graph,
+            &mut world.graph,
             &world.open,
             None,
             &stranger_offer,
@@ -1189,9 +1295,15 @@ fn see_gated_offer_post() {
     );
 
     world.grant(&helper, 1, 4);
-    let posted =
-        accept_offer_transition(&world.graph, &world.open, None, &offer, &helper, world.now)
-            .unwrap();
+    let posted = accept_offer_transition(
+        &mut world.graph,
+        &world.open,
+        None,
+        &offer,
+        &helper,
+        world.now,
+    )
+    .unwrap();
     assert_eq!(posted.stated, 1);
     assert_eq!(posted.helper, helper);
     assert_eq!(object_principal(&posted.id).unwrap(), helper);
@@ -1203,7 +1315,7 @@ fn see_gated_offer_post() {
     let foreign = world.offer(&other, 0x52, "theirs", "");
     assert_eq!(
         accept_offer_transition(
-            &world.graph,
+            &mut world.graph,
             &world.open,
             None,
             &foreign,
@@ -1213,19 +1325,33 @@ fn see_gated_offer_post() {
         Err(GunError::ForumSoul)
     );
     assert_eq!(
-        accept_offer_transition(&world.graph, &world.open, None, &foreign, &other, world.now),
+        accept_offer_transition(
+            &mut world.graph,
+            &world.open,
+            None,
+            &foreign,
+            &other,
+            world.now
+        ),
         Err(GunError::ForumSoul)
     );
     let resolved = accepting(&world.open, &posted, 2);
     assert_eq!(
-        accept_offer_transition(&world.graph, &resolved, None, &foreign, &helper, world.now),
+        accept_offer_transition(
+            &mut world.graph,
+            &resolved,
+            None,
+            &foreign,
+            &helper,
+            world.now
+        ),
         Err(GunError::ForumSoul)
     );
     let mut cancelled = posted.clone();
     cancelled.stated = 0;
     assert_eq!(
         accept_offer_transition(
-            &world.graph,
+            &mut world.graph,
             &world.open,
             None,
             &cancelled,
@@ -1238,7 +1364,7 @@ fn see_gated_offer_post() {
     rewritten.body = "rewritten".into();
     assert_eq!(
         accept_offer_transition(
-            &world.graph,
+            &mut world.graph,
             &world.open,
             Some(&posted),
             &rewritten,
@@ -1261,11 +1387,18 @@ fn see_gated_offer_post() {
     world.grant(&helper, 0, 5);
     let again = world.offer(&helper, 0x53, "again", "");
     assert_eq!(
-        accept_offer_transition(&world.graph, &world.open, None, &again, &helper, world.now),
+        accept_offer_transition(
+            &mut world.graph,
+            &world.open,
+            None,
+            &again,
+            &helper,
+            world.now
+        ),
         Err(GunError::ForumSoul)
     );
     let withdrawn = accept_offer_transition(
-        &world.graph,
+        &mut world.graph,
         &world.open,
         Some(&posted),
         &cancelled,
@@ -1277,7 +1410,7 @@ fn see_gated_offer_post() {
     assert_eq!(withdrawn.body, posted.body);
     assert_eq!(
         accept_offer_transition(
-            &world.graph,
+            &mut world.graph,
             &world.open,
             Some(&withdrawn),
             &posted,
@@ -1303,20 +1436,22 @@ fn owner_or_subject_accepts_one_offer() {
     let admitted_at = world.graph.admitted_owner(&world.need_id).unwrap().1;
     world.grant(&helper, 1, 4);
     world.grant(&other, 1, 6);
+    let offer_one = world.offer(&helper, 0x51, "one", "");
+    let offer_two = world.offer(&other, 0x52, "two", "");
     let first = accept_offer_transition(
-        &world.graph,
+        &mut world.graph,
         &world.open,
         None,
-        &world.offer(&helper, 0x51, "one", ""),
+        &offer_one,
         &helper,
         world.now,
     )
     .unwrap();
     let second = accept_offer_transition(
-        &world.graph,
+        &mut world.graph,
         &world.open,
         None,
-        &world.offer(&other, 0x52, "two", ""),
+        &offer_two,
         &other,
         world.now,
     )
@@ -1368,7 +1503,7 @@ fn owner_or_subject_accepts_one_offer() {
     pull.stated = 0;
     assert_eq!(
         accept_offer_transition(
-            &world.graph,
+            &mut world.graph,
             &accepted,
             Some(&first),
             &pull,
@@ -1379,7 +1514,7 @@ fn owner_or_subject_accepts_one_offer() {
     );
     assert_eq!(
         accept_offer_transition(
-            &world.graph,
+            &mut world.graph,
             &accepted,
             Some(&first),
             &pull,
@@ -1390,7 +1525,7 @@ fn owner_or_subject_accepts_one_offer() {
     );
     assert_eq!(
         accept_offer_transition(
-            &world.graph,
+            &mut world.graph,
             &accepted,
             Some(&first),
             &pull,
@@ -1404,12 +1539,13 @@ fn owner_or_subject_accepts_one_offer() {
     assert_eq!(first.stated, 1);
     assert_eq!(second.stated, 1);
     assert!(second.validate().is_ok());
+    let late_offer = world.offer(&helper, 0x57, "late", "");
     assert_eq!(
         accept_offer_transition(
-            &world.graph,
+            &mut world.graph,
             &accepted,
             None,
-            &world.offer(&helper, 0x57, "late", ""),
+            &late_offer,
             &helper,
             world.now
         ),
@@ -1483,7 +1619,7 @@ fn owner_or_subject_accepts_one_offer() {
     let mut withdrawn = first.clone();
     withdrawn.stated = 0;
     let withdrawn = accept_offer_transition(
-        &world.graph,
+        &mut world.graph,
         &again,
         Some(&first),
         &withdrawn,
@@ -1529,11 +1665,12 @@ fn owner_or_subject_accepts_one_offer() {
         ),
         Err(GunError::ForumSoul)
     );
+    let after = world.offer(&helper, 0x57, "after reopen", "");
     let late = accept_offer_transition(
-        &world.graph,
+        &mut world.graph,
         &opened_again,
         None,
-        &world.offer(&helper, 0x57, "after reopen", ""),
+        &after,
         &helper,
         world.now,
     )
@@ -1553,20 +1690,22 @@ fn decline_or_ignore_leaves_the_need_open() {
     let stranger = world.stranger.clone();
     world.grant(&helper, 1, 4);
     world.grant(&other, 1, 6);
+    let offer_one = world.offer(&helper, 0x51, "one", "");
+    let offer_two = world.offer(&other, 0x52, "two", "");
     let first = accept_offer_transition(
-        &world.graph,
+        &mut world.graph,
         &world.open,
         None,
-        &world.offer(&helper, 0x51, "one", ""),
+        &offer_one,
         &helper,
         world.now,
     )
     .unwrap();
     let second = accept_offer_transition(
-        &world.graph,
+        &mut world.graph,
         &world.open,
         None,
-        &world.offer(&other, 0x52, "two", ""),
+        &offer_two,
         &other,
         world.now,
     )
@@ -1578,7 +1717,7 @@ fn decline_or_ignore_leaves_the_need_open() {
     cancel_second.stated = 0;
     assert_eq!(
         accept_offer_transition(
-            &world.graph,
+            &mut world.graph,
             &world.open,
             Some(&second),
             &cancel_second,
@@ -1587,10 +1726,10 @@ fn decline_or_ignore_leaves_the_need_open() {
         ),
         Err(GunError::ForumSoul)
     );
-    let bare = MeshSeeGraph::new();
+    let mut bare = MeshSeeGraph::new();
     assert_eq!(
         accept_offer_transition(
-            &bare,
+            &mut bare,
             &world.open,
             Some(&second),
             &cancel_second,
@@ -1600,7 +1739,7 @@ fn decline_or_ignore_leaves_the_need_open() {
         Err(GunError::ObjectNotInGraph)
     );
     let declined = accept_offer_transition(
-        &world.graph,
+        &mut world.graph,
         &world.open,
         Some(&second),
         &cancel_second,
@@ -1621,7 +1760,7 @@ fn decline_or_ignore_leaves_the_need_open() {
     let mut cancel_first = first.clone();
     cancel_first.stated = 0;
     let declined_by_subject = accept_offer_transition(
-        &world.graph,
+        &mut world.graph,
         &world.open,
         Some(&first),
         &cancel_first,
@@ -1631,11 +1770,12 @@ fn decline_or_ignore_leaves_the_need_open() {
     .unwrap();
     assert_eq!(declined_by_subject.stated, 0);
     assert_eq!(world.open.stated, 1);
+    let owner_offer = world.offer(&owner, 0x61, "owner offer", "");
     let ignored = accept_offer_transition(
-        &world.graph,
+        &mut world.graph,
         &world.open,
         None,
-        &world.offer(&owner, 0x61, "owner offer", ""),
+        &owner_offer,
         &owner,
         world.now,
     )
@@ -1645,7 +1785,7 @@ fn decline_or_ignore_leaves_the_need_open() {
     assert!(world.open.accepted_offer.is_none());
     assert_eq!(
         accept_offer_transition(
-            &world.graph,
+            &mut world.graph,
             &world.open,
             Some(&ignored),
             &ForumOffer {
@@ -1671,11 +1811,12 @@ fn body_and_severity_stay_as_posted() {
     let owner = world.owner.clone();
     let subject = world.subject.clone();
     world.grant(&helper, 1, 4);
+    let posted_one = world.offer(&helper, 0x51, "one", "");
     let offer = accept_offer_transition(
-        &world.graph,
+        &mut world.graph,
         &world.open,
         None,
-        &world.offer(&helper, 0x51, "one", ""),
+        &posted_one,
         &helper,
         world.now,
     )
@@ -1798,7 +1939,7 @@ fn hop_status_chat_and_hint_do_not_mint() {
     let stranger_offer = world.offer(&stranger, 0x59, "board sighting", "");
     assert_eq!(
         accept_offer_transition(
-            &world.graph,
+            &mut world.graph,
             &world.open,
             None,
             &stranger_offer,
@@ -1851,11 +1992,12 @@ fn hop_status_chat_and_hint_do_not_mint() {
         &stranger_offer.soul().unwrap().join()
     ));
     world.grant(&helper, 1, 4);
+    let help = world.offer(&helper, 0x51, "help", "");
     let posted = accept_offer_transition(
-        &world.graph,
+        &mut world.graph,
         &world.open,
         None,
-        &world.offer(&helper, 0x51, "help", ""),
+        &help,
         &helper,
         world.now,
     )

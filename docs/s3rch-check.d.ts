@@ -118,8 +118,10 @@ export type ForumAgentStatus = {
  * `body`, `severity`, and `spec` stay as posted.
  * Anyone with Check see on this need may post a ForumOffer.
  * The need's owner, or `subject`, accepts one live offer only when
- * that helper still passes Check see on the need. When `subject` is
- * the helper, that principal may accept their own offer. That
+ * that helper still passes Check see on the need and the graph holds
+ * the live offer that helper posted. A caller-supplied offer that was
+ * not posted is refused. When `subject` is the helper, that principal
+ * may accept their own offer. That
  * accept sets `acceptedOffer` and `stated` 0. Cancelling an offer,
  * or leaving it, keeps the need open. A resolved need refuses
  * withdrawal of the offer it names. Only the owner reopens
@@ -161,7 +163,8 @@ export type ForumNeed = {
  * Offer under a need. The helper owns it.
  * Soul: s3rch/forums/<forumId>/needs/<needId>/offers/<offerId>
  * `stated` 1 is live. `stated` 0 is withdrawn or cancelled.
- * Anyone with Check see on the need may post one. The helper may
+ * Anyone with Check see on the need may post one. The graph stores
+ * that live offer. The helper may
  * withdraw it. The need's owner or subject may cancel it. That
  * cancel does not resolve the need. A resolved need refuses
  * withdrawal of the offer it names. `artifacts` are object ids,

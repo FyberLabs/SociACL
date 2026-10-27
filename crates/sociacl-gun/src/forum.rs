@@ -5,8 +5,9 @@
 //!
 //! Chat is a tagged [`crate::GunFeedNode`] under `s3rch/items`. These
 //! builders do not create a chat tree. Anyone with Check see on a need
-//! may post an offer. The need's owner or subject accepts one live
-//! offer only when that helper still passes Check see. Only the owner
+//! may post an offer. The graph stores that live offer. The need's owner
+//! or subject accepts it only when that stored offer is the one the
+//! helper posted and that helper still passes Check see. Only the owner
 //! reopens. A resolved need does not withdraw the offer it names. A ham
 //! update is accepted only when Check see allows the writer. Accepting
 //! an offer does not elect an owner. A hop, a status node, a chat tag,
@@ -192,8 +193,9 @@ impl ForumAgentStatus {
 ///
 /// `body`, `severity`, and `spec` stay as posted. `accepted_offer` is
 /// set only when `stated` is 0. Anyone with Check see may post an offer.
-/// The owner or `subject` accepts one live offer. Only the owner
-/// reopens. [`accept_need_transition`] does not admit an owner.
+/// The graph stores that live offer. The owner or `subject` accepts one
+/// stored live offer. Only the owner reopens.
+/// [`accept_need_transition`] does not admit an owner.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ForumNeed {
     pub id: ObjectId,
@@ -242,6 +244,8 @@ impl ForumNeed {
 /// `stated` 1 is live. `stated` 0 is withdrawn or cancelled.
 /// `artifacts` is a comma-separated list of object ids. It is not key
 /// material. The offer does not spend tokens and it does not elect.
+/// Posting stores this row on the graph. That row is not an
+/// object-owner admission.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ForumOffer {
     pub id: ObjectId,
@@ -275,19 +279,29 @@ impl ForumOffer {
     }
 }
 
+/// Offer row the graph stored when the helper posted it.
+///
+/// Graph data only. [`MeshSeeGraph::put_object`] does not admit it, so
+/// [`MeshSeeGraph::admitted_owner`] stays empty for the offer id.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct AdmittedForumOffer {
+    pub(crate) offer: ForumOffer,
+}
+
 /// Post or withdraw an offer.
 ///
 /// `current` absent and `next.stated` 1 posts. The writer is the helper
 /// and must pass Check see on the open need. A missing admission does
-/// not post. `current` live and `next.stated` 0 withdraws. The helper
+/// not post. The graph stores that live offer. Posting the same id again
+/// is refused. `current` live and `next.stated` 0 withdraws. The helper
 /// may withdraw their own offer. The need's owner or subject may cancel
 /// it. That cancel does not resolve the need and it does not delete the
 /// offer. A resolved need refuses withdrawal of the offer it names. The
 /// need stays resolved until the owner reopens. A cancelled offer is not
-/// posted again. This does not admit an owner and it does not read a
-/// hint or a hop.
+/// posted again. Withdrawal replaces the stored offer. This does not
+/// admit an owner and it does not read a hint or a hop.
 pub fn accept_offer_transition(
-    graph: &MeshSeeGraph,
+    graph: &mut MeshSeeGraph,
     need: &ForumNeed,
     current: Option<&ForumOffer>,
     next: &ForumOffer,
@@ -312,6 +326,10 @@ pub fn accept_offer_transition(
                     GunError::ForumSoul
                 });
             }
+            if stored_offer(graph, &next.id).is_some() {
+                return Err(GunError::ForumSoul);
+            }
+            store_offer(graph, next);
             Ok(next.clone())
         }
         Some(current) => {
@@ -330,15 +348,17 @@ pub fn accept_offer_transition(
             if need.stated == 0 && need.accepted_offer.as_ref() == Some(&current.id) {
                 return Err(GunError::ForumSoul);
             }
-            if writer == &current.helper {
-                return Ok(next.clone());
+            if writer != &current.helper {
+                let owner = admitted_owner(graph, &need.id)?;
+                if writer != owner && writer != &need.subject {
+                    return Err(GunError::ForumSoul);
+                }
             }
-            let owner = admitted_owner(graph, &need.id)?;
-            if writer == owner || writer == &need.subject {
-                Ok(next.clone())
-            } else {
-                Err(GunError::ForumSoul)
+            if stored_offer(graph, &current.id) != Some(current) {
+                return Err(GunError::ForumSoul);
             }
+            store_offer(graph, next);
+            Ok(next.clone())
         }
     }
 }
@@ -347,10 +367,12 @@ pub fn accept_offer_transition(
 ///
 /// `id`, `forum_id`, `subject`, `body`, `severity`, and `spec` stay.
 /// `next.ham_state` must be strictly greater. A missing admission does
-/// not. Stated 1 to 0 accepts `offer`: the writer is the admitted owner
-/// or `subject`, `accepted_offer` names that live offer, and the helper
-/// still passes Check see on the need. When `subject` is that helper,
-/// the same principal may accept their own offer. The need resolves.
+/// not. Stated 1 to 0 accepts `offer`: that offer must be the live offer
+/// the graph stored when the helper posted it, the writer is the admitted
+/// owner or `subject`, `accepted_offer` names that offer, and the helper
+/// still passes Check see on the need. A caller-supplied offer that was
+/// not posted is refused. When `subject` is that helper, the same
+/// principal may accept their own offer. The need resolves.
 /// Stated 0 to 1 reopens: the writer is the admitted owner,
 /// and `accepted_offer` is cleared. Offers already posted stay. A ham
 /// update that keeps `stated` and `accepted_offer` is a Check see write.
@@ -389,6 +411,7 @@ pub fn accept_need_transition(
             || offer.need != current.id
             || offer.forum_id != current.forum_id
             || next.accepted_offer.as_ref() != Some(&offer.id)
+            || stored_offer(graph, &offer.id) != Some(offer)
         {
             return Err(GunError::ForumSoul);
         }
@@ -422,6 +445,19 @@ pub fn accept_need_transition(
         return Ok(next.clone());
     }
     Err(GunError::ForumSoul)
+}
+
+fn stored_offer<'a>(graph: &'a MeshSeeGraph, id: &ObjectId) -> Option<&'a ForumOffer> {
+    graph.forum_offers.get(id.as_ref()).map(|row| &row.offer)
+}
+
+fn store_offer(graph: &mut MeshSeeGraph, offer: &ForumOffer) {
+    graph.forum_offers.insert(
+        offer.id.as_ref().to_string(),
+        AdmittedForumOffer {
+            offer: offer.clone(),
+        },
+    );
 }
 
 fn admitted_owner<'a>(
