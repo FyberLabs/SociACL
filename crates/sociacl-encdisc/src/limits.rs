@@ -4,11 +4,9 @@
 //! cost parameters is that same option, so a sealed copy cannot ask for
 //! less memory or more. Salt length is the only range: 16 through 64 bytes.
 //!
-//! `KEYRING_SERIAL_MAX` is 256 KiB. The constant is unchanged. A retired
-//! pair is 138 bytes. A prior base lane and a prior contact-lane secret
-//! are 68 bytes each. 1024 of each list plus 1024 retired keys is about
-//! 281237 bytes and does not fit. This cap rejects that encoding. Complete
-//! histories are capped separately; the serialization-policy gap remains #68 F22.
+//! Small keyrings retain v2's 256 KiB cap. Larger keyrings use the v3
+//! plaintext domain and a 512 KiB cap, sufficient for 1024 retired pairs
+//! plus both complete histories. No historical secrets are pruned.
 
 /// Inclusive floor and ceiling for one Argon2id parameter.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -59,8 +57,11 @@ pub const ARGON2ID_LIMITS: Argon2IdLimits = Argon2IdLimits {
     },
 };
 
-/// Fixed cap on the serialized keyring plaintext. 256 KiB. Unchanged by the contact-lane secret.
-pub const KEYRING_SERIAL_MAX: usize = 262_144;
+/// Original v2 plaintext cap; v2 never inherits the larger v3 allowance.
+pub const KEYRING_SERIAL_V2_MAX: usize = 262_144;
+
+/// Maximum serialized keyring plaintext, using the v3 domain above the v2 cap.
+pub const KEYRING_SERIAL_MAX: usize = 524_288;
 
 /// Maximum rotation sequence and entries in each complete lane history. No pruning.
 pub const KEYRING_HISTORY_MAX: usize = 1024;

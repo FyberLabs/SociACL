@@ -1,0 +1,39 @@
+{
+  "v": 1,
+  "family": "keyring-capacity",
+  "rule": "Public scalar 1 is genesis signing; 2 is genesis encryption. Retired encryption scalars are 2..1025, current signing 1027, encryption 1028. Base lane 0; prior lanes 1..1024; prior contacts 1025..2048; current contact 2049, each as 64-digit lowercase hex. Epoch is the maximum safe integer. Tests authenticate material separately from codec/transport capacity; this is not a witnessed chain.",
+  "count": 1024,
+  "contentEpoch": 9007199254740991,
+  "domain": "sociacl-keyring-plain-v3",
+  "serializedBytes": 281250,
+  "sha256": "8f8f5976240a8edb48fe5493dc8a4e081f8869614588e1d4fdf01b3d9c58ec31",
+  "boundaryCases": [
+    {
+      "domain": "sociacl-keyring-plain-v2",
+      "bytes": 262144
+    },
+    {
+      "domain": "sociacl-keyring-plain-v2",
+      "bytes": 262145,
+      "error": "keyring-too-large"
+    },
+    {
+      "domain": "sociacl-keyring-plain-v3",
+      "bytes": 262145
+    },
+    {
+      "domain": "sociacl-keyring-plain-v3",
+      "bytes": 524288
+    },
+    {
+      "domain": "sociacl-keyring-plain-v3",
+      "bytes": 524289,
+      "error": "keyring-too-large"
+    },
+    {
+      "domain": "sociacl-keyring-plain-v4",
+      "bytes": 262145,
+      "error": "recovery-rejected"
+    }
+  ]
+}

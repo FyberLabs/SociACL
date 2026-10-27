@@ -17,7 +17,9 @@ import {
   rotateKeyring,
 } from "../contract/account-keyring.ts";
 import { bytesToHex, seaPoint, sharedX, uncompressedFromSea } from "../contract/account-key-seal.ts";
-import { decodeKeyring, DOMAIN_KEYRING_PLAIN } from "../contract/keyring-codec.ts";
+import { encodeKeyring, decodeKeyring, DOMAIN_KEYRING_PLAIN, DOMAIN_KEYRING_PLAIN_V3 } from "../contract/keyring-codec.ts";
+import { capacityKeyring } from "./support/keyring-capacity.ts";
+import { KEYRING_SERIAL_V2_MAX, KEYRING_SERIAL_MAX, DELIVERY_BLOB_MAX, RECOVERY_ABSOLUTE_MAX } from "../contract/keyring-limits.ts";
 import { lengthPrefixed } from "../contract/canonical.ts";
 import { openReaderWrap } from "../contract/content-wrap.ts";
 import { deriveContactLane } from "../contract/contact-lane.ts";
@@ -1259,5 +1261,42 @@ test("shared codec history bounds reject counts before reading their payload", (
       assert.equal(decoded.priorContactSecrets.length, KEYRING_HISTORY_MAX);
       assert.equal(decoded.rotationSeq, KEYRING_HISTORY_MAX);
     }
+  }
+});
+
+
+test("maximum supported keyring uses v3 without losing historical secrets", () => {
+  const fixture = JSON.parse(readFileSync(new URL("../../vectors/encrypted-discovery/keyring-capacity.json", import.meta.url), "utf8"));
+  const keyring = capacityKeyring(fixture.count);
+  const encoded = encodeKeyring(keyring);
+  assert.equal(encoded.length, fixture.serializedBytes);
+  assert.ok(encoded.length > KEYRING_SERIAL_V2_MAX && encoded.length < KEYRING_SERIAL_MAX);
+  assert.equal(createHash("sha256").update(encoded).digest("hex"), fixture.sha256);
+  assert.ok(encoded.length + 1 + 65 + 12 + 16 <= DELIVERY_BLOB_MAX);
+  assert.ok(encoded.length + 33 + 64 + 12 + 16 <= RECOVERY_ABSOLUTE_MAX);
+  const decoded = decodeKeyring(encoded);
+  assert.equal(decoded.retired.length, fixture.count);
+  assert.deepEqual(decoded.priorLanes, keyring.priorLanes());
+  assert.deepEqual(decoded.priorContactSecrets, keyring.priorContactSecrets());
+  assert.deepEqual(decoded.retired, keyring.retired());
+  assert.equal(decoded.contentEpoch, fixture.contentEpoch);
+  assert.equal(decoded.rotationSeq, fixture.count);
+  assert.equal(new TextDecoder().decode(encoded.subarray(4, 4 + fixture.domain.length)), DOMAIN_KEYRING_PLAIN_V3);
+  // A relabelled large payload cannot borrow v3's allowance for v2.
+  encoded[4 + DOMAIN_KEYRING_PLAIN.length - 1] = "2".charCodeAt(0);
+  assert.throws(() => decodeKeyring(encoded), { message: "keyring-too-large" });
+});
+
+test("shared versioned plaintext caps are enforced before key material validation", () => {
+  const fixture = JSON.parse(readFileSync(new URL("../../vectors/encrypted-discovery/keyring-capacity.json", import.meta.url), "utf8"));
+  for (const row of fixture.boundaryCases) {
+    // Structural codec test: pad a key field, not an authenticated account.
+    const fields = [row.domain, "principal", "genesis", "pub", "", "epub", "epriv", "0", "lane", "0", "contact", "0", "0", "0"];
+    const base = lengthPrefixed(fields).length;
+    fields[4] = "x".repeat(row.bytes - base);
+    const bytes = lengthPrefixed(fields);
+    assert.equal(bytes.length, row.bytes);
+    if (row.error) assert.throws(() => decodeKeyring(bytes), { message: row.error });
+    else assert.equal(decodeKeyring(bytes).priv.length, row.bytes - base);
   }
 });
