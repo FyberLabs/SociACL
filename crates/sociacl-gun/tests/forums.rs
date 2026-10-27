@@ -4,13 +4,13 @@
 use p256::elliptic_curve::sec1::ToEncodedPoint;
 use serde_json::Value;
 use sociacl_gun::{
-    accept_hint, accept_hint_bytes, accept_need_transition, forum_agent_soul, forum_alarm_soul,
-    forum_chat_tag, forum_chat_tag_present, forum_chat_tags, forum_emergency_alarm,
-    forum_need_soul, forum_role_soul, forum_roles_match, forum_subtask_soul, forum_template_soul,
-    forum_update_soul, from_gun_node, is_separate_chat_soul, split_tags, to_gun_node, FeedItem,
-    FeedSource, ForumAgentState, ForumAgentStatus, ForumAlarm, ForumNeed, ForumNeedSeverity,
-    ForumRoleMembership, ForumRoleMode, ForumTemplate, GunError, GunFeedNode, HandoffHint,
-    HopFactor, MeshSeeGraph,
+    accept_hint, accept_hint_bytes, accept_need_transition, accept_offer_transition,
+    forum_agent_soul, forum_alarm_soul, forum_chat_tag, forum_chat_tag_present, forum_chat_tags,
+    forum_emergency_alarm, forum_need_soul, forum_offer_soul, forum_role_soul, forum_roles_match,
+    forum_subtask_soul, forum_template_soul, forum_update_soul, from_gun_node,
+    is_separate_chat_soul, split_tags, to_gun_node, FeedItem, FeedSource, ForumAgentState,
+    ForumAgentStatus, ForumAlarm, ForumNeed, ForumNeedSeverity, ForumOffer, ForumRoleMembership,
+    ForumRoleMode, ForumTemplate, GunError, GunFeedNode, HandoffHint, HopFactor, MeshSeeGraph,
 };
 use sociacl_ids::{
     history_state, mint_object_id_with, object_principal, object_record_bytes, parse_object_id,
@@ -120,7 +120,7 @@ impl Hold {
 }
 
 #[test]
-fn forum_vector_names_the_five_cases() {
+fn forum_vector_names_the_cases() {
     let doc = vector();
     let cases: Vec<_> = doc["cases"]
         .as_array()
@@ -136,6 +136,12 @@ fn forum_vector_names_the_five_cases() {
             "sgh1-hint-alone-fails-closed",
             "resolve-need-does-not-elect",
             "chat-via-tagged-items",
+            "see-gated-offer",
+            "owner-or-subject-accepts",
+            "decline-or-ignore-stays-open",
+            "owner-reopen-clears-accepted-offer",
+            "freeze-body-and-severity",
+            "hop-status-chat-hint-never-mint",
         ]
     );
     assert!(doc["identity"]
@@ -146,6 +152,13 @@ fn forum_vector_names_the_five_cases() {
         .as_str()
         .unwrap()
         .contains("linked credentials"));
+    let rule = doc["offerRule"].as_str().unwrap();
+    assert!(rule.contains("accepted_offer"));
+    assert!(rule.contains("does not elect"));
+    assert!(rule.contains("body and severity stay as posted"));
+    assert!(rule.contains("helper must still pass Check see"));
+    assert!(rule.contains("refuses withdrawal of the offer it names"));
+    assert!(rule.contains("live offer stored when that helper posted it"));
 }
 
 #[test]
@@ -214,14 +227,30 @@ fn sgh1_hint_alone_fails_closed() {
     assert!(!seen.allowed);
 }
 
+fn minted(kind: &str, owner: &PrincipalId, byte: u8) -> ObjectId {
+    mint_object_id_with(kind, owner, |bytes| {
+        bytes.fill(byte);
+        Ok(())
+    })
+    .unwrap()
+    .object_id()
+    .clone()
+}
+
 fn need_from(row: &Value, stated: u8, ham_state: u64) -> ForumNeed {
     let severity = match row["severity"].as_str().unwrap() {
         "emergency" => ForumNeedSeverity::Emergency,
         "need" => ForumNeedSeverity::Need,
         other => panic!("unknown severity {other}"),
     };
+    let id: ObjectId = row["needId"].as_str().unwrap().parse().unwrap();
+    let accepted_offer = if stated == 0 {
+        Some(minted("offer", &object_principal(&id).unwrap(), 0x44))
+    } else {
+        None
+    };
     ForumNeed {
-        id: row["needId"].as_str().unwrap().parse().unwrap(),
+        id,
         forum_id: row["needForumId"].as_str().unwrap().parse().unwrap(),
         subject: row["subject"].as_str().unwrap().parse().unwrap(),
         severity,
@@ -229,6 +258,8 @@ fn need_from(row: &Value, stated: u8, ham_state: u64) -> ForumNeed {
         stated,
         ham_state,
         ts: 11,
+        accepted_offer,
+        spec: None,
     }
 }
 
@@ -295,7 +326,7 @@ fn resolve_need_does_not_elect() {
         row["pinsResolved"].as_bool().unwrap()
     );
     assert_eq!(
-        accept_need_transition(&hold.graph, &open, &resolved, &agent, 10),
+        accept_need_transition(&hold.graph, &open, &resolved, None, &agent, 10),
         Err(GunError::ObjectNotInGraph)
     );
     assert!(alarm.pins_open_emergency(&open));
@@ -386,39 +417,35 @@ fn need_transition_checks_the_need_dest_acl() {
     let (owner, owner_scalar) = sea_signer(1);
     let (delegate, _) = sea_signer(2);
     let (stranger, _) = sea_signer(3);
+    let (subject, _) = sea_signer(4);
     let forum: ObjectId = vector()["forumId"].as_str().unwrap().parse().unwrap();
-    let need_id = mint_object_id_with("need", &owner, |bytes| {
-        bytes.fill(0x22);
-        Ok(())
-    })
-    .unwrap();
-    let need_id = need_id.object_id().clone();
+    let need_id = minted("need", &owner, 0x22);
     assert_eq!(object_principal(&need_id).unwrap(), owner);
     assert_ne!(owner, delegate);
+    assert_ne!(subject, delegate);
 
     let open = ForumNeed {
         id: need_id.clone(),
         forum_id: forum.clone(),
-        subject: delegate.clone(),
+        subject: subject.clone(),
         severity: ForumNeedSeverity::Emergency,
         body: "blocked".into(),
         stated: 1,
         ham_state: 1,
         ts: 11,
+        accepted_offer: None,
+        spec: None,
     };
     let alarm = ForumAlarm {
         forum_id: forum,
         need: need_id.clone(),
         pinned: 1,
     };
-    let resolved = ForumNeed {
-        stated: 0,
-        ham_state: 2,
-        ..open.clone()
-    };
+    let offer = live_offer(&open, &delegate, 0x51, "help", "");
     let attack = ForumNeed {
         stated: 0,
         ham_state: 9,
+        accepted_offer: Some(offer.id.clone()),
         ..open.clone()
     };
 
@@ -445,7 +472,7 @@ fn need_transition_checks_the_need_dest_acl() {
     let resolver = |_principal: &PrincipalId| Some(Vec::new());
 
     assert_eq!(
-        accept_need_transition(&graph, &open, &attack, &stranger, now),
+        accept_need_transition(&graph, &open, &attack, Some(&offer), &stranger, now),
         Err(GunError::ObjectNotInGraph)
     );
     assert!(alarm.pins_open_emergency(&open));
@@ -466,7 +493,7 @@ fn need_transition_checks_the_need_dest_acl() {
             .allowed
     );
     assert_eq!(
-        accept_need_transition(&graph, &open, &attack, &stranger, now),
+        accept_need_transition(&graph, &open, &attack, Some(&offer), &stranger, now),
         Err(GunError::ForumSoul)
     );
     assert!(alarm.pins_open_emergency(&open));
@@ -481,10 +508,11 @@ fn need_transition_checks_the_need_dest_acl() {
     let same_ham = ForumNeed {
         stated: 0,
         ham_state: 1,
+        accepted_offer: Some(offer.id.clone()),
         ..open.clone()
     };
     assert_eq!(
-        accept_need_transition(&graph, &open, &same_ham, &owner, now),
+        accept_need_transition(&graph, &open, &same_ham, Some(&offer), &owner, now),
         Err(GunError::ForumSoul)
     );
 
@@ -492,40 +520,68 @@ fn need_transition_checks_the_need_dest_acl() {
     graph
         .admit_row(&grant, &resolver, &ctx)
         .expect("delegate grant");
-    let by_delegate = accept_need_transition(&graph, &open, &resolved, &delegate, now).unwrap();
-    assert_eq!(by_delegate.stated, 0);
-    assert_eq!(by_delegate.ham_state, 2);
-    assert!(!alarm.pins_open_emergency(&by_delegate));
-    assert!(!forum_emergency_alarm(
-        &[ForumAgentState::Idle],
-        Some(&alarm),
-        Some(&by_delegate)
-    ));
-    assert!(forum_emergency_alarm(
-        &[ForumAgentState::Emergency],
-        Some(&alarm),
-        Some(&by_delegate)
-    ));
+    assert_eq!(
+        accept_need_transition(&graph, &open, &attack, Some(&offer), &delegate, now),
+        Err(GunError::ForumSoul)
+    );
+    let bumped = ForumNeed {
+        ham_state: 2,
+        ts: 12,
+        ..open.clone()
+    };
+    let by_delegate = accept_need_transition(&graph, &open, &bumped, None, &delegate, now).unwrap();
+    assert_eq!(by_delegate.stated, 1);
+    assert!(by_delegate.accepted_offer.is_none());
+    assert!(alarm.pins_open_emergency(&by_delegate));
     assert_eq!(graph.admitted_owner(&need_id).unwrap().0, &owner);
     assert_eq!(graph.admitted_owner(&need_id).unwrap().1, admitted_at);
+
+    let bare = ForumNeed {
+        stated: 0,
+        ham_state: 3,
+        ..open.clone()
+    };
+    assert!(bare.validate().is_err());
+    assert_eq!(
+        accept_need_transition(&graph, &open, &attack, None, &owner, now),
+        Err(GunError::ForumSoul)
+    );
 
     let cancel = signed_see(&owner, &owner_scalar, &need_id, &delegate, 0, 5, issued_at);
     graph
         .admit_row(&cancel, &resolver, &ctx)
         .expect("delegate cancel");
     let later = ForumNeed {
-        ham_state: 3,
-        ..resolved.clone()
+        ham_state: 4,
+        ..open.clone()
     };
     assert_eq!(
-        accept_need_transition(&graph, &open, &later, &delegate, now),
+        accept_need_transition(&graph, &open, &later, None, &delegate, now),
         Err(GunError::ForumSoul)
     );
-    let by_owner = accept_need_transition(&graph, &open, &resolved, &owner, now).unwrap();
-    assert_eq!(by_owner.stated, 0);
+    let by_owner = accept_need_transition(&graph, &open, &bumped, None, &owner, now).unwrap();
+    assert_eq!(by_owner.stated, 1);
     assert_eq!(by_owner.soul().unwrap().join(), open.soul().unwrap().join());
     assert_eq!(graph.admitted_owner(&need_id).unwrap().0, &owner);
     assert_eq!(graph.admitted_owner(&need_id).unwrap().1, admitted_at);
+}
+
+fn live_offer(
+    need: &ForumNeed,
+    helper: &PrincipalId,
+    nonce: u8,
+    body: &str,
+    artifacts: &str,
+) -> ForumOffer {
+    ForumOffer {
+        id: minted("offer", helper, nonce),
+        need: need.id.clone(),
+        forum_id: need.forum_id.clone(),
+        helper: helper.clone(),
+        body: body.into(),
+        artifacts: artifacts.into(),
+        stated: 1,
+    }
 }
 
 #[test]
@@ -667,6 +723,12 @@ fn chat_via_tagged_items() {
         &doc["seaPubkey"].as_str().unwrap().parse().unwrap()
     )
     .is_err());
+    assert!(forum_role_soul(
+        &forum,
+        "offers",
+        &doc["seaPubkey"].as_str().unwrap().parse().unwrap()
+    )
+    .is_err());
 }
 
 #[test]
@@ -691,6 +753,22 @@ fn forum_souls_use_the_sea_pubkey() {
     let need_soul = forum_need_soul(&forum, &need).unwrap();
     assert_eq!(need_soul.join(), souls["need"].as_str().unwrap());
     assert_eq!(need_soul.as_forum_need().unwrap().1, need);
+    assert!(need_soul.as_forum_offer().is_none());
+
+    let offer: ObjectId = parse_object_id(doc["offerId"].as_str().unwrap()).unwrap();
+    let spec: ObjectId = parse_object_id(doc["specId"].as_str().unwrap()).unwrap();
+    let offer_soul = forum_offer_soul(&forum, &need, &offer).unwrap();
+    assert_eq!(offer_soul.join(), souls["offer"].as_str().unwrap());
+    assert_eq!(
+        offer_soul.as_forum_offer().unwrap(),
+        (forum.clone(), need.clone(), offer.clone())
+    );
+    assert!(offer_soul.as_forum_need().is_none());
+    assert!(parse_soul(&offer_soul.join()).is_err());
+    assert!(!is_separate_chat_soul(&offer_soul.join()));
+    let minted_offer = minted("offer", &agent, 0x05);
+    assert_eq!(minted_offer, offer);
+    assert_eq!(minted("spec", &agent, 0x06), spec);
 
     let alarm = forum_alarm_soul(&forum).unwrap();
     assert_eq!(alarm.join(), souls["alarm"].as_str().unwrap());
@@ -804,6 +882,8 @@ fn forum_souls_use_the_sea_pubkey() {
         stated: 1,
         ham_state: 1,
         ts: 11,
+        accepted_offer: None,
+        spec: Some(spec),
     };
     assert!(open.validate().is_ok());
     let alarm = ForumAlarm {
@@ -829,6 +909,8 @@ fn forum_souls_use_the_sea_pubkey() {
     ));
     let mut resolved = open.clone();
     resolved.stated = 0;
+    resolved.accepted_offer = Some(offer.clone());
+    assert!(resolved.validate().is_ok());
     assert!(!forum_emergency_alarm(
         &[ForumAgentState::Idle],
         Some(&alarm),
@@ -839,4 +921,1119 @@ fn forum_souls_use_the_sea_pubkey() {
         mode: ForumRoleMode::RoleLabels,
     };
     assert!(template.validate().is_ok());
+}
+
+struct World {
+    graph: MeshSeeGraph,
+    jwks: sociacl_ids::Jwks,
+    policy: sociacl_ids::SiwePolicy,
+    links: BTreeMap<String, Value>,
+    pinned: BTreeSet<String>,
+    now: u64,
+    issued_at: u64,
+    owner: PrincipalId,
+    owner_scalar: [u8; 32],
+    subject: PrincipalId,
+    helper: PrincipalId,
+    other: PrincipalId,
+    stranger: PrincipalId,
+    forum: ObjectId,
+    need_id: ObjectId,
+    open: ForumNeed,
+}
+
+impl World {
+    fn open() -> Self {
+        let (owner, owner_scalar) = sea_signer(1);
+        let (subject, _) = sea_signer(2);
+        let (helper, _) = sea_signer(3);
+        let (other, _) = sea_signer(4);
+        let (stranger, _) = sea_signer(5);
+        let forum: ObjectId = vector()["forumId"].as_str().unwrap().parse().unwrap();
+        let need_id = minted("need", &owner, 0x22);
+        let spec = minted("spec", &owner, 0x66);
+        let file = see_file();
+        let raw = &file["context"];
+        let now = raw["now"].as_u64().unwrap();
+        let issued_at = 1_700_000_000;
+        let mut world = Self {
+            graph: MeshSeeGraph::new(),
+            jwks: serde_json::from_value(raw["jwks"].clone()).unwrap(),
+            policy: serde_json::from_value(raw["policy"].clone()).unwrap(),
+            links: BTreeMap::new(),
+            pinned: BTreeSet::new(),
+            now,
+            issued_at,
+            owner: owner.clone(),
+            owner_scalar,
+            subject: subject.clone(),
+            helper,
+            other,
+            stranger,
+            forum: forum.clone(),
+            need_id: need_id.clone(),
+            open: ForumNeed {
+                id: need_id,
+                forum_id: forum,
+                subject,
+                severity: ForumNeedSeverity::Emergency,
+                body: "blocked".into(),
+                stated: 1,
+                ham_state: 1,
+                ts: 11,
+                accepted_offer: None,
+                spec: Some(spec),
+            },
+        };
+        let record = signed_object(
+            &world.need_id,
+            &world.owner,
+            &world.owner_scalar,
+            world.issued_at,
+        );
+        world.with_ctx(|graph, ctx| {
+            let resolver = |_principal: &PrincipalId| Some(Vec::new());
+            assert_eq!(graph.put_object(&record, &resolver, ctx), Ok(true));
+        });
+        world
+    }
+
+    fn with_ctx(&mut self, body: impl FnOnce(&mut MeshSeeGraph, &ResolutionContext<'_>)) {
+        let history =
+            |principal: &PrincipalId, at, until| Ok(history_state(principal, &[], at, until));
+        let ctx = ResolutionContext {
+            jwks: &self.jwks,
+            links: &self.links,
+            revocations: &[],
+            now: self.now,
+            policy: &self.policy,
+            pinned_iss: &self.pinned,
+            history: &history,
+            genesis_epub_bindings: &[],
+        };
+        body(&mut self.graph, &ctx);
+    }
+
+    fn grant(&mut self, accessor: &PrincipalId, stated: u8, ham: u64) {
+        let row = signed_see(
+            &self.owner,
+            &self.owner_scalar,
+            &self.need_id,
+            accessor,
+            stated,
+            ham,
+            self.issued_at,
+        );
+        self.with_ctx(|graph, ctx| {
+            let resolver = |_principal: &PrincipalId| Some(Vec::new());
+            graph.admit_row(&row, &resolver, ctx).expect("grant");
+        });
+    }
+
+    fn offer(&self, helper: &PrincipalId, nonce: u8, body: &str, artifacts: &str) -> ForumOffer {
+        live_offer(&self.open, helper, nonce, body, artifacts)
+    }
+
+    fn alarm(&self) -> ForumAlarm {
+        ForumAlarm {
+            forum_id: self.forum.clone(),
+            need: self.need_id.clone(),
+            pinned: 1,
+        }
+    }
+}
+
+fn accepting(current: &ForumNeed, offer: &ForumOffer, ham: u64) -> ForumNeed {
+    ForumNeed {
+        stated: 0,
+        ham_state: ham,
+        ts: current.ts + 1,
+        accepted_offer: Some(offer.id.clone()),
+        ..current.clone()
+    }
+}
+
+#[test]
+fn accept_requires_the_helper_to_still_pass_see() {
+    let mut world = World::open();
+    let helper = world.helper.clone();
+    let owner = world.owner.clone();
+    let subject = world.subject.clone();
+    let offer = world.offer(&helper, 0x51, "unposted", "");
+    assert_eq!(
+        accept_offer_transition(
+            &mut world.graph,
+            &world.open,
+            None,
+            &offer,
+            &helper,
+            world.now
+        ),
+        Err(GunError::ForumSoul)
+    );
+    let take = accepting(&world.open, &offer, 2);
+    assert_eq!(
+        accept_need_transition(
+            &world.graph,
+            &world.open,
+            &take,
+            Some(&offer),
+            &owner,
+            world.now
+        ),
+        Err(GunError::ForumSoul)
+    );
+    assert_eq!(
+        accept_need_transition(
+            &world.graph,
+            &world.open,
+            &take,
+            Some(&offer),
+            &subject,
+            world.now
+        ),
+        Err(GunError::ForumSoul)
+    );
+
+    world.grant(&helper, 1, 4);
+    let posted = accept_offer_transition(
+        &mut world.graph,
+        &world.open,
+        None,
+        &offer,
+        &helper,
+        world.now,
+    )
+    .unwrap();
+    world.grant(&helper, 0, 5);
+    let take_posted = accepting(&world.open, &posted, 3);
+    assert_eq!(
+        accept_need_transition(
+            &world.graph,
+            &world.open,
+            &take_posted,
+            Some(&posted),
+            &owner,
+            world.now
+        ),
+        Err(GunError::ForumSoul)
+    );
+    assert_eq!(
+        accept_need_transition(
+            &world.graph,
+            &world.open,
+            &take_posted,
+            Some(&posted),
+            &subject,
+            world.now
+        ),
+        Err(GunError::ForumSoul)
+    );
+    assert_eq!(world.open.stated, 1);
+    assert!(world.open.accepted_offer.is_none());
+    assert_eq!(
+        world.graph.admitted_owner(&world.need_id).unwrap().0,
+        &owner
+    );
+    assert!(world.graph.admitted_owner(&posted.id).is_none());
+}
+
+#[test]
+fn accept_rejects_a_fabricated_offer() {
+    let mut world = World::open();
+    let helper = world.helper.clone();
+    let owner = world.owner.clone();
+    let subject = world.subject.clone();
+    world.grant(&helper, 1, 4);
+    assert!(
+        world
+            .graph
+            .check_see(&world.need_id, &helper, world.now, None, None)
+            .allowed
+    );
+    let fabricated = world.offer(&helper, 0x51, "never posted", "");
+    let take = accepting(&world.open, &fabricated, 2);
+    assert_eq!(
+        accept_need_transition(
+            &world.graph,
+            &world.open,
+            &take,
+            Some(&fabricated),
+            &owner,
+            world.now
+        ),
+        Err(GunError::ForumSoul)
+    );
+    assert_eq!(
+        accept_need_transition(
+            &world.graph,
+            &world.open,
+            &take,
+            Some(&fabricated),
+            &subject,
+            world.now
+        ),
+        Err(GunError::ForumSoul)
+    );
+    assert_eq!(world.open.stated, 1);
+    assert!(world.open.accepted_offer.is_none());
+    assert!(world.alarm().pins_open_emergency(&world.open));
+    assert_eq!(
+        world.graph.admitted_owner(&world.need_id).unwrap().0,
+        &owner
+    );
+
+    let posted = accept_offer_transition(
+        &mut world.graph,
+        &world.open,
+        None,
+        &fabricated,
+        &helper,
+        world.now,
+    )
+    .unwrap();
+    let mut rewritten = posted.clone();
+    rewritten.body = "not the posted body".into();
+    assert_eq!(
+        accept_need_transition(
+            &world.graph,
+            &world.open,
+            &accepting(&world.open, &rewritten, 3),
+            Some(&rewritten),
+            &owner,
+            world.now
+        ),
+        Err(GunError::ForumSoul)
+    );
+    let accepted = accept_need_transition(
+        &world.graph,
+        &world.open,
+        &accepting(&world.open, &posted, 4),
+        Some(&posted),
+        &owner,
+        world.now,
+    )
+    .unwrap();
+    assert_eq!(accepted.stated, 0);
+    assert_eq!(accepted.accepted_offer.as_ref(), Some(&posted.id));
+    assert!(world.graph.admitted_owner(&posted.id).is_none());
+    assert_eq!(
+        world.graph.admitted_owner(&world.need_id).unwrap().0,
+        &owner
+    );
+}
+
+fn case_named(name: &str) {
+    let doc = vector();
+    assert!(doc["cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|case| case.as_str() == Some(name)));
+}
+
+#[test]
+fn see_gated_offer_post() {
+    case_named("see-gated-offer");
+    let mut world = World::open();
+    let helper = world.helper.clone();
+    let other = world.other.clone();
+    let stranger = world.stranger.clone();
+    let offer = world.offer(&helper, 0x51, "I can help", "");
+    let mut bare = MeshSeeGraph::new();
+    assert_eq!(
+        accept_offer_transition(&mut bare, &world.open, None, &offer, &helper, world.now),
+        Err(GunError::ObjectNotInGraph)
+    );
+    assert_eq!(
+        accept_offer_transition(
+            &mut world.graph,
+            &world.open,
+            None,
+            &offer,
+            &helper,
+            world.now
+        ),
+        Err(GunError::ForumSoul)
+    );
+    let hint = HandoffHint::parse(
+        stranger.as_ref(),
+        world.need_id.as_ref(),
+        Some("see"),
+        Some("offer"),
+    )
+    .unwrap();
+    let hop = HopFactor::Structured {
+        channel: sociacl_core::AttestationChannel::ConventionBadge,
+        attestation_bytes: None,
+        share_token: None,
+    };
+    assert!(!hop.is_grant());
+    assert!(
+        !world
+            .graph
+            .check_see(
+                &world.need_id,
+                &stranger,
+                world.now,
+                Some(&hint),
+                Some(&hop)
+            )
+            .allowed
+    );
+    let stranger_offer = world.offer(&stranger, 0x59, "sighting", "");
+    assert_eq!(
+        accept_offer_transition(
+            &mut world.graph,
+            &world.open,
+            None,
+            &stranger_offer,
+            &stranger,
+            world.now
+        ),
+        Err(GunError::ForumSoul)
+    );
+
+    world.grant(&helper, 1, 4);
+    let posted = accept_offer_transition(
+        &mut world.graph,
+        &world.open,
+        None,
+        &offer,
+        &helper,
+        world.now,
+    )
+    .unwrap();
+    assert_eq!(posted.stated, 1);
+    assert_eq!(posted.helper, helper);
+    assert_eq!(object_principal(&posted.id).unwrap(), helper);
+    assert!(world.graph.admitted_owner(&posted.id).is_none());
+    assert_eq!(
+        world.graph.admitted_owner(&world.need_id).unwrap().0,
+        &world.owner
+    );
+    let foreign = world.offer(&other, 0x52, "theirs", "");
+    assert_eq!(
+        accept_offer_transition(
+            &mut world.graph,
+            &world.open,
+            None,
+            &foreign,
+            &helper,
+            world.now
+        ),
+        Err(GunError::ForumSoul)
+    );
+    assert_eq!(
+        accept_offer_transition(
+            &mut world.graph,
+            &world.open,
+            None,
+            &foreign,
+            &other,
+            world.now
+        ),
+        Err(GunError::ForumSoul)
+    );
+    let resolved = accepting(&world.open, &posted, 2);
+    assert_eq!(
+        accept_offer_transition(
+            &mut world.graph,
+            &resolved,
+            None,
+            &foreign,
+            &helper,
+            world.now
+        ),
+        Err(GunError::ForumSoul)
+    );
+    let mut cancelled = posted.clone();
+    cancelled.stated = 0;
+    assert_eq!(
+        accept_offer_transition(
+            &mut world.graph,
+            &world.open,
+            None,
+            &cancelled,
+            &helper,
+            world.now
+        ),
+        Err(GunError::ForumSoul)
+    );
+    let mut rewritten = cancelled.clone();
+    rewritten.body = "rewritten".into();
+    assert_eq!(
+        accept_offer_transition(
+            &mut world.graph,
+            &world.open,
+            Some(&posted),
+            &rewritten,
+            &helper,
+            world.now
+        ),
+        Err(GunError::ForumSoul)
+    );
+    let status: ObjectId = vector()["statusId"].as_str().unwrap().parse().unwrap();
+    let mut bad = world.offer(&helper, 0x54, "files", "epriv");
+    assert!(bad.validate().is_err());
+    bad.artifacts = format!("{status},{status}");
+    assert!(bad.validate().is_err());
+    let with_art = world.offer(&helper, 0x55, "files", status.as_ref());
+    assert!(with_art.validate().is_ok());
+    let mut mismatched = with_art.clone();
+    mismatched.helper = other.clone();
+    assert!(mismatched.validate().is_err());
+
+    world.grant(&helper, 0, 5);
+    let again = world.offer(&helper, 0x53, "again", "");
+    assert_eq!(
+        accept_offer_transition(
+            &mut world.graph,
+            &world.open,
+            None,
+            &again,
+            &helper,
+            world.now
+        ),
+        Err(GunError::ForumSoul)
+    );
+    let withdrawn = accept_offer_transition(
+        &mut world.graph,
+        &world.open,
+        Some(&posted),
+        &cancelled,
+        &helper,
+        world.now,
+    )
+    .unwrap();
+    assert_eq!(withdrawn.stated, 0);
+    assert_eq!(withdrawn.body, posted.body);
+    assert_eq!(
+        accept_offer_transition(
+            &mut world.graph,
+            &world.open,
+            Some(&withdrawn),
+            &posted,
+            &helper,
+            world.now
+        ),
+        Err(GunError::ForumSoul)
+    );
+    assert_eq!(world.open.stated, 1);
+    assert!(world.open.accepted_offer.is_none());
+    assert!(world.graph.admitted_owner(&posted.id).is_none());
+}
+
+#[test]
+fn owner_or_subject_accepts_one_offer() {
+    case_named("owner-or-subject-accepts");
+    case_named("owner-reopen-clears-accepted-offer");
+    let mut world = World::open();
+    let helper = world.helper.clone();
+    let other = world.other.clone();
+    let subject = world.subject.clone();
+    let owner = world.owner.clone();
+    let admitted_at = world.graph.admitted_owner(&world.need_id).unwrap().1;
+    world.grant(&helper, 1, 4);
+    world.grant(&other, 1, 6);
+    let offer_one = world.offer(&helper, 0x51, "one", "");
+    let offer_two = world.offer(&other, 0x52, "two", "");
+    let first = accept_offer_transition(
+        &mut world.graph,
+        &world.open,
+        None,
+        &offer_one,
+        &helper,
+        world.now,
+    )
+    .unwrap();
+    let second = accept_offer_transition(
+        &mut world.graph,
+        &world.open,
+        None,
+        &offer_two,
+        &other,
+        world.now,
+    )
+    .unwrap();
+    let take_first = accepting(&world.open, &first, 2);
+    assert_eq!(
+        accept_need_transition(
+            &world.graph,
+            &world.open,
+            &take_first,
+            Some(&first),
+            &helper,
+            world.now
+        ),
+        Err(GunError::ForumSoul)
+    );
+    assert!(
+        !world
+            .graph
+            .check_see(&world.need_id, &subject, world.now, None, None)
+            .allowed
+    );
+    let accepted = accept_need_transition(
+        &world.graph,
+        &world.open,
+        &take_first,
+        Some(&first),
+        &subject,
+        world.now,
+    )
+    .unwrap();
+    assert_eq!(accepted.stated, 0);
+    assert_eq!(accepted.accepted_offer.as_ref(), Some(&first.id));
+    assert_eq!(accepted.body, world.open.body);
+    assert_eq!(accepted.severity, world.open.severity);
+    assert_eq!(accepted.spec, world.open.spec);
+    assert_eq!(object_principal(&first.id).unwrap(), helper);
+    assert!(world.graph.admitted_owner(&first.id).is_none());
+    assert_eq!(
+        world.graph.admitted_owner(&world.need_id).unwrap().0,
+        &owner
+    );
+    assert_eq!(
+        world.graph.admitted_owner(&world.need_id).unwrap().1,
+        admitted_at
+    );
+    assert!(!world.alarm().pins_open_emergency(&accepted));
+    let mut pull = first.clone();
+    pull.stated = 0;
+    assert_eq!(
+        accept_offer_transition(
+            &mut world.graph,
+            &accepted,
+            Some(&first),
+            &pull,
+            &helper,
+            world.now
+        ),
+        Err(GunError::ForumSoul)
+    );
+    assert_eq!(
+        accept_offer_transition(
+            &mut world.graph,
+            &accepted,
+            Some(&first),
+            &pull,
+            &owner,
+            world.now
+        ),
+        Err(GunError::ForumSoul)
+    );
+    assert_eq!(
+        accept_offer_transition(
+            &mut world.graph,
+            &accepted,
+            Some(&first),
+            &pull,
+            &subject,
+            world.now
+        ),
+        Err(GunError::ForumSoul)
+    );
+    assert_eq!(accepted.stated, 0);
+    assert_eq!(accepted.accepted_offer.as_ref(), Some(&first.id));
+    assert_eq!(first.stated, 1);
+    assert_eq!(second.stated, 1);
+    assert!(second.validate().is_ok());
+    let late_offer = world.offer(&helper, 0x57, "late", "");
+    assert_eq!(
+        accept_offer_transition(
+            &mut world.graph,
+            &accepted,
+            None,
+            &late_offer,
+            &helper,
+            world.now
+        ),
+        Err(GunError::ForumSoul)
+    );
+
+    let reopened = ForumNeed {
+        stated: 1,
+        ham_state: 3,
+        accepted_offer: None,
+        ..accepted.clone()
+    };
+    assert_eq!(
+        accept_need_transition(
+            &world.graph,
+            &accepted,
+            &reopened,
+            None,
+            &subject,
+            world.now
+        ),
+        Err(GunError::ForumSoul)
+    );
+    assert_eq!(
+        accept_need_transition(&world.graph, &accepted, &reopened, None, &helper, world.now),
+        Err(GunError::ForumSoul)
+    );
+    let mut kept = reopened.clone();
+    kept.accepted_offer = Some(first.id.clone());
+    assert!(kept.validate().is_err());
+    let opened =
+        accept_need_transition(&world.graph, &accepted, &reopened, None, &owner, world.now)
+            .unwrap();
+    assert_eq!(opened.stated, 1);
+    assert!(opened.accepted_offer.is_none());
+    assert_eq!(first.stated, 1);
+    assert_eq!(second.stated, 1);
+    assert!(world.alarm().pins_open_emergency(&opened));
+    let take_second = accepting(&opened, &second, 4);
+    let again = accept_need_transition(
+        &world.graph,
+        &opened,
+        &take_second,
+        Some(&second),
+        &owner,
+        world.now,
+    )
+    .unwrap();
+    assert_eq!(again.accepted_offer.as_ref(), Some(&second.id));
+    assert_eq!(object_principal(&second.id).unwrap(), other);
+    assert_eq!(
+        world.graph.admitted_owner(&world.need_id).unwrap().0,
+        &owner
+    );
+    assert_eq!(
+        world.graph.admitted_owner(&world.need_id).unwrap().1,
+        admitted_at
+    );
+    let switched = accepting(&again, &first, 5);
+    assert_eq!(
+        accept_need_transition(
+            &world.graph,
+            &again,
+            &switched,
+            Some(&first),
+            &owner,
+            world.now
+        ),
+        Err(GunError::ForumSoul)
+    );
+    let mut withdrawn = first.clone();
+    withdrawn.stated = 0;
+    let withdrawn = accept_offer_transition(
+        &mut world.graph,
+        &again,
+        Some(&first),
+        &withdrawn,
+        &helper,
+        world.now,
+    )
+    .unwrap();
+    assert_eq!(withdrawn.stated, 0);
+    assert_eq!(again.accepted_offer.as_ref(), Some(&second.id));
+    let open_again = ForumNeed {
+        stated: 1,
+        ham_state: 6,
+        accepted_offer: None,
+        ..again.clone()
+    };
+    let opened_again =
+        accept_need_transition(&world.graph, &again, &open_again, None, &owner, world.now).unwrap();
+    let take_dead = accepting(&opened_again, &withdrawn, 7);
+    assert_eq!(
+        accept_need_transition(
+            &world.graph,
+            &opened_again,
+            &take_dead,
+            Some(&withdrawn),
+            &owner,
+            world.now
+        ),
+        Err(GunError::ForumSoul)
+    );
+    let mut foreign = second.clone();
+    foreign.need = minted("need", &owner, 0x99);
+    foreign.id = minted("offer", &other, 0x98);
+    assert!(foreign.validate().is_ok());
+    let take_foreign = accepting(&opened_again, &foreign, 8);
+    assert_eq!(
+        accept_need_transition(
+            &world.graph,
+            &opened_again,
+            &take_foreign,
+            Some(&foreign),
+            &owner,
+            world.now
+        ),
+        Err(GunError::ForumSoul)
+    );
+    let after = world.offer(&helper, 0x57, "after reopen", "");
+    let late = accept_offer_transition(
+        &mut world.graph,
+        &opened_again,
+        None,
+        &after,
+        &helper,
+        world.now,
+    )
+    .unwrap();
+    assert_eq!(late.stated, 1);
+    assert_eq!(second.stated, 1);
+}
+
+#[test]
+fn decline_or_ignore_leaves_the_need_open() {
+    case_named("decline-or-ignore-stays-open");
+    let mut world = World::open();
+    let helper = world.helper.clone();
+    let other = world.other.clone();
+    let subject = world.subject.clone();
+    let owner = world.owner.clone();
+    let stranger = world.stranger.clone();
+    world.grant(&helper, 1, 4);
+    world.grant(&other, 1, 6);
+    let offer_one = world.offer(&helper, 0x51, "one", "");
+    let offer_two = world.offer(&other, 0x52, "two", "");
+    let first = accept_offer_transition(
+        &mut world.graph,
+        &world.open,
+        None,
+        &offer_one,
+        &helper,
+        world.now,
+    )
+    .unwrap();
+    let second = accept_offer_transition(
+        &mut world.graph,
+        &world.open,
+        None,
+        &offer_two,
+        &other,
+        world.now,
+    )
+    .unwrap();
+    assert_eq!(world.open.stated, 1);
+    assert!(world.open.accepted_offer.is_none());
+    assert!(world.alarm().pins_open_emergency(&world.open));
+    let mut cancel_second = second.clone();
+    cancel_second.stated = 0;
+    assert_eq!(
+        accept_offer_transition(
+            &mut world.graph,
+            &world.open,
+            Some(&second),
+            &cancel_second,
+            &helper,
+            world.now
+        ),
+        Err(GunError::ForumSoul)
+    );
+    let mut bare = MeshSeeGraph::new();
+    assert_eq!(
+        accept_offer_transition(
+            &mut bare,
+            &world.open,
+            Some(&second),
+            &cancel_second,
+            &subject,
+            world.now
+        ),
+        Err(GunError::ObjectNotInGraph)
+    );
+    let declined = accept_offer_transition(
+        &mut world.graph,
+        &world.open,
+        Some(&second),
+        &cancel_second,
+        &owner,
+        world.now,
+    )
+    .unwrap();
+    assert_eq!(declined.stated, 0);
+    assert_eq!(world.open.stated, 1);
+    assert!(world.open.accepted_offer.is_none());
+    assert!(world.alarm().pins_open_emergency(&world.open));
+    assert!(
+        !world
+            .graph
+            .check_see(&world.need_id, &subject, world.now, None, None)
+            .allowed
+    );
+    let mut cancel_first = first.clone();
+    cancel_first.stated = 0;
+    let declined_by_subject = accept_offer_transition(
+        &mut world.graph,
+        &world.open,
+        Some(&first),
+        &cancel_first,
+        &subject,
+        world.now,
+    )
+    .unwrap();
+    assert_eq!(declined_by_subject.stated, 0);
+    assert_eq!(world.open.stated, 1);
+    let owner_offer = world.offer(&owner, 0x61, "owner offer", "");
+    let ignored = accept_offer_transition(
+        &mut world.graph,
+        &world.open,
+        None,
+        &owner_offer,
+        &owner,
+        world.now,
+    )
+    .unwrap();
+    assert_eq!(ignored.stated, 1);
+    assert_eq!(world.open.stated, 1);
+    assert!(world.open.accepted_offer.is_none());
+    assert_eq!(
+        accept_offer_transition(
+            &mut world.graph,
+            &world.open,
+            Some(&ignored),
+            &ForumOffer {
+                stated: 0,
+                ..ignored.clone()
+            },
+            &stranger,
+            world.now
+        ),
+        Err(GunError::ForumSoul)
+    );
+    assert_eq!(
+        world.graph.admitted_owner(&world.need_id).unwrap().0,
+        &owner
+    );
+}
+
+#[test]
+fn body_and_severity_stay_as_posted() {
+    case_named("freeze-body-and-severity");
+    let mut world = World::open();
+    let helper = world.helper.clone();
+    let owner = world.owner.clone();
+    let subject = world.subject.clone();
+    world.grant(&helper, 1, 4);
+    let posted_one = world.offer(&helper, 0x51, "one", "");
+    let offer = accept_offer_transition(
+        &mut world.graph,
+        &world.open,
+        None,
+        &posted_one,
+        &helper,
+        world.now,
+    )
+    .unwrap();
+    let mut changed = accepting(&world.open, &offer, 2);
+    changed.body = "rewritten".into();
+    assert_eq!(
+        accept_need_transition(
+            &world.graph,
+            &world.open,
+            &changed,
+            Some(&offer),
+            &owner,
+            world.now
+        ),
+        Err(GunError::ForumSoul)
+    );
+    changed = accepting(&world.open, &offer, 2);
+    changed.severity = ForumNeedSeverity::Need;
+    assert_eq!(
+        accept_need_transition(
+            &world.graph,
+            &world.open,
+            &changed,
+            Some(&offer),
+            &subject,
+            world.now
+        ),
+        Err(GunError::ForumSoul)
+    );
+    changed = accepting(&world.open, &offer, 2);
+    changed.spec = None;
+    assert_eq!(
+        accept_need_transition(
+            &world.graph,
+            &world.open,
+            &changed,
+            Some(&offer),
+            &owner,
+            world.now
+        ),
+        Err(GunError::ForumSoul)
+    );
+    changed = accepting(&world.open, &offer, 2);
+    changed.subject = helper.clone();
+    assert_eq!(
+        accept_need_transition(
+            &world.graph,
+            &world.open,
+            &changed,
+            Some(&offer),
+            &owner,
+            world.now
+        ),
+        Err(GunError::ForumSoul)
+    );
+    let mut ham_only = world.open.clone();
+    ham_only.ham_state = 2;
+    ham_only.body = "rewritten".into();
+    assert_eq!(
+        accept_need_transition(
+            &world.graph,
+            &world.open,
+            &ham_only,
+            None,
+            &helper,
+            world.now
+        ),
+        Err(GunError::ForumSoul)
+    );
+    let accepted = accept_need_transition(
+        &world.graph,
+        &world.open,
+        &accepting(&world.open, &offer, 2),
+        Some(&offer),
+        &owner,
+        world.now,
+    )
+    .unwrap();
+    assert_eq!(accepted.body, "blocked");
+    assert_eq!(accepted.severity, ForumNeedSeverity::Emergency);
+    assert_eq!(accepted.spec, world.open.spec);
+    assert_eq!(accepted.subject, subject);
+}
+
+#[test]
+fn hop_status_chat_and_hint_do_not_mint() {
+    case_named("hop-status-chat-hint-never-mint");
+    case_named("resolve-need-does-not-elect");
+    let mut world = World::open();
+    let stranger = world.stranger.clone();
+    let owner = world.owner.clone();
+    let helper = world.helper.clone();
+    let admitted_at = world.graph.admitted_owner(&world.need_id).unwrap().1;
+    let hint = HandoffHint::parse(
+        stranger.as_ref(),
+        world.need_id.as_ref(),
+        Some("see"),
+        Some("offer"),
+    )
+    .unwrap();
+    let hop = HopFactor::Structured {
+        channel: sociacl_core::AttestationChannel::ConventionBadge,
+        attestation_bytes: None,
+        share_token: None,
+    };
+    assert!(!hop.is_grant());
+    assert!(
+        !world
+            .graph
+            .check_see(
+                &world.need_id,
+                &stranger,
+                world.now,
+                Some(&hint),
+                Some(&hop)
+            )
+            .allowed
+    );
+    let stranger_offer = world.offer(&stranger, 0x59, "board sighting", "");
+    assert_eq!(
+        accept_offer_transition(
+            &mut world.graph,
+            &world.open,
+            None,
+            &stranger_offer,
+            &stranger,
+            world.now
+        ),
+        Err(GunError::ForumSoul)
+    );
+    assert_eq!(
+        accept_need_transition(
+            &world.graph,
+            &world.open,
+            &accepting(&world.open, &stranger_offer, 2),
+            Some(&stranger_offer),
+            &stranger,
+            world.now
+        ),
+        Err(GunError::ForumSoul)
+    );
+    let status = ForumAgentStatus {
+        id: minted("status", &helper, 0x33),
+        forum_id: world.forum.clone(),
+        agent: helper.clone(),
+        task: "sitrep".into(),
+        result: "done".into(),
+        needs: world.need_id.as_ref().into(),
+        progress: 40,
+        state: ForumAgentState::Working,
+        last_prompt: "report".into(),
+        last_update: 11,
+        agent_type: "agent".into(),
+        started: 1,
+        tokens: 12,
+        runtime: 30,
+        hb: None,
+        batt: None,
+        link: None,
+        artifacts: String::new(),
+    };
+    assert!(status.validate().is_ok());
+    assert_eq!(status.tokens, 12);
+    assert_ne!(
+        status.soul().unwrap().join(),
+        stranger_offer.soul().unwrap().join()
+    );
+    let tags = forum_chat_tags(&world.forum, ["report"]).unwrap();
+    assert!(forum_chat_tag_present(&tags, &world.forum));
+    assert!(is_separate_chat_soul("s3rch/chat"));
+    assert!(!is_separate_chat_soul(
+        &stranger_offer.soul().unwrap().join()
+    ));
+    world.grant(&helper, 1, 4);
+    let help = world.offer(&helper, 0x51, "help", "");
+    let posted = accept_offer_transition(
+        &mut world.graph,
+        &world.open,
+        None,
+        &help,
+        &helper,
+        world.now,
+    )
+    .unwrap();
+    let accepted = accept_need_transition(
+        &world.graph,
+        &world.open,
+        &accepting(&world.open, &posted, 2),
+        Some(&posted),
+        &owner,
+        world.now,
+    )
+    .unwrap();
+    assert_eq!(accepted.stated, 0);
+    assert_eq!(
+        world.graph.admitted_owner(&world.need_id).unwrap().0,
+        &owner
+    );
+    assert_eq!(
+        world.graph.admitted_owner(&world.need_id).unwrap().1,
+        admitted_at
+    );
+    assert!(world.graph.admitted_owner(&posted.id).is_none());
+    assert!(world.graph.admitted_owner(&stranger_offer.id).is_none());
+    assert_eq!(object_principal(&posted.id).unwrap(), helper);
+    assert_eq!(status.tokens, 12);
+    assert!(
+        !world
+            .graph
+            .check_see(
+                &world.need_id,
+                &stranger,
+                world.now,
+                Some(&hint),
+                Some(&hop)
+            )
+            .allowed
+    );
 }

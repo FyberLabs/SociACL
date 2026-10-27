@@ -165,6 +165,8 @@ pub struct MeshSeeGraph {
     owners: HashMap<String, ObjectAdmission>,
     admitted: HashMap<String, AdmittedSee>,
     pub(crate) post_rows: HashMap<String, crate::post::AdmittedPost>,
+    /// Offer rows stored by a successful post. Not an object-owner admission.
+    pub(crate) forum_offers: HashMap<String, crate::forum::AdmittedForumOffer>,
 }
 
 /// Admitted see row. The private seal keeps an unverified row out of Check.

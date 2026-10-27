@@ -188,6 +188,10 @@ fn consume_contract_locks_forums() {
     }
     assert!(dts.contains("ForumAgentStatus"));
     assert!(dts.contains("ForumNeed"));
+    assert!(dts.contains("ForumOffer"));
+    assert!(dts.contains("forumOfferSoul"));
+    assert!(dts.contains("acceptedOffer"));
+    assert!(dts.contains("/offers/"));
     assert!(dts.contains("ForumAlarm"));
     assert!(dts.contains("ForumRoleMode"));
     assert!(dts.contains("ForumChatItem"));
@@ -199,6 +203,14 @@ fn consume_contract_locks_forums() {
     assert!(gun.contains("cancel-visible-on-next-check"));
     assert!(gun.contains("sgh1-hint-alone-fails-closed"));
     assert!(gun.contains("chat-via-tagged-items"));
+    assert!(gun.contains("see-gated-offer"));
+    assert!(gun.contains("owner-or-subject-accepts"));
+    assert!(gun.contains("decline-or-ignore-stays-open"));
+    assert!(gun.contains("owner-reopen-clears-accepted-offer"));
+    assert!(gun.contains("freeze-body-and-severity"));
+    assert!(gun.contains("hop-status-chat-hint-never-mint"));
+    assert!(md.contains("forumOfferSoul"));
+    assert!(md.contains("acceptedOffer"));
     let lower_dts = dts.to_ascii_lowercase();
     let lower_md = md.to_ascii_lowercase();
     for text in [&lower_dts, &lower_md] {
