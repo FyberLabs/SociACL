@@ -33,7 +33,7 @@ import { decodeKeyring, DOMAIN_KEYRING_PLAIN } from "../contract/keyring-codec.t
 import { emojiVariationBase } from "../contract/emoji-variation.ts";
 import { checkRecoveryPassphrase, RecoveryWeakPassphraseError } from "../contract/passphrase-strength.ts";
 import { encodePassphrase, MemoryRecoveryStore, openRecoveryCopy, signRecoveryOp, type RecoveryEnvelope } from "../contract/recovery-seal.ts";
-import { DOMAIN_STORE_WRITE, HeadFloor, recoveryEnvelopeHash, REPLACED_NONE, signStoreWrite, storeWriteMessage, STORE_CLASS_DELIVERY, STORE_CLASS_GENESIS, verifyStoreWrite, wrapRowHash, wrapCiphertextHash } from "../contract/store-write.ts";
+import { DOMAIN_STORE_WRITE, HeadFloor, recoveryEnvelopeHash, REPLACED_NONE, signStoreWrite, storeWriteMessage, STORE_CLASS_NONE, STORE_CLASS_DELIVERY, STORE_CLASS_GENESIS, verifyStoreWrite, wrapRowHash, wrapCiphertextHash } from "../contract/store-write.ts";
 import { deliverKeyringWith, sealRecoveryCopyWith } from "./support/recovery-deterministic.ts";
 import {
   historyState,
@@ -1779,4 +1779,78 @@ test("legacy backup opens after strength policy changes but cannot reseal weakly
     assert.equal(store.writeGeneration(keyring.principal), 0);
   }
   await assert.rejects(() => openRecoveryCopy(new TextEncoder().encode("wrong"), envelope, keyring.principal, 0, [], context), { message: "recovery-rejected" });
+});
+
+
+test("store generation boundaries preserve rows and return shared errors", () => {
+  const fixture = JSON.parse(readFileSync(new URL("../../vectors/encrypted-discovery/store-generations.json", import.meta.url), "utf8"));
+  assert.equal(recovery.STORE_GENERATION_MAX, fixture.max);
+  const keyring = genesisKeyring(), principal = keyring.principal;
+  const context = witnessedContext();
+  const envelope = dummyEnvelope(principal, 0, keyring.pub, keyring.epub);
+  const wrapId = mintedWrap(principal, 900);
+  for (const row of fixture.cases) {
+    const store = new MemoryRecoveryStore(watch([], context), new HeadFloor());
+    putRecovery(store, envelope, keyring.currentPriv());
+    const changed = { ...envelope, bytes: new Uint8Array(envelope.bytes) };
+    changed.bytes[changed.bytes.length - 1] = changed.bytes[changed.bytes.length - 1]! ^ 1;
+    const readGeneration = store.writeGeneration.bind(store);
+    store.writeGeneration = () => row.generation; // Simulate an adapter's saved generation.
+    const signature = signStoreWrite(keyring.currentPriv(), principal, "put", "0", recoveryEnvelopeHash(changed), "0", recoveryEnvelopeHash(envelope), STORE_CLASS_NONE, String(row.generation));
+    if (row.error) {
+      assert.throws(() => store.put(changed, signature), { message: row.error }, row.name);
+      assert.deepEqual(store.current(principal), envelope);
+      assert.equal(readGeneration(principal), 1);
+    } else {
+      store.put(changed, signature);
+      assert.deepEqual(store.current(principal), changed);
+      assert.equal(readGeneration(principal), row.next);
+      delete (store as { writeGeneration?: unknown }).writeGeneration;
+      assert.throws(() => store.put(changed, signature), /store-rejected/);
+    }
+    const wraps = new MemoryKeyWrapStore(watch([], context), new HeadFloor());
+    putWrap(wraps, principal, wrapId, "delivery", "aa", keyring.currentPriv(), context);
+    const existing = wraps.get(principal, wrapId)!;
+    const replacement = { ...existing, ciphertextHex: "bb" };
+    const readWrapGeneration = wraps.writeGeneration.bind(wraps);
+    wraps.writeGeneration = () => row.generation;
+    const wrapSignature = signStoreWrite(keyring.currentPriv(), principal, "put", wrapId, wrapRowHash(replacement), "0", wrapRowHash(existing), STORE_CLASS_DELIVERY, String(row.generation));
+    if (row.error) {
+      assert.throws(() => wraps.put({ principal, wrapId, epub: existing.epub }, replacement, wrapSignature), { message: row.error }, row.name);
+      assert.deepEqual(wraps.get(principal, wrapId), existing);
+      assert.equal(readWrapGeneration(principal), 1);
+    } else {
+      wraps.put({ principal, wrapId, epub: existing.epub }, replacement, wrapSignature);
+      assert.deepEqual(wraps.get(principal, wrapId), replacement);
+      assert.equal(readWrapGeneration(principal), row.next);
+    }
+  }
+});
+
+test("exhausted generations reject recovery delete/commit and wrap delete before mutation", () => {
+  const keyring = genesisKeyring(), principal = keyring.principal;
+  let head = 0;
+  const chain = () => ({ currentKey: keyring.pub, currentEpub: keyring.epub, rotations: Array.from({ length: head }, (_, i) => ({ seq: i + 1 })) });
+  const store = new MemoryRecoveryStore(chain, new HeadFloor());
+  const current = dummyEnvelope(principal, 0, keyring.pub, keyring.epub);
+  const pending = dummyEnvelope(principal, 1, keyring.pub, keyring.epub);
+  putRecovery(store, current, keyring.currentPriv());
+  putRecovery(store, pending, keyring.currentPriv());
+  store.writeGeneration = () => recovery.STORE_GENERATION_MAX;
+  const deleteSignature = signRecoveryOp(store, keyring.currentPriv(), principal, "delete", 0, recoveryEnvelopeHash(current), recoveryEnvelopeHash(current));
+  assert.throws(() => store.delete(principal, 0, deleteSignature), /store-rejected/);
+  head = 1;
+  const commitSignature = signRecoveryOp(store, keyring.currentPriv(), principal, "commit", 1, recoveryEnvelopeHash(pending), recoveryEnvelopeHash(current));
+  assert.throws(() => store.commit(principal, commitSignature), /store-rejected/);
+  assert.deepEqual(store.current(principal), current);
+  assert.deepEqual(store.pending(principal), pending);
+  const wraps = new MemoryKeyWrapStore(chain, new HeadFloor());
+  const wrapId = mintedWrap(principal, 901);
+  putWrap(wraps, principal, wrapId, "delivery", "aa", keyring.currentPriv(), witnessedContext());
+  const saved = wraps.get(principal, wrapId)!;
+  wraps.writeGeneration = () => recovery.STORE_GENERATION_MAX;
+  const hash = wrapRowHash(saved);
+  const signature = signStoreWrite(keyring.currentPriv(), principal, "delete", wrapId, hash, "1", hash, STORE_CLASS_DELIVERY, String(recovery.STORE_GENERATION_MAX));
+  assert.throws(() => wraps.delete(principal, wrapId, signature), /store-rejected/);
+  assert.deepEqual(wraps.get(principal, wrapId), saved);
 });

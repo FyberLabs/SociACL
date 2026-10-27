@@ -26,6 +26,17 @@ import { canonicalDecimal, lengthPrefixed, sha256Hex } from "./canonical.ts";
 
 export const DOMAIN_STORE_WRITE = "sociacl-store-write-v1";
 
+/** Largest persisted generation; writes at this value must fail closed. */
+export const STORE_GENERATION_MAX = Number.MAX_SAFE_INTEGER;
+
+/** Preflight before mutating a row; never round, wrap, saturate, or reset. */
+export function nextStoreGeneration(generation: number): number {
+  if (!Number.isSafeInteger(generation) || generation < 0 || generation >= STORE_GENERATION_MAX) {
+    throw new Error("store-rejected");
+  }
+  return generation + 1;
+}
+
 /** Predecessor field when the row being replaced is absent. */
 export const REPLACED_NONE = "none";
 

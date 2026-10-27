@@ -31,6 +31,17 @@ use crate::sea;
 /// Domain for an authenticated store write. Not a wrap or recovery seal domain.
 pub const DOMAIN_STORE_WRITE: &str = "sociacl-store-write-v1";
 
+/// Largest persisted generation; writes at this value must fail closed.
+pub const STORE_GENERATION_MAX: u64 = 9_007_199_254_740_991;
+
+/// Preflight before mutating a row; never wrap, saturate, or reset.
+pub(crate) fn next_store_generation(generation: u64) -> Result<u64, EncDiscError> {
+    if generation >= STORE_GENERATION_MAX {
+        return Err(EncDiscError::StoreRejected);
+    }
+    Ok(generation + 1)
+}
+
 /// Predecessor field when the row being replaced is absent.
 pub const REPLACED_NONE: &str = "none";
 

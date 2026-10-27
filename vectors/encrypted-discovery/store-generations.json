@@ -1,0 +1,25 @@
+{
+  "max": 9007199254740991,
+  "cases": [
+    {
+      "name": "initial",
+      "generation": 0,
+      "next": 1
+    },
+    {
+      "name": "last-write",
+      "generation": 9007199254740990,
+      "next": 9007199254740991
+    },
+    {
+      "name": "exhausted",
+      "generation": 9007199254740991,
+      "error": "store-rejected"
+    },
+    {
+      "name": "unsafe-restored-value",
+      "generation": 9007199254740992,
+      "error": "store-rejected"
+    }
+  ]
+}

@@ -209,7 +209,7 @@ pub use store_write::{
     resolve_store_account, sign_store_write, store_write_message, verify_store_write,
     wrap_ciphertext_hash, wrap_row_hash,
     HeadFloor, PublishedChain, DOMAIN_STORE_WRITE, REPLACED_NONE, STORE_CLASS_DELIVERY,
-    STORE_CLASS_GENESIS, STORE_CLASS_NONE,
+    STORE_CLASS_GENESIS, STORE_CLASS_NONE, STORE_GENERATION_MAX,
 };
 pub use wrap::{
     open_group_epoch_wrap, open_reader_wrap, wrap_group_key_to_members,

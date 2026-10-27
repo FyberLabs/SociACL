@@ -528,6 +528,7 @@ impl<C: crate::store_write::PublishedChain> KeyWrapStore for MemoryKeyWrapStore<
             return Err(EncDiscError::StoreRejected);
         }
         let (account, head, generation) = self.resolved(&wrap.principal)?;
+        let next_generation = crate::store_write::next_store_generation(generation)?;
         let key = wrap.principal.as_ref().to_string();
         let existing = self
             .by_principal
@@ -565,7 +566,7 @@ impl<C: crate::store_write::PublishedChain> KeyWrapStore for MemoryKeyWrapStore<
             .or_default()
             .insert(wrap.wrap_id.as_ref().to_string(), wrap.clone());
         self.head_floor.raise(&key, head);
-        self.generation.insert(key, generation.saturating_add(1));
+        self.generation.insert(key, next_generation);
         Ok(())
     }
 
@@ -576,6 +577,7 @@ impl<C: crate::store_write::PublishedChain> KeyWrapStore for MemoryKeyWrapStore<
         store_signature: &str,
     ) -> Result<(), EncDiscError> {
         let (account, head, generation) = self.resolved(principal)?;
+        let next_generation = crate::store_write::next_store_generation(generation)?;
         let key = principal.as_ref().to_string();
         let row = self
             .by_principal
@@ -608,7 +610,7 @@ impl<C: crate::store_write::PublishedChain> KeyWrapStore for MemoryKeyWrapStore<
             self.by_principal.remove(principal.as_ref());
         }
         self.head_floor.raise(&key, head);
-        self.generation.insert(key, generation.saturating_add(1));
+        self.generation.insert(key, next_generation);
         Ok(())
     }
 
@@ -1411,6 +1413,111 @@ mod tests {
                 Err(EncDiscError::StoreRejected)
             ));
             assert_eq!(store.write_generation(account.principal()), 1);
+        }
+    }
+
+    #[test]
+    fn store_generation_boundaries_preserve_wrap_rows() {
+        let fixture: Value = serde_json::from_str(include_str!(
+            "../../../vectors/encrypted-discovery/store-generations.json"
+        ))
+        .unwrap();
+        let v = vector();
+        let account = fixture_account(&v);
+        let principal = account.principal();
+        let wrap_id = parse_wrap_object(v["backupWrap"]["wrapId"].as_str().unwrap()).unwrap();
+        let parts = empty_resolution();
+        let context = parts.context();
+        let wrap = EncryptedAccountWrap {
+            principal: principal.clone(),
+            wrap_id: wrap_id.clone(),
+            epub: account.epub().to_string(),
+            class: WrapClass::Delivery,
+            ciphertext_hex: "aa".to_string(),
+            signature: "ab".repeat(64),
+        };
+        let index = WrapIndex {
+            principal: principal.clone(),
+            wrap_id,
+            epub: account.epub().to_string(),
+        };
+        for row in fixture["cases"].as_array().unwrap() {
+            let mut store = MemoryKeyWrapStore::new(watch(&[], &context), crate::HeadFloor::new());
+            let hash = wrap_row_hash(&wrap).unwrap();
+            let signature =
+                sign_wrap_write(&store, account.local_priv(), &wrap, "put", &hash).unwrap();
+            store.put_wrap(&index, &wrap, &signature).unwrap();
+            let generation = row["generation"].as_u64().unwrap();
+            store
+                .generation
+                .insert(principal.as_ref().to_string(), generation);
+            let mut changed = wrap.clone();
+            changed.ciphertext_hex = "bb".to_string();
+            let signature = crate::sign_store_write(
+                account.local_priv(),
+                principal,
+                "put",
+                wrap.wrap_id.as_ref(),
+                &wrap_row_hash(&changed).unwrap(),
+                "0",
+                &hash,
+                crate::STORE_CLASS_DELIVERY,
+                &generation.to_string(),
+            )
+            .unwrap();
+            let result = store.put_wrap(&index, &changed, &signature);
+            if row.get("error").is_some() {
+                assert_eq!(result.unwrap_err(), EncDiscError::StoreRejected);
+                assert_eq!(
+                    store
+                        .get_wrap(principal, &wrap.wrap_id)
+                        .unwrap()
+                        .unwrap()
+                        .ciphertext_hex,
+                    "aa"
+                );
+                assert_eq!(store.write_generation(principal), generation);
+                let signature = crate::sign_store_write(
+                    account.local_priv(),
+                    principal,
+                    "delete",
+                    wrap.wrap_id.as_ref(),
+                    &hash,
+                    "0",
+                    &hash,
+                    crate::STORE_CLASS_DELIVERY,
+                    &generation.to_string(),
+                )
+                .unwrap();
+                assert_eq!(
+                    store
+                        .delete_wrap(principal, &wrap.wrap_id, &signature)
+                        .unwrap_err(),
+                    EncDiscError::StoreRejected
+                );
+                assert_eq!(
+                    store
+                        .get_wrap(principal, &wrap.wrap_id)
+                        .unwrap()
+                        .unwrap()
+                        .ciphertext_hex,
+                    "aa"
+                );
+            } else {
+                result.unwrap();
+                assert_eq!(
+                    store.write_generation(principal),
+                    row["next"].as_u64().unwrap()
+                );
+                assert_eq!(
+                    store
+                        .get_wrap(principal, &wrap.wrap_id)
+                        .unwrap()
+                        .unwrap()
+                        .ciphertext_hex,
+                    "bb"
+                );
+            }
         }
     }
 
