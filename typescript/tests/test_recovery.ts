@@ -30,6 +30,7 @@ import * as recovery from "../contract/recovery.ts";
 import { canonicalDecimal, lengthPrefixed } from "../contract/canonical.ts";
 import { deriveContactLane } from "../contract/contact-lane.ts";
 import { decodeKeyring, DOMAIN_KEYRING_PLAIN } from "../contract/keyring-codec.ts";
+import { emojiVariationBase } from "../contract/emoji-variation.ts";
 import { checkRecoveryPassphrase, RecoveryWeakPassphraseError } from "../contract/passphrase-strength.ts";
 import { encodePassphrase, MemoryRecoveryStore, openRecoveryCopy, signRecoveryOp, type RecoveryEnvelope } from "../contract/recovery-seal.ts";
 import { DOMAIN_STORE_WRITE, HeadFloor, recoveryEnvelopeHash, REPLACED_NONE, signStoreWrite, storeWriteMessage, STORE_CLASS_DELIVERY, STORE_CLASS_GENESIS, verifyStoreWrite, wrapRowHash, wrapCiphertextHash } from "../contract/store-write.ts";
@@ -1700,4 +1701,29 @@ test("strength estimator inputs match shared ASCII handle deduplication", async 
     assert.deepEqual(observed.at(-1), row.inputs, row.name);
   }
   assert.equal(observed.length, fixture.cases.length);
+});
+
+
+test("shared emoji variation bases and boundaries", () => {
+  const fixture = JSON.parse(readFileSync(new URL("../../vectors/encrypted-discovery/emoji-variation.json", import.meta.url), "utf8")) as { bases: number[] };
+  const bases = new Set(fixture.bases);
+  assert.equal(bases.size, 371);
+  for (const base of bases) {
+    for (const cp of [base - 1, base, base + 1]) {
+      assert.equal(emojiVariationBase(cp), bases.has(cp), cp.toString(16));
+    }
+  }
+});
+
+test("emoji presentation is retained in recovery key derivation", async () => {
+  const text = "flint-parcel-quantum-marble-92❤️";
+  const passphrase = encodePassphrase(text);
+  assert.equal(new TextDecoder().decode(passphrase), text);
+  const keyring = genesisKeyring();
+  const context = witnessedContext();
+  const store = new MemoryRecoveryStore(watch([], context), new HeadFloor());
+  const sealed = await recovery.sealRecoveryCopy(keyring, passphrase, store);
+  const restored = await openRecoveryCopy(passphrase, sealed, keyring.principal, 0, [], context);
+  assert.equal(restored.currentPriv(), keyring.currentPriv());
+  await assert.rejects(openRecoveryCopy(encodePassphrase(text.replace("\uFE0F", "")), sealed, keyring.principal, 0, [], context));
 });

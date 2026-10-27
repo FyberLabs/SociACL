@@ -84,6 +84,7 @@
 
 #![forbid(unsafe_code)]
 
+mod emoji_variation;
 mod account;
 mod canonical;
 mod contact_lane;

@@ -11,6 +11,7 @@
  * The error carries the score and feedback for the UI. It does not carry
  * the passphrase. Callers must not log the passphrase.
  */
+import { emojiVariationBase } from "./emoji-variation.ts";
 import { passphraseHidden } from "./unicode16.ts";
 
 const MIN_VISIBLE = 12;
@@ -65,19 +66,31 @@ export async function checkRecoveryPassphrase(
     throw new RecoveryWeakPassphraseError(0, "passphrase must be Unicode text", []);
   }
   const nfc = text.normalize("NFC");
-  const chars = [...nfc];
-  if (chars.some((ch) => passphraseHidden(ch.codePointAt(0) ?? -1))) {
-    throw new RecoveryWeakPassphraseError(0, "passphrase contains a hidden character", []);
+  const visible: string[] = [];
+  let previous = -1;
+  for (const ch of nfc) {
+    const cp = ch.codePointAt(0)!;
+    // Presentation selectors change rendering, not strength or visible length.
+    if (cp === 0xfe0f && emojiVariationBase(previous)) {
+      previous = cp;
+      continue;
+    }
+    if (passphraseHidden(cp)) {
+      throw new RecoveryWeakPassphraseError(0, "passphrase contains a hidden character", []);
+    }
+    visible.push(ch);
+    previous = cp;
   }
-  if (chars.length < MIN_VISIBLE) {
+  if (visible.length < MIN_VISIBLE) {
     throw new RecoveryWeakPassphraseError(0, "passphrase needs at least 12 visible characters", []);
   }
   const inputs = [principal];
-  if (handle && handle.length > 0 && asciiLower(handle) !== asciiLower(principal)) {
-    inputs.push(handle);
+  const scoringHandle = handle?.replace(/\uFE0F/gu, "");
+  if (scoringHandle && asciiLower(scoringHandle) !== asciiLower(principal)) {
+    inputs.push(scoringHandle);
   }
   const estimator = await loadEstimator();
-  const result = estimator.check(nfc, inputs);
+  const result = estimator.check(visible.join(""), inputs);
   if (result.score >= MIN_SCORE) return;
   throw new RecoveryWeakPassphraseError(
     result.score,

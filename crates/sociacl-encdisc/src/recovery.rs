@@ -1570,6 +1570,26 @@ mod tests {
     }
 
     #[test]
+    fn emoji_presentation_is_retained_in_recovery_key_derivation() {
+        let text = "flint-parcel-quantum-marble-92❤️";
+        let passphrase = encode_passphrase(text).unwrap();
+        assert_eq!(passphrase.as_slice(), text.as_bytes());
+        let held = hold();
+        let context = context_of(&held);
+        let keyring = genesis_keyring();
+        let mut store = MemoryRecoveryStore::new(watch(&[], &context), crate::HeadFloor::new());
+        let sealed = seal_recovery_copy(&keyring, &passphrase, &mut store, None).unwrap();
+        let restored = open_recovery_copy(
+            &passphrase, &sealed, keyring.principal(), 0, &[], &context,
+        ).unwrap();
+        assert_eq!(restored.current_priv(), keyring.current_priv());
+        let stripped = encode_passphrase(&text.replace('\u{fe0f}', "")).unwrap();
+        assert!(open_recovery_copy(
+            &stripped, &sealed, keyring.principal(), 0, &[], &context,
+        ).is_err());
+    }
+
+    #[test]
     fn store_write_bytes_match_the_shared_vector() {
         let v = recovery();
         let write = &v["storeWrite"];

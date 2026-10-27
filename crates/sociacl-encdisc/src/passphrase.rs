@@ -34,17 +34,23 @@ pub fn check_recovery_passphrase(
     for ch in text.nfc() {
         nfc.push(ch);
     }
-    if nfc
-        .chars()
-        .any(|ch| crate::unicode16::passphrase_hidden(ch as u32))
-    {
-        return Err(weak(
-            0,
-            "passphrase contains a hidden character",
-            Vec::new(),
-        ));
+    let mut scoring_text = Zeroizing::new(String::new());
+    let mut visible = 0;
+    let mut previous = None;
+    for ch in nfc.chars() {
+        let cp = ch as u32;
+        // Presentation selectors change rendering, not strength or visible length.
+        if cp == 0xfe0f && previous.is_some_and(crate::emoji_variation::emoji_variation_base) {
+            previous = Some(cp);
+            continue;
+        }
+        if crate::unicode16::passphrase_hidden(cp) {
+            return Err(weak(0, "passphrase contains a hidden character", Vec::new()));
+        }
+        scoring_text.push(ch);
+        visible += 1;
+        previous = Some(cp);
     }
-    let visible = nfc.chars().count();
     if visible < MIN_VISIBLE {
         return Err(weak(
             0,
@@ -52,8 +58,9 @@ pub fn check_recovery_passphrase(
             Vec::new(),
         ));
     }
-    let inputs = strength_inputs(principal.as_ref(), handle);
-    let entropy = zxcvbn::zxcvbn(nfc.as_str(), &inputs);
+    let scoring_handle = scoring_handle(handle);
+    let inputs = strength_inputs(principal.as_ref(), scoring_handle.as_deref());
+    let entropy = zxcvbn::zxcvbn(scoring_text.as_str(), &inputs);
     let score = u8::from(entropy.score());
     if score >= MIN_SCORE {
         return Ok(());
@@ -84,6 +91,11 @@ fn weak(score: u8, warning: impl Into<String>, suggestions: Vec<String>) -> EncD
     }
 }
 
+// The handle hint uses the same presentation-insensitive text as the score input.
+fn scoring_handle(handle: Option<&str>) -> Option<String> {
+    handle.map(|value| value.replace('\u{fe0f}', ""))
+}
+
 // ASCII-only comparison matches TypeScript; retain distinct Unicode handles verbatim.
 fn strength_inputs<'a>(principal: &'a str, handle: Option<&'a str>) -> Vec<&'a str> {
     let mut inputs = vec![principal];
@@ -97,7 +109,7 @@ fn strength_inputs<'a>(principal: &'a str, handle: Option<&'a str>) -> Vec<&'a s
 
 #[cfg(test)]
 mod tests {
-    use super::strength_inputs;
+    use super::{scoring_handle, strength_inputs};
 
     #[test]
     fn shared_strength_inputs_use_ascii_handle_deduplication() {
@@ -113,8 +125,9 @@ mod tests {
                 .iter()
                 .map(|value| value.as_str().unwrap())
                 .collect();
+            let handle = scoring_handle(row["handle"].as_str());
             assert_eq!(
-                strength_inputs(principal, row["handle"].as_str()),
+                strength_inputs(principal, handle.as_deref()),
                 expected,
                 "{}",
                 row["name"]
