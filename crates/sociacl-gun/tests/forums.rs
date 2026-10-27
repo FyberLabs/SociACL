@@ -1,18 +1,21 @@
 //! Forum acceptance vectors. Dest ACL is the grant. A hint is not.
 //! Resolve does not elect. Chat is a tagged item.
 
+use p256::elliptic_curve::sec1::ToEncodedPoint;
 use serde_json::Value;
 use sociacl_gun::{
-    accept_hint, accept_hint_bytes, forum_agent_soul, forum_alarm_soul, forum_chat_tag,
-    forum_chat_tag_present, forum_chat_tags, forum_emergency_alarm, forum_need_soul,
-    forum_role_soul, forum_roles_match, forum_subtask_soul, forum_template_soul, forum_update_soul,
-    from_gun_node, is_separate_chat_soul, to_gun_node, FeedItem, FeedSource, ForumAgentState,
-    ForumAgentStatus, ForumAlarm, ForumNeed, ForumNeedSeverity, ForumRoleMembership, ForumRoleMode,
-    ForumTemplate, GunFeedNode, HandoffHint, HopFactor, MeshSeeGraph,
+    accept_hint, accept_hint_bytes, accept_need_transition, forum_agent_soul, forum_alarm_soul,
+    forum_chat_tag, forum_chat_tag_present, forum_chat_tags, forum_emergency_alarm,
+    forum_need_soul, forum_role_soul, forum_roles_match, forum_subtask_soul, forum_template_soul,
+    forum_update_soul, from_gun_node, is_separate_chat_soul, split_tags, to_gun_node, FeedItem,
+    FeedSource, ForumAgentState, ForumAgentStatus, ForumAlarm, ForumNeed, ForumNeedSeverity,
+    ForumRoleMembership, ForumRoleMode, ForumTemplate, GunError, GunFeedNode, HandoffHint,
+    HopFactor, MeshSeeGraph,
 };
 use sociacl_ids::{
-    history_state, mint_object_id_with, object_principal, parse_object_id, parse_principal_id,
-    parse_soul, ObjectId, PrincipalId, Reason, ResolutionContext,
+    history_state, mint_object_id_with, object_principal, object_record_bytes, parse_object_id,
+    parse_principal_id, parse_soul, principal_from_sec1, see_grant_bytes, sign_with_keyring,
+    ObjectId, ObjectRecord, PrincipalId, Reason, ResolutionContext, SeeGrant,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -291,6 +294,16 @@ fn resolve_need_does_not_elect() {
         alarm.pins_open_emergency(&resolved),
         row["pinsResolved"].as_bool().unwrap()
     );
+    assert_eq!(
+        accept_need_transition(&hold.graph, &open, &resolved, &agent, 10),
+        Err(GunError::ObjectNotInGraph)
+    );
+    assert!(alarm.pins_open_emergency(&open));
+    assert!(forum_emergency_alarm(
+        &[ForumAgentState::Idle],
+        Some(&alarm),
+        Some(&open)
+    ));
     assert!(hold.graph.admitted_owner(&need_id).is_none());
     assert_eq!(
         hold.graph.admitted_owner(&hold.object).unwrap().0.clone(),
@@ -306,6 +319,213 @@ fn resolve_need_does_not_elect() {
             .check_see(&hold.object, &hold.owner, 10, None, None)
             .allowed
     );
+}
+
+fn sea_signer(byte: u8) -> (PrincipalId, [u8; 32]) {
+    let mut scalar = [0u8; 32];
+    scalar[31] = byte;
+    let secret = p256::SecretKey::from_slice(&scalar).unwrap();
+    let point = secret.public_key().to_encoded_point(false);
+    let principal = principal_from_sec1(point.as_bytes()).unwrap();
+    (principal, scalar)
+}
+
+fn signed_object(object: &ObjectId, owner: &PrincipalId, scalar: &[u8], issued_at: u64) -> Value {
+    let unsigned = ObjectRecord {
+        object: object.clone(),
+        owner: owner.clone(),
+        issued_at,
+        sig: String::new(),
+    };
+    let sig = sign_with_keyring(scalar, &object_record_bytes(&unsigned), owner).unwrap();
+    serde_json::json!({
+        "object": object.as_ref(),
+        "owner": owner.as_ref(),
+        "issuedAt": issued_at,
+        "sig": sig,
+    })
+}
+
+fn signed_see(
+    owner: &PrincipalId,
+    scalar: &[u8],
+    object: &ObjectId,
+    accessor: &PrincipalId,
+    stated: u8,
+    ham_state: u64,
+    issued_at: u64,
+) -> Value {
+    let unsigned = SeeGrant {
+        owner: owner.clone(),
+        object: object.clone(),
+        accessor: accessor.clone(),
+        stated,
+        from: 0,
+        until: 4_000_000_000,
+        ham_state,
+        issued_at,
+        sig: String::new(),
+        attest: None,
+    };
+    let sig = sign_with_keyring(scalar, &see_grant_bytes(&unsigned), owner).unwrap();
+    serde_json::json!({
+        "owner": owner.as_ref(),
+        "object": object.as_ref(),
+        "accessor": accessor.as_ref(),
+        "stated": stated,
+        "from": 0,
+        "until": 4_000_000_000u64,
+        "hamState": ham_state,
+        "issuedAt": issued_at,
+        "sig": sig,
+    })
+}
+
+#[test]
+fn need_transition_checks_the_need_dest_acl() {
+    let (owner, owner_scalar) = sea_signer(1);
+    let (delegate, _) = sea_signer(2);
+    let (stranger, _) = sea_signer(3);
+    let forum: ObjectId = vector()["forumId"].as_str().unwrap().parse().unwrap();
+    let need_id = mint_object_id_with("need", &owner, |bytes| {
+        bytes.fill(0x22);
+        Ok(())
+    })
+    .unwrap();
+    let need_id = need_id.object_id().clone();
+    assert_eq!(object_principal(&need_id).unwrap(), owner);
+    assert_ne!(owner, delegate);
+
+    let open = ForumNeed {
+        id: need_id.clone(),
+        forum_id: forum.clone(),
+        subject: delegate.clone(),
+        severity: ForumNeedSeverity::Emergency,
+        body: "blocked".into(),
+        stated: 1,
+        ham_state: 1,
+        ts: 11,
+    };
+    let alarm = ForumAlarm {
+        forum_id: forum,
+        need: need_id.clone(),
+        pinned: 1,
+    };
+    let resolved = ForumNeed {
+        stated: 0,
+        ham_state: 2,
+        ..open.clone()
+    };
+    let attack = ForumNeed {
+        stated: 0,
+        ham_state: 9,
+        ..open.clone()
+    };
+
+    let file = see_file();
+    let raw = &file["context"];
+    let mut graph = MeshSeeGraph::new();
+    let jwks = serde_json::from_value(raw["jwks"].clone()).unwrap();
+    let policy = serde_json::from_value(raw["policy"].clone()).unwrap();
+    let links = BTreeMap::new();
+    let pinned = BTreeSet::new();
+    let now = raw["now"].as_u64().unwrap();
+    let issued_at = 1_700_000_000;
+    let history = |principal: &PrincipalId, at, until| Ok(history_state(principal, &[], at, until));
+    let ctx = ResolutionContext {
+        jwks: &jwks,
+        links: &links,
+        revocations: &[],
+        now,
+        policy: &policy,
+        pinned_iss: &pinned,
+        history: &history,
+        genesis_epub_bindings: &[],
+    };
+    let resolver = |_principal: &PrincipalId| Some(Vec::new());
+
+    assert_eq!(
+        accept_need_transition(&graph, &open, &attack, &stranger, now),
+        Err(GunError::ObjectNotInGraph)
+    );
+    assert!(alarm.pins_open_emergency(&open));
+
+    let record = signed_object(&need_id, &owner, &owner_scalar, issued_at);
+    assert_eq!(graph.put_object(&record, &resolver, &ctx), Ok(true));
+    let admitted_at = graph.admitted_owner(&need_id).unwrap().1;
+    let hint = HandoffHint::parse(
+        stranger.as_ref(),
+        need_id.as_ref(),
+        Some("see"),
+        Some("resolve"),
+    )
+    .unwrap();
+    assert!(
+        !graph
+            .check_see(&need_id, &stranger, now, Some(&hint), None)
+            .allowed
+    );
+    assert_eq!(
+        accept_need_transition(&graph, &open, &attack, &stranger, now),
+        Err(GunError::ForumSoul)
+    );
+    assert!(alarm.pins_open_emergency(&open));
+    assert!(forum_emergency_alarm(
+        &[ForumAgentState::Idle],
+        Some(&alarm),
+        Some(&open)
+    ));
+    assert_eq!(graph.admitted_owner(&need_id).unwrap().0, &owner);
+    assert_eq!(graph.admitted_owner(&need_id).unwrap().1, admitted_at);
+
+    let same_ham = ForumNeed {
+        stated: 0,
+        ham_state: 1,
+        ..open.clone()
+    };
+    assert_eq!(
+        accept_need_transition(&graph, &open, &same_ham, &owner, now),
+        Err(GunError::ForumSoul)
+    );
+
+    let grant = signed_see(&owner, &owner_scalar, &need_id, &delegate, 1, 4, issued_at);
+    graph
+        .admit_row(&grant, &resolver, &ctx)
+        .expect("delegate grant");
+    let by_delegate = accept_need_transition(&graph, &open, &resolved, &delegate, now).unwrap();
+    assert_eq!(by_delegate.stated, 0);
+    assert_eq!(by_delegate.ham_state, 2);
+    assert!(!alarm.pins_open_emergency(&by_delegate));
+    assert!(!forum_emergency_alarm(
+        &[ForumAgentState::Idle],
+        Some(&alarm),
+        Some(&by_delegate)
+    ));
+    assert!(forum_emergency_alarm(
+        &[ForumAgentState::Emergency],
+        Some(&alarm),
+        Some(&by_delegate)
+    ));
+    assert_eq!(graph.admitted_owner(&need_id).unwrap().0, &owner);
+    assert_eq!(graph.admitted_owner(&need_id).unwrap().1, admitted_at);
+
+    let cancel = signed_see(&owner, &owner_scalar, &need_id, &delegate, 0, 5, issued_at);
+    graph
+        .admit_row(&cancel, &resolver, &ctx)
+        .expect("delegate cancel");
+    let later = ForumNeed {
+        ham_state: 3,
+        ..resolved.clone()
+    };
+    assert_eq!(
+        accept_need_transition(&graph, &open, &later, &delegate, now),
+        Err(GunError::ForumSoul)
+    );
+    let by_owner = accept_need_transition(&graph, &open, &resolved, &owner, now).unwrap();
+    assert_eq!(by_owner.stated, 0);
+    assert_eq!(by_owner.soul().unwrap().join(), open.soul().unwrap().join());
+    assert_eq!(graph.admitted_owner(&need_id).unwrap().0, &owner);
+    assert_eq!(graph.admitted_owner(&need_id).unwrap().1, admitted_at);
 }
 
 #[test]
@@ -438,6 +658,9 @@ fn chat_via_tagged_items() {
     assert!(forum_chat_tags(&forum, ["s3rch/chat/1"]).is_err());
     assert!(forum_chat_tags(&forum, ["Urgent"]).is_err());
     assert!(forum_chat_tags(&forum, ["chat"]).is_err());
+    assert!(forum_chat_tags(&forum, ["report,chat"]).is_err());
+    let joined = forum_chat_tags(&forum, ["report"]).unwrap();
+    assert!(!split_tags(&joined).iter().any(|tag| tag == "chat"));
     assert!(forum_role_soul(
         &forum,
         "chat",

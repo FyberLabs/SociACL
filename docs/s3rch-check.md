@@ -64,11 +64,11 @@ Per-agent status stores `task`, `result`, `needs`, `progress`, `state`, `lastPro
 
 The template mode is `distinct-principals` or `role-labels`. Distinct principals: each role token names a different SEA principal. Role labels: one SEA principal wears several role tokens. The role token is lowercase letters, digits, and hyphen. A display title is not the token. A role token is not a Check predicate. An `@role` in chat is addressing, not authority.
 
-Chat is a `GunFeedNode` under `s3rch/items`. `ForumChatItem` is that type. `tags` includes `forum:<forumId>`. Extra tags stay as written. A tag that is not already lowercase is rejected, and so is the tag `chat`. There is no `s3rch/chat` soul and no `s3rch/forums/<forumId>/chat` soul. `GunFeedNode` does not gain a field.
+Chat is a `GunFeedNode` under `s3rch/items`. `ForumChatItem` is that type. `tags` includes `forum:<forumId>`. Extra tags stay as written. A tag that is not already lowercase is rejected, and so is the tag `chat`. A comma in one extra tag is rejected. There is no `s3rch/chat` soul and no `s3rch/forums/<forumId>/chat` soul. `GunFeedNode` does not gain a field.
 
 The global alarm reads status tiles whose `state` is `emergency` and the pinned need at `forumAlarmSoul`. The pin counts when that need is an open emergency (`severity` `emergency`, `stated` 1). Either input is enough. The alarm node is not a grant.
 
-Resolve on a need is an owner or delegate dest-ACL write: `stated` 0 and a `hamState` bump, or a grant for who may write. The admitted object owner stays the owner. A missing dest-ACL row denies Check. A cancel is visible on the next Check. An SGH1 hint alone fails closed. A status node, a chat tag, and a hint do not mint.
+Resolve on a need is an owner or delegate dest-ACL write: `stated` 0 and a `hamState` bump, or a grant for who may write. The update is accepted only when Check see allows the writer on that need id. A missing admission does not accept the update. The admitted object owner stays the owner. A missing dest-ACL row denies Check. A cancel is visible on the next Check. An SGH1 hint alone fails closed. A status node, a chat tag, and a hint do not mint.
 
 ## Mesh
 

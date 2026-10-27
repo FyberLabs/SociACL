@@ -57,11 +57,11 @@ pub use feed::{
     IdentityClaimKind, IdentitySeeGrant, OffGraphKind,
 };
 pub use forum::{
-    forum_agent_soul, forum_alarm_soul, forum_chat_tag, forum_chat_tag_present, forum_chat_tags,
-    forum_emergency_alarm, forum_need_soul, forum_role_soul, forum_roles_match, forum_subtask_soul,
-    forum_template_soul, forum_update_soul, is_separate_chat_soul, ForumAgentState,
-    ForumAgentStatus, ForumAlarm, ForumNeed, ForumNeedSeverity, ForumRoleMembership, ForumRoleMode,
-    ForumTemplate,
+    accept_need_transition, forum_agent_soul, forum_alarm_soul, forum_chat_tag,
+    forum_chat_tag_present, forum_chat_tags, forum_emergency_alarm, forum_need_soul,
+    forum_role_soul, forum_roles_match, forum_subtask_soul, forum_template_soul, forum_update_soul,
+    is_separate_chat_soul, ForumAgentState, ForumAgentStatus, ForumAlarm, ForumNeed,
+    ForumNeedSeverity, ForumRoleMembership, ForumRoleMode, ForumTemplate,
 };
 pub use group::{
     DecodedGroupPayload, GroupPredicate, GroupPresentation, GroupSnapshotMember,

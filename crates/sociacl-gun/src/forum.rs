@@ -4,13 +4,15 @@
 //! Panopticon OAuth subject are linked credentials. They are not this key.
 //!
 //! Chat is a tagged [`crate::GunFeedNode`] under `s3rch/items`. These
-//! builders do not create a chat tree. Resolve of a need is a dest-ACL
-//! write on the existing Check path. It does not elect an owner.
+//! builders do not create a chat tree. A stated or ham update on a need
+//! is accepted only when Check see allows the writer on that need.
+//! It does not elect an owner.
 
 use std::collections::BTreeSet;
 
 use sociacl_ids::{object_principal, parse_object_id, parse_principal_id, ObjectId, PrincipalId};
 
+use crate::mesh::MeshSeeGraph;
 use crate::soul::{GunSoul, S3RCH_FORUMS, S3RCH_ROOT};
 use crate::GunError;
 
@@ -184,8 +186,10 @@ impl ForumAgentStatus {
 /// does not compare it to `forum_id` or to the principal embedded in
 /// that id.
 ///
-/// Resolve is an owner or delegate dest-ACL write. The admitted object
-/// owner stays the owner.
+/// A stated or `ham_state` update is accepted only by
+/// [`accept_need_transition`]. The writer must pass Check see on this
+/// need: the admitted owner, or a live delegate. A missing admission
+/// does not accept the update. The admitted owner stays the owner.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ForumNeed {
     pub id: ObjectId,
@@ -212,6 +216,40 @@ impl ForumNeed {
         self.validate()?;
         forum_need_soul(&self.forum_id, &self.id)
     }
+}
+
+/// Accept `next` as the stored need only when `writer` may write it.
+///
+/// Check see runs on `current.id`. The admitted owner passes. A live
+/// delegate passes. A missing admission, a cancelled delegate, and any
+/// other writer do not. `next.ham_state` must be strictly greater.
+/// `id`, `forum_id`, and `subject` stay. This does not admit an owner
+/// and it does not read a hint or a hop.
+pub fn accept_need_transition(
+    graph: &MeshSeeGraph,
+    current: &ForumNeed,
+    next: &ForumNeed,
+    writer: &PrincipalId,
+    now: u64,
+) -> Result<ForumNeed, GunError> {
+    current.validate()?;
+    next.validate()?;
+    if next.id != current.id || next.forum_id != current.forum_id || next.subject != current.subject
+    {
+        return Err(GunError::ForumSoul);
+    }
+    if next.ham_state <= current.ham_state {
+        return Err(GunError::ForumSoul);
+    }
+    let seen = graph.check_see(&current.id, writer, now, None, None);
+    if !seen.allowed {
+        return Err(if seen.reason == "unknown" {
+            GunError::ObjectNotInGraph
+        } else {
+            GunError::ForumSoul
+        });
+    }
+    Ok(next.clone())
 }
 
 /// Pinned emergency need for one forum.
@@ -388,6 +426,7 @@ pub fn forum_chat_tag(forum: &ObjectId) -> Result<String, GunError> {
 ///
 /// The forum tag is first. Extra tags stay as written: a tag that is
 /// not already lowercase is rejected, and so is the tag `chat`.
+/// A comma is rejected, so one extra cannot become two tags on read.
 /// A repeated extra is kept once. Nothing here is lowercased.
 pub fn forum_chat_tags(
     forum: &ObjectId,
@@ -593,7 +632,7 @@ fn tag_token_ok(tag: &str) -> bool {
         && tag == tag.to_ascii_lowercase()
         && !tag.contains('/')
         && !tag.contains(".get(")
-        && !tag.contains(['#', '$', '[', ']', '~'])
+        && !tag.contains([',', '#', '$', '[', ']', '~'])
         && tag.chars().all(|c| !c.is_control() && !c.is_whitespace())
 }
 

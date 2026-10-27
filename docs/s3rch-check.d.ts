@@ -114,8 +114,11 @@ export type ForumAgentStatus = {
  * s3rch/forums/<forumId>/needs/<needId>
  * `stated` 1 is open. `stated` 0 is resolved.
  * Resolve is an owner or delegate dest-ACL write (privilege-down
- * or a grant for who may write). The admitted object owner stays
- * the owner. A status node, a chat item, and a hint do not mint.
+ * or a grant for who may write). A stated or hamState update is
+ * accepted only when Check see allows the writer on this need id.
+ * A missing admission does not accept the update. The admitted
+ * object owner stays the owner. A status node, a chat item, and a
+ * hint do not mint.
  */
 export type ForumNeedSeverity = "need" | "emergency";
 
