@@ -137,3 +137,9 @@ Keep the affected identity blocked; use an explicitly reviewed migration to a
 new identity if recovery is impossible. That migration does not automatically
 transfer grants. The in-memory stores have no durable restore API; implementing
 these atomic restoration steps for a production adapter remains F16.
+
+## Durable storage implementation status
+
+[Panopticon PR #535](https://github.com/FyberLabs/panopticon/pull/535) implements the PostgreSQL storage primitive for F16: one global principal row, a shared authenticated head floor, separate recovery/wrap generations, atomic ciphertext updates, and serialized competing writers. Restart persistence, rollback, generation exhaustion, and refusal to downgrade away retained replay state have PostgreSQL regression coverage (37 ACL-service and 20 owner-migration/subject-membership tests passed).
+
+This implementation is in review and has not been deployed. It exposes no HTTP endpoint and does not authenticate operations itself. Production integration still needs the F14 fresh-history/signature checks before storage calls, service-role wiring, client generation re-read/re-sign behavior, and deployment acceptance. Issue #68 remains open for those requirements and the other integration findings.
