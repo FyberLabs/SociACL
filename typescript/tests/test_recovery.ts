@@ -1682,3 +1682,22 @@ test("a retired key cannot fill or relabel wraps", () => {
   deleteAccountWrap(principal, wrapId, k2.priv, labeled);
   assert.equal(labeled.get(principal, wrapId), undefined);
 });
+
+
+test("strength estimator inputs match shared ASCII handle deduplication", async (t) => {
+  const fixture = JSON.parse(readFileSync(new URL("../../vectors/encrypted-discovery/strength-inputs.json", import.meta.url), "utf8")) as {
+    principal: string; cases: { name: string; handle?: string; inputs: string[] }[];
+  };
+  const { ZxcvbnFactory } = await import("@zxcvbn-ts/core");
+  const original = ZxcvbnFactory.prototype.check;
+  const observed: (string | number)[][] = [];
+  t.mock.method(ZxcvbnFactory.prototype, "check", function (this: InstanceType<typeof ZxcvbnFactory>, text: string, inputs?: (string | number)[]) {
+    observed.push([...(inputs ?? [])]);
+    return original.call(this, text, inputs);
+  });
+  for (const row of fixture.cases) {
+    await checkRecoveryPassphrase(new TextEncoder().encode(recoveryVector.passphraseUtf8), fixture.principal, row.handle);
+    assert.deepEqual(observed.at(-1), row.inputs, row.name);
+  }
+  assert.equal(observed.length, fixture.cases.length);
+});

@@ -92,6 +92,8 @@ jobs:
           name: coverage
           path: |
             docs/coverage.md
+            target/coverage/rust-tests.txt
+            crates/**/proptest-regressions/**
             target/coverage/rust-summary.txt
             target/coverage/rust.lcov
             target/coverage/python-report.txt

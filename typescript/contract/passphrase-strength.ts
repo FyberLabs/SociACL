@@ -73,7 +73,7 @@ export async function checkRecoveryPassphrase(
     throw new RecoveryWeakPassphraseError(0, "passphrase needs at least 12 visible characters", []);
   }
   const inputs = [principal];
-  if (handle && handle.length > 0 && handle.toLowerCase() !== principal.toLowerCase()) {
+  if (handle && handle.length > 0 && asciiLower(handle) !== asciiLower(principal)) {
     inputs.push(handle);
   }
   const estimator = await loadEstimator();
@@ -84,4 +84,9 @@ export async function checkRecoveryPassphrase(
     result.feedback.warning ?? "",
     result.feedback.suggestions,
   );
+}
+
+// Match Rust eq_ignore_ascii_case; Unicode lookalikes remain separate inputs.
+function asciiLower(text: string): string {
+  return text.replace(/[A-Z]/gu, (letter) => letter.toLowerCase());
 }
