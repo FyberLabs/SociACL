@@ -84,6 +84,26 @@ against the resolved account state; do not mark a backup usable merely because
 a put succeeded. The same unknown-epub limitation applies to a historical v2
 head that has no authenticated encryption-key binding.
 
+## Generation exhaustion
+
+Recovery and wrap write generations are non-negative safe integers. The shared
+`STORE_GENERATION_MAX` is 9007199254740991. A write at generation `MAX - 1` may
+succeed and persist `MAX`; a write at `MAX` or above is `store-rejected` before
+changing a row, slot, or generation. TypeScript also rejects negative,
+fractional, and non-finite generations. Resolution may still raise the shared
+head floor, as it can during any rejected write. Reads remain available.
+
+Persist the generation and row atomically, including the terminal value. Do not
+round, wrap, saturate, or reset a generation to resume writes. An exhausted store
+requires an explicitly reviewed migration with a new replay-protection boundary;
+these APIs provide no online counter-reset operation. A retry cannot resolve
+exhaustion. For ordinary concurrent-write rejection, re-read the predecessor and
+generation and sign a fresh operation; never replay the old signature.
+
+The in-memory implementations preflight the increment. This supplies the shared
+boundary behavior for F16; it does not establish production persistence,
+single-writer enforcement, or restart/crash acceptance.
+
 ## Restoring a store without lowering its floor
 
 There is no supported online floor reset or operator override that lowers an

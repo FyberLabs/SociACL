@@ -200,6 +200,8 @@
 
 ## Encrypted discovery — unreleased
 
+- Bound recovery/wrap write generations with `STORE_GENERATION_MAX` (9007199254740991). Preflight increments before mutation: the final representable generation remains readable but rejects writes with `store-rejected`. Shared boundary fixtures cover both stores; counters never reset or saturate (#68 F16).
+
 - Document the year-aware seal-time strength policy (#68 F19). A shared synthetic legacy backup restores in both languages despite failing the current strength gate; new seals still reject its weak passphrase. TypeScript additionally verifies opening at two simulated wall-clock years.
 
 - Add `resolveStoreAccount` / `resolve_store_account` for adapter resolver callbacks. They verify raw history through the identity resolver, preserve diagnostics, and map failed resolution to `store-rejected` before a store observes a head. Production source freshness, trusted policy, and durable floor enforcement remain adapter responsibilities (#68 F14/F16).

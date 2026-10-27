@@ -34,6 +34,7 @@ import { DELIVERY_BLOB_MAX, MAX_WRAPS_PER_PRINCIPAL } from "./keyring-limits.ts"
 import { canonicalDecimal } from "./canonical.ts";
 import {
   HeadFloor,
+  nextStoreGeneration,
   REPLACED_NONE,
   signStoreWrite,
   verifyStoreWrite,
@@ -165,6 +166,7 @@ export class MemoryKeyWrapStore implements KeyWrapStore {
     const replaced = existing ? wrapRowHash(existing) : REPLACED_NONE;
     const hash = wrapRowHash(wrap);
     const generation = this.writeGeneration(wrap.principal);
+    const nextGeneration = nextStoreGeneration(generation);
     verifyStoreWrite(
       wrap.principal,
       "put",
@@ -185,7 +187,7 @@ export class MemoryKeyWrapStore implements KeyWrapStore {
     rows.set(index.wrapId, copyWrap(wrap));
     this.#wraps.set(index.principal, rows);
     this.#floor.raise(wrap.principal, head);
-    this.#generation.set(wrap.principal, generation + 1);
+    this.#generation.set(wrap.principal, nextGeneration);
   }
 
   delete(principal: PrincipalId, wrapId: ObjectId, storeSignature: string): void {
@@ -195,6 +197,7 @@ export class MemoryKeyWrapStore implements KeyWrapStore {
     if (!row) throw new Error("store-rejected");
     const hash = wrapRowHash(row);
     const generation = this.writeGeneration(principal);
+    const nextGeneration = nextStoreGeneration(generation);
     verifyStoreWrite(
       principal,
       "delete",
@@ -212,7 +215,7 @@ export class MemoryKeyWrapStore implements KeyWrapStore {
     rows?.delete(wrapId);
     if (rows && rows.size === 0) this.#wraps.delete(principal);
     this.#floor.raise(principal, head);
-    this.#generation.set(principal, generation + 1);
+    this.#generation.set(principal, nextGeneration);
   }
 
   #account(principal: PrincipalId): StoreWriteAccount {
@@ -459,4 +462,4 @@ function jsonString(value: string): string {
   return JSON.stringify(value);
 }
 
-export { resolveStoreAccount } from "./store-write.ts";
+export { resolveStoreAccount, STORE_GENERATION_MAX } from "./store-write.ts";

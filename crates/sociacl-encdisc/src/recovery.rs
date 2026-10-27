@@ -208,7 +208,7 @@ impl<C: crate::store_write::PublishedChain> MemoryRecoveryStore<C> {
         Ok((account, head, head, generation))
     }
 
-    fn bump(&mut self, key: &str, generation: u64, head: u64) {
+    fn bump(&mut self, key: &str, next_generation: u64, head: u64) {
         self.head_floor.raise(key, head);
         if let Some(current) = self
             .by_principal
@@ -218,7 +218,7 @@ impl<C: crate::store_write::PublishedChain> MemoryRecoveryStore<C> {
             self.head_floor.raise(key, current.rotation_seq);
         }
         self.generation
-            .insert(key.to_string(), generation.saturating_add(1));
+            .insert(key.to_string(), next_generation);
     }
 }
 
@@ -253,6 +253,7 @@ impl<C: crate::store_write::PublishedChain> RecoveryCopyStore for MemoryRecovery
             return Err(EncDiscError::StoreRejected);
         }
         let (account, head, _floor, generation) = self.account(&envelope.principal)?;
+        let next_generation = crate::store_write::next_store_generation(generation)?;
         let key = envelope.principal.as_ref().to_string();
         if self
             .by_principal
@@ -308,12 +309,12 @@ impl<C: crate::store_write::PublishedChain> RecoveryCopyStore for MemoryRecovery
             let slot = self.by_principal.entry(key.clone()).or_default();
             slot.current = Some(envelope.clone());
             slot.pending = None;
-            self.bump(&key, generation, head);
+            self.bump(&key, next_generation, head);
             return Ok(());
         }
         let slot = self.by_principal.entry(key.clone()).or_default();
         slot.pending = Some(envelope.clone());
-        self.bump(&key, generation, head);
+        self.bump(&key, next_generation, head);
         Ok(())
     }
 
@@ -364,6 +365,7 @@ impl<C: crate::store_write::PublishedChain> RecoveryCopyStore for MemoryRecovery
     fn commit(&mut self, principal: &PrincipalId, signature: &str) -> Result<(), EncDiscError> {
         let key = principal.as_ref().to_string();
         let (account, head, _floor, generation) = self.account(principal)?;
+        let next_generation = crate::store_write::next_store_generation(generation)?;
         let pending = self
             .by_principal
             .get(&key)
@@ -400,7 +402,7 @@ impl<C: crate::store_write::PublishedChain> RecoveryCopyStore for MemoryRecovery
         };
         slot.current = Some(pending);
         slot.pending = None;
-        self.bump(&key, generation, head);
+        self.bump(&key, next_generation, head);
         Ok(())
     }
 
@@ -412,6 +414,7 @@ impl<C: crate::store_write::PublishedChain> RecoveryCopyStore for MemoryRecovery
     ) -> Result<(), EncDiscError> {
         let key = principal.as_ref().to_string();
         let (account, head, _floor, generation) = self.account(principal)?;
+        let next_generation = crate::store_write::next_store_generation(generation)?;
         let stored = self
             .by_principal
             .get(&key)
@@ -460,7 +463,7 @@ impl<C: crate::store_write::PublishedChain> RecoveryCopyStore for MemoryRecovery
         if slot.current.is_none() && slot.pending.is_none() {
             self.by_principal.remove(&key);
         }
-        self.bump(&key, generation, head);
+        self.bump(&key, next_generation, head);
         Ok(())
     }
 }
@@ -1929,6 +1932,120 @@ mod tests {
             store.published_account(principal).unwrap().current_key,
             *principal
         );
+    }
+
+    #[test]
+    fn store_generation_boundaries_preserve_recovery_rows() {
+        let fixture: Value = serde_json::from_str(include_str!(
+            "../../../vectors/encrypted-discovery/store-generations.json"
+        ))
+        .unwrap();
+        assert_eq!(
+            crate::STORE_GENERATION_MAX,
+            fixture["max"].as_u64().unwrap()
+        );
+        let keyring = genesis_keyring();
+        let principal = keyring.principal();
+        let held = hold();
+        let context = context_of(&held);
+        let envelope = dummy_envelope(principal, 0, keyring.current_pub(), keyring.current_epub());
+        for row in fixture["cases"].as_array().unwrap() {
+            let mut store = MemoryRecoveryStore::new(watch(&[], &context), crate::HeadFloor::new());
+            put_as(&mut store, &envelope, keyring.current_priv()).unwrap();
+            let generation = row["generation"].as_u64().unwrap();
+            store
+                .generation
+                .insert(principal.as_ref().to_string(), generation);
+            let mut changed = envelope.clone();
+            *changed.bytes.last_mut().unwrap() ^= 1;
+            let signature = crate::sign_store_write(
+                keyring.current_priv(),
+                principal,
+                "put",
+                "0",
+                &recovery_envelope_hash(&changed).unwrap(),
+                "0",
+                &recovery_envelope_hash(&envelope).unwrap(),
+                crate::STORE_CLASS_NONE,
+                &generation.to_string(),
+            )
+            .unwrap();
+            let result = store.put_copy(&changed, &signature);
+            if row.get("error").is_some() {
+                assert_eq!(result.unwrap_err(), EncDiscError::StoreRejected);
+                assert_eq!(
+                    store.current_copy(principal).unwrap().unwrap().bytes,
+                    envelope.bytes
+                );
+                assert_eq!(store.write_generation(principal), generation);
+            } else {
+                result.unwrap();
+                assert_eq!(
+                    store.current_copy(principal).unwrap().unwrap().bytes,
+                    changed.bytes
+                );
+                assert_eq!(
+                    store.write_generation(principal),
+                    row["next"].as_u64().unwrap()
+                );
+                assert_eq!(
+                    store.put_copy(&changed, &signature).unwrap_err(),
+                    EncDiscError::StoreRejected
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn exhausted_generation_preserves_recovery_delete_and_commit_slots() {
+        let keyring = genesis_keyring();
+        let principal = keyring.principal();
+        let held = hold();
+        let context = context_of(&held);
+        let mut store = MemoryRecoveryStore::new(watch(&[], &context), crate::HeadFloor::new());
+        let current = dummy_envelope(principal, 0, keyring.current_pub(), keyring.current_epub());
+        put_as(&mut store, &current, keyring.current_priv()).unwrap();
+        // Model a pending copy at the now-published head. Only the generation
+        // guard should prevent promotion; account and signature otherwise match.
+        store
+            .by_principal
+            .get_mut(principal.as_ref())
+            .unwrap()
+            .pending = Some(current.clone());
+        store
+            .generation
+            .insert(principal.as_ref().to_string(), crate::STORE_GENERATION_MAX);
+        let hash = recovery_envelope_hash(&current).unwrap();
+        for operation in ["delete", "commit"] {
+            let signature = sign_recovery_op(
+                &store,
+                keyring.current_priv(),
+                principal,
+                operation,
+                0,
+                &hash,
+                &hash,
+            )
+            .unwrap();
+            let result = if operation == "delete" {
+                store.delete_copy(principal, 0, &signature)
+            } else {
+                store.commit(principal, &signature)
+            };
+            assert_eq!(result.unwrap_err(), EncDiscError::StoreRejected);
+            assert_eq!(
+                store.current_copy(principal).unwrap().unwrap().bytes,
+                current.bytes
+            );
+            assert_eq!(
+                store.pending_copy(principal).unwrap().unwrap().bytes,
+                current.bytes
+            );
+            assert_eq!(
+                store.write_generation(principal),
+                crate::STORE_GENERATION_MAX
+            );
+        }
     }
 
     #[test]

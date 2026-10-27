@@ -155,4 +155,4 @@ export async function rotateAndReseal(
   }
 }
 
-export { resolveStoreAccount } from "./store-write.ts";
+export { resolveStoreAccount, STORE_GENERATION_MAX } from "./store-write.ts";

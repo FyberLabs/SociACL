@@ -25,6 +25,7 @@ import { checkRecoveryPassphrase } from "./passphrase-strength.ts";
 import { assigned, passphraseWhitespace } from "./unicode16.ts";
 import {
   HeadFloor,
+  nextStoreGeneration,
   recoveryEnvelopeHash,
   REPLACED_NONE,
   signStoreWrite,
@@ -113,6 +114,7 @@ export class MemoryRecoveryStore implements RecoveryCopyStore {
     const replaced = predecessor(atHead ? slot?.current : slot?.pending);
     const hash = recoveryEnvelopeHash(envelope);
     const generation = this.writeGeneration(envelope.principal);
+    const nextGeneration = nextStoreGeneration(generation);
     verifyStoreWrite(
       envelope.principal,
       "put",
@@ -131,11 +133,11 @@ export class MemoryRecoveryStore implements RecoveryCopyStore {
         throw new Error("store-rejected");
       }
       this.#slots.set(envelope.principal, { current: copy });
-      this.#bump(envelope.principal, head);
+      this.#bump(envelope.principal, head, nextGeneration);
       return;
     }
     this.#slots.set(envelope.principal, { current: slot?.current, pending: copy });
-    this.#bump(envelope.principal, head);
+    this.#bump(envelope.principal, head, nextGeneration);
   }
 
   get(principal: PrincipalId, rotationSeq: number): RecoveryEnvelope | undefined {
@@ -164,6 +166,7 @@ export class MemoryRecoveryStore implements RecoveryCopyStore {
     const head = account.rotations.length;
     const hash = recoveryEnvelopeHash(pending);
     const generation = this.writeGeneration(principal);
+    const nextGeneration = nextStoreGeneration(generation);
     verifyStoreWrite(
       principal,
       "commit",
@@ -184,7 +187,7 @@ export class MemoryRecoveryStore implements RecoveryCopyStore {
     if (!pubsMatch) throw new Error("store-rejected");
     slot.current = pending;
     slot.pending = undefined;
-    this.#bump(principal, head);
+    this.#bump(principal, head, nextGeneration);
   }
 
   delete(principal: PrincipalId, rotationSeq: number, signature: string): void {
@@ -200,6 +203,7 @@ export class MemoryRecoveryStore implements RecoveryCopyStore {
     if (!slot || !stored) throw new Error("store-rejected");
     const hash = recoveryEnvelopeHash(stored);
     const generation = this.writeGeneration(principal);
+    const nextGeneration = nextStoreGeneration(generation);
     verifyStoreWrite(
       principal,
       "delete",
@@ -215,7 +219,7 @@ export class MemoryRecoveryStore implements RecoveryCopyStore {
     if (slot.current?.rotationSeq === rotationSeq) slot.current = undefined;
     if (slot.pending?.rotationSeq === rotationSeq) slot.pending = undefined;
     if (!slot.current && !slot.pending) this.#slots.delete(principal);
-    this.#bump(principal, head);
+    this.#bump(principal, head, nextGeneration);
   }
 
   #account(principal: PrincipalId): StoreWriteAccount {
@@ -227,11 +231,11 @@ export class MemoryRecoveryStore implements RecoveryCopyStore {
     }
   }
 
-  #bump(principal: string, head: number): void {
+  #bump(principal: string, head: number, nextGeneration: number): void {
     this.#floor.raise(principal, head);
     const current = this.#slots.get(principal)?.current;
     if (current) this.#floor.raise(principal, current.rotationSeq);
-    this.#generation.set(principal, (this.#generation.get(principal) ?? 0) + 1);
+    this.#generation.set(principal, nextGeneration);
   }
 }
 
