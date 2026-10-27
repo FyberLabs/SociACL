@@ -3,17 +3,16 @@
 
 use serde_json::Value;
 use sociacl_gun::{
-    accept_hint, accept_hint_bytes, factor_grants, forum_agent_soul, forum_alarm_soul,
-    forum_chat_tag, forum_chat_tag_present, forum_chat_tags, forum_emergency_alarm,
-    forum_need_soul, forum_role_soul, forum_roles_match, forum_subtask_soul, forum_template_soul,
-    forum_update_soul, from_gun_node, is_separate_chat_soul, to_gun_node, FeedItem, FeedSource,
-    ForumAgentState, ForumAgentStatus, ForumAlarm, ForumNeed, ForumNeedSeverity,
-    ForumRoleMembership, ForumRoleMode, ForumTemplate, GunFeedNode, HandoffHint, HopFactor,
-    MeshSeeGraph,
+    accept_hint, accept_hint_bytes, forum_agent_soul, forum_alarm_soul, forum_chat_tag,
+    forum_chat_tag_present, forum_chat_tags, forum_emergency_alarm, forum_need_soul,
+    forum_role_soul, forum_roles_match, forum_subtask_soul, forum_template_soul, forum_update_soul,
+    from_gun_node, is_separate_chat_soul, to_gun_node, FeedItem, FeedSource, ForumAgentState,
+    ForumAgentStatus, ForumAlarm, ForumNeed, ForumNeedSeverity, ForumRoleMembership, ForumRoleMode,
+    ForumTemplate, GunFeedNode, HandoffHint, HopFactor, MeshSeeGraph,
 };
 use sociacl_ids::{
-    history_state, mint_object_id_with, parse_object_id, parse_principal_id, parse_soul, ObjectId,
-    PrincipalId, Reason, ResolutionContext,
+    history_state, mint_object_id_with, object_principal, parse_object_id, parse_principal_id,
+    parse_soul, ObjectId, PrincipalId, Reason, ResolutionContext,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -23,14 +22,6 @@ fn vector() -> Value {
 
 fn see_file() -> Value {
     serde_json::from_str(include_str!("../../../vectors/mesh/v2/see.json")).unwrap()
-}
-
-fn fill(template: &str, doc: &Value) -> String {
-    template
-        .replace("<forumId>", doc["forumId"].as_str().unwrap())
-        .replace("<needId>", doc["needId"].as_str().unwrap())
-        .replace("<seaPubkey>", doc["seaPubkey"].as_str().unwrap())
-        .replace("<roleToken>", "treasurer")
 }
 
 fn see_case<'a>(file: &'a Value, name: &str) -> &'a Value {
@@ -218,20 +209,93 @@ fn sgh1_hint_alone_fails_closed() {
         .graph
         .check_see(&hold.object, &hold.accessor, 10, Some(&decoded), Some(&hop));
     assert!(!seen.allowed);
-    assert!(!factor_grants("hint"));
-    assert!(!factor_grants("hop"));
-    assert!(!factor_grants("sgh1"));
+}
+
+fn need_from(row: &Value, stated: u8, ham_state: u64) -> ForumNeed {
+    let severity = match row["severity"].as_str().unwrap() {
+        "emergency" => ForumNeedSeverity::Emergency,
+        "need" => ForumNeedSeverity::Need,
+        other => panic!("unknown severity {other}"),
+    };
+    ForumNeed {
+        id: row["needId"].as_str().unwrap().parse().unwrap(),
+        forum_id: row["needForumId"].as_str().unwrap().parse().unwrap(),
+        subject: row["subject"].as_str().unwrap().parse().unwrap(),
+        severity,
+        body: row["name"].as_str().unwrap_or("blocked").into(),
+        stated,
+        ham_state,
+        ts: 11,
+    }
+}
+
+fn alarm_from(row: &Value) -> ForumAlarm {
+    ForumAlarm {
+        forum_id: row["alarmForumId"].as_str().unwrap().parse().unwrap(),
+        need: row["needId"].as_str().unwrap().parse().unwrap(),
+        pinned: row["pinned"].as_u64().unwrap() as u8,
+    }
 }
 
 #[test]
 fn resolve_need_does_not_elect() {
     let mut hold = Hold::open();
+    let doc = vector();
+    let row = &doc["resolve"];
+    let forum: ObjectId = row["forumId"].as_str().unwrap().parse().unwrap();
+    let need_id: ObjectId = row["needId"].as_str().unwrap().parse().unwrap();
+    let subject: PrincipalId = row["subject"].as_str().unwrap().parse().unwrap();
+    let agent: PrincipalId = doc["seaPubkey"].as_str().unwrap().parse().unwrap();
+    assert_ne!(subject, agent);
+    assert_ne!(object_principal(&forum).unwrap(), subject);
+    assert_eq!(object_principal(&need_id).unwrap(), agent);
+    assert!(row["admittedOwner"].is_null());
+
+    let open = need_from(
+        row,
+        row["open"]["stated"].as_u64().unwrap() as u8,
+        row["open"]["hamState"].as_u64().unwrap(),
+    );
+    assert!(open.validate().is_ok());
+    let soul = open.soul().unwrap().join();
+    assert_eq!(soul, row["soul"].as_str().unwrap());
+    assert_eq!(soul, doc["souls"]["need"].as_str().unwrap());
+    assert!(parse_soul(&soul).is_err());
+
+    let alarm = alarm_from(row);
+    assert_eq!(
+        alarm.pins_open_emergency(&open),
+        row["pinsOpen"].as_bool().unwrap()
+    );
+    assert!(hold.graph.admitted_owner(&need_id).is_none());
     let owner_before = hold.graph.admitted_owner(&hold.object).unwrap().0.clone();
+
     hold.admit(&hold.live.clone());
     hold.admit(&hold.cancel.clone());
-    let owner_after = hold.graph.admitted_owner(&hold.object).unwrap().0.clone();
-    assert_eq!(owner_before, owner_after);
-    assert_eq!(owner_after, hold.owner);
+    assert_eq!(
+        hold.graph.admitted_owner(&hold.object).unwrap().0.clone(),
+        owner_before
+    );
+    assert_eq!(owner_before, hold.owner);
+
+    let resolved = need_from(
+        row,
+        row["resolved"]["stated"].as_u64().unwrap() as u8,
+        row["resolved"]["hamState"].as_u64().unwrap(),
+    );
+    assert_eq!(resolved.stated, 0);
+    assert_eq!(resolved.ham_state, open.ham_state + 1);
+    assert!(resolved.validate().is_ok());
+    assert_eq!(resolved.soul().unwrap().join(), soul);
+    assert_eq!(
+        alarm.pins_open_emergency(&resolved),
+        row["pinsResolved"].as_bool().unwrap()
+    );
+    assert!(hold.graph.admitted_owner(&need_id).is_none());
+    assert_eq!(
+        hold.graph.admitted_owner(&hold.object).unwrap().0.clone(),
+        owner_before
+    );
     let accessor = hold
         .graph
         .check_see(&hold.object, &hold.accessor, 10, None, None);
@@ -242,21 +306,61 @@ fn resolve_need_does_not_elect() {
             .check_see(&hold.object, &hold.owner, 10, None, None)
             .allowed
     );
-    assert!(!factor_grants("status"));
-    assert!(!factor_grants("chat"));
-    assert!(!factor_grants("need"));
-    assert!(!factor_grants("resolve"));
+}
+
+#[test]
+fn alarm_pin_rows() {
     let doc = vector();
-    let forum: ObjectId = doc["forumId"].as_str().unwrap().parse().unwrap();
-    let agent: PrincipalId = doc["seaPubkey"].as_str().unwrap().parse().unwrap();
-    let status_soul = forum_agent_soul(&forum, &agent).unwrap();
-    assert!(parse_soul(&status_soul.join()).is_err());
-    assert_ne!(
-        hold.graph
-            .check_see(&hold.object, &hold.accessor, 10, None, None)
-            .reason,
-        "treasurer"
-    );
+    for row in doc["alarm"].as_array().unwrap() {
+        let name = row["name"].as_str().unwrap();
+        let need = need_from(row, row["stated"].as_u64().unwrap() as u8, 1);
+        let alarm = alarm_from(row);
+        assert_eq!(
+            alarm.pins_open_emergency(&need),
+            row["pins"].as_bool().unwrap(),
+            "{name}"
+        );
+        let tiles: Vec<_> = row["tiles"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|tile| match tile.as_str().unwrap() {
+                "idle" => ForumAgentState::Idle,
+                "working" => ForumAgentState::Working,
+                "needs" => ForumAgentState::Needs,
+                "emergency" => ForumAgentState::Emergency,
+                other => panic!("unknown tile {other}"),
+            })
+            .collect();
+        assert_eq!(
+            forum_emergency_alarm(&tiles, Some(&alarm), Some(&need)),
+            row["alarm"].as_bool().unwrap(),
+            "{name}"
+        );
+    }
+}
+
+#[test]
+fn role_mode_rows() {
+    let doc = vector();
+    for row in doc["roles"].as_array().unwrap() {
+        let name = row["name"].as_str().unwrap();
+        let mode = ForumRoleMode::parse(row["mode"].as_str().unwrap()).unwrap();
+        let rows: Vec<_> = row["rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|item| ForumRoleMembership {
+                role: item["role"].as_str().unwrap().into(),
+                principal: item["principal"].as_str().unwrap().parse().unwrap(),
+            })
+            .collect();
+        assert_eq!(
+            forum_roles_match(mode, &rows),
+            row["accept"].as_bool().unwrap(),
+            "{name}"
+        );
+    }
 }
 
 #[test]
@@ -264,14 +368,38 @@ fn chat_via_tagged_items() {
     let doc = vector();
     let forum: ObjectId = doc["forumId"].as_str().unwrap().parse().unwrap();
     let tag = forum_chat_tag(&forum).unwrap();
-    assert_eq!(tag, fill(doc["chatTag"].as_str().unwrap(), &doc));
-    let tags = forum_chat_tags(&forum, ["report"]).unwrap();
+    assert_eq!(tag, doc["souls"]["chatTag"].as_str().unwrap());
+    let chat = &doc["chat"];
+    let extras: Vec<_> = chat["extra"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_str().unwrap())
+        .collect();
+    let tags = forum_chat_tags(&forum, extras).unwrap();
+    assert_eq!(tags, chat["joined"].as_str().unwrap());
+    let dupes: Vec<_> = chat["duplicateExtra"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_str().unwrap())
+        .collect();
+    assert_eq!(
+        forum_chat_tags(&forum, dupes).unwrap(),
+        chat["duplicateJoined"].as_str().unwrap()
+    );
+    for rejected in chat["reject"].as_array().unwrap() {
+        assert!(
+            forum_chat_tags(&forum, [rejected.as_str().unwrap()]).is_err(),
+            "{}",
+            rejected
+        );
+    }
     assert!(forum_chat_tag_present(&tags, &forum));
     assert!(is_separate_chat_soul("s3rch/chat"));
-    assert!(is_separate_chat_soul(&fill(
-        doc["refusedChatSouls"][1].as_str().unwrap(),
-        &doc
-    )));
+    assert!(is_separate_chat_soul(
+        doc["refusedChatSouls"][1].as_str().unwrap()
+    ));
     assert!(!is_separate_chat_soul(&format!(
         "{}/statement-1",
         doc["chatCollection"].as_str().unwrap()
@@ -308,6 +436,8 @@ fn chat_via_tagged_items() {
     assert!(from_gun_node(&raw).is_none());
     assert!(forum_chat_tag_present(&raw.tags, &forum));
     assert!(forum_chat_tags(&forum, ["s3rch/chat/1"]).is_err());
+    assert!(forum_chat_tags(&forum, ["Urgent"]).is_err());
+    assert!(forum_chat_tags(&forum, ["chat"]).is_err());
     assert!(forum_role_soul(
         &forum,
         "chat",
@@ -327,45 +457,37 @@ fn forum_souls_use_the_sea_pubkey() {
     assert!(parse_principal_id(doc["linkedWallet"].as_str().unwrap()).is_err());
     assert!(parse_principal_id("panopticon-oauth-subject").is_err());
 
+    let souls = &doc["souls"];
     let agent_soul = forum_agent_soul(&forum, &agent).unwrap();
-    assert_eq!(
-        agent_soul.join(),
-        fill(doc["agentSoul"].as_str().unwrap(), &doc)
-    );
+    assert_eq!(agent_soul.join(), souls["agent"].as_str().unwrap());
     assert_eq!(agent_soul.segments().last().unwrap(), agent.as_ref());
     assert!(!agent_soul.segments().last().unwrap().starts_with("0x"));
     assert_eq!(agent_soul.as_forum_agent().unwrap().1, agent);
     assert!(parse_soul(&agent_soul.join()).is_err());
 
     let need_soul = forum_need_soul(&forum, &need).unwrap();
-    assert_eq!(
-        need_soul.join(),
-        fill(doc["needSoul"].as_str().unwrap(), &doc)
-    );
+    assert_eq!(need_soul.join(), souls["need"].as_str().unwrap());
     assert_eq!(need_soul.as_forum_need().unwrap().1, need);
 
     let alarm = forum_alarm_soul(&forum).unwrap();
-    assert_eq!(alarm.join(), fill(doc["alarmSoul"].as_str().unwrap(), &doc));
+    assert_eq!(alarm.join(), souls["alarm"].as_str().unwrap());
     assert_eq!(alarm.as_forum_alarm().unwrap(), forum);
 
     let template = forum_template_soul(&forum).unwrap();
-    assert_eq!(
-        template.join(),
-        fill(doc["templateSoul"].as_str().unwrap(), &doc)
-    );
+    assert_eq!(template.join(), souls["template"].as_str().unwrap());
     assert_eq!(template.as_forum_template().unwrap(), forum);
 
     let role = forum_role_soul(&forum, "treasurer", &agent).unwrap();
-    assert_eq!(role.join(), fill(doc["roleSoul"].as_str().unwrap(), &doc));
+    assert_eq!(role.join(), souls["role"].as_str().unwrap());
     assert_eq!(role.as_forum_role().unwrap().1, "treasurer");
     assert!(forum_role_soul(&forum, "Treasurer", &agent).is_err());
     assert!(forum_role_soul(&forum, "practice manager", &agent).is_err());
 
     let sub = forum_subtask_soul(&forum, &agent, &status).unwrap();
-    assert!(sub.join().contains("/subtasks/"));
+    assert_eq!(sub.join(), souls["subtask"].as_str().unwrap());
     assert!(!is_separate_chat_soul(&sub.join()));
     let update = forum_update_soul(&forum, &agent, &need).unwrap();
-    assert!(update.join().contains("/updates/"));
+    assert_eq!(update.join(), souls["update"].as_str().unwrap());
     assert!(forum_subtask_soul(
         &forum,
         &agent,

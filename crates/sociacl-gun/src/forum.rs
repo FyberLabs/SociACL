@@ -1,4 +1,4 @@
-//! Forum souls on the locked `s3rch` graph.
+//! Forum souls on the `s3rch` graph.
 //!
 //! Identity is the GunDB SEA pubkey ([`PrincipalId`]). A wallet and a
 //! Panopticon OAuth subject are linked credentials. They are not this key.
@@ -11,7 +11,6 @@ use std::collections::BTreeSet;
 
 use sociacl_ids::{object_principal, parse_object_id, parse_principal_id, ObjectId, PrincipalId};
 
-use crate::leaf::normalize_tags;
 use crate::soul::{GunSoul, S3RCH_FORUMS, S3RCH_ROOT};
 use crate::GunError;
 
@@ -181,6 +180,10 @@ impl ForumAgentStatus {
 
 /// Need object. `stated` 1 is open. `stated` 0 is resolved.
 ///
+/// `subject` is the SEA pubkey the need is about. [`ForumNeed::validate`]
+/// does not compare it to `forum_id` or to the principal embedded in
+/// that id.
+///
 /// Resolve is an owner or delegate dest-ACL write. The admitted object
 /// owner stays the owner.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -238,7 +241,13 @@ impl ForumAlarm {
     }
 
     /// The pin names this open emergency need in the same forum.
+    ///
+    /// An alarm or a need that fails [`ForumAlarm::validate`] or
+    /// [`ForumNeed::validate`] does not pin.
     pub fn pins_open_emergency(&self, need: &ForumNeed) -> bool {
+        if self.validate().is_err() || need.validate().is_err() {
+            return false;
+        }
         self.forum_id == need.forum_id
             && self.need == need.id
             && self.pinned == 1
@@ -377,22 +386,28 @@ pub fn forum_chat_tag(forum: &ObjectId) -> Result<String, GunError> {
 
 /// Comma-separated tags for a forum chat statement.
 ///
-/// The forum tag is first. Extra tags use the existing tag normalizer.
-/// A slash, a Gun chain, or a `chat` path segment is rejected.
+/// The forum tag is first. Extra tags stay as written: a tag that is
+/// not already lowercase is rejected, and so is the tag `chat`.
+/// A repeated extra is kept once. Nothing here is lowercased.
 pub fn forum_chat_tags(
     forum: &ObjectId,
     extra: impl IntoIterator<Item = impl AsRef<str>>,
 ) -> Result<String, GunError> {
     let tag = forum_chat_tag(forum)?;
-    let mut raw = vec![tag];
+    let mut seen = BTreeSet::new();
+    let mut raw = Vec::new();
+    seen.insert(tag.clone());
+    raw.push(tag);
     for extra in extra {
         let extra = extra.as_ref();
         if !tag_token_ok(extra) {
             return Err(GunError::ForumSoul);
         }
-        raw.push(extra.to_string());
+        if seen.insert(extra.to_string()) {
+            raw.push(extra.to_string());
+        }
     }
-    Ok(normalize_tags(raw).join(","))
+    Ok(raw.join(","))
 }
 
 /// True when `tags` contains this forum's chat tag.
@@ -574,11 +589,12 @@ fn role_token_ok(token: &str) -> bool {
 
 fn tag_token_ok(tag: &str) -> bool {
     !tag.is_empty()
+        && tag != "chat"
+        && tag == tag.to_ascii_lowercase()
         && !tag.contains('/')
         && !tag.contains(".get(")
         && !tag.contains(['#', '$', '[', ']', '~'])
         && tag.chars().all(|c| !c.is_control() && !c.is_whitespace())
-        && !tag.split('/').any(|segment| segment == "chat")
 }
 
 fn csv_object_ids(value: &str, kind: Option<&str>) -> Result<Vec<ObjectId>, GunError> {

@@ -123,7 +123,10 @@ export type ForumNeed = {
   /** Minted object id of kind `need`. */
   id: ObjectId;
   forumId: ObjectId;
-  /** SEA pubkey the need is about. Not a role token. */
+  /**
+   * SEA pubkey the need is about. Not compared to the forum id or
+   * to the principal embedded in that id. Not a role token.
+   */
   subject: PrincipalId;
   severity: ForumNeedSeverity;
   body: string;
@@ -503,8 +506,11 @@ export function grantSoul(
 ): string | null;
 
 /**
- * Status soul. `s3rch/forums/<forumId>/agents/<seaPubkey>`.
- * Not a grant soul. Not a chat soul.
+ * Forum soul helpers. The consumer implements these names.
+ * This file declares them. Filled strings are in
+ * `vectors/mesh/forums.json`. Not a grant soul. Not a chat soul.
+ *
+ * Status soul: `s3rch/forums/<forumId>/agents/<seaPubkey>`.
  */
 export function forumAgentSoul(forumId: ObjectId, seaPubkey: PrincipalId): string;
 

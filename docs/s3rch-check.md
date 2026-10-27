@@ -47,7 +47,7 @@ The Rust crate in this repo remains the full plane. See [gun.md](gun.md) for tha
 
 ## Forums
 
-The account identity is the GunDB SEA pubkey (`PrincipalId`). A wallet and a Panopticon OAuth subject are linked credentials. They are not the agent key and not a second identity plane. Copy the forum names from [s3rch-check.d.ts](s3rch-check.d.ts). Soul keys are `forumAgentSoul`, `forumNeedSoul`, `forumAlarmSoul`, `forumTemplateSoul`, `forumRoleSoul`, `forumSubtaskSoul`, `forumUpdateSoul`, and `forumChatTag`. Acceptance file: [vectors/mesh/forums.json](../vectors/mesh/forums.json).
+The account identity is the GunDB SEA pubkey (`PrincipalId`). A wallet and a Panopticon OAuth subject are linked credentials. They are not the agent key and not a second identity plane. Copy the forum names from [s3rch-check.d.ts](s3rch-check.d.ts). The consumer implements `forumAgentSoul`, `forumNeedSoul`, `forumAlarmSoul`, `forumTemplateSoul`, `forumRoleSoul`, `forumSubtaskSoul`, `forumUpdateSoul`, and `forumChatTag`. Filled soul strings are in [vectors/mesh/forums.json](../vectors/mesh/forums.json). That file also has the need-resolve row, alarm pin rows (open, resolved, wrong forum), and accept or reject rows for both role modes.
 
 ```
 s3rch/forums/<forumId>/agents/<seaPubkey>                 → ForumAgentStatus
@@ -58,13 +58,13 @@ s3rch/forums/<forumId>/roles/<roleToken>/<seaPubkey>      → ForumRoleMembershi
 gun.get('s3rch').get('items').get(<item key>)             → ForumChatItem (a GunFeedNode)
 ```
 
-`forumId` is a minted object id of kind `forum`. `seaPubkey` is the SEA pubkey, not a `p_` key and not a wallet. `<needId>` is a minted object id of kind `need`. Check `see` uses the admitted object id. The soul is the Gun location. State is data, not a grant.
+`forumId` is a minted object id of kind `forum`. `seaPubkey` is the SEA pubkey, not a `p_` key and not a wallet. `<needId>` is a minted object id of kind `need`. `ForumNeed.subject` is the SEA pubkey the need is about. It is not compared to the forum id or to the principal embedded in that id. Check `see` uses the admitted object id. The soul is the Gun location. State is data, not a grant.
 
 Per-agent status stores `task`, `result`, `needs`, `progress`, `state`, `lastPrompt`, `lastUpdate`, `type`, `started`, `tokens`, and `runtime`. `started`, `tokens`, and `runtime` are that agent's counters. `tokens` is not a transfer. Optional `hb`, `batt`, and `link` are vitals on the same node. `needs` and `artifacts` are comma-separated object ids. Subtasks and updates are child souls under the agent, or feed item ids in `artifacts`.
 
 The template mode is `distinct-principals` or `role-labels`. Distinct principals: each role token names a different SEA principal. Role labels: one SEA principal wears several role tokens. The role token is lowercase letters, digits, and hyphen. A display title is not the token. A role token is not a Check predicate. An `@role` in chat is addressing, not authority.
 
-Chat is a `GunFeedNode` under `s3rch/items`. `ForumChatItem` is that type. `tags` includes `forum:<forumId>`. There is no `s3rch/chat` soul and no `s3rch/forums/<forumId>/chat` soul. `GunFeedNode` does not gain a field.
+Chat is a `GunFeedNode` under `s3rch/items`. `ForumChatItem` is that type. `tags` includes `forum:<forumId>`. Extra tags stay as written. A tag that is not already lowercase is rejected, and so is the tag `chat`. There is no `s3rch/chat` soul and no `s3rch/forums/<forumId>/chat` soul. `GunFeedNode` does not gain a field.
 
 The global alarm reads status tiles whose `state` is `emergency` and the pinned need at `forumAlarmSoul`. The pin counts when that need is an open emergency (`severity` `emergency`, `stated` 1). Either input is enough. The alarm node is not a grant.
 
