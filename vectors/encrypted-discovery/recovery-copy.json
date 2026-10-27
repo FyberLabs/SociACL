@@ -325,6 +325,77 @@
         "passphrase": "q7vN2mR9pL4xT8wK3c",
         "handle": "q7vN2mR9pL4xT8wK3c",
         "result": "fail"
+      },
+      {
+        "name": "emoji-heart",
+        "passphrase": "flint-parcel-quantum-marble-92❤️",
+        "result": "pass"
+      },
+      {
+        "name": "emoji-supplementary",
+        "passphrase": "flint-parcel-quantum-marble-92🖥️",
+        "result": "pass"
+      },
+      {
+        "name": "selector-leading",
+        "passphrase": "️flint-parcel-quantum-marble-92",
+        "result": "fail",
+        "score": 0,
+        "warning": "passphrase contains a hidden character"
+      },
+      {
+        "name": "selector-after-letter",
+        "passphrase": "flint-parcel-quantum-marble-92x️",
+        "result": "fail",
+        "score": 0,
+        "warning": "passphrase contains a hidden character"
+      },
+      {
+        "name": "selector-repeated",
+        "passphrase": "flint-parcel-quantum-marble-92❤️️",
+        "result": "fail",
+        "score": 0,
+        "warning": "passphrase contains a hidden character"
+      },
+      {
+        "name": "selector-after-space",
+        "passphrase": "flint-parcel-quantum-marble-92 ️",
+        "result": "fail",
+        "score": 0,
+        "warning": "passphrase contains a hidden character"
+      },
+      {
+        "name": "selector-unregistered-base",
+        "passphrase": "flint-parcel-quantum-marble-92😀️",
+        "result": "fail",
+        "score": 0,
+        "warning": "passphrase contains a hidden character"
+      },
+      {
+        "name": "selector-text-style",
+        "passphrase": "flint-parcel-quantum-marble-92❤︎",
+        "result": "fail",
+        "score": 0,
+        "warning": "passphrase contains a hidden character"
+      },
+      {
+        "name": "selector-cannot-pad-length",
+        "passphrase": "q7vN2mR9pL❤️",
+        "result": "fail",
+        "score": 0,
+        "warning": "passphrase needs at least 12 visible characters"
+      },
+      {
+        "name": "selector-cannot-boost-score",
+        "passphrase": "1️2️3️4️5️6️7️8️9️0️1️2️",
+        "result": "fail"
+      },
+      {
+        "name": "emoji-joiner-still-hidden",
+        "passphrase": "flint-parcel-quantum-marble-92👩‍💻",
+        "result": "fail",
+        "score": 0,
+        "warning": "passphrase contains a hidden character"
       }
     ]
   }
