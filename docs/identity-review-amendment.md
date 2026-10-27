@@ -484,3 +484,22 @@ accepted transition disappear or restore a retired signing key. The SIWE expiry
 must be strictly after issuance, and its not-before time cannot be after issuance.
 Malformed proofs, policy mismatches, and witness/proof hash mismatches still fail.
 Unattested rotation requests retain current-time freshness and SIWE expiry checks.
+
+## Publisher interoperability status
+
+[Panopticon PR #537](https://github.com/FyberLabs/panopticon/pull/537) adds an internal
+ES256 timestamp signer and public key-window export. It checks both its server
+clock and the verified record timestamp before signing, refuses backdating after
+retirement, and retains old public keys for historical verification. It exposes
+no HTTP route or production key configuration.
+
+Four shared cases in `vectors/ids/signed-at.json` use the public test token from
+that implementation's `core/acl-service/tests/fixtures/sociacl-witness.json`.
+Both TypeScript and Rust accept historical issuance within the original window
+(the proof expiry may exceed key retirement), and reject issuance before the
+window, at its exclusive end, or with missing bounds. The input bytes are an
+opaque test message, not a production ACL authorization.
+
+Authenticated policy publication, durable rollback protection, policy update
+lifecycle checks, signing-key custody, and the endpoint's fresh-history and
+present-revocation gates remain required under Panopticon #499 and SociACL #68.
