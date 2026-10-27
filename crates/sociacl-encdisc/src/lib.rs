@@ -142,7 +142,7 @@ pub use consume::{
     group_inbox_sig_bytes, group_inbox_soul, item_revision_soul, item_root_soul, manifest_soul,
     revision_manifest_bytes, status_authority_bytes, AccountKeyAnchor, AccountKeyLogEntry,
     AccountKeyLogHead, ConsumeDecision, CurrentKeyDecision, GroupInboxWriteSig, RevisionManifest,
-    StatusAuthorityBinding,
+    StatusAuthorityBinding, ACCOUNT_KEY_HEAD_MAX_AGE_MS,
 };
 pub use contact_lane::{
     derive_contact_lane, lane_lookup_key, open_contact_lane_grant, regrant_contact_lanes,

@@ -5,7 +5,9 @@
 //! other than the current account SEA pub needs `StatusAuthorityBinding`.
 //! A group-inbox `ssig` is that sender's current SEA pub. Those
 //! signatures fail closed unless the provider or wallet account-key
-//! log links. A hop, a status statement, and a chat node do not mint.
+//! log links. The signed head carries `issuedAt` and `maxAgeMs`. A
+//! verifier with no anchor still refuses a head outside that max-age.
+//! A hop, a status statement, and a chat node do not mint.
 //!
 //! s3r.ch copies `docs/s3rch-check.d.ts` and reimplements this module.
 //! It does not import this crate.
@@ -17,6 +19,15 @@ use crate::sea::verify_sea;
 
 /// Steps from a head at `KEYRING_HISTORY_MAX` down through seq 0.
 const ACCOUNT_KEY_WALK_LIMIT: usize = KEYRING_HISTORY_MAX + 1;
+
+/// Ceiling for a provider or wallet account-key head, in milliseconds.
+///
+/// Five minutes covers an answer from the provider or the wallet and
+/// ordinary clock skew. A longer window would keep a retired key current
+/// for a verifier that has not stored an anchor. The signed `maxAgeMs`
+/// and the verifier's `policyMaxAgeMs` can be shorter. Neither can raise
+/// this ceiling.
+pub const ACCOUNT_KEY_HEAD_MAX_AGE_MS: u64 = 300_000;
 
 pub const DOMAIN_ENV_DIGEST: &str = "s3rch-env-digest-v1";
 pub const DOMAIN_REVISION_MANIFEST: &str = "s3rch-revision-manifest-v1";
@@ -83,22 +94,25 @@ pub struct AccountKeyLogEntry {
 }
 
 /// Provider or wallet head. The SEA key does not sign these bytes.
+///
+/// `issued_at` and `max_age_ms` are inside the signature.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AccountKeyLogHead {
     pub account: String,
     pub seq: u64,
     pub entry_hash: String,
+    pub issued_at: u64,
+    pub max_age_ms: u64,
 }
 
 /// An entry already accepted on an earlier check.
 ///
-/// A later entry may stop at this anchor only when it names the same
+/// The hash is recomputed from `entry`. A hash supplied beside the entry
+/// is not stored. A later entry may stop here only when it names the same
 /// account and its seq is this seq plus one.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AccountKeyAnchor {
-    pub account: String,
-    pub seq: u64,
-    pub hash: String,
+    pub entry: AccountKeyLogEntry,
 }
 
 fn path_segment(value: &str) -> Result<(), EncDiscError> {
@@ -274,11 +288,15 @@ pub fn account_key_head_bytes(head: &AccountKeyLogHead) -> Result<Vec<u8>, EncDi
     }
     digest_hex(&head.entry_hash)?;
     let seq = canonical_decimal(head.seq)?;
+    let issued_at = canonical_decimal(head.issued_at)?;
+    let max_age = canonical_decimal(head.max_age_ms)?;
     prefixed(&[
         DOMAIN_ACCOUNT_KEY_HEAD,
         &head.account,
         &seq,
         &head.entry_hash,
+        &issued_at,
+        &max_age,
     ])
 }
 
@@ -381,6 +399,11 @@ pub fn accept_revision_manifest(
     ConsumeDecision::Accept
 }
 
+/// `binding_signed_by_current` is the consumer's result.
+///
+/// This check does not verify the binding signature. The consumer must
+/// verify that signature under the current account SEA pub before passing
+/// true.
 pub fn accept_status_signer(
     signing_pub: &str,
     current_account_pub: &str,
@@ -428,6 +451,12 @@ pub fn accept_status_signer(
     ConsumeDecision::Accept
 }
 
+/// `member`, `signature_under_sender`, and `derived_from_group_key` are
+/// the consumer's results.
+///
+/// This check does not verify the group-inbox signature, membership, or a
+/// derivation from the group epoch key. The consumer must do those checks
+/// before passing true.
 pub fn accept_group_inbox_sender(
     sender_pub: &str,
     current_account_pub: &str,
@@ -480,17 +509,83 @@ fn push_status_auth(
     Ok(())
 }
 
-fn anchor_links(entry: &AccountKeyLogEntry, entry_hash: &str, anchor: &AccountKeyAnchor) -> bool {
+fn anchor_links(
+    entry: &AccountKeyLogEntry,
+    entry_hash: &str,
+    anchor: &AccountKeyLogEntry,
+    anchor_hash: &str,
+) -> bool {
     if entry.account != anchor.account {
         return false;
     }
-    if entry_hash == anchor.hash && entry.seq == anchor.seq {
+    if entry_hash == anchor_hash && entry.seq == anchor.seq {
         return true;
     }
     match anchor.seq.checked_add(1) {
-        Some(next) => entry.seq == next && entry.prev == anchor.hash,
+        Some(next) => entry.seq == next && entry.prev == anchor_hash,
         None => false,
     }
+}
+
+fn head_is_fresh(
+    issued_at: u64,
+    signed_max_age_ms: u64,
+    now: u64,
+    skew_allowance_ms: u64,
+    policy_max_age_ms: u64,
+) -> bool {
+    let bound = signed_max_age_ms
+        .min(policy_max_age_ms)
+        .min(ACCOUNT_KEY_HEAD_MAX_AGE_MS);
+    let latest = now.saturating_add(skew_allowance_ms);
+    if issued_at > latest {
+        return false;
+    }
+    if now >= issued_at {
+        now - issued_at <= bound
+    } else {
+        true
+    }
+}
+
+/// True when a hash-linked entry below `seq` uses the provider signing key.
+///
+/// A missing parent stops the scan. The anchor already accepted that prefix,
+/// so an absent older entry is not a broken link. A duplicate seq refuses.
+fn provider_key_below(
+    entries: &[AccountKeyLogEntry],
+    account: &str,
+    mut seq: u64,
+    prev: &str,
+    provider_pub: &str,
+) -> bool {
+    let mut prev = prev.to_string();
+    for _ in 0..ACCOUNT_KEY_WALK_LIMIT {
+        if seq == 0 {
+            return false;
+        }
+        let parent = match unique_index(entries, account, seq - 1) {
+            Ok(Some(parent)) => parent,
+            Ok(None) => return false,
+            Err(()) => return true,
+        };
+        let parent_entry = &entries[parent];
+        if parent_entry.account != account {
+            return true;
+        }
+        let Ok(parent_hash) = account_key_entry_hash(parent_entry) else {
+            return false;
+        };
+        if parent_hash != prev {
+            return false;
+        }
+        if parent_entry.key_pub == provider_pub {
+            return true;
+        }
+        seq = parent_entry.seq;
+        prev = parent_entry.prev.clone();
+    }
+    false
 }
 
 fn head_signature_ok(provider_pub: &str, head: &AccountKeyLogHead, signature: &str) -> bool {
@@ -512,6 +607,9 @@ pub fn accept_current_key(
     head_signature: &str,
     expected_account: &str,
     statement_key_pub: &str,
+    now: u64,
+    skew_allowance_ms: u64,
+    policy_max_age_ms: u64,
 ) -> CurrentKeyDecision {
     if !provider_answered {
         return CurrentKeyDecision::Refuse("no-answer");
@@ -539,44 +637,66 @@ pub fn accept_current_key(
     if start_hash != head.entry_hash || entries[start].key_pub.is_empty() {
         return CurrentKeyDecision::Refuse("head-mismatch");
     }
-    if provider_pub == entries[start].key_pub {
-        return CurrentKeyDecision::Refuse("head-mismatch");
+    if !head_is_fresh(
+        head.issued_at,
+        head.max_age_ms,
+        now,
+        skew_allowance_ms,
+        policy_max_age_ms,
+    ) {
+        return CurrentKeyDecision::Refuse("stale");
     }
-    if let Some(anchor) = anchor {
-        if anchor.account != expected_account {
+    let resolved_anchor = if let Some(anchor) = anchor {
+        if anchor.entry.account != expected_account {
             return CurrentKeyDecision::Refuse("unlinked");
         }
-        if head.seq < anchor.seq {
+        let hash = match account_key_entry_hash(&anchor.entry) {
+            Ok(hash) => hash,
+            Err(_) => return CurrentKeyDecision::Refuse("unlinked"),
+        };
+        if head.seq < anchor.entry.seq {
             return CurrentKeyDecision::Refuse("superseded");
         }
-    }
+        Some((anchor, hash))
+    } else {
+        None
+    };
     let mut index = start;
     let mut linked = false;
+    let mut below: Option<(u64, String)> = None;
     for _ in 0..ACCOUNT_KEY_WALK_LIMIT {
         let entry = &entries[index];
         if entry.account != expected_account {
             return CurrentKeyDecision::Refuse("head-mismatch");
         }
+        if entry.key_pub == provider_pub {
+            return CurrentKeyDecision::Refuse("head-mismatch");
+        }
         let Ok(entry_hash) = account_key_entry_hash(entry) else {
             return CurrentKeyDecision::Refuse("prev-mismatch");
         };
-        if let Some(anchor) = anchor {
-            if anchor_links(entry, &entry_hash, anchor) {
+        if let Some((anchor, anchor_hash)) = resolved_anchor.as_ref() {
+            if anchor_links(entry, &entry_hash, &anchor.entry, anchor_hash) {
+                if anchor.entry.key_pub == provider_pub {
+                    return CurrentKeyDecision::Refuse("head-mismatch");
+                }
                 linked = true;
+                below = Some((anchor.entry.seq, anchor.entry.prev.clone()));
                 break;
             }
-            if entry.seq <= anchor.seq {
+            if entry.seq <= anchor.entry.seq {
                 return CurrentKeyDecision::Refuse("unlinked");
             }
         }
         if entry.seq == 0 {
-            if anchor.is_some() {
+            if resolved_anchor.is_some() {
                 return CurrentKeyDecision::Refuse("unlinked");
             }
             if entry.prev != PREV_NONE {
                 return CurrentKeyDecision::Refuse("prev-mismatch");
             }
             linked = true;
+            below = Some((entry.seq, entry.prev.clone()));
             break;
         }
         let parent = match unique_index(entries, expected_account, entry.seq - 1) {
@@ -594,6 +714,11 @@ pub fn accept_current_key(
     }
     if !linked {
         return CurrentKeyDecision::Refuse("unlinked");
+    }
+    if let Some((seq, prev)) = below {
+        if provider_key_below(entries, expected_account, seq, &prev, provider_pub) {
+            return CurrentKeyDecision::Refuse("head-mismatch");
+        }
     }
     if statement_key_pub != entries[start].key_pub {
         return CurrentKeyDecision::Refuse("superseded");

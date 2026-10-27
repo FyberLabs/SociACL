@@ -18,6 +18,7 @@ import {
   accountKeyHeadBytes,
   accountKeyHeadSignedBySea,
   accountKeyLogBytes,
+  ACCOUNT_KEY_HEAD_MAX_AGE_MS,
   consumeStatementMints,
   envDigest,
   grantManifestBytes,
@@ -35,11 +36,32 @@ import {
   type RevisionManifest,
 } from "../contract/consume.ts";
 
+type ConsumeCheck = {
+  name: string;
+  entries?: AccountKeyLogEntry[];
+  head?: AccountKeyLogHead;
+  anchor?: AccountKeyLogEntry;
+  chain?: { account: string; lastSeq: number; keyPub: string };
+  issuedAt?: number;
+  maxAgeMs?: number;
+  entryHash?: string;
+  providerAnswered: boolean;
+  headSignature: string;
+  expectedAccount: string;
+  statementKeyPub: string;
+  now: number;
+  skewAllowanceMs: number;
+  policyMaxAgeMs: number;
+  decision: string;
+  keyPub?: string;
+};
+
 const document = JSON.parse(
   readFileSync(new URL("../../vectors/encrypted-discovery/consume.json", import.meta.url), "utf8"),
 ) as {
   cases: { name: string; encodedLen: number; sha256: string }[];
-  inputs: { providerPub: string; headSignature: string };
+  inputs: { providerPub: string; headSignature: string; headMaxAgeMs: number };
+  checks: ConsumeCheck[];
 };
 const signing = JSON.parse(
   readFileSync(new URL("../../vectors/encrypted-discovery/sea-fixture.json", import.meta.url), "utf8"),
@@ -67,6 +89,25 @@ function manifest(env: string, statusAuthPub?: string): RevisionManifest {
 
 function genesis(): AccountKeyLogEntry {
   return { account: "provider:acct", keyPub: "sea-current", seq: 0, prev: "none" };
+}
+
+const ISSUED_AT = 1_700_000_000_000;
+const MAX_AGE = 60_000;
+const SKEW = 5_000;
+
+function headFor(account: string, seq: number, entryHash: string): AccountKeyLogHead {
+  return { account, seq, entryHash, issuedAt: ISSUED_AT, maxAgeMs: MAX_AGE };
+}
+
+function fresh(
+  input: Omit<Parameters<typeof acceptCurrentKey>[0], "now" | "skewAllowanceMs" | "policyMaxAgeMs">,
+) {
+  return acceptCurrentKey({
+    now: ISSUED_AT,
+    skewAllowanceMs: SKEW,
+    policyMaxAgeMs: MAX_AGE,
+    ...input,
+  });
 }
 
 function signHead(head: AccountKeyLogHead): { providerPub: string; headSignature: string } {
@@ -131,11 +172,7 @@ test("canonical consume vectors match the shared fixture", () => {
   const secondBytes = accountKeyLogBytes(second);
   const secondHash = accountKeyEntryHash(second);
   expectHash("account-key-next", secondBytes, secondHash);
-  const headBytes = accountKeyHeadBytes({
-    account: "provider:acct",
-    seq: 1,
-    entryHash: secondHash,
-  });
+  const headBytes = accountKeyHeadBytes(headFor("provider:acct", 1, secondHash));
   expectHash("account-key-head", headBytes, sha256Hex(headBytes));
   assert.equal(accountKeyHeadSignedBySea(), false);
 
@@ -346,12 +383,12 @@ test("status authority, group inbox, and current key", () => {
     prev: firstHash,
   };
   const secondHash = accountKeyEntryHash(second);
-  const head = { account: "provider:acct", seq: 1, entryHash: secondHash };
+  const head = headFor("provider:acct", 1, secondHash);
   const signed = signHead(head);
   assert.equal(signed.providerPub, document.inputs.providerPub);
   assert.equal(signed.headSignature, document.inputs.headSignature);
   assert.deepEqual(
-    acceptCurrentKey({
+    fresh({
       head,
       entries: [first, second],
       providerAnswered: true,
@@ -363,7 +400,7 @@ test("status authority, group inbox, and current key", () => {
     { ok: true, keyPub: "sea-next" },
   );
   assert.deepEqual(
-    acceptCurrentKey({
+    fresh({
       head,
       entries: [first, second],
       providerAnswered: false,
@@ -375,7 +412,7 @@ test("status authority, group inbox, and current key", () => {
     { ok: false, reason: "no-answer" },
   );
   assert.deepEqual(
-    acceptCurrentKey({
+    fresh({
       head,
       entries: [first, second],
       providerAnswered: true,
@@ -387,7 +424,7 @@ test("status authority, group inbox, and current key", () => {
     { ok: false, reason: "head-mismatch" },
   );
   assert.deepEqual(
-    acceptCurrentKey({
+    fresh({
       head,
       entries: [first, second],
       providerAnswered: true,
@@ -398,7 +435,7 @@ test("status authority, group inbox, and current key", () => {
     { ok: false, reason: "superseded" },
   );
   assert.deepEqual(
-    acceptCurrentKey({
+    fresh({
       head,
       entries: [{ ...first, keyPub: "sea-forged" }, second],
       providerAnswered: true,
@@ -408,9 +445,9 @@ test("status authority, group inbox, and current key", () => {
     }),
     { ok: false, reason: "prev-mismatch" },
   );
-  const anchor: AccountKeyAnchor = { account: "provider:acct", seq: 0, hash: firstHash };
+  const anchor: AccountKeyAnchor = { entry: first };
   assert.deepEqual(
-    acceptCurrentKey({
+    fresh({
       head,
       entries: [second],
       anchor,
@@ -427,13 +464,9 @@ test("status authority, group inbox, and current key", () => {
     seq: 9,
     prev: firstHash,
   };
-  const jumpedHead = {
-    account: "provider:acct",
-    seq: 9,
-    entryHash: accountKeyEntryHash(jumped),
-  };
+  const jumpedHead = headFor("provider:acct", 9, accountKeyEntryHash(jumped));
   assert.deepEqual(
-    acceptCurrentKey({
+    fresh({
       head: jumpedHead,
       entries: [first, jumped],
       anchor,
@@ -457,16 +490,12 @@ test("status authority, group inbox, and current key", () => {
     seq: 1,
     prev: otherHash,
   };
-  const crossedHead = {
-    account: "provider:acct",
-    seq: 1,
-    entryHash: accountKeyEntryHash(crossed),
-  };
+  const crossedHead = headFor("provider:acct", 1, accountKeyEntryHash(crossed));
   assert.deepEqual(
-    acceptCurrentKey({
+    fresh({
       head: crossedHead,
       entries: [other, crossed],
-      anchor: { account: "provider:other", seq: 0, hash: otherHash },
+      anchor: { entry: other },
       providerAnswered: true,
       expectedAccount: "provider:acct",
       ...signHead(crossedHead),
@@ -480,13 +509,9 @@ test("status authority, group inbox, and current key", () => {
     seq: 0,
     prev: "none",
   };
-  const seaHead = {
-    account: "provider:acct",
-    seq: 0,
-    entryHash: accountKeyEntryHash(seaEntry),
-  };
+  const seaHead = headFor("provider:acct", 0, accountKeyEntryHash(seaEntry));
   assert.deepEqual(
-    acceptCurrentKey({
+    fresh({
       head: seaHead,
       entries: [seaEntry],
       providerAnswered: true,
@@ -508,14 +533,10 @@ test("status authority, group inbox, and current key", () => {
     seq: 1,
     prev: accountKeyEntryHash(attackerGenesis),
   };
-  const attackerHead = {
-    account: "provider:other",
-    seq: 1,
-    entryHash: accountKeyEntryHash(attackerNext),
-  };
+  const attackerHead = headFor("provider:other", 1, accountKeyEntryHash(attackerNext));
   const attackerSigned = signHead(attackerHead);
   assert.deepEqual(
-    acceptCurrentKey({
+    fresh({
       head: attackerHead,
       entries: [attackerGenesis, attackerNext],
       providerAnswered: true,
@@ -526,7 +547,7 @@ test("status authority, group inbox, and current key", () => {
     { ok: false, reason: "head-mismatch" },
   );
   assert.deepEqual(
-    acceptCurrentKey({
+    fresh({
       head: attackerHead,
       entries: [attackerGenesis, attackerNext],
       providerAnswered: true,
@@ -537,7 +558,7 @@ test("status authority, group inbox, and current key", () => {
     { ok: true, keyPub: "sea-attacker" },
   );
   assert.deepEqual(
-    acceptCurrentKey({
+    fresh({
       head,
       entries: [first, second],
       providerAnswered: true,
@@ -554,9 +575,9 @@ test("status authority, group inbox, and current key", () => {
     prev = accountKeyEntryHash(entry);
     entries.push(entry);
   }
-  const limitHead = { account: "provider:acct", seq: KEYRING_HISTORY_MAX, entryHash: prev };
+  const limitHead = headFor("provider:acct", KEYRING_HISTORY_MAX, prev);
   assert.deepEqual(
-    acceptCurrentKey({
+    fresh({
       head: limitHead,
       entries,
       providerAnswered: true,
@@ -605,10 +626,10 @@ test("account key anchor is a floor", () => {
     seq: 2,
     prev: accountKeyEntryHash(forkFirst),
   };
-  const oldHead = { account: "provider:acct", seq: 1, entryHash: firstHash };
-  const floor = { account: "provider:acct", seq: 2, hash: secondHash };
+  const oldHead = headFor("provider:acct", 1, firstHash);
+  const floor: AccountKeyAnchor = { entry: second };
   assert.deepEqual(
-    acceptCurrentKey({
+    fresh({
       head: oldHead,
       entries: [genesisEntry, first, second],
       anchor: floor,
@@ -619,14 +640,10 @@ test("account key anchor is a floor", () => {
     }),
     { ok: false, reason: "superseded" },
   );
-  const forkHead = {
-    account: "provider:acct",
-    seq: 2,
-    entryHash: accountKeyEntryHash(forkSecond),
-  };
-  const realFloor = { account: "provider:acct", seq: 1, hash: firstHash };
+  const forkHead = headFor("provider:acct", 2, accountKeyEntryHash(forkSecond));
+  const realFloor: AccountKeyAnchor = { entry: first };
   assert.deepEqual(
-    acceptCurrentKey({
+    fresh({
       head: forkHead,
       entries: [genesisEntry, forkFirst, forkSecond],
       anchor: realFloor,
@@ -637,9 +654,9 @@ test("account key anchor is a floor", () => {
     }),
     { ok: false, reason: "unlinked" },
   );
-  const current = { account: "provider:acct", seq: 2, entryHash: secondHash };
+  const current = headFor("provider:acct", 2, secondHash);
   assert.deepEqual(
-    acceptCurrentKey({
+    fresh({
       head: current,
       entries: [second],
       anchor: floor,
@@ -650,4 +667,63 @@ test("account key anchor is a floor", () => {
     }),
     { ok: true, keyPub: "k2" },
   );
+});
+
+function chainFrom(spec: { account: string; lastSeq: number; keyPub: string }): AccountKeyLogEntry[] {
+  assert.equal(spec.lastSeq, KEYRING_HISTORY_MAX);
+  const entries: AccountKeyLogEntry[] = [];
+  let prev = "none";
+  for (let seq = 0; seq <= spec.lastSeq; seq += 1) {
+    const row: AccountKeyLogEntry = {
+      account: spec.account,
+      keyPub: spec.keyPub.replace("{seq}", String(seq)),
+      seq,
+      prev,
+    };
+    prev = accountKeyEntryHash(row);
+    entries.push(row);
+  }
+  return entries;
+}
+
+test("shared consume checks", () => {
+  assert.equal(document.inputs.headMaxAgeMs, ACCOUNT_KEY_HEAD_MAX_AGE_MS);
+  for (const row of document.checks) {
+    let entries: AccountKeyLogEntry[];
+    let head: AccountKeyLogHead;
+    if (row.chain !== undefined) {
+      entries = chainFrom(row.chain);
+      const last = entries[entries.length - 1];
+      assert.ok(last, row.name);
+      head = headFor(last.account, last.seq, accountKeyEntryHash(last));
+      head = { ...head, issuedAt: row.issuedAt ?? ISSUED_AT, maxAgeMs: row.maxAgeMs ?? MAX_AGE };
+      assert.equal(head.entryHash, row.entryHash, row.name);
+    } else {
+      assert.ok(row.entries, row.name);
+      assert.ok(row.head, row.name);
+      entries = row.entries;
+      head = row.head;
+    }
+    if (row.name === "account-key-head-signature") {
+      assert.equal(row.headSignature, document.inputs.headSignature);
+    }
+    const decision = acceptCurrentKey({
+      head,
+      entries,
+      ...(row.anchor === undefined ? {} : { anchor: { entry: row.anchor } }),
+      providerAnswered: row.providerAnswered,
+      providerPub: document.inputs.providerPub,
+      headSignature: row.headSignature,
+      expectedAccount: row.expectedAccount,
+      statementKeyPub: row.statementKeyPub,
+      now: row.now,
+      skewAllowanceMs: row.skewAllowanceMs,
+      policyMaxAgeMs: row.policyMaxAgeMs,
+    });
+    if (row.decision === "accept") {
+      assert.deepEqual(decision, { ok: true, keyPub: row.keyPub }, row.name);
+    } else {
+      assert.deepEqual(decision, { ok: false, reason: row.decision }, row.name);
+    }
+  }
 });
