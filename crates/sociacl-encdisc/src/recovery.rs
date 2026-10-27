@@ -24,14 +24,15 @@ use crate::error::EncDiscError;
 use crate::hexutil::encode_hex;
 use crate::keyring::{rotate_keyring, AccountKeyring, KeyringRotation, RotationMint};
 use crate::limits::{
-    in_bound, ARGON2ID_LIMITS, KEYRING_HISTORY_MAX, KEYRING_SERIAL_MAX, RECOVERY_ABSOLUTE_MAX, RECOVERY_HEADER_LEN,
-    RECOVERY_NONCE_LEN, RECOVERY_TAG_LEN,
+    in_bound, ARGON2ID_LIMITS, KEYRING_HISTORY_MAX, KEYRING_SERIAL_MAX, KEYRING_SERIAL_V2_MAX,
+    RECOVERY_ABSOLUTE_MAX, RECOVERY_HEADER_LEN, RECOVERY_NONCE_LEN, RECOVERY_TAG_LEN,
 };
 use crate::store_write::{sign_store_write, verify_store_write};
 use unicode_normalization::UnicodeNormalization;
 pub(crate) const DOMAIN_RECOVERY: &str = "sociacl-recovery-copy-v1";
 pub(crate) const DOMAIN_KEYRING_PLAIN_V1: &str = "sociacl-keyring-plain-v1";
 pub(crate) const DOMAIN_KEYRING_PLAIN: &str = "sociacl-keyring-plain-v2";
+pub(crate) const DOMAIN_KEYRING_PLAIN_V3: &str = "sociacl-keyring-plain-v3";
 
 /// Ciphertext of one keyring version. The store does not see the passphrase.
 ///
@@ -977,7 +978,13 @@ pub(crate) fn encode_keyring(keyring: &AccountKeyring) -> Result<Zeroizing<Vec<u
         return Err(EncDiscError::KeyringTooLarge);
     }
     let mut out = Zeroizing::new(Vec::with_capacity(total));
-    write_field(&mut out, DOMAIN_KEYRING_PLAIN);
+    // Both domains have the same length; existing small-copy bytes stay stable.
+    let domain = if total > KEYRING_SERIAL_V2_MAX {
+        DOMAIN_KEYRING_PLAIN_V3
+    } else {
+        DOMAIN_KEYRING_PLAIN
+    };
+    write_field(&mut out, domain);
     write_field(&mut out, keyring.principal().as_ref());
     write_field(&mut out, keyring.genesis_epub().as_ref());
     write_field(&mut out, keyring.current_pub().as_ref());
@@ -1013,8 +1020,13 @@ pub(crate) fn decode_keyring(bytes: &[u8]) -> Result<KeyringFields, EncDiscError
     }
     let mut cursor = Cursor { bytes, offset: 0 };
     let domain = cursor.next_string()?;
-    if domain.as_str() == DOMAIN_KEYRING_PLAIN_V1 || domain.as_str() != DOMAIN_KEYRING_PLAIN {
+    if domain.as_str() == DOMAIN_KEYRING_PLAIN_V1
+        || (domain.as_str() != DOMAIN_KEYRING_PLAIN && domain.as_str() != DOMAIN_KEYRING_PLAIN_V3)
+    {
         return Err(EncDiscError::RecoveryRejected);
+    }
+    if domain.as_str() == DOMAIN_KEYRING_PLAIN && bytes.len() > KEYRING_SERIAL_V2_MAX {
+        return Err(EncDiscError::KeyringTooLarge);
     }
     let principal = cursor.next_string()?;
     let genesis_epub = cursor.next_string()?;
@@ -3085,6 +3097,54 @@ mod tests {
                 assert_eq!(decoded.prior_lanes.len(), KEYRING_HISTORY_MAX);
                 assert_eq!(decoded.prior_contact_secrets.len(), KEYRING_HISTORY_MAX);
                 assert_eq!(decoded.rotation_seq, KEYRING_HISTORY_MAX as u64);
+            }
+        }
+    }
+
+
+    #[test]
+    fn shared_versioned_plaintext_caps_precede_key_material_validation() {
+        let fixture: Value = serde_json::from_str(include_str!(
+            "../../../vectors/encrypted-discovery/keyring-capacity.json"
+        ))
+        .unwrap();
+        for row in fixture["boundaryCases"].as_array().unwrap() {
+            let domain = row["domain"].as_str().unwrap();
+            let size = row["bytes"].as_u64().unwrap() as usize;
+            let mut fields: Vec<String> = [
+                domain,
+                "principal",
+                "genesis",
+                "pub",
+                "",
+                "epub",
+                "epriv",
+                "0",
+                "lane",
+                "0",
+                "contact",
+                "0",
+                "0",
+                "0",
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+            let base: usize = fields.iter().map(|s| 4 + s.len()).sum();
+            fields[4] = "x".repeat(size - base);
+            let mut bytes = Vec::new();
+            for field in &fields {
+                write_field(&mut bytes, field);
+            }
+            assert_eq!(bytes.len(), size);
+            let result = decode_keyring(&bytes);
+            if let Some(expected) = row["error"].as_str() {
+                let Err(error) = result else {
+                    panic!("accepted {domain} size {size}");
+                };
+                assert_eq!(token(&error), expected);
+            } else {
+                assert_eq!(result.unwrap().current_priv.len(), size - base);
             }
         }
     }

@@ -24,7 +24,7 @@ import {
 import { recoveryEnvelopeHash, REPLACED_NONE } from "./store-write.ts";
 import { type PrincipalId, type ResolutionContext } from "../ids/src/index.js";
 
-export { ARGON2ID_LIMITS, KEYRING_SERIAL_MAX, DELIVERY_BLOB_MAX, RECOVERY_ABSOLUTE_MAX, RECOVERY_ENVELOPE_MAX } from "./keyring-limits.ts";
+export { ARGON2ID_LIMITS, KEYRING_SERIAL_MAX, KEYRING_SERIAL_V2_MAX, DELIVERY_BLOB_MAX, RECOVERY_ABSOLUTE_MAX, RECOVERY_ENVELOPE_MAX } from "./keyring-limits.ts";
 export { checkRecoveryPassphrase, RecoveryWeakPassphraseError, encodePassphrase, MemoryRecoveryStore, openRecoveryCopy };
 export type { RecoveryCopyStore, RecoveryEnvelope };
 

@@ -30,10 +30,10 @@
       "floor": 16,
       "ceiling": 64
     },
-    "keyringSerialMax": 262144,
-    "deliveryBlobMax": 262238,
-    "recoveryEnvelopeMax": 262205,
-    "recoveryAbsoluteMax": 262269,
+    "keyringSerialMax": 524288,
+    "deliveryBlobMax": 524382,
+    "recoveryEnvelopeMax": 524349,
+    "recoveryAbsoluteMax": 524413,
     "wrapsPerPrincipal": 64
   },
   "unicodeVersion": "16.0.0",
@@ -226,23 +226,23 @@
     },
     {
       "name": "envelope-above-cap",
-      "envelopeBytes": 262270,
+      "envelopeBytes": 524414,
       "error": "keyring-too-large"
     },
     {
       "name": "ciphertext-above-cap",
-      "ciphertextBytes": 262161,
+      "ciphertextBytes": 524305,
       "error": "keyring-too-large"
     },
     {
       "name": "ciphertext-above-cap-long-salt",
       "saltHex": "11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111",
-      "ciphertextBytes": 262161,
+      "ciphertextBytes": 524305,
       "error": "keyring-too-large"
     },
     {
       "name": "delivery-above-cap",
-      "blobBytes": 262239,
+      "blobBytes": 524383,
       "error": "keyring-too-large"
     }
   ],

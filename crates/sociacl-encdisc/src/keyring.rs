@@ -1448,6 +1448,93 @@ mod tests {
     }
 
     #[test]
+    fn maximum_supported_keyring_uses_v3_without_losing_history() {
+        use sha2::{Digest, Sha256};
+        let fixture: Value = serde_json::from_str(include_str!(
+            "../../../vectors/encrypted-discovery/keyring-capacity.json"
+        ))
+        .unwrap();
+        let count = fixture["count"].as_u64().unwrap() as usize;
+        let (genesis, _) = scalar_sea_n(1);
+        let (genesis_epub, _) = scalar_sea_n(2);
+        let (current, current_priv) = scalar_sea_n((count + 3) as u16);
+        let (epub, epriv) = scalar_sea_n((count + 4) as u16);
+        let retired: Vec<_> = (2..count + 2).map(|n| scalar_sea_n(n as u16)).collect();
+        let retired_refs: Vec<_> = retired
+            .iter()
+            .map(|(p, s)| (p.as_str(), s.as_str()))
+            .collect();
+        let lanes: Vec<_> = (1..=count).map(|n| format!("{n:064x}")).collect();
+        let contacts: Vec<_> = (count + 1..=2 * count)
+            .map(|n| format!("{n:064x}"))
+            .collect();
+        let lane_refs: Vec<_> = lanes.iter().map(String::as_str).collect();
+        let contact_refs: Vec<_> = contacts.iter().map(String::as_str).collect();
+        // Validate key material and complete histories; no witnessed chain is claimed.
+        let keyring = AccountKeyring::hold(
+            parse_principal_id(&genesis).unwrap(),
+            &genesis_epub,
+            &current,
+            current_priv.as_str(),
+            &epub,
+            epriv.as_str(),
+            &retired_refs,
+            &format!("{:064x}", 0),
+            &lane_refs,
+            &format!("{:064x}", 2 * count + 1),
+            &contact_refs,
+            fixture["contentEpoch"].as_u64().unwrap(),
+            count as u64,
+        )
+        .unwrap();
+        let mut encoded = crate::recovery::encode_keyring(&keyring).unwrap();
+        assert_eq!(
+            encoded.len(),
+            fixture["serializedBytes"].as_u64().unwrap() as usize
+        );
+        assert!(encoded.len() > crate::limits::KEYRING_SERIAL_V2_MAX);
+        assert!(encoded.len() < crate::limits::KEYRING_SERIAL_MAX);
+        assert!(encoded.len() + 1 + 65 + 12 + 16 <= crate::limits::DELIVERY_BLOB_MAX);
+        assert!(encoded.len() + 33 + 64 + 12 + 16 <= crate::limits::RECOVERY_ABSOLUTE_MAX);
+        assert_eq!(
+            crate::hexutil::encode_secret_hex(&Sha256::digest(&encoded)).as_str(),
+            fixture["sha256"].as_str().unwrap()
+        );
+        let decoded = crate::recovery::decode_keyring(&encoded).unwrap();
+        assert_eq!(decoded.retired.len(), count);
+        for (actual, expected) in decoded.retired.iter().zip(&retired) {
+            assert_eq!(actual.0.as_str(), expected.0.as_str());
+            assert_eq!(actual.1.as_str(), expected.1.as_str());
+        }
+        assert_eq!(
+            decoded
+                .prior_lanes
+                .iter()
+                .map(|s| s.as_str())
+                .collect::<Vec<_>>(),
+            lane_refs
+        );
+        assert_eq!(
+            decoded
+                .prior_contact_secrets
+                .iter()
+                .map(|s| s.as_str())
+                .collect::<Vec<_>>(),
+            contact_refs
+        );
+        assert_eq!(decoded.rotation_seq, count as u64);
+        assert_eq!(
+            decoded.content_epoch,
+            fixture["contentEpoch"].as_u64().unwrap()
+        );
+        encoded[4 + crate::recovery::DOMAIN_KEYRING_PLAIN.len() - 1] = b'2';
+        assert!(matches!(
+            crate::recovery::decode_keyring(&encoded),
+            Err(EncDiscError::KeyringTooLarge)
+        ));
+    }
+
+    #[test]
     fn history_limit_refuses_rotation_before_mint() {
         let v = ring();
         let account = genesis_of(&v);

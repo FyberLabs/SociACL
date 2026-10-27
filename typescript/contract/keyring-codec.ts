@@ -4,10 +4,11 @@
  */
 import type { AccountKeyring } from "./account-keyring.ts";
 import { canonicalDecimal, lengthPrefixed } from "./canonical.ts";
-import { KEYRING_HISTORY_MAX, KEYRING_SERIAL_MAX } from "./keyring-limits.ts";
+import { KEYRING_HISTORY_MAX, KEYRING_SERIAL_MAX, KEYRING_SERIAL_V2_MAX } from "./keyring-limits.ts";
 
 const DOMAIN_KEYRING_PLAIN_V1 = "sociacl-keyring-plain-v1";
 export const DOMAIN_KEYRING_PLAIN = "sociacl-keyring-plain-v2";
+export const DOMAIN_KEYRING_PLAIN_V3 = "sociacl-keyring-plain-v3";
 
 export type KeyringFields = {
   principal: string;
@@ -52,6 +53,8 @@ export function encodeKeyring(keyring: AccountKeyring): Uint8Array {
     total += 4 + new TextEncoder().encode(field).length;
     if (total > KEYRING_SERIAL_MAX) throw new Error("keyring-too-large");
   }
+  // Both domains have the same encoded length; preserve existing small-copy bytes.
+  if (total > KEYRING_SERIAL_V2_MAX) fields[0] = DOMAIN_KEYRING_PLAIN_V3;
   return lengthPrefixed(fields);
 }
 
@@ -59,7 +62,8 @@ export function decodeKeyring(bytes: Uint8Array): KeyringFields {
   if (bytes.length > KEYRING_SERIAL_MAX) throw new Error("keyring-too-large");
   const cursor = new Cursor(bytes);
   const domain = cursor.nextString();
-  if (domain === DOMAIN_KEYRING_PLAIN_V1 || domain !== DOMAIN_KEYRING_PLAIN) throw new Error("recovery-rejected");
+  if (domain === DOMAIN_KEYRING_PLAIN_V1 || (domain !== DOMAIN_KEYRING_PLAIN && domain !== DOMAIN_KEYRING_PLAIN_V3)) throw new Error("recovery-rejected");
+  if (domain === DOMAIN_KEYRING_PLAIN && bytes.length > KEYRING_SERIAL_V2_MAX) throw new Error("keyring-too-large");
   const principal = cursor.nextString();
   const genesisEpub = cursor.nextString();
   const pub = cursor.nextString();

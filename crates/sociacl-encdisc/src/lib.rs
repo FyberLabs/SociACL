@@ -174,7 +174,7 @@ pub use keyring::{
 };
 pub use limits::{
     Argon2Bound, Argon2IdLimits, ARGON2ID_LIMITS, DELIVERY_BLOB_MAX, KEYRING_HISTORY_MAX, KEYRING_SERIAL_MAX,
-    MAX_WRAPS_PER_PRINCIPAL, RECOVERY_ABSOLUTE_MAX, RECOVERY_ENVELOPE_MAX,
+    KEYRING_SERIAL_V2_MAX, MAX_WRAPS_PER_PRINCIPAL, RECOVERY_ABSOLUTE_MAX, RECOVERY_ENVELOPE_MAX,
 };
 pub use migration::{
     accept_migration, apply_protocol_migration, open_migrated_item, prepare_protocol_migration,

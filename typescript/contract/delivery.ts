@@ -14,7 +14,7 @@ import type { AccountKeyring } from "./account-keyring.ts";
 import { deliverKeyringWith, openDeliveredKeyring } from "./delivery-seal.ts";
 
 export { openDeliveredKeyring };
-export { DELIVERY_BLOB_MAX, KEYRING_SERIAL_MAX } from "./keyring-limits.ts";
+export { DELIVERY_BLOB_MAX, KEYRING_SERIAL_MAX, KEYRING_SERIAL_V2_MAX } from "./keyring-limits.ts";
 
 export function deliverKeyring(
   keyring: AccountKeyring,

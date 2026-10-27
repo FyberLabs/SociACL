@@ -262,13 +262,44 @@ This is the current unreleased keyring capacity, not a rule limiting the
 identity resolver's accepted record sequences. A larger capacity requires a
 reviewed policy and serialization change; do not discard old secrets to bypass it.
 
-The serialized keyring has a fixed cap, `KEYRING_SERIAL_MAX`, 262144 bytes (256 KiB). The constant is unchanged. Each retired pair encodes as 138 bytes. Each prior base lane and each prior contact-lane secret encodes as 68 bytes. 1024 retired keys, 1024 prior base lanes, and 1024 prior contact-lane secrets are about 281237 bytes and do not fit. The byte cap rejects that encoding. The count rules stay `priorLanes.length == rotationSeq` and `priorContactSecrets.length == rotationSeq`. The independent history count limit does not guarantee that every permitted combination fits the byte cap. [SociACL#68 F22](https://github.com/FyberLabs/SociACL/issues/68) still tracks this serialization-policy mismatch. Seal checks the plaintext length before it encrypts. Open refuses a blob longer than `RECOVERY_ABSOLUTE_MAX` (262269) before it parses the header. That ceiling is `RECOVERY_ENVELOPE_MAX` (262205: the 33-byte header, a 12-byte nonce, the plaintext cap, and the 16-byte tag) plus the 64-byte salt ceiling. Salt length is not a term of `RECOVERY_ENVELOPE_MAX`. After the header parses, a ciphertext longer than the plaintext cap plus the 16-byte tag is `keyring-too-large` for a 16-byte salt and for a 64-byte salt.
+The plaintext codec has versioned byte caps. `sociacl-keyring-plain-v2` retains
+`KEYRING_SERIAL_V2_MAX` = 262144 bytes (256 KiB). Encoders keep that domain for
+keyrings that fit, preserving all existing small recovery/delivery bytes. A
+larger keyring uses `sociacl-keyring-plain-v3` with the same field order and
+`KEYRING_SERIAL_MAX` = 524288 bytes (512 KiB). Decoders accept both domains,
+but never apply the larger allowance to v2. The incomplete v1 format and
+unknown domains remain rejected. V3 can also carry a smaller keyring.
+
+The policy retains every secret. No retired encryption key, disclosed base
+lane, or prior contact-lane secret is pruned. The maximum supported combination
+(1024 retired pairs, both 1024-entry histories, and the maximum safe epoch)
+encodes to 281250 bytes, so it fits v3. Both history counts still equal the
+rotation sequence and remain capped by `KEYRING_HISTORY_MAX`. Shared tests
+check the complete maximum encoding's SHA-256, restore every entry, and
+exercise each version's exact byte boundary.
+
+Seal checks the plaintext size before encryption. Recovery open rejects blobs
+over `RECOVERY_ABSOLUTE_MAX` (524413) before header parsing. This is
+`RECOVERY_ENVELOPE_MAX` (524349: 33-byte header, 12-byte nonce, plaintext cap,
+16-byte tag) plus the 64-byte salt ceiling. Salt length does not reduce the
+allowed plaintext. After header parsing, ciphertext above the plaintext cap
+plus tag is `keyring-too-large` for either salt length. After authenticated
+decryption, the plaintext domain selects its own cap.
+
+The recovery and delivery cryptographic domains and outer version bytes are
+unchanged; the plaintext domain is authenticated inside the ciphertext.
+Existing v2 copies remain readable. Upgrade receiving clients and ciphertext
+adapters before producing large v3 copies: older clients safely reject them
+because of their smaller outer cap (or unsupported plaintext domain). Do not
+silently truncate history to satisfy an older client. This package change is
+unreleased and does not establish deployment acceptance for external adapters.
+
 
 Rust wipes the derived Argon2 key and the keyring plaintext with `zeroize`. The `argon2` crate's `zeroize` feature wipes that crate's working memory blocks, the 64 MiB blocks, not a separate password buffer. The string API collects NFC into a `Zeroizing` buffer and wipes it on success and on error. The caller's passphrase string and the scratch inside `unicode-normalization` are not wiped. TypeScript cannot wipe strings either. TypeScript fills its derived-key `Uint8Array`, its plaintext `Uint8Array`, and the string API's passphrase copy. The hash-wasm Argon2 linear memory is not wiped. Node's `Buffer.concat` AES intermediates are not wiped.
 
 ## Device delivery of a keyring
 
-A new device receives the keyring through its own sealed wrap. The KDF and associated data use `sociacl-keyring-delivery-v1`. The signature uses `sociacl-keyring-delivery-sig-v1`. Those domains are separate from the genesis backup domains `sociacl-account-key-bind-v1` and `sociacl-account-key-wrap-sig-v1`. The transport public key still arrives out of band. The ciphertext goes to a `KeyWrapStore` keyed by `(principal, wrapId)`. The genesis backup and each device delivery share that store. A second device's wrap id is stored beside the first. The same wrap id replaces only that row. `get_wrap` / `get` takes the principal and the wrap id. `list_wraps` / `list` returns every wrap for the principal. The device inherits the one keypair and does not mint an identity or a contact-lane secret. The delivery wrap carries that secret, including at sequence 0. The genesis backup does not. The wrap is refused when the serialized keyring is over `KEYRING_SERIAL_MAX`, before seal, and when the blob is over `DELIVERY_BLOB_MAX` (262238: version byte, 65-byte point, 12-byte nonce, plaintext cap, and tag), before decrypt. The genesis backup cap stays 8192 bytes. The wrap store accepts a keyring-sized blob. Genesis seal and open still enforce 8192.
+A new device receives the keyring through its own sealed wrap. The KDF and associated data use `sociacl-keyring-delivery-v1`. The signature uses `sociacl-keyring-delivery-sig-v1`. Those domains are separate from the genesis backup domains `sociacl-account-key-bind-v1` and `sociacl-account-key-wrap-sig-v1`. The transport public key still arrives out of band. The ciphertext goes to a `KeyWrapStore` keyed by `(principal, wrapId)`. The genesis backup and each device delivery share that store. A second device's wrap id is stored beside the first. The same wrap id replaces only that row. `get_wrap` / `get` takes the principal and the wrap id. `list_wraps` / `list` returns every wrap for the principal. The device inherits the one keypair and does not mint an identity or a contact-lane secret. The delivery wrap carries that secret, including at sequence 0. The genesis backup does not. The wrap is refused when the serialized keyring is over `KEYRING_SERIAL_MAX`, before seal, and when the blob is over `DELIVERY_BLOB_MAX` (524382: version byte, 65-byte point, 12-byte nonce, plaintext cap, and tag), before decrypt. The genesis backup cap stays 8192 bytes. The wrap store accepts a keyring-sized blob. Genesis seal and open still enforce 8192.
 
 Open checks the current-key signature before it parses the plaintext. `recovery-stale` is returned only when the plaintext `rotationSeq` is older than the expected sequence and the signature also verifies under the key that was valid at that older sequence. That key is the current key of the rotation records whose own `seq` is less than or equal to the delivered sequence. Array position is not a sequence. Sequence 0 is the genesis principal. `recovery-stale` is not proof the delivery is genuine: a signature under a key the rotation was meant to cut off still returns `recovery-stale`, and no key material is accepted. A bad signature, a sequence that is not older, and a codec failure on this path are `wrap-rejected`. A forged wrap cannot choose among `recovery-stale`, `recovery-rejected`, and `wrap-rejected`. The transport scalar is wiped if key agreement throws, including on an attacker-chosen ephemeral point. Rust copies that scalar into a temporary P-256 secret that zeros on drop, and drops the secret as soon as the shared secret is derived. The caller's transport key stays. The transport public key must not be the principal, the genesis epub, the current pub, the current epub, or a retired epub. Opening a delivery blob with the genesis backup opener fails closed. Both implementations return `wrap-rejected`. The genesis backup opener also uses that error for malformed, invalid, or retired-key signatures; signature failures do not expose a separate error token.
 
@@ -726,7 +757,7 @@ Not decided:
 - Open an Argon2id recovery envelope below the floor or above the ceiling
 - Decrypt a keyring or a recovery envelope before checking its length
 - Let device delivery mint a second identity
-- Raise or version the 256 KiB serial cap to fit every permitted combination of retired keys and complete histories ([SociACL#68 F22](https://github.com/FyberLabs/SociACL/issues/68)); the separate history-count cap is enforced
+- Negotiate or deploy compatible receiving clients/adapters before issuing large v3 keyrings; the package supports versioned caps and retains the separate history-count bound
 - Put the owner's SEA pub on a visible grant row
 - Treat a wrap, a presentation, an inbox append, an introduction, a content signature, an epoch manifest, a presenter binding, a status proof, or a stamp as a grant
 - Accept a presentation that does not bind the presenter to the reader's SEA key
