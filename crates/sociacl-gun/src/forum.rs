@@ -186,10 +186,10 @@ impl ForumAgentStatus {
 /// does not compare it to `forum_id` or to the principal embedded in
 /// that id.
 ///
-/// A stated or `ham_state` update is accepted only by
-/// [`accept_need_transition`]. The writer must pass Check see on this
-/// need: the admitted owner, or a live delegate. A missing admission
-/// does not accept the update. The admitted owner stays the owner.
+/// Anyone with Check see on this need may resolve it. The stated or
+/// `ham_state` update is accepted only by [`accept_need_transition`].
+/// A missing admission does not accept the update. The admitted owner
+/// stays the owner.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ForumNeed {
     pub id: ObjectId,
@@ -218,11 +218,9 @@ impl ForumNeed {
     }
 }
 
-/// Accept `next` as the stored need only when `writer` may write it.
-///
-/// Check see runs on `current.id`. The admitted owner passes. A live
-/// delegate passes. A missing admission, a cancelled delegate, and any
-/// other writer do not. `next.ham_state` must be strictly greater.
+/// Accept `next` as the stored need only when Check see allows `writer`
+/// on `current.id`. Anyone that Check allows may resolve. A missing
+/// admission does not. `next.ham_state` must be strictly greater.
 /// `id`, `forum_id`, and `subject` stay. This does not admit an owner
 /// and it does not read a hint or a hop.
 pub fn accept_need_transition(
