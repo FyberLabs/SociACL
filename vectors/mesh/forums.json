@@ -4,7 +4,7 @@
   "identity": "GunDB SEA pubkey is the account. A wallet and a Panopticon OAuth subject are linked credentials only.",
   "seeCase": "equal-ham-cancel-wins",
   "subjectRule": "ForumNeed.subject is the SEA pubkey the need is about. It is not compared to the forum id and not compared to the principal embedded in the forum id.",
-  "offerRule": "stated 1 on an offer is live. stated 0 is withdrawn by the helper or cancelled by the need owner or subject. Check see on the need gates the post. Accepting one live offer sets accepted_offer and stated 0. Only the owner reopens, and that clears accepted_offer. Earlier offers stay. body and severity stay as posted. Resolve does not elect. A hop, a status node, a chat tag, and a hint do not mint.",
+  "offerRule": "stated 1 on an offer is live. stated 0 is withdrawn by the helper or cancelled by the need owner or subject. Check see on the need gates the post. Accepting one live offer sets accepted_offer and stated 0, and the helper must still pass Check see. A resolved need refuses withdrawal of the offer it names. Only the owner reopens, and that clears accepted_offer. Earlier offers stay. body and severity stay as posted. Resolve does not elect. A hop, a status node, a chat tag, and a hint do not mint.",
   "consumer": "The consumer implements the forum soul helpers declared in docs/s3rch-check.d.ts. Filled strings are the souls object in this file.",
   "cases": [
     "check-deny-without-dest-acl",

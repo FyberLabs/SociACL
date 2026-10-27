@@ -6,9 +6,11 @@
 //! Chat is a tagged [`crate::GunFeedNode`] under `s3rch/items`. These
 //! builders do not create a chat tree. Anyone with Check see on a need
 //! may post an offer. The need's owner or subject accepts one live
-//! offer. Only the owner reopens. A ham update is accepted only when
-//! Check see allows the writer. Accepting an offer does not elect an
-//! owner. A hop, a status node, a chat tag, and a hint do not mint.
+//! offer only when that helper still passes Check see. Only the owner
+//! reopens. A resolved need does not withdraw the offer it names. A ham
+//! update is accepted only when Check see allows the writer. Accepting
+//! an offer does not elect an owner. A hop, a status node, a chat tag,
+//! and a hint do not mint.
 
 use std::collections::BTreeSet;
 
@@ -280,8 +282,10 @@ impl ForumOffer {
 /// not post. `current` live and `next.stated` 0 withdraws. The helper
 /// may withdraw their own offer. The need's owner or subject may cancel
 /// it. That cancel does not resolve the need and it does not delete the
-/// offer. A cancelled offer is not posted again. This does not admit an
-/// owner and it does not read a hint or a hop.
+/// offer. A resolved need refuses withdrawal of the offer it names. The
+/// need stays resolved until the owner reopens. A cancelled offer is not
+/// posted again. This does not admit an owner and it does not read a
+/// hint or a hop.
 pub fn accept_offer_transition(
     graph: &MeshSeeGraph,
     need: &ForumNeed,
@@ -323,6 +327,9 @@ pub fn accept_offer_transition(
             {
                 return Err(GunError::ForumSoul);
             }
+            if need.stated == 0 && need.accepted_offer.as_ref() == Some(&current.id) {
+                return Err(GunError::ForumSoul);
+            }
             if writer == &current.helper {
                 return Ok(next.clone());
             }
@@ -341,8 +348,10 @@ pub fn accept_offer_transition(
 /// `id`, `forum_id`, `subject`, `body`, `severity`, and `spec` stay.
 /// `next.ham_state` must be strictly greater. A missing admission does
 /// not. Stated 1 to 0 accepts `offer`: the writer is the admitted owner
-/// or `subject`, `accepted_offer` names that live offer, and the need
-/// resolves. Stated 0 to 1 reopens: the writer is the admitted owner,
+/// or `subject`, `accepted_offer` names that live offer, and the helper
+/// still passes Check see on the need. When `subject` is that helper,
+/// the same principal may accept their own offer. The need resolves.
+/// Stated 0 to 1 reopens: the writer is the admitted owner,
 /// and `accepted_offer` is cleared. Offers already posted stay. A ham
 /// update that keeps `stated` and `accepted_offer` is a Check see write.
 /// This does not admit an owner and it does not read a hint or a hop.
@@ -381,6 +390,10 @@ pub fn accept_need_transition(
             || offer.forum_id != current.forum_id
             || next.accepted_offer.as_ref() != Some(&offer.id)
         {
+            return Err(GunError::ForumSoul);
+        }
+        let helper_sees = graph.check_see(&current.id, &offer.helper, now, None, None);
+        if !helper_sees.allowed {
             return Err(GunError::ForumSoul);
         }
         if writer != owner && writer != &current.subject {

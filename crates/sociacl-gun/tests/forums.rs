@@ -120,7 +120,7 @@ impl Hold {
 }
 
 #[test]
-fn forum_vector_names_the_five_cases() {
+fn forum_vector_names_the_cases() {
     let doc = vector();
     let cases: Vec<_> = doc["cases"]
         .as_array()
@@ -156,6 +156,8 @@ fn forum_vector_names_the_five_cases() {
     assert!(rule.contains("accepted_offer"));
     assert!(rule.contains("does not elect"));
     assert!(rule.contains("body and severity stay as posted"));
+    assert!(rule.contains("helper must still pass Check see"));
+    assert!(rule.contains("refuses withdrawal of the offer it names"));
 }
 
 #[test]
@@ -1050,6 +1052,78 @@ fn accepting(current: &ForumNeed, offer: &ForumOffer, ham: u64) -> ForumNeed {
     }
 }
 
+#[test]
+fn accept_requires_the_helper_to_still_pass_see() {
+    let mut world = World::open();
+    let helper = world.helper.clone();
+    let owner = world.owner.clone();
+    let subject = world.subject.clone();
+    let offer = world.offer(&helper, 0x51, "unposted", "");
+    assert_eq!(
+        accept_offer_transition(&world.graph, &world.open, None, &offer, &helper, world.now),
+        Err(GunError::ForumSoul)
+    );
+    let take = accepting(&world.open, &offer, 2);
+    assert_eq!(
+        accept_need_transition(
+            &world.graph,
+            &world.open,
+            &take,
+            Some(&offer),
+            &owner,
+            world.now
+        ),
+        Err(GunError::ForumSoul)
+    );
+    assert_eq!(
+        accept_need_transition(
+            &world.graph,
+            &world.open,
+            &take,
+            Some(&offer),
+            &subject,
+            world.now
+        ),
+        Err(GunError::ForumSoul)
+    );
+
+    world.grant(&helper, 1, 4);
+    let posted =
+        accept_offer_transition(&world.graph, &world.open, None, &offer, &helper, world.now)
+            .unwrap();
+    world.grant(&helper, 0, 5);
+    let take_posted = accepting(&world.open, &posted, 3);
+    assert_eq!(
+        accept_need_transition(
+            &world.graph,
+            &world.open,
+            &take_posted,
+            Some(&posted),
+            &owner,
+            world.now
+        ),
+        Err(GunError::ForumSoul)
+    );
+    assert_eq!(
+        accept_need_transition(
+            &world.graph,
+            &world.open,
+            &take_posted,
+            Some(&posted),
+            &subject,
+            world.now
+        ),
+        Err(GunError::ForumSoul)
+    );
+    assert_eq!(world.open.stated, 1);
+    assert!(world.open.accepted_offer.is_none());
+    assert_eq!(
+        world.graph.admitted_owner(&world.need_id).unwrap().0,
+        &owner
+    );
+    assert!(world.graph.admitted_owner(&posted.id).is_none());
+}
+
 fn case_named(name: &str) {
     let doc = vector();
     assert!(doc["cases"]
@@ -1290,6 +1364,44 @@ fn owner_or_subject_accepts_one_offer() {
         admitted_at
     );
     assert!(!world.alarm().pins_open_emergency(&accepted));
+    let mut pull = first.clone();
+    pull.stated = 0;
+    assert_eq!(
+        accept_offer_transition(
+            &world.graph,
+            &accepted,
+            Some(&first),
+            &pull,
+            &helper,
+            world.now
+        ),
+        Err(GunError::ForumSoul)
+    );
+    assert_eq!(
+        accept_offer_transition(
+            &world.graph,
+            &accepted,
+            Some(&first),
+            &pull,
+            &owner,
+            world.now
+        ),
+        Err(GunError::ForumSoul)
+    );
+    assert_eq!(
+        accept_offer_transition(
+            &world.graph,
+            &accepted,
+            Some(&first),
+            &pull,
+            &subject,
+            world.now
+        ),
+        Err(GunError::ForumSoul)
+    );
+    assert_eq!(accepted.stated, 0);
+    assert_eq!(accepted.accepted_offer.as_ref(), Some(&first.id));
+    assert_eq!(first.stated, 1);
     assert_eq!(second.stated, 1);
     assert!(second.validate().is_ok());
     assert_eq!(

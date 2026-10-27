@@ -117,9 +117,12 @@ export type ForumAgentStatus = {
  * `stated` 1 is open. `stated` 0 is resolved.
  * `body`, `severity`, and `spec` stay as posted.
  * Anyone with Check see on this need may post a ForumOffer.
- * The need's owner, or `subject`, accepts one live offer. That
+ * The need's owner, or `subject`, accepts one live offer only when
+ * that helper still passes Check see on the need. When `subject` is
+ * the helper, that principal may accept their own offer. That
  * accept sets `acceptedOffer` and `stated` 0. Cancelling an offer,
- * or leaving it, keeps the need open. Only the owner reopens
+ * or leaving it, keeps the need open. A resolved need refuses
+ * withdrawal of the offer it names. Only the owner reopens
  * (`stated` 1) and clears `acceptedOffer`. Earlier offers stay.
  * A missing admission does not accept the update. The admitted
  * object owner stays the owner. A status node, a chat item, a hop,
@@ -160,7 +163,8 @@ export type ForumNeed = {
  * `stated` 1 is live. `stated` 0 is withdrawn or cancelled.
  * Anyone with Check see on the need may post one. The helper may
  * withdraw it. The need's owner or subject may cancel it. That
- * cancel does not resolve the need. `artifacts` are object ids,
+ * cancel does not resolve the need. A resolved need refuses
+ * withdrawal of the offer it names. `artifacts` are object ids,
  * not key material. An offer does not spend tokens.
  */
 export type ForumOffer = {
