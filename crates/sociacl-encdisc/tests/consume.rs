@@ -12,7 +12,7 @@ use sociacl_encdisc::{
     item_revision_soul, item_root_soul, length_prefixed, manifest_soul, revision_manifest_bytes,
     sha256_hex, sign_sea, status_authority_bytes, AccountKeyAnchor, AccountKeyLogEntry,
     AccountKeyLogHead, ConsumeDecision, CurrentKeyDecision, EpochManifestBody, GroupInboxWriteSig,
-    RevisionManifest, StatusAuthorityBinding, KEYRING_HISTORY_MAX,
+    RevisionManifest, StatusAuthorityBinding, ACCOUNT_KEY_HEAD_MAX_AGE_MS, KEYRING_HISTORY_MAX,
 };
 
 const FIXTURE: &str = include_str!("../../../vectors/encrypted-discovery/consume.json");
@@ -80,10 +80,53 @@ fn provider_keys() -> (String, String) {
     )
 }
 
+const ISSUED_AT: u64 = 1_700_000_000_000;
+const MAX_AGE_MS: u64 = 60_000;
+const SKEW_MS: u64 = 5_000;
+
+fn head_for(account: &str, seq: u64, entry_hash: impl Into<String>) -> AccountKeyLogHead {
+    AccountKeyLogHead {
+        account: account.to_string(),
+        seq,
+        entry_hash: entry_hash.into(),
+        issued_at: ISSUED_AT,
+        max_age_ms: MAX_AGE_MS,
+    }
+}
+
+fn anchor_of(entry: AccountKeyLogEntry) -> AccountKeyAnchor {
+    AccountKeyAnchor { entry }
+}
+
 fn sign_head(head: &AccountKeyLogHead) -> (String, String) {
     let (provider_pub, provider_priv) = provider_keys();
     let signature = sign_sea(&provider_priv, &account_key_head_bytes(head).unwrap()).unwrap();
     (provider_pub, signature)
+}
+
+fn check(
+    head: Option<&AccountKeyLogHead>,
+    entries: &[AccountKeyLogEntry],
+    anchor: Option<&AccountKeyAnchor>,
+    answered: bool,
+    provider_pub: &str,
+    signature: &str,
+    expected: &str,
+    statement: &str,
+) -> CurrentKeyDecision {
+    accept_current_key(
+        head,
+        entries,
+        anchor,
+        answered,
+        provider_pub,
+        signature,
+        expected,
+        statement,
+        ISSUED_AT,
+        SKEW_MS,
+        MAX_AGE_MS,
+    )
 }
 
 fn decide(
@@ -97,7 +140,7 @@ fn decide(
         Some(head) => sign_head(head),
         None => (String::new(), String::new()),
     };
-    accept_current_key(
+    check(
         head,
         entries,
         anchor,
@@ -173,11 +216,7 @@ fn canonical_consume_vectors_match() {
     let next_bytes = account_key_log_bytes(&next).unwrap();
     let next_hash = account_key_entry_hash(&next).unwrap();
     expect_hash("account-key-next", &next_bytes, &next_hash);
-    let head = AccountKeyLogHead {
-        account: "provider:acct".to_string(),
-        seq: 1,
-        entry_hash: next_hash,
-    };
+    let head = head_for("provider:acct", 1, next_hash);
     let head_bytes = account_key_head_bytes(&head).unwrap();
     expect_hash("account-key-head", &head_bytes, &sha256_hex(&head_bytes));
     assert!(!account_key_head_signed_by_sea());
@@ -448,11 +487,7 @@ fn current_key_fails_closed() {
     let genesis_hash = account_key_entry_hash(&genesis).unwrap();
     let next = next(&genesis_hash);
     let next_hash = account_key_entry_hash(&next).unwrap();
-    let head = AccountKeyLogHead {
-        account: "provider:acct".to_string(),
-        seq: 1,
-        entry_hash: next_hash.clone(),
-    };
+    let head = head_for("provider:acct", 1, next_hash.clone());
     let entries = [genesis.clone(), next.clone()];
     let (provider_pub, signature) = sign_head(&head);
     let document: serde_json::Value = serde_json::from_str(FIXTURE).unwrap();
@@ -464,7 +499,7 @@ fn current_key_fails_closed() {
         signature,
         document["inputs"]["headSignature"].as_str().unwrap()
     );
-    match accept_current_key(
+    match check(
         Some(&head),
         &entries,
         None,
@@ -478,7 +513,7 @@ fn current_key_fails_closed() {
         other => panic!("{other:?}"),
     }
     assert!(matches!(
-        accept_current_key(
+        check(
             Some(&head),
             &entries,
             None,
@@ -491,7 +526,7 @@ fn current_key_fails_closed() {
         CurrentKeyDecision::Refuse("no-answer")
     ));
     assert!(matches!(
-        accept_current_key(
+        check(
             None,
             &entries,
             None,
@@ -508,7 +543,7 @@ fn current_key_fails_closed() {
         CurrentKeyDecision::Refuse("superseded")
     ));
     assert!(matches!(
-        accept_current_key(
+        check(
             Some(&head),
             &entries,
             None,
@@ -532,11 +567,7 @@ fn current_key_fails_closed() {
         ),
         CurrentKeyDecision::Refuse("prev-mismatch")
     ));
-    let anchor = AccountKeyAnchor {
-        account: "provider:acct".to_string(),
-        seq: 0,
-        hash: genesis_hash.clone(),
-    };
+    let anchor = anchor_of(genesis.clone());
     match decide(
         Some(&head),
         &[next.clone()],
@@ -553,11 +584,7 @@ fn current_key_fails_closed() {
         seq: 9,
         prev: genesis_hash.clone(),
     };
-    let jumped_head = AccountKeyLogHead {
-        account: "provider:acct".to_string(),
-        seq: 9,
-        entry_hash: account_key_entry_hash(&jumped).unwrap(),
-    };
+    let jumped_head = head_for("provider:acct", 9, account_key_entry_hash(&jumped).unwrap());
     assert!(matches!(
         decide(
             Some(&jumped_head),
@@ -581,16 +608,12 @@ fn current_key_fails_closed() {
         seq: 1,
         prev: other_hash.clone(),
     };
-    let crossed_head = AccountKeyLogHead {
-        account: "provider:acct".to_string(),
-        seq: 1,
-        entry_hash: account_key_entry_hash(&crossed).unwrap(),
-    };
-    let other_anchor = AccountKeyAnchor {
-        account: "provider:other".to_string(),
-        seq: 0,
-        hash: other_hash,
-    };
+    let crossed_head = head_for(
+        "provider:acct",
+        1,
+        account_key_entry_hash(&crossed).unwrap(),
+    );
+    let other_anchor = anchor_of(other.clone());
     assert!(matches!(
         decide(
             Some(&crossed_head),
@@ -607,14 +630,14 @@ fn current_key_fails_closed() {
         seq: 0,
         prev: "none".to_string(),
     };
-    let sea_head = AccountKeyLogHead {
-        account: "provider:acct".to_string(),
-        seq: 0,
-        entry_hash: account_key_entry_hash(&sea_entry).unwrap(),
-    };
+    let sea_head = head_for(
+        "provider:acct",
+        0,
+        account_key_entry_hash(&sea_entry).unwrap(),
+    );
     let (sea_pub, sea_sig) = sign_head(&sea_head);
     assert!(matches!(
-        accept_current_key(
+        check(
             Some(&sea_head),
             &[sea_entry],
             None,
@@ -638,15 +661,15 @@ fn current_key_fails_closed() {
         seq: 1,
         prev: account_key_entry_hash(&attacker_genesis).unwrap(),
     };
-    let attacker_head = AccountKeyLogHead {
-        account: "provider:other".to_string(),
-        seq: 1,
-        entry_hash: account_key_entry_hash(&attacker_next).unwrap(),
-    };
+    let attacker_head = head_for(
+        "provider:other",
+        1,
+        account_key_entry_hash(&attacker_next).unwrap(),
+    );
     let (attacker_pub, attacker_sig) = sign_head(&attacker_head);
     let attacker_entries = [attacker_genesis, attacker_next];
     assert!(matches!(
-        accept_current_key(
+        check(
             Some(&attacker_head),
             &attacker_entries,
             None,
@@ -658,7 +681,7 @@ fn current_key_fails_closed() {
         ),
         CurrentKeyDecision::Refuse("head-mismatch")
     ));
-    match accept_current_key(
+    match check(
         Some(&attacker_head),
         &attacker_entries,
         None,
@@ -672,7 +695,7 @@ fn current_key_fails_closed() {
         other => panic!("{other:?}"),
     }
     assert!(matches!(
-        accept_current_key(
+        check(
             Some(&head),
             &entries,
             None,
@@ -721,11 +744,7 @@ fn account_key_log_accepts_the_keyring_limit() {
         prev = account_key_entry_hash(&entry).unwrap();
         entries.push(entry);
     }
-    let head = AccountKeyLogHead {
-        account: "provider:acct".to_string(),
-        seq: KEYRING_HISTORY_MAX as u64,
-        entry_hash: prev,
-    };
+    let head = head_for("provider:acct", KEYRING_HISTORY_MAX as u64, prev);
     let statement = format!("sea-{KEYRING_HISTORY_MAX}");
     match decide(Some(&head), &entries, None, true, &statement) {
         CurrentKeyDecision::Accept { key_pub } => assert_eq!(key_pub, statement),
@@ -752,16 +771,8 @@ fn account_key_anchor_is_a_floor() {
     let second_hash = account_key_entry_hash(&second).unwrap();
     let fork_first = log_entry("kf1", 1, &genesis_hash);
     let fork_second = log_entry("kf2", 2, &account_key_entry_hash(&fork_first).unwrap());
-    let floor = AccountKeyAnchor {
-        account: "provider:acct".to_string(),
-        seq: 2,
-        hash: second_hash.clone(),
-    };
-    let old_head = AccountKeyLogHead {
-        account: "provider:acct".to_string(),
-        seq: 1,
-        entry_hash: first_hash.clone(),
-    };
+    let floor = anchor_of(second.clone());
+    let old_head = head_for("provider:acct", 1, first_hash.clone());
     assert!(matches!(
         decide(
             Some(&old_head),
@@ -772,16 +783,12 @@ fn account_key_anchor_is_a_floor() {
         ),
         CurrentKeyDecision::Refuse("superseded")
     ));
-    let real_floor = AccountKeyAnchor {
-        account: "provider:acct".to_string(),
-        seq: 1,
-        hash: first_hash,
-    };
-    let fork_head = AccountKeyLogHead {
-        account: "provider:acct".to_string(),
-        seq: 2,
-        entry_hash: account_key_entry_hash(&fork_second).unwrap(),
-    };
+    let real_floor = anchor_of(first.clone());
+    let fork_head = head_for(
+        "provider:acct",
+        2,
+        account_key_entry_hash(&fork_second).unwrap(),
+    );
     assert!(matches!(
         decide(
             Some(&fork_head),
@@ -792,11 +799,7 @@ fn account_key_anchor_is_a_floor() {
         ),
         CurrentKeyDecision::Refuse("unlinked")
     ));
-    let current = AccountKeyLogHead {
-        account: "provider:acct".to_string(),
-        seq: 2,
-        entry_hash: second_hash,
-    };
+    let current = head_for("provider:acct", 2, second_hash);
     match decide(Some(&current), &[second], Some(&floor), true, "k2") {
         CurrentKeyDecision::Accept { key_pub } => assert_eq!(key_pub, "k2"),
         other => panic!("{other:?}"),
@@ -810,5 +813,114 @@ fn account_key_anchor_is_a_floor() {
     ) {
         CurrentKeyDecision::Refuse(reason) => assert_eq!(reason, "unlinked"),
         other => panic!("{other:?}"),
+    }
+}
+
+fn entry_from(value: &serde_json::Value) -> AccountKeyLogEntry {
+    AccountKeyLogEntry {
+        account: value["account"].as_str().unwrap().to_string(),
+        key_pub: value["keyPub"].as_str().unwrap().to_string(),
+        seq: value["seq"].as_u64().unwrap(),
+        prev: value["prev"].as_str().unwrap().to_string(),
+    }
+}
+
+fn head_from(value: &serde_json::Value) -> AccountKeyLogHead {
+    AccountKeyLogHead {
+        account: value["account"].as_str().unwrap().to_string(),
+        seq: value["seq"].as_u64().unwrap(),
+        entry_hash: value["entryHash"].as_str().unwrap().to_string(),
+        issued_at: value["issuedAt"].as_u64().unwrap(),
+        max_age_ms: value["maxAgeMs"].as_u64().unwrap(),
+    }
+}
+
+fn chain_from(spec: &serde_json::Value) -> Vec<AccountKeyLogEntry> {
+    let account = spec["account"].as_str().unwrap();
+    let last = spec["lastSeq"].as_u64().unwrap();
+    let pattern = spec["keyPub"].as_str().unwrap();
+    assert_eq!(last, KEYRING_HISTORY_MAX as u64);
+    let mut prev = "none".to_string();
+    let mut entries = Vec::new();
+    for seq in 0..=last {
+        let entry = AccountKeyLogEntry {
+            account: account.to_string(),
+            key_pub: pattern.replace("{seq}", &seq.to_string()),
+            seq,
+            prev,
+        };
+        prev = account_key_entry_hash(&entry).unwrap();
+        entries.push(entry);
+    }
+    entries
+}
+
+#[test]
+fn shared_consume_checks() {
+    let document: serde_json::Value = serde_json::from_str(FIXTURE).unwrap();
+    assert_eq!(
+        document["inputs"]["headMaxAgeMs"].as_u64().unwrap(),
+        ACCOUNT_KEY_HEAD_MAX_AGE_MS
+    );
+    let provider_pub = document["inputs"]["providerPub"].as_str().unwrap();
+    for row in document["checks"].as_array().unwrap() {
+        let name = row["name"].as_str().unwrap();
+        let (entries, head) = if row.get("chain").is_some() {
+            let entries = chain_from(&row["chain"]);
+            let last = entries.last().unwrap();
+            let head = AccountKeyLogHead {
+                account: last.account.clone(),
+                seq: last.seq,
+                entry_hash: account_key_entry_hash(last).unwrap(),
+                issued_at: row["issuedAt"].as_u64().unwrap(),
+                max_age_ms: row["maxAgeMs"].as_u64().unwrap(),
+            };
+            assert_eq!(
+                head.entry_hash,
+                row["entryHash"].as_str().unwrap(),
+                "{name}"
+            );
+            (entries, head)
+        } else {
+            let entries = row["entries"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(entry_from)
+                .collect();
+            (entries, head_from(&row["head"]))
+        };
+        let anchor = row.get("anchor").map(|value| anchor_of(entry_from(value)));
+        if name == "account-key-head-signature" {
+            assert_eq!(
+                row["headSignature"].as_str().unwrap(),
+                document["inputs"]["headSignature"].as_str().unwrap()
+            );
+        }
+        let decision = accept_current_key(
+            Some(&head),
+            &entries,
+            anchor.as_ref(),
+            row["providerAnswered"].as_bool().unwrap(),
+            provider_pub,
+            row["headSignature"].as_str().unwrap(),
+            row["expectedAccount"].as_str().unwrap(),
+            row["statementKeyPub"].as_str().unwrap(),
+            row["now"].as_u64().unwrap(),
+            row["skewAllowanceMs"].as_u64().unwrap(),
+            row["policyMaxAgeMs"].as_u64().unwrap(),
+        );
+        match row["decision"].as_str().unwrap() {
+            "accept" => match decision {
+                CurrentKeyDecision::Accept { key_pub } => {
+                    assert_eq!(key_pub, row["keyPub"].as_str().unwrap(), "{name}");
+                }
+                other => panic!("{name}: {other:?}"),
+            },
+            reason => match decision {
+                CurrentKeyDecision::Refuse(got) => assert_eq!(got, reason, "{name}"),
+                other => panic!("{name}: {other:?}"),
+            },
+        }
     }
 }

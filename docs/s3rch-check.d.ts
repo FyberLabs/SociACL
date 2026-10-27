@@ -2717,12 +2717,24 @@ export type AccountKeyLogEntry = {
 /**
  * Head signed by the login provider or the wallet.
  * The SEA key does not sign these bytes.
+ * issuedAt and maxAgeMs are inside the signature.
  */
 export type AccountKeyLogHead = {
   account: string;
   seq: number;
   entryHash: string;
+  issuedAt: number;
+  maxAgeMs: number;
 };
+
+/**
+ * Ceiling for a provider or wallet account-key head, in milliseconds.
+ * Five minutes covers an answer and ordinary clock skew. A longer
+ * window would keep a retired key current for a verifier that has not
+ * stored an anchor. The signed maxAgeMs and the verifier's
+ * policyMaxAgeMs can be shorter. Neither can raise this ceiling.
+ */
+export const ACCOUNT_KEY_HEAD_MAX_AGE_MS: 300000;
 
 /** s3rch/items/<itemId>/r/<rev>. The first revision uses this path. */
 export function itemRevisionSoul(itemId: string, rev: string): ItemRevisionSoul;
@@ -2795,7 +2807,8 @@ export function accountKeyLogBytes(entry: AccountKeyLogEntry): Uint8Array;
 export function accountKeyEntryHash(entry: AccountKeyLogEntry): string;
 
 /**
- * Fields: "s3rch-account-key-head-v1", account, decimal seq, entryHash.
+ * Fields: "s3rch-account-key-head-v1", account, decimal seq, entryHash,
+ * decimal issuedAt, decimal maxAgeMs.
  * The provider or the wallet signs this. The SEA key does not.
  */
 export function accountKeyHeadBytes(head: AccountKeyLogHead): Uint8Array;
@@ -2869,6 +2882,9 @@ export function acceptRevisionManifest(input: {
  * is the log head. A missing binding refuses every other signer.
  * purpose "manifest", "grant", and "binding" accept only the current
  * account key. The proof does not mint.
+ * bindingSignedByCurrent is the consumer's result. This check does not
+ * verify the binding signature. The consumer must verify it under the
+ * current account SEA pub before passing true.
  */
 export function acceptStatusSigner(input: {
   signingPub: string;
@@ -2887,6 +2903,11 @@ export function acceptStatusSigner(input: {
  * under a key derived from the group epoch key, including
  * derive(ECDH(member, groupEpub), "writer"), is refused. ssig does not
  * mint see or a membership. The group key encrypts only.
+ * member, signatureUnderSender, and derivedFromGroupKey are the
+ * consumer's results. This check does not verify ssig, membership, or
+ * a derivation from the group epoch key. The consumer must do those
+ * checks before passing true. Passing true without that verification
+ * accepts a signer this check did not see.
  */
 export function acceptGroupInboxSender(input: {
   senderPub: string;
@@ -2898,15 +2919,15 @@ export function acceptGroupInboxSender(input: {
 
 /**
  * An entry already accepted on an earlier check. A floor.
- * head.seq below this seq is refused. The walk must reach this
- * account, seq, and hash. The entry itself counts. The same-account
- * shortcut counts when entry.seq is this seq plus one and prev is
- * this hash. Reaching seq 0 does not replace this entry.
+ * The hash is recomputed from entry. A hash supplied beside the entry
+ * is not stored. head.seq below entry.seq is refused. The walk must
+ * reach this account, seq, and recomputed hash. The entry itself counts.
+ * The same-account shortcut counts when the later entry's seq is this
+ * seq plus one and prev is the recomputed hash. Reaching seq 0 does not
+ * replace this entry.
  */
 export type AccountKeyAnchor = {
-  account: string;
-  seq: number;
-  hash: string;
+  entry: AccountKeyLogEntry;
 };
 
 /**
@@ -2915,14 +2936,23 @@ export type AccountKeyAnchor = {
  * member being resolved. head.account and every chain entry must equal
  * it. A valid head for another account is refused. The account SEA pub
  * does not sign that head. The hash chain links the head to seq 0, or
- * to an anchor already accepted for the same account. That anchor is
- * a floor: head.seq is at least anchor.seq, and the walk reaches that
- * exact entry. entry.seq == anchor.seq + 1 with prev equal to the
- * anchor hash still counts. Seq 0 alone does not. The walk covers a
- * head at KEYRING_HISTORY_MAX. A missing head, a signature that does
- * not verify, a chain that does not link, a prev mismatch, or no
- * answer from the provider or wallet refuses. The highest cached seq
- * is not the current key. A superseded keyPub does not authenticate.
+ * to an anchor already accepted for the same account. The anchor stores
+ * that entry. The check recomputes its hash. That anchor is a floor:
+ * head.seq is at least the anchor seq, and the walk reaches that exact
+ * entry. A later seq equal to the anchor seq plus one, with prev equal
+ * to the recomputed hash, still counts. Seq 0 alone does not. The walk
+ * covers a head at KEYRING_HISTORY_MAX. A missing head, a signature that
+ * does not verify, a head outside the max-age, a chain that does not
+ * link, a prev mismatch, or no answer from the provider or wallet
+ * refuses. issuedAt and maxAgeMs are inside the provider signature.
+ * The verifier passes now, skewAllowanceMs, and policyMaxAgeMs. The
+ * head is fresh only when issuedAt is at most now + skewAllowanceMs
+ * and now - issuedAt is within the smaller of the signed maxAgeMs,
+ * policyMaxAgeMs, and ACCOUNT_KEY_HEAD_MAX_AGE_MS. A first contact
+ * with no anchor still refuses a stale head. The provider signing key
+ * must not equal any keyPub on the linked chain, including a retired
+ * entry and the anchor entry. The highest cached seq is not the
+ * current key. A superseded keyPub does not authenticate.
  */
 export function acceptCurrentKey(input: {
   head?: AccountKeyLogHead;
@@ -2933,6 +2963,9 @@ export function acceptCurrentKey(input: {
   headSignature: string;
   expectedAccount: string;
   statementKeyPub: string;
+  now: number;
+  skewAllowanceMs: number;
+  policyMaxAgeMs: number;
 }): { ok: true; keyPub: string } | { ok: false; reason: string };
 
 /**
@@ -3064,8 +3097,13 @@ export type EncryptedDiscoveryVector =
   | "account-key-anchor-non-adjacent"
   | "account-key-anchor-wrong-account"
   | "account-key-anchor-rollback"
+  | "account-key-anchor-floor"
   | "account-key-anchor-fork"
+  | "account-key-anchor-recompute"
   | "account-key-log-at-limit"
   | "account-key-head-signature"
   | "account-key-head-wrong-account"
+  | "account-key-head-stale"
+  | "account-key-head-max-age"
+  | "account-key-provider-older-key"
   | "consume-statement-does-not-mint";

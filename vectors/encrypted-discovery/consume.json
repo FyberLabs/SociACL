@@ -4,7 +4,10 @@
     "statusAuthPub is omitted from the revision manifest and from epochRevisionId when absent.",
     "account-key-next.prev is the genesis entry hash. The head names the next entry.",
     "The SEA key does not sign the head.",
-    "headSignature is the provider signing key over account-key-head. The account SEA pub is not that key."
+    "headSignature is the provider signing key over account-key-head. The account SEA pub is not that key.",
+    "account-key-head appends decimal issuedAt and decimal maxAgeMs. A verifier with no anchor still refuses a head outside the max-age.",
+    "checks store the accepted anchor entry. The hash is recomputed from that entry.",
+    "headMaxAgeMs is the verifier ceiling. A signed maxAgeMs or policyMaxAgeMs above it does not extend the head."
   ],
   "inputs": {
     "itemId": "itema",
@@ -34,7 +37,13 @@
     "aclSnapshot": "f9ac289c45e5e277cf0ecee22616a46b07d5ff92b83df0b13cacf8a9b5097449",
     "absentEpoch": "d068c39be0391bb64791839b21a21413392abe28f4e8f824d524884f07bd486f",
     "providerPub": "YP7UuiVanTHJYet0xjVtaMBJuJI7Yfps5mliLmDyn7Y.eQP-EAi4vJmkGunpVii8ZPLxsgwtfp9Rd6PClNRGIpk",
-    "headSignature": "ab28a26dc91a63d2716323bb6aa2b66ebf9fd81cf1e2ba015c3acf7274260ccd1575489af972fa8cf674396f7e4e0043e77f033bc27d5dbafb33c0ec688d794f"
+    "headSignature": "3993e75eac08ce3f59e9e7c4d78540683ca631181522327463865bed6e1bc1425b7352df217e3fdae1bcc7ef86af59325f6124f4f26f366018a602c41fb69f51",
+    "issuedAt": 1700000000000,
+    "maxAgeMs": 60000,
+    "now": 1700000000000,
+    "skewAllowanceMs": 5000,
+    "policyMaxAgeMs": 60000,
+    "headMaxAgeMs": 300000
   },
   "cases": [
     {
@@ -84,13 +93,621 @@
     },
     {
       "name": "account-key-head",
-      "encodedLen": 119,
-      "sha256": "ff9ddf92843f649cbb70318692a7fb5c7b3857aef54960cb7de4b26ada6adf30"
+      "encodedLen": 145,
+      "sha256": "9e11f4ffe90e31f57aa77fea16b133531ff6d8652317707e2428d07a538cb6a3"
     },
     {
       "name": "epoch-status-auth",
       "encodedLen": 340,
       "sha256": "30f211e0f93701810483c7d4aa7f6e0f4997f16f76c65dfe464f18263b4b42d1"
+    }
+  ],
+  "checks": [
+    {
+      "providerAnswered": true,
+      "now": 1700000000000,
+      "skewAllowanceMs": 5000,
+      "policyMaxAgeMs": 60000,
+      "name": "account-key-anchor-floor",
+      "entries": [
+        {
+          "account": "provider:acct",
+          "keyPub": "k2",
+          "seq": 2,
+          "prev": "40a010dd34adcfbb81462cdcf46c11e22cce4985335e8b625da9ae355d04c793"
+        }
+      ],
+      "head": {
+        "account": "provider:acct",
+        "seq": 2,
+        "entryHash": "0a63a45014427470908361185fc3595b03e336f5c7794c58b071893355bd1a00",
+        "issuedAt": 1700000000000,
+        "maxAgeMs": 60000
+      },
+      "anchor": {
+        "account": "provider:acct",
+        "keyPub": "k2",
+        "seq": 2,
+        "prev": "40a010dd34adcfbb81462cdcf46c11e22cce4985335e8b625da9ae355d04c793"
+      },
+      "headSignature": "8df1f041fb85327f922a6a77b409b9ba0252aa7026afa647e53b73747328dee1060b0244dfec1f78c8e58020623a0a1ffd21e5781c5545ef03010f6d2a7031f7",
+      "expectedAccount": "provider:acct",
+      "statementKeyPub": "k2",
+      "decision": "accept",
+      "keyPub": "k2"
+    },
+    {
+      "providerAnswered": true,
+      "now": 1700000000000,
+      "skewAllowanceMs": 5000,
+      "policyMaxAgeMs": 60000,
+      "name": "account-key-anchor-rollback",
+      "entries": [
+        {
+          "account": "provider:acct",
+          "keyPub": "k0",
+          "seq": 0,
+          "prev": "none"
+        },
+        {
+          "account": "provider:acct",
+          "keyPub": "k1",
+          "seq": 1,
+          "prev": "99a6ab713acb0236c7f8e31304e3b48063cf2027ef06b7b8865810917433f8dd"
+        },
+        {
+          "account": "provider:acct",
+          "keyPub": "k2",
+          "seq": 2,
+          "prev": "40a010dd34adcfbb81462cdcf46c11e22cce4985335e8b625da9ae355d04c793"
+        }
+      ],
+      "head": {
+        "account": "provider:acct",
+        "seq": 1,
+        "entryHash": "40a010dd34adcfbb81462cdcf46c11e22cce4985335e8b625da9ae355d04c793",
+        "issuedAt": 1700000000000,
+        "maxAgeMs": 60000
+      },
+      "anchor": {
+        "account": "provider:acct",
+        "keyPub": "k2",
+        "seq": 2,
+        "prev": "40a010dd34adcfbb81462cdcf46c11e22cce4985335e8b625da9ae355d04c793"
+      },
+      "headSignature": "1662b35c0286c0dd76530963009d2d1dbc92ea00b0be9afc8f039288c4358a0004e7383bde2fbadf6295507643232706f2698a4a1661d319d13545ffeb147143",
+      "expectedAccount": "provider:acct",
+      "statementKeyPub": "k1",
+      "decision": "superseded"
+    },
+    {
+      "providerAnswered": true,
+      "now": 1700000000000,
+      "skewAllowanceMs": 5000,
+      "policyMaxAgeMs": 60000,
+      "name": "account-key-anchor-fork",
+      "entries": [
+        {
+          "account": "provider:acct",
+          "keyPub": "k0",
+          "seq": 0,
+          "prev": "none"
+        },
+        {
+          "account": "provider:acct",
+          "keyPub": "kf1",
+          "seq": 1,
+          "prev": "99a6ab713acb0236c7f8e31304e3b48063cf2027ef06b7b8865810917433f8dd"
+        },
+        {
+          "account": "provider:acct",
+          "keyPub": "kf2",
+          "seq": 2,
+          "prev": "880effdb884a5a06584204c7c6045533ee11e1cce5443f352be33555438425be"
+        }
+      ],
+      "head": {
+        "account": "provider:acct",
+        "seq": 2,
+        "entryHash": "030ed1cb6911524460d32de64332ef21bec105ac847fb7970b639cd6d78597cd",
+        "issuedAt": 1700000000000,
+        "maxAgeMs": 60000
+      },
+      "anchor": {
+        "account": "provider:acct",
+        "keyPub": "k1",
+        "seq": 1,
+        "prev": "99a6ab713acb0236c7f8e31304e3b48063cf2027ef06b7b8865810917433f8dd"
+      },
+      "headSignature": "a0f7b758c5a8aa8fe68154a68a78964c56e53f4f4d1bb359845828db1e35bf406d8d7df00f6066c49e5ea7de63ca205043c8e6e0e8be7e5589e7605000174a0c",
+      "expectedAccount": "provider:acct",
+      "statementKeyPub": "kf2",
+      "decision": "unlinked"
+    },
+    {
+      "providerAnswered": true,
+      "now": 1700000000000,
+      "skewAllowanceMs": 5000,
+      "policyMaxAgeMs": 60000,
+      "name": "account-key-head-wrong-account",
+      "entries": [
+        {
+          "account": "provider:other",
+          "keyPub": "sea-attacker-0",
+          "seq": 0,
+          "prev": "none"
+        },
+        {
+          "account": "provider:other",
+          "keyPub": "sea-attacker",
+          "seq": 1,
+          "prev": "d10db7ab193bf8957df37b504f3ef96e2dab16848b1268e4596ce99035785077"
+        }
+      ],
+      "head": {
+        "account": "provider:other",
+        "seq": 1,
+        "entryHash": "4269a6c071d97d74f6ed8e820ae133ebfb01eb0db6e32407e070064c12e512aa",
+        "issuedAt": 1700000000000,
+        "maxAgeMs": 60000
+      },
+      "headSignature": "8b99e68ebff3d68719c69862a9db835293bbe2dcb65170ff93fda13cf4485d4245ea7dd06310ee2437c9f3dd1a4ab0bab95d044debba809b2c115f83de78c4e7",
+      "expectedAccount": "provider:acct",
+      "statementKeyPub": "sea-attacker",
+      "decision": "head-mismatch"
+    },
+    {
+      "providerAnswered": true,
+      "now": 1700000000000,
+      "skewAllowanceMs": 5000,
+      "policyMaxAgeMs": 60000,
+      "name": "account-key-head-matching-account",
+      "entries": [
+        {
+          "account": "provider:other",
+          "keyPub": "sea-attacker-0",
+          "seq": 0,
+          "prev": "none"
+        },
+        {
+          "account": "provider:other",
+          "keyPub": "sea-attacker",
+          "seq": 1,
+          "prev": "d10db7ab193bf8957df37b504f3ef96e2dab16848b1268e4596ce99035785077"
+        }
+      ],
+      "head": {
+        "account": "provider:other",
+        "seq": 1,
+        "entryHash": "4269a6c071d97d74f6ed8e820ae133ebfb01eb0db6e32407e070064c12e512aa",
+        "issuedAt": 1700000000000,
+        "maxAgeMs": 60000
+      },
+      "headSignature": "8b99e68ebff3d68719c69862a9db835293bbe2dcb65170ff93fda13cf4485d4245ea7dd06310ee2437c9f3dd1a4ab0bab95d044debba809b2c115f83de78c4e7",
+      "expectedAccount": "provider:other",
+      "statementKeyPub": "sea-attacker",
+      "decision": "accept",
+      "keyPub": "sea-attacker"
+    },
+    {
+      "providerAnswered": true,
+      "now": 1700000000000,
+      "skewAllowanceMs": 5000,
+      "policyMaxAgeMs": 60000,
+      "name": "account-key-log-at-limit",
+      "chain": {
+        "account": "provider:acct",
+        "lastSeq": 1024,
+        "keyPub": "sea-{seq}"
+      },
+      "issuedAt": 1700000000000,
+      "maxAgeMs": 60000,
+      "entryHash": "7c52e49c2ec1806da5af5ce8e14be7e23f6ef237da19bfaf16f30aaafb6b1703",
+      "headSignature": "0d7f8469be3ed22cbf1dbbc0d660087e69545941a292b99599de5c77ba46b3692285b61cbe5fd3a4dcc41a18263e3cb51093861eed9f7007f907af47d756a493",
+      "expectedAccount": "provider:acct",
+      "statementKeyPub": "sea-1024",
+      "decision": "accept",
+      "keyPub": "sea-1024"
+    },
+    {
+      "providerAnswered": true,
+      "now": 1700000000000,
+      "skewAllowanceMs": 5000,
+      "policyMaxAgeMs": 60000,
+      "name": "account-key-head-signature",
+      "entries": [
+        {
+          "account": "provider:acct",
+          "keyPub": "sea-current",
+          "seq": 0,
+          "prev": "none"
+        },
+        {
+          "account": "provider:acct",
+          "keyPub": "sea-next",
+          "seq": 1,
+          "prev": "81e0da25dfef9427ae3bb3747867942f825d7410218551f5545dc59a1b22b508"
+        }
+      ],
+      "head": {
+        "account": "provider:acct",
+        "seq": 1,
+        "entryHash": "83417e3c5f4c64a4e5849976fbd9123eb648b96bb19e7d0148ad2d9b8ce36799",
+        "issuedAt": 1700000000000,
+        "maxAgeMs": 60000
+      },
+      "headSignature": "3993e75eac08ce3f59e9e7c4d78540683ca631181522327463865bed6e1bc1425b7352df217e3fdae1bcc7ef86af59325f6124f4f26f366018a602c41fb69f51",
+      "expectedAccount": "provider:acct",
+      "statementKeyPub": "sea-next",
+      "decision": "accept",
+      "keyPub": "sea-next"
+    },
+    {
+      "providerAnswered": true,
+      "now": 1700000000000,
+      "skewAllowanceMs": 5000,
+      "policyMaxAgeMs": 60000,
+      "name": "account-key-head-signature-bad",
+      "entries": [
+        {
+          "account": "provider:acct",
+          "keyPub": "sea-current",
+          "seq": 0,
+          "prev": "none"
+        },
+        {
+          "account": "provider:acct",
+          "keyPub": "sea-next",
+          "seq": 1,
+          "prev": "81e0da25dfef9427ae3bb3747867942f825d7410218551f5545dc59a1b22b508"
+        }
+      ],
+      "head": {
+        "account": "provider:acct",
+        "seq": 1,
+        "entryHash": "83417e3c5f4c64a4e5849976fbd9123eb648b96bb19e7d0148ad2d9b8ce36799",
+        "issuedAt": 1700000000000,
+        "maxAgeMs": 60000
+      },
+      "headSignature": "00",
+      "expectedAccount": "provider:acct",
+      "statementKeyPub": "sea-next",
+      "decision": "head-mismatch"
+    },
+    {
+      "providerAnswered": true,
+      "now": 1700000000000,
+      "skewAllowanceMs": 5000,
+      "policyMaxAgeMs": 60000,
+      "name": "account-key-head-signature-sea",
+      "entries": [
+        {
+          "account": "provider:acct",
+          "keyPub": "YP7UuiVanTHJYet0xjVtaMBJuJI7Yfps5mliLmDyn7Y.eQP-EAi4vJmkGunpVii8ZPLxsgwtfp9Rd6PClNRGIpk",
+          "seq": 0,
+          "prev": "none"
+        }
+      ],
+      "head": {
+        "account": "provider:acct",
+        "seq": 0,
+        "entryHash": "96ae87e5f002edf6fdd0b0deeb60e14f8154bdd1f67f4d7e8213868dbc881fc7",
+        "issuedAt": 1700000000000,
+        "maxAgeMs": 60000
+      },
+      "headSignature": "dce47dad0b8238a21ea0fa8e648e080c4526c223381d62abdc500e83e0e5de737b47169455849f6e6dc4ca1a049bcf95c855590f7f53b0397666c3a84a265a62",
+      "expectedAccount": "provider:acct",
+      "statementKeyPub": "YP7UuiVanTHJYet0xjVtaMBJuJI7Yfps5mliLmDyn7Y.eQP-EAi4vJmkGunpVii8ZPLxsgwtfp9Rd6PClNRGIpk",
+      "decision": "head-mismatch"
+    },
+    {
+      "providerAnswered": true,
+      "now": 1700000060001,
+      "skewAllowanceMs": 5000,
+      "policyMaxAgeMs": 60000,
+      "name": "account-key-head-stale",
+      "entries": [
+        {
+          "account": "provider:acct",
+          "keyPub": "sea-current",
+          "seq": 0,
+          "prev": "none"
+        },
+        {
+          "account": "provider:acct",
+          "keyPub": "sea-next",
+          "seq": 1,
+          "prev": "81e0da25dfef9427ae3bb3747867942f825d7410218551f5545dc59a1b22b508"
+        }
+      ],
+      "head": {
+        "account": "provider:acct",
+        "seq": 1,
+        "entryHash": "83417e3c5f4c64a4e5849976fbd9123eb648b96bb19e7d0148ad2d9b8ce36799",
+        "issuedAt": 1700000000000,
+        "maxAgeMs": 60000
+      },
+      "headSignature": "3993e75eac08ce3f59e9e7c4d78540683ca631181522327463865bed6e1bc1425b7352df217e3fdae1bcc7ef86af59325f6124f4f26f366018a602c41fb69f51",
+      "expectedAccount": "provider:acct",
+      "statementKeyPub": "sea-next",
+      "decision": "stale"
+    },
+    {
+      "providerAnswered": true,
+      "now": 1700000000000,
+      "skewAllowanceMs": 5000,
+      "policyMaxAgeMs": 60000,
+      "name": "account-key-head-future",
+      "entries": [
+        {
+          "account": "provider:acct",
+          "keyPub": "sea-current",
+          "seq": 0,
+          "prev": "none"
+        },
+        {
+          "account": "provider:acct",
+          "keyPub": "sea-next",
+          "seq": 1,
+          "prev": "81e0da25dfef9427ae3bb3747867942f825d7410218551f5545dc59a1b22b508"
+        }
+      ],
+      "head": {
+        "account": "provider:acct",
+        "seq": 1,
+        "entryHash": "83417e3c5f4c64a4e5849976fbd9123eb648b96bb19e7d0148ad2d9b8ce36799",
+        "issuedAt": 1700000005001,
+        "maxAgeMs": 60000
+      },
+      "headSignature": "b1893d310b94474f404a322c85328bff03538864963773bcd99dd982b672926f6cefd0f8c62ef9452e2cf96ad45da617a3948f15dae2417099dc6a334e441664",
+      "expectedAccount": "provider:acct",
+      "statementKeyPub": "sea-next",
+      "decision": "stale"
+    },
+    {
+      "providerAnswered": true,
+      "now": 1700000000000,
+      "skewAllowanceMs": 5000,
+      "policyMaxAgeMs": 60000,
+      "name": "account-key-head-skew",
+      "entries": [
+        {
+          "account": "provider:acct",
+          "keyPub": "sea-current",
+          "seq": 0,
+          "prev": "none"
+        },
+        {
+          "account": "provider:acct",
+          "keyPub": "sea-next",
+          "seq": 1,
+          "prev": "81e0da25dfef9427ae3bb3747867942f825d7410218551f5545dc59a1b22b508"
+        }
+      ],
+      "head": {
+        "account": "provider:acct",
+        "seq": 1,
+        "entryHash": "83417e3c5f4c64a4e5849976fbd9123eb648b96bb19e7d0148ad2d9b8ce36799",
+        "issuedAt": 1700000005000,
+        "maxAgeMs": 60000
+      },
+      "headSignature": "108d7dac5043a514af8bb0ffe72b9ed450d3c344d762daed1953be309b48f5b304614904188eb52df439db881a888e25100839041b78768f1c6ab7cc1dc76611",
+      "expectedAccount": "provider:acct",
+      "statementKeyPub": "sea-next",
+      "decision": "accept",
+      "keyPub": "sea-next"
+    },
+    {
+      "providerAnswered": true,
+      "now": 1700000300001,
+      "skewAllowanceMs": 5000,
+      "policyMaxAgeMs": 86400000,
+      "name": "account-key-head-max-age",
+      "entries": [
+        {
+          "account": "provider:acct",
+          "keyPub": "sea-current",
+          "seq": 0,
+          "prev": "none"
+        },
+        {
+          "account": "provider:acct",
+          "keyPub": "sea-next",
+          "seq": 1,
+          "prev": "81e0da25dfef9427ae3bb3747867942f825d7410218551f5545dc59a1b22b508"
+        }
+      ],
+      "head": {
+        "account": "provider:acct",
+        "seq": 1,
+        "entryHash": "83417e3c5f4c64a4e5849976fbd9123eb648b96bb19e7d0148ad2d9b8ce36799",
+        "issuedAt": 1700000000000,
+        "maxAgeMs": 86400000
+      },
+      "headSignature": "fa2cd255dfd821a614a7563475a5b11370d3e194a02ff27d63dcb48cc6ccd4fa0e28032a16e19b2e32d6357b5cf08f26154be65a13f5d07ac8cbd5cf50570eb6",
+      "expectedAccount": "provider:acct",
+      "statementKeyPub": "sea-next",
+      "decision": "stale"
+    },
+    {
+      "providerAnswered": true,
+      "now": 1700000300000,
+      "skewAllowanceMs": 5000,
+      "policyMaxAgeMs": 86400000,
+      "name": "account-key-head-max-age-fresh",
+      "entries": [
+        {
+          "account": "provider:acct",
+          "keyPub": "sea-current",
+          "seq": 0,
+          "prev": "none"
+        },
+        {
+          "account": "provider:acct",
+          "keyPub": "sea-next",
+          "seq": 1,
+          "prev": "81e0da25dfef9427ae3bb3747867942f825d7410218551f5545dc59a1b22b508"
+        }
+      ],
+      "head": {
+        "account": "provider:acct",
+        "seq": 1,
+        "entryHash": "83417e3c5f4c64a4e5849976fbd9123eb648b96bb19e7d0148ad2d9b8ce36799",
+        "issuedAt": 1700000000000,
+        "maxAgeMs": 86400000
+      },
+      "headSignature": "fa2cd255dfd821a614a7563475a5b11370d3e194a02ff27d63dcb48cc6ccd4fa0e28032a16e19b2e32d6357b5cf08f26154be65a13f5d07ac8cbd5cf50570eb6",
+      "expectedAccount": "provider:acct",
+      "statementKeyPub": "sea-next",
+      "decision": "accept",
+      "keyPub": "sea-next"
+    },
+    {
+      "providerAnswered": true,
+      "now": 1700000000000,
+      "skewAllowanceMs": 5000,
+      "policyMaxAgeMs": 60000,
+      "name": "account-key-provider-older-key",
+      "entries": [
+        {
+          "account": "provider:acct",
+          "keyPub": "YP7UuiVanTHJYet0xjVtaMBJuJI7Yfps5mliLmDyn7Y.eQP-EAi4vJmkGunpVii8ZPLxsgwtfp9Rd6PClNRGIpk",
+          "seq": 0,
+          "prev": "none"
+        },
+        {
+          "account": "provider:acct",
+          "keyPub": "sea-mid",
+          "seq": 1,
+          "prev": "96ae87e5f002edf6fdd0b0deeb60e14f8154bdd1f67f4d7e8213868dbc881fc7"
+        },
+        {
+          "account": "provider:acct",
+          "keyPub": "sea-next",
+          "seq": 2,
+          "prev": "de1666b6533d032b4dd8507d560c124b52e585cb97bce7e3f6211b63e0501352"
+        }
+      ],
+      "head": {
+        "account": "provider:acct",
+        "seq": 2,
+        "entryHash": "dc1e210537584d8ec845df9d0b27b5871f15176068dadfa221cc3a1004f1f20b",
+        "issuedAt": 1700000000000,
+        "maxAgeMs": 60000
+      },
+      "headSignature": "563fc8bfa21bbfb04f39869f9dac81005f0707801beb887f0da18f5e49d93bd55623a1bed2a7628bd4b7192189cf0cf902a97d1cef31f7fdb2dc7d5e30b2d319",
+      "expectedAccount": "provider:acct",
+      "statementKeyPub": "sea-next",
+      "decision": "head-mismatch"
+    },
+    {
+      "providerAnswered": true,
+      "now": 1700000000000,
+      "skewAllowanceMs": 5000,
+      "policyMaxAgeMs": 60000,
+      "name": "account-key-provider-below-anchor",
+      "entries": [
+        {
+          "account": "provider:acct",
+          "keyPub": "YP7UuiVanTHJYet0xjVtaMBJuJI7Yfps5mliLmDyn7Y.eQP-EAi4vJmkGunpVii8ZPLxsgwtfp9Rd6PClNRGIpk",
+          "seq": 0,
+          "prev": "none"
+        },
+        {
+          "account": "provider:acct",
+          "keyPub": "k1",
+          "seq": 1,
+          "prev": "96ae87e5f002edf6fdd0b0deeb60e14f8154bdd1f67f4d7e8213868dbc881fc7"
+        },
+        {
+          "account": "provider:acct",
+          "keyPub": "k2",
+          "seq": 2,
+          "prev": "b7bbff9008b8ea3a36a3dad58acd61dacd8d16d64694367dd80b11a81102575e"
+        }
+      ],
+      "head": {
+        "account": "provider:acct",
+        "seq": 2,
+        "entryHash": "31c277f822e560dac5f8a15dbe0d06fb348df11de60876f5461bd7b665c72094",
+        "issuedAt": 1700000000000,
+        "maxAgeMs": 60000
+      },
+      "anchor": {
+        "account": "provider:acct",
+        "keyPub": "k1",
+        "seq": 1,
+        "prev": "96ae87e5f002edf6fdd0b0deeb60e14f8154bdd1f67f4d7e8213868dbc881fc7"
+      },
+      "headSignature": "84541927523d88518d14e2b12c4afc2b33b3885799f02e1e4befb81477cc619333c3bf23e1796c472cb61be7f70f63fb5d98d8233e997c91aa92056b95090e6b",
+      "expectedAccount": "provider:acct",
+      "statementKeyPub": "k2",
+      "decision": "head-mismatch"
+    },
+    {
+      "providerAnswered": true,
+      "now": 1700000000000,
+      "skewAllowanceMs": 5000,
+      "policyMaxAgeMs": 60000,
+      "name": "account-key-anchor-recompute",
+      "entries": [
+        {
+          "account": "provider:acct",
+          "keyPub": "k1",
+          "seq": 1,
+          "prev": "99a6ab713acb0236c7f8e31304e3b48063cf2027ef06b7b8865810917433f8dd"
+        }
+      ],
+      "head": {
+        "account": "provider:acct",
+        "seq": 1,
+        "entryHash": "40a010dd34adcfbb81462cdcf46c11e22cce4985335e8b625da9ae355d04c793",
+        "issuedAt": 1700000000000,
+        "maxAgeMs": 60000
+      },
+      "anchor": {
+        "account": "provider:acct",
+        "keyPub": "k0",
+        "seq": 0,
+        "prev": "none"
+      },
+      "headSignature": "1662b35c0286c0dd76530963009d2d1dbc92ea00b0be9afc8f039288c4358a0004e7383bde2fbadf6295507643232706f2698a4a1661d319d13545ffeb147143",
+      "expectedAccount": "provider:acct",
+      "statementKeyPub": "k1",
+      "decision": "accept",
+      "keyPub": "k1"
+    },
+    {
+      "providerAnswered": true,
+      "now": 1700000000000,
+      "skewAllowanceMs": 5000,
+      "policyMaxAgeMs": 60000,
+      "name": "account-key-anchor-recompute-mismatch",
+      "entries": [
+        {
+          "account": "provider:acct",
+          "keyPub": "k1",
+          "seq": 1,
+          "prev": "99a6ab713acb0236c7f8e31304e3b48063cf2027ef06b7b8865810917433f8dd"
+        }
+      ],
+      "head": {
+        "account": "provider:acct",
+        "seq": 1,
+        "entryHash": "40a010dd34adcfbb81462cdcf46c11e22cce4985335e8b625da9ae355d04c793",
+        "issuedAt": 1700000000000,
+        "maxAgeMs": 60000
+      },
+      "anchor": {
+        "account": "provider:acct",
+        "keyPub": "k0-tampered",
+        "seq": 0,
+        "prev": "none"
+      },
+      "headSignature": "1662b35c0286c0dd76530963009d2d1dbc92ea00b0be9afc8f039288c4358a0004e7383bde2fbadf6295507643232706f2698a4a1661d319d13545ffeb147143",
+      "expectedAccount": "provider:acct",
+      "statementKeyPub": "k1",
+      "decision": "unlinked"
     }
   ]
 }

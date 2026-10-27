@@ -14,6 +14,15 @@ import { KEYRING_HISTORY_MAX } from "./keyring-limits.ts";
 /** Steps from a head at KEYRING_HISTORY_MAX down through seq 0. */
 const ACCOUNT_KEY_WALK_LIMIT = KEYRING_HISTORY_MAX + 1;
 
+/**
+ * Ceiling for a provider or wallet account-key head, in milliseconds.
+ * Five minutes covers an answer and ordinary clock skew. A longer window
+ * would keep a retired key current for a verifier that has not stored an
+ * anchor. The signed maxAgeMs and the verifier's policyMaxAgeMs can be
+ * shorter. Neither can raise this ceiling.
+ */
+export const ACCOUNT_KEY_HEAD_MAX_AGE_MS = 300_000;
+
 export const DOMAIN_ENV_DIGEST = "s3rch-env-digest-v1";
 export const DOMAIN_REVISION_MANIFEST = "s3rch-revision-manifest-v1";
 export const DOMAIN_GRANT_MANIFEST = "s3rch-grant-manifest-v1";
@@ -62,17 +71,21 @@ export type AccountKeyLogEntry = {
   prev: string;
 };
 
+/** Provider or wallet head. issuedAt and maxAgeMs are inside the signature. */
 export type AccountKeyLogHead = {
   account: string;
   seq: number;
   entryHash: string;
+  issuedAt: number;
+  maxAgeMs: number;
 };
 
-/** An entry already accepted. A shortcut requires this account and seq + 1. */
+/**
+ * An entry already accepted. The hash is recomputed from `entry`.
+ * A shortcut requires this account and seq + 1.
+ */
 export type AccountKeyAnchor = {
-  account: string;
-  seq: number;
-  hash: string;
+  entry: AccountKeyLogEntry;
 };
 
 function pathSegment(value: string): void {
@@ -237,6 +250,8 @@ export function accountKeyHeadBytes(head: AccountKeyLogHead): Uint8Array {
     head.account,
     canonicalDecimal(head.seq),
     head.entryHash,
+    canonicalDecimal(head.issuedAt),
+    canonicalDecimal(head.maxAgeMs),
   ]);
 }
 
@@ -338,6 +353,11 @@ export function acceptRevisionManifest(input: {
   return accept();
 }
 
+/**
+ * bindingSignedByCurrent is the consumer's result. This check does not
+ * verify the binding signature. The consumer must verify it under the
+ * current account SEA pub before passing true.
+ */
 export function acceptStatusSigner(input: {
   signingPub: string;
   currentAccountPub: string;
@@ -380,6 +400,12 @@ export function acceptStatusSigner(input: {
   return accept();
 }
 
+/**
+ * member, signatureUnderSender, and derivedFromGroupKey are the consumer's
+ * results. This check does not verify ssig, membership, or a derivation
+ * from the group epoch key. The consumer must do those checks before
+ * passing true.
+ */
 export function acceptGroupInboxSender(input: {
   senderPub: string;
   currentAccountPub: string;
@@ -418,10 +444,80 @@ function requireStatusAuth(statusAuthPub: string | undefined): string | undefine
   return statusAuthPub;
 }
 
-function anchorLinks(entry: AccountKeyLogEntry, entryHash: string, anchor: AccountKeyAnchor): boolean {
+function anchorLinks(
+  entry: AccountKeyLogEntry,
+  entryHash: string,
+  anchor: AccountKeyLogEntry,
+  anchorHash: string,
+): boolean {
   if (entry.account !== anchor.account) return false;
-  if (entryHash === anchor.hash && entry.seq === anchor.seq) return true;
-  return entry.prev === anchor.hash && entry.seq === anchor.seq + 1;
+  if (entryHash === anchorHash && entry.seq === anchor.seq) return true;
+  return entry.prev === anchorHash && entry.seq === anchor.seq + 1;
+}
+
+function safeTime(value: number): boolean {
+  return Number.isSafeInteger(value) && value >= 0;
+}
+
+function headIsFresh(
+  issuedAt: number,
+  signedMaxAgeMs: number,
+  now: number,
+  skewAllowanceMs: number,
+  policyMaxAgeMs: number,
+): boolean {
+  if (
+    !safeTime(issuedAt) ||
+    !safeTime(signedMaxAgeMs) ||
+    !safeTime(now) ||
+    !safeTime(skewAllowanceMs) ||
+    !safeTime(policyMaxAgeMs)
+  ) {
+    return false;
+  }
+  let bound = signedMaxAgeMs < policyMaxAgeMs ? signedMaxAgeMs : policyMaxAgeMs;
+  if (ACCOUNT_KEY_HEAD_MAX_AGE_MS < bound) bound = ACCOUNT_KEY_HEAD_MAX_AGE_MS;
+  const latest = BigInt(now) + BigInt(skewAllowanceMs);
+  if (BigInt(issuedAt) > latest) return false;
+  if (BigInt(now) >= BigInt(issuedAt)) {
+    return BigInt(now) - BigInt(issuedAt) <= BigInt(bound);
+  }
+  return true;
+}
+
+/** True when a hash-linked entry below `seq` uses the provider signing key. */
+function providerKeyBelow(
+  entries: readonly AccountKeyLogEntry[],
+  account: string,
+  seq: number,
+  prev: string,
+  providerPub: string,
+): boolean {
+  let currentSeq = seq;
+  let currentPrev = prev;
+  for (let step = 0; step < ACCOUNT_KEY_WALK_LIMIT; step += 1) {
+    if (currentSeq === 0) return false;
+    let parent: number | undefined;
+    try {
+      parent = uniqueIndex(entries, account, currentSeq - 1);
+    } catch {
+      return true;
+    }
+    if (parent === undefined) return false;
+    const parentEntry = entries[parent];
+    if (parentEntry === undefined || parentEntry.account !== account) return true;
+    let parentHash: string;
+    try {
+      parentHash = accountKeyEntryHash(parentEntry);
+    } catch {
+      return false;
+    }
+    if (parentHash !== currentPrev) return false;
+    if (parentEntry.keyPub === providerPub) return true;
+    currentSeq = parentEntry.seq;
+    currentPrev = parentEntry.prev;
+  }
+  return false;
 }
 
 function headSignatureOk(providerPub: string, head: AccountKeyLogHead, signature: string): boolean {
@@ -445,6 +541,9 @@ export function acceptCurrentKey(input: {
   headSignature: string;
   expectedAccount: string;
   statementKeyPub: string;
+  now: number;
+  skewAllowanceMs: number;
+  policyMaxAgeMs: number;
 }): CurrentKeyDecision {
   if (!input.providerAnswered) return { ok: false, reason: "no-answer" };
   const head = input.head;
@@ -477,35 +576,60 @@ export function acceptCurrentKey(input: {
   if (startHash !== head.entryHash || startEntry.keyPub.length === 0) {
     return { ok: false, reason: "head-mismatch" };
   }
-  if (input.providerPub === startEntry.keyPub) return { ok: false, reason: "head-mismatch" };
+  if (
+    !headIsFresh(
+      head.issuedAt,
+      head.maxAgeMs,
+      input.now,
+      input.skewAllowanceMs,
+      input.policyMaxAgeMs,
+    )
+  ) {
+    return { ok: false, reason: "stale" };
+  }
+  let resolvedAnchor: { entry: AccountKeyLogEntry; hash: string } | undefined;
   const anchor = input.anchor;
   if (anchor !== undefined) {
-    if (anchor.account !== input.expectedAccount) return { ok: false, reason: "unlinked" };
-    if (head.seq < anchor.seq) return { ok: false, reason: "superseded" };
+    if (anchor.entry.account !== input.expectedAccount) return { ok: false, reason: "unlinked" };
+    let hash: string;
+    try {
+      hash = accountKeyEntryHash(anchor.entry);
+    } catch {
+      return { ok: false, reason: "unlinked" };
+    }
+    if (head.seq < anchor.entry.seq) return { ok: false, reason: "superseded" };
+    resolvedAnchor = { entry: anchor.entry, hash };
   }
   let index = start;
   let linked = false;
+  let below: { seq: number; prev: string } | undefined;
   for (let step = 0; step < ACCOUNT_KEY_WALK_LIMIT; step += 1) {
     const entry = input.entries[index];
     if (entry === undefined) return { ok: false, reason: "unlinked" };
     if (entry.account !== input.expectedAccount) return { ok: false, reason: "head-mismatch" };
+    if (entry.keyPub === input.providerPub) return { ok: false, reason: "head-mismatch" };
     let entryHash: string;
     try {
       entryHash = accountKeyEntryHash(entry);
     } catch {
       return { ok: false, reason: "prev-mismatch" };
     }
-    if (anchor !== undefined) {
-      if (anchorLinks(entry, entryHash, anchor)) {
+    if (resolvedAnchor !== undefined) {
+      if (anchorLinks(entry, entryHash, resolvedAnchor.entry, resolvedAnchor.hash)) {
+        if (resolvedAnchor.entry.keyPub === input.providerPub) {
+          return { ok: false, reason: "head-mismatch" };
+        }
         linked = true;
+        below = { seq: resolvedAnchor.entry.seq, prev: resolvedAnchor.entry.prev };
         break;
       }
-      if (entry.seq <= anchor.seq) return { ok: false, reason: "unlinked" };
+      if (entry.seq <= resolvedAnchor.entry.seq) return { ok: false, reason: "unlinked" };
     }
     if (entry.seq === 0) {
-      if (anchor !== undefined) return { ok: false, reason: "unlinked" };
+      if (resolvedAnchor !== undefined) return { ok: false, reason: "unlinked" };
       if (entry.prev !== PREV_NONE) return { ok: false, reason: "prev-mismatch" };
       linked = true;
+      below = { seq: entry.seq, prev: entry.prev };
       break;
     }
     let parent: number | undefined;
@@ -527,6 +651,12 @@ export function acceptCurrentKey(input: {
     index = parent;
   }
   if (!linked) return { ok: false, reason: "unlinked" };
+  if (
+    below !== undefined &&
+    providerKeyBelow(input.entries, input.expectedAccount, below.seq, below.prev, input.providerPub)
+  ) {
+    return { ok: false, reason: "head-mismatch" };
+  }
   if (input.statementKeyPub !== startEntry.keyPub) {
     return { ok: false, reason: "superseded" };
   }
