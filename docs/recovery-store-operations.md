@@ -142,4 +142,29 @@ these atomic restoration steps for a production adapter remains F16.
 
 [Panopticon PR #535](https://github.com/FyberLabs/panopticon/pull/535) implements the PostgreSQL storage primitive for F16: one global principal row, a shared authenticated head floor, separate recovery/wrap generations, atomic ciphertext updates, and serialized competing writers. Restart persistence, rollback, generation exhaustion, and refusal to downgrade away retained replay state have PostgreSQL regression coverage (37 ACL-service and 20 owner-migration/subject-membership tests passed).
 
-This implementation is in review and has not been deployed. It exposes no HTTP endpoint and does not authenticate operations itself. Production integration still needs the F14 fresh-history/signature checks before storage calls, service-role wiring, client generation re-read/re-sign behavior, and deployment acceptance. Issue #68 remains open for those requirements and the other integration findings.
+The storage primitive merged in Panopticon #535 with passing CI; deployment has not been verified. It exposes no HTTP endpoint and does not authenticate operations itself. Production integration still needs the F14 fresh-history/signature checks before storage calls, service-role wiring, client generation re-read/re-sign behavior, and deployment acceptance. Issue #68 remains open for those requirements and the other integration findings.
+
+## Signed retries and ambiguous responses
+
+After a conflict, fetch fresh authenticated account history and read the current
+row and generation. Reconcile the desired operation with the new state before
+signing again. A newly signed operation must bind both the current predecessor
+hash (or `none`) and current generation, as well as the freshly resolved head and
+current signing key. When both commitments have changed, refreshing only one is
+insufficient. Another writer may
+win again between reads and submission; return the conflict to the caller rather
+than blindly retrying or silently overwriting its changes.
+
+If the response to a write is lost, read back the exact committed row first. A
+matching complete row commitment can satisfy a desired-state write without another
+write or generation increment; it does not prove which client committed it. A
+matching ciphertext alone is insufficient because public metadata and signatures
+also belong to the row commitment. If the row differs, reconcile intent before a
+new signature. These APIs provide no exactly-once operation receipt.
+
+The shared `store-retries.json` scenarios exercise both reference stores in Rust
+and TypeScript with real store-operation signatures: two clients sign against one
+snapshot, stale and partially refreshed authorizations fail without mutation,
+complete re-read/re-sign succeeds, and exact read-back resolves a lost response.
+The payloads are opaque test ciphertext; these are package contract tests, not
+production endpoint or database integration acceptance.

@@ -1934,6 +1934,238 @@ mod tests {
         );
     }
 
+
+    #[test]
+    fn signed_recovery_retries_reconcile_conflicts_and_lost_responses() {
+        let fixture: Value = serde_json::from_str(include_str!(
+            "../../../vectors/encrypted-discovery/store-retries.json"
+        ))
+        .unwrap();
+        let keyring = genesis_keyring();
+        let principal = keyring.principal();
+        let held = hold();
+        let context = context_of(&held);
+        for scenario in fixture["cases"].as_array().unwrap() {
+            let mut store = MemoryRecoveryStore::new(watch(&[], &context), crate::HeadFloor::new());
+            let row = |marker: u8| {
+                let mut value =
+                    dummy_envelope(principal, 0, keyring.current_pub(), keyring.current_epub());
+                *value.bytes.last_mut().unwrap() = marker;
+                value
+            };
+            let hash = |value: &RecoveryEnvelope| recovery_envelope_hash(value).unwrap();
+            let initial = row(1);
+            let desired = row(2);
+            let winner = row(scenario["winner"].as_u64().unwrap() as u8);
+            let sign = |value, predecessor: &str, generation: u64| {
+                crate::sign_store_write(
+                    keyring.current_priv(),
+                    principal,
+                    "put",
+                    "0",
+                    &hash(value),
+                    "0",
+                    predecessor,
+                    crate::STORE_CLASS_NONE,
+                    &generation.to_string(),
+                )
+                .unwrap()
+            };
+            store
+                .put_copy(&initial, &sign(&initial, crate::REPLACED_NONE, 0))
+                .unwrap();
+            let old_generation = store.write_generation(principal);
+            let old_predecessor = hash(&store.current_copy(principal).unwrap().unwrap());
+            let queued_signature = sign(&desired, &old_predecessor, old_generation);
+            store
+                .put_copy(&winner, &sign(&winner, &old_predecessor, old_generation))
+                .unwrap();
+            assert_eq!(
+                store
+                    .put_copy(&desired, &queued_signature)
+                    .unwrap_err(),
+                EncDiscError::StoreRejected
+            );
+            assert_eq!(
+                hash(&store.current_copy(principal).unwrap().unwrap()),
+                hash(&winner)
+            );
+            assert_eq!(store.write_generation(principal), 2);
+            let current_predecessor = hash(&store.current_copy(principal).unwrap().unwrap());
+            for (predecessor, generation) in [
+                (&old_predecessor, 2),
+                (&current_predecessor, old_generation),
+            ] {
+                let signature = sign(&desired, predecessor, generation);
+                assert_eq!(
+                    store.put_copy(&desired, &signature).unwrap_err(),
+                    EncDiscError::StoreRejected
+                );
+                assert_eq!(
+                    hash(&store.current_copy(principal).unwrap().unwrap()),
+                    hash(&winner)
+                );
+                assert_eq!(store.write_generation(principal), 2);
+            }
+            if scenario["retry"].as_bool().unwrap() {
+                assert_ne!(
+                    hash(&store.current_copy(principal).unwrap().unwrap()),
+                    hash(&desired)
+                );
+                let signature = sign(
+                    &desired,
+                    &hash(&store.current_copy(principal).unwrap().unwrap()),
+                    store.write_generation(principal),
+                );
+                assert_ne!(signature, queued_signature);
+                store.put_copy(&desired, &signature).unwrap();
+                assert_eq!(
+                    store.put_copy(&desired, &signature).unwrap_err(),
+                    EncDiscError::StoreRejected
+                );
+            } else {
+                // Exact read-back resolves a lost response without another write.
+                assert_eq!(
+                    hash(&store.current_copy(principal).unwrap().unwrap()),
+                    hash(&desired)
+                );
+            }
+            assert_eq!(
+                hash(&store.current_copy(principal).unwrap().unwrap()),
+                hash(&desired)
+            );
+            assert_eq!(
+                store.write_generation(principal),
+                scenario["finalGeneration"].as_u64().unwrap()
+            );
+        }
+    }
+
+    #[test]
+    fn signed_wrap_retries_reconcile_conflicts_and_lost_responses() {
+        let fixture: Value = serde_json::from_str(include_str!(
+            "../../../vectors/encrypted-discovery/store-retries.json"
+        ))
+        .unwrap();
+        let keyring = genesis_keyring();
+        let principal = keyring.principal();
+        let held = hold();
+        let context = context_of(&held);
+        for scenario in fixture["cases"].as_array().unwrap() {
+            let mut store =
+                crate::MemoryKeyWrapStore::new(watch(&[], &context), crate::HeadFloor::new());
+            let wrap_id = sociacl_ids::mint_object_id_with("wrap", principal, |bytes| {
+                *bytes = [7u8; 16];
+                Ok(())
+            })
+            .unwrap()
+            .object_id()
+            .clone();
+            let index = crate::WrapIndex {
+                principal: principal.clone(),
+                wrap_id: wrap_id.clone(),
+                epub: keyring.current_epub().as_ref().to_string(),
+            };
+            let row = |marker: u8| crate::EncryptedAccountWrap {
+                principal: principal.clone(),
+                wrap_id: wrap_id.clone(),
+                epub: index.epub.clone(),
+                class: crate::WrapClass::Delivery,
+                ciphertext_hex: format!("{marker:02x}"),
+                signature: "ab".repeat(64),
+            };
+            let hash = |value: &crate::EncryptedAccountWrap| crate::wrap_row_hash(value).unwrap();
+            let initial = row(1);
+            let desired = row(2);
+            let winner = row(scenario["winner"].as_u64().unwrap() as u8);
+            let sign = |value, predecessor: &str, generation: u64| {
+                crate::sign_store_write(
+                    keyring.current_priv(),
+                    principal,
+                    "put",
+                    wrap_id.as_ref(),
+                    &hash(value),
+                    "0",
+                    predecessor,
+                    crate::STORE_CLASS_DELIVERY,
+                    &generation.to_string(),
+                )
+                .unwrap()
+            };
+            store
+                .put_wrap(&index, &initial, &sign(&initial, crate::REPLACED_NONE, 0))
+                .unwrap();
+            let old_generation = store.write_generation(principal);
+            let old_predecessor = hash(&store.get_wrap(principal, &wrap_id).unwrap().unwrap());
+            let queued_signature = sign(&desired, &old_predecessor, old_generation);
+            store
+                .put_wrap(
+                    &index,
+                    &winner,
+                    &sign(&winner, &old_predecessor, old_generation),
+                )
+                .unwrap();
+            assert_eq!(
+                store
+                    .put_wrap(&index, &desired, &queued_signature)
+                    .unwrap_err(),
+                EncDiscError::StoreRejected
+            );
+            assert_eq!(
+                hash(&store.get_wrap(principal, &wrap_id).unwrap().unwrap()),
+                hash(&winner)
+            );
+            assert_eq!(store.write_generation(principal), 2);
+            let current_predecessor = hash(&store.get_wrap(principal, &wrap_id).unwrap().unwrap());
+            for (predecessor, generation) in [
+                (&old_predecessor, 2),
+                (&current_predecessor, old_generation),
+            ] {
+                let signature = sign(&desired, predecessor, generation);
+                assert_eq!(
+                    store.put_wrap(&index, &desired, &signature).unwrap_err(),
+                    EncDiscError::StoreRejected
+                );
+                assert_eq!(
+                    hash(&store.get_wrap(principal, &wrap_id).unwrap().unwrap()),
+                    hash(&winner)
+                );
+                assert_eq!(store.write_generation(principal), 2);
+            }
+            if scenario["retry"].as_bool().unwrap() {
+                assert_ne!(
+                    hash(&store.get_wrap(principal, &wrap_id).unwrap().unwrap()),
+                    hash(&desired)
+                );
+                let signature = sign(
+                    &desired,
+                    &hash(&store.get_wrap(principal, &wrap_id).unwrap().unwrap()),
+                    store.write_generation(principal),
+                );
+                assert_ne!(signature, queued_signature);
+                store.put_wrap(&index, &desired, &signature).unwrap();
+                assert_eq!(
+                    store.put_wrap(&index, &desired, &signature).unwrap_err(),
+                    EncDiscError::StoreRejected
+                );
+            } else {
+                // Exact read-back resolves a lost response without another write.
+                assert_eq!(
+                    hash(&store.get_wrap(principal, &wrap_id).unwrap().unwrap()),
+                    hash(&desired)
+                );
+            }
+            assert_eq!(
+                hash(&store.get_wrap(principal, &wrap_id).unwrap().unwrap()),
+                hash(&desired)
+            );
+            assert_eq!(
+                store.write_generation(principal),
+                scenario["finalGeneration"].as_u64().unwrap()
+            );
+        }
+    }
+
     #[test]
     fn store_generation_boundaries_preserve_recovery_rows() {
         let fixture: Value = serde_json::from_str(include_str!(

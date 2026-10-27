@@ -1854,3 +1854,62 @@ test("exhausted generations reject recovery delete/commit and wrap delete before
   assert.throws(() => wraps.delete(principal, wrapId, signature), /store-rejected/);
   assert.deepEqual(wraps.get(principal, wrapId), saved);
 });
+
+
+test("signed store retries re-read both commitments and detect lost responses", () => {
+  const fixture = JSON.parse(readFileSync(new URL("../../vectors/encrypted-discovery/store-retries.json", import.meta.url), "utf8"));
+  const keyring = genesisKeyring(), principal = keyring.principal;
+  for (const kind of ["recovery", "wrap"] as const) for (const scenario of fixture.cases) {
+    const context = witnessedContext();
+    const recoveryStore = new MemoryRecoveryStore(watch([], context), new HeadFloor());
+    const wraps = new MemoryKeyWrapStore(watch([], context), new HeadFloor());
+    const wrapId = mintedWrap(principal, 901);
+    const envelope = dummyEnvelope(principal, 0, keyring.pub, keyring.epub);
+    const row = (marker: number): RecoveryEnvelope | EncryptedAccountWrap => {
+      if (kind === "recovery") {
+        const bytes = new Uint8Array(envelope.bytes);
+        bytes[bytes.length - 1] = marker;
+        return { ...envelope, bytes };
+      }
+      return { principal, wrapId, epub: keyring.epub, class: "delivery", ciphertextHex: marker.toString(16).padStart(2, "0"), signature: "ab".repeat(64) };
+    };
+    const hash = (value: RecoveryEnvelope | EncryptedAccountWrap) => kind === "recovery"
+      ? recoveryEnvelopeHash(value as RecoveryEnvelope) : wrapRowHash(value as EncryptedAccountWrap);
+    const read = () => kind === "recovery" ? recoveryStore.current(principal)! : wraps.get(principal, wrapId)!;
+    const generation = () => kind === "recovery" ? recoveryStore.writeGeneration(principal) : wraps.writeGeneration(principal);
+    const sign = (value: RecoveryEnvelope | EncryptedAccountWrap, predecessor: string, gen: number) =>
+      signStoreWrite(keyring.currentPriv(), principal, "put", kind === "recovery" ? "0" : wrapId, hash(value), "0", predecessor, kind === "recovery" ? STORE_CLASS_NONE : STORE_CLASS_DELIVERY, String(gen));
+    const put = (value: RecoveryEnvelope | EncryptedAccountWrap, signature: string) => {
+      if (kind === "recovery") recoveryStore.put(value as RecoveryEnvelope, signature);
+      else wraps.put({ principal, wrapId, epub: keyring.epub }, value as EncryptedAccountWrap, signature);
+    };
+    const initial = row(1), desired = row(2), winner = row(scenario.winner);
+    put(initial, sign(initial, REPLACED_NONE, 0));
+    const oldGeneration = generation(), oldPredecessor = hash(read());
+    const queuedSignature = sign(desired, oldPredecessor, oldGeneration);
+    // Two clients signed against the same snapshot. The winner commits first.
+    put(winner, sign(winner, oldPredecessor, oldGeneration));
+    assert.throws(() => put(desired, queuedSignature), { message: fixture.staleError }, scenario.name);
+    assert.equal(hash(read()), hash(winner));
+    assert.equal(generation(), 2);
+    // Refreshing only one signed commitment is insufficient, even with a new signature.
+    for (const [predecessor, gen] of [[oldPredecessor, generation()], [hash(read()), oldGeneration]] as const) {
+      assert.throws(() => put(desired, sign(desired, predecessor, gen)), { message: fixture.staleError });
+      assert.equal(hash(read()), hash(winner));
+      assert.equal(generation(), 2);
+    }
+    if (scenario.retry) {
+      assert.notEqual(hash(read()), hash(desired));
+      // Caller has reconciled its intent; sign the complete newly read snapshot.
+      const signature = sign(desired, hash(read()), generation());
+      assert.notEqual(signature, queuedSignature);
+      put(desired, signature);
+      assert.throws(() => put(desired, signature), { message: fixture.staleError });
+    } else {
+      // An ambiguous response is resolved by exact row read-back, with no extra write.
+      assert.equal(hash(read()), hash(desired));
+    }
+    assert.equal(hash(read()), hash(desired));
+    assert.equal(generation(), scenario.finalGeneration);
+  }
+});

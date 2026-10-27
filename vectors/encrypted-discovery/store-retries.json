@@ -1,0 +1,18 @@
+{
+  "description": "Signed retry scenarios for recovery and delivery-wrap reference stores; opaque ciphertext, not decryption or HTTP acceptance.",
+  "cases": [
+    {
+      "name": "competing replacement",
+      "winner": 3,
+      "retry": true,
+      "finalGeneration": 3
+    },
+    {
+      "name": "committed response lost",
+      "winner": 2,
+      "retry": false,
+      "finalGeneration": 2
+    }
+  ],
+  "staleError": "store-rejected"
+}
