@@ -487,7 +487,7 @@ Unattested rotation requests retain current-time freshness and SIWE expiry check
 
 ## Publisher interoperability status
 
-[Panopticon PR #537](https://github.com/FyberLabs/panopticon/pull/537) adds an internal
+[Panopticon PR #537](https://github.com/FyberLabs/panopticon/pull/537), now merged, adds an internal
 ES256 timestamp signer and public key-window export. It checks both its server
 clock and the verified record timestamp before signing, refuses backdating after
 retirement, and retains old public keys for historical verification. It exposes
@@ -503,3 +503,12 @@ opaque test message, not a production ACL authorization.
 Authenticated policy publication, durable rollback protection, policy update
 lifecycle checks, signing-key custody, and the endpoint's fresh-history and
 present-revocation gates remain required under Panopticon #499 and SociACL #68.
+
+[Panopticon PR #540](https://github.com/FyberLabs/panopticon/pull/540) adds durable
+server policy revisions and key history. Older/conflicting revisions, widened
+windows, changed key material, and removed-key resurrection fail closed. Policy
+updates and signing share a PostgreSQL row lock. Omitted keys leave permanent
+tombstones; ordinary retired keys should remain published with their original
+windows for historical verification. This implementation is in review. It takes
+already-authenticated operator input; policy ingestion, client revision floors,
+key custody, service-role wiring, endpoint adoption, and deployment remain open.
