@@ -53,14 +53,14 @@ CI (`.github/workflows/ci.yml`) runs `./scripts/test-all.sh` then `./scripts/cov
 A push to protected `master` tags `ids-v*` (`typescript/ids` and `crates/sociacl-ids`) and `sociacl-v*` (the `sociacl` npm package and the workspace crates on `workspace.package.version`) when that version has no tag. `github.token` creates the tag through the Git refs API. The same run packs that family's npm tarball, uploads it with a SHA-256, and attests build provenance. A `sociacl-v*` release ships that tarball only. The workspace crates are named by the tag and are not packed. `python/sociacl` has no package version and is not part of either family. Tag and pack jobs are not in a concurrency group, so a later push cannot cancel the pack for the commit that created the tag. Release jobs queue per tag name. If `master` is not protected, tagging exits without a ref ([#60](https://github.com/FyberLabs/SociACL/issues/60)). A tag that already names another commit is left in place. A maintainer can still push either tag family directly.
 
 <!-- coverage:start -->
-Measured **2026-10-16** by `scripts/coverage.sh`. CI publishes the same table on the job summary.
+Measured **2026-10-27** by `scripts/coverage.sh`. CI publishes the same table on the job summary.
 
 | Surface | Result | Line coverage |
 | --- | --- | ---: |
-| Rust workspace | 344 tests + 6 examples | 87.36% |
-| C FFI (`sociacl-c`) | 12 unit + 6 examples | 84.56% |
-| Python `python/sociacl` | 28 tests | 86.6% |
-| TypeScript `typescript/src` and `typescript/contract` | 61 tests | 93.4% |
+| Rust workspace | 413 tests + 6 examples | 91.01% |
+| C FFI (`sociacl-c`) | 12 unit + 6 examples | 83.80% |
+| Python `python/sociacl` | 28 tests | 88.2% |
+| TypeScript `typescript/src` and `typescript/contract` | 158 tests | 95.9% |
 
 C example hits land in `libsociacl`, not in the `.c` files. Full crate table: [docs/coverage.md](docs/coverage.md).
 <!-- coverage:end -->
