@@ -237,7 +237,38 @@ strength-check API is unchanged. Browser bundlers can split the dynamic imports;
 this repository does not publish a recovery browser bundle or claim a specific
 bundle-size reduction.
 
-A passphrase is also checked for strength, and only at seal. Open does not run this gate, so a copy that already exists still opens. After NFC, a passphrase that contains a Unicode 16 default-ignorable or format character (U+200B, U+FEFF, U+00AD, and the rest of that set) is `recovery-weak-passphrase`. The exception is U+FE0F immediately following a base listed in the [Unicode 16 emoji variation sequences](https://www.unicode.org/Public/16.0.0/ucd/emoji/emoji-variation-sequences.txt). Exactly one selector is allowed there; misplaced or repeated selectors, other variation selectors, and zero-width joiners remain rejected. Accepted U+FE0F selectors are omitted from the strength estimate and visible count (and from the estimator's handle hint), but remain in the NFC passphrase bytes used by the KDF. Removing a selector therefore does not unlock a backup sealed with it. The visible length is the number of remaining code points, and it must be at least 12. The passphrase must also score at least 3 under zxcvbn. TypeScript uses `@zxcvbn-ts/core` 4.2.0 with `@zxcvbn-ts/language-common` 4.1.3 and `@zxcvbn-ts/language-en` 4.1.1. Rust uses the `zxcvbn` crate 3.1.1. Both receive the account's `PrincipalId` and, when the caller knows it, the account handle, as user inputs. The two estimators have advisory parity: they can disagree near the threshold. The shared vector pins clear pass and fail rows, not a byte-exact score. The error carries the score, the warning, and the suggestions so the UI can say why the passphrase was refused. The error does not contain the passphrase. Callers must not log the passphrase. Empty and whitespace-only passphrases stay `recovery-params`, and that check still runs on open.
+A passphrase is also checked for strength, and only at seal. Open does not run this gate, so a copy that already exists still opens. After NFC, a passphrase that contains a Unicode 16 default-ignorable or format character (U+200B, U+FEFF, U+00AD, and the rest of that set) is `recovery-weak-passphrase`. The exception is U+FE0F immediately following a base listed in the [Unicode 16 emoji variation sequences](https://www.unicode.org/Public/16.0.0/ucd/emoji/emoji-variation-sequences.txt). Exactly one selector is allowed there; misplaced or repeated selectors, other variation selectors, and zero-width joiners remain rejected. Accepted U+FE0F selectors are omitted from the strength estimate and visible count (and from the estimator's handle hint), but remain in the NFC passphrase bytes used by the KDF. Removing a selector therefore does not unlock a backup sealed with it. The visible length is the number of remaining code points, and it must be at least 12. The passphrase must also score at least 3 under zxcvbn. TypeScript uses `@zxcvbn-ts/core` 4.2.0 with `@zxcvbn-ts/language-common` 4.1.3 and `@zxcvbn-ts/language-en` 4.1.1. Rust uses the `zxcvbn` crate 3.1.1. Both receive the account's `PrincipalId` and, when the caller knows it, the account handle, as user inputs. The two estimators have advisory parity: they can disagree near the threshold. The shared vector pins clear pass and fail rows, not a byte-exact score. The year-aware scoring policy is described below. The error carries the score, the warning, and the suggestions so the UI can say why the passphrase was refused. The error does not contain the passphrase. Callers must not log the passphrase. Empty and whitespace-only passphrases stay `recovery-params`, and that check still runs on open.
+
+### Year-aware strength policy
+
+Keep the pinned estimators' year-aware behavior for new seals. Their reference
+year is taken from the runtime clock and cached by the dependency: TypeScript
+uses the local year at module initialization; native Rust initializes its UTC
+year lazily. A long-running process need not switch at midnight on January 1.
+Scores and threshold decisions can differ across years, time zones, process
+lifetimes, estimator versions, and languages. They are seal-time guidance, not a
+stable protocol value. Do not persist a score as authorization or promise an
+identical future score. Run the strength gate again for every new seal, including
+re-sealing a recovered keyring; ask for a new passphrase if the old one fails.
+
+Opening an existing copy does not call the strength estimator (and TypeScript
+does not load its dictionaries on this path). A changed
+year or strength policy cannot by itself make that copy unrecoverable. This does
+not bypass passphrase encoding/parameter checks, ciphertext authentication,
+keyring validation, authenticated history, or expected-sequence checks. The
+resolver's explicit verification time is separate from the estimator's wall clock.
+
+The shared `vectors/encrypted-discovery/recovery-legacy-strength.json` fixture is
+a synthetic pre-gate backup of the public genesis test keyring, encrypted with
+`password`. Both implementations reject that passphrase for new seals but restore
+all its key material from the fixture; wrong passwords still fail. TypeScript
+also opens it with mocked wall-clock years 2000 and 2099 while retaining the same
+trusted history context. This demonstrates strength-gate independence, not an
+approval of weak passwords or a guarantee that every historical account state
+will remain acceptable forever. The fixture deliberately uses a passphrase below
+the minimum length so its seal rejection is independent of estimator scoring.
+
+### Recovery cryptography and storage
 
 The TypeScript KDF is hash-wasm 4.12.0. That build has no pthreads. Its Argon2 implementation walks lanes in a serial loop, in both the C source and the JavaScript that drives it, so `p=4` runs one lane after another. A browser loads that same module. The Rust crate is `argon2` 0.5.3 with the `alloc`, `std`, and `zeroize` features and without its defaults. The shared small vector (`password`, `somesalt`, `m=32` KiB, `t=3`, `p=4`, 32-byte output) matches across the two libraries. `m=32` is below the floor and is refused for a real envelope.
 
