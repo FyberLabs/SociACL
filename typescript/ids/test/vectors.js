@@ -12,6 +12,7 @@ const keys = { principal:ids.formatPrincipalKey, wallet:ids.formatWalletKey, oid
   object:ids.objectKey, network:ids.formatNetworkKey, 'source-key':ids.formatSourcePathKey };
 const names = [];
 function run(f, c) {
+  if (f.family === 'witness-checkpoint') return ids.verifyWitnessCheckpoint(c.input.checkpoint, c.input.policy, {...f.context, ...c});
   if (f.family === 'witness-lifecycle') {
     const ctx = {...f.context, ...c};
     let previous = c.input.previous;
@@ -181,7 +182,7 @@ test('lengthPrefixed reads each field once', () => {
   assert.deepEqual(ids.lengthPrefixed(throwingProxy), { ok: false, reason: 'bad-record' });
 });
 test('every shared vector and exact rejection reason', () => {
-  assert.equal(files.length,14);
+  assert.equal(files.length,15);
   for(const file of files) {
     const f = JSON.parse(readFileSync(new URL(file,root),'utf8'));
     assert.equal(f.v,1);

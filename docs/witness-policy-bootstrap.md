@@ -5,7 +5,9 @@ The [policy APIs](witness-policy-client.md) authenticate envelopes, enforce
 observed lifecycle history, and persist browser state. They do not establish
 freshness or authenticate a restored history. This contract defines those missing
 trust inputs and the conditions under which production consumers may operate.
-It introduces no new package API, wire format or cryptographic algorithm.
+The original contract introduces no cryptographic algorithm. The subsequent
+[checkpoint authentication API and wire format](witness-checkpoint.md) implement
+its signature boundary; durable adapters and services are still required.
 Provisioning/recovery adapters must implement and test this contract before
 production adoption (#136) or deployment (FyberLabs/panopticon#552) is complete.
 
@@ -98,8 +100,8 @@ or applying a verified revoke to deny access. It gates positive authorization;
 missing freshness never authorizes ignoring a revoke. The present-only lifetime
 of an unwitnessed revoke and the historical timestamp requirement are unchanged.
 
-The transport, serialization and signature encoding for checkpoint attestations
-are intentionally left to the owning management adapter. Its implementation must
+The [v1 checkpoint format](witness-checkpoint.md) binds complete history and request
+context with a separate management signature. Its owning service/adapter must
 bind every field above and supply replay/expiry/concurrency tests; no unsigned
 JSON or caller-provided boolean substitutes for that authentication.
 

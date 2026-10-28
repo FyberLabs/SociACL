@@ -97,3 +97,14 @@ export type WitnessPolicyState = Readonly<{
   type: 'sociacl-witness-policy-state-v1'; root: string; audience: string; revision: number;
   jwks: Jwks; history: readonly WitnessPolicyHistoryEntry[];
 }>;
+
+/** Independently provisioned scope and fresh request challenge; never response hints. */
+export type WitnessCheckpointExpectations = Readonly<{
+  managementRoot: string; root: string; rootEpoch: number; audience: string;
+  client: string; challenge: string; minimumRevision: number; now: number;
+}>;
+/** Authenticated candidate only; adapters must consume challenges and install atomically. */
+export type WitnessCheckpoint = Readonly<{
+  type: 'sociacl-witness-checkpoint-v1'; audience: string; client: string; challenge: string;
+  rootEpoch: number; issuedAt: number; expiresAt: number; state: WitnessPolicyState;
+}>;
