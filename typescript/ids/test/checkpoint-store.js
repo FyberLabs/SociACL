@@ -206,3 +206,17 @@ test('cancelled or closed requests cannot finish or restore a lease',async()=>{
   await assert.rejects(store.install(a,...response(a)));const b=await store.beginRefresh();store.close();
   await assert.rejects(store.install(b,...response(b)));await assert.rejects(store.readFresh());await assert.rejects(store.beginRefresh());
 });
+
+for (const clock of ['wall', 'monotonic']) test(`earlier policy expiry bounds ${clock} freshness`, async () => {
+  const {store,time}=await setup();
+  try {
+    const request=await store.beginRefresh(), [checkpoint]=response(request);
+    const policy=sign({type:'sociacl-witness-policy-v1',audience:canonical.audience,
+      revision:canonical.state.revision,issuedAt:time.wall,expiresAt:time.wall+5,jwks:canonical.state.jwks},17,'policy');
+    await store.install(request,checkpoint,policy);
+    await store.readFresh();
+    if(clock==='wall') time.wall+=5; else time.mono+=5000;
+    await assert.rejects(store.readFresh());
+    assert.equal((await store.readInstalled()).revision,canonical.state.revision);
+  } finally {store.close();}
+});

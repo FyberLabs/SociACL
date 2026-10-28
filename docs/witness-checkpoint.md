@@ -179,7 +179,7 @@ lease; `readInstalled()` inspects that historical state and a new refresh restor
 freshness. Concurrent writers serialize; `readFresh()` rejects a row replaced by
 another handle, including replacement with different evidence at the same revision.
 
-Freshness is per handle, bounded by both UTC expiry and a monotonic deadline anchored
+Freshness is per handle, bounded by the earlier policy/checkpoint UTC expiry and a monotonic deadline anchored
 to request creation, at most 300 seconds. Reads do not extend it. Backward/invalid
 clocks, failed refreshes, `cancel()` and `close()` invalidate that handle's lease.
 Reopening always requires a new checkpoint, even when saved evidence has not expired.
@@ -196,7 +196,7 @@ still required; this is not protection against XSS or complete profile rollback.
 External authoritative continuity, explicit recovery/migration authorization and
 product startup/verification integration remain #136 and Panopticon #552.
 
-Validation includes 32 storage regressions and real Chromium schema upgrades,
+Validation includes 34 storage regressions and real Chromium schema upgrades,
 concurrent refreshes, cross-page reads, full-process restart and monotonic expiry.
 Run `npm run test:browser-store` with Playwright Chromium installed. This establishes
 adapter behavior, not product adoption or deployed management-service acceptance.

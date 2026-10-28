@@ -1,4 +1,4 @@
-import { advanceWitnessPolicy } from './witness-policy.js';
+import { advanceWitnessPolicy, verifyWitnessPolicyEnvelope } from './witness-policy.js';
 import { advanceWitnessCheckpoint, verifyWitnessCheckpoint } from './witness-checkpoint.js';
 import { parsePrincipalId } from './ids.js';
 import { integer, utf8, b64 } from './util.js';
@@ -91,9 +91,12 @@ export async function openWitnessCheckpointStore(options) {
     if (!verified.ok) throw Error('Invalid checkpoint response');
     // Anchor to request time, never to response or read time. A stalled UTC
     // clock cannot extend the lease; requests themselves also live at most 300s.
-    const deadline = active.mono + Math.min(300, verified.value.expiresAt - active.wall) * 1000;
+    const signedPolicy = verifyWitnessPolicyEnvelope(policy, root, audience, time.wall);
+    if (!signedPolicy.ok) throw Error('Invalid policy response');
+    const expiresAt = Math.min(verified.value.expiresAt, signedPolicy.value.expiresAt);
+    const deadline = active.mono + Math.min(300, expiresAt - active.wall) * 1000;
     if (time.mono >= deadline) throw Error('Checkpoint monotonic lease expired');
-    return { verified:verified.value, time, deadline };
+    return { verified:verified.value, time, deadline, expiresAt };
   }
   async function beginRefresh() {
     invalidate();
@@ -138,8 +141,8 @@ export async function openWitnessCheckpointStore(options) {
           } catch (error) { abort(error); }
         };
       });
-      const { verified, deadline } = check(active, checkpoint, policy);
-      lease = { checkpoint, policy, deadline, expiresAt:verified.expiresAt, generation:active.generation };
+      const { verified, deadline, expiresAt } = check(active, checkpoint, policy);
+      lease = { checkpoint, policy, deadline, expiresAt, generation:active.generation };
       return verified.state;
     } catch (error) { if (generation === active.generation) invalidate(); throw error; }
   }
