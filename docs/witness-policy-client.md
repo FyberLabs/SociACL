@@ -224,3 +224,33 @@ is tested; sudden power loss, browser eviction recovery, other browser engines a
 production application adoption are not established by these tests. Distribution,
 independent freshness, root custody/compromise recovery and deployment acceptance
 remain open under #68 F4.
+
+
+## Panopticon HTTP delivery integration
+
+[Panopticon PR #550](https://github.com/FyberLabs/panopticon/pull/550) adds the
+server delivery path `GET /api/v1/acl/sociacl/witness-policy`, disabled until an
+operator provisions its signed files and independent public root/audience. The
+endpoint returns the same envelope accepted by the existing TS/Rust verifier;
+there are no new signature or lifecycle rules. The edge allows only this exact
+GET without login and keeps it on the anonymous client-address rate limiter.
+
+The server verifies each response against its current installed policy under a
+shared lock, rejects stale/unavailable state with 503, and sends `no-store`.
+Unconfigured publication returns 404. Treat every non-200, malformed response or
+verification failure as a failed refresh; never clear the local revision/history,
+bootstrap automatically, or install unsigned JWKS as a fallback. An already
+installed policy remains subject to the application's independent freshness rules.
+
+A successful download is still only an input to `store.refresh`, or to an
+independently authorized first `store.bootstrap`. The client must keep its root,
+audience, bootstrap floor and clock independent of the response and redirect
+source. The endpoint cannot establish latest-revision freshness for a new client,
+repair lost local history, or revoke artifacts previously delivered. Production
+role grants, signed-file mounts/renewal, TLS/edge acceptance, actual application
+adoption and root custody/compromise recovery remain outstanding. PR #550 is in
+review; this companion records implementation and test evidence, not deployment.
+
+Local Panopticon validation passed 157 ACL-service tests (including 27 new HTTP,
+startup and restricted-role cases) and 244 edge tests (one existing skip), including
+11 new route/limiter/proxy cases. Boundary and dependency checks also passed.
