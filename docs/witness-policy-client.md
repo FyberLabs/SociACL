@@ -104,7 +104,7 @@ The function's `now` argument is only the caller's point-in-time observation.
 
 The shared cases cover serialization/restart, conflict rechecks and expiry after
 lock waits; they are not deployment persistence or concurrent-database acceptance
-tests. Durable browser/server adapters and those acceptance tests remain open.
+tests. The IndexedDB adapter below supplies browser transactions and restart tests. Native client adapters and deployment acceptance remain open.
 
 ## Before a client may use the returned JWKS
 
@@ -121,8 +121,7 @@ An authenticated document is not an installed policy. An adapter must still:
 4. Preserve administrative root custody and define authenticated root rotation and
    compromise recovery. HTTPS delivery alone does not replace these requirements.
 
-The pure transition above supplies the lifecycle decision in step 2. Durable
-adapter execution, bootstrap, delivery, root lifecycle and deployment remain open. Do not assign the verifier's result directly to a production resolver's
+The pure transition above supplies the lifecycle decision in step 2. Browser adapter execution is available below; native client storage, bootstrap, delivery, root lifecycle and deployment remain open. Do not assign the verifier's result directly to a production resolver's
 JWKS. The helper deliberately performs no installation or rollback-floor reset.
 A compromised witness can still forge timestamps within its authorized window;
 validity-window enforcement does not detect such forgeries by itself.
@@ -143,3 +142,85 @@ sequences and 41 rejections. They cover matching/reordered refreshes, restart
 floors, narrowing, retirement, removal, material/ID reuse, concurrent-winner
 rechecks, clock expiry, malformed stored state, UTF-8 ordering, and history/byte
 limits. Test fixtures use public scalars only and are never bootstrap credentials.
+
+
+## IndexedDB browser adapter
+
+The optional `sociacl-ids/indexeddb` entry point exports
+`openWitnessPolicyStore`. It imports no Node modules and does not touch IndexedDB
+until opened. This is a browser platform adapter for the existing TS/Rust shared
+lifecycle contract; it introduces no new signature or lifecycle rules and is not
+a Rust native-storage implementation.
+
+```ts
+import { openWitnessPolicyStore } from 'sociacl-ids/indexeddb';
+
+const store = await openWitnessPolicyStore({
+  name: 'application-witness-policy-v1', // dedicated, stable database name
+  root: trustedConfig.administratorRoot,
+  audience: trustedConfig.audience,
+  minimumRevision: trustedConfig.minimumRevision,
+  now: () => Math.floor(Date.now() / 1000), // must satisfy application's trusted-clock contract
+});
+// Only an independently authorized first-install flow may call bootstrap(bundle).
+// Ordinary startup never catches a missing row and bootstraps automatically.
+const installed = await store.read();
+const updated = await store.refresh(signedBundleText);
+// These results have committed. Pass their JWKS to the authenticated resolver
+// with the separate account-history and freshness requirements still enforced.
+store.close();
+```
+
+`bootstrap` refuses any existing row. `refresh` refuses missing or corrupt state.
+Every write uses one strict-durability IndexedDB read/write transaction over the
+latest row. The row contains the entire revision/JWKS/history snapshot, original
+signed envelope and acceptance time. Independent connections serialize on the
+same object store, so a losing writer evaluates the winner's history and cannot
+replace it with a stale candidate. There is no in-memory fallback, reset API,
+history pruning, or automatic root migration. Unsupported strict durability fails
+closed.
+
+A read reauthenticates the saved envelope at its recorded acceptance time and
+requires it to match the stored revision/registry. Ordinary transport expiration
+does not delete previously installed witness windows: historical attestations
+still need their retired keys. A newly raised configuration floor blocks old reads
+but permits an authenticated refresh above that floor using all stored history.
+Root/audience changes fail until a separate trusted migration is defined.
+
+Updates check the clock after acquiring the transaction, after the write request
+succeeds (while the transaction can still abort), and again before returning the
+committed result. Aborted writes never expose the candidate. If commit succeeds
+but the final clock check fails, the call rejects although the row may have
+committed. Reconcile with `read()`; do not bootstrap, reset or blindly assume the
+old revision. The final check cannot undo an already completed transaction.
+
+The database is **trusted origin-local storage**, not a cryptographic anti-rollback
+anchor. The saved history and acceptance time are not signed by the root. XSS,
+malicious same-origin code, profile modification, backup rollback or origin-data
+eviction can defeat local continuity. Storage persistence permission can reduce
+eviction but cannot authenticate a lost history. A missing row must require the
+application's independently authenticated restoration/bootstrap procedure and
+freshness floor; merely seeing an empty database is not authorization. Use a stable
+database name; choosing a new name is effectively a new bootstrap namespace.
+Callers must not supply the factory, clock, root, floor or database name from an
+untrusted bundle. The optional `indexedDB` factory supports test/platform injection.
+
+`npm test` includes 32 adapter tests using `fake-indexeddb`, including 15 unchanged
+shared TS/Rust lifecycle cases executed through database transactions. Additional
+cases cover restart, contention, abort/quota failures, corruption, floor increases,
+expiry and lost-response reconciliation. A separate real-Chromium test uses a
+persistent profile, closes and relaunches the browser process, and checks concurrent
+conflicts, cross-page reads and rollback rejection:
+
+```sh
+cd typescript/ids
+npm ci
+npx playwright install --with-deps chromium
+npm run test:browser-store
+```
+
+CI runs this in the separate `browser-policy-store` job. Browser-process restart
+is tested; sudden power loss, browser eviction recovery, other browser engines and
+production application adoption are not established by these tests. Distribution,
+independent freshness, root custody/compromise recovery and deployment acceptance
+remain open under #68 F4.
