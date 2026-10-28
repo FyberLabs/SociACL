@@ -12,8 +12,8 @@ const a=key(19), b=key(20), narrowed={...a,notBefore:a.notBefore+10,notAfter:a.n
 const sort=keys=>[...keys].sort((a,b)=>Buffer.compare(Buffer.from(a.kid),Buffer.from(b.kid)));
 const state=(revision,active,removed=[])=>({type:'sociacl-witness-policy-state-v1',root,audience,revision,jwks:{keys:sort(active)},
  history:sort([...active,...removed]).map(jwk=>({jwk,removed:!active.some(k=>k.kid===jwk.kid)}))});
-const envelope=(revision,keys=[a],at=now)=>{const payload=Buffer.from(JSON.stringify({type:'sociacl-witness-policy-v1',audience,revision,issuedAt:at-1,expiresAt:at+60,jwks:{keys}}));
- const sig=p256.sign(Buffer.concat([Buffer.from('sociacl-witness-policy-v1\n'),payload]),secret(17),{lowS:true});
+const envelope=(revision,keys=[a],at=now,signer=17)=>{const payload=Buffer.from(JSON.stringify({type:'sociacl-witness-policy-v1',audience,revision,issuedAt:at-1,expiresAt:at+60,jwks:{keys}}));
+ const sig=p256.sign(Buffer.concat([Buffer.from('sociacl-witness-policy-v1\n'),payload]),secret(signer),{lowS:true});
  return JSON.stringify({type:'sociacl-witness-policy-envelope-v1',payload:b64(payload),signature:b64(sig)});};
 const step=(revision,keys=[a],at=now)=>({envelope:envelope(revision,keys,at),now:at});
 const accept=[],reject=[];
@@ -31,6 +31,21 @@ yes('empty-update-removes-all-trust',null,[step(7,[a,b]),step(8,[])],state(8,[],
 yes('retained-tombstone-after-restart',state(8,[],[a]),[step(9,[b])],state(9,[b],[a]));
 yes('revision-gap-observed-history',state(7,[a]),[step(10,[b])],state(10,[b],[a]));
 yes('raised-bootstrap-floor',state(7,[a]),[step(9,[b])],state(9,[b],[a]),{minimumRevision:9});
+// Recovery threat-model pairs: accepted primitive inputs are NOT bootstrap authorization.
+// Independent checkpoints must bind complete history, not just a revision floor.
+yes('limit-still-valid-replay-with-stale-floor',null,[step(7)],state(7,[a]));
+no('checkpoint-floor-refuses-still-valid-replay',null,[step(7)],{minimumRevision:8});
+yes('limit-missing-history-cannot-detect-resurrection',null,[step(9)],state(9,[a]),{minimumRevision:9});
+no('checkpoint-history-refuses-resurrection',state(8,[],[a]),[step(9)],{minimumRevision:9});
+yes('limit-revision-gap-cannot-see-intermediate-removal',state(7,[a]),[step(9)],state(9,[a]));
+no('complete-history-refuses-intermediate-resurrection',state(7,[a]),[step(8,[]),step(9)]);
+yes('limit-revision-gap-cannot-see-intermediate-narrowing',state(7,[a]),[step(9)],state(9,[a]));
+no('checkpoint-narrowing-refuses-reexpanded-window',state(8,[narrowed]),[step(9)]);
+yes('checkpoint-recovery-preserves-tombstones',state(8,[],[a]),[step(10,[b])],state(10,[b],[a]),{minimumRevision:10});
+const replacementStep={envelope:envelope(9,[b],now,18),now};
+yes('limit-new-root-empty-state-is-not-migration',null,[replacementStep],{...state(9,[b]),root:principal(18)},{root:principal(18)});
+no('root-replacement-does-not-rebind-old-state',state(8,[],[a]),[replacementStep],{root:principal(18)});
+no('checkpoint-recovery-still-requires-live-envelope',state(8,[],[a]),[{envelope:envelope(9,[b]),now:now+60}]);
 const unicode=[key(21,'\u{10000}'),key(22,'\ue000')];
 yes('unicode-key-order-is-utf8',null,[step(7,unicode)],state(7,unicode));
 yes('maximum-safe-revision-idempotent',state(9007199254740991,[a]),[step(9007199254740991)],state(9007199254740991,[a]));

@@ -793,6 +793,356 @@
       "minimumRevision": 9
     },
     {
+      "name": "limit-still-valid-replay-with-stale-floor",
+      "input": {
+        "previous": null,
+        "steps": [
+          {
+            "envelope": "{\"type\":\"sociacl-witness-policy-envelope-v1\",\"payload\":\"eyJ0eXBlIjoic29jaWFjbC13aXRuZXNzLXBvbGljeS12MSIsImF1ZGllbmNlIjoicGFub3B0aWNvbi10ZXN0IiwicmV2aXNpb24iOjcsImlzc3VlZEF0IjoxNjk5OTk5OTk5LCJleHBpcmVzQXQiOjE3MDAwMDAwNjAsImp3a3MiOnsia2V5cyI6W3sia2lkIjoia2V5LTE5Iiwia3R5IjoiRUMiLCJjcnYiOiJQLTI1NiIsImFsZyI6IkVTMjU2IiwidXNlIjoic2lnIiwia2V5X29wcyI6WyJ2ZXJpZnkiXSwieCI6InkyMG9ZUkFzRENYT09iZkJjUWpGQjNnc1JTSlhpRWlWd2Z4N2RLc0Q3WU0iLCJ5IjoiV05kaFN5VFo3MUZjTmVjUURXMXM1S1NXY1c0dy1qNEQ0NUZRZFN2T3phbyIsIm5vdEJlZm9yZSI6MTY5OTk5OTAwMCwibm90QWZ0ZXIiOjE3MDAwMDEwMDB9XX19\",\"signature\":\"IE3IwwDbqTrdNZ1yzoEYtchaO0f3ZVo__u1yDxXlcL8mec5OD5x-l_5kPqjU714hFhroWq26JnU9XJAJr0GIsg\"}",
+            "now": 1700000000
+          }
+        ]
+      },
+      "canonical": {
+        "type": "sociacl-witness-policy-state-v1",
+        "root": "R3dpBMDxzDqcCYS2b3UwGl-mhnjw1kr4uhq840c4pz4.qgBe5rW5VyhiMYVld2SOg4GygEQo1XM_MveH_3Hx_Nw",
+        "audience": "panopticon-test",
+        "revision": 7,
+        "jwks": {
+          "keys": [
+            {
+              "kid": "key-19",
+              "kty": "EC",
+              "crv": "P-256",
+              "alg": "ES256",
+              "use": "sig",
+              "key_ops": [
+                "verify"
+              ],
+              "x": "y20oYRAsDCXOObfBcQjFB3gsRSJXiEiVwfx7dKsD7YM",
+              "y": "WNdhSyTZ71FcNecQDW1s5KSWcW4w-j4D45FQdSvOzao",
+              "notBefore": 1699999000,
+              "notAfter": 1700001000
+            }
+          ]
+        },
+        "history": [
+          {
+            "jwk": {
+              "kid": "key-19",
+              "kty": "EC",
+              "crv": "P-256",
+              "alg": "ES256",
+              "use": "sig",
+              "key_ops": [
+                "verify"
+              ],
+              "x": "y20oYRAsDCXOObfBcQjFB3gsRSJXiEiVwfx7dKsD7YM",
+              "y": "WNdhSyTZ71FcNecQDW1s5KSWcW4w-j4D45FQdSvOzao",
+              "notBefore": 1699999000,
+              "notAfter": 1700001000
+            },
+            "removed": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "limit-missing-history-cannot-detect-resurrection",
+      "input": {
+        "previous": null,
+        "steps": [
+          {
+            "envelope": "{\"type\":\"sociacl-witness-policy-envelope-v1\",\"payload\":\"eyJ0eXBlIjoic29jaWFjbC13aXRuZXNzLXBvbGljeS12MSIsImF1ZGllbmNlIjoicGFub3B0aWNvbi10ZXN0IiwicmV2aXNpb24iOjksImlzc3VlZEF0IjoxNjk5OTk5OTk5LCJleHBpcmVzQXQiOjE3MDAwMDAwNjAsImp3a3MiOnsia2V5cyI6W3sia2lkIjoia2V5LTE5Iiwia3R5IjoiRUMiLCJjcnYiOiJQLTI1NiIsImFsZyI6IkVTMjU2IiwidXNlIjoic2lnIiwia2V5X29wcyI6WyJ2ZXJpZnkiXSwieCI6InkyMG9ZUkFzRENYT09iZkJjUWpGQjNnc1JTSlhpRWlWd2Z4N2RLc0Q3WU0iLCJ5IjoiV05kaFN5VFo3MUZjTmVjUURXMXM1S1NXY1c0dy1qNEQ0NUZRZFN2T3phbyIsIm5vdEJlZm9yZSI6MTY5OTk5OTAwMCwibm90QWZ0ZXIiOjE3MDAwMDEwMDB9XX19\",\"signature\":\"iwM-7TP6XhX7d9pDTx38U2wBg0dv-dsUM3o0thpr9jZlT4r31rTD-LKHFEddZL0ZbWuwUli75uzp3ioYcav7wA\"}",
+            "now": 1700000000
+          }
+        ]
+      },
+      "canonical": {
+        "type": "sociacl-witness-policy-state-v1",
+        "root": "R3dpBMDxzDqcCYS2b3UwGl-mhnjw1kr4uhq840c4pz4.qgBe5rW5VyhiMYVld2SOg4GygEQo1XM_MveH_3Hx_Nw",
+        "audience": "panopticon-test",
+        "revision": 9,
+        "jwks": {
+          "keys": [
+            {
+              "kid": "key-19",
+              "kty": "EC",
+              "crv": "P-256",
+              "alg": "ES256",
+              "use": "sig",
+              "key_ops": [
+                "verify"
+              ],
+              "x": "y20oYRAsDCXOObfBcQjFB3gsRSJXiEiVwfx7dKsD7YM",
+              "y": "WNdhSyTZ71FcNecQDW1s5KSWcW4w-j4D45FQdSvOzao",
+              "notBefore": 1699999000,
+              "notAfter": 1700001000
+            }
+          ]
+        },
+        "history": [
+          {
+            "jwk": {
+              "kid": "key-19",
+              "kty": "EC",
+              "crv": "P-256",
+              "alg": "ES256",
+              "use": "sig",
+              "key_ops": [
+                "verify"
+              ],
+              "x": "y20oYRAsDCXOObfBcQjFB3gsRSJXiEiVwfx7dKsD7YM",
+              "y": "WNdhSyTZ71FcNecQDW1s5KSWcW4w-j4D45FQdSvOzao",
+              "notBefore": 1699999000,
+              "notAfter": 1700001000
+            },
+            "removed": false
+          }
+        ]
+      },
+      "minimumRevision": 9
+    },
+    {
+      "name": "limit-revision-gap-cannot-see-intermediate-removal",
+      "input": {
+        "previous": "{\"type\":\"sociacl-witness-policy-state-v1\",\"root\":\"R3dpBMDxzDqcCYS2b3UwGl-mhnjw1kr4uhq840c4pz4.qgBe5rW5VyhiMYVld2SOg4GygEQo1XM_MveH_3Hx_Nw\",\"audience\":\"panopticon-test\",\"revision\":7,\"jwks\":{\"keys\":[{\"kid\":\"key-19\",\"kty\":\"EC\",\"crv\":\"P-256\",\"alg\":\"ES256\",\"use\":\"sig\",\"key_ops\":[\"verify\"],\"x\":\"y20oYRAsDCXOObfBcQjFB3gsRSJXiEiVwfx7dKsD7YM\",\"y\":\"WNdhSyTZ71FcNecQDW1s5KSWcW4w-j4D45FQdSvOzao\",\"notBefore\":1699999000,\"notAfter\":1700001000}]},\"history\":[{\"jwk\":{\"kid\":\"key-19\",\"kty\":\"EC\",\"crv\":\"P-256\",\"alg\":\"ES256\",\"use\":\"sig\",\"key_ops\":[\"verify\"],\"x\":\"y20oYRAsDCXOObfBcQjFB3gsRSJXiEiVwfx7dKsD7YM\",\"y\":\"WNdhSyTZ71FcNecQDW1s5KSWcW4w-j4D45FQdSvOzao\",\"notBefore\":1699999000,\"notAfter\":1700001000},\"removed\":false}]}",
+        "steps": [
+          {
+            "envelope": "{\"type\":\"sociacl-witness-policy-envelope-v1\",\"payload\":\"eyJ0eXBlIjoic29jaWFjbC13aXRuZXNzLXBvbGljeS12MSIsImF1ZGllbmNlIjoicGFub3B0aWNvbi10ZXN0IiwicmV2aXNpb24iOjksImlzc3VlZEF0IjoxNjk5OTk5OTk5LCJleHBpcmVzQXQiOjE3MDAwMDAwNjAsImp3a3MiOnsia2V5cyI6W3sia2lkIjoia2V5LTE5Iiwia3R5IjoiRUMiLCJjcnYiOiJQLTI1NiIsImFsZyI6IkVTMjU2IiwidXNlIjoic2lnIiwia2V5X29wcyI6WyJ2ZXJpZnkiXSwieCI6InkyMG9ZUkFzRENYT09iZkJjUWpGQjNnc1JTSlhpRWlWd2Z4N2RLc0Q3WU0iLCJ5IjoiV05kaFN5VFo3MUZjTmVjUURXMXM1S1NXY1c0dy1qNEQ0NUZRZFN2T3phbyIsIm5vdEJlZm9yZSI6MTY5OTk5OTAwMCwibm90QWZ0ZXIiOjE3MDAwMDEwMDB9XX19\",\"signature\":\"iwM-7TP6XhX7d9pDTx38U2wBg0dv-dsUM3o0thpr9jZlT4r31rTD-LKHFEddZL0ZbWuwUli75uzp3ioYcav7wA\"}",
+            "now": 1700000000
+          }
+        ]
+      },
+      "canonical": {
+        "type": "sociacl-witness-policy-state-v1",
+        "root": "R3dpBMDxzDqcCYS2b3UwGl-mhnjw1kr4uhq840c4pz4.qgBe5rW5VyhiMYVld2SOg4GygEQo1XM_MveH_3Hx_Nw",
+        "audience": "panopticon-test",
+        "revision": 9,
+        "jwks": {
+          "keys": [
+            {
+              "kid": "key-19",
+              "kty": "EC",
+              "crv": "P-256",
+              "alg": "ES256",
+              "use": "sig",
+              "key_ops": [
+                "verify"
+              ],
+              "x": "y20oYRAsDCXOObfBcQjFB3gsRSJXiEiVwfx7dKsD7YM",
+              "y": "WNdhSyTZ71FcNecQDW1s5KSWcW4w-j4D45FQdSvOzao",
+              "notBefore": 1699999000,
+              "notAfter": 1700001000
+            }
+          ]
+        },
+        "history": [
+          {
+            "jwk": {
+              "kid": "key-19",
+              "kty": "EC",
+              "crv": "P-256",
+              "alg": "ES256",
+              "use": "sig",
+              "key_ops": [
+                "verify"
+              ],
+              "x": "y20oYRAsDCXOObfBcQjFB3gsRSJXiEiVwfx7dKsD7YM",
+              "y": "WNdhSyTZ71FcNecQDW1s5KSWcW4w-j4D45FQdSvOzao",
+              "notBefore": 1699999000,
+              "notAfter": 1700001000
+            },
+            "removed": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "limit-revision-gap-cannot-see-intermediate-narrowing",
+      "input": {
+        "previous": "{\"type\":\"sociacl-witness-policy-state-v1\",\"root\":\"R3dpBMDxzDqcCYS2b3UwGl-mhnjw1kr4uhq840c4pz4.qgBe5rW5VyhiMYVld2SOg4GygEQo1XM_MveH_3Hx_Nw\",\"audience\":\"panopticon-test\",\"revision\":7,\"jwks\":{\"keys\":[{\"kid\":\"key-19\",\"kty\":\"EC\",\"crv\":\"P-256\",\"alg\":\"ES256\",\"use\":\"sig\",\"key_ops\":[\"verify\"],\"x\":\"y20oYRAsDCXOObfBcQjFB3gsRSJXiEiVwfx7dKsD7YM\",\"y\":\"WNdhSyTZ71FcNecQDW1s5KSWcW4w-j4D45FQdSvOzao\",\"notBefore\":1699999000,\"notAfter\":1700001000}]},\"history\":[{\"jwk\":{\"kid\":\"key-19\",\"kty\":\"EC\",\"crv\":\"P-256\",\"alg\":\"ES256\",\"use\":\"sig\",\"key_ops\":[\"verify\"],\"x\":\"y20oYRAsDCXOObfBcQjFB3gsRSJXiEiVwfx7dKsD7YM\",\"y\":\"WNdhSyTZ71FcNecQDW1s5KSWcW4w-j4D45FQdSvOzao\",\"notBefore\":1699999000,\"notAfter\":1700001000},\"removed\":false}]}",
+        "steps": [
+          {
+            "envelope": "{\"type\":\"sociacl-witness-policy-envelope-v1\",\"payload\":\"eyJ0eXBlIjoic29jaWFjbC13aXRuZXNzLXBvbGljeS12MSIsImF1ZGllbmNlIjoicGFub3B0aWNvbi10ZXN0IiwicmV2aXNpb24iOjksImlzc3VlZEF0IjoxNjk5OTk5OTk5LCJleHBpcmVzQXQiOjE3MDAwMDAwNjAsImp3a3MiOnsia2V5cyI6W3sia2lkIjoia2V5LTE5Iiwia3R5IjoiRUMiLCJjcnYiOiJQLTI1NiIsImFsZyI6IkVTMjU2IiwidXNlIjoic2lnIiwia2V5X29wcyI6WyJ2ZXJpZnkiXSwieCI6InkyMG9ZUkFzRENYT09iZkJjUWpGQjNnc1JTSlhpRWlWd2Z4N2RLc0Q3WU0iLCJ5IjoiV05kaFN5VFo3MUZjTmVjUURXMXM1S1NXY1c0dy1qNEQ0NUZRZFN2T3phbyIsIm5vdEJlZm9yZSI6MTY5OTk5OTAwMCwibm90QWZ0ZXIiOjE3MDAwMDEwMDB9XX19\",\"signature\":\"iwM-7TP6XhX7d9pDTx38U2wBg0dv-dsUM3o0thpr9jZlT4r31rTD-LKHFEddZL0ZbWuwUli75uzp3ioYcav7wA\"}",
+            "now": 1700000000
+          }
+        ]
+      },
+      "canonical": {
+        "type": "sociacl-witness-policy-state-v1",
+        "root": "R3dpBMDxzDqcCYS2b3UwGl-mhnjw1kr4uhq840c4pz4.qgBe5rW5VyhiMYVld2SOg4GygEQo1XM_MveH_3Hx_Nw",
+        "audience": "panopticon-test",
+        "revision": 9,
+        "jwks": {
+          "keys": [
+            {
+              "kid": "key-19",
+              "kty": "EC",
+              "crv": "P-256",
+              "alg": "ES256",
+              "use": "sig",
+              "key_ops": [
+                "verify"
+              ],
+              "x": "y20oYRAsDCXOObfBcQjFB3gsRSJXiEiVwfx7dKsD7YM",
+              "y": "WNdhSyTZ71FcNecQDW1s5KSWcW4w-j4D45FQdSvOzao",
+              "notBefore": 1699999000,
+              "notAfter": 1700001000
+            }
+          ]
+        },
+        "history": [
+          {
+            "jwk": {
+              "kid": "key-19",
+              "kty": "EC",
+              "crv": "P-256",
+              "alg": "ES256",
+              "use": "sig",
+              "key_ops": [
+                "verify"
+              ],
+              "x": "y20oYRAsDCXOObfBcQjFB3gsRSJXiEiVwfx7dKsD7YM",
+              "y": "WNdhSyTZ71FcNecQDW1s5KSWcW4w-j4D45FQdSvOzao",
+              "notBefore": 1699999000,
+              "notAfter": 1700001000
+            },
+            "removed": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "checkpoint-recovery-preserves-tombstones",
+      "input": {
+        "previous": "{\"type\":\"sociacl-witness-policy-state-v1\",\"root\":\"R3dpBMDxzDqcCYS2b3UwGl-mhnjw1kr4uhq840c4pz4.qgBe5rW5VyhiMYVld2SOg4GygEQo1XM_MveH_3Hx_Nw\",\"audience\":\"panopticon-test\",\"revision\":8,\"jwks\":{\"keys\":[]},\"history\":[{\"jwk\":{\"kid\":\"key-19\",\"kty\":\"EC\",\"crv\":\"P-256\",\"alg\":\"ES256\",\"use\":\"sig\",\"key_ops\":[\"verify\"],\"x\":\"y20oYRAsDCXOObfBcQjFB3gsRSJXiEiVwfx7dKsD7YM\",\"y\":\"WNdhSyTZ71FcNecQDW1s5KSWcW4w-j4D45FQdSvOzao\",\"notBefore\":1699999000,\"notAfter\":1700001000},\"removed\":true}]}",
+        "steps": [
+          {
+            "envelope": "{\"type\":\"sociacl-witness-policy-envelope-v1\",\"payload\":\"eyJ0eXBlIjoic29jaWFjbC13aXRuZXNzLXBvbGljeS12MSIsImF1ZGllbmNlIjoicGFub3B0aWNvbi10ZXN0IiwicmV2aXNpb24iOjEwLCJpc3N1ZWRBdCI6MTY5OTk5OTk5OSwiZXhwaXJlc0F0IjoxNzAwMDAwMDYwLCJqd2tzIjp7ImtleXMiOlt7ImtpZCI6ImtleS0yMCIsImt0eSI6IkVDIiwiY3J2IjoiUC0yNTYiLCJhbGciOiJFUzI1NiIsInVzZSI6InNpZyIsImtleV9vcHMiOlsidmVyaWZ5Il0sIngiOiJnNkFhazNnNVc2dWJ6V29LMER6RmJWYm1zWkpRUmxxVW9qVGNUR3NvMnBvIiwieSI6ImR1U2JiZUwzTWpTdWFsNjUxaEszWEo4aUFydHBJX1ZQLUNRS3FvYjJRTGciLCJub3RCZWZvcmUiOjE2OTk5OTkwMDAsIm5vdEFmdGVyIjoxNzAwMDAxMDAwfV19fQ\",\"signature\":\"IGxr4Yh7CCTpz3R26AnSwls5TipYs4gk7hScRMtbFV0LZqq31CACSZ_7V_ChqIU08OWMxV7MdB7E_K8zbHbwVw\"}",
+            "now": 1700000000
+          }
+        ]
+      },
+      "canonical": {
+        "type": "sociacl-witness-policy-state-v1",
+        "root": "R3dpBMDxzDqcCYS2b3UwGl-mhnjw1kr4uhq840c4pz4.qgBe5rW5VyhiMYVld2SOg4GygEQo1XM_MveH_3Hx_Nw",
+        "audience": "panopticon-test",
+        "revision": 10,
+        "jwks": {
+          "keys": [
+            {
+              "kid": "key-20",
+              "kty": "EC",
+              "crv": "P-256",
+              "alg": "ES256",
+              "use": "sig",
+              "key_ops": [
+                "verify"
+              ],
+              "x": "g6Aak3g5W6ubzWoK0DzFbVbmsZJQRlqUojTcTGso2po",
+              "y": "duSbbeL3MjSual651hK3XJ8iArtpI_VP-CQKqob2QLg",
+              "notBefore": 1699999000,
+              "notAfter": 1700001000
+            }
+          ]
+        },
+        "history": [
+          {
+            "jwk": {
+              "kid": "key-19",
+              "kty": "EC",
+              "crv": "P-256",
+              "alg": "ES256",
+              "use": "sig",
+              "key_ops": [
+                "verify"
+              ],
+              "x": "y20oYRAsDCXOObfBcQjFB3gsRSJXiEiVwfx7dKsD7YM",
+              "y": "WNdhSyTZ71FcNecQDW1s5KSWcW4w-j4D45FQdSvOzao",
+              "notBefore": 1699999000,
+              "notAfter": 1700001000
+            },
+            "removed": true
+          },
+          {
+            "jwk": {
+              "kid": "key-20",
+              "kty": "EC",
+              "crv": "P-256",
+              "alg": "ES256",
+              "use": "sig",
+              "key_ops": [
+                "verify"
+              ],
+              "x": "g6Aak3g5W6ubzWoK0DzFbVbmsZJQRlqUojTcTGso2po",
+              "y": "duSbbeL3MjSual651hK3XJ8iArtpI_VP-CQKqob2QLg",
+              "notBefore": 1699999000,
+              "notAfter": 1700001000
+            },
+            "removed": false
+          }
+        ]
+      },
+      "minimumRevision": 10
+    },
+    {
+      "name": "limit-new-root-empty-state-is-not-migration",
+      "input": {
+        "previous": null,
+        "steps": [
+          {
+            "envelope": "{\"type\":\"sociacl-witness-policy-envelope-v1\",\"payload\":\"eyJ0eXBlIjoic29jaWFjbC13aXRuZXNzLXBvbGljeS12MSIsImF1ZGllbmNlIjoicGFub3B0aWNvbi10ZXN0IiwicmV2aXNpb24iOjksImlzc3VlZEF0IjoxNjk5OTk5OTk5LCJleHBpcmVzQXQiOjE3MDAwMDAwNjAsImp3a3MiOnsia2V5cyI6W3sia2lkIjoia2V5LTIwIiwia3R5IjoiRUMiLCJjcnYiOiJQLTI1NiIsImFsZyI6IkVTMjU2IiwidXNlIjoic2lnIiwia2V5X29wcyI6WyJ2ZXJpZnkiXSwieCI6Imc2QWFrM2c1VzZ1YnpXb0swRHpGYlZibXNaSlFSbHFVb2pUY1RHc28ycG8iLCJ5IjoiZHVTYmJlTDNNalN1YWw2NTFoSzNYSjhpQXJ0cElfVlAtQ1FLcW9iMlFMZyIsIm5vdEJlZm9yZSI6MTY5OTk5OTAwMCwibm90QWZ0ZXIiOjE3MDAwMDEwMDB9XX19\",\"signature\":\"lniZycrvtav2xHf9e0CeCp1Q6LZ7GRfnzhEckAompy1zN-N-IETxbxcsVHX7h3bZLEAZWDYdJPFMTDMoVgxxuA\"}",
+            "now": 1700000000
+          }
+        ]
+      },
+      "canonical": {
+        "type": "sociacl-witness-policy-state-v1",
+        "root": "EFfgq1eA9HDe_JN40cfIdDe7TG-epVxj2TYmbb14H9o.9vFkWhXL5dyfqbff2W7lp9zBG1xe9PH3jYOzOTxqRaI",
+        "audience": "panopticon-test",
+        "revision": 9,
+        "jwks": {
+          "keys": [
+            {
+              "kid": "key-20",
+              "kty": "EC",
+              "crv": "P-256",
+              "alg": "ES256",
+              "use": "sig",
+              "key_ops": [
+                "verify"
+              ],
+              "x": "g6Aak3g5W6ubzWoK0DzFbVbmsZJQRlqUojTcTGso2po",
+              "y": "duSbbeL3MjSual651hK3XJ8iArtpI_VP-CQKqob2QLg",
+              "notBefore": 1699999000,
+              "notAfter": 1700001000
+            }
+          ]
+        },
+        "history": [
+          {
+            "jwk": {
+              "kid": "key-20",
+              "kty": "EC",
+              "crv": "P-256",
+              "alg": "ES256",
+              "use": "sig",
+              "key_ops": [
+                "verify"
+              ],
+              "x": "g6Aak3g5W6ubzWoK0DzFbVbmsZJQRlqUojTcTGso2po",
+              "y": "duSbbeL3MjSual651hK3XJ8iArtpI_VP-CQKqob2QLg",
+              "notBefore": 1699999000,
+              "notAfter": 1700001000
+            },
+            "removed": false
+          }
+        ]
+      },
+      "root": "EFfgq1eA9HDe_JN40cfIdDe7TG-epVxj2TYmbb14H9o.9vFkWhXL5dyfqbff2W7lp9zBG1xe9PH3jYOzOTxqRaI"
+    },
+    {
       "name": "unicode-key-order-is-utf8",
       "input": {
         "previous": null,
@@ -18366,6 +18716,91 @@
     }
   ],
   "reject": [
+    {
+      "name": "checkpoint-floor-refuses-still-valid-replay",
+      "input": {
+        "previous": null,
+        "steps": [
+          {
+            "envelope": "{\"type\":\"sociacl-witness-policy-envelope-v1\",\"payload\":\"eyJ0eXBlIjoic29jaWFjbC13aXRuZXNzLXBvbGljeS12MSIsImF1ZGllbmNlIjoicGFub3B0aWNvbi10ZXN0IiwicmV2aXNpb24iOjcsImlzc3VlZEF0IjoxNjk5OTk5OTk5LCJleHBpcmVzQXQiOjE3MDAwMDAwNjAsImp3a3MiOnsia2V5cyI6W3sia2lkIjoia2V5LTE5Iiwia3R5IjoiRUMiLCJjcnYiOiJQLTI1NiIsImFsZyI6IkVTMjU2IiwidXNlIjoic2lnIiwia2V5X29wcyI6WyJ2ZXJpZnkiXSwieCI6InkyMG9ZUkFzRENYT09iZkJjUWpGQjNnc1JTSlhpRWlWd2Z4N2RLc0Q3WU0iLCJ5IjoiV05kaFN5VFo3MUZjTmVjUURXMXM1S1NXY1c0dy1qNEQ0NUZRZFN2T3phbyIsIm5vdEJlZm9yZSI6MTY5OTk5OTAwMCwibm90QWZ0ZXIiOjE3MDAwMDEwMDB9XX19\",\"signature\":\"IE3IwwDbqTrdNZ1yzoEYtchaO0f3ZVo__u1yDxXlcL8mec5OD5x-l_5kPqjU714hFhroWq26JnU9XJAJr0GIsg\"}",
+            "now": 1700000000
+          }
+        ]
+      },
+      "reason": "bad-attestation",
+      "minimumRevision": 8
+    },
+    {
+      "name": "checkpoint-history-refuses-resurrection",
+      "input": {
+        "previous": "{\"type\":\"sociacl-witness-policy-state-v1\",\"root\":\"R3dpBMDxzDqcCYS2b3UwGl-mhnjw1kr4uhq840c4pz4.qgBe5rW5VyhiMYVld2SOg4GygEQo1XM_MveH_3Hx_Nw\",\"audience\":\"panopticon-test\",\"revision\":8,\"jwks\":{\"keys\":[]},\"history\":[{\"jwk\":{\"kid\":\"key-19\",\"kty\":\"EC\",\"crv\":\"P-256\",\"alg\":\"ES256\",\"use\":\"sig\",\"key_ops\":[\"verify\"],\"x\":\"y20oYRAsDCXOObfBcQjFB3gsRSJXiEiVwfx7dKsD7YM\",\"y\":\"WNdhSyTZ71FcNecQDW1s5KSWcW4w-j4D45FQdSvOzao\",\"notBefore\":1699999000,\"notAfter\":1700001000},\"removed\":true}]}",
+        "steps": [
+          {
+            "envelope": "{\"type\":\"sociacl-witness-policy-envelope-v1\",\"payload\":\"eyJ0eXBlIjoic29jaWFjbC13aXRuZXNzLXBvbGljeS12MSIsImF1ZGllbmNlIjoicGFub3B0aWNvbi10ZXN0IiwicmV2aXNpb24iOjksImlzc3VlZEF0IjoxNjk5OTk5OTk5LCJleHBpcmVzQXQiOjE3MDAwMDAwNjAsImp3a3MiOnsia2V5cyI6W3sia2lkIjoia2V5LTE5Iiwia3R5IjoiRUMiLCJjcnYiOiJQLTI1NiIsImFsZyI6IkVTMjU2IiwidXNlIjoic2lnIiwia2V5X29wcyI6WyJ2ZXJpZnkiXSwieCI6InkyMG9ZUkFzRENYT09iZkJjUWpGQjNnc1JTSlhpRWlWd2Z4N2RLc0Q3WU0iLCJ5IjoiV05kaFN5VFo3MUZjTmVjUURXMXM1S1NXY1c0dy1qNEQ0NUZRZFN2T3phbyIsIm5vdEJlZm9yZSI6MTY5OTk5OTAwMCwibm90QWZ0ZXIiOjE3MDAwMDEwMDB9XX19\",\"signature\":\"iwM-7TP6XhX7d9pDTx38U2wBg0dv-dsUM3o0thpr9jZlT4r31rTD-LKHFEddZL0ZbWuwUli75uzp3ioYcav7wA\"}",
+            "now": 1700000000
+          }
+        ]
+      },
+      "reason": "bad-attestation",
+      "minimumRevision": 9
+    },
+    {
+      "name": "complete-history-refuses-intermediate-resurrection",
+      "input": {
+        "previous": "{\"type\":\"sociacl-witness-policy-state-v1\",\"root\":\"R3dpBMDxzDqcCYS2b3UwGl-mhnjw1kr4uhq840c4pz4.qgBe5rW5VyhiMYVld2SOg4GygEQo1XM_MveH_3Hx_Nw\",\"audience\":\"panopticon-test\",\"revision\":7,\"jwks\":{\"keys\":[{\"kid\":\"key-19\",\"kty\":\"EC\",\"crv\":\"P-256\",\"alg\":\"ES256\",\"use\":\"sig\",\"key_ops\":[\"verify\"],\"x\":\"y20oYRAsDCXOObfBcQjFB3gsRSJXiEiVwfx7dKsD7YM\",\"y\":\"WNdhSyTZ71FcNecQDW1s5KSWcW4w-j4D45FQdSvOzao\",\"notBefore\":1699999000,\"notAfter\":1700001000}]},\"history\":[{\"jwk\":{\"kid\":\"key-19\",\"kty\":\"EC\",\"crv\":\"P-256\",\"alg\":\"ES256\",\"use\":\"sig\",\"key_ops\":[\"verify\"],\"x\":\"y20oYRAsDCXOObfBcQjFB3gsRSJXiEiVwfx7dKsD7YM\",\"y\":\"WNdhSyTZ71FcNecQDW1s5KSWcW4w-j4D45FQdSvOzao\",\"notBefore\":1699999000,\"notAfter\":1700001000},\"removed\":false}]}",
+        "steps": [
+          {
+            "envelope": "{\"type\":\"sociacl-witness-policy-envelope-v1\",\"payload\":\"eyJ0eXBlIjoic29jaWFjbC13aXRuZXNzLXBvbGljeS12MSIsImF1ZGllbmNlIjoicGFub3B0aWNvbi10ZXN0IiwicmV2aXNpb24iOjgsImlzc3VlZEF0IjoxNjk5OTk5OTk5LCJleHBpcmVzQXQiOjE3MDAwMDAwNjAsImp3a3MiOnsia2V5cyI6W119fQ\",\"signature\":\"a-lyp_VramTSNnzZh8rKs_CoDJDteenOFRdZIpn_FEE8Oc_s0tXNnoLPZakYCzV1fioE5LGuxyfsabHWn7QePA\"}",
+            "now": 1700000000
+          },
+          {
+            "envelope": "{\"type\":\"sociacl-witness-policy-envelope-v1\",\"payload\":\"eyJ0eXBlIjoic29jaWFjbC13aXRuZXNzLXBvbGljeS12MSIsImF1ZGllbmNlIjoicGFub3B0aWNvbi10ZXN0IiwicmV2aXNpb24iOjksImlzc3VlZEF0IjoxNjk5OTk5OTk5LCJleHBpcmVzQXQiOjE3MDAwMDAwNjAsImp3a3MiOnsia2V5cyI6W3sia2lkIjoia2V5LTE5Iiwia3R5IjoiRUMiLCJjcnYiOiJQLTI1NiIsImFsZyI6IkVTMjU2IiwidXNlIjoic2lnIiwia2V5X29wcyI6WyJ2ZXJpZnkiXSwieCI6InkyMG9ZUkFzRENYT09iZkJjUWpGQjNnc1JTSlhpRWlWd2Z4N2RLc0Q3WU0iLCJ5IjoiV05kaFN5VFo3MUZjTmVjUURXMXM1S1NXY1c0dy1qNEQ0NUZRZFN2T3phbyIsIm5vdEJlZm9yZSI6MTY5OTk5OTAwMCwibm90QWZ0ZXIiOjE3MDAwMDEwMDB9XX19\",\"signature\":\"iwM-7TP6XhX7d9pDTx38U2wBg0dv-dsUM3o0thpr9jZlT4r31rTD-LKHFEddZL0ZbWuwUli75uzp3ioYcav7wA\"}",
+            "now": 1700000000
+          }
+        ]
+      },
+      "reason": "bad-attestation"
+    },
+    {
+      "name": "checkpoint-narrowing-refuses-reexpanded-window",
+      "input": {
+        "previous": "{\"type\":\"sociacl-witness-policy-state-v1\",\"root\":\"R3dpBMDxzDqcCYS2b3UwGl-mhnjw1kr4uhq840c4pz4.qgBe5rW5VyhiMYVld2SOg4GygEQo1XM_MveH_3Hx_Nw\",\"audience\":\"panopticon-test\",\"revision\":8,\"jwks\":{\"keys\":[{\"kid\":\"key-19\",\"kty\":\"EC\",\"crv\":\"P-256\",\"alg\":\"ES256\",\"use\":\"sig\",\"key_ops\":[\"verify\"],\"x\":\"y20oYRAsDCXOObfBcQjFB3gsRSJXiEiVwfx7dKsD7YM\",\"y\":\"WNdhSyTZ71FcNecQDW1s5KSWcW4w-j4D45FQdSvOzao\",\"notBefore\":1699999010,\"notAfter\":1700000990}]},\"history\":[{\"jwk\":{\"kid\":\"key-19\",\"kty\":\"EC\",\"crv\":\"P-256\",\"alg\":\"ES256\",\"use\":\"sig\",\"key_ops\":[\"verify\"],\"x\":\"y20oYRAsDCXOObfBcQjFB3gsRSJXiEiVwfx7dKsD7YM\",\"y\":\"WNdhSyTZ71FcNecQDW1s5KSWcW4w-j4D45FQdSvOzao\",\"notBefore\":1699999010,\"notAfter\":1700000990},\"removed\":false}]}",
+        "steps": [
+          {
+            "envelope": "{\"type\":\"sociacl-witness-policy-envelope-v1\",\"payload\":\"eyJ0eXBlIjoic29jaWFjbC13aXRuZXNzLXBvbGljeS12MSIsImF1ZGllbmNlIjoicGFub3B0aWNvbi10ZXN0IiwicmV2aXNpb24iOjksImlzc3VlZEF0IjoxNjk5OTk5OTk5LCJleHBpcmVzQXQiOjE3MDAwMDAwNjAsImp3a3MiOnsia2V5cyI6W3sia2lkIjoia2V5LTE5Iiwia3R5IjoiRUMiLCJjcnYiOiJQLTI1NiIsImFsZyI6IkVTMjU2IiwidXNlIjoic2lnIiwia2V5X29wcyI6WyJ2ZXJpZnkiXSwieCI6InkyMG9ZUkFzRENYT09iZkJjUWpGQjNnc1JTSlhpRWlWd2Z4N2RLc0Q3WU0iLCJ5IjoiV05kaFN5VFo3MUZjTmVjUURXMXM1S1NXY1c0dy1qNEQ0NUZRZFN2T3phbyIsIm5vdEJlZm9yZSI6MTY5OTk5OTAwMCwibm90QWZ0ZXIiOjE3MDAwMDEwMDB9XX19\",\"signature\":\"iwM-7TP6XhX7d9pDTx38U2wBg0dv-dsUM3o0thpr9jZlT4r31rTD-LKHFEddZL0ZbWuwUli75uzp3ioYcav7wA\"}",
+            "now": 1700000000
+          }
+        ]
+      },
+      "reason": "bad-attestation"
+    },
+    {
+      "name": "root-replacement-does-not-rebind-old-state",
+      "input": {
+        "previous": "{\"type\":\"sociacl-witness-policy-state-v1\",\"root\":\"R3dpBMDxzDqcCYS2b3UwGl-mhnjw1kr4uhq840c4pz4.qgBe5rW5VyhiMYVld2SOg4GygEQo1XM_MveH_3Hx_Nw\",\"audience\":\"panopticon-test\",\"revision\":8,\"jwks\":{\"keys\":[]},\"history\":[{\"jwk\":{\"kid\":\"key-19\",\"kty\":\"EC\",\"crv\":\"P-256\",\"alg\":\"ES256\",\"use\":\"sig\",\"key_ops\":[\"verify\"],\"x\":\"y20oYRAsDCXOObfBcQjFB3gsRSJXiEiVwfx7dKsD7YM\",\"y\":\"WNdhSyTZ71FcNecQDW1s5KSWcW4w-j4D45FQdSvOzao\",\"notBefore\":1699999000,\"notAfter\":1700001000},\"removed\":true}]}",
+        "steps": [
+          {
+            "envelope": "{\"type\":\"sociacl-witness-policy-envelope-v1\",\"payload\":\"eyJ0eXBlIjoic29jaWFjbC13aXRuZXNzLXBvbGljeS12MSIsImF1ZGllbmNlIjoicGFub3B0aWNvbi10ZXN0IiwicmV2aXNpb24iOjksImlzc3VlZEF0IjoxNjk5OTk5OTk5LCJleHBpcmVzQXQiOjE3MDAwMDAwNjAsImp3a3MiOnsia2V5cyI6W3sia2lkIjoia2V5LTIwIiwia3R5IjoiRUMiLCJjcnYiOiJQLTI1NiIsImFsZyI6IkVTMjU2IiwidXNlIjoic2lnIiwia2V5X29wcyI6WyJ2ZXJpZnkiXSwieCI6Imc2QWFrM2c1VzZ1YnpXb0swRHpGYlZibXNaSlFSbHFVb2pUY1RHc28ycG8iLCJ5IjoiZHVTYmJlTDNNalN1YWw2NTFoSzNYSjhpQXJ0cElfVlAtQ1FLcW9iMlFMZyIsIm5vdEJlZm9yZSI6MTY5OTk5OTAwMCwibm90QWZ0ZXIiOjE3MDAwMDEwMDB9XX19\",\"signature\":\"lniZycrvtav2xHf9e0CeCp1Q6LZ7GRfnzhEckAompy1zN-N-IETxbxcsVHX7h3bZLEAZWDYdJPFMTDMoVgxxuA\"}",
+            "now": 1700000000
+          }
+        ]
+      },
+      "reason": "bad-attestation",
+      "root": "EFfgq1eA9HDe_JN40cfIdDe7TG-epVxj2TYmbb14H9o.9vFkWhXL5dyfqbff2W7lp9zBG1xe9PH3jYOzOTxqRaI"
+    },
+    {
+      "name": "checkpoint-recovery-still-requires-live-envelope",
+      "input": {
+        "previous": "{\"type\":\"sociacl-witness-policy-state-v1\",\"root\":\"R3dpBMDxzDqcCYS2b3UwGl-mhnjw1kr4uhq840c4pz4.qgBe5rW5VyhiMYVld2SOg4GygEQo1XM_MveH_3Hx_Nw\",\"audience\":\"panopticon-test\",\"revision\":8,\"jwks\":{\"keys\":[]},\"history\":[{\"jwk\":{\"kid\":\"key-19\",\"kty\":\"EC\",\"crv\":\"P-256\",\"alg\":\"ES256\",\"use\":\"sig\",\"key_ops\":[\"verify\"],\"x\":\"y20oYRAsDCXOObfBcQjFB3gsRSJXiEiVwfx7dKsD7YM\",\"y\":\"WNdhSyTZ71FcNecQDW1s5KSWcW4w-j4D45FQdSvOzao\",\"notBefore\":1699999000,\"notAfter\":1700001000},\"removed\":true}]}",
+        "steps": [
+          {
+            "envelope": "{\"type\":\"sociacl-witness-policy-envelope-v1\",\"payload\":\"eyJ0eXBlIjoic29jaWFjbC13aXRuZXNzLXBvbGljeS12MSIsImF1ZGllbmNlIjoicGFub3B0aWNvbi10ZXN0IiwicmV2aXNpb24iOjksImlzc3VlZEF0IjoxNjk5OTk5OTk5LCJleHBpcmVzQXQiOjE3MDAwMDAwNjAsImp3a3MiOnsia2V5cyI6W3sia2lkIjoia2V5LTIwIiwia3R5IjoiRUMiLCJjcnYiOiJQLTI1NiIsImFsZyI6IkVTMjU2IiwidXNlIjoic2lnIiwia2V5X29wcyI6WyJ2ZXJpZnkiXSwieCI6Imc2QWFrM2c1VzZ1YnpXb0swRHpGYlZibXNaSlFSbHFVb2pUY1RHc28ycG8iLCJ5IjoiZHVTYmJlTDNNalN1YWw2NTFoSzNYSjhpQXJ0cElfVlAtQ1FLcW9iMlFMZyIsIm5vdEJlZm9yZSI6MTY5OTk5OTAwMCwibm90QWZ0ZXIiOjE3MDAwMDEwMDB9XX19\",\"signature\":\"OBShRawdN3xO2lroTByyZBA_oI-G0aJp6tVMZgF5bNFKTtKSnhQMb3qGPb6FM3U9zPO95kFSEyq5dTXTiEHFeQ\"}",
+            "now": 1700000060
+          }
+        ]
+      },
+      "reason": "bad-attestation"
+    },
     {
       "name": "bootstrap-rollback",
       "input": {

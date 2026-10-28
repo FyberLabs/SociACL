@@ -35,7 +35,7 @@ for (const kind of ['accept', 'reject']) {
   for (const vector of vectors[kind].filter(v => v.input.previous === null)) {
     test(`IndexedDB shared ${kind}: ${vector.name}`, async () => {
       let time = vectors.context.now;
-      const { open } = setup({ minimumRevision: vector.minimumRevision ?? vectors.context.minimumRevision, now: () => time });
+      const { open } = setup({ root: vector.root ?? vectors.context.root, audience: vector.audience ?? vectors.context.audience, minimumRevision: vector.minimumRevision ?? vectors.context.minimumRevision, now: () => time });
       let store;
       const run = async () => {
         store = await open();
@@ -219,4 +219,38 @@ test('clock is sampled after an earlier transaction releases its lock', async ()
   await queued;
   assert.deepEqual(await store.read(), before);
   store.close();
+});
+
+// These demonstrate the boundary a production checkpoint/continuity adapter must
+// enforce. A signed old row is intentionally not detectable by IndexedDB alone.
+test('profile rollback needs an external checkpoint even when saved signatures are valid', async () => {
+  const { open, options } = setup();
+  const store = await open();
+  try {
+    const old = await store.bootstrap(initial);
+    let backup;
+    await raw(options, (_, record) => { backup = structuredClone(record); });
+    await store.refresh(removed);
+    await raw(options, db => db.put(backup, 'installed'));
+    assert.deepEqual(await store.read(), old); // documented local-storage limitation
+    const anchored = await openWitnessPolicyStore({ ...options, minimumRevision: 8 });
+    try { await assert.rejects(anchored.read()); }
+    finally { anchored.close(); }
+  } finally { store.close(); }
+});
+
+test('eviction never authorizes refresh to bootstrap or recover erased tombstones', async () => {
+  const { open, options } = setup();
+  let store = await open();
+  await store.bootstrap(initial);
+  await store.refresh(removed);
+  await raw(options, db => db.delete('installed'));
+  store.close();
+  store = await open();
+  try {
+    await assert.rejects(store.read());
+    await assert.rejects(store.refresh(initial));
+    await assert.rejects(store.refresh(removed));
+    await raw(options, (_, record) => assert.equal(record, undefined));
+  } finally { store.close(); }
 });
