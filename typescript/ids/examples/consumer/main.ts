@@ -85,3 +85,14 @@ if (verifyWitnessPolicyEnvelope('{}', '', 'test', 0).ok) throw Error('invalid po
 
 import { advanceWitnessPolicy } from 'sociacl-ids';
 if (advanceWitnessPolicy('{}', null, '', 'test', 1, 0).ok) throw Error('invalid transition accepted');
+
+// Browser adapter declarations and optional subpath ship in the tarball.
+import { openWitnessPolicyStore } from 'sociacl-ids/indexeddb';
+if (typeof openWitnessPolicyStore !== 'function') throw Error('missing IndexedDB export');
+if (false) {
+  const store = await openWitnessPolicyStore({ name: 'test', root: '', audience: 'test', minimumRevision: 7, now: () => 1700000000 });
+  const state = await store.read();
+  const revision: number = state.revision;
+  void revision;
+  store.close();
+}

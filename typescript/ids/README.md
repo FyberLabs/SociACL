@@ -417,3 +417,15 @@ policy state with a revision floor and permanent observed-key history. Previous
 state must come from trusted storage. The caller must serialize the transition
 and atomically commit the entire result before exposing JWKS. No persistence,
 root reset, or latest-policy discovery is supplied by this pure function.
+
+
+### Browser witness policy persistence
+
+`sociacl-ids/indexeddb` provides `openWitnessPolicyStore` with explicit `bootstrap`,
+`refresh`, `read` and `close` operations. Strict IndexedDB transactions commit the
+revision, registry and permanent observed-key history before returning trust.
+Missing/corrupt storage fails closed; there is no automatic bootstrap or memory
+fallback. Trusted root/audience/floor/clock configuration and protected origin
+storage remain required. See the [adapter contract](../../docs/witness-policy-client.md#indexeddb-browser-adapter)
+for restart, expiry, lost-response and storage-rollback limitations. The browser
+acceptance run is `npm run test:browser-store` after installing Playwright Chromium.
