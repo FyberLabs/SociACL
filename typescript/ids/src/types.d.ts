@@ -84,3 +84,9 @@ export type ResolutionContext = Readonly<{ jwks: Jwks; links: ReadonlyMap<string
   revocations?: readonly unknown[]; now: number; policy: SiwePolicy; pinnedIss: ReadonlySet<string>; history: HistoryResolver;
   /** Witnessed `genesis-epub` records. Gun `user.epub` is not this list and is never read. */
   genesisEpubBindings?: readonly unknown[] }>;
+
+/** Authenticated transport document only; not installed trust or a freshness proof. */
+export type WitnessPolicy = Readonly<{
+  type: 'sociacl-witness-policy-v1'; audience: string; revision: number;
+  issuedAt: number; expiresAt: number; jwks: Jwks;
+}>;

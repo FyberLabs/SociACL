@@ -71,6 +71,16 @@ fn resolution<T>(r: Resolution<T>, c: &Case) -> Result<T, Reason> {
     r.result
 }
 fn run(f: &Family, c: &Case, v: &Value) -> Result<Value, Reason> {
+    if f.family == "witness-policy" {
+        let ctx = context(f, c);
+        let result = verify_witness_policy_envelope(
+            string(v)?,
+            ctx["root"].as_str().unwrap(),
+            ctx["audience"].as_str().unwrap(),
+            ctx["now"].as_u64().unwrap(),
+        )?;
+        return Ok(serde_json::to_value(result).unwrap());
+    }
     if f.family == "edges" {
         return match c.extra["operation"].as_str().unwrap() {
             "json" => parse_json_input(string(v)?),
@@ -546,7 +556,7 @@ fn every_shared_vector() {
         .filter(|p| p.extension().is_some_and(|s| s == "json"))
         .collect();
     paths.sort();
-    assert_eq!(paths.len(), 12);
+    assert_eq!(paths.len(), 13);
     let mut names = BTreeSet::new();
     for path in paths {
         let f: Family = serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap();

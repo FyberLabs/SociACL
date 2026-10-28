@@ -79,3 +79,6 @@ const lookup = resolveWalletLinkNow(address.value,[fixture.wallet],[revoke],cont
 const asOf = resolveWalletLink(address.value,[fixture.wallet],[revoke],context);
 if (lookup.ok || lookup.reason !== 'revoked-link' || !asOf.ok) throw Error('lookup boundary failed');
 console.log('Installed tarball parsers, declarations and present/history revocation work');
+
+import { verifyWitnessPolicyEnvelope } from 'sociacl-ids';
+if (verifyWitnessPolicyEnvelope('{}', '', 'test', 0).ok) throw Error('invalid policy accepted');

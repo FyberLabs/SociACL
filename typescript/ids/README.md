@@ -400,3 +400,12 @@ Commit the consumer lockfile with tarball integrity. This URL becomes usable
 only after that release exists. This PR does not publish a tag or migrate a
 consumer. Grammar, vector acceptance/rejection, or signing-domain changes bump
 the minor version before 1.0, and the major version from 1.0 onward.
+
+## Signed witness-policy exports
+
+`verifyWitnessPolicyEnvelope(envelopeJson, pinnedRoot, audience, now)` authenticates
+Panopticon's exact-byte export in browsers and Node. Rust exposes the matching
+`verify_witness_policy_envelope`. Neither function installs JWKS or supplies
+rollback protection. See [the client contract](../../docs/witness-policy-client.md)
+for independent root provisioning, durable floors, bootstrap freshness, and the
+required checks before a production resolver may use the result.
