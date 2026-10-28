@@ -12,6 +12,21 @@ const keys = { principal:ids.formatPrincipalKey, wallet:ids.formatWalletKey, oid
   object:ids.objectKey, network:ids.formatNetworkKey, 'source-key':ids.formatSourcePathKey };
 const names = [];
 function run(f, c) {
+  if (f.family === 'witness-lifecycle') {
+    const ctx = {...f.context, ...c};
+    let previous = c.input.previous;
+    let result;
+    for (const step of c.input.steps) {
+      result = ids.advanceWitnessPolicy(step.envelope, previous, ctx.root, ctx.audience, ctx.minimumRevision, step.now ?? ctx.now);
+      if (!result.ok) return result;
+      previous = JSON.stringify(result.value);
+    }
+    return result;
+  }
+  if (f.family === 'witness-policy') {
+    const ctx = {...f.context, ...c};
+    return ids.verifyWitnessPolicyEnvelope(c.input, ctx.root, ctx.audience, ctx.now);
+  }
   if (f.family === 'edges') {
     const parsers={ 'principal-key':ids.parsePrincipalKey, 'path-key':ids.parsePathKey, json:ids.parseJsonInput, sec1:x=>ids.principalFromSec1(Uint8Array.from(Buffer.from(x,'hex'))) };
     return parsers[c.operation](c.input);
@@ -166,7 +181,7 @@ test('lengthPrefixed reads each field once', () => {
   assert.deepEqual(ids.lengthPrefixed(throwingProxy), { ok: false, reason: 'bad-record' });
 });
 test('every shared vector and exact rejection reason', () => {
-  assert.equal(files.length,12);
+  assert.equal(files.length,14);
   for(const file of files) {
     const f = JSON.parse(readFileSync(new URL(file,root),'utf8'));
     assert.equal(f.v,1);

@@ -16,6 +16,14 @@
     "./zod": {
       "types": "./dist/zod.d.ts",
       "default": "./dist/zod.js"
+    },
+    "./indexeddb": {
+      "types": "./dist/indexeddb.d.ts",
+      "default": "./dist/indexeddb.js"
+    },
+    "./witness-client": {
+      "types": "./dist/witness-client.d.ts",
+      "default": "./dist/witness-client.js"
     }
   },
   "files": [
@@ -29,7 +37,8 @@
     "browser": "node scripts/browser.mjs",
     "consumer": "node scripts/consumer.mjs",
     "build": "node scripts/build.mjs",
-    "prepack": "npm run build"
+    "prepack": "npm run build",
+    "test:browser-store": "node scripts/browser-store.mjs && node scripts/browser-client.mjs"
   },
   "dependencies": {
     "@noble/curves": "2.0.1",
@@ -44,9 +53,11 @@
     }
   },
   "devDependencies": {
-    "typescript": "5.9.3",
-    "fast-check": "4.3.0",
     "esbuild": "0.25.11",
+    "fake-indexeddb": "6.2.4",
+    "fast-check": "4.3.0",
+    "playwright": "1.58.2",
+    "typescript": "5.9.3",
     "zod": "4.1.12"
   }
 }

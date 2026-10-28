@@ -23,3 +23,19 @@ declare const ctx: ResolutionContext;
 verifyWalletLink({},ctx.jwks,ctx.policy,ctx.now);
 // @ts-expect-error Resolution context must include an authenticated history resolver.
 const missingHistory: ResolutionContext = {jwks:ctx.jwks,links:ctx.links,now:ctx.now,policy:ctx.policy};
+
+import { verifyWitnessPolicyEnvelope, type WitnessPolicy } from '../src/index.js';
+const policyResult = verifyWitnessPolicyEnvelope('{}', 'independently pinned root', 'deployment', 1700000000);
+if (policyResult.ok) {
+  const policy: WitnessPolicy = policyResult.value;
+  // @ts-expect-error Authenticated output is immutable.
+  policy.revision = 0;
+}
+
+import { advanceWitnessPolicy, type WitnessPolicyState } from '../src/index.js';
+const transition = advanceWitnessPolicy('{}', null, '', 'deployment', 7, 1700000000);
+if (transition.ok) {
+  const saved: WitnessPolicyState = transition.value;
+  // @ts-expect-error A consumer cannot erase retained removal history.
+  saved.history[0].removed = false;
+}

@@ -71,6 +71,29 @@ fn resolution<T>(r: Resolution<T>, c: &Case) -> Result<T, Reason> {
     r.result
 }
 fn run(f: &Family, c: &Case, v: &Value) -> Result<Value, Reason> {
+    if f.family == "witness-lifecycle" {
+        let ctx = context(f, c);
+        let mut previous = v["previous"].as_str().map(str::to_owned);
+        let mut result = Value::Null;
+        for step in v["steps"].as_array().unwrap() {
+            let next = advance_witness_policy(step["envelope"].as_str().unwrap(), previous.as_deref(),
+                ctx["root"].as_str().unwrap(), ctx["audience"].as_str().unwrap(), ctx["minimumRevision"].as_u64().unwrap(),
+                step["now"].as_u64().unwrap_or_else(|| ctx["now"].as_u64().unwrap()))?;
+            previous = Some(serde_json::to_string(&next).unwrap());
+            result = serde_json::to_value(next).unwrap();
+        }
+        return Ok(result);
+    }
+    if f.family == "witness-policy" {
+        let ctx = context(f, c);
+        let result = verify_witness_policy_envelope(
+            string(v)?,
+            ctx["root"].as_str().unwrap(),
+            ctx["audience"].as_str().unwrap(),
+            ctx["now"].as_u64().unwrap(),
+        )?;
+        return Ok(serde_json::to_value(result).unwrap());
+    }
     if f.family == "edges" {
         return match c.extra["operation"].as_str().unwrap() {
             "json" => parse_json_input(string(v)?),
@@ -546,7 +569,7 @@ fn every_shared_vector() {
         .filter(|p| p.extension().is_some_and(|s| s == "json"))
         .collect();
     paths.sort();
-    assert_eq!(paths.len(), 12);
+    assert_eq!(paths.len(), 14);
     let mut names = BTreeSet::new();
     for path in paths {
         let f: Family = serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap();

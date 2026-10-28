@@ -2,8 +2,10 @@
 mod ids;
 mod records;
 mod uri;
+mod witness_policy;
 pub use ids::*;
 pub use records::*;
+pub use witness_policy::*;
 
 use serde::{Deserialize, Serialize};
 use std::{fmt, str::FromStr};

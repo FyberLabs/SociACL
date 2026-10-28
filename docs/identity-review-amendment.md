@@ -509,6 +509,21 @@ server policy revisions and key history. Older/conflicting revisions, widened
 windows, changed key material, and removed-key resurrection fail closed. Policy
 updates and signing share a PostgreSQL row lock. Omitted keys leave permanent
 tombstones; ordinary retired keys should remain published with their original
-windows for historical verification. This implementation is in review. It takes
-already-authenticated operator input; policy ingestion, client revision floors,
+windows for historical verification. This implementation is merged. Authenticated operator ingestion and signed
+export are merged in Panopticon #542 and #543. Client revision floors,
 key custody, service-role wiring, endpoint adoption, and deployment remain open.
+
+
+The [client export verifier](witness-policy-client.md) now authenticates those
+exact signed envelopes in TypeScript and Rust. It returns a validated document,
+not installed trust. Durable client policy/history updates, bootstrap freshness,
+root lifecycle, delivery and deployment remain required before production use.
+
+
+The shared client lifecycle transition now calculates a root/audience-bound
+candidate state with an explicit bootstrap floor, monotonic revision and permanent
+observed-key history. Narrowing is allowed; changed material, removed-key reuse
+and conflicting same-revision registries are refused. This pure decision must run
+against the latest trusted stored state inside an atomic adapter update; it does
+not itself supply durability or latest-policy discovery. See the
+[transaction and observation limits](witness-policy-client.md).

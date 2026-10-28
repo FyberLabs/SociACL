@@ -400,3 +400,43 @@ Commit the consumer lockfile with tarball integrity. This URL becomes usable
 only after that release exists. This PR does not publish a tag or migrate a
 consumer. Grammar, vector acceptance/rejection, or signing-domain changes bump
 the minor version before 1.0, and the major version from 1.0 onward.
+
+## Signed witness-policy exports
+
+`verifyWitnessPolicyEnvelope(envelopeJson, pinnedRoot, audience, now)` authenticates
+Panopticon's exact-byte export in browsers and Node. Rust exposes the matching
+`verify_witness_policy_envelope`. Neither function installs JWKS or supplies
+rollback protection. See [the client contract](../../docs/witness-policy-client.md)
+for independent root provisioning, durable floors, bootstrap freshness, and the
+required checks before a production resolver may use the result.
+
+
+`advanceWitnessPolicy(envelopeJson, previousJson, pinnedRoot, audience,
+minimumRevision, now)` and Rust's `advance_witness_policy` calculate a candidate
+policy state with a revision floor and permanent observed-key history. Previous
+state must come from trusted storage. The caller must serialize the transition
+and atomically commit the entire result before exposing JWKS. No persistence,
+root reset, or latest-policy discovery is supplied by this pure function.
+
+
+### Browser witness policy persistence
+
+`sociacl-ids/indexeddb` provides `openWitnessPolicyStore` with explicit `bootstrap`,
+`refresh`, `read` and `close` operations. Strict IndexedDB transactions commit the
+revision, registry and permanent observed-key history before returning trust.
+Missing/corrupt storage fails closed; there is no automatic bootstrap or memory
+fallback. Trusted root/audience/floor/clock configuration and protected origin
+storage remain required. See the [adapter contract](../../docs/witness-policy-client.md#indexeddb-browser-adapter)
+for restart, expiry, lost-response and storage-rollback limitations. The browser
+acceptance run is `npm run test:browser-store` after installing Playwright Chromium.
+
+
+### HTTPS policy client
+
+`sociacl-ids/witness-client` exports `openWitnessPolicyClient` to connect the
+signed-policy HTTP endpoint to the durable browser store. Downloads require HTTPS,
+reject redirects and non-200/non-JSON responses, omit credentials, enforce byte
+and time limits, and return only after verified storage commits. Bootstrap stays
+explicit; refresh failures never erase history or silently return old trust.
+See the [client contract](../../docs/witness-policy-client.md#browser-https-client)
+for cancellation, freshness and trusted-configuration requirements.
