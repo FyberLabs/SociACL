@@ -9,3 +9,4 @@ export { lengthPrefixed } from './util.js';
 export { POST_DOMAIN, REQUEST_DOMAIN, REQUEST_ID_DOMAIN, MAX_RESOLUTION_INPUT, signingBytes, linkId, verifyKeySignature, signWithKeyring, verifySignedAt, verifySeeGrant, parseSeeGrant, seeGrantBytes, verifyPostGrant, parsePostGrant, postGrantBytes, requestId, requestIdBytes, parseAccessRequest, accessRequestBytes, verifyAccessRequest, parseObjectRecord, objectRecordBytes, verifyObjectRecord, verifyAclAttestation, verifyWalletLink, verifyOidcLink, verifyRotate, verifyRotationRequest, verifyGenesisEpubRequest, verifyRevoke, verifyRevokeNow,
   resolveCurrentKey, resolveWalletLink, resolveWalletLinkNow, resolveOidcLinkNow, prepareRetainedLinksNow, verifyingLinkMap, historyState, checkRotationPublish, checkRotationDraft } from './records.js';
 export { parseJsonInput } from './json.js';
+export { verifyWitnessPolicyEnvelope, MAX_WITNESS_POLICY_BYTES, MAX_WITNESS_ENVELOPE_BYTES } from './witness-policy.js';

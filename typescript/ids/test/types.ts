@@ -23,3 +23,11 @@ declare const ctx: ResolutionContext;
 verifyWalletLink({},ctx.jwks,ctx.policy,ctx.now);
 // @ts-expect-error Resolution context must include an authenticated history resolver.
 const missingHistory: ResolutionContext = {jwks:ctx.jwks,links:ctx.links,now:ctx.now,policy:ctx.policy};
+
+import { verifyWitnessPolicyEnvelope, type WitnessPolicy } from '../src/index.js';
+const policyResult = verifyWitnessPolicyEnvelope('{}', 'independently pinned root', 'deployment', 1700000000);
+if (policyResult.ok) {
+  const policy: WitnessPolicy = policyResult.value;
+  // @ts-expect-error Authenticated output is immutable.
+  policy.revision = 0;
+}
