@@ -228,7 +228,7 @@ remain open under #68 F4.
 
 ## Panopticon HTTP delivery integration
 
-[Panopticon PR #550](https://github.com/FyberLabs/panopticon/pull/550) adds the
+Merged [Panopticon PR #550](https://github.com/FyberLabs/panopticon/pull/550) adds the
 server delivery path `GET /api/v1/acl/sociacl/witness-policy`, disabled until an
 operator provisions its signed files and independent public root/audience. The
 endpoint returns the same envelope accepted by the existing TS/Rust verifier;
@@ -248,9 +248,88 @@ audience, bootstrap floor and clock independent of the response and redirect
 source. The endpoint cannot establish latest-revision freshness for a new client,
 repair lost local history, or revoke artifacts previously delivered. Production
 role grants, signed-file mounts/renewal, TLS/edge acceptance, actual application
-adoption and root custody/compromise recovery remain outstanding. PR #550 is in
-review; this companion records implementation and test evidence, not deployment.
+adoption and root custody/compromise recovery remain outstanding. PR #550 and SociACL companion #133 are merged. Their final CI passed; this records implementation and test evidence, not deployment.
 
 Local Panopticon validation passed 157 ACL-service tests (including 27 new HTTP,
 startup and restricted-role cases) and 244 edge tests (one existing skip), including
 11 new route/limiter/proxy cases. Boundary and dependency checks also passed.
+
+
+## Browser HTTPS client
+
+`sociacl-ids/witness-client` exports `openWitnessPolicyClient`, combining the
+existing IndexedDB store and an HTTPS download. Opening it creates no trust and
+performs no fetch. It exposes `bootstrap()`, `refresh()`, `read()` and `close()`:
+
+```ts
+import { openWitnessPolicyClient } from 'sociacl-ids/witness-client';
+
+const client = await openWitnessPolicyClient({
+  name: 'application-witness-policy-v1',
+  root: trustedConfig.administratorRoot,
+  audience: trustedConfig.audience,
+  minimumRevision: trustedConfig.minimumRevision,
+  now: () => Math.floor(Date.now() / 1000),
+  url: trustedConfig.policyEndpoint,
+  timeoutMs: 10000,
+});
+// An independently authorized first-install flow calls client.bootstrap().
+// Ordinary refresh must never turn missing state into automatic bootstrap.
+const installed = await client.refresh({ signal: requestAbortController.signal });
+// Only now has the downloaded policy authenticated and committed.
+useInstalledPolicy(installed.jwks);
+client.close();
+```
+
+The URL is independently trusted configuration: it must be absolute HTTPS and
+contain no user information, query or fragment. Root/audience/floor/clock/name
+remain independently configured too; nothing is discovered from a redirect or
+response. Normal browser TLS and CORS checks remain active. GET requests use
+`redirect: error`, `credentials: omit`, `cache: no-store` and `referrerPolicy:
+no-referrer`, with `Accept: application/json`. The client accepts only status 200,
+a non-redirected JSON response and a readable body. Non-200 responses (including
+304 and partial 206 responses), network errors and invalid signatures reject.
+
+Both advertised Content-Length (if present) and streamed **decoded body bytes**
+are limited to `MAX_WITNESS_ENVELOPE_BYTES` (360,448). Missing or understated
+lengths cannot bypass the streaming limit. Text decoding is strict UTF-8 and
+preserves BOM bytes so malformed input cannot be repaired before verification.
+The original envelope text then passes through the existing TS/Rust-compatible
+verifier and lifecycle decision inside the store's serialized transaction.
+No new signature, lifecycle or shared-vector rules are introduced. This browser
+adapter is not a Rust native HTTP/storage implementation.
+
+The timeout defaults to 10 seconds and must be an integer from 1 through 60,000
+milliseconds. It covers response headers and the full streamed body; timeout,
+caller abort or `close()` cancels an active download. Late responses cannot install
+state. Waiting is bounded even when an injected test transport ignores abort or
+its stream cancellation never resolves. As with browser timers generally, a
+suspended or blocked JavaScript event loop can delay the timeout callback; the
+elapsed monotonic deadline is rechecked before storage, and the store's trusted
+clock independently rejects expired policy on resumption.
+
+Cancellation and the timeout end **before the database transaction starts**.
+Once installation starts, normal store commit/abort rules apply. `close()` drains
+already-started database transactions rather than promising to roll them back.
+An error after a commit still requires reconciliation using `read()`, as described
+in the store contract. Concurrent downloads rerun lifecycle validation against
+the latest committed row, so a delayed response cannot overwrite newer history.
+
+A failed refresh rejects; it never returns the previously stored policy, clears
+history, or retries as a bootstrap. `read()` explicitly reads installed state and
+does not establish current network freshness. Callers must enforce their own
+freshness policy before resuming freshness-sensitive operations after failure.
+Root compromise recovery, eviction/rollback recovery, bootstrap approval and
+production application adoption remain outside this adapter. The optional
+`fetch` and `indexedDB` injections are trusted platform/test dependencies, never
+request-supplied values.
+
+Validation includes 42 transport/store tests using the existing shared lifecycle
+fixtures, plus the real Chromium HTTPS run in `npm run test:browser-store`. That
+run creates a temporary test-only TLS certificate, uses an actual HTTP server and
+persistent browser profile, and checks cookie/referrer omission, redirect refusal,
+timeout/error preservation, rollback rejection and browser-process restart. Only
+the test browser ignores the generated certificate error; the library has no TLS
+bypass option. The existing full TS/Rust shared corpus remains authoritative for
+signature and lifecycle parity. No deployed endpoint or application rollout is
+claimed by these tests.

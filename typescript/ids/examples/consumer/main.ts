@@ -96,3 +96,14 @@ if (false) {
   void revision;
   store.close();
 }
+
+
+import { openWitnessPolicyClient } from 'sociacl-ids/witness-client';
+if (typeof openWitnessPolicyClient !== 'function') throw Error('missing witness client export');
+if (false) {
+  const client = await openWitnessPolicyClient({ name: 'policy', root: '', audience: 'deployment',
+    minimumRevision: 7, now: () => 1700000000, url: 'https://policy.example/api/v1/acl/sociacl/witness-policy' });
+  const revision: number = (await client.refresh({ signal: new AbortController().signal })).revision;
+  void revision;
+  client.close();
+}

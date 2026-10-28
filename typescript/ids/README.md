@@ -429,3 +429,14 @@ fallback. Trusted root/audience/floor/clock configuration and protected origin
 storage remain required. See the [adapter contract](../../docs/witness-policy-client.md#indexeddb-browser-adapter)
 for restart, expiry, lost-response and storage-rollback limitations. The browser
 acceptance run is `npm run test:browser-store` after installing Playwright Chromium.
+
+
+### HTTPS policy client
+
+`sociacl-ids/witness-client` exports `openWitnessPolicyClient` to connect the
+signed-policy HTTP endpoint to the durable browser store. Downloads require HTTPS,
+reject redirects and non-200/non-JSON responses, omit credentials, enforce byte
+and time limits, and return only after verified storage commits. Bootstrap stays
+explicit; refresh failures never erase history or silently return old trust.
+See the [client contract](../../docs/witness-policy-client.md#browser-https-client)
+for cancellation, freshness and trusted-configuration requirements.
