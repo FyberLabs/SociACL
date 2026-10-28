@@ -93,6 +93,10 @@ failure, block new logins/rotations and other freshness-sensitive decisions unti
 renewal. Previously installed keys may remain available for explicitly historical
 verification; that does not certify present revocation or current account history.
 Identity-history freshness is a separate requirement (Panopticon #499/#553).
+This gate does not prevent creating or retaining a current-key offline revoke,
+or applying a verified revoke to deny access. It gates positive authorization;
+missing freshness never authorizes ignoring a revoke. The present-only lifetime
+of an unwitnessed revoke and the historical timestamp requirement are unchanged.
 
 The transport, serialization and signature encoding for checkpoint attestations
 are intentionally left to the owning management adapter. Its implementation must
