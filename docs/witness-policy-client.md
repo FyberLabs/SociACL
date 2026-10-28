@@ -1,5 +1,9 @@
 # Witness policy export authentication
 
+Production bootstrap, freshness leases, history restoration and root migration
+follow the [independent trust and recovery contract](witness-policy-bootstrap.md).
+The APIs below do not authenticate those external inputs.
+
 `verifyWitnessPolicyEnvelope(envelopeJson, root, audience, now)` and Rust's
 `verify_witness_policy_envelope` authenticate the export format from
 [Panopticon #543](https://github.com/FyberLabs/panopticon/pull/543). This is the
@@ -137,8 +141,9 @@ All nine accepted exports were also checked against Panopticon's actual
 authoring script uses public test scalars 17–20 and is not a key-provisioning tool.
 
 
-`vectors/ids/witness-lifecycle.json` adds 56 shared transition cases: 15 accepted
-sequences and 41 rejections. They cover matching/reordered refreshes, restart
+`vectors/ids/witness-lifecycle.json` contains 68 shared transition cases: 21 accepted
+sequences and 47 rejections, including the paired bootstrap/recovery threat-model
+cases described in the [recovery contract](witness-policy-bootstrap.md). They cover matching/reordered refreshes, restart
 floors, narrowing, retirement, removal, material/ID reuse, concurrent-winner
 rechecks, clock expiry, malformed stored state, UTF-8 ordering, and history/byte
 limits. Test fixtures use public scalars only and are never bootstrap credentials.
@@ -205,7 +210,7 @@ database name; choosing a new name is effectively a new bootstrap namespace.
 Callers must not supply the factory, clock, root, floor or database name from an
 untrusted bundle. The optional `indexedDB` factory supports test/platform injection.
 
-`npm test` includes 32 adapter tests using `fake-indexeddb`, including 15 unchanged
+`npm test` includes adapter tests using `fake-indexeddb`, including
 shared TS/Rust lifecycle cases executed through database transactions. Additional
 cases cover restart, contention, abort/quota failures, corruption, floor increases,
 expiry and lost-response reconciliation. A separate real-Chromium test uses a
