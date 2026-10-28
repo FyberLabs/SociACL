@@ -90,3 +90,10 @@ export type WitnessPolicy = Readonly<{
   type: 'sociacl-witness-policy-v1'; audience: string; revision: number;
   issuedAt: number; expiresAt: number; jwks: Jwks;
 }>;
+
+export type WitnessPolicyHistoryEntry = Readonly<{jwk: Jwks['keys'][number]; removed: boolean}>;
+/** Candidate for atomic durable commit; never accept this state from an untrusted channel. */
+export type WitnessPolicyState = Readonly<{
+  type: 'sociacl-witness-policy-state-v1'; root: string; audience: string; revision: number;
+  jwks: Jwks; history: readonly WitnessPolicyHistoryEntry[];
+}>;

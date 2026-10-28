@@ -31,3 +31,11 @@ if (policyResult.ok) {
   // @ts-expect-error Authenticated output is immutable.
   policy.revision = 0;
 }
+
+import { advanceWitnessPolicy, type WitnessPolicyState } from '../src/index.js';
+const transition = advanceWitnessPolicy('{}', null, '', 'deployment', 7, 1700000000);
+if (transition.ok) {
+  const saved: WitnessPolicyState = transition.value;
+  // @ts-expect-error A consumer cannot erase retained removal history.
+  saved.history[0].removed = false;
+}
