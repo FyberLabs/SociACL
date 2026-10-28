@@ -68,7 +68,7 @@ pub fn verify_witness_policy_envelope(
         return Err(bad);
     }
     let signature = Signature::from_slice(&raw_sig).map_err(|_| bad)?;
-    if signature.normalize_s().is_some() {
+    if signature.normalize_s() != signature {
         return Err(bad);
     }
     let key =

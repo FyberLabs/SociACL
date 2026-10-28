@@ -1,7 +1,7 @@
 //! Forum acceptance vectors. Dest ACL is the grant. A hint is not.
 //! Resolve does not elect. Chat is a tagged item.
 
-use p256::elliptic_curve::sec1::ToEncodedPoint;
+use p256::elliptic_curve::sec1::ToSec1Point;
 use serde_json::Value;
 use sociacl_gun::{
     accept_hint, accept_hint_bytes, accept_need_transition, accept_offer_transition,
@@ -356,7 +356,7 @@ fn sea_signer(byte: u8) -> (PrincipalId, [u8; 32]) {
     let mut scalar = [0u8; 32];
     scalar[31] = byte;
     let secret = p256::SecretKey::from_slice(&scalar).unwrap();
-    let point = secret.public_key().to_encoded_point(false);
+    let point = secret.public_key().to_sec1_point(false);
     let principal = principal_from_sec1(point.as_bytes()).unwrap();
     (principal, scalar)
 }

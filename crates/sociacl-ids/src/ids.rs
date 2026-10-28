@@ -1,6 +1,6 @@
 use crate::uri::{public_host, web_uri};
 use crate::*;
-use p256::elliptic_curve::sec1::ToEncodedPoint;
+use p256::elliptic_curve::sec1::ToSec1Point;
 use sha2::{Digest, Sha256};
 use sha3::Keccak256;
 
@@ -691,7 +691,7 @@ pub fn derive_external_id(source: &SourceKey, item: &str) -> Result<ObjectId, Re
 /// Utility for fixed-key tests and callers importing a validated SEC1 point.
 pub fn principal_from_sec1(bytes: &[u8]) -> Result<PrincipalId, Reason> {
     let key = p256::PublicKey::from_sec1_bytes(bytes).map_err(|_| Reason::NotOnCurve)?;
-    let raw = key.to_encoded_point(false);
+    let raw = key.to_sec1_point(false);
     parse_principal_id(&format!(
         "{}.{}",
         b64(&raw.as_bytes()[1..33]),

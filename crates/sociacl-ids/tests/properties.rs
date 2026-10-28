@@ -21,8 +21,8 @@ proptest! {
     fn roundtrip_injectivity_and_segments(mut seed in any::<[u8;32]>(), wallet in any::<[u8;20]>(), object in any::<[u8;16]>(), n in 1u32..1_000_001) {
         seed[0]&=0x7f;seed[31]|=1;
         let secret=p256::SecretKey::from_slice(&seed).unwrap();
-        use p256::elliptic_curve::sec1::ToEncodedPoint;
-        let p=principal_from_sec1(secret.public_key().to_encoded_point(false).as_bytes()).unwrap();
+        use p256::elliptic_curve::sec1::ToSec1Point;
+        let p=principal_from_sec1(secret.public_key().to_sec1_point(false).as_bytes()).unwrap();
         let w=parse_wallet_input(&format!("0x{}",hex(&wallet))).unwrap();
         let t=parse_tenant_id(&format!("{}-{}-{}-{}-{}",hex(&object[..4]),hex(&object[4..6]),hex(&object[6..8]),hex(&object[8..10]),hex(&object[10..]))).unwrap();
         let o=mint_object_id_with("room",&p,|out|{*out=object;Ok(())}).unwrap();let o=o.object_id();
@@ -42,7 +42,7 @@ proptest! {
         prop_assert_eq!(keys.iter().collect::<HashSet<_>>().len(),keys.len());
         let mut seed2=seed;seed2[31]^=2;
         let second=p256::SecretKey::from_slice(&seed2).unwrap();
-        let p2=principal_from_sec1(second.public_key().to_encoded_point(false).as_bytes()).unwrap();
+        let p2=principal_from_sec1(second.public_key().to_sec1_point(false).as_bytes()).unwrap();
         let mut wbytes=wallet;wbytes[0]^=1;
         let w2=parse_wallet_input(&format!("0x{}",hex(&wbytes))).unwrap();
         let n2=parse_network_id(&net.as_ref().replace("https://node","https://other")).unwrap();

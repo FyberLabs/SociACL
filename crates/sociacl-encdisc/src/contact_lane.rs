@@ -14,6 +14,7 @@ use aes_gcm::aead::{Aead, KeyInit, Payload};
 use aes_gcm::{Aes256Gcm, Nonce};
 use hmac::digest::Mac;
 use hmac::Hmac;
+use p256::elliptic_curve::Generate;
 use rand::rngs::OsRng;
 use rand::RngCore;
 use sha2::Sha256;
@@ -217,7 +218,7 @@ pub fn seal_contact_lane_grant(
     let resolved = sociacl_ids::resolve_current_key(&sender, sender_rotations, sender_context);
     let account = resolved.result.map_err(reject)?;
     let sender_epub = crate::epub_for_new_seal(account.current_epub.as_ref(), None)?;
-    let ephemeral = p256::SecretKey::random(&mut OsRng);
+    let ephemeral = p256::SecretKey::generate();
     let mut nonce = [0u8; 12];
     OsRng.fill_bytes(&mut nonce);
     let grant = seal_grant(
@@ -337,7 +338,7 @@ pub fn regrant_contact_lanes(
     }
     let mut grants = Vec::with_capacity(ready.len());
     for (sender, epub) in &ready {
-        let ephemeral = p256::SecretKey::random(&mut OsRng);
+        let ephemeral = p256::SecretKey::generate();
         let mut nonce = [0u8; 12];
         OsRng.fill_bytes(&mut nonce);
         let grant = seal_grant(
