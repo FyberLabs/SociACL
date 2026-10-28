@@ -606,6 +606,318 @@
           ]
         }
       }
+    },
+    {
+      "name": "advance-adds-authenticated-history",
+      "operation": "advance",
+      "input": {
+        "checkpoint": "{\"type\":\"sociacl-witness-checkpoint-envelope-v1\",\"payload\":\"eyJ0eXBlIjoic29jaWFjbC13aXRuZXNzLWNoZWNrcG9pbnQtdjEiLCJhdWRpZW5jZSI6InBhbm9wdGljb24tdGVzdCIsImNsaWVudCI6ImVucm9sbG1lbnQtMSIsImNoYWxsZW5nZSI6Iktpb3FLaW9xS2lvcUtpb3FLaW9xS2lvcUtpb3FLaW9xS2lvcUtpb3FLaW8iLCJyb290RXBvY2giOjEsImlzc3VlZEF0IjoxNjk5OTk5OTk5LCJleHBpcmVzQXQiOjE3MDAwMDAwNjAsInN0YXRlIjp7InR5cGUiOiJzb2NpYWNsLXdpdG5lc3MtcG9saWN5LXN0YXRlLXYxIiwicm9vdCI6IlIzZHBCTUR4ekRxY0NZUzJiM1V3R2wtbWhuancxa3I0dWhxODQwYzRwejQucWdCZTVyVzVWeWhpTVlWbGQyU09nNEd5Z0VRbzFYTV9NdmVIXzNIeF9OdyIsImF1ZGllbmNlIjoicGFub3B0aWNvbi10ZXN0IiwicmV2aXNpb24iOjgsImp3a3MiOnsia2V5cyI6W3sia2lkIjoia2V5LTIwIiwia3R5IjoiRUMiLCJjcnYiOiJQLTI1NiIsImFsZyI6IkVTMjU2IiwidXNlIjoic2lnIiwia2V5X29wcyI6WyJ2ZXJpZnkiXSwieCI6Imc2QWFrM2c1VzZ1YnpXb0swRHpGYlZibXNaSlFSbHFVb2pUY1RHc28ycG8iLCJ5IjoiZHVTYmJlTDNNalN1YWw2NTFoSzNYSjhpQXJ0cElfVlAtQ1FLcW9iMlFMZyIsIm5vdEJlZm9yZSI6MTY5OTk5OTAwMCwibm90QWZ0ZXIiOjE3MDAwMDEwMDB9XX0sImhpc3RvcnkiOlt7Imp3ayI6eyJraWQiOiJrZXktMTkiLCJrdHkiOiJFQyIsImNydiI6IlAtMjU2IiwiYWxnIjoiRVMyNTYiLCJ1c2UiOiJzaWciLCJrZXlfb3BzIjpbInZlcmlmeSJdLCJ4IjoieTIwb1lSQXNEQ1hPT2JmQmNRakZCM2dzUlNKWGlFaVZ3Zng3ZEtzRDdZTSIsInkiOiJXTmRoU3lUWjcxRmNOZWNRRFcxczVLU1djVzR3LWo0RDQ1RlFkU3ZPemFvIiwibm90QmVmb3JlIjoxNjk5OTk5MDAwLCJub3RBZnRlciI6MTcwMDAwMTAwMH0sInJlbW92ZWQiOnRydWV9LHsiandrIjp7ImtpZCI6ImtleS0yMCIsImt0eSI6IkVDIiwiY3J2IjoiUC0yNTYiLCJhbGciOiJFUzI1NiIsInVzZSI6InNpZyIsImtleV9vcHMiOlsidmVyaWZ5Il0sIngiOiJnNkFhazNnNVc2dWJ6V29LMER6RmJWYm1zWkpRUmxxVW9qVGNUR3NvMnBvIiwieSI6ImR1U2JiZUwzTWpTdWFsNjUxaEszWEo4aUFydHBJX1ZQLUNRS3FvYjJRTGciLCJub3RCZWZvcmUiOjE2OTk5OTkwMDAsIm5vdEFmdGVyIjoxNzAwMDAxMDAwfSwicmVtb3ZlZCI6ZmFsc2V9XX19\",\"signature\":\"WbrbIHhyfIQhBRdbocMVeS9vsrbUXsaKtFkMQEwjfGYF3JL97DKptT2ALqpdTigq99bfA6lJLjtxJoSMrWooyA\"}",
+        "policy": "{\"type\":\"sociacl-witness-policy-envelope-v1\",\"payload\":\"eyJ0eXBlIjoic29jaWFjbC13aXRuZXNzLXBvbGljeS12MSIsImF1ZGllbmNlIjoicGFub3B0aWNvbi10ZXN0IiwicmV2aXNpb24iOjgsImlzc3VlZEF0IjoxNjk5OTk5OTk5LCJleHBpcmVzQXQiOjE3MDAwMDAxMjAsImp3a3MiOnsia2V5cyI6W3sia2lkIjoia2V5LTIwIiwia3R5IjoiRUMiLCJjcnYiOiJQLTI1NiIsImFsZyI6IkVTMjU2IiwidXNlIjoic2lnIiwia2V5X29wcyI6WyJ2ZXJpZnkiXSwieCI6Imc2QWFrM2c1VzZ1YnpXb0swRHpGYlZibXNaSlFSbHFVb2pUY1RHc28ycG8iLCJ5IjoiZHVTYmJlTDNNalN1YWw2NTFoSzNYSjhpQXJ0cElfVlAtQ1FLcW9iMlFMZyIsIm5vdEJlZm9yZSI6MTY5OTk5OTAwMCwibm90QWZ0ZXIiOjE3MDAwMDEwMDB9XX19\",\"signature\":\"2Ur7rpUP6d2W5vLZtI6Mn2CVUvzNXnTtJyP3vnjvwsJL2zlMVA2n6leMYx2YSmsOCfVZYayZLRaj5ZYuX183qQ\"}",
+        "previous": "{\"type\":\"sociacl-witness-policy-state-v1\",\"root\":\"R3dpBMDxzDqcCYS2b3UwGl-mhnjw1kr4uhq840c4pz4.qgBe5rW5VyhiMYVld2SOg4GygEQo1XM_MveH_3Hx_Nw\",\"audience\":\"panopticon-test\",\"revision\":7,\"jwks\":{\"keys\":[{\"kid\":\"key-19\",\"kty\":\"EC\",\"crv\":\"P-256\",\"alg\":\"ES256\",\"use\":\"sig\",\"key_ops\":[\"verify\"],\"x\":\"y20oYRAsDCXOObfBcQjFB3gsRSJXiEiVwfx7dKsD7YM\",\"y\":\"WNdhSyTZ71FcNecQDW1s5KSWcW4w-j4D45FQdSvOzao\",\"notBefore\":1699999000,\"notAfter\":1700001000}]},\"history\":[{\"jwk\":{\"kid\":\"key-19\",\"kty\":\"EC\",\"crv\":\"P-256\",\"alg\":\"ES256\",\"use\":\"sig\",\"key_ops\":[\"verify\"],\"x\":\"y20oYRAsDCXOObfBcQjFB3gsRSJXiEiVwfx7dKsD7YM\",\"y\":\"WNdhSyTZ71FcNecQDW1s5KSWcW4w-j4D45FQdSvOzao\",\"notBefore\":1699999000,\"notAfter\":1700001000},\"removed\":false}]}"
+      },
+      "canonical": {
+        "type": "sociacl-witness-checkpoint-v1",
+        "audience": "panopticon-test",
+        "client": "enrollment-1",
+        "challenge": "KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKio",
+        "rootEpoch": 1,
+        "issuedAt": 1699999999,
+        "expiresAt": 1700000060,
+        "state": {
+          "type": "sociacl-witness-policy-state-v1",
+          "root": "R3dpBMDxzDqcCYS2b3UwGl-mhnjw1kr4uhq840c4pz4.qgBe5rW5VyhiMYVld2SOg4GygEQo1XM_MveH_3Hx_Nw",
+          "audience": "panopticon-test",
+          "revision": 8,
+          "jwks": {
+            "keys": [
+              {
+                "kid": "key-20",
+                "kty": "EC",
+                "crv": "P-256",
+                "alg": "ES256",
+                "use": "sig",
+                "key_ops": [
+                  "verify"
+                ],
+                "x": "g6Aak3g5W6ubzWoK0DzFbVbmsZJQRlqUojTcTGso2po",
+                "y": "duSbbeL3MjSual651hK3XJ8iArtpI_VP-CQKqob2QLg",
+                "notBefore": 1699999000,
+                "notAfter": 1700001000
+              }
+            ]
+          },
+          "history": [
+            {
+              "jwk": {
+                "kid": "key-19",
+                "kty": "EC",
+                "crv": "P-256",
+                "alg": "ES256",
+                "use": "sig",
+                "key_ops": [
+                  "verify"
+                ],
+                "x": "y20oYRAsDCXOObfBcQjFB3gsRSJXiEiVwfx7dKsD7YM",
+                "y": "WNdhSyTZ71FcNecQDW1s5KSWcW4w-j4D45FQdSvOzao",
+                "notBefore": 1699999000,
+                "notAfter": 1700001000
+              },
+              "removed": true
+            },
+            {
+              "jwk": {
+                "kid": "key-20",
+                "kty": "EC",
+                "crv": "P-256",
+                "alg": "ES256",
+                "use": "sig",
+                "key_ops": [
+                  "verify"
+                ],
+                "x": "g6Aak3g5W6ubzWoK0DzFbVbmsZJQRlqUojTcTGso2po",
+                "y": "duSbbeL3MjSual651hK3XJ8iArtpI_VP-CQKqob2QLg",
+                "notBefore": 1699999000,
+                "notAfter": 1700001000
+              },
+              "removed": false
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "advance-idempotent-complete-state",
+      "operation": "advance",
+      "input": {
+        "checkpoint": "{\"type\":\"sociacl-witness-checkpoint-envelope-v1\",\"payload\":\"eyJ0eXBlIjoic29jaWFjbC13aXRuZXNzLWNoZWNrcG9pbnQtdjEiLCJhdWRpZW5jZSI6InBhbm9wdGljb24tdGVzdCIsImNsaWVudCI6ImVucm9sbG1lbnQtMSIsImNoYWxsZW5nZSI6Iktpb3FLaW9xS2lvcUtpb3FLaW9xS2lvcUtpb3FLaW9xS2lvcUtpb3FLaW8iLCJyb290RXBvY2giOjEsImlzc3VlZEF0IjoxNjk5OTk5OTk5LCJleHBpcmVzQXQiOjE3MDAwMDAwNjAsInN0YXRlIjp7InR5cGUiOiJzb2NpYWNsLXdpdG5lc3MtcG9saWN5LXN0YXRlLXYxIiwicm9vdCI6IlIzZHBCTUR4ekRxY0NZUzJiM1V3R2wtbWhuancxa3I0dWhxODQwYzRwejQucWdCZTVyVzVWeWhpTVlWbGQyU09nNEd5Z0VRbzFYTV9NdmVIXzNIeF9OdyIsImF1ZGllbmNlIjoicGFub3B0aWNvbi10ZXN0IiwicmV2aXNpb24iOjgsImp3a3MiOnsia2V5cyI6W3sia2lkIjoia2V5LTIwIiwia3R5IjoiRUMiLCJjcnYiOiJQLTI1NiIsImFsZyI6IkVTMjU2IiwidXNlIjoic2lnIiwia2V5X29wcyI6WyJ2ZXJpZnkiXSwieCI6Imc2QWFrM2c1VzZ1YnpXb0swRHpGYlZibXNaSlFSbHFVb2pUY1RHc28ycG8iLCJ5IjoiZHVTYmJlTDNNalN1YWw2NTFoSzNYSjhpQXJ0cElfVlAtQ1FLcW9iMlFMZyIsIm5vdEJlZm9yZSI6MTY5OTk5OTAwMCwibm90QWZ0ZXIiOjE3MDAwMDEwMDB9XX0sImhpc3RvcnkiOlt7Imp3ayI6eyJraWQiOiJrZXktMTkiLCJrdHkiOiJFQyIsImNydiI6IlAtMjU2IiwiYWxnIjoiRVMyNTYiLCJ1c2UiOiJzaWciLCJrZXlfb3BzIjpbInZlcmlmeSJdLCJ4IjoieTIwb1lSQXNEQ1hPT2JmQmNRakZCM2dzUlNKWGlFaVZ3Zng3ZEtzRDdZTSIsInkiOiJXTmRoU3lUWjcxRmNOZWNRRFcxczVLU1djVzR3LWo0RDQ1RlFkU3ZPemFvIiwibm90QmVmb3JlIjoxNjk5OTk5MDAwLCJub3RBZnRlciI6MTcwMDAwMTAwMH0sInJlbW92ZWQiOnRydWV9LHsiandrIjp7ImtpZCI6ImtleS0yMCIsImt0eSI6IkVDIiwiY3J2IjoiUC0yNTYiLCJhbGciOiJFUzI1NiIsInVzZSI6InNpZyIsImtleV9vcHMiOlsidmVyaWZ5Il0sIngiOiJnNkFhazNnNVc2dWJ6V29LMER6RmJWYm1zWkpRUmxxVW9qVGNUR3NvMnBvIiwieSI6ImR1U2JiZUwzTWpTdWFsNjUxaEszWEo4aUFydHBJX1ZQLUNRS3FvYjJRTGciLCJub3RCZWZvcmUiOjE2OTk5OTkwMDAsIm5vdEFmdGVyIjoxNzAwMDAxMDAwfSwicmVtb3ZlZCI6ZmFsc2V9XX19\",\"signature\":\"WbrbIHhyfIQhBRdbocMVeS9vsrbUXsaKtFkMQEwjfGYF3JL97DKptT2ALqpdTigq99bfA6lJLjtxJoSMrWooyA\"}",
+        "policy": "{\"type\":\"sociacl-witness-policy-envelope-v1\",\"payload\":\"eyJ0eXBlIjoic29jaWFjbC13aXRuZXNzLXBvbGljeS12MSIsImF1ZGllbmNlIjoicGFub3B0aWNvbi10ZXN0IiwicmV2aXNpb24iOjgsImlzc3VlZEF0IjoxNjk5OTk5OTk5LCJleHBpcmVzQXQiOjE3MDAwMDAxMjAsImp3a3MiOnsia2V5cyI6W3sia2lkIjoia2V5LTIwIiwia3R5IjoiRUMiLCJjcnYiOiJQLTI1NiIsImFsZyI6IkVTMjU2IiwidXNlIjoic2lnIiwia2V5X29wcyI6WyJ2ZXJpZnkiXSwieCI6Imc2QWFrM2c1VzZ1YnpXb0swRHpGYlZibXNaSlFSbHFVb2pUY1RHc28ycG8iLCJ5IjoiZHVTYmJlTDNNalN1YWw2NTFoSzNYSjhpQXJ0cElfVlAtQ1FLcW9iMlFMZyIsIm5vdEJlZm9yZSI6MTY5OTk5OTAwMCwibm90QWZ0ZXIiOjE3MDAwMDEwMDB9XX19\",\"signature\":\"2Ur7rpUP6d2W5vLZtI6Mn2CVUvzNXnTtJyP3vnjvwsJL2zlMVA2n6leMYx2YSmsOCfVZYayZLRaj5ZYuX183qQ\"}",
+        "previous": "{\"type\":\"sociacl-witness-policy-state-v1\",\"root\":\"R3dpBMDxzDqcCYS2b3UwGl-mhnjw1kr4uhq840c4pz4.qgBe5rW5VyhiMYVld2SOg4GygEQo1XM_MveH_3Hx_Nw\",\"audience\":\"panopticon-test\",\"revision\":8,\"jwks\":{\"keys\":[{\"kid\":\"key-20\",\"kty\":\"EC\",\"crv\":\"P-256\",\"alg\":\"ES256\",\"use\":\"sig\",\"key_ops\":[\"verify\"],\"x\":\"g6Aak3g5W6ubzWoK0DzFbVbmsZJQRlqUojTcTGso2po\",\"y\":\"duSbbeL3MjSual651hK3XJ8iArtpI_VP-CQKqob2QLg\",\"notBefore\":1699999000,\"notAfter\":1700001000}]},\"history\":[{\"jwk\":{\"kid\":\"key-19\",\"kty\":\"EC\",\"crv\":\"P-256\",\"alg\":\"ES256\",\"use\":\"sig\",\"key_ops\":[\"verify\"],\"x\":\"y20oYRAsDCXOObfBcQjFB3gsRSJXiEiVwfx7dKsD7YM\",\"y\":\"WNdhSyTZ71FcNecQDW1s5KSWcW4w-j4D45FQdSvOzao\",\"notBefore\":1699999000,\"notAfter\":1700001000},\"removed\":true},{\"jwk\":{\"kid\":\"key-20\",\"kty\":\"EC\",\"crv\":\"P-256\",\"alg\":\"ES256\",\"use\":\"sig\",\"key_ops\":[\"verify\"],\"x\":\"g6Aak3g5W6ubzWoK0DzFbVbmsZJQRlqUojTcTGso2po\",\"y\":\"duSbbeL3MjSual651hK3XJ8iArtpI_VP-CQKqob2QLg\",\"notBefore\":1699999000,\"notAfter\":1700001000},\"removed\":false}]}"
+      },
+      "canonical": {
+        "type": "sociacl-witness-checkpoint-v1",
+        "audience": "panopticon-test",
+        "client": "enrollment-1",
+        "challenge": "KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKio",
+        "rootEpoch": 1,
+        "issuedAt": 1699999999,
+        "expiresAt": 1700000060,
+        "state": {
+          "type": "sociacl-witness-policy-state-v1",
+          "root": "R3dpBMDxzDqcCYS2b3UwGl-mhnjw1kr4uhq840c4pz4.qgBe5rW5VyhiMYVld2SOg4GygEQo1XM_MveH_3Hx_Nw",
+          "audience": "panopticon-test",
+          "revision": 8,
+          "jwks": {
+            "keys": [
+              {
+                "kid": "key-20",
+                "kty": "EC",
+                "crv": "P-256",
+                "alg": "ES256",
+                "use": "sig",
+                "key_ops": [
+                  "verify"
+                ],
+                "x": "g6Aak3g5W6ubzWoK0DzFbVbmsZJQRlqUojTcTGso2po",
+                "y": "duSbbeL3MjSual651hK3XJ8iArtpI_VP-CQKqob2QLg",
+                "notBefore": 1699999000,
+                "notAfter": 1700001000
+              }
+            ]
+          },
+          "history": [
+            {
+              "jwk": {
+                "kid": "key-19",
+                "kty": "EC",
+                "crv": "P-256",
+                "alg": "ES256",
+                "use": "sig",
+                "key_ops": [
+                  "verify"
+                ],
+                "x": "y20oYRAsDCXOObfBcQjFB3gsRSJXiEiVwfx7dKsD7YM",
+                "y": "WNdhSyTZ71FcNecQDW1s5KSWcW4w-j4D45FQdSvOzao",
+                "notBefore": 1699999000,
+                "notAfter": 1700001000
+              },
+              "removed": true
+            },
+            {
+              "jwk": {
+                "kid": "key-20",
+                "kty": "EC",
+                "crv": "P-256",
+                "alg": "ES256",
+                "use": "sig",
+                "key_ops": [
+                  "verify"
+                ],
+                "x": "g6Aak3g5W6ubzWoK0DzFbVbmsZJQRlqUojTcTGso2po",
+                "y": "duSbbeL3MjSual651hK3XJ8iArtpI_VP-CQKqob2QLg",
+                "notBefore": 1699999000,
+                "notAfter": 1700001000
+              },
+              "removed": false
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "advance-enriches-observed-history",
+      "operation": "advance",
+      "input": {
+        "checkpoint": "{\"type\":\"sociacl-witness-checkpoint-envelope-v1\",\"payload\":\"eyJ0eXBlIjoic29jaWFjbC13aXRuZXNzLWNoZWNrcG9pbnQtdjEiLCJhdWRpZW5jZSI6InBhbm9wdGljb24tdGVzdCIsImNsaWVudCI6ImVucm9sbG1lbnQtMSIsImNoYWxsZW5nZSI6Iktpb3FLaW9xS2lvcUtpb3FLaW9xS2lvcUtpb3FLaW9xS2lvcUtpb3FLaW8iLCJyb290RXBvY2giOjEsImlzc3VlZEF0IjoxNjk5OTk5OTk5LCJleHBpcmVzQXQiOjE3MDAwMDAwNjAsInN0YXRlIjp7InR5cGUiOiJzb2NpYWNsLXdpdG5lc3MtcG9saWN5LXN0YXRlLXYxIiwicm9vdCI6IlIzZHBCTUR4ekRxY0NZUzJiM1V3R2wtbWhuancxa3I0dWhxODQwYzRwejQucWdCZTVyVzVWeWhpTVlWbGQyU09nNEd5Z0VRbzFYTV9NdmVIXzNIeF9OdyIsImF1ZGllbmNlIjoicGFub3B0aWNvbi10ZXN0IiwicmV2aXNpb24iOjgsImp3a3MiOnsia2V5cyI6W3sia2lkIjoia2V5LTIwIiwia3R5IjoiRUMiLCJjcnYiOiJQLTI1NiIsImFsZyI6IkVTMjU2IiwidXNlIjoic2lnIiwia2V5X29wcyI6WyJ2ZXJpZnkiXSwieCI6Imc2QWFrM2c1VzZ1YnpXb0swRHpGYlZibXNaSlFSbHFVb2pUY1RHc28ycG8iLCJ5IjoiZHVTYmJlTDNNalN1YWw2NTFoSzNYSjhpQXJ0cElfVlAtQ1FLcW9iMlFMZyIsIm5vdEJlZm9yZSI6MTY5OTk5OTAwMCwibm90QWZ0ZXIiOjE3MDAwMDEwMDB9XX0sImhpc3RvcnkiOlt7Imp3ayI6eyJraWQiOiJrZXktMTkiLCJrdHkiOiJFQyIsImNydiI6IlAtMjU2IiwiYWxnIjoiRVMyNTYiLCJ1c2UiOiJzaWciLCJrZXlfb3BzIjpbInZlcmlmeSJdLCJ4IjoieTIwb1lSQXNEQ1hPT2JmQmNRakZCM2dzUlNKWGlFaVZ3Zng3ZEtzRDdZTSIsInkiOiJXTmRoU3lUWjcxRmNOZWNRRFcxczVLU1djVzR3LWo0RDQ1RlFkU3ZPemFvIiwibm90QmVmb3JlIjoxNjk5OTk5MDAwLCJub3RBZnRlciI6MTcwMDAwMTAwMH0sInJlbW92ZWQiOnRydWV9LHsiandrIjp7ImtpZCI6ImtleS0yMCIsImt0eSI6IkVDIiwiY3J2IjoiUC0yNTYiLCJhbGciOiJFUzI1NiIsInVzZSI6InNpZyIsImtleV9vcHMiOlsidmVyaWZ5Il0sIngiOiJnNkFhazNnNVc2dWJ6V29LMER6RmJWYm1zWkpRUmxxVW9qVGNUR3NvMnBvIiwieSI6ImR1U2JiZUwzTWpTdWFsNjUxaEszWEo4aUFydHBJX1ZQLUNRS3FvYjJRTGciLCJub3RCZWZvcmUiOjE2OTk5OTkwMDAsIm5vdEFmdGVyIjoxNzAwMDAxMDAwfSwicmVtb3ZlZCI6ZmFsc2V9XX19\",\"signature\":\"WbrbIHhyfIQhBRdbocMVeS9vsrbUXsaKtFkMQEwjfGYF3JL97DKptT2ALqpdTigq99bfA6lJLjtxJoSMrWooyA\"}",
+        "policy": "{\"type\":\"sociacl-witness-policy-envelope-v1\",\"payload\":\"eyJ0eXBlIjoic29jaWFjbC13aXRuZXNzLXBvbGljeS12MSIsImF1ZGllbmNlIjoicGFub3B0aWNvbi10ZXN0IiwicmV2aXNpb24iOjgsImlzc3VlZEF0IjoxNjk5OTk5OTk5LCJleHBpcmVzQXQiOjE3MDAwMDAxMjAsImp3a3MiOnsia2V5cyI6W3sia2lkIjoia2V5LTIwIiwia3R5IjoiRUMiLCJjcnYiOiJQLTI1NiIsImFsZyI6IkVTMjU2IiwidXNlIjoic2lnIiwia2V5X29wcyI6WyJ2ZXJpZnkiXSwieCI6Imc2QWFrM2c1VzZ1YnpXb0swRHpGYlZibXNaSlFSbHFVb2pUY1RHc28ycG8iLCJ5IjoiZHVTYmJlTDNNalN1YWw2NTFoSzNYSjhpQXJ0cElfVlAtQ1FLcW9iMlFMZyIsIm5vdEJlZm9yZSI6MTY5OTk5OTAwMCwibm90QWZ0ZXIiOjE3MDAwMDEwMDB9XX19\",\"signature\":\"2Ur7rpUP6d2W5vLZtI6Mn2CVUvzNXnTtJyP3vnjvwsJL2zlMVA2n6leMYx2YSmsOCfVZYayZLRaj5ZYuX183qQ\"}",
+        "previous": "{\"type\":\"sociacl-witness-policy-state-v1\",\"root\":\"R3dpBMDxzDqcCYS2b3UwGl-mhnjw1kr4uhq840c4pz4.qgBe5rW5VyhiMYVld2SOg4GygEQo1XM_MveH_3Hx_Nw\",\"audience\":\"panopticon-test\",\"revision\":8,\"jwks\":{\"keys\":[{\"kid\":\"key-20\",\"kty\":\"EC\",\"crv\":\"P-256\",\"alg\":\"ES256\",\"use\":\"sig\",\"key_ops\":[\"verify\"],\"x\":\"g6Aak3g5W6ubzWoK0DzFbVbmsZJQRlqUojTcTGso2po\",\"y\":\"duSbbeL3MjSual651hK3XJ8iArtpI_VP-CQKqob2QLg\",\"notBefore\":1699999000,\"notAfter\":1700001000}]},\"history\":[{\"jwk\":{\"kid\":\"key-20\",\"kty\":\"EC\",\"crv\":\"P-256\",\"alg\":\"ES256\",\"use\":\"sig\",\"key_ops\":[\"verify\"],\"x\":\"g6Aak3g5W6ubzWoK0DzFbVbmsZJQRlqUojTcTGso2po\",\"y\":\"duSbbeL3MjSual651hK3XJ8iArtpI_VP-CQKqob2QLg\",\"notBefore\":1699999000,\"notAfter\":1700001000},\"removed\":false}]}"
+      },
+      "canonical": {
+        "type": "sociacl-witness-checkpoint-v1",
+        "audience": "panopticon-test",
+        "client": "enrollment-1",
+        "challenge": "KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKio",
+        "rootEpoch": 1,
+        "issuedAt": 1699999999,
+        "expiresAt": 1700000060,
+        "state": {
+          "type": "sociacl-witness-policy-state-v1",
+          "root": "R3dpBMDxzDqcCYS2b3UwGl-mhnjw1kr4uhq840c4pz4.qgBe5rW5VyhiMYVld2SOg4GygEQo1XM_MveH_3Hx_Nw",
+          "audience": "panopticon-test",
+          "revision": 8,
+          "jwks": {
+            "keys": [
+              {
+                "kid": "key-20",
+                "kty": "EC",
+                "crv": "P-256",
+                "alg": "ES256",
+                "use": "sig",
+                "key_ops": [
+                  "verify"
+                ],
+                "x": "g6Aak3g5W6ubzWoK0DzFbVbmsZJQRlqUojTcTGso2po",
+                "y": "duSbbeL3MjSual651hK3XJ8iArtpI_VP-CQKqob2QLg",
+                "notBefore": 1699999000,
+                "notAfter": 1700001000
+              }
+            ]
+          },
+          "history": [
+            {
+              "jwk": {
+                "kid": "key-19",
+                "kty": "EC",
+                "crv": "P-256",
+                "alg": "ES256",
+                "use": "sig",
+                "key_ops": [
+                  "verify"
+                ],
+                "x": "y20oYRAsDCXOObfBcQjFB3gsRSJXiEiVwfx7dKsD7YM",
+                "y": "WNdhSyTZ71FcNecQDW1s5KSWcW4w-j4D45FQdSvOzao",
+                "notBefore": 1699999000,
+                "notAfter": 1700001000
+              },
+              "removed": true
+            },
+            {
+              "jwk": {
+                "kid": "key-20",
+                "kty": "EC",
+                "crv": "P-256",
+                "alg": "ES256",
+                "use": "sig",
+                "key_ops": [
+                  "verify"
+                ],
+                "x": "g6Aak3g5W6ubzWoK0DzFbVbmsZJQRlqUojTcTGso2po",
+                "y": "duSbbeL3MjSual651hK3XJ8iArtpI_VP-CQKqob2QLg",
+                "notBefore": 1699999000,
+                "notAfter": 1700001000
+              },
+              "removed": false
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "advance-narrows-removed-key",
+      "operation": "advance",
+      "input": {
+        "checkpoint": "{\"type\":\"sociacl-witness-checkpoint-envelope-v1\",\"payload\":\"eyJ0eXBlIjoic29jaWFjbC13aXRuZXNzLWNoZWNrcG9pbnQtdjEiLCJhdWRpZW5jZSI6InBhbm9wdGljb24tdGVzdCIsImNsaWVudCI6ImVucm9sbG1lbnQtMSIsImNoYWxsZW5nZSI6Iktpb3FLaW9xS2lvcUtpb3FLaW9xS2lvcUtpb3FLaW9xS2lvcUtpb3FLaW8iLCJyb290RXBvY2giOjEsImlzc3VlZEF0IjoxNjk5OTk5OTk5LCJleHBpcmVzQXQiOjE3MDAwMDAwNjAsInN0YXRlIjp7InR5cGUiOiJzb2NpYWNsLXdpdG5lc3MtcG9saWN5LXN0YXRlLXYxIiwicm9vdCI6IlIzZHBCTUR4ekRxY0NZUzJiM1V3R2wtbWhuancxa3I0dWhxODQwYzRwejQucWdCZTVyVzVWeWhpTVlWbGQyU09nNEd5Z0VRbzFYTV9NdmVIXzNIeF9OdyIsImF1ZGllbmNlIjoicGFub3B0aWNvbi10ZXN0IiwicmV2aXNpb24iOjgsImp3a3MiOnsia2V5cyI6W3sia2lkIjoia2V5LTIwIiwia3R5IjoiRUMiLCJjcnYiOiJQLTI1NiIsImFsZyI6IkVTMjU2IiwidXNlIjoic2lnIiwia2V5X29wcyI6WyJ2ZXJpZnkiXSwieCI6Imc2QWFrM2c1VzZ1YnpXb0swRHpGYlZibXNaSlFSbHFVb2pUY1RHc28ycG8iLCJ5IjoiZHVTYmJlTDNNalN1YWw2NTFoSzNYSjhpQXJ0cElfVlAtQ1FLcW9iMlFMZyIsIm5vdEJlZm9yZSI6MTY5OTk5OTAwMCwibm90QWZ0ZXIiOjE3MDAwMDEwMDB9XX0sImhpc3RvcnkiOlt7Imp3ayI6eyJraWQiOiJrZXktMTkiLCJrdHkiOiJFQyIsImNydiI6IlAtMjU2IiwiYWxnIjoiRVMyNTYiLCJ1c2UiOiJzaWciLCJrZXlfb3BzIjpbInZlcmlmeSJdLCJ4IjoieTIwb1lSQXNEQ1hPT2JmQmNRakZCM2dzUlNKWGlFaVZ3Zng3ZEtzRDdZTSIsInkiOiJXTmRoU3lUWjcxRmNOZWNRRFcxczVLU1djVzR3LWo0RDQ1RlFkU3ZPemFvIiwibm90QmVmb3JlIjoxNjk5OTk5MDEwLCJub3RBZnRlciI6MTcwMDAwMDk5MH0sInJlbW92ZWQiOnRydWV9LHsiandrIjp7ImtpZCI6ImtleS0yMCIsImt0eSI6IkVDIiwiY3J2IjoiUC0yNTYiLCJhbGciOiJFUzI1NiIsInVzZSI6InNpZyIsImtleV9vcHMiOlsidmVyaWZ5Il0sIngiOiJnNkFhazNnNVc2dWJ6V29LMER6RmJWYm1zWkpRUmxxVW9qVGNUR3NvMnBvIiwieSI6ImR1U2JiZUwzTWpTdWFsNjUxaEszWEo4aUFydHBJX1ZQLUNRS3FvYjJRTGciLCJub3RCZWZvcmUiOjE2OTk5OTkwMDAsIm5vdEFmdGVyIjoxNzAwMDAxMDAwfSwicmVtb3ZlZCI6ZmFsc2V9XX19\",\"signature\":\"wOLmppCVQjFI000Sf3Pypt5wkVlahj2H9_ODVGfyldYfe-eYc6IrQddNjQqZKGuCDI1EeeUamvEJLxE0zaXy3w\"}",
+        "policy": "{\"type\":\"sociacl-witness-policy-envelope-v1\",\"payload\":\"eyJ0eXBlIjoic29jaWFjbC13aXRuZXNzLXBvbGljeS12MSIsImF1ZGllbmNlIjoicGFub3B0aWNvbi10ZXN0IiwicmV2aXNpb24iOjgsImlzc3VlZEF0IjoxNjk5OTk5OTk5LCJleHBpcmVzQXQiOjE3MDAwMDAxMjAsImp3a3MiOnsia2V5cyI6W3sia2lkIjoia2V5LTIwIiwia3R5IjoiRUMiLCJjcnYiOiJQLTI1NiIsImFsZyI6IkVTMjU2IiwidXNlIjoic2lnIiwia2V5X29wcyI6WyJ2ZXJpZnkiXSwieCI6Imc2QWFrM2c1VzZ1YnpXb0swRHpGYlZibXNaSlFSbHFVb2pUY1RHc28ycG8iLCJ5IjoiZHVTYmJlTDNNalN1YWw2NTFoSzNYSjhpQXJ0cElfVlAtQ1FLcW9iMlFMZyIsIm5vdEJlZm9yZSI6MTY5OTk5OTAwMCwibm90QWZ0ZXIiOjE3MDAwMDEwMDB9XX19\",\"signature\":\"2Ur7rpUP6d2W5vLZtI6Mn2CVUvzNXnTtJyP3vnjvwsJL2zlMVA2n6leMYx2YSmsOCfVZYayZLRaj5ZYuX183qQ\"}",
+        "previous": "{\"type\":\"sociacl-witness-policy-state-v1\",\"root\":\"R3dpBMDxzDqcCYS2b3UwGl-mhnjw1kr4uhq840c4pz4.qgBe5rW5VyhiMYVld2SOg4GygEQo1XM_MveH_3Hx_Nw\",\"audience\":\"panopticon-test\",\"revision\":8,\"jwks\":{\"keys\":[{\"kid\":\"key-20\",\"kty\":\"EC\",\"crv\":\"P-256\",\"alg\":\"ES256\",\"use\":\"sig\",\"key_ops\":[\"verify\"],\"x\":\"g6Aak3g5W6ubzWoK0DzFbVbmsZJQRlqUojTcTGso2po\",\"y\":\"duSbbeL3MjSual651hK3XJ8iArtpI_VP-CQKqob2QLg\",\"notBefore\":1699999000,\"notAfter\":1700001000}]},\"history\":[{\"jwk\":{\"kid\":\"key-19\",\"kty\":\"EC\",\"crv\":\"P-256\",\"alg\":\"ES256\",\"use\":\"sig\",\"key_ops\":[\"verify\"],\"x\":\"y20oYRAsDCXOObfBcQjFB3gsRSJXiEiVwfx7dKsD7YM\",\"y\":\"WNdhSyTZ71FcNecQDW1s5KSWcW4w-j4D45FQdSvOzao\",\"notBefore\":1699999000,\"notAfter\":1700001000},\"removed\":true},{\"jwk\":{\"kid\":\"key-20\",\"kty\":\"EC\",\"crv\":\"P-256\",\"alg\":\"ES256\",\"use\":\"sig\",\"key_ops\":[\"verify\"],\"x\":\"g6Aak3g5W6ubzWoK0DzFbVbmsZJQRlqUojTcTGso2po\",\"y\":\"duSbbeL3MjSual651hK3XJ8iArtpI_VP-CQKqob2QLg\",\"notBefore\":1699999000,\"notAfter\":1700001000},\"removed\":false}]}"
+      },
+      "canonical": {
+        "type": "sociacl-witness-checkpoint-v1",
+        "audience": "panopticon-test",
+        "client": "enrollment-1",
+        "challenge": "KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKio",
+        "rootEpoch": 1,
+        "issuedAt": 1699999999,
+        "expiresAt": 1700000060,
+        "state": {
+          "type": "sociacl-witness-policy-state-v1",
+          "root": "R3dpBMDxzDqcCYS2b3UwGl-mhnjw1kr4uhq840c4pz4.qgBe5rW5VyhiMYVld2SOg4GygEQo1XM_MveH_3Hx_Nw",
+          "audience": "panopticon-test",
+          "revision": 8,
+          "jwks": {
+            "keys": [
+              {
+                "kid": "key-20",
+                "kty": "EC",
+                "crv": "P-256",
+                "alg": "ES256",
+                "use": "sig",
+                "key_ops": [
+                  "verify"
+                ],
+                "x": "g6Aak3g5W6ubzWoK0DzFbVbmsZJQRlqUojTcTGso2po",
+                "y": "duSbbeL3MjSual651hK3XJ8iArtpI_VP-CQKqob2QLg",
+                "notBefore": 1699999000,
+                "notAfter": 1700001000
+              }
+            ]
+          },
+          "history": [
+            {
+              "jwk": {
+                "kid": "key-19",
+                "kty": "EC",
+                "crv": "P-256",
+                "alg": "ES256",
+                "use": "sig",
+                "key_ops": [
+                  "verify"
+                ],
+                "x": "y20oYRAsDCXOObfBcQjFB3gsRSJXiEiVwfx7dKsD7YM",
+                "y": "WNdhSyTZ71FcNecQDW1s5KSWcW4w-j4D45FQdSvOzao",
+                "notBefore": 1699999010,
+                "notAfter": 1700000990
+              },
+              "removed": true
+            },
+            {
+              "jwk": {
+                "kid": "key-20",
+                "kty": "EC",
+                "crv": "P-256",
+                "alg": "ES256",
+                "use": "sig",
+                "key_ops": [
+                  "verify"
+                ],
+                "x": "g6Aak3g5W6ubzWoK0DzFbVbmsZJQRlqUojTcTGso2po",
+                "y": "duSbbeL3MjSual651hK3XJ8iArtpI_VP-CQKqob2QLg",
+                "notBefore": 1699999000,
+                "notAfter": 1700001000
+              },
+              "removed": false
+            }
+          ]
+        }
+      }
     }
   ],
   "reject": [
@@ -1197,6 +1509,136 @@
       "input": {
         "checkpoint": "{\"payload\":\"AA\",\"type\":\"sociacl-witness-checkpoint-envelope-v1\",\"payload\":\"eyJ0eXBlIjoic29jaWFjbC13aXRuZXNzLWNoZWNrcG9pbnQtdjEiLCJhdWRpZW5jZSI6InBhbm9wdGljb24tdGVzdCIsImNsaWVudCI6ImVucm9sbG1lbnQtMSIsImNoYWxsZW5nZSI6Iktpb3FLaW9xS2lvcUtpb3FLaW9xS2lvcUtpb3FLaW9xS2lvcUtpb3FLaW8iLCJyb290RXBvY2giOjEsImlzc3VlZEF0IjoxNjk5OTk5OTk5LCJleHBpcmVzQXQiOjE3MDAwMDAwNjAsInN0YXRlIjp7InR5cGUiOiJzb2NpYWNsLXdpdG5lc3MtcG9saWN5LXN0YXRlLXYxIiwicm9vdCI6IlIzZHBCTUR4ekRxY0NZUzJiM1V3R2wtbWhuancxa3I0dWhxODQwYzRwejQucWdCZTVyVzVWeWhpTVlWbGQyU09nNEd5Z0VRbzFYTV9NdmVIXzNIeF9OdyIsImF1ZGllbmNlIjoicGFub3B0aWNvbi10ZXN0IiwicmV2aXNpb24iOjgsImp3a3MiOnsia2V5cyI6W3sia2lkIjoia2V5LTIwIiwia3R5IjoiRUMiLCJjcnYiOiJQLTI1NiIsImFsZyI6IkVTMjU2IiwidXNlIjoic2lnIiwia2V5X29wcyI6WyJ2ZXJpZnkiXSwieCI6Imc2QWFrM2c1VzZ1YnpXb0swRHpGYlZibXNaSlFSbHFVb2pUY1RHc28ycG8iLCJ5IjoiZHVTYmJlTDNNalN1YWw2NTFoSzNYSjhpQXJ0cElfVlAtQ1FLcW9iMlFMZyIsIm5vdEJlZm9yZSI6MTY5OTk5OTAwMCwibm90QWZ0ZXIiOjE3MDAwMDEwMDB9XX0sImhpc3RvcnkiOlt7Imp3ayI6eyJraWQiOiJrZXktMTkiLCJrdHkiOiJFQyIsImNydiI6IlAtMjU2IiwiYWxnIjoiRVMyNTYiLCJ1c2UiOiJzaWciLCJrZXlfb3BzIjpbInZlcmlmeSJdLCJ4IjoieTIwb1lSQXNEQ1hPT2JmQmNRakZCM2dzUlNKWGlFaVZ3Zng3ZEtzRDdZTSIsInkiOiJXTmRoU3lUWjcxRmNOZWNRRFcxczVLU1djVzR3LWo0RDQ1RlFkU3ZPemFvIiwibm90QmVmb3JlIjoxNjk5OTk5MDAwLCJub3RBZnRlciI6MTcwMDAwMTAwMH0sInJlbW92ZWQiOnRydWV9LHsiandrIjp7ImtpZCI6ImtleS0yMCIsImt0eSI6IkVDIiwiY3J2IjoiUC0yNTYiLCJhbGciOiJFUzI1NiIsInVzZSI6InNpZyIsImtleV9vcHMiOlsidmVyaWZ5Il0sIngiOiJnNkFhazNnNVc2dWJ6V29LMER6RmJWYm1zWkpRUmxxVW9qVGNUR3NvMnBvIiwieSI6ImR1U2JiZUwzTWpTdWFsNjUxaEszWEo4aUFydHBJX1ZQLUNRS3FvYjJRTGciLCJub3RCZWZvcmUiOjE2OTk5OTkwMDAsIm5vdEFmdGVyIjoxNzAwMDAxMDAwfSwicmVtb3ZlZCI6ZmFsc2V9XX19\",\"signature\":\"WbrbIHhyfIQhBRdbocMVeS9vsrbUXsaKtFkMQEwjfGYF3JL97DKptT2ALqpdTigq99bfA6lJLjtxJoSMrWooyA\"}",
         "policy": "{\"type\":\"sociacl-witness-policy-envelope-v1\",\"payload\":\"eyJ0eXBlIjoic29jaWFjbC13aXRuZXNzLXBvbGljeS12MSIsImF1ZGllbmNlIjoicGFub3B0aWNvbi10ZXN0IiwicmV2aXNpb24iOjgsImlzc3VlZEF0IjoxNjk5OTk5OTk5LCJleHBpcmVzQXQiOjE3MDAwMDAxMjAsImp3a3MiOnsia2V5cyI6W3sia2lkIjoia2V5LTIwIiwia3R5IjoiRUMiLCJjcnYiOiJQLTI1NiIsImFsZyI6IkVTMjU2IiwidXNlIjoic2lnIiwia2V5X29wcyI6WyJ2ZXJpZnkiXSwieCI6Imc2QWFrM2c1VzZ1YnpXb0swRHpGYlZibXNaSlFSbHFVb2pUY1RHc28ycG8iLCJ5IjoiZHVTYmJlTDNNalN1YWw2NTFoSzNYSjhpQXJ0cElfVlAtQ1FLcW9iMlFMZyIsIm5vdEJlZm9yZSI6MTY5OTk5OTAwMCwibm90QWZ0ZXIiOjE3MDAwMDEwMDB9XX19\",\"signature\":\"2Ur7rpUP6d2W5vLZtI6Mn2CVUvzNXnTtJyP3vnjvwsJL2zlMVA2n6leMYx2YSmsOCfVZYayZLRaj5ZYuX183qQ\"}"
+      },
+      "reason": "bad-attestation"
+    },
+    {
+      "name": "advance-refuses-omitted-tombstone",
+      "operation": "advance",
+      "input": {
+        "checkpoint": "{\"type\":\"sociacl-witness-checkpoint-envelope-v1\",\"payload\":\"eyJ0eXBlIjoic29jaWFjbC13aXRuZXNzLWNoZWNrcG9pbnQtdjEiLCJhdWRpZW5jZSI6InBhbm9wdGljb24tdGVzdCIsImNsaWVudCI6ImVucm9sbG1lbnQtMSIsImNoYWxsZW5nZSI6Iktpb3FLaW9xS2lvcUtpb3FLaW9xS2lvcUtpb3FLaW9xS2lvcUtpb3FLaW8iLCJyb290RXBvY2giOjEsImlzc3VlZEF0IjoxNjk5OTk5OTk5LCJleHBpcmVzQXQiOjE3MDAwMDAwNjAsInN0YXRlIjp7InR5cGUiOiJzb2NpYWNsLXdpdG5lc3MtcG9saWN5LXN0YXRlLXYxIiwicm9vdCI6IlIzZHBCTUR4ekRxY0NZUzJiM1V3R2wtbWhuancxa3I0dWhxODQwYzRwejQucWdCZTVyVzVWeWhpTVlWbGQyU09nNEd5Z0VRbzFYTV9NdmVIXzNIeF9OdyIsImF1ZGllbmNlIjoicGFub3B0aWNvbi10ZXN0IiwicmV2aXNpb24iOjgsImp3a3MiOnsia2V5cyI6W3sia2lkIjoia2V5LTIwIiwia3R5IjoiRUMiLCJjcnYiOiJQLTI1NiIsImFsZyI6IkVTMjU2IiwidXNlIjoic2lnIiwia2V5X29wcyI6WyJ2ZXJpZnkiXSwieCI6Imc2QWFrM2c1VzZ1YnpXb0swRHpGYlZibXNaSlFSbHFVb2pUY1RHc28ycG8iLCJ5IjoiZHVTYmJlTDNNalN1YWw2NTFoSzNYSjhpQXJ0cElfVlAtQ1FLcW9iMlFMZyIsIm5vdEJlZm9yZSI6MTY5OTk5OTAwMCwibm90QWZ0ZXIiOjE3MDAwMDEwMDB9XX0sImhpc3RvcnkiOlt7Imp3ayI6eyJraWQiOiJrZXktMjAiLCJrdHkiOiJFQyIsImNydiI6IlAtMjU2IiwiYWxnIjoiRVMyNTYiLCJ1c2UiOiJzaWciLCJrZXlfb3BzIjpbInZlcmlmeSJdLCJ4IjoiZzZBYWszZzVXNnVieldvSzBEekZiVmJtc1pKUVJscVVvalRjVEdzbzJwbyIsInkiOiJkdVNiYmVMM01qU3VhbDY1MWhLM1hKOGlBcnRwSV9WUC1DUUtxb2IyUUxnIiwibm90QmVmb3JlIjoxNjk5OTk5MDAwLCJub3RBZnRlciI6MTcwMDAwMTAwMH0sInJlbW92ZWQiOmZhbHNlfV19fQ\",\"signature\":\"cp9B53TB3z8CL5BZL4FhTfAae4byKB5SMO7wSekjty51wtJFfkhl2ddVHvSfwAuZvtipNiVflEfB24lIE8aFzw\"}",
+        "policy": "{\"type\":\"sociacl-witness-policy-envelope-v1\",\"payload\":\"eyJ0eXBlIjoic29jaWFjbC13aXRuZXNzLXBvbGljeS12MSIsImF1ZGllbmNlIjoicGFub3B0aWNvbi10ZXN0IiwicmV2aXNpb24iOjgsImlzc3VlZEF0IjoxNjk5OTk5OTk5LCJleHBpcmVzQXQiOjE3MDAwMDAxMjAsImp3a3MiOnsia2V5cyI6W3sia2lkIjoia2V5LTIwIiwia3R5IjoiRUMiLCJjcnYiOiJQLTI1NiIsImFsZyI6IkVTMjU2IiwidXNlIjoic2lnIiwia2V5X29wcyI6WyJ2ZXJpZnkiXSwieCI6Imc2QWFrM2c1VzZ1YnpXb0swRHpGYlZibXNaSlFSbHFVb2pUY1RHc28ycG8iLCJ5IjoiZHVTYmJlTDNNalN1YWw2NTFoSzNYSjhpQXJ0cElfVlAtQ1FLcW9iMlFMZyIsIm5vdEJlZm9yZSI6MTY5OTk5OTAwMCwibm90QWZ0ZXIiOjE3MDAwMDEwMDB9XX19\",\"signature\":\"2Ur7rpUP6d2W5vLZtI6Mn2CVUvzNXnTtJyP3vnjvwsJL2zlMVA2n6leMYx2YSmsOCfVZYayZLRaj5ZYuX183qQ\"}",
+        "previous": "{\"type\":\"sociacl-witness-policy-state-v1\",\"root\":\"R3dpBMDxzDqcCYS2b3UwGl-mhnjw1kr4uhq840c4pz4.qgBe5rW5VyhiMYVld2SOg4GygEQo1XM_MveH_3Hx_Nw\",\"audience\":\"panopticon-test\",\"revision\":8,\"jwks\":{\"keys\":[{\"kid\":\"key-20\",\"kty\":\"EC\",\"crv\":\"P-256\",\"alg\":\"ES256\",\"use\":\"sig\",\"key_ops\":[\"verify\"],\"x\":\"g6Aak3g5W6ubzWoK0DzFbVbmsZJQRlqUojTcTGso2po\",\"y\":\"duSbbeL3MjSual651hK3XJ8iArtpI_VP-CQKqob2QLg\",\"notBefore\":1699999000,\"notAfter\":1700001000}]},\"history\":[{\"jwk\":{\"kid\":\"key-19\",\"kty\":\"EC\",\"crv\":\"P-256\",\"alg\":\"ES256\",\"use\":\"sig\",\"key_ops\":[\"verify\"],\"x\":\"y20oYRAsDCXOObfBcQjFB3gsRSJXiEiVwfx7dKsD7YM\",\"y\":\"WNdhSyTZ71FcNecQDW1s5KSWcW4w-j4D45FQdSvOzao\",\"notBefore\":1699999000,\"notAfter\":1700001000},\"removed\":true},{\"jwk\":{\"kid\":\"key-20\",\"kty\":\"EC\",\"crv\":\"P-256\",\"alg\":\"ES256\",\"use\":\"sig\",\"key_ops\":[\"verify\"],\"x\":\"g6Aak3g5W6ubzWoK0DzFbVbmsZJQRlqUojTcTGso2po\",\"y\":\"duSbbeL3MjSual651hK3XJ8iArtpI_VP-CQKqob2QLg\",\"notBefore\":1699999000,\"notAfter\":1700001000},\"removed\":false}]}"
+      },
+      "reason": "bad-attestation"
+    },
+    {
+      "name": "advance-refuses-widened-tombstone",
+      "operation": "advance",
+      "input": {
+        "checkpoint": "{\"type\":\"sociacl-witness-checkpoint-envelope-v1\",\"payload\":\"eyJ0eXBlIjoic29jaWFjbC13aXRuZXNzLWNoZWNrcG9pbnQtdjEiLCJhdWRpZW5jZSI6InBhbm9wdGljb24tdGVzdCIsImNsaWVudCI6ImVucm9sbG1lbnQtMSIsImNoYWxsZW5nZSI6Iktpb3FLaW9xS2lvcUtpb3FLaW9xS2lvcUtpb3FLaW9xS2lvcUtpb3FLaW8iLCJyb290RXBvY2giOjEsImlzc3VlZEF0IjoxNjk5OTk5OTk5LCJleHBpcmVzQXQiOjE3MDAwMDAwNjAsInN0YXRlIjp7InR5cGUiOiJzb2NpYWNsLXdpdG5lc3MtcG9saWN5LXN0YXRlLXYxIiwicm9vdCI6IlIzZHBCTUR4ekRxY0NZUzJiM1V3R2wtbWhuancxa3I0dWhxODQwYzRwejQucWdCZTVyVzVWeWhpTVlWbGQyU09nNEd5Z0VRbzFYTV9NdmVIXzNIeF9OdyIsImF1ZGllbmNlIjoicGFub3B0aWNvbi10ZXN0IiwicmV2aXNpb24iOjgsImp3a3MiOnsia2V5cyI6W3sia2lkIjoia2V5LTIwIiwia3R5IjoiRUMiLCJjcnYiOiJQLTI1NiIsImFsZyI6IkVTMjU2IiwidXNlIjoic2lnIiwia2V5X29wcyI6WyJ2ZXJpZnkiXSwieCI6Imc2QWFrM2c1VzZ1YnpXb0swRHpGYlZibXNaSlFSbHFVb2pUY1RHc28ycG8iLCJ5IjoiZHVTYmJlTDNNalN1YWw2NTFoSzNYSjhpQXJ0cElfVlAtQ1FLcW9iMlFMZyIsIm5vdEJlZm9yZSI6MTY5OTk5OTAwMCwibm90QWZ0ZXIiOjE3MDAwMDEwMDB9XX0sImhpc3RvcnkiOlt7Imp3ayI6eyJraWQiOiJrZXktMTkiLCJrdHkiOiJFQyIsImNydiI6IlAtMjU2IiwiYWxnIjoiRVMyNTYiLCJ1c2UiOiJzaWciLCJrZXlfb3BzIjpbInZlcmlmeSJdLCJ4IjoieTIwb1lSQXNEQ1hPT2JmQmNRakZCM2dzUlNKWGlFaVZ3Zng3ZEtzRDdZTSIsInkiOiJXTmRoU3lUWjcxRmNOZWNRRFcxczVLU1djVzR3LWo0RDQ1RlFkU3ZPemFvIiwibm90QmVmb3JlIjoxNjk5OTk5MDAwLCJub3RBZnRlciI6MTcwMDAwMTAwMH0sInJlbW92ZWQiOnRydWV9LHsiandrIjp7ImtpZCI6ImtleS0yMCIsImt0eSI6IkVDIiwiY3J2IjoiUC0yNTYiLCJhbGciOiJFUzI1NiIsInVzZSI6InNpZyIsImtleV9vcHMiOlsidmVyaWZ5Il0sIngiOiJnNkFhazNnNVc2dWJ6V29LMER6RmJWYm1zWkpRUmxxVW9qVGNUR3NvMnBvIiwieSI6ImR1U2JiZUwzTWpTdWFsNjUxaEszWEo4aUFydHBJX1ZQLUNRS3FvYjJRTGciLCJub3RCZWZvcmUiOjE2OTk5OTkwMDAsIm5vdEFmdGVyIjoxNzAwMDAxMDAwfSwicmVtb3ZlZCI6ZmFsc2V9XX19\",\"signature\":\"WbrbIHhyfIQhBRdbocMVeS9vsrbUXsaKtFkMQEwjfGYF3JL97DKptT2ALqpdTigq99bfA6lJLjtxJoSMrWooyA\"}",
+        "policy": "{\"type\":\"sociacl-witness-policy-envelope-v1\",\"payload\":\"eyJ0eXBlIjoic29jaWFjbC13aXRuZXNzLXBvbGljeS12MSIsImF1ZGllbmNlIjoicGFub3B0aWNvbi10ZXN0IiwicmV2aXNpb24iOjgsImlzc3VlZEF0IjoxNjk5OTk5OTk5LCJleHBpcmVzQXQiOjE3MDAwMDAxMjAsImp3a3MiOnsia2V5cyI6W3sia2lkIjoia2V5LTIwIiwia3R5IjoiRUMiLCJjcnYiOiJQLTI1NiIsImFsZyI6IkVTMjU2IiwidXNlIjoic2lnIiwia2V5X29wcyI6WyJ2ZXJpZnkiXSwieCI6Imc2QWFrM2c1VzZ1YnpXb0swRHpGYlZibXNaSlFSbHFVb2pUY1RHc28ycG8iLCJ5IjoiZHVTYmJlTDNNalN1YWw2NTFoSzNYSjhpQXJ0cElfVlAtQ1FLcW9iMlFMZyIsIm5vdEJlZm9yZSI6MTY5OTk5OTAwMCwibm90QWZ0ZXIiOjE3MDAwMDEwMDB9XX19\",\"signature\":\"2Ur7rpUP6d2W5vLZtI6Mn2CVUvzNXnTtJyP3vnjvwsJL2zlMVA2n6leMYx2YSmsOCfVZYayZLRaj5ZYuX183qQ\"}",
+        "previous": "{\"type\":\"sociacl-witness-policy-state-v1\",\"root\":\"R3dpBMDxzDqcCYS2b3UwGl-mhnjw1kr4uhq840c4pz4.qgBe5rW5VyhiMYVld2SOg4GygEQo1XM_MveH_3Hx_Nw\",\"audience\":\"panopticon-test\",\"revision\":8,\"jwks\":{\"keys\":[{\"kid\":\"key-20\",\"kty\":\"EC\",\"crv\":\"P-256\",\"alg\":\"ES256\",\"use\":\"sig\",\"key_ops\":[\"verify\"],\"x\":\"g6Aak3g5W6ubzWoK0DzFbVbmsZJQRlqUojTcTGso2po\",\"y\":\"duSbbeL3MjSual651hK3XJ8iArtpI_VP-CQKqob2QLg\",\"notBefore\":1699999000,\"notAfter\":1700001000}]},\"history\":[{\"jwk\":{\"kid\":\"key-19\",\"kty\":\"EC\",\"crv\":\"P-256\",\"alg\":\"ES256\",\"use\":\"sig\",\"key_ops\":[\"verify\"],\"x\":\"y20oYRAsDCXOObfBcQjFB3gsRSJXiEiVwfx7dKsD7YM\",\"y\":\"WNdhSyTZ71FcNecQDW1s5KSWcW4w-j4D45FQdSvOzao\",\"notBefore\":1699999010,\"notAfter\":1700000990},\"removed\":true},{\"jwk\":{\"kid\":\"key-20\",\"kty\":\"EC\",\"crv\":\"P-256\",\"alg\":\"ES256\",\"use\":\"sig\",\"key_ops\":[\"verify\"],\"x\":\"g6Aak3g5W6ubzWoK0DzFbVbmsZJQRlqUojTcTGso2po\",\"y\":\"duSbbeL3MjSual651hK3XJ8iArtpI_VP-CQKqob2QLg\",\"notBefore\":1699999000,\"notAfter\":1700001000},\"removed\":false}]}"
+      },
+      "reason": "bad-attestation"
+    },
+    {
+      "name": "advance-refuses-dropped-unseen-local-history",
+      "operation": "advance",
+      "input": {
+        "checkpoint": "{\"type\":\"sociacl-witness-checkpoint-envelope-v1\",\"payload\":\"eyJ0eXBlIjoic29jaWFjbC13aXRuZXNzLWNoZWNrcG9pbnQtdjEiLCJhdWRpZW5jZSI6InBhbm9wdGljb24tdGVzdCIsImNsaWVudCI6ImVucm9sbG1lbnQtMSIsImNoYWxsZW5nZSI6Iktpb3FLaW9xS2lvcUtpb3FLaW9xS2lvcUtpb3FLaW9xS2lvcUtpb3FLaW8iLCJyb290RXBvY2giOjEsImlzc3VlZEF0IjoxNjk5OTk5OTk5LCJleHBpcmVzQXQiOjE3MDAwMDAwNjAsInN0YXRlIjp7InR5cGUiOiJzb2NpYWNsLXdpdG5lc3MtcG9saWN5LXN0YXRlLXYxIiwicm9vdCI6IlIzZHBCTUR4ekRxY0NZUzJiM1V3R2wtbWhuancxa3I0dWhxODQwYzRwejQucWdCZTVyVzVWeWhpTVlWbGQyU09nNEd5Z0VRbzFYTV9NdmVIXzNIeF9OdyIsImF1ZGllbmNlIjoicGFub3B0aWNvbi10ZXN0IiwicmV2aXNpb24iOjgsImp3a3MiOnsia2V5cyI6W3sia2lkIjoia2V5LTIwIiwia3R5IjoiRUMiLCJjcnYiOiJQLTI1NiIsImFsZyI6IkVTMjU2IiwidXNlIjoic2lnIiwia2V5X29wcyI6WyJ2ZXJpZnkiXSwieCI6Imc2QWFrM2c1VzZ1YnpXb0swRHpGYlZibXNaSlFSbHFVb2pUY1RHc28ycG8iLCJ5IjoiZHVTYmJlTDNNalN1YWw2NTFoSzNYSjhpQXJ0cElfVlAtQ1FLcW9iMlFMZyIsIm5vdEJlZm9yZSI6MTY5OTk5OTAwMCwibm90QWZ0ZXIiOjE3MDAwMDEwMDB9XX0sImhpc3RvcnkiOlt7Imp3ayI6eyJraWQiOiJrZXktMTkiLCJrdHkiOiJFQyIsImNydiI6IlAtMjU2IiwiYWxnIjoiRVMyNTYiLCJ1c2UiOiJzaWciLCJrZXlfb3BzIjpbInZlcmlmeSJdLCJ4IjoieTIwb1lSQXNEQ1hPT2JmQmNRakZCM2dzUlNKWGlFaVZ3Zng3ZEtzRDdZTSIsInkiOiJXTmRoU3lUWjcxRmNOZWNRRFcxczVLU1djVzR3LWo0RDQ1RlFkU3ZPemFvIiwibm90QmVmb3JlIjoxNjk5OTk5MDAwLCJub3RBZnRlciI6MTcwMDAwMTAwMH0sInJlbW92ZWQiOnRydWV9LHsiandrIjp7ImtpZCI6ImtleS0yMCIsImt0eSI6IkVDIiwiY3J2IjoiUC0yNTYiLCJhbGciOiJFUzI1NiIsInVzZSI6InNpZyIsImtleV9vcHMiOlsidmVyaWZ5Il0sIngiOiJnNkFhazNnNVc2dWJ6V29LMER6RmJWYm1zWkpRUmxxVW9qVGNUR3NvMnBvIiwieSI6ImR1U2JiZUwzTWpTdWFsNjUxaEszWEo4aUFydHBJX1ZQLUNRS3FvYjJRTGciLCJub3RCZWZvcmUiOjE2OTk5OTkwMDAsIm5vdEFmdGVyIjoxNzAwMDAxMDAwfSwicmVtb3ZlZCI6ZmFsc2V9XX19\",\"signature\":\"WbrbIHhyfIQhBRdbocMVeS9vsrbUXsaKtFkMQEwjfGYF3JL97DKptT2ALqpdTigq99bfA6lJLjtxJoSMrWooyA\"}",
+        "policy": "{\"type\":\"sociacl-witness-policy-envelope-v1\",\"payload\":\"eyJ0eXBlIjoic29jaWFjbC13aXRuZXNzLXBvbGljeS12MSIsImF1ZGllbmNlIjoicGFub3B0aWNvbi10ZXN0IiwicmV2aXNpb24iOjgsImlzc3VlZEF0IjoxNjk5OTk5OTk5LCJleHBpcmVzQXQiOjE3MDAwMDAxMjAsImp3a3MiOnsia2V5cyI6W3sia2lkIjoia2V5LTIwIiwia3R5IjoiRUMiLCJjcnYiOiJQLTI1NiIsImFsZyI6IkVTMjU2IiwidXNlIjoic2lnIiwia2V5X29wcyI6WyJ2ZXJpZnkiXSwieCI6Imc2QWFrM2c1VzZ1YnpXb0swRHpGYlZibXNaSlFSbHFVb2pUY1RHc28ycG8iLCJ5IjoiZHVTYmJlTDNNalN1YWw2NTFoSzNYSjhpQXJ0cElfVlAtQ1FLcW9iMlFMZyIsIm5vdEJlZm9yZSI6MTY5OTk5OTAwMCwibm90QWZ0ZXIiOjE3MDAwMDEwMDB9XX19\",\"signature\":\"2Ur7rpUP6d2W5vLZtI6Mn2CVUvzNXnTtJyP3vnjvwsJL2zlMVA2n6leMYx2YSmsOCfVZYayZLRaj5ZYuX183qQ\"}",
+        "previous": "{\"type\":\"sociacl-witness-policy-state-v1\",\"root\":\"R3dpBMDxzDqcCYS2b3UwGl-mhnjw1kr4uhq840c4pz4.qgBe5rW5VyhiMYVld2SOg4GygEQo1XM_MveH_3Hx_Nw\",\"audience\":\"panopticon-test\",\"revision\":8,\"jwks\":{\"keys\":[{\"kid\":\"key-20\",\"kty\":\"EC\",\"crv\":\"P-256\",\"alg\":\"ES256\",\"use\":\"sig\",\"key_ops\":[\"verify\"],\"x\":\"g6Aak3g5W6ubzWoK0DzFbVbmsZJQRlqUojTcTGso2po\",\"y\":\"duSbbeL3MjSual651hK3XJ8iArtpI_VP-CQKqob2QLg\",\"notBefore\":1699999000,\"notAfter\":1700001000}]},\"history\":[{\"jwk\":{\"kid\":\"key-19\",\"kty\":\"EC\",\"crv\":\"P-256\",\"alg\":\"ES256\",\"use\":\"sig\",\"key_ops\":[\"verify\"],\"x\":\"y20oYRAsDCXOObfBcQjFB3gsRSJXiEiVwfx7dKsD7YM\",\"y\":\"WNdhSyTZ71FcNecQDW1s5KSWcW4w-j4D45FQdSvOzao\",\"notBefore\":1699999000,\"notAfter\":1700001000},\"removed\":true},{\"jwk\":{\"kid\":\"key-20\",\"kty\":\"EC\",\"crv\":\"P-256\",\"alg\":\"ES256\",\"use\":\"sig\",\"key_ops\":[\"verify\"],\"x\":\"g6Aak3g5W6ubzWoK0DzFbVbmsZJQRlqUojTcTGso2po\",\"y\":\"duSbbeL3MjSual651hK3XJ8iArtpI_VP-CQKqob2QLg\",\"notBefore\":1699999000,\"notAfter\":1700001000},\"removed\":false},{\"jwk\":{\"kid\":\"key-21\",\"kty\":\"EC\",\"crv\":\"P-256\",\"alg\":\"ES256\",\"use\":\"sig\",\"key_ops\":[\"verify\"],\"x\":\"MlD89oZjfHsuSshutHO8pTpYITn0KxUj_XY2Tmc5noM\",\"y\":\"QufDQmZ9NZOXswkNHX64jIl808M7VmqCFd4koHHUjAk\",\"notBefore\":1699999000,\"notAfter\":1700001000},\"removed\":true}]}"
+      },
+      "reason": "bad-attestation"
+    },
+    {
+      "name": "advance-refuses-removed-key-resurrection",
+      "operation": "advance",
+      "input": {
+        "checkpoint": "{\"type\":\"sociacl-witness-checkpoint-envelope-v1\",\"payload\":\"eyJ0eXBlIjoic29jaWFjbC13aXRuZXNzLWNoZWNrcG9pbnQtdjEiLCJhdWRpZW5jZSI6InBhbm9wdGljb24tdGVzdCIsImNsaWVudCI6ImVucm9sbG1lbnQtMSIsImNoYWxsZW5nZSI6Iktpb3FLaW9xS2lvcUtpb3FLaW9xS2lvcUtpb3FLaW9xS2lvcUtpb3FLaW8iLCJyb290RXBvY2giOjEsImlzc3VlZEF0IjoxNjk5OTk5OTk5LCJleHBpcmVzQXQiOjE3MDAwMDAwNjAsInN0YXRlIjp7InR5cGUiOiJzb2NpYWNsLXdpdG5lc3MtcG9saWN5LXN0YXRlLXYxIiwicm9vdCI6IlIzZHBCTUR4ekRxY0NZUzJiM1V3R2wtbWhuancxa3I0dWhxODQwYzRwejQucWdCZTVyVzVWeWhpTVlWbGQyU09nNEd5Z0VRbzFYTV9NdmVIXzNIeF9OdyIsImF1ZGllbmNlIjoicGFub3B0aWNvbi10ZXN0IiwicmV2aXNpb24iOjgsImp3a3MiOnsia2V5cyI6W3sia2lkIjoia2V5LTIwIiwia3R5IjoiRUMiLCJjcnYiOiJQLTI1NiIsImFsZyI6IkVTMjU2IiwidXNlIjoic2lnIiwia2V5X29wcyI6WyJ2ZXJpZnkiXSwieCI6Imc2QWFrM2c1VzZ1YnpXb0swRHpGYlZibXNaSlFSbHFVb2pUY1RHc28ycG8iLCJ5IjoiZHVTYmJlTDNNalN1YWw2NTFoSzNYSjhpQXJ0cElfVlAtQ1FLcW9iMlFMZyIsIm5vdEJlZm9yZSI6MTY5OTk5OTAwMCwibm90QWZ0ZXIiOjE3MDAwMDEwMDB9XX0sImhpc3RvcnkiOlt7Imp3ayI6eyJraWQiOiJrZXktMTkiLCJrdHkiOiJFQyIsImNydiI6IlAtMjU2IiwiYWxnIjoiRVMyNTYiLCJ1c2UiOiJzaWciLCJrZXlfb3BzIjpbInZlcmlmeSJdLCJ4IjoieTIwb1lSQXNEQ1hPT2JmQmNRakZCM2dzUlNKWGlFaVZ3Zng3ZEtzRDdZTSIsInkiOiJXTmRoU3lUWjcxRmNOZWNRRFcxczVLU1djVzR3LWo0RDQ1RlFkU3ZPemFvIiwibm90QmVmb3JlIjoxNjk5OTk5MDAwLCJub3RBZnRlciI6MTcwMDAwMTAwMH0sInJlbW92ZWQiOnRydWV9LHsiandrIjp7ImtpZCI6ImtleS0yMCIsImt0eSI6IkVDIiwiY3J2IjoiUC0yNTYiLCJhbGciOiJFUzI1NiIsInVzZSI6InNpZyIsImtleV9vcHMiOlsidmVyaWZ5Il0sIngiOiJnNkFhazNnNVc2dWJ6V29LMER6RmJWYm1zWkpRUmxxVW9qVGNUR3NvMnBvIiwieSI6ImR1U2JiZUwzTWpTdWFsNjUxaEszWEo4aUFydHBJX1ZQLUNRS3FvYjJRTGciLCJub3RCZWZvcmUiOjE2OTk5OTkwMDAsIm5vdEFmdGVyIjoxNzAwMDAxMDAwfSwicmVtb3ZlZCI6ZmFsc2V9XX19\",\"signature\":\"WbrbIHhyfIQhBRdbocMVeS9vsrbUXsaKtFkMQEwjfGYF3JL97DKptT2ALqpdTigq99bfA6lJLjtxJoSMrWooyA\"}",
+        "policy": "{\"type\":\"sociacl-witness-policy-envelope-v1\",\"payload\":\"eyJ0eXBlIjoic29jaWFjbC13aXRuZXNzLXBvbGljeS12MSIsImF1ZGllbmNlIjoicGFub3B0aWNvbi10ZXN0IiwicmV2aXNpb24iOjgsImlzc3VlZEF0IjoxNjk5OTk5OTk5LCJleHBpcmVzQXQiOjE3MDAwMDAxMjAsImp3a3MiOnsia2V5cyI6W3sia2lkIjoia2V5LTIwIiwia3R5IjoiRUMiLCJjcnYiOiJQLTI1NiIsImFsZyI6IkVTMjU2IiwidXNlIjoic2lnIiwia2V5X29wcyI6WyJ2ZXJpZnkiXSwieCI6Imc2QWFrM2c1VzZ1YnpXb0swRHpGYlZibXNaSlFSbHFVb2pUY1RHc28ycG8iLCJ5IjoiZHVTYmJlTDNNalN1YWw2NTFoSzNYSjhpQXJ0cElfVlAtQ1FLcW9iMlFMZyIsIm5vdEJlZm9yZSI6MTY5OTk5OTAwMCwibm90QWZ0ZXIiOjE3MDAwMDEwMDB9XX19\",\"signature\":\"2Ur7rpUP6d2W5vLZtI6Mn2CVUvzNXnTtJyP3vnjvwsJL2zlMVA2n6leMYx2YSmsOCfVZYayZLRaj5ZYuX183qQ\"}",
+        "previous": "{\"type\":\"sociacl-witness-policy-state-v1\",\"root\":\"R3dpBMDxzDqcCYS2b3UwGl-mhnjw1kr4uhq840c4pz4.qgBe5rW5VyhiMYVld2SOg4GygEQo1XM_MveH_3Hx_Nw\",\"audience\":\"panopticon-test\",\"revision\":7,\"jwks\":{\"keys\":[]},\"history\":[{\"jwk\":{\"kid\":\"key-19\",\"kty\":\"EC\",\"crv\":\"P-256\",\"alg\":\"ES256\",\"use\":\"sig\",\"key_ops\":[\"verify\"],\"x\":\"y20oYRAsDCXOObfBcQjFB3gsRSJXiEiVwfx7dKsD7YM\",\"y\":\"WNdhSyTZ71FcNecQDW1s5KSWcW4w-j4D45FQdSvOzao\",\"notBefore\":1699999000,\"notAfter\":1700001000},\"removed\":true},{\"jwk\":{\"kid\":\"key-20\",\"kty\":\"EC\",\"crv\":\"P-256\",\"alg\":\"ES256\",\"use\":\"sig\",\"key_ops\":[\"verify\"],\"x\":\"g6Aak3g5W6ubzWoK0DzFbVbmsZJQRlqUojTcTGso2po\",\"y\":\"duSbbeL3MjSual651hK3XJ8iArtpI_VP-CQKqob2QLg\",\"notBefore\":1699999000,\"notAfter\":1700001000},\"removed\":true}]}"
+      },
+      "reason": "bad-attestation"
+    },
+    {
+      "name": "advance-refuses-local-revision-rollback",
+      "operation": "advance",
+      "input": {
+        "checkpoint": "{\"type\":\"sociacl-witness-checkpoint-envelope-v1\",\"payload\":\"eyJ0eXBlIjoic29jaWFjbC13aXRuZXNzLWNoZWNrcG9pbnQtdjEiLCJhdWRpZW5jZSI6InBhbm9wdGljb24tdGVzdCIsImNsaWVudCI6ImVucm9sbG1lbnQtMSIsImNoYWxsZW5nZSI6Iktpb3FLaW9xS2lvcUtpb3FLaW9xS2lvcUtpb3FLaW9xS2lvcUtpb3FLaW8iLCJyb290RXBvY2giOjEsImlzc3VlZEF0IjoxNjk5OTk5OTk5LCJleHBpcmVzQXQiOjE3MDAwMDAwNjAsInN0YXRlIjp7InR5cGUiOiJzb2NpYWNsLXdpdG5lc3MtcG9saWN5LXN0YXRlLXYxIiwicm9vdCI6IlIzZHBCTUR4ekRxY0NZUzJiM1V3R2wtbWhuancxa3I0dWhxODQwYzRwejQucWdCZTVyVzVWeWhpTVlWbGQyU09nNEd5Z0VRbzFYTV9NdmVIXzNIeF9OdyIsImF1ZGllbmNlIjoicGFub3B0aWNvbi10ZXN0IiwicmV2aXNpb24iOjgsImp3a3MiOnsia2V5cyI6W3sia2lkIjoia2V5LTIwIiwia3R5IjoiRUMiLCJjcnYiOiJQLTI1NiIsImFsZyI6IkVTMjU2IiwidXNlIjoic2lnIiwia2V5X29wcyI6WyJ2ZXJpZnkiXSwieCI6Imc2QWFrM2c1VzZ1YnpXb0swRHpGYlZibXNaSlFSbHFVb2pUY1RHc28ycG8iLCJ5IjoiZHVTYmJlTDNNalN1YWw2NTFoSzNYSjhpQXJ0cElfVlAtQ1FLcW9iMlFMZyIsIm5vdEJlZm9yZSI6MTY5OTk5OTAwMCwibm90QWZ0ZXIiOjE3MDAwMDEwMDB9XX0sImhpc3RvcnkiOlt7Imp3ayI6eyJraWQiOiJrZXktMTkiLCJrdHkiOiJFQyIsImNydiI6IlAtMjU2IiwiYWxnIjoiRVMyNTYiLCJ1c2UiOiJzaWciLCJrZXlfb3BzIjpbInZlcmlmeSJdLCJ4IjoieTIwb1lSQXNEQ1hPT2JmQmNRakZCM2dzUlNKWGlFaVZ3Zng3ZEtzRDdZTSIsInkiOiJXTmRoU3lUWjcxRmNOZWNRRFcxczVLU1djVzR3LWo0RDQ1RlFkU3ZPemFvIiwibm90QmVmb3JlIjoxNjk5OTk5MDAwLCJub3RBZnRlciI6MTcwMDAwMTAwMH0sInJlbW92ZWQiOnRydWV9LHsiandrIjp7ImtpZCI6ImtleS0yMCIsImt0eSI6IkVDIiwiY3J2IjoiUC0yNTYiLCJhbGciOiJFUzI1NiIsInVzZSI6InNpZyIsImtleV9vcHMiOlsidmVyaWZ5Il0sIngiOiJnNkFhazNnNVc2dWJ6V29LMER6RmJWYm1zWkpRUmxxVW9qVGNUR3NvMnBvIiwieSI6ImR1U2JiZUwzTWpTdWFsNjUxaEszWEo4aUFydHBJX1ZQLUNRS3FvYjJRTGciLCJub3RCZWZvcmUiOjE2OTk5OTkwMDAsIm5vdEFmdGVyIjoxNzAwMDAxMDAwfSwicmVtb3ZlZCI6ZmFsc2V9XX19\",\"signature\":\"WbrbIHhyfIQhBRdbocMVeS9vsrbUXsaKtFkMQEwjfGYF3JL97DKptT2ALqpdTigq99bfA6lJLjtxJoSMrWooyA\"}",
+        "policy": "{\"type\":\"sociacl-witness-policy-envelope-v1\",\"payload\":\"eyJ0eXBlIjoic29jaWFjbC13aXRuZXNzLXBvbGljeS12MSIsImF1ZGllbmNlIjoicGFub3B0aWNvbi10ZXN0IiwicmV2aXNpb24iOjgsImlzc3VlZEF0IjoxNjk5OTk5OTk5LCJleHBpcmVzQXQiOjE3MDAwMDAxMjAsImp3a3MiOnsia2V5cyI6W3sia2lkIjoia2V5LTIwIiwia3R5IjoiRUMiLCJjcnYiOiJQLTI1NiIsImFsZyI6IkVTMjU2IiwidXNlIjoic2lnIiwia2V5X29wcyI6WyJ2ZXJpZnkiXSwieCI6Imc2QWFrM2c1VzZ1YnpXb0swRHpGYlZibXNaSlFSbHFVb2pUY1RHc28ycG8iLCJ5IjoiZHVTYmJlTDNNalN1YWw2NTFoSzNYSjhpQXJ0cElfVlAtQ1FLcW9iMlFMZyIsIm5vdEJlZm9yZSI6MTY5OTk5OTAwMCwibm90QWZ0ZXIiOjE3MDAwMDEwMDB9XX19\",\"signature\":\"2Ur7rpUP6d2W5vLZtI6Mn2CVUvzNXnTtJyP3vnjvwsJL2zlMVA2n6leMYx2YSmsOCfVZYayZLRaj5ZYuX183qQ\"}",
+        "previous": "{\"type\":\"sociacl-witness-policy-state-v1\",\"root\":\"R3dpBMDxzDqcCYS2b3UwGl-mhnjw1kr4uhq840c4pz4.qgBe5rW5VyhiMYVld2SOg4GygEQo1XM_MveH_3Hx_Nw\",\"audience\":\"panopticon-test\",\"revision\":9,\"jwks\":{\"keys\":[{\"kid\":\"key-20\",\"kty\":\"EC\",\"crv\":\"P-256\",\"alg\":\"ES256\",\"use\":\"sig\",\"key_ops\":[\"verify\"],\"x\":\"g6Aak3g5W6ubzWoK0DzFbVbmsZJQRlqUojTcTGso2po\",\"y\":\"duSbbeL3MjSual651hK3XJ8iArtpI_VP-CQKqob2QLg\",\"notBefore\":1699999000,\"notAfter\":1700001000}]},\"history\":[{\"jwk\":{\"kid\":\"key-19\",\"kty\":\"EC\",\"crv\":\"P-256\",\"alg\":\"ES256\",\"use\":\"sig\",\"key_ops\":[\"verify\"],\"x\":\"y20oYRAsDCXOObfBcQjFB3gsRSJXiEiVwfx7dKsD7YM\",\"y\":\"WNdhSyTZ71FcNecQDW1s5KSWcW4w-j4D45FQdSvOzao\",\"notBefore\":1699999000,\"notAfter\":1700001000},\"removed\":true},{\"jwk\":{\"kid\":\"key-20\",\"kty\":\"EC\",\"crv\":\"P-256\",\"alg\":\"ES256\",\"use\":\"sig\",\"key_ops\":[\"verify\"],\"x\":\"g6Aak3g5W6ubzWoK0DzFbVbmsZJQRlqUojTcTGso2po\",\"y\":\"duSbbeL3MjSual651hK3XJ8iArtpI_VP-CQKqob2QLg\",\"notBefore\":1699999000,\"notAfter\":1700001000},\"removed\":false}]}"
+      },
+      "reason": "bad-attestation"
+    },
+    {
+      "name": "advance-refuses-conflicting-same-revision",
+      "operation": "advance",
+      "input": {
+        "checkpoint": "{\"type\":\"sociacl-witness-checkpoint-envelope-v1\",\"payload\":\"eyJ0eXBlIjoic29jaWFjbC13aXRuZXNzLWNoZWNrcG9pbnQtdjEiLCJhdWRpZW5jZSI6InBhbm9wdGljb24tdGVzdCIsImNsaWVudCI6ImVucm9sbG1lbnQtMSIsImNoYWxsZW5nZSI6Iktpb3FLaW9xS2lvcUtpb3FLaW9xS2lvcUtpb3FLaW9xS2lvcUtpb3FLaW8iLCJyb290RXBvY2giOjEsImlzc3VlZEF0IjoxNjk5OTk5OTk5LCJleHBpcmVzQXQiOjE3MDAwMDAwNjAsInN0YXRlIjp7InR5cGUiOiJzb2NpYWNsLXdpdG5lc3MtcG9saWN5LXN0YXRlLXYxIiwicm9vdCI6IlIzZHBCTUR4ekRxY0NZUzJiM1V3R2wtbWhuancxa3I0dWhxODQwYzRwejQucWdCZTVyVzVWeWhpTVlWbGQyU09nNEd5Z0VRbzFYTV9NdmVIXzNIeF9OdyIsImF1ZGllbmNlIjoicGFub3B0aWNvbi10ZXN0IiwicmV2aXNpb24iOjgsImp3a3MiOnsia2V5cyI6W3sia2lkIjoia2V5LTIwIiwia3R5IjoiRUMiLCJjcnYiOiJQLTI1NiIsImFsZyI6IkVTMjU2IiwidXNlIjoic2lnIiwia2V5X29wcyI6WyJ2ZXJpZnkiXSwieCI6Imc2QWFrM2c1VzZ1YnpXb0swRHpGYlZibXNaSlFSbHFVb2pUY1RHc28ycG8iLCJ5IjoiZHVTYmJlTDNNalN1YWw2NTFoSzNYSjhpQXJ0cElfVlAtQ1FLcW9iMlFMZyIsIm5vdEJlZm9yZSI6MTY5OTk5OTAwMCwibm90QWZ0ZXIiOjE3MDAwMDEwMDB9XX0sImhpc3RvcnkiOlt7Imp3ayI6eyJraWQiOiJrZXktMTkiLCJrdHkiOiJFQyIsImNydiI6IlAtMjU2IiwiYWxnIjoiRVMyNTYiLCJ1c2UiOiJzaWciLCJrZXlfb3BzIjpbInZlcmlmeSJdLCJ4IjoieTIwb1lSQXNEQ1hPT2JmQmNRakZCM2dzUlNKWGlFaVZ3Zng3ZEtzRDdZTSIsInkiOiJXTmRoU3lUWjcxRmNOZWNRRFcxczVLU1djVzR3LWo0RDQ1RlFkU3ZPemFvIiwibm90QmVmb3JlIjoxNjk5OTk5MDAwLCJub3RBZnRlciI6MTcwMDAwMTAwMH0sInJlbW92ZWQiOnRydWV9LHsiandrIjp7ImtpZCI6ImtleS0yMCIsImt0eSI6IkVDIiwiY3J2IjoiUC0yNTYiLCJhbGciOiJFUzI1NiIsInVzZSI6InNpZyIsImtleV9vcHMiOlsidmVyaWZ5Il0sIngiOiJnNkFhazNnNVc2dWJ6V29LMER6RmJWYm1zWkpRUmxxVW9qVGNUR3NvMnBvIiwieSI6ImR1U2JiZUwzTWpTdWFsNjUxaEszWEo4aUFydHBJX1ZQLUNRS3FvYjJRTGciLCJub3RCZWZvcmUiOjE2OTk5OTkwMDAsIm5vdEFmdGVyIjoxNzAwMDAxMDAwfSwicmVtb3ZlZCI6ZmFsc2V9XX19\",\"signature\":\"WbrbIHhyfIQhBRdbocMVeS9vsrbUXsaKtFkMQEwjfGYF3JL97DKptT2ALqpdTigq99bfA6lJLjtxJoSMrWooyA\"}",
+        "policy": "{\"type\":\"sociacl-witness-policy-envelope-v1\",\"payload\":\"eyJ0eXBlIjoic29jaWFjbC13aXRuZXNzLXBvbGljeS12MSIsImF1ZGllbmNlIjoicGFub3B0aWNvbi10ZXN0IiwicmV2aXNpb24iOjgsImlzc3VlZEF0IjoxNjk5OTk5OTk5LCJleHBpcmVzQXQiOjE3MDAwMDAxMjAsImp3a3MiOnsia2V5cyI6W3sia2lkIjoia2V5LTIwIiwia3R5IjoiRUMiLCJjcnYiOiJQLTI1NiIsImFsZyI6IkVTMjU2IiwidXNlIjoic2lnIiwia2V5X29wcyI6WyJ2ZXJpZnkiXSwieCI6Imc2QWFrM2c1VzZ1YnpXb0swRHpGYlZibXNaSlFSbHFVb2pUY1RHc28ycG8iLCJ5IjoiZHVTYmJlTDNNalN1YWw2NTFoSzNYSjhpQXJ0cElfVlAtQ1FLcW9iMlFMZyIsIm5vdEJlZm9yZSI6MTY5OTk5OTAwMCwibm90QWZ0ZXIiOjE3MDAwMDEwMDB9XX19\",\"signature\":\"2Ur7rpUP6d2W5vLZtI6Mn2CVUvzNXnTtJyP3vnjvwsJL2zlMVA2n6leMYx2YSmsOCfVZYayZLRaj5ZYuX183qQ\"}",
+        "previous": "{\"type\":\"sociacl-witness-policy-state-v1\",\"root\":\"R3dpBMDxzDqcCYS2b3UwGl-mhnjw1kr4uhq840c4pz4.qgBe5rW5VyhiMYVld2SOg4GygEQo1XM_MveH_3Hx_Nw\",\"audience\":\"panopticon-test\",\"revision\":8,\"jwks\":{\"keys\":[{\"kid\":\"key-19\",\"kty\":\"EC\",\"crv\":\"P-256\",\"alg\":\"ES256\",\"use\":\"sig\",\"key_ops\":[\"verify\"],\"x\":\"y20oYRAsDCXOObfBcQjFB3gsRSJXiEiVwfx7dKsD7YM\",\"y\":\"WNdhSyTZ71FcNecQDW1s5KSWcW4w-j4D45FQdSvOzao\",\"notBefore\":1699999000,\"notAfter\":1700001000}]},\"history\":[{\"jwk\":{\"kid\":\"key-19\",\"kty\":\"EC\",\"crv\":\"P-256\",\"alg\":\"ES256\",\"use\":\"sig\",\"key_ops\":[\"verify\"],\"x\":\"y20oYRAsDCXOObfBcQjFB3gsRSJXiEiVwfx7dKsD7YM\",\"y\":\"WNdhSyTZ71FcNecQDW1s5KSWcW4w-j4D45FQdSvOzao\",\"notBefore\":1699999000,\"notAfter\":1700001000},\"removed\":false}]}"
+      },
+      "reason": "bad-attestation"
+    },
+    {
+      "name": "advance-refuses-local-root-change",
+      "operation": "advance",
+      "input": {
+        "checkpoint": "{\"type\":\"sociacl-witness-checkpoint-envelope-v1\",\"payload\":\"eyJ0eXBlIjoic29jaWFjbC13aXRuZXNzLWNoZWNrcG9pbnQtdjEiLCJhdWRpZW5jZSI6InBhbm9wdGljb24tdGVzdCIsImNsaWVudCI6ImVucm9sbG1lbnQtMSIsImNoYWxsZW5nZSI6Iktpb3FLaW9xS2lvcUtpb3FLaW9xS2lvcUtpb3FLaW9xS2lvcUtpb3FLaW8iLCJyb290RXBvY2giOjEsImlzc3VlZEF0IjoxNjk5OTk5OTk5LCJleHBpcmVzQXQiOjE3MDAwMDAwNjAsInN0YXRlIjp7InR5cGUiOiJzb2NpYWNsLXdpdG5lc3MtcG9saWN5LXN0YXRlLXYxIiwicm9vdCI6IlIzZHBCTUR4ekRxY0NZUzJiM1V3R2wtbWhuancxa3I0dWhxODQwYzRwejQucWdCZTVyVzVWeWhpTVlWbGQyU09nNEd5Z0VRbzFYTV9NdmVIXzNIeF9OdyIsImF1ZGllbmNlIjoicGFub3B0aWNvbi10ZXN0IiwicmV2aXNpb24iOjgsImp3a3MiOnsia2V5cyI6W3sia2lkIjoia2V5LTIwIiwia3R5IjoiRUMiLCJjcnYiOiJQLTI1NiIsImFsZyI6IkVTMjU2IiwidXNlIjoic2lnIiwia2V5X29wcyI6WyJ2ZXJpZnkiXSwieCI6Imc2QWFrM2c1VzZ1YnpXb0swRHpGYlZibXNaSlFSbHFVb2pUY1RHc28ycG8iLCJ5IjoiZHVTYmJlTDNNalN1YWw2NTFoSzNYSjhpQXJ0cElfVlAtQ1FLcW9iMlFMZyIsIm5vdEJlZm9yZSI6MTY5OTk5OTAwMCwibm90QWZ0ZXIiOjE3MDAwMDEwMDB9XX0sImhpc3RvcnkiOlt7Imp3ayI6eyJraWQiOiJrZXktMTkiLCJrdHkiOiJFQyIsImNydiI6IlAtMjU2IiwiYWxnIjoiRVMyNTYiLCJ1c2UiOiJzaWciLCJrZXlfb3BzIjpbInZlcmlmeSJdLCJ4IjoieTIwb1lSQXNEQ1hPT2JmQmNRakZCM2dzUlNKWGlFaVZ3Zng3ZEtzRDdZTSIsInkiOiJXTmRoU3lUWjcxRmNOZWNRRFcxczVLU1djVzR3LWo0RDQ1RlFkU3ZPemFvIiwibm90QmVmb3JlIjoxNjk5OTk5MDAwLCJub3RBZnRlciI6MTcwMDAwMTAwMH0sInJlbW92ZWQiOnRydWV9LHsiandrIjp7ImtpZCI6ImtleS0yMCIsImt0eSI6IkVDIiwiY3J2IjoiUC0yNTYiLCJhbGciOiJFUzI1NiIsInVzZSI6InNpZyIsImtleV9vcHMiOlsidmVyaWZ5Il0sIngiOiJnNkFhazNnNVc2dWJ6V29LMER6RmJWYm1zWkpRUmxxVW9qVGNUR3NvMnBvIiwieSI6ImR1U2JiZUwzTWpTdWFsNjUxaEszWEo4aUFydHBJX1ZQLUNRS3FvYjJRTGciLCJub3RCZWZvcmUiOjE2OTk5OTkwMDAsIm5vdEFmdGVyIjoxNzAwMDAxMDAwfSwicmVtb3ZlZCI6ZmFsc2V9XX19\",\"signature\":\"WbrbIHhyfIQhBRdbocMVeS9vsrbUXsaKtFkMQEwjfGYF3JL97DKptT2ALqpdTigq99bfA6lJLjtxJoSMrWooyA\"}",
+        "policy": "{\"type\":\"sociacl-witness-policy-envelope-v1\",\"payload\":\"eyJ0eXBlIjoic29jaWFjbC13aXRuZXNzLXBvbGljeS12MSIsImF1ZGllbmNlIjoicGFub3B0aWNvbi10ZXN0IiwicmV2aXNpb24iOjgsImlzc3VlZEF0IjoxNjk5OTk5OTk5LCJleHBpcmVzQXQiOjE3MDAwMDAxMjAsImp3a3MiOnsia2V5cyI6W3sia2lkIjoia2V5LTIwIiwia3R5IjoiRUMiLCJjcnYiOiJQLTI1NiIsImFsZyI6IkVTMjU2IiwidXNlIjoic2lnIiwia2V5X29wcyI6WyJ2ZXJpZnkiXSwieCI6Imc2QWFrM2c1VzZ1YnpXb0swRHpGYlZibXNaSlFSbHFVb2pUY1RHc28ycG8iLCJ5IjoiZHVTYmJlTDNNalN1YWw2NTFoSzNYSjhpQXJ0cElfVlAtQ1FLcW9iMlFMZyIsIm5vdEJlZm9yZSI6MTY5OTk5OTAwMCwibm90QWZ0ZXIiOjE3MDAwMDEwMDB9XX19\",\"signature\":\"2Ur7rpUP6d2W5vLZtI6Mn2CVUvzNXnTtJyP3vnjvwsJL2zlMVA2n6leMYx2YSmsOCfVZYayZLRaj5ZYuX183qQ\"}",
+        "previous": "{\"type\":\"sociacl-witness-policy-state-v1\",\"root\":\"MlD89oZjfHsuSshutHO8pTpYITn0KxUj_XY2Tmc5noM.QufDQmZ9NZOXswkNHX64jIl808M7VmqCFd4koHHUjAk\",\"audience\":\"panopticon-test\",\"revision\":8,\"jwks\":{\"keys\":[{\"kid\":\"key-20\",\"kty\":\"EC\",\"crv\":\"P-256\",\"alg\":\"ES256\",\"use\":\"sig\",\"key_ops\":[\"verify\"],\"x\":\"g6Aak3g5W6ubzWoK0DzFbVbmsZJQRlqUojTcTGso2po\",\"y\":\"duSbbeL3MjSual651hK3XJ8iArtpI_VP-CQKqob2QLg\",\"notBefore\":1699999000,\"notAfter\":1700001000}]},\"history\":[{\"jwk\":{\"kid\":\"key-19\",\"kty\":\"EC\",\"crv\":\"P-256\",\"alg\":\"ES256\",\"use\":\"sig\",\"key_ops\":[\"verify\"],\"x\":\"y20oYRAsDCXOObfBcQjFB3gsRSJXiEiVwfx7dKsD7YM\",\"y\":\"WNdhSyTZ71FcNecQDW1s5KSWcW4w-j4D45FQdSvOzao\",\"notBefore\":1699999000,\"notAfter\":1700001000},\"removed\":true},{\"jwk\":{\"kid\":\"key-20\",\"kty\":\"EC\",\"crv\":\"P-256\",\"alg\":\"ES256\",\"use\":\"sig\",\"key_ops\":[\"verify\"],\"x\":\"g6Aak3g5W6ubzWoK0DzFbVbmsZJQRlqUojTcTGso2po\",\"y\":\"duSbbeL3MjSual651hK3XJ8iArtpI_VP-CQKqob2QLg\",\"notBefore\":1699999000,\"notAfter\":1700001000},\"removed\":false}]}"
+      },
+      "reason": "bad-attestation"
+    },
+    {
+      "name": "advance-refuses-local-audience-change",
+      "operation": "advance",
+      "input": {
+        "checkpoint": "{\"type\":\"sociacl-witness-checkpoint-envelope-v1\",\"payload\":\"eyJ0eXBlIjoic29jaWFjbC13aXRuZXNzLWNoZWNrcG9pbnQtdjEiLCJhdWRpZW5jZSI6InBhbm9wdGljb24tdGVzdCIsImNsaWVudCI6ImVucm9sbG1lbnQtMSIsImNoYWxsZW5nZSI6Iktpb3FLaW9xS2lvcUtpb3FLaW9xS2lvcUtpb3FLaW9xS2lvcUtpb3FLaW8iLCJyb290RXBvY2giOjEsImlzc3VlZEF0IjoxNjk5OTk5OTk5LCJleHBpcmVzQXQiOjE3MDAwMDAwNjAsInN0YXRlIjp7InR5cGUiOiJzb2NpYWNsLXdpdG5lc3MtcG9saWN5LXN0YXRlLXYxIiwicm9vdCI6IlIzZHBCTUR4ekRxY0NZUzJiM1V3R2wtbWhuancxa3I0dWhxODQwYzRwejQucWdCZTVyVzVWeWhpTVlWbGQyU09nNEd5Z0VRbzFYTV9NdmVIXzNIeF9OdyIsImF1ZGllbmNlIjoicGFub3B0aWNvbi10ZXN0IiwicmV2aXNpb24iOjgsImp3a3MiOnsia2V5cyI6W3sia2lkIjoia2V5LTIwIiwia3R5IjoiRUMiLCJjcnYiOiJQLTI1NiIsImFsZyI6IkVTMjU2IiwidXNlIjoic2lnIiwia2V5X29wcyI6WyJ2ZXJpZnkiXSwieCI6Imc2QWFrM2c1VzZ1YnpXb0swRHpGYlZibXNaSlFSbHFVb2pUY1RHc28ycG8iLCJ5IjoiZHVTYmJlTDNNalN1YWw2NTFoSzNYSjhpQXJ0cElfVlAtQ1FLcW9iMlFMZyIsIm5vdEJlZm9yZSI6MTY5OTk5OTAwMCwibm90QWZ0ZXIiOjE3MDAwMDEwMDB9XX0sImhpc3RvcnkiOlt7Imp3ayI6eyJraWQiOiJrZXktMTkiLCJrdHkiOiJFQyIsImNydiI6IlAtMjU2IiwiYWxnIjoiRVMyNTYiLCJ1c2UiOiJzaWciLCJrZXlfb3BzIjpbInZlcmlmeSJdLCJ4IjoieTIwb1lSQXNEQ1hPT2JmQmNRakZCM2dzUlNKWGlFaVZ3Zng3ZEtzRDdZTSIsInkiOiJXTmRoU3lUWjcxRmNOZWNRRFcxczVLU1djVzR3LWo0RDQ1RlFkU3ZPemFvIiwibm90QmVmb3JlIjoxNjk5OTk5MDAwLCJub3RBZnRlciI6MTcwMDAwMTAwMH0sInJlbW92ZWQiOnRydWV9LHsiandrIjp7ImtpZCI6ImtleS0yMCIsImt0eSI6IkVDIiwiY3J2IjoiUC0yNTYiLCJhbGciOiJFUzI1NiIsInVzZSI6InNpZyIsImtleV9vcHMiOlsidmVyaWZ5Il0sIngiOiJnNkFhazNnNVc2dWJ6V29LMER6RmJWYm1zWkpRUmxxVW9qVGNUR3NvMnBvIiwieSI6ImR1U2JiZUwzTWpTdWFsNjUxaEszWEo4aUFydHBJX1ZQLUNRS3FvYjJRTGciLCJub3RCZWZvcmUiOjE2OTk5OTkwMDAsIm5vdEFmdGVyIjoxNzAwMDAxMDAwfSwicmVtb3ZlZCI6ZmFsc2V9XX19\",\"signature\":\"WbrbIHhyfIQhBRdbocMVeS9vsrbUXsaKtFkMQEwjfGYF3JL97DKptT2ALqpdTigq99bfA6lJLjtxJoSMrWooyA\"}",
+        "policy": "{\"type\":\"sociacl-witness-policy-envelope-v1\",\"payload\":\"eyJ0eXBlIjoic29jaWFjbC13aXRuZXNzLXBvbGljeS12MSIsImF1ZGllbmNlIjoicGFub3B0aWNvbi10ZXN0IiwicmV2aXNpb24iOjgsImlzc3VlZEF0IjoxNjk5OTk5OTk5LCJleHBpcmVzQXQiOjE3MDAwMDAxMjAsImp3a3MiOnsia2V5cyI6W3sia2lkIjoia2V5LTIwIiwia3R5IjoiRUMiLCJjcnYiOiJQLTI1NiIsImFsZyI6IkVTMjU2IiwidXNlIjoic2lnIiwia2V5X29wcyI6WyJ2ZXJpZnkiXSwieCI6Imc2QWFrM2c1VzZ1YnpXb0swRHpGYlZibXNaSlFSbHFVb2pUY1RHc28ycG8iLCJ5IjoiZHVTYmJlTDNNalN1YWw2NTFoSzNYSjhpQXJ0cElfVlAtQ1FLcW9iMlFMZyIsIm5vdEJlZm9yZSI6MTY5OTk5OTAwMCwibm90QWZ0ZXIiOjE3MDAwMDEwMDB9XX19\",\"signature\":\"2Ur7rpUP6d2W5vLZtI6Mn2CVUvzNXnTtJyP3vnjvwsJL2zlMVA2n6leMYx2YSmsOCfVZYayZLRaj5ZYuX183qQ\"}",
+        "previous": "{\"type\":\"sociacl-witness-policy-state-v1\",\"root\":\"R3dpBMDxzDqcCYS2b3UwGl-mhnjw1kr4uhq840c4pz4.qgBe5rW5VyhiMYVld2SOg4GygEQo1XM_MveH_3Hx_Nw\",\"audience\":\"other\",\"revision\":8,\"jwks\":{\"keys\":[{\"kid\":\"key-20\",\"kty\":\"EC\",\"crv\":\"P-256\",\"alg\":\"ES256\",\"use\":\"sig\",\"key_ops\":[\"verify\"],\"x\":\"g6Aak3g5W6ubzWoK0DzFbVbmsZJQRlqUojTcTGso2po\",\"y\":\"duSbbeL3MjSual651hK3XJ8iArtpI_VP-CQKqob2QLg\",\"notBefore\":1699999000,\"notAfter\":1700001000}]},\"history\":[{\"jwk\":{\"kid\":\"key-19\",\"kty\":\"EC\",\"crv\":\"P-256\",\"alg\":\"ES256\",\"use\":\"sig\",\"key_ops\":[\"verify\"],\"x\":\"y20oYRAsDCXOObfBcQjFB3gsRSJXiEiVwfx7dKsD7YM\",\"y\":\"WNdhSyTZ71FcNecQDW1s5KSWcW4w-j4D45FQdSvOzao\",\"notBefore\":1699999000,\"notAfter\":1700001000},\"removed\":true},{\"jwk\":{\"kid\":\"key-20\",\"kty\":\"EC\",\"crv\":\"P-256\",\"alg\":\"ES256\",\"use\":\"sig\",\"key_ops\":[\"verify\"],\"x\":\"g6Aak3g5W6ubzWoK0DzFbVbmsZJQRlqUojTcTGso2po\",\"y\":\"duSbbeL3MjSual651hK3XJ8iArtpI_VP-CQKqob2QLg\",\"notBefore\":1699999000,\"notAfter\":1700001000},\"removed\":false}]}"
+      },
+      "reason": "bad-attestation"
+    },
+    {
+      "name": "advance-refuses-corrupt-state",
+      "operation": "advance",
+      "input": {
+        "checkpoint": "{\"type\":\"sociacl-witness-checkpoint-envelope-v1\",\"payload\":\"eyJ0eXBlIjoic29jaWFjbC13aXRuZXNzLWNoZWNrcG9pbnQtdjEiLCJhdWRpZW5jZSI6InBhbm9wdGljb24tdGVzdCIsImNsaWVudCI6ImVucm9sbG1lbnQtMSIsImNoYWxsZW5nZSI6Iktpb3FLaW9xS2lvcUtpb3FLaW9xS2lvcUtpb3FLaW9xS2lvcUtpb3FLaW8iLCJyb290RXBvY2giOjEsImlzc3VlZEF0IjoxNjk5OTk5OTk5LCJleHBpcmVzQXQiOjE3MDAwMDAwNjAsInN0YXRlIjp7InR5cGUiOiJzb2NpYWNsLXdpdG5lc3MtcG9saWN5LXN0YXRlLXYxIiwicm9vdCI6IlIzZHBCTUR4ekRxY0NZUzJiM1V3R2wtbWhuancxa3I0dWhxODQwYzRwejQucWdCZTVyVzVWeWhpTVlWbGQyU09nNEd5Z0VRbzFYTV9NdmVIXzNIeF9OdyIsImF1ZGllbmNlIjoicGFub3B0aWNvbi10ZXN0IiwicmV2aXNpb24iOjgsImp3a3MiOnsia2V5cyI6W3sia2lkIjoia2V5LTIwIiwia3R5IjoiRUMiLCJjcnYiOiJQLTI1NiIsImFsZyI6IkVTMjU2IiwidXNlIjoic2lnIiwia2V5X29wcyI6WyJ2ZXJpZnkiXSwieCI6Imc2QWFrM2c1VzZ1YnpXb0swRHpGYlZibXNaSlFSbHFVb2pUY1RHc28ycG8iLCJ5IjoiZHVTYmJlTDNNalN1YWw2NTFoSzNYSjhpQXJ0cElfVlAtQ1FLcW9iMlFMZyIsIm5vdEJlZm9yZSI6MTY5OTk5OTAwMCwibm90QWZ0ZXIiOjE3MDAwMDEwMDB9XX0sImhpc3RvcnkiOlt7Imp3ayI6eyJraWQiOiJrZXktMTkiLCJrdHkiOiJFQyIsImNydiI6IlAtMjU2IiwiYWxnIjoiRVMyNTYiLCJ1c2UiOiJzaWciLCJrZXlfb3BzIjpbInZlcmlmeSJdLCJ4IjoieTIwb1lSQXNEQ1hPT2JmQmNRakZCM2dzUlNKWGlFaVZ3Zng3ZEtzRDdZTSIsInkiOiJXTmRoU3lUWjcxRmNOZWNRRFcxczVLU1djVzR3LWo0RDQ1RlFkU3ZPemFvIiwibm90QmVmb3JlIjoxNjk5OTk5MDAwLCJub3RBZnRlciI6MTcwMDAwMTAwMH0sInJlbW92ZWQiOnRydWV9LHsiandrIjp7ImtpZCI6ImtleS0yMCIsImt0eSI6IkVDIiwiY3J2IjoiUC0yNTYiLCJhbGciOiJFUzI1NiIsInVzZSI6InNpZyIsImtleV9vcHMiOlsidmVyaWZ5Il0sIngiOiJnNkFhazNnNVc2dWJ6V29LMER6RmJWYm1zWkpRUmxxVW9qVGNUR3NvMnBvIiwieSI6ImR1U2JiZUwzTWpTdWFsNjUxaEszWEo4aUFydHBJX1ZQLUNRS3FvYjJRTGciLCJub3RCZWZvcmUiOjE2OTk5OTkwMDAsIm5vdEFmdGVyIjoxNzAwMDAxMDAwfSwicmVtb3ZlZCI6ZmFsc2V9XX19\",\"signature\":\"WbrbIHhyfIQhBRdbocMVeS9vsrbUXsaKtFkMQEwjfGYF3JL97DKptT2ALqpdTigq99bfA6lJLjtxJoSMrWooyA\"}",
+        "policy": "{\"type\":\"sociacl-witness-policy-envelope-v1\",\"payload\":\"eyJ0eXBlIjoic29jaWFjbC13aXRuZXNzLXBvbGljeS12MSIsImF1ZGllbmNlIjoicGFub3B0aWNvbi10ZXN0IiwicmV2aXNpb24iOjgsImlzc3VlZEF0IjoxNjk5OTk5OTk5LCJleHBpcmVzQXQiOjE3MDAwMDAxMjAsImp3a3MiOnsia2V5cyI6W3sia2lkIjoia2V5LTIwIiwia3R5IjoiRUMiLCJjcnYiOiJQLTI1NiIsImFsZyI6IkVTMjU2IiwidXNlIjoic2lnIiwia2V5X29wcyI6WyJ2ZXJpZnkiXSwieCI6Imc2QWFrM2c1VzZ1YnpXb0swRHpGYlZibXNaSlFSbHFVb2pUY1RHc28ycG8iLCJ5IjoiZHVTYmJlTDNNalN1YWw2NTFoSzNYSjhpQXJ0cElfVlAtQ1FLcW9iMlFMZyIsIm5vdEJlZm9yZSI6MTY5OTk5OTAwMCwibm90QWZ0ZXIiOjE3MDAwMDEwMDB9XX19\",\"signature\":\"2Ur7rpUP6d2W5vLZtI6Mn2CVUvzNXnTtJyP3vnjvwsJL2zlMVA2n6leMYx2YSmsOCfVZYayZLRaj5ZYuX183qQ\"}",
+        "previous": "{}"
+      },
+      "reason": "bad-attestation"
+    },
+    {
+      "name": "advance-refuses-empty-state",
+      "operation": "advance",
+      "input": {
+        "checkpoint": "{\"type\":\"sociacl-witness-checkpoint-envelope-v1\",\"payload\":\"eyJ0eXBlIjoic29jaWFjbC13aXRuZXNzLWNoZWNrcG9pbnQtdjEiLCJhdWRpZW5jZSI6InBhbm9wdGljb24tdGVzdCIsImNsaWVudCI6ImVucm9sbG1lbnQtMSIsImNoYWxsZW5nZSI6Iktpb3FLaW9xS2lvcUtpb3FLaW9xS2lvcUtpb3FLaW9xS2lvcUtpb3FLaW8iLCJyb290RXBvY2giOjEsImlzc3VlZEF0IjoxNjk5OTk5OTk5LCJleHBpcmVzQXQiOjE3MDAwMDAwNjAsInN0YXRlIjp7InR5cGUiOiJzb2NpYWNsLXdpdG5lc3MtcG9saWN5LXN0YXRlLXYxIiwicm9vdCI6IlIzZHBCTUR4ekRxY0NZUzJiM1V3R2wtbWhuancxa3I0dWhxODQwYzRwejQucWdCZTVyVzVWeWhpTVlWbGQyU09nNEd5Z0VRbzFYTV9NdmVIXzNIeF9OdyIsImF1ZGllbmNlIjoicGFub3B0aWNvbi10ZXN0IiwicmV2aXNpb24iOjgsImp3a3MiOnsia2V5cyI6W3sia2lkIjoia2V5LTIwIiwia3R5IjoiRUMiLCJjcnYiOiJQLTI1NiIsImFsZyI6IkVTMjU2IiwidXNlIjoic2lnIiwia2V5X29wcyI6WyJ2ZXJpZnkiXSwieCI6Imc2QWFrM2c1VzZ1YnpXb0swRHpGYlZibXNaSlFSbHFVb2pUY1RHc28ycG8iLCJ5IjoiZHVTYmJlTDNNalN1YWw2NTFoSzNYSjhpQXJ0cElfVlAtQ1FLcW9iMlFMZyIsIm5vdEJlZm9yZSI6MTY5OTk5OTAwMCwibm90QWZ0ZXIiOjE3MDAwMDEwMDB9XX0sImhpc3RvcnkiOlt7Imp3ayI6eyJraWQiOiJrZXktMTkiLCJrdHkiOiJFQyIsImNydiI6IlAtMjU2IiwiYWxnIjoiRVMyNTYiLCJ1c2UiOiJzaWciLCJrZXlfb3BzIjpbInZlcmlmeSJdLCJ4IjoieTIwb1lSQXNEQ1hPT2JmQmNRakZCM2dzUlNKWGlFaVZ3Zng3ZEtzRDdZTSIsInkiOiJXTmRoU3lUWjcxRmNOZWNRRFcxczVLU1djVzR3LWo0RDQ1RlFkU3ZPemFvIiwibm90QmVmb3JlIjoxNjk5OTk5MDAwLCJub3RBZnRlciI6MTcwMDAwMTAwMH0sInJlbW92ZWQiOnRydWV9LHsiandrIjp7ImtpZCI6ImtleS0yMCIsImt0eSI6IkVDIiwiY3J2IjoiUC0yNTYiLCJhbGciOiJFUzI1NiIsInVzZSI6InNpZyIsImtleV9vcHMiOlsidmVyaWZ5Il0sIngiOiJnNkFhazNnNVc2dWJ6V29LMER6RmJWYm1zWkpRUmxxVW9qVGNUR3NvMnBvIiwieSI6ImR1U2JiZUwzTWpTdWFsNjUxaEszWEo4aUFydHBJX1ZQLUNRS3FvYjJRTGciLCJub3RCZWZvcmUiOjE2OTk5OTkwMDAsIm5vdEFmdGVyIjoxNzAwMDAxMDAwfSwicmVtb3ZlZCI6ZmFsc2V9XX19\",\"signature\":\"WbrbIHhyfIQhBRdbocMVeS9vsrbUXsaKtFkMQEwjfGYF3JL97DKptT2ALqpdTigq99bfA6lJLjtxJoSMrWooyA\"}",
+        "policy": "{\"type\":\"sociacl-witness-policy-envelope-v1\",\"payload\":\"eyJ0eXBlIjoic29jaWFjbC13aXRuZXNzLXBvbGljeS12MSIsImF1ZGllbmNlIjoicGFub3B0aWNvbi10ZXN0IiwicmV2aXNpb24iOjgsImlzc3VlZEF0IjoxNjk5OTk5OTk5LCJleHBpcmVzQXQiOjE3MDAwMDAxMjAsImp3a3MiOnsia2V5cyI6W3sia2lkIjoia2V5LTIwIiwia3R5IjoiRUMiLCJjcnYiOiJQLTI1NiIsImFsZyI6IkVTMjU2IiwidXNlIjoic2lnIiwia2V5X29wcyI6WyJ2ZXJpZnkiXSwieCI6Imc2QWFrM2c1VzZ1YnpXb0swRHpGYlZibXNaSlFSbHFVb2pUY1RHc28ycG8iLCJ5IjoiZHVTYmJlTDNNalN1YWw2NTFoSzNYSjhpQXJ0cElfVlAtQ1FLcW9iMlFMZyIsIm5vdEJlZm9yZSI6MTY5OTk5OTAwMCwibm90QWZ0ZXIiOjE3MDAwMDEwMDB9XX19\",\"signature\":\"2Ur7rpUP6d2W5vLZtI6Mn2CVUvzNXnTtJyP3vnjvwsJL2zlMVA2n6leMYx2YSmsOCfVZYayZLRaj5ZYuX183qQ\"}",
+        "previous": ""
+      },
+      "reason": "bad-attestation"
+    },
+    {
+      "name": "advance-refuses-null-state",
+      "operation": "advance",
+      "input": {
+        "checkpoint": "{\"type\":\"sociacl-witness-checkpoint-envelope-v1\",\"payload\":\"eyJ0eXBlIjoic29jaWFjbC13aXRuZXNzLWNoZWNrcG9pbnQtdjEiLCJhdWRpZW5jZSI6InBhbm9wdGljb24tdGVzdCIsImNsaWVudCI6ImVucm9sbG1lbnQtMSIsImNoYWxsZW5nZSI6Iktpb3FLaW9xS2lvcUtpb3FLaW9xS2lvcUtpb3FLaW9xS2lvcUtpb3FLaW8iLCJyb290RXBvY2giOjEsImlzc3VlZEF0IjoxNjk5OTk5OTk5LCJleHBpcmVzQXQiOjE3MDAwMDAwNjAsInN0YXRlIjp7InR5cGUiOiJzb2NpYWNsLXdpdG5lc3MtcG9saWN5LXN0YXRlLXYxIiwicm9vdCI6IlIzZHBCTUR4ekRxY0NZUzJiM1V3R2wtbWhuancxa3I0dWhxODQwYzRwejQucWdCZTVyVzVWeWhpTVlWbGQyU09nNEd5Z0VRbzFYTV9NdmVIXzNIeF9OdyIsImF1ZGllbmNlIjoicGFub3B0aWNvbi10ZXN0IiwicmV2aXNpb24iOjgsImp3a3MiOnsia2V5cyI6W3sia2lkIjoia2V5LTIwIiwia3R5IjoiRUMiLCJjcnYiOiJQLTI1NiIsImFsZyI6IkVTMjU2IiwidXNlIjoic2lnIiwia2V5X29wcyI6WyJ2ZXJpZnkiXSwieCI6Imc2QWFrM2c1VzZ1YnpXb0swRHpGYlZibXNaSlFSbHFVb2pUY1RHc28ycG8iLCJ5IjoiZHVTYmJlTDNNalN1YWw2NTFoSzNYSjhpQXJ0cElfVlAtQ1FLcW9iMlFMZyIsIm5vdEJlZm9yZSI6MTY5OTk5OTAwMCwibm90QWZ0ZXIiOjE3MDAwMDEwMDB9XX0sImhpc3RvcnkiOlt7Imp3ayI6eyJraWQiOiJrZXktMTkiLCJrdHkiOiJFQyIsImNydiI6IlAtMjU2IiwiYWxnIjoiRVMyNTYiLCJ1c2UiOiJzaWciLCJrZXlfb3BzIjpbInZlcmlmeSJdLCJ4IjoieTIwb1lSQXNEQ1hPT2JmQmNRakZCM2dzUlNKWGlFaVZ3Zng3ZEtzRDdZTSIsInkiOiJXTmRoU3lUWjcxRmNOZWNRRFcxczVLU1djVzR3LWo0RDQ1RlFkU3ZPemFvIiwibm90QmVmb3JlIjoxNjk5OTk5MDAwLCJub3RBZnRlciI6MTcwMDAwMTAwMH0sInJlbW92ZWQiOnRydWV9LHsiandrIjp7ImtpZCI6ImtleS0yMCIsImt0eSI6IkVDIiwiY3J2IjoiUC0yNTYiLCJhbGciOiJFUzI1NiIsInVzZSI6InNpZyIsImtleV9vcHMiOlsidmVyaWZ5Il0sIngiOiJnNkFhazNnNVc2dWJ6V29LMER6RmJWYm1zWkpRUmxxVW9qVGNUR3NvMnBvIiwieSI6ImR1U2JiZUwzTWpTdWFsNjUxaEszWEo4aUFydHBJX1ZQLUNRS3FvYjJRTGciLCJub3RCZWZvcmUiOjE2OTk5OTkwMDAsIm5vdEFmdGVyIjoxNzAwMDAxMDAwfSwicmVtb3ZlZCI6ZmFsc2V9XX19\",\"signature\":\"WbrbIHhyfIQhBRdbocMVeS9vsrbUXsaKtFkMQEwjfGYF3JL97DKptT2ALqpdTigq99bfA6lJLjtxJoSMrWooyA\"}",
+        "policy": "{\"type\":\"sociacl-witness-policy-envelope-v1\",\"payload\":\"eyJ0eXBlIjoic29jaWFjbC13aXRuZXNzLXBvbGljeS12MSIsImF1ZGllbmNlIjoicGFub3B0aWNvbi10ZXN0IiwicmV2aXNpb24iOjgsImlzc3VlZEF0IjoxNjk5OTk5OTk5LCJleHBpcmVzQXQiOjE3MDAwMDAxMjAsImp3a3MiOnsia2V5cyI6W3sia2lkIjoia2V5LTIwIiwia3R5IjoiRUMiLCJjcnYiOiJQLTI1NiIsImFsZyI6IkVTMjU2IiwidXNlIjoic2lnIiwia2V5X29wcyI6WyJ2ZXJpZnkiXSwieCI6Imc2QWFrM2c1VzZ1YnpXb0swRHpGYlZibXNaSlFSbHFVb2pUY1RHc28ycG8iLCJ5IjoiZHVTYmJlTDNNalN1YWw2NTFoSzNYSjhpQXJ0cElfVlAtQ1FLcW9iMlFMZyIsIm5vdEJlZm9yZSI6MTY5OTk5OTAwMCwibm90QWZ0ZXIiOjE3MDAwMDEwMDB9XX19\",\"signature\":\"2Ur7rpUP6d2W5vLZtI6Mn2CVUvzNXnTtJyP3vnjvwsJL2zlMVA2n6leMYx2YSmsOCfVZYayZLRaj5ZYuX183qQ\"}",
+        "previous": "null"
+      },
+      "reason": "bad-attestation"
+    },
+    {
+      "name": "advance-refuses-history-material-change",
+      "operation": "advance",
+      "input": {
+        "checkpoint": "{\"type\":\"sociacl-witness-checkpoint-envelope-v1\",\"payload\":\"eyJ0eXBlIjoic29jaWFjbC13aXRuZXNzLWNoZWNrcG9pbnQtdjEiLCJhdWRpZW5jZSI6InBhbm9wdGljb24tdGVzdCIsImNsaWVudCI6ImVucm9sbG1lbnQtMSIsImNoYWxsZW5nZSI6Iktpb3FLaW9xS2lvcUtpb3FLaW9xS2lvcUtpb3FLaW9xS2lvcUtpb3FLaW8iLCJyb290RXBvY2giOjEsImlzc3VlZEF0IjoxNjk5OTk5OTk5LCJleHBpcmVzQXQiOjE3MDAwMDAwNjAsInN0YXRlIjp7InR5cGUiOiJzb2NpYWNsLXdpdG5lc3MtcG9saWN5LXN0YXRlLXYxIiwicm9vdCI6IlIzZHBCTUR4ekRxY0NZUzJiM1V3R2wtbWhuancxa3I0dWhxODQwYzRwejQucWdCZTVyVzVWeWhpTVlWbGQyU09nNEd5Z0VRbzFYTV9NdmVIXzNIeF9OdyIsImF1ZGllbmNlIjoicGFub3B0aWNvbi10ZXN0IiwicmV2aXNpb24iOjgsImp3a3MiOnsia2V5cyI6W3sia2lkIjoia2V5LTIwIiwia3R5IjoiRUMiLCJjcnYiOiJQLTI1NiIsImFsZyI6IkVTMjU2IiwidXNlIjoic2lnIiwia2V5X29wcyI6WyJ2ZXJpZnkiXSwieCI6Imc2QWFrM2c1VzZ1YnpXb0swRHpGYlZibXNaSlFSbHFVb2pUY1RHc28ycG8iLCJ5IjoiZHVTYmJlTDNNalN1YWw2NTFoSzNYSjhpQXJ0cElfVlAtQ1FLcW9iMlFMZyIsIm5vdEJlZm9yZSI6MTY5OTk5OTAwMCwibm90QWZ0ZXIiOjE3MDAwMDEwMDB9XX0sImhpc3RvcnkiOlt7Imp3ayI6eyJraWQiOiJrZXktMTkiLCJrdHkiOiJFQyIsImNydiI6IlAtMjU2IiwiYWxnIjoiRVMyNTYiLCJ1c2UiOiJzaWciLCJrZXlfb3BzIjpbInZlcmlmeSJdLCJ4IjoieTIwb1lSQXNEQ1hPT2JmQmNRakZCM2dzUlNKWGlFaVZ3Zng3ZEtzRDdZTSIsInkiOiJXTmRoU3lUWjcxRmNOZWNRRFcxczVLU1djVzR3LWo0RDQ1RlFkU3ZPemFvIiwibm90QmVmb3JlIjoxNjk5OTk5MDAwLCJub3RBZnRlciI6MTcwMDAwMTAwMH0sInJlbW92ZWQiOnRydWV9LHsiandrIjp7ImtpZCI6ImtleS0yMCIsImt0eSI6IkVDIiwiY3J2IjoiUC0yNTYiLCJhbGciOiJFUzI1NiIsInVzZSI6InNpZyIsImtleV9vcHMiOlsidmVyaWZ5Il0sIngiOiJnNkFhazNnNVc2dWJ6V29LMER6RmJWYm1zWkpRUmxxVW9qVGNUR3NvMnBvIiwieSI6ImR1U2JiZUwzTWpTdWFsNjUxaEszWEo4aUFydHBJX1ZQLUNRS3FvYjJRTGciLCJub3RCZWZvcmUiOjE2OTk5OTkwMDAsIm5vdEFmdGVyIjoxNzAwMDAxMDAwfSwicmVtb3ZlZCI6ZmFsc2V9XX19\",\"signature\":\"WbrbIHhyfIQhBRdbocMVeS9vsrbUXsaKtFkMQEwjfGYF3JL97DKptT2ALqpdTigq99bfA6lJLjtxJoSMrWooyA\"}",
+        "policy": "{\"type\":\"sociacl-witness-policy-envelope-v1\",\"payload\":\"eyJ0eXBlIjoic29jaWFjbC13aXRuZXNzLXBvbGljeS12MSIsImF1ZGllbmNlIjoicGFub3B0aWNvbi10ZXN0IiwicmV2aXNpb24iOjgsImlzc3VlZEF0IjoxNjk5OTk5OTk5LCJleHBpcmVzQXQiOjE3MDAwMDAxMjAsImp3a3MiOnsia2V5cyI6W3sia2lkIjoia2V5LTIwIiwia3R5IjoiRUMiLCJjcnYiOiJQLTI1NiIsImFsZyI6IkVTMjU2IiwidXNlIjoic2lnIiwia2V5X29wcyI6WyJ2ZXJpZnkiXSwieCI6Imc2QWFrM2c1VzZ1YnpXb0swRHpGYlZibXNaSlFSbHFVb2pUY1RHc28ycG8iLCJ5IjoiZHVTYmJlTDNNalN1YWw2NTFoSzNYSjhpQXJ0cElfVlAtQ1FLcW9iMlFMZyIsIm5vdEJlZm9yZSI6MTY5OTk5OTAwMCwibm90QWZ0ZXIiOjE3MDAwMDEwMDB9XX19\",\"signature\":\"2Ur7rpUP6d2W5vLZtI6Mn2CVUvzNXnTtJyP3vnjvwsJL2zlMVA2n6leMYx2YSmsOCfVZYayZLRaj5ZYuX183qQ\"}",
+        "previous": "{\"type\":\"sociacl-witness-policy-state-v1\",\"root\":\"R3dpBMDxzDqcCYS2b3UwGl-mhnjw1kr4uhq840c4pz4.qgBe5rW5VyhiMYVld2SOg4GygEQo1XM_MveH_3Hx_Nw\",\"audience\":\"panopticon-test\",\"revision\":8,\"jwks\":{\"keys\":[{\"kid\":\"key-20\",\"kty\":\"EC\",\"crv\":\"P-256\",\"alg\":\"ES256\",\"use\":\"sig\",\"key_ops\":[\"verify\"],\"x\":\"g6Aak3g5W6ubzWoK0DzFbVbmsZJQRlqUojTcTGso2po\",\"y\":\"duSbbeL3MjSual651hK3XJ8iArtpI_VP-CQKqob2QLg\",\"notBefore\":1699999000,\"notAfter\":1700001000}]},\"history\":[{\"jwk\":{\"kid\":\"key-19\",\"kty\":\"EC\",\"crv\":\"P-256\",\"alg\":\"ES256\",\"use\":\"sig\",\"key_ops\":[\"verify\"],\"x\":\"MlD89oZjfHsuSshutHO8pTpYITn0KxUj_XY2Tmc5noM\",\"y\":\"QufDQmZ9NZOXswkNHX64jIl808M7VmqCFd4koHHUjAk\",\"notBefore\":1699999000,\"notAfter\":1700001000},\"removed\":true},{\"jwk\":{\"kid\":\"key-20\",\"kty\":\"EC\",\"crv\":\"P-256\",\"alg\":\"ES256\",\"use\":\"sig\",\"key_ops\":[\"verify\"],\"x\":\"g6Aak3g5W6ubzWoK0DzFbVbmsZJQRlqUojTcTGso2po\",\"y\":\"duSbbeL3MjSual651hK3XJ8iArtpI_VP-CQKqob2QLg\",\"notBefore\":1699999000,\"notAfter\":1700001000},\"removed\":false}]}"
+      },
+      "reason": "bad-attestation"
+    },
+    {
+      "name": "advance-refuses-active-window-widening",
+      "operation": "advance",
+      "input": {
+        "checkpoint": "{\"type\":\"sociacl-witness-checkpoint-envelope-v1\",\"payload\":\"eyJ0eXBlIjoic29jaWFjbC13aXRuZXNzLWNoZWNrcG9pbnQtdjEiLCJhdWRpZW5jZSI6InBhbm9wdGljb24tdGVzdCIsImNsaWVudCI6ImVucm9sbG1lbnQtMSIsImNoYWxsZW5nZSI6Iktpb3FLaW9xS2lvcUtpb3FLaW9xS2lvcUtpb3FLaW9xS2lvcUtpb3FLaW8iLCJyb290RXBvY2giOjEsImlzc3VlZEF0IjoxNjk5OTk5OTk5LCJleHBpcmVzQXQiOjE3MDAwMDAwNjAsInN0YXRlIjp7InR5cGUiOiJzb2NpYWNsLXdpdG5lc3MtcG9saWN5LXN0YXRlLXYxIiwicm9vdCI6IlIzZHBCTUR4ekRxY0NZUzJiM1V3R2wtbWhuancxa3I0dWhxODQwYzRwejQucWdCZTVyVzVWeWhpTVlWbGQyU09nNEd5Z0VRbzFYTV9NdmVIXzNIeF9OdyIsImF1ZGllbmNlIjoicGFub3B0aWNvbi10ZXN0IiwicmV2aXNpb24iOjgsImp3a3MiOnsia2V5cyI6W3sia2lkIjoia2V5LTIwIiwia3R5IjoiRUMiLCJjcnYiOiJQLTI1NiIsImFsZyI6IkVTMjU2IiwidXNlIjoic2lnIiwia2V5X29wcyI6WyJ2ZXJpZnkiXSwieCI6Imc2QWFrM2c1VzZ1YnpXb0swRHpGYlZibXNaSlFSbHFVb2pUY1RHc28ycG8iLCJ5IjoiZHVTYmJlTDNNalN1YWw2NTFoSzNYSjhpQXJ0cElfVlAtQ1FLcW9iMlFMZyIsIm5vdEJlZm9yZSI6MTY5OTk5OTAwMCwibm90QWZ0ZXIiOjE3MDAwMDEwMDB9XX0sImhpc3RvcnkiOlt7Imp3ayI6eyJraWQiOiJrZXktMTkiLCJrdHkiOiJFQyIsImNydiI6IlAtMjU2IiwiYWxnIjoiRVMyNTYiLCJ1c2UiOiJzaWciLCJrZXlfb3BzIjpbInZlcmlmeSJdLCJ4IjoieTIwb1lSQXNEQ1hPT2JmQmNRakZCM2dzUlNKWGlFaVZ3Zng3ZEtzRDdZTSIsInkiOiJXTmRoU3lUWjcxRmNOZWNRRFcxczVLU1djVzR3LWo0RDQ1RlFkU3ZPemFvIiwibm90QmVmb3JlIjoxNjk5OTk5MDAwLCJub3RBZnRlciI6MTcwMDAwMTAwMH0sInJlbW92ZWQiOnRydWV9LHsiandrIjp7ImtpZCI6ImtleS0yMCIsImt0eSI6IkVDIiwiY3J2IjoiUC0yNTYiLCJhbGciOiJFUzI1NiIsInVzZSI6InNpZyIsImtleV9vcHMiOlsidmVyaWZ5Il0sIngiOiJnNkFhazNnNVc2dWJ6V29LMER6RmJWYm1zWkpRUmxxVW9qVGNUR3NvMnBvIiwieSI6ImR1U2JiZUwzTWpTdWFsNjUxaEszWEo4aUFydHBJX1ZQLUNRS3FvYjJRTGciLCJub3RCZWZvcmUiOjE2OTk5OTkwMDAsIm5vdEFmdGVyIjoxNzAwMDAxMDAwfSwicmVtb3ZlZCI6ZmFsc2V9XX19\",\"signature\":\"WbrbIHhyfIQhBRdbocMVeS9vsrbUXsaKtFkMQEwjfGYF3JL97DKptT2ALqpdTigq99bfA6lJLjtxJoSMrWooyA\"}",
+        "policy": "{\"type\":\"sociacl-witness-policy-envelope-v1\",\"payload\":\"eyJ0eXBlIjoic29jaWFjbC13aXRuZXNzLXBvbGljeS12MSIsImF1ZGllbmNlIjoicGFub3B0aWNvbi10ZXN0IiwicmV2aXNpb24iOjgsImlzc3VlZEF0IjoxNjk5OTk5OTk5LCJleHBpcmVzQXQiOjE3MDAwMDAxMjAsImp3a3MiOnsia2V5cyI6W3sia2lkIjoia2V5LTIwIiwia3R5IjoiRUMiLCJjcnYiOiJQLTI1NiIsImFsZyI6IkVTMjU2IiwidXNlIjoic2lnIiwia2V5X29wcyI6WyJ2ZXJpZnkiXSwieCI6Imc2QWFrM2c1VzZ1YnpXb0swRHpGYlZibXNaSlFSbHFVb2pUY1RHc28ycG8iLCJ5IjoiZHVTYmJlTDNNalN1YWw2NTFoSzNYSjhpQXJ0cElfVlAtQ1FLcW9iMlFMZyIsIm5vdEJlZm9yZSI6MTY5OTk5OTAwMCwibm90QWZ0ZXIiOjE3MDAwMDEwMDB9XX19\",\"signature\":\"2Ur7rpUP6d2W5vLZtI6Mn2CVUvzNXnTtJyP3vnjvwsJL2zlMVA2n6leMYx2YSmsOCfVZYayZLRaj5ZYuX183qQ\"}",
+        "previous": "{\"type\":\"sociacl-witness-policy-state-v1\",\"root\":\"R3dpBMDxzDqcCYS2b3UwGl-mhnjw1kr4uhq840c4pz4.qgBe5rW5VyhiMYVld2SOg4GygEQo1XM_MveH_3Hx_Nw\",\"audience\":\"panopticon-test\",\"revision\":7,\"jwks\":{\"keys\":[{\"kid\":\"key-20\",\"kty\":\"EC\",\"crv\":\"P-256\",\"alg\":\"ES256\",\"use\":\"sig\",\"key_ops\":[\"verify\"],\"x\":\"g6Aak3g5W6ubzWoK0DzFbVbmsZJQRlqUojTcTGso2po\",\"y\":\"duSbbeL3MjSual651hK3XJ8iArtpI_VP-CQKqob2QLg\",\"notBefore\":1699999000,\"notAfter\":1700000999}]},\"history\":[{\"jwk\":{\"kid\":\"key-19\",\"kty\":\"EC\",\"crv\":\"P-256\",\"alg\":\"ES256\",\"use\":\"sig\",\"key_ops\":[\"verify\"],\"x\":\"y20oYRAsDCXOObfBcQjFB3gsRSJXiEiVwfx7dKsD7YM\",\"y\":\"WNdhSyTZ71FcNecQDW1s5KSWcW4w-j4D45FQdSvOzao\",\"notBefore\":1699999000,\"notAfter\":1700001000},\"removed\":true},{\"jwk\":{\"kid\":\"key-20\",\"kty\":\"EC\",\"crv\":\"P-256\",\"alg\":\"ES256\",\"use\":\"sig\",\"key_ops\":[\"verify\"],\"x\":\"g6Aak3g5W6ubzWoK0DzFbVbmsZJQRlqUojTcTGso2po\",\"y\":\"duSbbeL3MjSual651hK3XJ8iArtpI_VP-CQKqob2QLg\",\"notBefore\":1699999000,\"notAfter\":1700000999},\"removed\":false}]}"
       },
       "reason": "bad-attestation"
     }

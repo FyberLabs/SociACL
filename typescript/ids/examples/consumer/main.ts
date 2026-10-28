@@ -112,3 +112,16 @@ import { verifyWitnessCheckpoint, type WitnessCheckpointExpectations } from 'soc
 const checkpointContext: WitnessCheckpointExpectations = { managementRoot: '', root: '', rootEpoch: 1,
   audience: 'deployment', client: 'enrollment', challenge: '', minimumRevision: 1, now: 1700000000 };
 if (verifyWitnessCheckpoint('{}', '{}', checkpointContext).ok) throw Error('invalid checkpoint accepted');
+
+import { openWitnessCheckpointStore } from 'sociacl-ids/checkpoint-store';
+if (typeof openWitnessCheckpointStore !== 'function') throw Error('missing checkpoint store');
+if (false) {
+  const store = await openWitnessCheckpointStore({managementRoot:'',root:'',rootEpoch:1,audience:'deployment',
+    client:'enrollment',minimumRevision:1,name:'policy',now:()=>1700000000});
+  const request = await store.beginRefresh();
+  const state = await store.install(request, '{}', '{}');
+  const revision: number = (await store.readFresh()).revision;
+  void state; void revision; store.close();
+}
+import { advanceWitnessCheckpoint } from 'sociacl-ids';
+if (advanceWitnessCheckpoint('{}', '{}', '{}', checkpointContext).ok) throw Error('invalid checkpoint transition');

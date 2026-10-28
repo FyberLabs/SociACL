@@ -453,3 +453,16 @@ state or `bad-attestation`; it does not consume challenges or install trust.
 See [wire format and adapter obligations](../../docs/witness-checkpoint.md).
 The existing IndexedDB/client APIs cannot restore checkpoint history; do not pass
 this result directly to a production resolver or treat it as recovery permission.
+
+
+### Durable checkpoint refresh
+
+`sociacl-ids/checkpoint-store` exports `openWitnessCheckpointStore` for existing
+browser state: `beginRefresh`, one-use `install`, historical `readInstalled`, gated
+`readFresh`, `cancel` and `close`. It atomically installs authenticated full history,
+checks local continuity, and bounds freshness by UTC plus monotonic time. Restart
+requires renewal. It supplies no bootstrap, recovery, migration or HTTP transport.
+The shared `advanceWitnessCheckpoint` helper (Rust: `advance_witness_checkpoint`)
+performs the pure continuity comparison. See the
+[refresh contract](../../docs/witness-checkpoint.md#continuity-reconciliation-and-browser-refresh)
+for configuration, schema upgrade and failure semantics.

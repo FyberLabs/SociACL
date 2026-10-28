@@ -12,7 +12,9 @@ const keys = { principal:ids.formatPrincipalKey, wallet:ids.formatWalletKey, oid
   object:ids.objectKey, network:ids.formatNetworkKey, 'source-key':ids.formatSourcePathKey };
 const names = [];
 function run(f, c) {
-  if (f.family === 'witness-checkpoint') return ids.verifyWitnessCheckpoint(c.input.checkpoint, c.input.policy, {...f.context, ...c});
+  if (f.family === 'witness-checkpoint') return c.operation === 'advance'
+    ? ids.advanceWitnessCheckpoint(c.input.checkpoint, c.input.policy, c.input.previous, {...f.context, ...c})
+    : ids.verifyWitnessCheckpoint(c.input.checkpoint, c.input.policy, {...f.context, ...c});
   if (f.family === 'witness-lifecycle') {
     const ctx = {...f.context, ...c};
     let previous = c.input.previous;
