@@ -12,7 +12,8 @@ permissions:
 
 jobs:
   browser-policy-store:
-    runs-on: ubuntu-latest
+    # Match the OS supported by the pinned Playwright browser build.
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7.0.1
