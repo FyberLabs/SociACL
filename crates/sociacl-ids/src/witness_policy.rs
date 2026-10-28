@@ -103,7 +103,12 @@ pub fn verify_witness_policy_envelope(
     {
         return Err(bad);
     }
-    let keys = doc["jwks"]["keys"].as_array().ok_or(bad)?;
+    validate_keys(doc["jwks"]["keys"].as_array().ok_or(bad)?, &pinned)?;
+    serde_json::from_value(doc).map_err(|_| bad)
+}
+
+fn validate_keys(keys: &[Value], pinned: &crate::PrincipalId) -> Result<(), Reason> {
+    let bad = Reason::BadAttestation;
     let mut kids = BTreeSet::new();
     let mut points = BTreeSet::new();
     for k in keys {
@@ -140,9 +145,165 @@ pub fn verify_witness_policy_envelope(
             k["y"].as_str().ok_or(bad)?
         ))
         .map_err(|_| bad)?;
-        if point == pinned || !points.insert(point) {
+        if &point == pinned || !points.insert(point) {
             return Err(bad);
         }
     }
-    serde_json::from_value(doc).map_err(|_| bad)
+    Ok(())
+}
+
+pub const MAX_WITNESS_POLICY_HISTORY: usize = 1024;
+pub const MAX_WITNESS_STATE_BYTES: usize = 2097152;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WitnessPolicyHistoryEntry {
+    pub jwk: crate::Jwk,
+    pub removed: bool,
+}
+/// Candidate for atomic durable commit, never untrusted transport state.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WitnessPolicyState {
+    #[serde(rename = "type")]
+    pub kind: String,
+    pub root: String,
+    pub audience: String,
+    pub revision: u64,
+    pub jwks: Jwks,
+    pub history: Vec<WitnessPolicyHistoryEntry>,
+}
+fn same_registry(a: &Jwks, b: &Jwks) -> bool {
+    let keys: std::collections::BTreeMap<_, _> = a.keys.iter().map(|k| (&k.kid, k)).collect();
+    a.keys.len() == b.keys.len()
+        && b.keys.iter().all(|k| {
+            keys.get(&k.kid).is_some_and(|old| {
+                old.x == k.x
+                    && old.y == k.y
+                    && old.not_before == k.not_before
+                    && old.not_after == k.not_after
+            })
+        })
+}
+/// Calculate the next snapshot inside an adapter's serialized update. Previous
+/// JSON must come from trusted rollback-protected storage; None is only for an
+/// independently authorized initial bootstrap. Re-run on current state/clock
+/// after lock waits or CAS conflicts, and atomically persist the whole result
+/// before exposing its JWKS. This pure function provides no persistence or proof
+/// that the supplied previous state is fresh. minimum_revision is a trusted,
+/// positive bootstrap floor, not a hint from the envelope or network.
+pub fn advance_witness_policy(
+    envelope: &str,
+    previous_json: Option<&str>,
+    root: &str,
+    audience: &str,
+    minimum_revision: u64,
+    now: u64,
+) -> Result<WitnessPolicyState, Reason> {
+    let bad = Reason::BadAttestation;
+    if minimum_revision == 0 || minimum_revision > MAX_INTEGER {
+        return Err(bad);
+    }
+    let mut policy = verify_witness_policy_envelope(envelope, root, audience, now)?;
+    if policy.revision < minimum_revision {
+        return Err(bad);
+    }
+    let pinned = parse_principal_id(root).map_err(|_| bad)?;
+    let mut history = std::collections::BTreeMap::new();
+    if let Some(source) = previous_json {
+        if source.len() > MAX_WITNESS_STATE_BYTES {
+            return Err(bad);
+        }
+        let raw = unique_json(source).map_err(|_| bad)?;
+        if !exact(
+            &raw,
+            &["type", "root", "audience", "revision", "jwks", "history"],
+        ) || raw["type"] != "sociacl-witness-policy-state-v1"
+            || raw["root"] != root
+            || raw["audience"] != audience
+            || integer(&raw["revision"])? == 0
+            || !exact(&raw["jwks"], &["keys"])
+        {
+            return Err(bad);
+        }
+        let entries = raw["history"].as_array().ok_or(bad)?;
+        if entries.len() > MAX_WITNESS_POLICY_HISTORY {
+            return Err(bad);
+        }
+        for e in entries {
+            if !exact(e, &["jwk", "removed"]) || !e["removed"].is_boolean() {
+                return Err(bad);
+            }
+        }
+        validate_keys(raw["jwks"]["keys"].as_array().ok_or(bad)?, &pinned)?;
+        validate_keys(
+            &entries.iter().map(|e| e["jwk"].clone()).collect::<Vec<_>>(),
+            &pinned,
+        )?;
+        let previous: WitnessPolicyState = serde_json::from_value(raw).map_err(|_| bad)?;
+        let active = Jwks {
+            keys: previous
+                .history
+                .iter()
+                .filter(|e| !e.removed)
+                .map(|e| e.jwk.clone())
+                .collect(),
+        };
+        if !same_registry(&previous.jwks, &active)
+            || policy.revision < previous.revision
+            || (policy.revision == previous.revision
+                && !same_registry(&policy.jwks, &previous.jwks))
+        {
+            return Err(bad);
+        }
+        history.extend(previous.history.into_iter().map(|e| (e.jwk.kid.clone(), e)));
+    }
+    let material: BTreeSet<_> = history
+        .values()
+        .map(|e| (e.jwk.x.clone(), e.jwk.y.clone()))
+        .collect();
+    let mut present = BTreeSet::new();
+    for k in &policy.jwks.keys {
+        present.insert(k.kid.clone());
+        if let Some(old) = history.get(&k.kid) {
+            if old.removed
+                || k.x != old.jwk.x
+                || k.y != old.jwk.y
+                || k.not_before < old.jwk.not_before
+                || k.not_after > old.jwk.not_after
+            {
+                return Err(bad);
+            }
+        } else if material.contains(&(k.x.clone(), k.y.clone())) {
+            return Err(bad);
+        }
+        history.insert(
+            k.kid.clone(),
+            WitnessPolicyHistoryEntry {
+                jwk: k.clone(),
+                removed: false,
+            },
+        );
+    }
+    if history.len() > MAX_WITNESS_POLICY_HISTORY {
+        return Err(bad);
+    }
+    for (kid, entry) in &mut history {
+        if !present.contains(kid) {
+            entry.removed = true;
+        }
+    }
+    policy.jwks.keys.sort_by(|a, b| a.kid.cmp(&b.kid));
+    let result = WitnessPolicyState {
+        kind: "sociacl-witness-policy-state-v1".into(),
+        root: root.into(),
+        audience: audience.into(),
+        revision: policy.revision,
+        jwks: policy.jwks,
+        history: history.into_values().collect(),
+    };
+    if serde_json::to_vec(&result).map_err(|_| bad)?.len() > MAX_WITNESS_STATE_BYTES {
+        return Err(bad);
+    }
+    Ok(result)
 }

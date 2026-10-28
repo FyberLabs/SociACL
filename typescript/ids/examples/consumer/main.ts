@@ -82,3 +82,6 @@ console.log('Installed tarball parsers, declarations and present/history revocat
 
 import { verifyWitnessPolicyEnvelope } from 'sociacl-ids';
 if (verifyWitnessPolicyEnvelope('{}', '', 'test', 0).ok) throw Error('invalid policy accepted');
+
+import { advanceWitnessPolicy } from 'sociacl-ids';
+if (advanceWitnessPolicy('{}', null, '', 'test', 1, 0).ok) throw Error('invalid transition accepted');

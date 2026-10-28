@@ -409,3 +409,11 @@ Panopticon's exact-byte export in browsers and Node. Rust exposes the matching
 rollback protection. See [the client contract](../../docs/witness-policy-client.md)
 for independent root provisioning, durable floors, bootstrap freshness, and the
 required checks before a production resolver may use the result.
+
+
+`advanceWitnessPolicy(envelopeJson, previousJson, pinnedRoot, audience,
+minimumRevision, now)` and Rust's `advance_witness_policy` calculate a candidate
+policy state with a revision floor and permanent observed-key history. Previous
+state must come from trusted storage. The caller must serialize the transition
+and atomically commit the entire result before exposing JWKS. No persistence,
+root reset, or latest-policy discovery is supplied by this pure function.

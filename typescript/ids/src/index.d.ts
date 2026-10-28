@@ -13,3 +13,4 @@ export { signingBytes, linkId, verifyKeySignature, signWithKeyring, verifySigned
   resolveCurrentKey, resolveWalletLink, resolveWalletLinkNow, resolveOidcLinkNow, prepareRetainedLinksNow, verifyingLinkMap, historyState, checkRotationPublish, checkRotationDraft } from './records.js';
 export { parseJsonInput } from './json.js';
 export { verifyWitnessPolicyEnvelope, MAX_WITNESS_POLICY_BYTES, MAX_WITNESS_ENVELOPE_BYTES } from './witness-policy.js';
+export { advanceWitnessPolicy, MAX_WITNESS_POLICY_HISTORY, MAX_WITNESS_STATE_BYTES } from './witness-policy.js';

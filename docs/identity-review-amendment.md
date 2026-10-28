@@ -518,3 +518,12 @@ The [client export verifier](witness-policy-client.md) now authenticates those
 exact signed envelopes in TypeScript and Rust. It returns a validated document,
 not installed trust. Durable client policy/history updates, bootstrap freshness,
 root lifecycle, delivery and deployment remain required before production use.
+
+
+The shared client lifecycle transition now calculates a root/audience-bound
+candidate state with an explicit bootstrap floor, monotonic revision and permanent
+observed-key history. Narrowing is allowed; changed material, removed-key reuse
+and conflicting same-revision registries are refused. This pure decision must run
+against the latest trusted stored state inside an atomic adapter update; it does
+not itself supply durability or latest-policy discovery. See the
+[transaction and observation limits](witness-policy-client.md).
