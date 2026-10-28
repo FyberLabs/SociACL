@@ -2,7 +2,9 @@
 
 Production bootstrap, freshness leases, history restoration and root migration
 follow the [independent trust and recovery contract](witness-policy-bootstrap.md).
-The APIs below do not authenticate those external inputs.
+The APIs below do not authenticate those external inputs. The separate
+[checkpoint verifier](witness-checkpoint.md) authenticates management snapshots;
+it does not install them or replace the production adapter requirements.
 
 `verifyWitnessPolicyEnvelope(envelopeJson, root, audience, now)` and Rust's
 `verify_witness_policy_envelope` authenticate the export format from

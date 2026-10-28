@@ -39,3 +39,14 @@ if (transition.ok) {
   // @ts-expect-error A consumer cannot erase retained removal history.
   saved.history[0].removed = false;
 }
+
+import { verifyWitnessCheckpoint, type WitnessCheckpointExpectations, type WitnessCheckpoint } from '../src/index.js';
+declare const checkpointContext: WitnessCheckpointExpectations;
+const checkpointResult = verifyWitnessCheckpoint('{}', '{}', checkpointContext);
+if (checkpointResult.ok) {
+  const checkpoint: WitnessCheckpoint = checkpointResult.value;
+  // @ts-expect-error Authenticated history is immutable.
+  checkpoint.state.history[0].removed = false;
+}
+// @ts-expect-error All independently trusted request bindings are mandatory.
+verifyWitnessCheckpoint('{}', '{}', {root: '', audience: '', now: 1});

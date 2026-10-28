@@ -440,3 +440,16 @@ and time limits, and return only after verified storage commits. Bootstrap stays
 explicit; refresh failures never erase history or silently return old trust.
 See the [client contract](../../docs/witness-policy-client.md#browser-https-client)
 for cancellation, freshness and trusted-configuration requirements.
+
+## Management checkpoint authentication
+
+`verifyWitnessCheckpoint(checkpointJson, policyEnvelopeJson, expected)` verifies
+a request-bound, complete-history management signature and the matching live
+policy signature. Independently provision all `WitnessCheckpointExpectations`,
+including distinct management/policy roots, exact root epoch, audience, enrollment
+client, fresh 32-byte base64url challenge, revision floor and trusted Unix time.
+The maximum signed lease is 300 seconds. Returns immutable candidate metadata and
+state or `bad-attestation`; it does not consume challenges or install trust.
+See [wire format and adapter obligations](../../docs/witness-checkpoint.md).
+The existing IndexedDB/client APIs cannot restore checkpoint history; do not pass
+this result directly to a production resolver or treat it as recovery permission.

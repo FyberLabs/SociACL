@@ -71,6 +71,17 @@ fn resolution<T>(r: Resolution<T>, c: &Case) -> Result<T, Reason> {
     r.result
 }
 fn run(f: &Family, c: &Case, v: &Value) -> Result<Value, Reason> {
+    if f.family == "witness-checkpoint" {
+        let ctx = context(f, c);
+        let expected = WitnessCheckpointExpectations {
+            management_root: ctx["managementRoot"].as_str().unwrap(), root: ctx["root"].as_str().unwrap(),
+            root_epoch: ctx["rootEpoch"].as_u64().unwrap(), audience: ctx["audience"].as_str().unwrap(),
+            client: ctx["client"].as_str().unwrap(), challenge: ctx["challenge"].as_str().unwrap(),
+            minimum_revision: ctx["minimumRevision"].as_u64().unwrap(), now: ctx["now"].as_u64().unwrap(),
+        };
+        return Ok(serde_json::to_value(verify_witness_checkpoint(v["checkpoint"].as_str().unwrap(),
+            v["policy"].as_str().unwrap(), &expected)?).unwrap());
+    }
     if f.family == "witness-lifecycle" {
         let ctx = context(f, c);
         let mut previous = v["previous"].as_str().map(str::to_owned);
@@ -569,7 +580,7 @@ fn every_shared_vector() {
         .filter(|p| p.extension().is_some_and(|s| s == "json"))
         .collect();
     paths.sort();
-    assert_eq!(paths.len(), 14);
+    assert_eq!(paths.len(), 15);
     let mut names = BTreeSet::new();
     for path in paths {
         let f: Family = serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap();

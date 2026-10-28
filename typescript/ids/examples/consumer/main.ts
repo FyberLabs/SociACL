@@ -107,3 +107,8 @@ if (false) {
   void revision;
   client.close();
 }
+
+import { verifyWitnessCheckpoint, type WitnessCheckpointExpectations } from 'sociacl-ids';
+const checkpointContext: WitnessCheckpointExpectations = { managementRoot: '', root: '', rootEpoch: 1,
+  audience: 'deployment', client: 'enrollment', challenge: '', minimumRevision: 1, now: 1700000000 };
+if (verifyWitnessCheckpoint('{}', '{}', checkpointContext).ok) throw Error('invalid checkpoint accepted');
