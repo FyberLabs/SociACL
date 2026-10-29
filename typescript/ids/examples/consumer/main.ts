@@ -125,3 +125,7 @@ if (false) {
 }
 import { advanceWitnessCheckpoint } from 'sociacl-ids';
 if (advanceWitnessCheckpoint('{}', '{}', '{}', checkpointContext).ok) throw Error('invalid checkpoint transition');
+
+import { openWitnessCheckpointClient } from 'sociacl-ids/checkpoint-client';
+const checkpointClientFactory: typeof openWitnessCheckpointClient = openWitnessCheckpointClient;
+void checkpointClientFactory;

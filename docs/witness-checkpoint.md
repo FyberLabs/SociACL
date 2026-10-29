@@ -114,8 +114,7 @@ Do not feed its JWKS directly into a production resolver. The adapter must:
 
 The existing `openWitnessPolicyClient`/IndexedDB v1 APIs do not perform these steps
 and cannot restore a complete checkpoint history. There is intentionally no
-`verified: true` callback or direct-write escape hatch. Checkpoint-aware storage,
-management transport/service and application startup integration remain #136 and
+`verified: true` callback or direct-write escape hatch. Recovery/migration storage, management service and application startup integration remain #136 and
 Panopticon #552. Root migration needs its own authenticated action and atomic
 transition; this API requires an exact already-trusted root/epoch.
 
@@ -200,3 +199,6 @@ Validation includes 34 storage regressions and real Chromium schema upgrades,
 concurrent refreshes, cross-page reads, full-process restart and monotonic expiry.
 Run `npm run test:browser-store` with Playwright Chromium installed. This establishes
 adapter behavior, not product adoption or deployed management-service acceptance.
+
+The optional [authenticated HTTPS client](witness-checkpoint-client.md) connects
+existing-state refresh to a provisioned management endpoint and credential provider.
