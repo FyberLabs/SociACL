@@ -466,3 +466,15 @@ The shared `advanceWitnessCheckpoint` helper (Rust: `advance_witness_checkpoint`
 performs the pure continuity comparison. See the
 [refresh contract](../../docs/witness-checkpoint.md#continuity-reconciliation-and-browser-refresh)
 for configuration, schema upgrade and failure semantics.
+
+
+### Authenticated checkpoint transport
+
+`sociacl-ids/checkpoint-client` exports `openWitnessCheckpointClient`. Supply the
+checkpoint-store configuration, an independently provisioned HTTPS `url`, and a
+management enrollment `getAccessToken(signal)` provider. `refresh({signal})` sends
+a fresh challenge, authenticates the response and installs it durably before
+returning. Credential/download/storage failures invalidate this handle's freshness;
+`readInstalled()` remains historical and `readFresh()` requires a live lease.
+There is no automatic retry, bootstrap or recovery. See the
+[HTTP and cancellation contract](../../docs/witness-checkpoint-client.md).
