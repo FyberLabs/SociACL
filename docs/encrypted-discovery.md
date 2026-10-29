@@ -44,7 +44,7 @@ A wrap is not a grant. `checkSee` and `checkSeeGrant` do not take wrap bytes and
 
 ## One inbox lane
 
-Each reader account has **exactly one** disclosed base inbox lane (`RecipientInbox`). Every private grant row for that account is appended to that lane. The reader scans that lane and no other. A per-contact lane is not a second `RecipientInbox`.
+Each reader account has **exactly one** disclosed base inbox lane (`RecipientInbox`). Every private grant row for that account is appended to that lane. The `RecipientInbox` grant-row scanner scans only that base lane. This rule describes the existing private-grant delivery contract; it does not specify a scanner for the per-contact transport below. A per-contact lane is not a second `RecipientInbox`.
 
 Scanning a shared bucket is not allowed. A lane is not a bucket many readers trial-decrypt. There is no second `RecipientInbox` per device, per epoch, or per contact. Devices of one account share one SEA keypair and one disclosed base lane. A per-contact inbox lane is HKDF of a separate contact-lane secret, not of that disclosed lane. See [Per-contact inbox lanes](#per-contact-inbox-lanes). A keyring rotation replaces the disclosed base lane. It does not add a device lane.
 
@@ -220,7 +220,9 @@ Open derives the sender's encryption public key from `epriv`. The sequence is th
 
 `regrantContactLanes` / `regrant_contact_lanes` seals a fresh grant for each contact after the contact-lane secret rotates. It resolves every contact's `currentEpub` first. One null epub fails the whole call with `epub-unknown` before any grant is returned.
 
-`laneLookupKey` / `lane_lookup_key` returns the lane id hex. Storage indexes a contact lane by that string alone. The index key is not either `PrincipalId` and not a `~pub` path. Message authenticity is the recipient signature inside the sealed envelope. It is not the path the bytes were stored under. A lane is delivery only. It does not grant. Hopcap stays 1.
+`laneLookupKey` / `lane_lookup_key` returns the lane id hex. The contact-lane transport planned in #71 must index a contact lane by that string alone. The index key is not either `PrincipalId` and not a `~pub` path. Message authenticity is the recipient signature inside the sealed envelope. It is not the path the bytes were stored under. A lane is delivery only. It does not grant. Hopcap stays 1.
+
+A `ContactLaneGrant` delivers the derived lookup id to its authorized sender; it is not a `BlindedGrantRow` and does not create another `RecipientInbox`. These helpers derive and exchange lookup ids only. They do not append contact messages or scan either the base or derived lanes. The contact transport must define its authorized subscriptions and message retrieval in #71; scanning the base lane does not retrieve messages stored under a derived id.
 
 This crate does not wire Panopticon or Gun, and it does not open a first-contact public request channel. The request channel is [SociACL#70](https://github.com/FyberLabs/SociACL/issues/70). The lane-id index and its write-spam limits are [SociACL#71](https://github.com/FyberLabs/SociACL/issues/71). The shared vector is `vectors/encrypted-discovery/contact-lane.json`. `typescript/tests/support/generate-contact-lane.ts` rebuilds it. The deterministic seal that pins the ephemeral and the nonce is test-only. It is not a public export. It still confirms the recipient keyring and does not read Gun.
 
@@ -842,7 +844,7 @@ The names are `EncryptedDiscoveryVector` in [s3rch-check.d.ts](s3rch-check.d.ts)
 
 `account-key-head-max-age`. The signed `maxAgeMs` and `policyMaxAgeMs` are both longer than `ACCOUNT_KEY_HEAD_MAX_AGE_MS`. The head is `stale` once its age passes 300000 milliseconds. The same head at that age is accepted. Neither the signature nor the verifier cap can raise the ceiling.
 
-`account-key-provider-older-key`. The provider signing key equals a `keyPub` older than the head, or the anchor entry, or an entry whose hash still links below the anchor. The head is refused. Equality with the head's own `keyPub` is the same refusal.
+`account-key-provider-older-key`, `account-key-provider-anchor-key`, and `account-key-provider-below-anchor`. The anchor-key case supplies the provider key only through the trusted anchor, outside the entries list. The provider signing key equals a `keyPub` older than the head, or the anchor entry, or an entry whose hash still links below the anchor. The head is refused. Equality with the head's own `keyPub` is the same refusal.
 
 `consume-statement-does-not-mint`. A hop, a status statement, a chat node, a manifest, a binding, an `ssig`, and a log entry do not mint a grant.
 

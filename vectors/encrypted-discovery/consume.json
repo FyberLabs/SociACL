@@ -605,6 +605,44 @@
       "now": 1700000000000,
       "skewAllowanceMs": 5000,
       "policyMaxAgeMs": 60000,
+      "name": "account-key-provider-anchor-key",
+      "entries": [
+        {
+          "account": "provider:acct",
+          "keyPub": "sea-mid",
+          "seq": 1,
+          "prev": "96ae87e5f002edf6fdd0b0deeb60e14f8154bdd1f67f4d7e8213868dbc881fc7"
+        },
+        {
+          "account": "provider:acct",
+          "keyPub": "sea-next",
+          "seq": 2,
+          "prev": "de1666b6533d032b4dd8507d560c124b52e585cb97bce7e3f6211b63e0501352"
+        }
+      ],
+      "head": {
+        "account": "provider:acct",
+        "seq": 2,
+        "entryHash": "dc1e210537584d8ec845df9d0b27b5871f15176068dadfa221cc3a1004f1f20b",
+        "issuedAt": 1700000000000,
+        "maxAgeMs": 60000
+      },
+      "headSignature": "563fc8bfa21bbfb04f39869f9dac81005f0707801beb887f0da18f5e49d93bd55623a1bed2a7628bd4b7192189cf0cf902a97d1cef31f7fdb2dc7d5e30b2d319",
+      "expectedAccount": "provider:acct",
+      "statementKeyPub": "sea-next",
+      "decision": "head-mismatch",
+      "anchor": {
+        "account": "provider:acct",
+        "keyPub": "YP7UuiVanTHJYet0xjVtaMBJuJI7Yfps5mliLmDyn7Y.eQP-EAi4vJmkGunpVii8ZPLxsgwtfp9Rd6PClNRGIpk",
+        "seq": 0,
+        "prev": "none"
+      }
+    },
+    {
+      "providerAnswered": true,
+      "now": 1700000000000,
+      "skewAllowanceMs": 5000,
+      "policyMaxAgeMs": 60000,
       "name": "account-key-provider-below-anchor",
       "entries": [
         {
