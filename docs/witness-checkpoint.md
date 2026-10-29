@@ -202,3 +202,16 @@ adapter behavior, not product adoption or deployed management-service acceptance
 
 The optional [authenticated HTTPS client](witness-checkpoint-client.md) connects
 existing-state refresh to a provisioned management endpoint and credential provider.
+
+## Panopticon signing interoperability
+
+`vectors/interop/panopticon-checkpoint.json` is a public-key fixture produced by
+Panopticon's internal `sign_checkpoint_for_verified_refresh` with a real PostgreSQL
+snapshot. Dedicated TypeScript and Rust tests accept its signature/full history and
+reject changed client, root epoch, challenge and expired use. The fixture is separate
+from the generated identity-vector manifest; it does not change the 1,194-case count.
+Panopticon tests also check the committed fixture against its actual signer output.
+
+The signer requires an independently supplied management continuity commitment; its
+input class does not authenticate provenance. Protected management storage, client
+authorization/replay consumption, deployment and recovery/migration remain open.
