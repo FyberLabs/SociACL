@@ -50,3 +50,10 @@ if (checkpointResult.ok) {
 }
 // @ts-expect-error All independently trusted request bindings are mandatory.
 verifyWitnessCheckpoint('{}', '{}', {root: '', audience: '', now: 1});
+
+import { advanceWitnessCheckpoint } from '../src/index.js';
+const advancedCheckpoint = advanceWitnessCheckpoint('{}', '{}', '{}', checkpointContext);
+if (advancedCheckpoint.ok) {
+  // @ts-expect-error Returned reconciled history is immutable.
+  advancedCheckpoint.value.state.history[0].removed = false;
+}

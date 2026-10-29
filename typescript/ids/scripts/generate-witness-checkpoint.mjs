@@ -2,7 +2,7 @@
 import { writeFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import { p256 } from '@noble/curves/nist.js';
-import { verifyWitnessCheckpoint } from '../src/index.js';
+import { advanceWitnessCheckpoint, verifyWitnessCheckpoint } from '../src/index.js';
 const secret = n => Buffer.from(BigInt(n).toString(16).padStart(64, '0'), 'hex');
 const b64 = b => Buffer.from(b).toString('base64url');
 const principal = n => {const p=p256.getPublicKey(secret(n),false);return b64(p.slice(1,33))+'.'+b64(p.slice(33));};
@@ -81,8 +81,32 @@ alter('unknown-outer-field',o=>o.root=context.managementRoot);
 alter('wrong-envelope-type',o=>o.type='other');alter('short-signature',o=>o.signature=b64(Buffer.alloc(63)));
 alter('high-s-signature',o=>{const sig=Buffer.from(o.signature,'base64url');const order=BigInt('0xffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551');const s=BigInt('0x'+sig.subarray(32).toString('hex'));sig.set(Buffer.from((order-s).toString(16).padStart(64,'0'),'hex'),32);o.signature=b64(sig);});
 no('duplicate-envelope-member',{checkpoint:base.checkpoint.replace('"type":','"payload":"AA","type":')});
+// Reconciliation never substitutes a signed checkpoint for saved restrictions.
+const prior = {...state,revision:7,jwks:{keys:[a]},history:[{jwk:a,removed:false}]};
+function continuity(name, previous, d=doc, rejected=false, ctx={}) {
+ const c={name,operation:'advance',input:{checkpoint:sign(d),policy:policy(d.state),previous:typeof previous==='string'?previous:JSON.stringify(previous)},...ctx};
+ if(rejected) reject.push({...c,reason:'bad-attestation'}); else accept.push({...c,canonical:d});
+}
+continuity('advance-adds-authenticated-history',prior);
+continuity('advance-idempotent-complete-state',state);
+continuity('advance-enriches-observed-history',{...state,history:[{jwk:b,removed:false}]});
+const narrowedA={...a,notBefore:a.notBefore+10,notAfter:a.notAfter-10};
+continuity('advance-narrows-removed-key',state,{...doc,state:{...state,history:[{jwk:narrowedA,removed:true},{jwk:b,removed:false}]}});
+continuity('advance-refuses-omitted-tombstone',state,{...doc,state:{...state,history:[{jwk:b,removed:false}]}},true);
+continuity('advance-refuses-widened-tombstone',{...state,history:[{jwk:narrowedA,removed:true},{jwk:b,removed:false}]},doc,true);
+continuity('advance-refuses-dropped-unseen-local-history',{...state,history:[...state.history,{jwk:key(21),removed:true}]},doc,true);
+continuity('advance-refuses-removed-key-resurrection',{...state,revision:7,jwks:{keys:[]},history:[{jwk:a,removed:true},{jwk:b,removed:true}]},doc,true);
+continuity('advance-refuses-local-revision-rollback',{...state,revision:9},doc,true);
+continuity('advance-refuses-conflicting-same-revision',{...prior,revision:8},doc,true);
+continuity('advance-refuses-local-root-change',{...state,root:principal(21)},doc,true);
+continuity('advance-refuses-local-audience-change',{...state,audience:'other'},doc,true);
+continuity('advance-refuses-corrupt-state','{}',doc,true);
+continuity('advance-refuses-empty-state','',doc,true);
+continuity('advance-refuses-null-state','null',doc,true);
+continuity('advance-refuses-history-material-change',{...state,history:[{jwk:{...key(21),kid:a.kid},removed:true},{jwk:b,removed:false}]},doc,true);
+continuity('advance-refuses-active-window-widening',{...state,revision:7,jwks:{keys:[{...b,notAfter:b.notAfter-1}]},history:[{jwk:a,removed:true},{jwk:{...b,notAfter:b.notAfter-1},removed:false}]},doc,true);
 for(const c of [...accept,...reject]) {
- const result=verifyWitnessCheckpoint(c.input.checkpoint,c.input.policy,{...context,...c});
+ const result=c.operation==='advance' ? advanceWitnessCheckpoint(c.input.checkpoint,c.input.policy,c.input.previous,{...context,...c}) : verifyWitnessCheckpoint(c.input.checkpoint,c.input.policy,{...context,...c});
  if(c.reason) assert.deepEqual(result,{ok:false,reason:c.reason},c.name);
  else {assert.ok(result.ok,c.name);assert.deepEqual(result.value,c.canonical,c.name);}
 }

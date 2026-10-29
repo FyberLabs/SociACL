@@ -158,6 +158,43 @@ pub fn verify_witness_checkpoint(
     })
 }
 
+/// Authenticate and reconcile against existing trusted continuity. No reset or
+/// bootstrap is provided. Run against the latest state inside the adapter lock.
+pub fn advance_witness_checkpoint(
+    envelope: &str,
+    policy_envelope: &str,
+    previous_json: &str,
+    expected: &WitnessCheckpointExpectations<'_>,
+) -> Result<WitnessCheckpoint, Reason> {
+    let checkpoint = verify_witness_checkpoint(envelope, policy_envelope, expected)?;
+    let required = advance_witness_policy(
+        policy_envelope,
+        Some(previous_json),
+        expected.root,
+        expected.audience,
+        expected.minimum_revision,
+        expected.now,
+    )?;
+    let offered: std::collections::BTreeMap<_, _> = checkpoint
+        .state
+        .history
+        .iter()
+        .map(|entry| (&entry.jwk.kid, entry))
+        .collect();
+    for old in &required.history {
+        let next = offered.get(&old.jwk.kid).ok_or(Reason::BadAttestation)?;
+        if (old.removed && !next.removed)
+            || next.jwk.x != old.jwk.x
+            || next.jwk.y != old.jwk.y
+            || next.jwk.not_before < old.jwk.not_before
+            || next.jwk.not_after > old.jwk.not_after
+        {
+            return Err(Reason::BadAttestation);
+        }
+    }
+    Ok(checkpoint)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

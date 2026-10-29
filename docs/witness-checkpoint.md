@@ -122,7 +122,7 @@ transition; this API requires an exact already-trusted root/epoch.
 ## Validation
 
 `vectors/ids/witness-checkpoint.json` is executed by both language manifests. Its
-79 cases cover full removed-key history, exact-byte signatures, lease boundaries,
+96 cases cover full removed-key history, exact-byte signatures, lease boundaries,
 request/scope binding, replay against a different request, independent keys,
 root epochs, live matching policy, malformed state, altered history, high-S
 signatures, duplicate members, Unicode and canonical encodings. Boundary tests in
@@ -135,3 +135,68 @@ The deterministic generator uses public test scalars and a fixed test challenge.
 It is not a production issuer or a source of enrollment credentials. These tests
 are cryptographic compatibility evidence, not production adapter or deployment
 acceptance.
+
+## Continuity reconciliation and browser refresh
+
+`advanceWitnessCheckpoint(checkpointJson, policyEnvelopeJson, previousJson, expected)`
+and Rust's `advance_witness_checkpoint` additionally reconcile the authenticated
+snapshot against existing trusted state. They reject revision rollback, conflicting
+same-revision registries, missing historical keys, changed key material, resurrected
+tombstones and widened issuance windows. Additional authenticated history is allowed.
+There is no null-state bootstrap. Both languages execute the same 17 reconciliation
+cases in the checkpoint vector family.
+
+The optional `sociacl-ids/checkpoint-store` export provides
+`openWitnessCheckpointStore(options)` for refreshing **existing** browser continuity.
+Options contain `name`, independent management/policy roots, `rootEpoch`, `audience`,
+`client`, `minimumRevision`, and a trusted UTC `now()` in Unix seconds. An optional
+`monotonic()` supplies milliseconds (default `performance.now()`); `indexedDB` and
+`crypto` are injectable platform dependencies. Protect this configuration separately
+from responses. The adapter does not implement a management transport or enrollment.
+
+```js
+import { openWitnessCheckpointStore } from 'sociacl-ids/checkpoint-store';
+const store = await openWitnessCheckpointStore(trustedConfiguration);
+const request = await store.beginRefresh();
+// Send request through the independently authenticated management transport.
+const response = await management.refresh(request);
+await store.install(request, response.checkpoint, response.policy);
+const state = await store.readFresh(); // At the freshness-sensitive decision boundary.
+```
+
+`beginRefresh()` invalidates this handle's previous lease and request, checks saved
+continuity, and creates a random 32-byte challenge. `install()` accepts only that
+exact request object, once; failure also consumes it. Requests are held in memory,
+never restored after restart. Lost responses require a new request. The service must
+bind the request to authenticated client identity and its authoritative continuity.
+
+A strict IndexedDB transaction rereads the latest row, authenticates both signatures,
+reconciles history, and saves complete state, exact signed evidence, challenge and
+acceptance time together. Verification repeats after lock waits, before completion
+and before returning. Failed writes preserve the prior row. A commit followed by
+cancellation, expiry or a lost response may persist evidence without granting a
+lease; `readInstalled()` inspects that historical state and a new refresh restores
+freshness. Concurrent writers serialize; `readFresh()` rejects a row replaced by
+another handle, including replacement with different evidence at the same revision.
+
+Freshness is per handle, bounded by the earlier policy/checkpoint UTC expiry and a monotonic deadline anchored
+to request creation, at most 300 seconds. Reads do not extend it. Backward/invalid
+clocks, failed refreshes, `cancel()` and `close()` invalidate that handle's lease.
+Reopening always requires a new checkpoint, even when saved evidence has not expired.
+`readInstalled()` enforces the configured revision floor but makes no freshness
+claim. A raised floor permits renewal from an older authentic row while blocking
+reads of that row. Historical state must not be substituted after `readFresh()` fails.
+
+Opening upgrades the existing policy database to schema 2, excluding schema-1
+writers. Existing schema-1 rows are authenticated before use; conversion occurs only
+on a successful checkpoint commit. Missing/corrupt rows remain blocked. There are
+no bootstrap, restore, reset or root-migration methods. Changed roots, epochs or
+client scope cannot silently migrate saved checkpoints. Trusted origin storage is
+still required; this is not protection against XSS or complete profile rollback.
+External authoritative continuity, explicit recovery/migration authorization and
+product startup/verification integration remain #136 and Panopticon #552.
+
+Validation includes 34 storage regressions and real Chromium schema upgrades,
+concurrent refreshes, cross-page reads, full-process restart and monotonic expiry.
+Run `npm run test:browser-store` with Playwright Chromium installed. This establishes
+adapter behavior, not product adoption or deployed management-service acceptance.

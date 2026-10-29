@@ -79,8 +79,13 @@ fn run(f: &Family, c: &Case, v: &Value) -> Result<Value, Reason> {
             client: ctx["client"].as_str().unwrap(), challenge: ctx["challenge"].as_str().unwrap(),
             minimum_revision: ctx["minimumRevision"].as_u64().unwrap(), now: ctx["now"].as_u64().unwrap(),
         };
-        return Ok(serde_json::to_value(verify_witness_checkpoint(v["checkpoint"].as_str().unwrap(),
-            v["policy"].as_str().unwrap(), &expected)?).unwrap());
+        let result = if c.extra.get("operation").and_then(Value::as_str) == Some("advance") {
+            advance_witness_checkpoint(v["checkpoint"].as_str().unwrap(), v["policy"].as_str().unwrap(),
+                v["previous"].as_str().unwrap(), &expected)?
+        } else {
+            verify_witness_checkpoint(v["checkpoint"].as_str().unwrap(), v["policy"].as_str().unwrap(), &expected)?
+        };
+        return Ok(serde_json::to_value(result).unwrap());
     }
     if f.family == "witness-lifecycle" {
         let ctx = context(f, c);

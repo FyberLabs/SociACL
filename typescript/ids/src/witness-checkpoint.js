@@ -70,3 +70,31 @@ export function verifyWitnessCheckpoint(envelope, policyEnvelope, expected) {
       rootEpoch, issuedAt: start, expiresAt: end, state: state.value }));
   } catch { return fail('bad-attestation'); }
 }
+
+/** Authenticate and reconcile a checkpoint against the latest trusted local state.
+ * No bootstrap/reset: previousJson must name existing validated continuity.
+ * Additional authenticated history is allowed, but no local restriction may be lost.
+ * Run inside the adapter's serialized transaction; this function performs no I/O.
+ * @param {unknown} envelope
+ * @param {unknown} policyEnvelope
+ * @param {unknown} previousJson
+ * @param {import('./types.js').WitnessCheckpointExpectations} expected
+ * @returns {import('./types.js').Result<import('./types.js').WitnessCheckpoint>}
+ */
+export function advanceWitnessCheckpoint(envelope, policyEnvelope, previousJson, expected) {
+  try {
+    if (typeof previousJson !== 'string') return fail('bad-attestation');
+    const checkpoint = verifyWitnessCheckpoint(envelope, policyEnvelope, expected);
+    if (!checkpoint.ok) return checkpoint;
+    const required = advanceWitnessPolicy(policyEnvelope, previousJson, expected.root,
+      expected.audience, expected.minimumRevision, expected.now);
+    if (!required.ok) return fail('bad-attestation');
+    const offered = new Map(checkpoint.value.state.history.map(entry => [entry.jwk.kid, entry]));
+    for (const old of required.value.history) {
+      const next = offered.get(old.jwk.kid);
+      if (!next || (old.removed && !next.removed) || next.jwk.x !== old.jwk.x || next.jwk.y !== old.jwk.y ||
+          next.jwk.notBefore < old.jwk.notBefore || next.jwk.notAfter > old.jwk.notAfter) return fail('bad-attestation');
+    }
+    return checkpoint;
+  } catch { return fail('bad-attestation'); }
+}
