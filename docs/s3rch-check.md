@@ -105,7 +105,74 @@ both predicates, missing/one-sided membership, destination binding, immediate
 cancellation and independent grant paths. Both language runners execute them;
 the Rust forum integration additionally posts and accepts a group-only offer,
 then refuses acceptance and a new post after the binding is withdrawn.
-Pause/reassign coordination and drawer child write admission remain in #123.
+The pause/reassign workflow and drawer write boundary are specified below.
+
+### Pause and reassign: cancellation before replacement
+
+A pause or reassignment label on `ForumAgentStatus` is data. It neither cancels
+an existing grant nor grants access to the replacement. Use the existing signed
+see, post and group cancellation rows on each destination's ACL. No new status
+soul or signature domain is introduced.
+
+`ForumDelegationChangePlan` and `ForumDelegationChangePhase` describe local app
+coordination, not wire authority or a completion verifier. The app must provide
+the following ordered workflow:
+
+1. **Fence work and inventory destinations.** Authenticate the status owner and
+   serialize the change with task dispatch, new child creation and grant writes.
+   Stop dispatching work to the old delegate. Load the complete owner-maintained
+   inventory of affected task/child ids and their direct/group grant paths;
+   visible drawer rows and an untrusted request's object list are insufficient.
+   Each destination owner must authorize its cancellations. A status owner is
+   not automatically the owner of every referenced destination. If that authority
+   or complete inventory is unavailable, keep the change pending.
+2. **Revoke before granting.** Persist the plan and exact signed cancellation
+   rows before delivery; use owner-authorized `stated: 0` rows with HAM values
+   above the live rows they revoke. Cancel post first to stop delegated writes,
+   then direct see, and remove every independently authorizing membership or
+   object-set binding. Post cancellation alone leaves reads; direct cancellation
+   alone can leave group reads and offer admission. Keep tombstones. If a group
+   is shared with unrelated work, obtain authorization for the wider revocation
+   or keep the change pending; do not claim a task-only revoke happened. Ownership
+   itself cannot be cancelled this way: a delegate that owns a destination needs
+   a separate authorized ownership/data migration, outside this flow.
+3. **Reconcile and confirm.** Retry the same signed rows after a lost response,
+   and reconcile authenticated stored rows before advancing. A timeout, missing
+   row, expired grant or a stale local Check is not a cancellation receipt. Verify
+   durable cancellation state for every inventoried path, and re-Check the old
+   delegate's read/write/offer access on current authenticated state. Fence any
+   concurrent regrant or newly added destination until this finishes. Account-key
+   rotation must not erase the revocation: obtain timestamp attestations where
+   required for cancellations to survive retirement, or keep the change pending
+   across rotation. Do not promise instant revocation on disconnected peers or
+   erasure of plaintext/keys already obtained. Production completion additionally
+   needs the enforcing app/worker's acknowledgement and drain/fence of in-flight
+   effects; these pure Check functions cannot stop a running process.
+4. **Complete pause or authorize replacement.** A pause reaches `paused` only
+   after step 3. Reassignment stays `revoking` until that boundary, then enters
+   `granting`. Obtain fresh owner-authorized grants for the new delegate on the
+   exact destinations and capabilities needed. An assignment label, old offer,
+   hint or copied old grant is insufficient. Drawer writes still require direct
+   see plus post; grant admission still enforces the post ceiling. Re-Check the
+   replacement before dispatch and only then report local phase `assigned` and
+   publish the corresponding owner-authenticated status update. These local
+   phases do not add values to `ForumAgentState`. Preserve object ownership and existing drawer paths; naming a new
+   delegate does not move the records into that delegate's drawer.
+
+Failure or user cancellation does not roll back already applied revocations.
+If replacement grants only partially succeed, keep dispatch fenced and reconcile
+or explicitly revoke those new grants; do not restore the previous delegate's
+old rows. Resume is a new owner-authorized grant operation with newer HAM state,
+not replay of pre-pause grants. Retain the durable operation identity, row bytes
+and progress across restart so stale retries cannot supersede newer work.
+
+Shared post vectors `forum-pause-*`, `forum-reassign-*` and `forum-resume-*`
+exercise cancellation ordering, lost-response retries, old-grant replay and
+explicit replacement/resume grants. `forum-cancel-every-independent-grant-path`
+in the group vectors covers group access surviving a direct cancellation.
+These test destination ACL behavior, not distributed workflow completion.
+The app coordinator, signed status writes, durable inventory, worker fencing and
+restart/concurrency tests belong to [s3r.ch #146](https://github.com/FyberLabs/s3r.ch/issues/146).
 
 ### Drawer child admission
 
@@ -149,7 +216,7 @@ Shared `drawer-*` cases in the post/group vectors cover owner/delegate writes,
 read-only refusal, group-read refusal, see/post cancellation, the post ceiling,
 unknown children, wrong drawer agents and invalid forum kinds. This supplies
 the library contract for #123's drawer gap; product adoption is still separate.
-Pause/reassign privilege reduction remains open.
+Pause/reassign uses the ordered cancellation workflow above.
 
 ### Soul helpers and stored data
 

@@ -486,6 +486,13 @@ export function runPostCase(steps, options) {
       if (got.allowed !== step.allowed || got.reason !== step.reason) failStep(step, got);
       continue;
     }
+    if (step.op === 'check') {
+      const got = checkSee(graph, step.object, step.accessor, step.now,
+        step.hint ? { principal: step.accessor } : undefined,
+        step.hop ? { channel: 'convention-badge' } : undefined);
+      if (got.allowed !== step.allowed || got.reason !== step.reason) failStep(step, got);
+      continue;
+    }
     if (step.op === 'check-post') {
       const got = checkPost(graph, step.object, step.accessor, step.now, step.hint ? { principal: step.accessor } : undefined, step.hop ? { channel: 'convention-badge' } : undefined);
       if (got.allowed !== step.allowed || got.reason !== step.reason) failStep(step, got);
