@@ -112,6 +112,30 @@ export type ForumAgentStatus = {
 };
 
 /**
+ * Local owner-coordinated pause/reassign intent. Not a Gun wire record,
+ * grant, cancellation receipt or proof that a remote peer has stopped.
+ * The app supplies a complete owner-authorized destination inventory, fences
+ * concurrent grants/work, and persists exact signed cancellation rows for retry.
+ * A status put alone never changes Check. See the consume guide's ordered flow.
+ */
+export type ForumDelegationChangePlan = {
+  statusId: ObjectId;
+  previousDelegate: PrincipalId;
+  /** Includes task and every delegated child destination, not just visible rows. */
+  affectedObjects: readonly ObjectId[];
+} & (
+  | { operation: "pause"; nextDelegate?: never }
+  | { operation: "reassign"; nextDelegate: PrincipalId }
+);
+
+/** Local workflow progress only. Never an input to Check or admission. */
+export type ForumDelegationChangePhase =
+  | "revoking"
+  | "paused"
+  | "granting"
+  | "assigned";
+
+/**
  * Need object. Soul:
  * s3rch/forums/<forumId>/needs/<needId>
  * `stated` 1 is open. `stated` 0 is resolved.
