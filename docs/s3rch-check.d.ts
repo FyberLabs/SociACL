@@ -602,6 +602,30 @@ export function forumUpdateSoul(
   updateId: ObjectId,
 ): string;
 
+/** Owned artifact record under the agent; references do not grant target access. */
+export function forumArtifactSoul(
+  forumId: ObjectId,
+  seaPubkey: PrincipalId,
+  artifactId: ObjectId,
+): string;
+
+/**
+ * Write admission for a subtask, update or artifact child.
+ * Child ownership must already be authenticated by putObject and match the
+ * drawer agent. The agent owns the record; a delegate needs both a live direct
+ * see grant and a separate post grant on this exact child. Parent access,
+ * group read access and a path spelling do not confer write authority.
+ * Authenticate the writer and re-check at every put, including creation.
+ */
+export function checkForumChildWrite(
+  graph: SeeGraph,
+  forumId: ObjectId,
+  seaPubkey: PrincipalId,
+  childId: ObjectId,
+  writer: PrincipalId,
+  now: number,
+): CheckResult;
+
 /**
  * Tag for a forum chat statement on a GunFeedNode.
  * Spelling: `forum:<forumId>`. Not a soul.

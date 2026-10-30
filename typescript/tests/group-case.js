@@ -3,6 +3,7 @@
  * The runner does not enroll a signer.
  */
 import { admitGroupCancel, admitMembership, admitObjectSet, checkGroupPresentation, checkGroupSee, MemoryGroupGraph, reverifyGroup, snapshotUnderstatesGroup } from '../src/group.js';
+import { checkForumChildWrite } from '../src/post.js';
 import { checkForumSee } from '../src/forum.js';
 import { admitRow, putObject } from '../src/see.js';
 
@@ -74,6 +75,11 @@ export function runGroupCase(steps, options) {
       } else if (!got.ok || (step.dropped != null && got.value.dropped !== step.dropped)) {
         failStep(step, got.ok ? got.value : got.reason);
       }
+      continue;
+    }
+    if (step.op === 'check-drawer-write') {
+      const got = checkForumChildWrite(graph, step.forum, step.agent, step.object, step.accessor, step.now);
+      if (got.allowed !== step.allowed || got.reason !== step.reason) failStep(step, got);
       continue;
     }
     if (step.op === 'check-forum') {
