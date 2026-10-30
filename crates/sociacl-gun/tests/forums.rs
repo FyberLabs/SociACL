@@ -213,6 +213,22 @@ fn sgh1_hint_alone_fails_closed() {
     .unwrap();
     let bytes = hint.encode().unwrap();
     assert_eq!(&bytes[..4], b"SGH1");
+    let doc = vector();
+    let hex: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
+    assert_eq!(hex, doc["hint"]["hex"].as_str().unwrap());
+    assert_eq!(
+        hint.principal.as_str(),
+        doc["hint"]["fields"]["principal"].as_str().unwrap()
+    );
+    assert_eq!(
+        hint.target.as_str(),
+        doc["hint"]["fields"]["target"].as_str().unwrap()
+    );
+    assert_eq!(hint.verb.as_deref(), doc["hint"]["fields"]["verb"].as_str());
+    assert_eq!(
+        hint.context.as_deref(),
+        doc["hint"]["fields"]["context"].as_str()
+    );
     let decoded = accept_hint_bytes(&bytes).unwrap();
     assert_eq!(decoded, hint);
     let hop = HopFactor::Structured {
