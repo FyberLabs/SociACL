@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { historyState, parsePrincipalId } from '../ids/src/index.js';
-import { acceptHint, fromGunNode, toGunNode } from '../src/gun.js';
+import { acceptHint, checkForumSee, fromGunNode, toGunNode } from '../src/gun.js';
 import { admittedOwner, admitRow, checkSee, putObject } from '../src/see.js';
 
 const doc = JSON.parse(readFileSync(new URL('../../vectors/mesh/forums.json', import.meta.url)));
@@ -97,5 +97,13 @@ test('forums: SEA pubkey stays one Gun segment', () => {
     const segments = doc.souls[key].split('/');
     assert.ok(segments.includes(doc.seaPubkey), key);
     assert.equal(segments.filter(part => part === doc.seaPubkey).length, 1);
+  }
+});
+
+
+test('forums: invalid Check instants fail closed even for the owner', () => {
+  const { graph, object, owner } = open();
+  for (const now of [NaN, Infinity, -1, 0.5, Number.MAX_SAFE_INTEGER + 1]) {
+    assert.deepEqual(checkForumSee(graph, object, owner, now), { allowed: false, reason: 'unknown' });
   }
 });

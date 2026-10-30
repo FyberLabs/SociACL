@@ -2053,3 +2053,46 @@ fn hop_status_chat_and_hint_do_not_mint() {
             .allowed
     );
 }
+
+#[test]
+fn group_offer_requires_live_destination_binding_at_post_and_accept() {
+    let mut world = World::open();
+    let helper = world.subject.clone(); // scalar 2: the shared group's member
+    let owner = world.owner.clone();
+    let offer = world.offer(&helper, 0x71, "group offer", "");
+    let file: Value = serde_json::from_str(include_str!("../../../vectors/mesh/v2/group.json")).unwrap();
+    let steps = &file["accept"][0]["steps"];
+    for index in [1, 2] {
+        world.with_ctx(|graph, ctx| {
+            graph.admit_membership(&steps[index]["row"], &|_| Some(Vec::new()), ctx).unwrap();
+        });
+    }
+    assert!(accept_offer_transition(&mut world.graph, &world.open, None, &offer, &helper, 10).is_err());
+    let mut edge = steps[3]["row"].clone();
+    edge["object"] = world.need_id.as_ref().into();
+    for (stated, ham) in [(1, 1), (0, 2)] {
+        edge["stated"] = stated.into();
+        edge["hamState"] = ham.into();
+        let bytes = sociacl_ids::length_prefixed(&[
+            "sociacl-object-set-v2", owner.as_ref(), world.need_id.as_ref(),
+            "same-group", edge["set"].as_str().unwrap(), &stated.to_string(),
+            &ham.to_string(), &world.issued_at.to_string(), "0",
+        ]).unwrap();
+        edge["sig"] = sign_with_keyring(&world.owner_scalar, &bytes, &owner).unwrap().into();
+        world.with_ctx(|graph, ctx| {
+            graph.admit_object_set(&edge, &|_| Some(Vec::new()), ctx).unwrap();
+        });
+        if stated == 1 {
+            assert!(!world.graph.check_see(&world.need_id, &helper, 10, None, None).allowed);
+            assert!(accept_offer_transition(&mut world.graph, &world.open, None, &offer, &helper, 10).is_ok());
+            assert!(accept_need_transition(&world.graph, &world.open,
+                &accepting(&world.open, &offer, 2), Some(&offer), &owner, 10).is_ok());
+        } else {
+            assert!(accept_need_transition(&world.graph, &world.open,
+                &accepting(&world.open, &offer, 2), Some(&offer), &owner, 10).is_err());
+            let another = world.offer(&helper, 0x72, "after withdrawal", "");
+            assert!(accept_offer_transition(&mut world.graph, &world.open, None, &another, &helper, 10).is_err());
+        }
+        assert!(world.graph.admitted_owner(&offer.id).is_none());
+    }
+}

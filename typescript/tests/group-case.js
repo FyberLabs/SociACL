@@ -3,7 +3,8 @@
  * The runner does not enroll a signer.
  */
 import { admitGroupCancel, admitMembership, admitObjectSet, checkGroupPresentation, checkGroupSee, MemoryGroupGraph, reverifyGroup, snapshotUnderstatesGroup } from '../src/group.js';
-import { putObject } from '../src/see.js';
+import { checkForumSee } from '../src/forum.js';
+import { admitRow, putObject } from '../src/see.js';
 
 /** @param {Record<string, any>} step @param {unknown} got */
 function failStep(step, got) {
@@ -49,6 +50,11 @@ export function runGroupCase(steps, options) {
       } else if (!got.ok) failStep(step, got.reason);
       continue;
     }
+    if (step.op === 'admit') {
+      const got = admitRow(graph, step.row, resolverFor(step));
+      if (!got.ok) failStep(step, got);
+      continue;
+    }
     if (step.op === 'admit-member' || step.op === 'admit-object-set' || step.op === 'admit-cancel') {
       lastRow = step.row;
       const got = step.op === 'admit-member'
@@ -68,6 +74,11 @@ export function runGroupCase(steps, options) {
       } else if (!got.ok || (step.dropped != null && got.value.dropped !== step.dropped)) {
         failStep(step, got.ok ? got.value : got.reason);
       }
+      continue;
+    }
+    if (step.op === 'check-forum') {
+      const got = checkForumSee(graph, step.object, step.accessor, step.now);
+      if (got.allowed !== step.allowed || got.reason !== step.reason) failStep(step, got);
       continue;
     }
     if (step.op === 'check-group') {

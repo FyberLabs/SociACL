@@ -76,6 +76,37 @@ drawer admit rules remain there. Business and Fleet contracts remain in
 [#124](https://github.com/FyberLabs/SociACL/issues/124) and
 [#125](https://github.com/FyberLabs/SociACL/issues/125).
 
+### Offer admission through a group
+
+`checkForumSee` (`check_forum_see` in Rust) checks the need's stored object id.
+It accepts the admitted owner or a live direct see grant, then checks the
+owner-signed `same-group` or `named-circle` object-set binding and its live,
+jointly signed membership. The accessor does not supply a predicate or set.
+Membership in a forum, a role label, a parent forum, or a shared ancestor alone
+is insufficient. This remains hopcap 1; neither hint nor hop is an input to
+this helper. Group rows still require authenticated admission and re-verification
+when account-key history changes; this helper does not fetch or refresh history.
+
+Rust uses this check when posting an offer, when re-checking its helper at
+acceptance, and for the existing see-gated need HAM update. Acceptance still
+requires the stored live offer and the need owner or subject as writer; only
+the owner reopens. Offer withdrawal keeps its existing helper/owner/subject
+rules, including after membership is removed. No offer becomes an admitted
+object owner, and resolving never changes ownership.
+
+Direct and group access are independent grants. Cancelling a direct see row
+does not withdraw a separately authorized group binding. To remove all access,
+cancel every applicable path: direct grant and group membership or object-set
+binding. An existing offer must fail acceptance immediately when its helper
+has lost all such paths. An owner remains authorized by ownership.
+
+Shared `forum-*` cases in [group.json](../vectors/mesh/v2/group.json) cover
+both predicates, missing/one-sided membership, destination binding, immediate
+cancellation and independent grant paths. Both language runners execute them;
+the Rust forum integration additionally posts and accepts a group-only offer,
+then refuses acceptance and a new post after the binding is withdrawn.
+Pause/reassign coordination and drawer child write admission remain in #123.
+
 ### Soul helpers and stored data
 
 The account identity is the GunDB SEA pubkey (`PrincipalId`). A wallet and a Panopticon OAuth subject are linked credentials. They are not the agent key and not a second identity plane. Copy the forum names from [s3rch-check.d.ts](s3rch-check.d.ts). The consumer implements `forumAgentSoul`, `forumNeedSoul`, `forumOfferSoul`, `forumAlarmSoul`, `forumTemplateSoul`, `forumRoleSoul`, `forumSubtaskSoul`, `forumUpdateSoul`, and `forumChatTag`. Filled soul strings are in [vectors/mesh/forums.json](../vectors/mesh/forums.json). That file also has the need-resolve row, the offer soul, alarm pin rows (open, resolved, wrong forum), and accept or reject rows for both role modes.
