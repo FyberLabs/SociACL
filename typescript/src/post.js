@@ -19,6 +19,7 @@
  */
 
 import {
+  objectPrincipal,
   postSoul,
   parsePostGrant,
   verifyAclAttestation,
@@ -328,6 +329,32 @@ export function checkPost(graph, object, accessor, now, hint, hop) {
   return { allowed: false, reason: 'missing', ...echoed };
 }
 
+/** Drawer writes require ownership of the routed child or direct see + post.
+ * @param {object} graph
+ * @param {ObjectId} forum
+ * @param {PrincipalId} agent
+ * @param {ObjectId} child
+ * @param {PrincipalId} writer
+ * @param {number} now
+ * @returns {{allowed: boolean, reason: string}}
+ */
+export function checkForumChildWrite(graph, forum, agent, child, writer, now) {
+  const root = seeObjectEdge(forum);
+  const id = seeObjectEdge(child);
+  const who = seeAccessorEdge(agent);
+  if (!root.ok || !root.value.startsWith('forum_') || !id.ok || !who.ok) {
+    return { allowed: false, reason: 'bad-record' };
+  }
+  const embedded = objectPrincipal(id.value);
+  if (!embedded.ok || embedded.value !== who.value) return { allowed: false, reason: 'bad-record' };
+  if (!Number.isSafeInteger(now) || now < 0) return { allowed: false, reason: 'unknown' };
+  const admission = admittedOwner(graph, id.value);
+  if (!admission) return { allowed: false, reason: 'unknown' };
+  if (admission.owner !== who.value) return { allowed: false, reason: 'bad-record' };
+  const result = checkPost(graph, id.value, writer, now);
+  return { allowed: result.allowed, reason: result.reason };
+}
+
 /**
  * Recheck post rows for one principal. see.js passes the rotations it already resolved.
  * @param {object} graph
@@ -452,6 +479,11 @@ export function runPostCase(steps, options) {
       if (!got || got.stated !== step.stated || got.hamState !== step.hamState || got.mode !== step.mode) failStep(step, got);
       if (step.from !== undefined && got.from !== step.from) failStep(step, got);
       if (step.until !== undefined && got.until !== step.until) failStep(step, got);
+      continue;
+    }
+    if (step.op === 'check-drawer-write') {
+      const got = checkForumChildWrite(graph, step.forum, step.agent, step.object, step.accessor, step.now);
+      if (got.allowed !== step.allowed || got.reason !== step.reason) failStep(step, got);
       continue;
     }
     if (step.op === 'check-post') {

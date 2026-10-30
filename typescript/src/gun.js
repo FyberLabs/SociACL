@@ -9,7 +9,7 @@
 
 export { checkForumSee } from './forum.js';
 
-export { admitPost, checkPost, factorGrants } from "./post.js";
+export { admitPost, checkPost, checkForumChildWrite, factorGrants } from "./post.js";
 
 /** Length-prefixed domain for postGrantBytes. The ids constant, not a second string. */
 export { POST_DOMAIN as POST_GRANT_DOMAIN, postGrantBytes, postSoul } from "../ids/src/index.js";

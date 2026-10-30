@@ -46,6 +46,36 @@ pub fn check_forum_see(
     direct
 }
 
+/// Check a subtask, update or artifact write on its own destination ACL.
+/// The child must be admitted under the drawer agent's ownership. Parent
+/// access and group read access do not supply the separate post grant.
+pub fn check_forum_child_write(
+    graph: &MeshSeeGraph,
+    forum: &ObjectId,
+    agent: &PrincipalId,
+    child: &ObjectId,
+    writer: &PrincipalId,
+    now: u64,
+) -> MeshCheckResult {
+    let deny = |reason: &str| MeshCheckResult {
+        allowed: false, reason: reason.into(), hint: None, hop: None,
+    };
+    if require_kind(forum, "forum").is_err()
+        || object_principal(child).ok().as_ref() != Some(agent) {
+        return deny("bad-record");
+    }
+    if now > 9_007_199_254_740_991 {
+        return deny("unknown");
+    }
+    let Some((owner, _)) = graph.admitted_owner(child) else {
+        return deny("unknown");
+    };
+    if owner != agent {
+        return deny("bad-record");
+    }
+    graph.check_post(child, writer, now, None, None)
+}
+
 const ROLE_TOKEN_MAX: usize = 32;
 const RESERVED_ROLE_TOKENS: &[&str] = &[
     "acl", "agents", "alarm", "chat", "forums", "items", "meta", "needs", "offers", "roles",
@@ -674,6 +704,21 @@ pub fn forum_update_soul(
         agent.as_ref(),
         "updates",
         update.as_ref(),
+    ]))
+}
+
+/// `s3rch/forums/<forumId>/agents/<seaPubkey>/artifacts/<objectId>`.
+/// This names an owned artifact record, not access to a referenced object.
+pub fn forum_artifact_soul(
+    forum: &ObjectId,
+    agent: &PrincipalId,
+    artifact: &ObjectId,
+) -> Result<GunSoul, GunError> {
+    require_kind(forum, "forum")?;
+    object_principal(artifact).map_err(|_| GunError::ForumSoul)?;
+    Ok(soul([
+        S3RCH_ROOT, S3RCH_FORUMS, forum.as_ref(), "agents", agent.as_ref(),
+        "artifacts", artifact.as_ref(),
     ]))
 }
 

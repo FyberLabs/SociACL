@@ -397,6 +397,15 @@ fn run_case(file: &Value, case: &Value) -> MeshSeeGraph {
                     }
                 }
             }
+            "check-drawer-write" => {
+                let got = sociacl_gun::check_forum_child_write(
+                    graph, &object_of(&step["forum"]), &principal_of(&step["agent"]),
+                    &object_of(&step["object"]), &principal_of(&step["accessor"]),
+                    step["now"].as_u64().unwrap(),
+                );
+                assert_eq!(got.allowed, step["allowed"] == true, "{name}");
+                assert_eq!(got.reason, step["reason"].as_str().unwrap(), "{name}");
+            }
             "check-post" => {
                 let got = graph.check_post(
                     &object_of(&step["object"]),

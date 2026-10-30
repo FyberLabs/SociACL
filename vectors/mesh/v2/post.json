@@ -572,6 +572,568 @@
           "reason": "cancelled"
         }
       ]
+    },
+    {
+      "name": "drawer-cancel-see-denies-post",
+      "steps": [
+        {
+          "op": "put",
+          "record": {
+            "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+            "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+            "issuedAt": 1700000000,
+            "sig": "Z9fYJjtkbVsxBszNe5U5FEdoWWQI_8ZtRxbJk2ALU9PKBqOa-ga7kzgGUrgNHJdQuxiPvJFT7st1iub5IXG10g"
+          },
+          "rotations": "genesis",
+          "ok": true,
+          "kept": true
+        },
+        {
+          "op": "admit",
+          "row": {
+            "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+            "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+            "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+            "stated": 1,
+            "from": 0,
+            "until": 100,
+            "hamState": 1,
+            "issuedAt": 1700000000,
+            "sig": "1NXfvopLvJoceM8EjiHh3V7prQZ9s6_NfHwqSj3pr8Aue5GotoD5t60gbI0_qAePuyd9AXthdOpk0C5QE8lx3w"
+          },
+          "rotations": "genesis",
+          "ok": true,
+          "kept": true
+        },
+        {
+          "op": "admit-post",
+          "row": {
+            "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+            "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+            "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+            "stated": 1,
+            "from": 0,
+            "until": 100,
+            "hamState": 1,
+            "issuedAt": 1700000000,
+            "sig": "4Al0SNOIlkbxrgyr1-UghWC8zBqQO62u-rTXXvt0ead6pysqT-yzMqyuMwggKw8nH5qHbt8rhVtfueWUc3dPEg"
+          },
+          "rotations": "genesis",
+          "ok": true,
+          "kept": true,
+          "mode": "present",
+          "stated": 1,
+          "hamState": 1
+        },
+        {
+          "op": "check-drawer-write",
+          "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+          "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "now": 10,
+          "allowed": true,
+          "reason": "post",
+          "forum": "forum_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_01010101010101010101010101010101",
+          "agent": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU"
+        },
+        {
+          "op": "admit",
+          "row": {
+            "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+            "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+            "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+            "stated": 0,
+            "from": 0,
+            "until": 100,
+            "hamState": 2,
+            "issuedAt": 1700000000,
+            "sig": "h0mhhJe9knpbWo8bXnqOKZkV6RwqMN-NqFYZsDZWRpvzsFMJsarzKNNtjMd7Y5q-uAVNTtIOMY-ZRr_no0y-Lw"
+          },
+          "rotations": "genesis",
+          "ok": true,
+          "kept": true
+        },
+        {
+          "op": "check-drawer-write",
+          "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+          "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "now": 10,
+          "allowed": false,
+          "reason": "delegate",
+          "forum": "forum_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_01010101010101010101010101010101",
+          "agent": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU"
+        },
+        {
+          "op": "view-post",
+          "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+          "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "stated": 1,
+          "hamState": 1,
+          "mode": "present"
+        }
+      ]
+    },
+    {
+      "name": "drawer-post-ceiling-refuses-without-write",
+      "steps": [
+        {
+          "op": "put",
+          "record": {
+            "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+            "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+            "issuedAt": 1700000000,
+            "sig": "Z9fYJjtkbVsxBszNe5U5FEdoWWQI_8ZtRxbJk2ALU9PKBqOa-ga7kzgGUrgNHJdQuxiPvJFT7st1iub5IXG10g"
+          },
+          "rotations": "genesis",
+          "ok": true,
+          "kept": true
+        },
+        {
+          "op": "admit",
+          "row": {
+            "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+            "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+            "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+            "stated": 1,
+            "from": 0,
+            "until": 100,
+            "hamState": 1,
+            "issuedAt": 1700000000,
+            "sig": "1NXfvopLvJoceM8EjiHh3V7prQZ9s6_NfHwqSj3pr8Aue5GotoD5t60gbI0_qAePuyd9AXthdOpk0C5QE8lx3w"
+          },
+          "rotations": "genesis",
+          "ok": true,
+          "kept": true
+        },
+        {
+          "op": "admit-post",
+          "row": {
+            "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+            "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+            "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+            "stated": 1,
+            "from": 0,
+            "until": 30,
+            "hamState": 9007199254740991,
+            "issuedAt": 1700000000,
+            "sig": "thcS8zhN2e5qvshMc0-ayOoVNbpypOyzMmF7Sm6pv-iippWT8n8oZc6rTwgNtP6ycWchgt5LF4zHvAZsrrir5w"
+          },
+          "rotations": "genesis",
+          "ok": true,
+          "kept": true,
+          "mode": "present",
+          "stated": 1,
+          "hamState": 9007199254740991
+        },
+        {
+          "op": "admit-post",
+          "row": {
+            "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+            "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+            "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+            "stated": 1,
+            "from": 20,
+            "until": 80,
+            "hamState": 9007199254740991,
+            "issuedAt": 1700000000,
+            "sig": "yjicwsDOfQ_AXjHPVgobswNzN__u0BukbHUybAwtDEf_xKqAl0Tr0R6ntKrS7diq98P8YztpR8MlGgP9ASydIQ"
+          },
+          "rotations": "genesis",
+          "ok": true,
+          "kept": false
+        },
+        {
+          "op": "view-post",
+          "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+          "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "stated": 1,
+          "hamState": 9007199254740991,
+          "mode": "present",
+          "from": 0,
+          "until": 30
+        },
+        {
+          "op": "check-drawer-write",
+          "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+          "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "now": 25,
+          "allowed": true,
+          "reason": "post",
+          "forum": "forum_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_01010101010101010101010101010101",
+          "agent": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU"
+        }
+      ]
+    },
+    {
+      "name": "drawer-hint-and-hop-do-not-grant",
+      "steps": [
+        {
+          "op": "put",
+          "record": {
+            "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+            "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+            "issuedAt": 1700000000,
+            "sig": "Z9fYJjtkbVsxBszNe5U5FEdoWWQI_8ZtRxbJk2ALU9PKBqOa-ga7kzgGUrgNHJdQuxiPvJFT7st1iub5IXG10g"
+          },
+          "rotations": "genesis",
+          "ok": true,
+          "kept": true
+        },
+        {
+          "op": "check-drawer-write",
+          "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+          "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "now": 10,
+          "allowed": false,
+          "reason": "delegate",
+          "hint": true,
+          "hop": true,
+          "forum": "forum_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_01010101010101010101010101010101",
+          "agent": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU"
+        },
+        {
+          "op": "view-post",
+          "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+          "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "absent": true
+        }
+      ]
+    },
+    {
+      "name": "drawer-owner-posts-from-the-object-record",
+      "steps": [
+        {
+          "op": "put",
+          "record": {
+            "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+            "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+            "issuedAt": 1700000000,
+            "sig": "Z9fYJjtkbVsxBszNe5U5FEdoWWQI_8ZtRxbJk2ALU9PKBqOa-ga7kzgGUrgNHJdQuxiPvJFT7st1iub5IXG10g"
+          },
+          "rotations": "genesis",
+          "ok": true,
+          "kept": true
+        },
+        {
+          "op": "check-drawer-write",
+          "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+          "accessor": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "now": 10,
+          "allowed": true,
+          "reason": "owner",
+          "forum": "forum_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_01010101010101010101010101010101",
+          "agent": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU"
+        },
+        {
+          "op": "check-drawer-write",
+          "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+          "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "now": 10,
+          "allowed": false,
+          "reason": "delegate",
+          "forum": "forum_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_01010101010101010101010101010101",
+          "agent": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU"
+        }
+      ]
+    },
+    {
+      "name": "drawer-delegate-post-cancel-denies",
+      "steps": [
+        {
+          "op": "put",
+          "record": {
+            "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+            "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+            "issuedAt": 1700000000,
+            "sig": "Z9fYJjtkbVsxBszNe5U5FEdoWWQI_8ZtRxbJk2ALU9PKBqOa-ga7kzgGUrgNHJdQuxiPvJFT7st1iub5IXG10g"
+          },
+          "rotations": "genesis",
+          "ok": true,
+          "kept": true
+        },
+        {
+          "op": "admit",
+          "row": {
+            "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+            "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+            "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+            "stated": 1,
+            "from": 0,
+            "until": 100,
+            "hamState": 1,
+            "issuedAt": 1700000000,
+            "sig": "1NXfvopLvJoceM8EjiHh3V7prQZ9s6_NfHwqSj3pr8Aue5GotoD5t60gbI0_qAePuyd9AXthdOpk0C5QE8lx3w"
+          },
+          "rotations": "genesis",
+          "ok": true,
+          "kept": true
+        },
+        {
+          "op": "check-drawer-write",
+          "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+          "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "now": 10,
+          "allowed": false,
+          "reason": "missing",
+          "forum": "forum_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_01010101010101010101010101010101",
+          "agent": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU"
+        },
+        {
+          "op": "admit-post",
+          "row": {
+            "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+            "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+            "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+            "stated": 1,
+            "from": 0,
+            "until": 100,
+            "hamState": 1,
+            "issuedAt": 1700000000,
+            "sig": "4Al0SNOIlkbxrgyr1-UghWC8zBqQO62u-rTXXvt0ead6pysqT-yzMqyuMwggKw8nH5qHbt8rhVtfueWUc3dPEg"
+          },
+          "rotations": "genesis",
+          "ok": true,
+          "kept": true,
+          "mode": "present",
+          "stated": 1,
+          "hamState": 1
+        },
+        {
+          "op": "check-drawer-write",
+          "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+          "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "now": 10,
+          "allowed": true,
+          "reason": "post",
+          "forum": "forum_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_01010101010101010101010101010101",
+          "agent": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU"
+        },
+        {
+          "op": "admit-post",
+          "row": {
+            "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+            "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+            "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+            "stated": 0,
+            "from": 0,
+            "until": 100,
+            "hamState": 2,
+            "issuedAt": 1700000000,
+            "sig": "41wXwdB5chQ5Jrcwvf9J7MdA-AjveNRs9jn2AlLom0r-f3rWoUSgsGLh9ap25WpXHt4maAAiQsZDYJ8yZBY7kA"
+          },
+          "rotations": "genesis",
+          "ok": true,
+          "kept": true,
+          "mode": "present",
+          "stated": 0,
+          "hamState": 2
+        },
+        {
+          "op": "check-drawer-write",
+          "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+          "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "now": 10,
+          "allowed": false,
+          "reason": "cancelled",
+          "forum": "forum_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_01010101010101010101010101010101",
+          "agent": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU"
+        }
+      ]
+    },
+    {
+      "name": "drawer-post-row-without-object-record",
+      "steps": [
+        {
+          "op": "admit-post",
+          "row": {
+            "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+            "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+            "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+            "stated": 1,
+            "from": 0,
+            "until": 100,
+            "hamState": 1,
+            "issuedAt": 1700000000,
+            "sig": "4Al0SNOIlkbxrgyr1-UghWC8zBqQO62u-rTXXvt0ead6pysqT-yzMqyuMwggKw8nH5qHbt8rhVtfueWUc3dPEg"
+          },
+          "rotations": "genesis",
+          "ok": false,
+          "reason": "unknown"
+        }
+      ]
+    },
+    {
+      "name": "drawer-wrong-agent",
+      "steps": [
+        {
+          "op": "put",
+          "record": {
+            "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+            "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+            "issuedAt": 1700000000,
+            "sig": "Z9fYJjtkbVsxBszNe5U5FEdoWWQI_8ZtRxbJk2ALU9PKBqOa-ga7kzgGUrgNHJdQuxiPvJFT7st1iub5IXG10g"
+          },
+          "rotations": "genesis",
+          "ok": true,
+          "kept": true
+        },
+        {
+          "op": "check-drawer-write",
+          "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+          "accessor": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "now": 10,
+          "allowed": false,
+          "reason": "bad-record",
+          "forum": "forum_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_01010101010101010101010101010101",
+          "agent": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E"
+        }
+      ]
+    },
+    {
+      "name": "drawer-wrong-forum-kind",
+      "steps": [
+        {
+          "op": "put",
+          "record": {
+            "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+            "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+            "issuedAt": 1700000000,
+            "sig": "Z9fYJjtkbVsxBszNe5U5FEdoWWQI_8ZtRxbJk2ALU9PKBqOa-ga7kzgGUrgNHJdQuxiPvJFT7st1iub5IXG10g"
+          },
+          "rotations": "genesis",
+          "ok": true,
+          "kept": true
+        },
+        {
+          "op": "check-drawer-write",
+          "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+          "accessor": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "now": 10,
+          "allowed": false,
+          "reason": "bad-record",
+          "forum": "need_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_02020202020202020202020202020202",
+          "agent": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU"
+        }
+      ]
+    },
+    {
+      "name": "drawer-unsafe-time",
+      "steps": [
+        {
+          "op": "put",
+          "record": {
+            "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+            "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+            "issuedAt": 1700000000,
+            "sig": "Z9fYJjtkbVsxBszNe5U5FEdoWWQI_8ZtRxbJk2ALU9PKBqOa-ga7kzgGUrgNHJdQuxiPvJFT7st1iub5IXG10g"
+          },
+          "rotations": "genesis",
+          "ok": true,
+          "kept": true
+        },
+        {
+          "op": "check-drawer-write",
+          "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+          "accessor": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "now": 9007199254740992,
+          "allowed": false,
+          "reason": "unknown",
+          "forum": "forum_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_01010101010101010101010101010101",
+          "agent": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU"
+        }
+      ]
+    },
+    {
+      "name": "drawer-unadmitted-child",
+      "steps": [
+        {
+          "op": "put",
+          "record": {
+            "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+            "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+            "issuedAt": 1700000000,
+            "sig": "Z9fYJjtkbVsxBszNe5U5FEdoWWQI_8ZtRxbJk2ALU9PKBqOa-ga7kzgGUrgNHJdQuxiPvJFT7st1iub5IXG10g"
+          },
+          "rotations": "genesis",
+          "ok": true,
+          "kept": true
+        },
+        {
+          "op": "check-drawer-write",
+          "object": "status_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_03030303030303030303030303030303",
+          "accessor": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+          "now": 10,
+          "allowed": false,
+          "reason": "unknown",
+          "forum": "forum_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_01010101010101010101010101010101",
+          "agent": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU"
+        }
+      ]
+    },
+    {
+      "name": "drawer-expired-grants",
+      "steps": [
+        {
+          "op": "put",
+          "record": {
+            "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+            "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+            "issuedAt": 1700000000,
+            "sig": "Z9fYJjtkbVsxBszNe5U5FEdoWWQI_8ZtRxbJk2ALU9PKBqOa-ga7kzgGUrgNHJdQuxiPvJFT7st1iub5IXG10g"
+          },
+          "rotations": "genesis",
+          "ok": true,
+          "kept": true
+        },
+        {
+          "op": "admit",
+          "row": {
+            "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+            "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+            "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+            "stated": 1,
+            "from": 0,
+            "until": 100,
+            "hamState": 1,
+            "issuedAt": 1700000000,
+            "sig": "1NXfvopLvJoceM8EjiHh3V7prQZ9s6_NfHwqSj3pr8Aue5GotoD5t60gbI0_qAePuyd9AXthdOpk0C5QE8lx3w"
+          },
+          "rotations": "genesis",
+          "ok": true,
+          "kept": true
+        },
+        {
+          "op": "admit-post",
+          "row": {
+            "owner": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+            "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+            "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+            "stated": 1,
+            "from": 0,
+            "until": 100,
+            "hamState": 1,
+            "issuedAt": 1700000000,
+            "sig": "4Al0SNOIlkbxrgyr1-UghWC8zBqQO62u-rTXXvt0ead6pysqT-yzMqyuMwggKw8nH5qHbt8rhVtfueWUc3dPEg"
+          },
+          "rotations": "genesis",
+          "ok": true,
+          "kept": true,
+          "mode": "present",
+          "stated": 1,
+          "hamState": 1
+        },
+        {
+          "op": "check-drawer-write",
+          "object": "chat_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_11111111111111111111111111111111",
+          "accessor": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg.B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+          "now": 100,
+          "allowed": false,
+          "reason": "delegate",
+          "hint": true,
+          "hop": true,
+          "forum": "forum_p_6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5_01010101010101010101010101010101",
+          "agent": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU"
+        }
+      ]
     }
   ],
   "reject": [

@@ -107,9 +107,53 @@ the Rust forum integration additionally posts and accepts a group-only offer,
 then refuses acceptance and a new post after the binding is withdrawn.
 Pause/reassign coordination and drawer child write admission remain in #123.
 
+### Drawer child admission
+
+Subtasks, updates and artifact records use these paths:
+
+```
+s3rch/forums/<forumId>/agents/<seaPubkey>/subtasks/<objectId>
+s3rch/forums/<forumId>/agents/<seaPubkey>/updates/<objectId>
+s3rch/forums/<forumId>/agents/<seaPubkey>/artifacts/<objectId>
+```
+
+The corresponding Rust builders are `forum_subtask_soul`, `forum_update_soul`
+and `forum_artifact_soul`; copied consumer names are `forumSubtaskSoul`,
+`forumUpdateSoul` and `forumArtifactSoul`. Each requires a minted child id,
+and preserves the complete SEA pubkey as one segment. Building a path grants
+nothing. These are owned child records, not shared-object mounts.
+
+Before the first child put, admit its agent-signed object record through
+`putObject`. `checkForumChildWrite` (`check_forum_child_write` in Rust) then
+requires that authenticated child owner to equal the drawer agent. The agent
+may write; a delegate needs a live direct see grant **and** a separate live post
+grant on that exact child. The existing post ceiling applies. Access to the
+forum, agent status, a sibling, or a group read binding does not supply either
+grant. Unknown children fail closed even for the principal embedded in the id.
+A cancelled or expired see/post grant denies the next write.
+
+Authenticate the writer independently, validate the child payload, and run
+this check against current admitted state immediately before every put.
+The helper is a permission decision, not a signed-write verifier or a storage
+transaction. Peers must enforce the same boundary on incoming writes. Reads
+use `checkForumSee` on the child itself; the drawer path never substitutes for
+its ACL. Moving a record into another agent's drawer requires a newly owned
+record and fresh authorization, not relabelling its path.
+
+An artifact record may reference an external URL or another object. Permission
+to write or read the reference does not grant access to that target; the target
+requires its own Check. The status node's existing comma-separated `artifacts`
+list remains data and does not admit child records.
+
+Shared `drawer-*` cases in the post/group vectors cover owner/delegate writes,
+read-only refusal, group-read refusal, see/post cancellation, the post ceiling,
+unknown children, wrong drawer agents and invalid forum kinds. This supplies
+the library contract for #123's drawer gap; product adoption is still separate.
+Pause/reassign privilege reduction remains open.
+
 ### Soul helpers and stored data
 
-The account identity is the GunDB SEA pubkey (`PrincipalId`). A wallet and a Panopticon OAuth subject are linked credentials. They are not the agent key and not a second identity plane. Copy the forum names from [s3rch-check.d.ts](s3rch-check.d.ts). The consumer implements `forumAgentSoul`, `forumNeedSoul`, `forumOfferSoul`, `forumAlarmSoul`, `forumTemplateSoul`, `forumRoleSoul`, `forumSubtaskSoul`, `forumUpdateSoul`, and `forumChatTag`. Filled soul strings are in [vectors/mesh/forums.json](../vectors/mesh/forums.json). That file also has the need-resolve row, the offer soul, alarm pin rows (open, resolved, wrong forum), and accept or reject rows for both role modes.
+The account identity is the GunDB SEA pubkey (`PrincipalId`). A wallet and a Panopticon OAuth subject are linked credentials. They are not the agent key and not a second identity plane. Copy the forum names from [s3rch-check.d.ts](s3rch-check.d.ts). The consumer implements `forumAgentSoul`, `forumNeedSoul`, `forumOfferSoul`, `forumAlarmSoul`, `forumTemplateSoul`, `forumRoleSoul`, `forumSubtaskSoul`, `forumUpdateSoul`, `forumArtifactSoul`, and `forumChatTag`. Filled soul strings are in [vectors/mesh/forums.json](../vectors/mesh/forums.json). That file also has the need-resolve row, the offer soul, alarm pin rows (open, resolved, wrong forum), and accept or reject rows for both role modes.
 
 ```
 s3rch/forums/<forumId>/agents/<seaPubkey>                 → ForumAgentStatus

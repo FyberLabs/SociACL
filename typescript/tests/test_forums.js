@@ -93,7 +93,7 @@ baseline('chat-via-tagged-items', () => {
 test('forums: SEA pubkey stays one Gun segment', () => {
   assert.equal(parsePrincipalId(doc.seaPubkey).ok, true);
   assert.equal(parsePrincipalId(doc.linkedWallet).ok, false);
-  for (const key of ['agent', 'role', 'subtask', 'update']) {
+  for (const key of ['agent', 'role', 'subtask', 'update', 'artifact']) {
     const segments = doc.souls[key].split('/');
     assert.ok(segments.includes(doc.seaPubkey), key);
     assert.equal(segments.filter(part => part === doc.seaPubkey).length, 1);

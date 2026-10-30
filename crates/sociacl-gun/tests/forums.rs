@@ -5,7 +5,7 @@ use p256::elliptic_curve::sec1::ToSec1Point;
 use serde_json::Value;
 use sociacl_gun::{
     accept_hint, accept_hint_bytes, accept_need_transition, accept_offer_transition,
-    forum_agent_soul, forum_alarm_soul, forum_chat_tag, forum_chat_tag_present, forum_chat_tags,
+    forum_artifact_soul, forum_agent_soul, forum_alarm_soul, forum_chat_tag, forum_chat_tag_present, forum_chat_tags,
     forum_emergency_alarm, forum_need_soul, forum_offer_soul, forum_role_soul, forum_roles_match,
     forum_subtask_soul, forum_template_soul, forum_update_soul, from_gun_node,
     is_separate_chat_soul, split_tags, to_gun_node, FeedItem, FeedSource, ForumAgentState,
@@ -803,6 +803,12 @@ fn forum_souls_use_the_sea_pubkey() {
     let sub = forum_subtask_soul(&forum, &agent, &status).unwrap();
     assert_eq!(sub.join(), souls["subtask"].as_str().unwrap());
     assert!(!is_separate_chat_soul(&sub.join()));
+    let artifact = forum_artifact_soul(&forum, &agent, &spec).unwrap();
+    assert_eq!(artifact.join(), souls["artifact"].as_str().unwrap());
+    assert_eq!(artifact.segments()[4], agent.as_ref());
+    assert!(forum_artifact_soul(&need, &agent, &spec).is_err());
+    assert!(forum_artifact_soul(&forum, &agent,
+        &"ext_0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".parse().unwrap()).is_err());
     let update = forum_update_soul(&forum, &agent, &need).unwrap();
     assert_eq!(update.join(), souls["update"].as_str().unwrap());
     assert!(forum_subtask_soul(
