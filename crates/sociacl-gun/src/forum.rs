@@ -19,7 +19,32 @@ use sociacl_ids::{object_principal, parse_object_id, parse_principal_id, ObjectI
 
 use crate::mesh::MeshSeeGraph;
 use crate::soul::{GunSoul, S3RCH_FORUMS, S3RCH_ROOT};
-use crate::GunError;
+use crate::{GroupPredicate, GunError, MeshCheckResult};
+
+/// Forum read admission: direct destination grant or its signed group binding.
+/// Membership alone, role labels, hints and hops never grant. Independent
+/// direct and group grants must each be cancelled to remove all access.
+pub fn check_forum_see(
+    graph: &MeshSeeGraph,
+    object: &ObjectId,
+    accessor: &PrincipalId,
+    now: u64,
+) -> MeshCheckResult {
+    if now > 9_007_199_254_740_991 {
+        return MeshCheckResult { allowed: false, reason: "unknown".into(), hint: None, hop: None };
+    }
+    let direct = graph.check_see(object, accessor, now, None, None);
+    if direct.allowed {
+        return direct;
+    }
+    for predicate in [GroupPredicate::SameGroup, GroupPredicate::NamedCircle] {
+        let group = graph.check_group_see(predicate, object, accessor, now, None, None);
+        if group.allowed {
+            return group;
+        }
+    }
+    direct
+}
 
 const ROLE_TOKEN_MAX: usize = 32;
 const RESERVED_ROLE_TOKENS: &[&str] = &[
@@ -318,7 +343,7 @@ pub fn accept_offer_transition(
             if next.stated != 1 || need.stated != 1 || writer != &next.helper {
                 return Err(GunError::ForumSoul);
             }
-            let seen = graph.check_see(&need.id, writer, now, None, None);
+            let seen = check_forum_see(graph, &need.id, writer, now);
             if !seen.allowed {
                 return Err(if seen.reason == "unknown" {
                     GunError::ObjectNotInGraph
@@ -415,7 +440,7 @@ pub fn accept_need_transition(
         {
             return Err(GunError::ForumSoul);
         }
-        let helper_sees = graph.check_see(&current.id, &offer.helper, now, None, None);
+        let helper_sees = check_forum_see(graph, &current.id, &offer.helper, now);
         if !helper_sees.allowed {
             return Err(GunError::ForumSoul);
         }
@@ -434,7 +459,7 @@ pub fn accept_need_transition(
         if offer.is_some() {
             return Err(GunError::ForumSoul);
         }
-        let seen = graph.check_see(&current.id, writer, now, None, None);
+        let seen = check_forum_see(graph, &current.id, writer, now);
         if !seen.allowed {
             return Err(if seen.reason == "unknown" {
                 GunError::ObjectNotInGraph

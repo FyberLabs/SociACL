@@ -7,6 +7,8 @@
  * Stored-id see Check is see.js. Label rows stay out of this module.
  */
 
+export { checkForumSee } from './forum.js';
+
 export { admitPost, checkPost, factorGrants } from "./post.js";
 
 /** Length-prefixed domain for postGrantBytes. The ids constant, not a second string. */

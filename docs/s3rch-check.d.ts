@@ -2424,6 +2424,20 @@ export function checkGroupSee(
 ): CheckResult;
 
 /**
+ * Forum Check see: admitted owner, live direct grant, or the destination's
+ * signed same-group/named-circle binding plus live jointly signed membership.
+ * No caller-provided predicate or set. No transitive membership or role label.
+ * Posting an offer and accepting it must both re-check the helper on the need.
+ * Independent grant paths require independent cancellation.
+ */
+export function checkForumSee(
+  graph: GroupSeeGraph,
+  object: CheckObjectId,
+  accessor: AccessorId,
+  now: number,
+): CheckResult;
+
+/**
  * One edge after privilege-down.
  * grant.stated is 0. hamState is the bumped value.
  */

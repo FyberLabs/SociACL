@@ -482,6 +482,14 @@ fn run_case(file: &Value, case: &Value) -> MeshSeeGraph {
                     }
                 }
             }
+            "check-forum" => {
+                let got = sociacl_gun::check_forum_see(
+                    graph, &object_of(&step["object"]), &principal_of(&step["accessor"]),
+                    step["now"].as_u64().unwrap(),
+                );
+                assert_eq!(got.allowed, step["allowed"] == true, "{name}");
+                assert_eq!(got.reason, step["reason"].as_str().unwrap(), "{name}");
+            }
             "check-group" => {
                 let hop = step["hop"]
                     .as_bool()
