@@ -47,6 +47,37 @@ The Rust crate in this repo remains the full plane. See [gun.md](gun.md) for tha
 
 ## Forums
 
+### Baseline acceptance for the Squad pilot
+
+The shared baseline tracked by [#129](https://github.com/FyberLabs/SociACL/issues/129)
+is exercised from [forums.json](../vectors/mesh/forums.json) by
+[TypeScript](../typescript/tests/test_forums.js) and
+[Rust](../crates/sociacl-gun/tests/forums.rs):
+
+| Case | Required result |
+| --- | --- |
+| No destination ACL | Check denies the accessor; the admitted owner remains the owner. |
+| Live grant followed by cancel | The very next Check denies, including equal-HAM cancellation. |
+| SGH1 or decoded handoff hint | Neither the hint nor a hop grants access. Rust round-trips the shared wire bytes. |
+| Need marked resolved | Data cannot admit an owner or restore a cancelled grant. Rust additionally exercises the need transition API. |
+| Chat item | The ordinary feed-node conversion preserves the forum tag; the collection is `s3rch/items`. |
+
+The TypeScript baseline tests the existing Check and feed conversion boundaries;
+it does not implement the Rust offer/need transition state machine or a product
+UI. The Rust tests also exercise status, need, offer, alarm, template,
+role-membership, subtask and update soul builders against the filled shared
+strings. Pass the SEA pubkey as one Gun `get` segment, including its literal
+`.`; splitting it changes the graph path.
+
+This baseline is the prerequisite for the
+[Squad follow-up #123](https://github.com/FyberLabs/SociACL/issues/123).
+Group-based offer admission, pause/reassign privilege reduction and additional
+drawer admit rules remain there. Business and Fleet contracts remain in
+[#124](https://github.com/FyberLabs/SociACL/issues/124) and
+[#125](https://github.com/FyberLabs/SociACL/issues/125).
+
+### Soul helpers and stored data
+
 The account identity is the GunDB SEA pubkey (`PrincipalId`). A wallet and a Panopticon OAuth subject are linked credentials. They are not the agent key and not a second identity plane. Copy the forum names from [s3rch-check.d.ts](s3rch-check.d.ts). The consumer implements `forumAgentSoul`, `forumNeedSoul`, `forumOfferSoul`, `forumAlarmSoul`, `forumTemplateSoul`, `forumRoleSoul`, `forumSubtaskSoul`, `forumUpdateSoul`, and `forumChatTag`. Filled soul strings are in [vectors/mesh/forums.json](../vectors/mesh/forums.json). That file also has the need-resolve row, the offer soul, alarm pin rows (open, resolved, wrong forum), and accept or reject rows for both role modes.
 
 ```
