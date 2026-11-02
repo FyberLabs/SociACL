@@ -1,3 +1,14 @@
+<p>
+  <img src="branding/mark-256.png" alt="SociACL grant rings" width="64" />
+</p>
+
+<p>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="branding/wordmark.png" />
+    <img src="branding/wordmark-on-light.png" alt="SociACL" width="220" />
+  </picture>
+</p>
+
 # SociACL
 
 Social-graph authority plane for a self-healing mesh of devices and data.
@@ -127,6 +138,8 @@ node --experimental-strip-types --test \
   typescript/tests/test_epoch.ts \
   typescript/tests/test_migration.ts
 ```
+
+Marks: [branding/](branding/).
 
 See [ARCHITECTURE.md](ARCHITECTURE.md), [docs/verbs.md](docs/verbs.md), [docs/networks.md](docs/networks.md), [docs/wills.md](docs/wills.md), [docs/attestations.md](docs/attestations.md), [docs/clocks.md](docs/clocks.md), [docs/social-light.md](docs/social-light.md), [docs/gun.md](docs/gun.md), [docs/s3rch-check.md](docs/s3rch-check.md), [docs/encrypted-discovery.md](docs/encrypted-discovery.md), [docs/aimmune-ir-check.md](docs/aimmune-ir-check.md), and [docs/coverage.md](docs/coverage.md).
 

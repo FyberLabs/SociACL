@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 48" role="img">
+  <g transform="translate(0 8)">
+  <circle cx="12.2" cy="16" r="7.4" fill="none" stroke="#F5C400" stroke-width="2.5"/>
+  <circle cx="19.8" cy="16" r="7.4" fill="none" stroke="#F5C400" stroke-width="2.5"/>
+  <circle cx="16" cy="16" r="2.3" fill="#F5C400"/></g>
+  <text x="44" y="32" fill="#E8E6DC" font-size="26" font-weight="600" font-family="DejaVu Sans, ui-sans-serif, sans-serif" letter-spacing="-0.4">SociACL</text>
+</svg>
