@@ -5,7 +5,7 @@ import sys
 
 import yaml
 
-PREPARATION_JOBS = {'tag-ids', 'tag-sociacl', 'pack-ids', 'pack-sociacl'}
+PREPARATION_JOBS = {'pack-ids', 'pack-sociacl'}
 
 
 def check(document):

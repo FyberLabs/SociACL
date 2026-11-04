@@ -33,7 +33,7 @@ class WorkflowContract(unittest.TestCase):
         with self.assertRaises(ValueError): check.check(self.document)
 
     def test_missing_preparation_job_is_rejected(self):
-        del self.document['jobs']['tag-ids']
+        del self.document['jobs']['pack-ids']
         with self.assertRaises(ValueError): check.check(self.document)
 
     def test_floating_action_and_reusable_workflow_are_rejected(self):
