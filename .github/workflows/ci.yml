@@ -212,11 +212,17 @@ jobs:
             exit 1
           fi
       - name: Attest original test build provenance
+        id: provenance
         if: steps.release.outputs.exists == 'false' && github.ref == 'refs/heads/master'
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: ${{ runner.temp }}/identity-release/*.tgz
           github-token: ${{ github.token }}
+      - name: Preserve the original signed proof
+        if: steps.release.outputs.exists == 'false' && github.ref == 'refs/heads/master'
+        env:
+          BUNDLE_PATH: ${{ steps.provenance.outputs.bundle-path }}
+        run: cp "$BUNDLE_PATH" "$RUNNER_TEMP/identity-release/provenance.sigstore.json"
       - name: Publish channel package
         if: steps.release.outputs.exists == 'false'
         run: |
@@ -227,7 +233,7 @@ jobs:
             flags=(--target "$GITHUB_SHA" --prerelease)
           fi
           gh release create "$RELEASE_TAG" --repo "$GH_REPO" "${flags[@]}" --generate-notes \
-            *.tgz *.tgz.sha256 release-manifest.json
+            *.tgz *.tgz.sha256 release-manifest.json provenance.sigstore.json
 
   pack-sociacl:
     needs: [test, msrv, browser-policy-store]
@@ -298,11 +304,17 @@ jobs:
             exit 1
           fi
       - name: Attest original test build provenance
+        id: provenance
         if: steps.release.outputs.exists == 'false' && github.ref == 'refs/heads/master'
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: ${{ runner.temp }}/sociacl-release/*.tgz
           github-token: ${{ github.token }}
+      - name: Preserve the original signed proof
+        if: steps.release.outputs.exists == 'false' && github.ref == 'refs/heads/master'
+        env:
+          BUNDLE_PATH: ${{ steps.provenance.outputs.bundle-path }}
+        run: cp "$BUNDLE_PATH" "$RUNNER_TEMP/sociacl-release/provenance.sigstore.json"
       - name: Publish channel package
         if: steps.release.outputs.exists == 'false'
         run: |
@@ -313,4 +325,4 @@ jobs:
             flags=(--target "$GITHUB_SHA" --prerelease)
           fi
           gh release create "$RELEASE_TAG" --repo "$GH_REPO" "${flags[@]}" --generate-notes \
-            *.tgz *.tgz.sha256 release-manifest.json
+            *.tgz *.tgz.sha256 release-manifest.json provenance.sigstore.json

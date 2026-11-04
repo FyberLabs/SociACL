@@ -30,12 +30,14 @@ class PackageChannelTests(unittest.TestCase):
                 calls.append(args)
                 if args[0]=='git':return ''
                 if args[:3]==('gh','attestation','verify'):
+                    self.assertIn('--bundle',args)
+                    self.assertEqual(args[args.index('--bundle')+1],str(out/'provenance.sigstore.json'))
                     return json.dumps([dict(verificationResult=dict(statement=dict(predicate=dict(runDetails=dict(metadata=dict(invocationId='https://github.com/FyberLabs/SociACL/actions/runs/123/attempts/1'))))))])
                 self.assertEqual(args[:3],('gh','release','download'))
                 name=args[args.index('--pattern')+1]
                 (out/name).write_bytes(json.dumps(manifest).encode() if name=='release-manifest.json' else payload)
                 return ''
-            release=dict(draft=False,prerelease=True,assets=[dict(name='release-manifest.json',size=500),dict(name=filename,size=len(payload))])
+            release=dict(draft=False,prerelease=True,assets=[dict(name='release-manifest.json',size=500),dict(name=filename,size=len(payload)),dict(name='provenance.sigstore.json',size=500)])
             evidence=dict(head_sha=revision,head_branch='master',event='push',conclusion='success',status='completed',path='.github/workflows/ci.yml')
             env=dict(GITHUB_REPOSITORY=p.REPO,GITHUB_SHA=revision,GITHUB_REF='refs/tags/ids-v0.10.0',GITHUB_EVENT_NAME='push')
             with patch.dict(p.PACKAGES,ids=(str(package),'sociacl-ids')),patch.object(p,'run',side_effect=run),patch.object(p,'api',side_effect=[dict(protected=True),release,evidence]):

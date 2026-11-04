@@ -76,7 +76,10 @@ def prepare(prefix,out,env):
         if filename not in assets or assets[filename]['size']>100*1024*1024:raise ValueError('invalid package asset')
         run('gh','release','download',test_tag,'--repo',REPO,'--pattern',filename,'--dir',str(out))
         if hashlib.sha256((out/filename).read_bytes()).hexdigest()!=m['sha256']:raise ValueError('package digest mismatch')
-        proofs=json.loads(run('gh','attestation','verify',str(out/filename),'--repo',REPO,
+        bundle='provenance.sigstore.json'
+        if bundle not in assets or assets[bundle]['size']>1024*1024:raise ValueError('original provenance bundle required')
+        run('gh','release','download',test_tag,'--repo',REPO,'--pattern',bundle,'--dir',str(out))
+        proofs=json.loads(run('gh','attestation','verify',str(out/filename),'--bundle',str(out/bundle),'--repo',REPO,
             '--signer-workflow',REPO+'/.github/workflows/ci.yml','--source-ref','refs/heads/master',
             '--source-digest',revision,'--format','json'))
         invocation=re.compile(r'https://github.com/FyberLabs/SociACL/actions/runs/'+re.escape(str(m['test_run_id']))+r'/attempts/[1-9][0-9]*')
