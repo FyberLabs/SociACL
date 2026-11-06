@@ -60,7 +60,7 @@ pub use forum::{
     check_forum_child_write, forum_artifact_soul,
     accept_need_transition, accept_offer_transition, check_forum_see, forum_agent_soul, forum_alarm_soul,
     forum_chat_tag, forum_chat_tag_present, forum_chat_tags, forum_emergency_alarm,
-    forum_need_soul, forum_offer_soul, forum_role_soul, forum_roles_match, forum_subtask_soul,
+    forum_mount_soul, forum_role_window_soul, forum_need_soul, forum_offer_soul, forum_role_soul, forum_roles_match, forum_subtask_soul,
     forum_template_soul, forum_update_soul, is_separate_chat_soul, ForumAgentState,
     ForumAgentStatus, ForumAlarm, ForumNeed, ForumNeedSeverity, ForumOffer, ForumRoleMembership,
     ForumRoleMode, ForumTemplate,

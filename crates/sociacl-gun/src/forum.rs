@@ -669,6 +669,50 @@ pub fn forum_role_soul(
     ]))
 }
 
+/// Business window metadata, never the referenced object's authority.
+/// The item id belongs to the forum owner; the target may have another owner.
+pub fn forum_role_window_soul(
+    forum: &ObjectId,
+    role: &str,
+    window: &ObjectId,
+) -> Result<GunSoul, GunError> {
+    require_business_pointer(forum, window)?;
+    if !role_token_ok(role) {
+        return Err(GunError::ForumSoul);
+    }
+    Ok(soul([
+        S3RCH_ROOT,
+        S3RCH_FORUMS,
+        forum.as_ref(),
+        "windows",
+        role,
+        window.as_ref(),
+    ]))
+}
+
+/// Shared-object mount metadata. Its path and requested mode never grant.
+pub fn forum_mount_soul(forum: &ObjectId, mount: &ObjectId) -> Result<GunSoul, GunError> {
+    require_business_pointer(forum, mount)?;
+    Ok(soul([
+        S3RCH_ROOT,
+        S3RCH_FORUMS,
+        forum.as_ref(),
+        "mounts",
+        mount.as_ref(),
+    ]))
+}
+
+fn require_business_pointer(forum: &ObjectId, pointer: &ObjectId) -> Result<(), GunError> {
+    require_kind(forum, "forum")?;
+    require_kind(pointer, "item")?;
+    if object_principal(forum).map_err(|_| GunError::ForumSoul)?
+        != object_principal(pointer).map_err(|_| GunError::ForumSoul)?
+    {
+        return Err(GunError::ForumSoul);
+    }
+    Ok(())
+}
+
 /// `s3rch/forums/<forumId>/agents/<seaPubkey>/subtasks/<objectId>`.
 pub fn forum_subtask_soul(
     forum: &ObjectId,
