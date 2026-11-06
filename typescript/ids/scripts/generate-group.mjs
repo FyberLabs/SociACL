@@ -656,6 +656,45 @@ add('reject', 'witnessed-cancel-issuedat-rewrite', [
   { op: 'admit-cancel', row: { ...witnessedRewrite, issuedAt: at + 1 }, rotations: 'rotated', ok: false, reason: 'bad-attestation' },
   check(chatA, p2, true, 'same-group'),
 ]);
+// Out-of-order delivery is rejected, not queued. Replaying after the row
+// arrives must apply the same signed cancel and deny the next Check.
+for (const kind of ['membership', 'object-set']) {
+  const cancel = cancelRow(kind, kind === 'membership' ? 2 : 1);
+  add('reject', `${kind}-cancel-before-row-requires-replay`, [
+    put(),
+    admitCancel(cancel, 'genesis', { ok: false, reason: 'unknown' }),
+    member(),
+    setAssent(),
+    objectEdge(),
+    check(chatA, p2, true, 'same-group'),
+    admitCancel(cancel, 'genesis'),
+    check(chatA, p2, false, 'missing'),
+    admitCancel(cancel, 'genesis', { kept: false }),
+    check(chatA, p2, false, 'missing'),
+  ], 'unknown stores no pending cancel. The transport must replay after the target row is admitted; a duplicate accepted cancel is idempotent.');
+}
+
+// The object owner chooses the set; the set owner and member jointly
+// establish membership. Neither owner can forge the other authority.
+const foreignSet = val(ids.mintObjectId('set', p3, () => new Uint8Array(16).fill(0x55)));
+for (const predicate of ['same-group', 'named-circle']) {
+  const fields = { set: foreignSet, setOwner: p3, predicate };
+  add('accept', `${predicate}-object-owner-can-name-another-principals-set`, [
+    put(),
+    { op: 'admit-member', row: assent('member', 2, fields), rotations: 'genesis', ok: true, kept: true },
+    { op: 'admit-object-set', row: edge(1, fields), rotations: 'genesis', ok: true, kept: true },
+    check(chatA, p2, false, 'missing', { predicate }),
+    { op: 'admit-member', row: assent('set', 1, fields), rotations: 'genesis', ok: false, reason: 'bad-signature' },
+    check(chatA, p2, false, 'missing', { predicate }),
+    { op: 'admit-member', row: assent('set', 3, fields), rotations: 'genesis', ok: true, kept: true },
+    check(chatA, p2, true, predicate, { predicate }),
+    check(chatA, p3, false, 'missing', { predicate }),
+    check(chatA, p, true, 'owner', { predicate }),
+    { op: 'admit-object-set', row: edge(3, { ...fields, hamState: 2 }), rotations: 'genesis', ok: false, reason: 'bad-signature' },
+    check(chatA, p2, true, predicate, { predicate }),
+  ], 'Naming a foreign-owned set does not transfer object ownership or let the object owner assert membership on behalf of the set owner.');
+}
+
 const body = { v: 1, family: 'group', context, accept, reject };
 const path = new URL('../../../vectors/mesh/v2/group.json', import.meta.url);
 writeFileSync(path, JSON.stringify(body, null, 2) + '\n');
