@@ -355,6 +355,39 @@ A group cancel is length-prefixed UTF-8. Each field is a little-endian `u32` byt
 
 A group set id is a minted ObjectId of kind `set`. The owner is the principal embedded in that id and the signed set-owner field. An object-set soul is `s3rch/acl/<owner key>/objset/<predicate>/<set>/<object>`. A cancel signed over that soul cannot move to another set or predicate. An object-set row merged in before this graph holds the admitted signed object record is dropped. `reverifyGroup` drops an unwitnessed retired-key cancel. Only a witnessed cancel survives that recheck. The request path writes owner-signed `sociacl-see-grant-v2` and `sociacl-post-grant-v2` rows. `typescript/src/legacy/post-label.js` and `crates/sociacl-gun/src/post_label.rs` are deleted.
 
+#### Group delivery and ownership boundaries
+
+An object owner may name another principal's minted set in a signed object-set
+edge, for either `same-group` or `named-circle`. The set's embedded principal
+must sign the set side of membership, and the member must sign the member side.
+The object owner cannot substitute for that set owner. Naming the set neither
+transfers the object nor grants the set owner access to it. These existing
+boundaries are exercised by the shared `*-object-owner-can-name-another-principals-set`
+vectors.
+
+A correctly signed cancel received before its target membership or matching
+object-set row returns `unknown`; it is not queued or retained. Admitting the
+row later does not replay that rejected cancel. A storage/transport adapter
+must retain and retry out-of-order delivery after admitting the prerequisite
+row, and must not treat `unknown` as successful cancellation. Until replay,
+the library can only evaluate the admitted graph: a complete live membership
+and object-set edge can allow. After successful cancel admission the next Check
+denies; repeated admission of the same cancel is idempotent. The shared
+`membership-cancel-before-row-requires-replay` and
+`object-set-cancel-before-row-requires-replay` vectors cover this distinction.
+Likewise, replay an object-set merge after its signed object record has been
+admitted; the earlier rejected merge is not a queue.
+
+Cancel-only tombstones have no age-based or size-based eviction in the group
+library. Keep their evidence so replay of an older assent cannot restore access.
+There is no authenticated replica watermark or compaction proof here that
+would make dropping them safe; a local TTL or row-count cap is not a substitute.
+This is retained-history growth, not a bounded-storage guarantee. The existing
+`snapshot-of-a-cancel-only-tombstone` and
+`reverify-keeps-a-witnessed-cancel-when-the-edge-retires` vectors exercise that
+retention. An unwitnessed cancel still follows the retired-key recheck rule
+above; retaining a row does not authenticate its claimed signing time.
+
 These s3r.ch object spellings are deleted from `parseObjectId` / `parse_object_id` and from `vectors/ids/object.json`. Network ids of the form `s3rch:https://...` are a different grammar and stay. `post` is a reserved kind, so a s3r.ch post cannot use kind `post` when that product adopts SociACL. `s3rch:forum:<owner>` has no random part. A forum id needs a nonce, or a derived id, before it can be an object id. The seven deleted forms are:
 
 - `s3rch:room:<eip55>:<ts>:<hex>`
