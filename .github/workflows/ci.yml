@@ -53,6 +53,9 @@ jobs:
           "$RUNNER_TEMP/workflow-check/bin/python" scripts/check-release-workflow.py
           "$RUNNER_TEMP/workflow-check/bin/python" scripts/check-release-workflow.test.py
 
+      - name: Test package promotion boundaries
+        run: python3 scripts/package-channel.test.py
+
       - name: Check release versions
         run: python3 scripts/check-release-versions.py
 
@@ -140,79 +143,13 @@ jobs:
             target/coverage/typescript-report.txt
           if-no-files-found: warn
 
-  tag-ids:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
-    needs: [test, msrv]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    # No concurrency group. See pack-ids.
-    outputs:
-      tag: ${{ steps.tag.outputs.tag }}
-      created: ${{ steps.tag.outputs.created }}
-      publish: ${{ steps.tag.outputs.publish }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version-file: .nvmrc
-          package-manager-cache: false
-      # github.token creates the tag in this run. A tag created that way does
-      # not start another workflow, so pack-ids publishes only when publish=true.
-      # Unprotected master exits 0 without a tag (#60). An existing tag that
-      # names another commit stays put; publish stays false until the version changes.
-      # A lost create is HTTP 422. The script re-reads the ref and does not move it.
-      - name: Tag ids release
-        id: tag
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-        run: scripts/tag-if-absent.sh ids typescript/ids/package.json
-
-  tag-sociacl:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
-    needs: [test, msrv]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    # No concurrency group. See pack-ids.
-    outputs:
-      tag: ${{ steps.tag.outputs.tag }}
-      created: ${{ steps.tag.outputs.created }}
-      publish: ${{ steps.tag.outputs.publish }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version-file: .nvmrc
-          package-manager-cache: false
-      - name: Tag sociacl release
-        id: tag
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-        run: scripts/tag-if-absent.sh sociacl typescript/package.json
-
   pack-ids:
-    needs: [test, msrv, tag-ids]
-    if: ${{ !cancelled() && needs.test.result == 'success' && needs.msrv.result == 'success' && (startsWith(github.ref, 'refs/tags/ids-v') || (needs.tag-ids.result == 'success' && needs.tag-ids.outputs.publish == 'true')) }}
+    needs: [test, msrv, browser-policy-store]
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/master') || startsWith(github.ref, 'refs/tags/ids-v')
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    # No concurrency group. A group shared with tag-ids keeps one running job
-    # and one pending job, and a third master push cancels the pending one.
-    # If that pending job is this pack, the tag already exists and later runs
-    # set publish=false, so the version never gets a release.
-    env:
-      GH_TOKEN: ${{ github.token }}
-      GH_REPO: ${{ github.repository }}
-      RELEASE_TAG: ${{ startsWith(github.ref, 'refs/tags/ids-v') && github.ref_name || needs.tag-ids.outputs.tag }}
+      actions: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -222,178 +159,170 @@ jobs:
         with:
           node-version-file: .nvmrc
           package-manager-cache: false
-      - name: Check release versions
-        run: python3 scripts/check-release-versions.py
-      - name: Verify protected release ancestry
-        run: scripts/verify-release-ref.sh ids typescript/ids/package.json
-      - name: Pack identity package
-        run: |
-          set -euo pipefail
-          npm ci --ignore-scripts --prefix typescript/ids
-          version="$(node -p "JSON.parse(require('fs').readFileSync('typescript/ids/package.json')).version")"
-          test "$RELEASE_TAG" = "ids-v$version"
-          npm run build --prefix typescript/ids
-          npm pack --ignore-scripts ./typescript/ids --pack-destination "$RUNNER_TEMP"
-          cd "$RUNNER_TEMP" || exit
-          sha256sum "sociacl-ids-$version.tgz" > "sociacl-ids-$version.tgz.sha256"
+      - name: Prepare test package or promote its exact bytes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/package-channel.py ids "$RUNNER_TEMP/identity-release"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: identity-release
-          path: |
-            ${{ runner.temp }}/sociacl-ids-*.tgz
-            ${{ runner.temp }}/sociacl-ids-*.tgz.sha256
-          if-no-files-found: error
-
-  pack-sociacl:
-    needs: [test, msrv, tag-sociacl]
-    if: ${{ !cancelled() && needs.test.result == 'success' && needs.msrv.result == 'success' && (startsWith(github.ref, 'refs/tags/sociacl-v') || (needs.tag-sociacl.result == 'success' && needs.tag-sociacl.outputs.publish == 'true')) }}
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    # No concurrency group. See pack-ids.
-    env:
-      GH_TOKEN: ${{ github.token }}
-      GH_REPO: ${{ github.repository }}
-      RELEASE_TAG: ${{ startsWith(github.ref, 'refs/tags/sociacl-v') && github.ref_name || needs.tag-sociacl.outputs.tag }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          fetch-depth: 0
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version-file: .nvmrc
-          package-manager-cache: false
-      - name: Check release versions
-        run: python3 scripts/check-release-versions.py
-      - name: Verify protected release ancestry
-        run: scripts/verify-release-ref.sh sociacl typescript/package.json
-      - name: Pack sociacl package
-        run: |
-          set -euo pipefail
-          npm ci --ignore-scripts --prefix typescript
-          version="$(node -p "JSON.parse(require('fs').readFileSync('typescript/package.json')).version")"
-          test "$RELEASE_TAG" = "sociacl-v$version"
-          npm pack --ignore-scripts ./typescript --pack-destination "$RUNNER_TEMP"
-          cd "$RUNNER_TEMP" || exit
-          sha256sum "sociacl-$version.tgz" > "sociacl-$version.tgz.sha256"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: sociacl-release
-          path: |
-            ${{ runner.temp }}/sociacl-*.tgz
-            ${{ runner.temp }}/sociacl-*.tgz.sha256
+          path: ${{ runner.temp }}/identity-release/*
           if-no-files-found: error
 
   release-ids:
-    needs: [pack-ids, tag-ids]
-    if: ${{ !cancelled() && needs.pack-ids.result == 'success' }}
+    needs: pack-ids
     runs-on: ubuntu-latest
     permissions:
       contents: write
       id-token: write
       attestations: write
-    # Queue only this tag's publish. A later commit does not enter the group
-    # unless it is publishing the same tag.
     concurrency:
-      group: release-${{ needs.tag-ids.outputs.tag || github.ref_name }}
+      group: release-ids-${{ github.ref == 'refs/heads/master' && github.sha || github.ref_name }}
       cancel-in-progress: false
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
-      RELEASE_TAG: ${{ startsWith(github.ref, 'refs/tags/ids-v') && github.ref_name || needs.tag-ids.outputs.tag }}
+      RELEASE_TAG: ${{ github.ref == 'refs/heads/master' && format('ids-test-{0}', github.sha) || github.ref_name }}
     steps:
-      # The write-token job never checks out or executes package source/scripts.
+      # No checkout or execution of package source in the write-token job.
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: identity-release
           path: ${{ runner.temp }}/identity-release
-      - name: Verify digest and release state
+      - name: Verify immutable release assets
         id: release
         run: |
           set -euo pipefail
-          cd "$RUNNER_TEMP/identity-release" || exit
-          sha256sum --check sociacl-ids-*.tgz.sha256
-          set +e
-          err="$(gh release view "$RELEASE_TAG" --repo "$GH_REPO" 2>&1 >/dev/null)"
-          status=$?
-          set -e
-          if [[ "$status" -eq 0 ]]; then
-            echo "release ${RELEASE_TAG} already exists; leaving it unchanged"
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-            exit 0
+          cd "$RUNNER_TEMP/identity-release"
+          sha256sum --check *.tgz.sha256
+          status=0
+          gh release view "$RELEASE_TAG" --repo "$GH_REPO" >/dev/null 2> "$RUNNER_TEMP/release-error" || status=$?
+          if [[ "$status" == 0 ]]; then
+            previous="$(mktemp -d)"
+            trap 'rm -rf "$previous"' EXIT
+            gh release download "$RELEASE_TAG" --repo "$GH_REPO" --dir "$previous"
+            for file in *.tgz *.tgz.sha256 release-manifest.json; do
+              cmp "$file" "$previous/$file"
+            done
+            echo 'exists=true' >> "$GITHUB_OUTPUT"
+          elif grep -Eq 'release not found|HTTP 404' "$RUNNER_TEMP/release-error"; then
+            echo 'exists=false' >> "$GITHUB_OUTPUT"
+          else
+            cat "$RUNNER_TEMP/release-error" >&2
+            exit 1
           fi
-          if [[ "$err" == *"release not found"* || "$err" == *"HTTP 404"* ]]; then
-            echo "exists=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          printf '%s\n' "$err" >&2
-          exit 1
-      - name: Attest build provenance
-        if: steps.release.outputs.exists == 'false'
+      - name: Attest original test build provenance
+        id: provenance
+        if: steps.release.outputs.exists == 'false' && github.ref == 'refs/heads/master'
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
-          subject-path: ${{ runner.temp }}/identity-release/sociacl-ids-*.tgz
+          subject-path: ${{ runner.temp }}/identity-release/*.tgz
           github-token: ${{ github.token }}
-      - name: Publish identity release assets
+      - name: Preserve the original signed proof
+        if: steps.release.outputs.exists == 'false' && github.ref == 'refs/heads/master'
+        env:
+          BUNDLE_PATH: ${{ steps.provenance.outputs.bundle-path }}
+        run: cp "$BUNDLE_PATH" "$RUNNER_TEMP/identity-release/provenance.sigstore.json"
+      - name: Publish channel package
         if: steps.release.outputs.exists == 'false'
         run: |
           set -euo pipefail
-          cd "$RUNNER_TEMP/identity-release" || exit
-          gh release create "$RELEASE_TAG" --verify-tag --generate-notes \
-            sociacl-ids-*.tgz sociacl-ids-*.tgz.sha256
+          cd "$RUNNER_TEMP/identity-release"
+          flags=(--verify-tag)
+          if [[ "$GITHUB_REF" == refs/heads/master ]]; then
+            flags=(--target "$GITHUB_SHA" --prerelease)
+          fi
+          gh release create "$RELEASE_TAG" --repo "$GH_REPO" "${flags[@]}" --generate-notes \
+            *.tgz *.tgz.sha256 release-manifest.json provenance.sigstore.json
+
+  pack-sociacl:
+    needs: [test, msrv, browser-policy-store]
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/master') || startsWith(github.ref, 'refs/tags/sociacl-v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - name: Prepare test package or promote its exact bytes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/package-channel.py sociacl "$RUNNER_TEMP/sociacl-release"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sociacl-release
+          path: ${{ runner.temp }}/sociacl-release/*
+          if-no-files-found: error
 
   release-sociacl:
-    needs: [pack-sociacl, tag-sociacl]
-    if: ${{ !cancelled() && needs.pack-sociacl.result == 'success' }}
+    needs: pack-sociacl
     runs-on: ubuntu-latest
     permissions:
       contents: write
       id-token: write
       attestations: write
     concurrency:
-      group: release-${{ needs.tag-sociacl.outputs.tag || github.ref_name }}
+      group: release-sociacl-${{ github.ref == 'refs/heads/master' && github.sha || github.ref_name }}
       cancel-in-progress: false
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
-      RELEASE_TAG: ${{ startsWith(github.ref, 'refs/tags/sociacl-v') && github.ref_name || needs.tag-sociacl.outputs.tag }}
+      RELEASE_TAG: ${{ github.ref == 'refs/heads/master' && format('sociacl-test-{0}', github.sha) || github.ref_name }}
     steps:
+      # No checkout or execution of package source in the write-token job.
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: sociacl-release
           path: ${{ runner.temp }}/sociacl-release
-      - name: Verify digest and release state
+      - name: Verify immutable release assets
         id: release
         run: |
           set -euo pipefail
-          cd "$RUNNER_TEMP/sociacl-release" || exit
-          sha256sum --check sociacl-*.tgz.sha256
-          set +e
-          err="$(gh release view "$RELEASE_TAG" --repo "$GH_REPO" 2>&1 >/dev/null)"
-          status=$?
-          set -e
-          if [[ "$status" -eq 0 ]]; then
-            echo "release ${RELEASE_TAG} already exists; leaving it unchanged"
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-            exit 0
+          cd "$RUNNER_TEMP/sociacl-release"
+          sha256sum --check *.tgz.sha256
+          status=0
+          gh release view "$RELEASE_TAG" --repo "$GH_REPO" >/dev/null 2> "$RUNNER_TEMP/release-error" || status=$?
+          if [[ "$status" == 0 ]]; then
+            previous="$(mktemp -d)"
+            trap 'rm -rf "$previous"' EXIT
+            gh release download "$RELEASE_TAG" --repo "$GH_REPO" --dir "$previous"
+            for file in *.tgz *.tgz.sha256 release-manifest.json; do
+              cmp "$file" "$previous/$file"
+            done
+            echo 'exists=true' >> "$GITHUB_OUTPUT"
+          elif grep -Eq 'release not found|HTTP 404' "$RUNNER_TEMP/release-error"; then
+            echo 'exists=false' >> "$GITHUB_OUTPUT"
+          else
+            cat "$RUNNER_TEMP/release-error" >&2
+            exit 1
           fi
-          if [[ "$err" == *"release not found"* || "$err" == *"HTTP 404"* ]]; then
-            echo "exists=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          printf '%s\n' "$err" >&2
-          exit 1
-      - name: Attest build provenance
-        if: steps.release.outputs.exists == 'false'
+      - name: Attest original test build provenance
+        id: provenance
+        if: steps.release.outputs.exists == 'false' && github.ref == 'refs/heads/master'
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
-          subject-path: ${{ runner.temp }}/sociacl-release/sociacl-*.tgz
+          subject-path: ${{ runner.temp }}/sociacl-release/*.tgz
           github-token: ${{ github.token }}
-      - name: Publish sociacl release assets
+      - name: Preserve the original signed proof
+        if: steps.release.outputs.exists == 'false' && github.ref == 'refs/heads/master'
+        env:
+          BUNDLE_PATH: ${{ steps.provenance.outputs.bundle-path }}
+        run: cp "$BUNDLE_PATH" "$RUNNER_TEMP/sociacl-release/provenance.sigstore.json"
+      - name: Publish channel package
         if: steps.release.outputs.exists == 'false'
         run: |
           set -euo pipefail
-          cd "$RUNNER_TEMP/sociacl-release" || exit
-          gh release create "$RELEASE_TAG" --verify-tag --generate-notes \
-            sociacl-*.tgz sociacl-*.tgz.sha256
+          cd "$RUNNER_TEMP/sociacl-release"
+          flags=(--verify-tag)
+          if [[ "$GITHUB_REF" == refs/heads/master ]]; then
+            flags=(--target "$GITHUB_SHA" --prerelease)
+          fi
+          gh release create "$RELEASE_TAG" --repo "$GH_REPO" "${flags[@]}" --generate-notes \
+            *.tgz *.tgz.sha256 release-manifest.json provenance.sigstore.json
