@@ -2102,3 +2102,111 @@ fn group_offer_requires_live_destination_binding_at_post_and_accept() {
         assert!(world.graph.admitted_owner(&offer.id).is_none());
     }
 }
+
+#[test]
+fn business_souls_and_destination_acl_vectors() {
+    let doc: Value =
+        serde_json::from_str(include_str!("../../../vectors/mesh/business.json")).unwrap();
+    let forum: ObjectId = doc["forum"].as_str().unwrap().parse().unwrap();
+    let window: ObjectId = doc["window"].as_str().unwrap().parse().unwrap();
+    let mount: ObjectId = doc["mount"].as_str().unwrap().parse().unwrap();
+    let foreign: ObjectId = doc["foreignItem"].as_str().unwrap().parse().unwrap();
+    assert_eq!(
+        sociacl_gun::forum_mount_soul(&forum, &mount)
+            .unwrap()
+            .join(),
+        doc["souls"]["mount"]
+    );
+    for row in doc["souls"]["windows"].as_array().unwrap() {
+        assert_eq!(
+            sociacl_gun::forum_role_window_soul(&forum, row["role"].as_str().unwrap(), &window)
+                .unwrap()
+                .join(),
+            row["soul"]
+        );
+    }
+    assert!(sociacl_gun::forum_mount_soul(&forum, &foreign).is_err());
+    assert!(sociacl_gun::forum_mount_soul(&window, &mount).is_err());
+    assert!(sociacl_gun::forum_mount_soul(&forum, &forum).is_err());
+    assert!(sociacl_gun::forum_role_window_soul(&forum, "../owner", &window).is_err());
+    assert!(sociacl_gun::forum_role_window_soul(&forum, "treasurer", &foreign).is_err());
+    for mode in doc["modes"].as_array().unwrap() {
+        let rows: Vec<_> = mode["rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|row| ForumRoleMembership {
+                role: row["role"].as_str().unwrap().into(),
+                principal: row["principal"].as_str().unwrap().parse().unwrap(),
+            })
+            .collect();
+        let kind = if mode["mode"] == "role-labels" {
+            ForumRoleMode::RoleLabels
+        } else {
+            ForumRoleMode::DistinctPrincipals
+        };
+        assert!(forum_roles_match(kind, &rows));
+        let mut hold = Hold::open();
+        for record in doc["sourceRecords"].as_array().unwrap() {
+            hold.put(record);
+            let source: ObjectId = record["object"].as_str().unwrap().parse().unwrap();
+            assert_eq!(
+                hold.graph
+                    .check_see(&source, &hold.accessor, 10, None, None)
+                    .reason,
+                "owner"
+            );
+        }
+        assert_eq!(hold.object.as_ref(), doc["target"].as_str().unwrap());
+        for stage in mode["stages"].as_array().unwrap() {
+            for name in stage["admit"].as_array().unwrap() {
+                let name = name.as_str().unwrap();
+                let row = &doc["grants"][name];
+                hold.with_ctx(|graph, ctx| {
+                    let resolver = |_principal: &PrincipalId| Some(Vec::new());
+                    if name.to_lowercase().contains("post") {
+                        graph
+                            .admit_post(row, &resolver, ctx)
+                            .expect("post admission");
+                    } else {
+                        graph.admit_row(row, &resolver, ctx).expect("see admission");
+                    }
+                });
+            }
+            for expected in stage["expected"].as_array().unwrap() {
+                let who: PrincipalId = expected["principal"].as_str().unwrap().parse().unwrap();
+                let hint = HandoffHint {
+                    principal: who.to_string().into(),
+                    target: hold.object.to_string().into(),
+                    verb: Some("see".into()),
+                    context: Some("business-role".into()),
+                };
+                let now = doc["now"].as_u64().unwrap();
+                assert_eq!(
+                    hold.graph
+                        .check_see(&hold.object, &who, now, Some(&hint), None)
+                        .allowed,
+                    expected["read"].as_bool().unwrap(),
+                    "{stage}"
+                );
+                assert_eq!(
+                    sociacl_gun::check_forum_see(&hold.graph, &hold.object, &who, now).allowed,
+                    expected["read"].as_bool().unwrap(),
+                    "{stage}"
+                );
+                assert_eq!(
+                    hold.graph
+                        .check_post(&hold.object, &who, now, Some(&hint), None)
+                        .allowed,
+                    expected["write"].as_bool().unwrap(),
+                    "{stage}"
+                );
+                assert_eq!(hold.graph.admitted_owner(&mount).unwrap().0, &hold.accessor);
+            }
+            assert_eq!(
+                hold.graph.admitted_owner(&hold.object).unwrap().0,
+                &hold.owner
+            );
+        }
+    }
+}

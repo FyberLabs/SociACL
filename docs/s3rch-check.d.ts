@@ -246,6 +246,42 @@ export type ForumRoleMembership = {
   principal: PrincipalId;
 };
 
+/** Business views are pointers to ordinary destination objects, never grants. */
+export type BusinessWindowKind = "allocation" | "memory-map" | "decision-log" |
+  "skills" | "scorecard" | "roadmap";
+
+/**
+ * Metadata item owned by the forum owner, admitted as its own signed object.
+ * Soul: s3rch/forums/<forumId>/windows/<role>/<id>.
+ * Read/write metadata on id's ACL; read/write content on target's ACL.
+ * Role bindings and window kind cannot substitute for either check.
+ */
+export type ForumRoleWindow = {
+  id: ObjectId;
+  forumId: ObjectId;
+  role: string;
+  kind: BusinessWindowKind;
+  target: ObjectId;
+};
+
+/**
+ * Metadata item owned by the mounting forum's owner.
+ * Soul: s3rch/forums/<forumId>/mounts/<id>.
+ * mode is a presentation limit/request, never a grant or a grant ceiling.
+ * R/W requires direct destination see plus post grants to the actual accessor.
+ * Removing this pointer does not cancel those grants; cancel the ACL rows.
+ */
+export type ForumSharedMount = {
+  id: ObjectId;
+  forumId: ObjectId;
+  target: ObjectId;
+  mode: "read" | "read-write";
+};
+
+/** Consumer soul builders; require forum kind and same-owner item metadata id. */
+export function forumRoleWindowSoul(forumId: ObjectId, role: string, windowId: ObjectId): string;
+export function forumMountSoul(forumId: ObjectId, mountId: ObjectId): string;
+
 /**
  * Forum chat statement. Same [`GunFeedNode`] under `s3rch/items`.
  * `tags` includes `forum:<forumId>`. There is no `s3rch/chat` soul

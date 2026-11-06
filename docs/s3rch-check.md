@@ -72,9 +72,72 @@ strings. Pass the SEA pubkey as one Gun `get` segment, including its literal
 This baseline is the prerequisite for the
 [Squad follow-up #123](https://github.com/FyberLabs/SociACL/issues/123).
 Group-based offer admission, pause/reassign privilege reduction and additional
-drawer admit rules remain there. Business and Fleet contracts remain in
-[#124](https://github.com/FyberLabs/SociACL/issues/124) and
-[#125](https://github.com/FyberLabs/SociACL/issues/125).
+drawer admit rules remain there. The Business contract is specified below;
+Fleet roll-ups remain in [#125](https://github.com/FyberLabs/SociACL/issues/125).
+
+### Business role windows and shared mounts
+
+`ForumRoleWindow` and `ForumSharedMount` are metadata pointers, admitted and
+persisted as ordinary signed objects. Their ids are minted `item` ids owned by
+the forum's embedded owner; their target can belong to a different principal.
+The soul helpers validate the path, not signatures or permission:
+
+| Record | Soul |
+| --- | --- |
+| Role window | `s3rch/forums/<forumId>/windows/<roleToken>/<itemId>` |
+| Shared mount | `s3rch/forums/<forumId>/mounts/<itemId>` |
+
+Read the pointer only after Check see on its own item id. Create/update/delete
+it through that item's authenticated owner/write boundary; a forum or role
+label alone cannot authorize this write. Resolve only one target ObjectId and
+Check that target independently before fetching its content or committing a
+write. Never treat the path, pointer, parent forum, or a successful check on the
+pointer as authorization on the target. A mount targeting another mount does
+not recursively inherit or forward access. Hopcap remains 1.
+
+| Role | Window kind | Destination data and write boundary |
+| --- | --- | --- |
+| Treasurer | `allocation` | Budget requests are ordinary needs; existing need/offer transition checks apply. No transfers or spending authority. |
+| Secretary | `memory-map`, `decision-log` | Ordinary destination objects; writes need that object's post permission. |
+| Practice Manager | `skills`, `scorecard` | Ordinary destination objects; evaluation commissions are needs, not execution grants. |
+| President/PM | `roadmap` | Ordinary roadmap objects and existing status/need transitions. Assignment or Resolve never changes ownership. |
+
+Role tokens can be `treasurer`, `secretary`, `practice-manager` and
+`president-pm`. Keep the existing `distinct-principals` and `role-labels`
+template modes. In both, check the actual authenticated principal; the token
+is a display/routing label, not a predicate. With role-labels, one key's grants
+apply to that principal regardless of which role tab is active. There is no
+security isolation between labels sharing a key. Distinct principals require
+separate grants. Rebinding a role does not transfer or revoke the previous
+principal's grants.
+
+A mount's `mode` requests/displays `read` or `read-write`; it grants nothing.
+For read, use `checkForumSee` on the target's stored ObjectId. For generic
+content write, use `checkPost` on that same id: the owner, or direct signed
+`sociacl-see-grant-v2` **and** `sociacl-post-grant-v2` rows naming the actual
+accessor, must allow. A group read path alone is not a post grant. Preserve
+object-specific need/offer/status transition restrictions as well; a generic
+post check does not replace them. Do not copy a grant onto the mounting forum
+or issue grants to a role token. An R view may hide editing, but is not an ACL
+ceiling on permissions the principal independently holds.
+
+To downgrade R/W to R, cancel the destination post row (stated 0 at a winning
+HAM state). To remove access, also cancel its see row and every independent
+group access path. Persist and authenticate the cancellations and recheck at
+the destination; the next Check reflects them. Deleting a mount or changing
+its mode only changes presentation. It does not revoke a grant. A retry must
+not replace cancellations with an older live row. Existing key-history,
+witness and freshness rules still apply.
+
+An agent addressing a role sends an SGH1 hint to the addressed principal and
+ordinary destination message object. The recipient resolves the role as
+untrusted addressing data and rechecks the destination ACL. The hint, even
+combined with a parent/role/mount reference, never allows Check or mints an
+onward grant. Private content is not included before destination authorization.
+The shared [Business fixtures](../vectors/mesh/business.json) cover both modes,
+R/RW, downgrade, full cancel,
+old-row replay and hint-only denial. This contract does not implement the
+s3r.ch UI, payments, or a worker runtime.
 
 ### Offer admission through a group
 

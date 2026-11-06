@@ -107,3 +107,34 @@ test('forums: invalid Check instants fail closed even for the owner', () => {
     assert.deepEqual(checkForumSee(graph, object, owner, now), { allowed: false, reason: 'unknown' });
   }
 });
+
+// Shared Business views never alter the authority inputs to destination Check.
+const business = JSON.parse(readFileSync(new URL('../../vectors/mesh/business.json', import.meta.url)));
+for (const mode of business.modes) {
+  test(`business: ${mode.mode} destination grants, downgrade and replay`, async () => {
+    const { admitPost, checkPost } = await import('../src/post.js');
+    const { graph, resolver, object, owner } = open();
+    assert.equal(business.target, object);
+    assert.notEqual(business.forum, object);
+    for (const record of business.sourceRecords) {
+      assert.equal(putObject(graph, record, resolver).ok, true);
+      assert.equal(checkSee(graph, record.object, record.owner, business.now).reason, 'owner');
+    }
+    for (const stage of mode.stages) {
+      for (const name of stage.admit) {
+        const admit = name.toLowerCase().includes('post') ? admitPost : admitRow;
+        assert.equal(admit(graph, business.grants[name], resolver).ok, true);
+      }
+      assert.deepEqual(stage.expected.map(row => row.principal), mode.rows.map(row => row.principal));
+      for (const expected of stage.expected) {
+        const hint = acceptHint({ principal: expected.principal, target: object, verb: 'see', context: 'business-role' });
+        assert.equal(checkSee(graph, object, expected.principal, business.now, hint).allowed, expected.read, stage.name);
+        assert.equal(checkForumSee(graph, object, expected.principal, business.now).allowed, expected.read, stage.name);
+        assert.equal(checkPost(graph, object, expected.principal, business.now, hint).allowed, expected.write, stage.name);
+        // Owning the mounted view does not transfer target ownership.
+        assert.equal(admittedOwner(graph, business.mount).owner, business.sourceRecords[0].owner);
+      }
+      assert.equal(admittedOwner(graph, object).owner, owner);
+    }
+  });
+}
