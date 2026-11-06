@@ -61,7 +61,18 @@ After a cut, `export_bundle` freezes what a remaining principal already held. Th
 
 CI (`.github/workflows/ci.yml`) runs `./scripts/test-all.sh` then `./scripts/coverage.sh` on `ubuntu-latest`. Same commands refresh this snapshot.
 
-A push to protected `master` tags `ids-v*` (`typescript/ids` and `crates/sociacl-ids`) and `sociacl-v*` (the `sociacl` npm package and the workspace crates on `workspace.package.version`) when that version has no tag. `github.token` creates the tag through the Git refs API. The same run packs that family's npm tarball, uploads it with a SHA-256, and attests build provenance. A `sociacl-v*` release ships that tarball only. The workspace crates are named by the tag and are not packed. `python/sociacl` has no package version and is not part of either family. Tag and pack jobs are not in a concurrency group, so a later push cannot cancel the pack for the commit that created the tag. Release jobs queue per tag name. If `master` is not protected, tagging exits without a ref ([#60](https://github.com/FyberLabs/SociACL/issues/60)). A tag that already names another commit is left in place. A maintainer can still push either tag family directly.
+A push to protected `master` tags `ids-v*` (`typescript/ids` and `crates/sociacl-ids`) and `sociacl-v*` (the `sociacl` npm package and the workspace crates on `workspace.package.version`) when that version has no tag. `github.token` creates the tag through the Git refs API. The same run packs that family's npm tarball, uploads it with a SHA-256, and attests build provenance. A `sociacl-v*` release ships that tarball only. The workspace crates are named by the tag and are not packed. `python/sociacl` has no package version and is not part of either family. Tag and pack jobs are not in a concurrency group, so a later push cannot cancel the pack for the commit that created the tag. Release jobs queue per tag name. If `master` is not protected, tagging exits without a ref; [#60](https://github.com/FyberLabs/SociACL/issues/60) is closed as not planned under the owner's no-branch-protection policy. A tag that already names another commit is left in place. A maintainer can still push either tag family directly.
+
+For an owner-authorized release whose pack or release job fails or is cancelled, re-run the original workflow run that created the tag. An existing tag at that commit is reused (`publish=true`); an existing release is left unchanged. Do not move tags or create a replacement version to retry. Every agent tag/release action still requires the owner's explicit approval for that specific action.
+
+CI checks full-SHA action pins and rejects workflow-level or tag/pack-job concurrency, including `cancel-in-progress: false` (GitHub can still replace a pending job). Per-tag release-job serialization remains allowed. Run these checks locally with a temporary Python environment:
+
+```sh
+python3 -m venv /tmp/sociacl-workflow-check
+/tmp/sociacl-workflow-check/bin/pip install -r scripts/requirements-ci.txt
+/tmp/sociacl-workflow-check/bin/python scripts/check-release-workflow.py
+/tmp/sociacl-workflow-check/bin/python scripts/check-release-workflow.test.py
+```
 
 <!-- coverage:start -->
 Measured **2026-10-27** by `scripts/coverage.sh`. CI publishes the same table on the job summary.

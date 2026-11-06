@@ -16,8 +16,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7.0.1
-      - uses: actions/setup-node@v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .nvmrc
           package-manager-cache: false
@@ -31,9 +31,11 @@ jobs:
   msrv:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7.0.1
-      - uses: dtolnay/rust-toolchain@1.88.0
-      - uses: Swatinem/rust-cache@v2.9.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@360a4e93673de6630fac2478bc9e35244b01a759 # 1.88.0
+        with:
+          toolchain: 1.88.0
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - name: Check workspace on minimum supported Rust
         run: cargo check --workspace --all-targets --locked
 
@@ -42,12 +44,19 @@ jobs:
     # runner. A fork PR would execute untrusted code on that machine.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Guard pinned actions and release preparation scheduling
+        run: |
+          python3 -m venv "$RUNNER_TEMP/workflow-check"
+          "$RUNNER_TEMP/workflow-check/bin/pip" install -r scripts/requirements-ci.txt
+          "$RUNNER_TEMP/workflow-check/bin/python" scripts/check-release-workflow.py
+          "$RUNNER_TEMP/workflow-check/bin/python" scripts/check-release-workflow.test.py
 
       - name: Check release versions
         run: python3 scripts/check-release-versions.py
 
-      - uses: actions/setup-node@v7.0.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .nvmrc
           check-latest: true
@@ -58,14 +67,15 @@ jobs:
           node -v
           test "$(node -p "process.versions.node.split('.')[0]")" -ge 24
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
+          toolchain: stable
           components: llvm-tools-preview
 
-      - uses: Swatinem/rust-cache@v2.9.2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
 
       - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@v2.87.22
+        uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0 # v2.87.22
         with:
           tool: cargo-llvm-cov
 
@@ -116,7 +126,7 @@ jobs:
 
       - name: Upload coverage
         if: always()
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: coverage
           path: |
@@ -142,11 +152,11 @@ jobs:
       created: ${{ steps.tag.outputs.created }}
       publish: ${{ steps.tag.outputs.publish }}
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-node@v7.0.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .nvmrc
           package-manager-cache: false
@@ -174,11 +184,11 @@ jobs:
       created: ${{ steps.tag.outputs.created }}
       publish: ${{ steps.tag.outputs.publish }}
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-node@v7.0.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .nvmrc
           package-manager-cache: false
@@ -204,11 +214,11 @@ jobs:
       GH_REPO: ${{ github.repository }}
       RELEASE_TAG: ${{ startsWith(github.ref, 'refs/tags/ids-v') && github.ref_name || needs.tag-ids.outputs.tag }}
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           fetch-depth: 0
-      - uses: actions/setup-node@v7.0.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .nvmrc
           package-manager-cache: false
@@ -226,7 +236,7 @@ jobs:
           npm pack --ignore-scripts ./typescript/ids --pack-destination "$RUNNER_TEMP"
           cd "$RUNNER_TEMP" || exit
           sha256sum "sociacl-ids-$version.tgz" > "sociacl-ids-$version.tgz.sha256"
-      - uses: actions/upload-artifact@v7.0.1
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: identity-release
           path: |
@@ -246,11 +256,11 @@ jobs:
       GH_REPO: ${{ github.repository }}
       RELEASE_TAG: ${{ startsWith(github.ref, 'refs/tags/sociacl-v') && github.ref_name || needs.tag-sociacl.outputs.tag }}
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           fetch-depth: 0
-      - uses: actions/setup-node@v7.0.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .nvmrc
           package-manager-cache: false
@@ -267,7 +277,7 @@ jobs:
           npm pack --ignore-scripts ./typescript --pack-destination "$RUNNER_TEMP"
           cd "$RUNNER_TEMP" || exit
           sha256sum "sociacl-$version.tgz" > "sociacl-$version.tgz.sha256"
-      - uses: actions/upload-artifact@v7.0.1
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: sociacl-release
           path: |
@@ -294,7 +304,7 @@ jobs:
       RELEASE_TAG: ${{ startsWith(github.ref, 'refs/tags/ids-v') && github.ref_name || needs.tag-ids.outputs.tag }}
     steps:
       # The write-token job never checks out or executes package source/scripts.
-      - uses: actions/download-artifact@v8.0.1
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: identity-release
           path: ${{ runner.temp }}/identity-release
@@ -321,7 +331,7 @@ jobs:
           exit 1
       - name: Attest build provenance
         if: steps.release.outputs.exists == 'false'
-        uses: actions/attest-build-provenance@v4.2.2
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: ${{ runner.temp }}/identity-release/sociacl-ids-*.tgz
           github-token: ${{ github.token }}
@@ -349,7 +359,7 @@ jobs:
       GH_REPO: ${{ github.repository }}
       RELEASE_TAG: ${{ startsWith(github.ref, 'refs/tags/sociacl-v') && github.ref_name || needs.tag-sociacl.outputs.tag }}
     steps:
-      - uses: actions/download-artifact@v8.0.1
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: sociacl-release
           path: ${{ runner.temp }}/sociacl-release
@@ -376,7 +386,7 @@ jobs:
           exit 1
       - name: Attest build provenance
         if: steps.release.outputs.exists == 'false'
-        uses: actions/attest-build-provenance@v4.2.2
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: ${{ runner.temp }}/sociacl-release/sociacl-*.tgz
           github-token: ${{ github.token }}

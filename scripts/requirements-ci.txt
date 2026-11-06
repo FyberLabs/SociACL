@@ -1,0 +1,2 @@
+# YAML parsing for workflow contract checks only; not a runtime dependency.
+PyYAML==6.0.3
