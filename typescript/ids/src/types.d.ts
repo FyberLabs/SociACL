@@ -108,3 +108,12 @@ export type WitnessCheckpoint = Readonly<{
   type: 'sociacl-witness-checkpoint-v1'; audience: string; client: string; challenge: string;
   rootEpoch: number; issuedAt: number; expiresAt: number; state: WitnessPolicyState;
 }>;
+
+/** Trusted resolver output, not a proof. Adapters must resolve authenticated
+ * history with resolveCurrentKey; never construct this from writer assertions.
+ * See docs/recovery-store-operations.md for freshness and restoration rules. */
+export type StoreWriteAccount = {
+  readonly currentKey: PrincipalId;
+  readonly currentEpub: PrincipalId | null;
+  readonly rotations: readonly { readonly seq: number }[];
+};
