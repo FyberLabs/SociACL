@@ -1,4 +1,4 @@
-import { parseTenantId, mintObjectId, objectSoul, grantSoul, parsePrincipalId, parseEip55, verifyRevokeNow, verifyRevoke, resolveWalletLinkNow, resolveWalletLink, historyState, type Revoke, type ResolutionContext, type ObjectId } from 'sociacl-ids';
+import { resolveStoreAccount, type Diagnostic, parseTenantId, mintObjectId, objectSoul, grantSoul, parsePrincipalId, parseEip55, verifyRevokeNow, verifyRevoke, resolveWalletLinkNow, resolveWalletLink, historyState, type Revoke, type ResolutionContext, type ObjectId } from 'sociacl-ids';
 const tenant = parseTenantId('01234567-89ab-cdef-0123-456789abcdef');
 if (!tenant.ok) throw Error(tenant.reason);
 const creator = parsePrincipalId('axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU');
@@ -129,3 +129,11 @@ if (advanceWitnessCheckpoint('{}', '{}', '{}', checkpointContext).ok) throw Erro
 import { openWitnessCheckpointClient } from 'sociacl-ids/checkpoint-client';
 const checkpointClientFactory: typeof openWitnessCheckpointClient = openWitnessCheckpointClient;
 void checkpointClientFactory;
+
+// A malformed high sequence must never become the head a store observes.
+const diagnostics: Diagnostic[] = [];
+const head = resolveStoreAccount(creator.value, [{ seq: 999 }], context, diagnostics);
+if (head.currentKey !== creator.value || head.rotations.length !== 0 ||
+    !diagnostics.some(d => d.source === 'rotation' && d.index === 0)) {
+  throw Error('invalid store resolution from installed package');
+}

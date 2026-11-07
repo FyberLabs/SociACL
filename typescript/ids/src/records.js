@@ -1214,3 +1214,18 @@ export function verifyObjectRecord(row, rotations, ctx) {
   if (!signed.ok) return signed;
   return ok(Object.freeze({ ...signed.value, record: parsed.value.record, bytes: parsed.value.bytes }));
 }
+
+/** Resolve the adapter-supplied history before recording a store head.
+ * The adapter authenticates the snapshot and checks its completeness and freshness.
+ * @param {PrincipalId} principal
+ * @param {readonly unknown[]} rotations
+ * @param {ResolutionContext} context
+ * @param {Diagnostic[]} diagnostics
+ * @returns {import('./types.js').StoreWriteAccount}
+ */
+export function resolveStoreAccount(principal, rotations, context, diagnostics) {
+  const resolved = resolveCurrentKey(principal, rotations, context);
+  for (const diagnostic of resolved.diagnostics) diagnostics.push(diagnostic);
+  if (!resolved.ok) throw new Error('store-rejected');
+  return resolved.value;
+}

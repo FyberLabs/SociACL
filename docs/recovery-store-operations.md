@@ -25,8 +25,8 @@ write, can raise that floor.
 
 ## Shared resolution helper
 
-Use `resolveStoreAccount` (exported from the TypeScript recovery and account-key
-modules) or Rust `resolve_store_account` when adapting a loaded history snapshot
+Use `resolveStoreAccount` from `sociacl-ids` (also re-exported by the TypeScript
+recovery and account-key modules) or Rust `resolve_store_account` when adapting a loaded history snapshot
 to the store's resolver callback. The helper runs the identity package's complete
 `resolveCurrentKey` / `resolve_current_key` verifier. It returns only the accepted
 head and maps resolution failure, including a valid fork, to `store-rejected`.
@@ -36,7 +36,8 @@ collection on both success and failure. Use a fresh collection for each operatio
 and report it through the adapter's diagnostic channel.
 
 ```typescript
-import { resolveStoreAccount, MemoryRecoveryStore } from "./recovery.ts";
+import { resolveStoreAccount } from "sociacl-ids";
+import { MemoryRecoveryStore } from "./recovery.ts";
 // loadSnapshot is adapter-owned, not a request-body parser. It must enforce
 // authenticated policy, history availability, and freshness before returning.
 const chain = (principal: PrincipalId) => {
