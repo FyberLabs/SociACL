@@ -1,6 +1,6 @@
 import { sha256 } from '@noble/hashes/sha2.js';
 import { parsePrincipalId } from './ids.js';
-import { verifySignedAt } from './records.js';
+import { verifySignedAt, resolveCurrentKey, historyState, verifyKeySignature } from './records.js';
 import { data, integer, text, lp, hex, ok, fail } from './util.js';
 /** @import {PrincipalId, Result, ResolutionContext} from './types.js' */
 /** @typedef {Readonly<{v: 1, principal: PrincipalId, agent: PrincipalId, audience: string, scopes: readonly string[], nonce: string, issuedAt: number, expiresAt: number, sig: string}>} AgentDelegation */
@@ -92,7 +92,16 @@ export function verifyAgentDelegation(input, rotations, ctx, request) {
     if (rev.principal !== r.principal) return fail('owner-mismatch');
     if (rev.issuedAt > ctx.now) return fail('future-record');
     const proof = verifySignedAt(rev.principal, rotations, ctx, p.value.bytes, rev.sig, rev.issuedAt);
-    if (!proof.ok) return proof;
+    if (!proof.ok) {
+      // Retain authenticated historical cancellations without granting a retired
+      // key authority over a new delegation. Only unrelated IDs take this path.
+      if (proof.reason !== 'unwitnessed-retired-key' || rev.delegationId === id) return proof;
+      const account = resolveCurrentKey(r.principal, rotations, ctx);
+      if (!account.ok) return account;
+      const historical = historyState(r.principal, account.value.rotations, rev.issuedAt, ctx.now);
+      const signature = verifyKeySignature(historical.key, rev.sig, p.value.bytes);
+      if (!signature.ok) return signature;
+    }
     if (rev.delegationId === id) return fail('revoked-link');
   }
   return ok(Object.freeze({ delegation: r, id }));

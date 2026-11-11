@@ -83,3 +83,20 @@ test('owner rotation prevents reuse of an old-key delegation', () => {
   assert.equal(verified.ok, false);
   assert.equal(verified.reason, 'unwitnessed-retired-key');
 });
+test('retained old revocations do not block a new delegation after owner rotation', () => {
+  const rotation = fixture.accept.find(c => c.name === 'wallet-rotate').input;
+  const context = { ...ctx, links: new Map(fixture.context.links) };
+  const old = grant({ issuedAt: rotation.issuedAt - 3, expiresAt: ctx.now + 100 });
+  const rev = { v: 1, principal: owner, delegationId: ids.parseAgentDelegation(old).value.id, issuedAt: rotation.issuedAt - 2 };
+  const cancelled = { ...rev, sig: sign(ids.agentRevocationBytes(rev)) };
+  const fresh = grant({ agent: principal(3), issuedAt: rotation.issuedAt + 1 });
+  fresh.sig = sign(ids.agentDelegationBytes(fresh), 2);
+  const req = { ...request, agent: principal(3), revocations: [cancelled] };
+  const check = (rs) => ids.verifyAgentDelegation(fresh, [rotation], context, { ...req, revocations: rs });
+  assert.equal(check([cancelled]).ok, true);
+  assert.equal(check([{ ...cancelled, sig: sign(ids.agentRevocationBytes(rev), 3) }]).ok, false);
+  const attack = { ...rev, delegationId: ids.parseAgentDelegation(fresh).value.id };
+  assert.equal(check([{ ...attack, sig: sign(ids.agentRevocationBytes(attack)) }]).ok, false);
+  const current = { ...attack, issuedAt: ctx.now };
+  assert.equal(check([{ ...current, sig: sign(ids.agentRevocationBytes(current), 2) }]).reason, 'revoked-link');
+});

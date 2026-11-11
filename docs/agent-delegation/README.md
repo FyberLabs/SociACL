@@ -33,7 +33,11 @@ The caller must obtain a complete, fresh revocation snapshot from the owner's
 authenticated storage, not a caller-selected Gun fragment or arbitrary empty
 array. Missing, stale or unreadable storage denies before invoking this
 function; do not translate such failures into an empty list. Every supplied
-revocation must be well-formed and owner-signed; an invalid row denies. A matching
+revocation must be well-formed and owner-signed; an invalid row denies.
+Unrelated historical revocations are verified against the issuance-time key in
+authenticated rotation history and retained without blocking new delegations.
+A retired key can never revoke a current-key delegation through that historical
+path. No historical timestamp is used to grant authority. A matching
 revocation denies, with no later grant overriding the same ID. A newly issued
 delegation needs a new nonce. Rotation also makes old delegation tokens unusable.
 
