@@ -61,3 +61,5 @@ export function acceptHop(hop) {
 export function decodeHop(bytes) {
   return bytes;
 }
+
+export { acceptForumNeedTransition, acceptForumOfferTransition } from './forum-transitions.js';
