@@ -16,6 +16,13 @@ const cases = [
 ];
 for (const [name, command, args] of cases) {
   test(name, () => {
-    execFileSync(command, args, { cwd: root, stdio: 'pipe', maxBuffer: 4 * 1024 * 1024 });
+    try {
+      execFileSync(command, args, { cwd: root, stdio: 'pipe', maxBuffer: 4 * 1024 * 1024 });
+    } catch (error) {
+      // Infra redacts this stream; native XML keeps only the case outcome.
+      process.stderr.write(error.stdout ?? '');
+      process.stderr.write(error.stderr ?? '');
+      throw new Error(`${name} failed (status ${error.status ?? 'signal'})`);
+    }
   });
 }
