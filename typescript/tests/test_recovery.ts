@@ -1913,3 +1913,112 @@ test("signed store retries re-read both commitments and detect lost responses", 
     assert.equal(generation(), scenario.finalGeneration);
   }
 });
+
+test('recovery flow: old backup, new bytes, durable retries and published commit', { timeout: 180_000 }, async () => {
+  const genesis = scalarSea(ring.witnessed.genesisScalar), genesisEncryption = scalarSea(ring.witnessed.genesisEpubScalar);
+  const original = AccountKeyring.fromGenesis(importGenesis(ring.genesis.laneId, genesis.pub, genesis.priv,
+    genesisEncryption.pub, genesisEncryption.priv), ring.genesis.contactLaneSecret);
+  const allRecords = JSON.parse(readFileSync(new URL('../../vectors/ids/records.json', import.meta.url), 'utf8'));
+  const context = { ...witnessedContext(), genesisEpubBindings:
+    allRecords.accept.find((row: { name: string }) => row.name === 'binding-valid-no-rotation').genesisEpubBindings };
+  const initialStore = new MemoryRecoveryStore(watch([], context), new HeadFloor());
+  const oldEnvelope = await recovery.sealRecoveryCopyFromString(original, recoveryVector.passphraseUtf8, initialStore);
+  const recovered = await recovery.openRecoveryCopyFromString(recoveryVector.passphraseUtf8, oldEnvelope,
+    original.principal, 0, [], context);
+  const record = records.accept.find(row => row.name === ring.witnessed.rotationName);
+  assert.ok(record);
+  let published: readonly unknown[] = [];
+  const backing = new MemoryRecoveryStore(principal => watch(published, context)(principal), new HeadFloor());
+  putRecovery(backing, oldEnvelope, recovered.currentPriv());
+  let puts = 0, failBefore = true, losePut = true, loseCommit = true;
+  const adapter = new Proxy(backing, { get(target, property) {
+    if (property === 'put') return (envelope: RecoveryEnvelope, signature: string) => {
+      puts++;
+      if (failBefore) { failBefore = false; throw new Error('offline'); }
+      target.put(envelope, signature);
+      if (losePut) { losePut = false; throw new Error('response-lost'); }
+    };
+    if (property === 'commit') return (principal: PrincipalId, signature: string) => {
+      target.commit(principal, signature);
+      if (loseCommit) { loseCommit = false; throw new Error('response-lost'); }
+    };
+    const value = Reflect.get(target, property, target) as unknown;
+    return typeof value === 'function' ? value.bind(target) : value;
+  }});
+  // The byte API preserves the decomposed suffix and surrounding whitespace.
+  const chosen = new TextEncoder().encode(` ${recoveryVector.passphraseUtf8} e\u0301 `);
+  const expected = new Uint8Array(chosen);
+  const signing = scalarSea(ring.witnessed.currentScalar), encryption = scalarSea(ring.witnessed.epubScalar);
+  let mints = 0;
+  const preparing = recovery.prepareRecoveryRotation({ recovered, newPassphrase: chosen,
+    trusted: ring.trusted, lost: ring.lost, rotations: [], context, store: adapter,
+    mint: () => { mints++; return { ...vectorMint(), signingPub: signing.pub, signingPriv: signing.priv,
+      epub: encryption.pub, epriv: encryption.priv }; },
+  });
+  chosen.fill(0);
+  const flow = await preparing;
+  assert.equal(flow.state, 'prepared');
+  assert.equal(puts, 0);
+  assert.equal(backing.pending(recovered.principal), undefined);
+  assert.throws(() => flow.persist(), /offline/);
+  assert.equal(flow.state, 'prepared');
+  assert.deepEqual(backing.current(recovered.principal), oldEnvelope);
+  flow.persist(); // A lost successful response reconciles without another put.
+  assert.equal(flow.state, 'pending');
+  flow.persist();
+  assert.equal(puts, 2);
+  assert.equal(mints, 1);
+  assert.throws(() => flow.commit(), /recovery-conflict/);
+  published = [record.input];
+  assert.equal(backing.publishedAccount(recovered.principal).currentKey, flow.envelope().signingPub);
+  assert.equal(backing.publishedAccount(recovered.principal).currentEpub, flow.envelope().epub);
+  assert.equal(backing.publishedAccount(recovered.principal).rotations.length, flow.envelope().rotationSeq);
+  flow.commit(); // A lost commit response also reconciles by exact read-back.
+  assert.equal(flow.state, 'committed');
+  flow.commit();
+  const envelope = flow.envelope();
+  const opened = await recovery.openRecoveryCopy(expected, envelope, recovered.principal, 1, published, context);
+  assert.equal(opened.currentPriv(), signing.priv);
+  const altered = new TextEncoder().encode(new TextDecoder().decode(expected).normalize('NFC'));
+  await assert.rejects(() => recovery.openRecoveryCopy(altered, envelope, recovered.principal, 1, published, context));
+  envelope.bytes.fill(0);
+  assert.notEqual(hashEnvelope(flow.envelope()), hashEnvelope(envelope));
+  expected.fill(0); altered.fill(0);
+});
+
+function hashEnvelope(envelope: RecoveryEnvelope): string { return recoveryEnvelopeHash(envelope); }
+
+test('recovery flow: cancellation and weak choice never persist', { timeout: 180_000 }, async () => {
+  const original = genesisKeyring(), context = witnessedContext();
+  const legacy = JSON.parse(readFileSync(new URL('../../vectors/encrypted-discovery/recovery-legacy-strength.json', import.meta.url), 'utf8'));
+  const recovered = await recovery.openRecoveryCopyFromString(legacy.passphraseUtf8,
+    { principal: original.principal, rotationSeq: 0, signingPub: original.pub, epub: original.epub, bytes: hexToBytes(legacy.envelopeHex) },
+    original.principal, 0, [], context);
+  const store = new MemoryRecoveryStore(watch([], context), new HeadFloor());
+  const options = { recovered, newPassphrase: new TextEncoder().encode(recoveryVector.passphraseUtf8),
+    trusted: ring.trusted, lost: ring.lost, rotations: [], context, store, mint: vectorMint };
+  await assert.rejects(() => recovery.prepareRecoveryRotation({ ...options,
+    newPassphrase: new TextEncoder().encode('weak') }), /recovery-weak-passphrase/);
+  const aborted = new AbortController(); aborted.abort();
+  await assert.rejects(() => recovery.prepareRecoveryRotation({ ...options, signal: aborted.signal }));
+  const during = new AbortController();
+  const promise = recovery.prepareRecoveryRotation({ ...options, signal: during.signal });
+  during.abort();
+  await assert.rejects(() => promise);
+  assert.equal(store.writeGeneration(recovered.principal), 0);
+  const flow = await recovery.prepareRecoveryRotation(options);
+  const competitor = dummyEnvelope(recovered.principal, 1, flow.envelope().signingPub, flow.envelope().epub);
+  putRecovery(store, competitor, recovered.currentPriv());
+  assert.throws(() => flow.persist(), /recovery-conflict/);
+  assert.deepEqual(store.pending(recovered.principal), competitor);
+  recovery.deleteRecoveryCopy(recovered.principal, 1, recovered.currentPriv(), store);
+  flow.persist(); // Re-read the generation after another writer changed it.
+  const persisted = store.pending(recovered.principal);
+  const generation = store.writeGeneration(recovered.principal);
+  flow.cancel();
+  assert.equal(flow.state, 'cancelled');
+  assert.throws(() => flow.persist(), /recovery-cancelled/);
+  assert.throws(() => flow.commit(), /recovery-cancelled/);
+  assert.equal(store.writeGeneration(recovered.principal), generation);
+  assert.deepEqual(store.pending(recovered.principal), persisted);
+});

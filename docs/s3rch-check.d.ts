@@ -3249,3 +3249,33 @@ export type EncryptedDiscoveryVector =
 export function filterForumSearchCandidates(
   graph: object, candidates: ObjectId[], accessor: PrincipalId, now: number,
 ): ObjectId[];
+
+/** Separate data transitions; Check remains a permission answer and never changes ownership. */
+export type ForumNeedTransitionResult =
+  | { ok: true; need: ForumNeed }
+  | { ok: false; reason: string };
+export type ForumOfferTransitionResult =
+  | { ok: true; offer: ForumOffer }
+  | { ok: false; reason: string };
+/**
+ * Caller authenticates writer, supplies current admitted need, and serializes
+ * transitions with durable persistence. No caller-asserted Check boolean.
+ * Posting requires helper's current Check; withdrawal requires the stored live
+ * offer and helper, owner or subject. Accepted offers cannot be withdrawn until
+ * reopening. Tombstones prevent repost; no object-owner admission is created.
+ */
+export function acceptForumOfferTransition(
+  graph: GroupSeeGraph, need: ForumNeed, current: ForumOffer | undefined,
+  next: ForumOffer, writer: PrincipalId, now: number,
+): ForumOfferTransitionResult;
+/**
+ * Immutable id/forum/subject/body/severity/spec, strictly increasing safe HAM.
+ * Resolve: owner or subject, exact stored live offer, helper still passes Check.
+ * Reopen: owner only, clear acceptedOffer. Otherwise current Check gates updates.
+ * Caller atomically compares/persists current and next; this does not persist
+ * needs, authenticate a transport, or turn a supplied row into an admitted offer.
+ */
+export function acceptForumNeedTransition(
+  graph: GroupSeeGraph, current: ForumNeed, next: ForumNeed,
+  offer: ForumOffer | undefined, writer: PrincipalId, now: number,
+): ForumNeedTransitionResult;

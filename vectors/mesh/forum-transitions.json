@@ -1,0 +1,47 @@
+{
+  "v": 1,
+  "family": "forum-transitions",
+  "base": "forums.json",
+  "cases": [
+    {
+      "name": "body-stays",
+      "patch": {
+        "body": "changed"
+      },
+      "ok": false
+    },
+    {
+      "name": "severity-stays",
+      "patch": {
+        "severity": "emergency"
+      },
+      "ok": false
+    },
+    {
+      "name": "ham-increases",
+      "patch": {
+        "hamState": 1
+      },
+      "ok": false
+    },
+    {
+      "name": "open-needs-have-no-accepted-offer",
+      "patch": {
+        "acceptedOffer": "$offer"
+      },
+      "ok": false
+    },
+    {
+      "name": "resolve-requires-live-offer",
+      "patch": {
+        "stated": 0
+      },
+      "ok": false
+    },
+    {
+      "name": "owner-ham-update",
+      "patch": {},
+      "ok": true
+    }
+  ]
+}

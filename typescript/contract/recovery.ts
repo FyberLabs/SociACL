@@ -156,3 +156,5 @@ export async function rotateAndReseal(
 }
 
 export { resolveStoreAccount, STORE_GENERATION_MAX } from "./store-write.ts";
+
+export { prepareRecoveryRotation, type RecoveryRotationFlow, type RecoveryRotationState } from './recovery-flow.ts';
