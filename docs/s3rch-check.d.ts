@@ -221,6 +221,36 @@ export type ForumAlarm = {
 };
 
 /**
+ * Fleet/Command sitrep or emergency projection. Stored at s3rch/items/<id>,
+ * tagged forum:<destinationForum>,report. Each forwarding hop creates a new
+ * admitted report object with its own destination ACL; source access never
+ * grants access to this object. The body is an explicitly published snapshot,
+ * not a promise of access to any linked source object.
+ */
+export type ForumRollupReport = GunFeedNode & {
+  id: ObjectId;
+  kind: "forum-report";
+  sourceForum: ObjectId;
+  destinationForum: ObjectId;
+  reportType: "sitrep" | "emergency";
+  trigger: "scheduled" | "manual" | "event";
+  /** Previous report/need id. Resolving it requires its own current Check. */
+  sourceObject: ObjectId;
+  /** SEA identity; wallets/OAuth subjects are linked credentials only. */
+  author: PrincipalId;
+  /** Cancelling a projection hides its presentation; ACL cancellation revokes. */
+  stated: 0 | 1;
+};
+
+/**
+ * Ordinary metadata under s3rch/forums/<forumId>/parent. Read and write on the
+ * child's admitted ACL; inspect the parent only after its own Check. No
+ * inherited grant, principal alias, authority walk or automatic forwarding.
+ * Cycles and unavailable parents stop traversal; never widen the hopcap.
+ */
+export type ForumParentLink = { forumId: ObjectId; parent: ObjectId };
+
+/**
  * Forum template. The template chooses one mode for the whole forum.
  * distinct-principals: each role token is a different SEA principal.
  * role-labels: one SEA principal wears several role tokens.

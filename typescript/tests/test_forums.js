@@ -138,3 +138,33 @@ for (const mode of business.modes) {
     }
   });
 }
+
+const rollups = JSON.parse(readFileSync(new URL('../../vectors/mesh/forum-rollups.json', import.meta.url)));
+test('rollups: shared Squad/Fleet/Command destination isolation and resolution', () => {
+  const raw = rollups.context;
+  const resolver = { rotations: () => raw.rotationSets.genesis, ctx: {
+    ...raw, links: new Map(raw.links ?? []), pinnedIss: new Set(raw.pinnedIss ?? []),
+    history: (principal, at, until) => raw.authenticatedAccounts.includes(principal)
+      ? { ok: true, value: historyState(principal, [], at, until) }
+      : { ok: false, reason: 'missing-history' },
+  }};
+  const graph = {};
+  for (const level of rollups.levels) assert.equal(putObject(graph, level.record, resolver).ok, true);
+  for (const scenario of rollups.cases) {
+    for (const instruction of scenario.admit) {
+      const [name, kind] = instruction.split(':');
+      assert.equal(admitRow(graph, rollups.levels.find(l => l.level === name)[kind], resolver).ok, true);
+    }
+    for (const [i, level] of rollups.levels.entries()) {
+      const hint = acceptHint({principal: rollups.accessor, target: level.object, verb: 'see', context: 'emergency'});
+      const projection = { id: level.object, kind: 'forum-report', destinationForum: level.forum,
+        sourceForum: rollups.levels[0].forum, sourceObject: rollups.levels[0].object,
+        reportType: 'emergency', stated: scenario.resolve ? 0 : 1 };
+      const owner = admittedOwner(graph, level.object);
+      assert.equal(putObject(graph, projection, resolver).ok, false, scenario.name);
+      assert.deepEqual(admittedOwner(graph, level.object), owner, scenario.name);
+      assert.equal(checkSee(graph, level.object, rollups.accessor, rollups.now, hint).allowed, scenario.expected[i], scenario.name);
+      assert.equal(checkForumSee(graph, level.object, rollups.accessor, rollups.now).allowed, scenario.expected[i], scenario.name);
+    }
+  }
+});
