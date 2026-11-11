@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "files": {
+    "docs/agent-delegation/agent-delegation.d.ts": "bed2b6f2749685037372fbd9df5e22498053249b64e101883fca044a26063b5f",
+    "docs/agent-delegation/types.d.ts": "0b5eb2259c8fce46247944468f2e927ad2cfa27fe2c49873a13972e5ed7f71f5",
+    "vectors/agent-delegation/v1.json": "aecdd9e66846dec8dcb63168d2a075787a8b91eed2c73bff375068befb9396cc"
+  }
+}
