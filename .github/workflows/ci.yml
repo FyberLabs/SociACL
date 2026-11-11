@@ -11,23 +11,6 @@ permissions:
   contents: read
 
 jobs:
-  browser-policy-store:
-    # Match the OS supported by the pinned Playwright browser build.
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version-file: .nvmrc
-          package-manager-cache: false
-      - run: npm ci
-        working-directory: typescript/ids
-      - run: npx playwright install --with-deps chromium
-        working-directory: typescript/ids
-      - run: npm run test:browser-store
-        working-directory: typescript/ids
-
   msrv:
     runs-on: ubuntu-latest
     steps:
@@ -73,16 +56,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           toolchain: stable
-          components: llvm-tools-preview
 
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
 
-      - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0 # v2.87.22
-        with:
-          tool: cargo-llvm-cov
-
-      - name: Audit sources and test all languages
+      - name: Audit sources and run unit/contract tests
         run: ./scripts/test-all.sh
 
       - name: Production install can load sociacl/gun
@@ -117,34 +94,8 @@ jobs:
             }
           "
 
-      - name: Coverage
-        run: ./scripts/coverage.sh
-
-      - name: Publish coverage summary
-        if: always()
-        run: |
-          if [[ -f docs/coverage.md ]]; then
-            cat docs/coverage.md >> "$GITHUB_STEP_SUMMARY"
-          fi
-
-      - name: Upload coverage
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: coverage
-          path: |
-            docs/coverage.md
-            target/coverage/rust-tests.txt
-            crates/**/proptest-regressions/**
-            target/coverage/rust-summary.txt
-            target/coverage/rust.lcov
-            target/coverage/python-report.txt
-            target/coverage/python.json
-            target/coverage/typescript-report.txt
-          if-no-files-found: warn
-
   pack-ids:
-    needs: [test, msrv, browser-policy-store]
+    needs: [test, msrv]
     if: (github.event_name == 'push' && github.ref == 'refs/heads/master') || startsWith(github.ref, 'refs/tags/ids-v')
     runs-on: ubuntu-latest
     permissions:
@@ -236,7 +187,7 @@ jobs:
             *.tgz *.tgz.sha256 release-manifest.json provenance.sigstore.json
 
   pack-sociacl:
-    needs: [test, msrv, browser-policy-store]
+    needs: [test, msrv]
     if: (github.event_name == 'push' && github.ref == 'refs/heads/master') || startsWith(github.ref, 'refs/tags/sociacl-v')
     runs-on: ubuntu-latest
     permissions:

@@ -14,6 +14,12 @@ def check(document):
     if 'concurrency' in document:
         raise ValueError('Workflow concurrency can strand tag/pack preparation')
     jobs = document['jobs']
+    if 'browser-policy-store' in jobs:
+        raise ValueError('Browser E2E belongs to the central nightly batch')
+    for job in jobs.values():
+        for step in job.get('steps', []):
+            if any(command in step.get('run', '') for command in ('test:browser-store', 'nightly-integration.mjs', './scripts/coverage.sh', 'scripts/test-runtime.sh')):
+                raise ValueError('Integration execution must not return to PR CI')
     for name in PREPARATION_JOBS:
         if name not in jobs:
             raise ValueError(f'Missing preparation job: {name}')
