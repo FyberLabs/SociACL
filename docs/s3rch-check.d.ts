@@ -6,6 +6,9 @@
  * Do not add this file as an npm package. This is a contract, not
  * a dependency.
  *
+ * Identity record/verifier declarations and pinned shared-vector manifest:
+ *   docs/identity-consume/ (dependency-free sibling contract)
+ *
  * Reference implementation (Rust, this repo):
  *   crates/sociacl-gun — plaintext MeshSeeGrant Check
  *   crates/sociacl-encdisc — encrypted-discovery slice
