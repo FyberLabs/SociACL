@@ -21,6 +21,13 @@ class WorkflowContract(unittest.TestCase):
         for name in ('release-ids', 'release-sociacl'):
             self.assertIn('concurrency', self.document['jobs'][name])
 
+    def test_integration_cannot_return_to_pr_ci(self):
+        for command in ('npm run test:browser-store', 'node scripts/nightly-integration.mjs', './scripts/coverage.sh', 'bash scripts/test-runtime.sh'):
+            document = copy.deepcopy(self.document)
+            document['jobs']['test']['steps'].append({'run': command})
+            with self.subTest(command=command), self.assertRaises(ValueError):
+                check.check(document)
+
     def test_each_tag_or_pack_concurrency_is_rejected_even_without_cancellation(self):
         for name in check.PREPARATION_JOBS:
             document = copy.deepcopy(self.document)
