@@ -50,7 +50,7 @@ After a cut, `export_bundle` freezes what a remaining principal already held. Th
 
 ## Not implemented
 
-- [#29](https://github.com/FyberLabs/SociACL/issues/29), [#30](https://github.com/FyberLabs/SociACL/issues/30), and [#31](https://github.com/FyberLabs/SociACL/issues/31) are open questions. This tree does not choose a group epoch length, does not decide whether every membership change starts a new epoch, does not decide whether plaintext `MeshSeeGrant` remains a public-content mode, and does not define group search tokens.
+- Group membership changes require a new epoch; explicitly public plaintext content remains supported; group search tokens are deferred in favor of client-side Check filtering. See [group policy decisions](docs/encrypted-discovery.md#group-policy-decisions). These are publisher/consumer requirements, not evidence of application rollout.
 - `crates/sociacl-gun` evaluates plaintext grants and direct `same-group` / `named-circle` edges. It does not evaluate a wrap.
 - s3r.ch copies [docs/s3rch-check.d.ts](docs/s3rch-check.d.ts) and reimplements Check in TypeScript. It does not import this crate. AImmune / Brewnix IR copies [docs/aimmune-ir-check.d.ts](docs/aimmune-ir-check.d.ts) the same way.
 - A shard-close watermark is not implemented. Private information retrieval, a zero-knowledge presentation, and a SociACL index are not implemented.

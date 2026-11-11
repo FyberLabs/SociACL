@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { historyState, parsePrincipalId } from '../ids/src/index.js';
-import { acceptHint, checkForumSee, fromGunNode, toGunNode } from '../src/gun.js';
+import { acceptHint, checkForumSee, filterForumSearchCandidates, fromGunNode, toGunNode } from '../src/gun.js';
 import { admittedOwner, admitRow, checkSee, putObject } from '../src/see.js';
 
 const doc = JSON.parse(readFileSync(new URL('../../vectors/mesh/forums.json', import.meta.url)));
@@ -167,4 +167,20 @@ test('rollups: shared Squad/Fleet/Command destination isolation and resolution',
       assert.equal(checkForumSee(graph, level.object, rollups.accessor, rollups.now).allowed, scenario.expected[i], scenario.name);
     }
   }
+});
+
+
+test('search: current destination grants, cancellation and invalid inputs', () => {
+  const { graph, resolver, live, cancel, object, accessor } = open();
+  const candidates = [object, object, 'not-an-object'];
+  assert.deepEqual(filterForumSearchCandidates(graph, candidates, accessor, 10), []);
+  assert.equal(admitRow(graph, live, resolver).ok, true);
+  assert.deepEqual(filterForumSearchCandidates(graph, candidates, accessor, 10), [object]);
+  for (const now of [NaN, Infinity, -1, 0.5]) {
+    assert.deepEqual(filterForumSearchCandidates(graph, candidates, accessor, now), []);
+  }
+  assert.deepEqual(filterForumSearchCandidates(graph, Array(1001).fill(object), accessor, 10), []);
+  assert.deepEqual(filterForumSearchCandidates(graph, null, accessor, 10), []);
+  assert.equal(admitRow(graph, cancel, resolver).ok, true);
+  assert.deepEqual(filterForumSearchCandidates(graph, candidates, accessor, 10), []);
 });

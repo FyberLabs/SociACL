@@ -2742,7 +2742,7 @@ export type MigrationAdmission = {
  * including one whose from is still ahead of now. Each edge soul is
  * grantSoul(owner, object, accessor). A wrap named here is not a
  * grant. A reader does not call this. Items kept on the public
- * plaintext path are not rewritten. Whether that path stays is open.
+ * plaintext path are not rewritten. Explicitly public plaintext remains a supported mode.
  */
 export function applyProtocolMigration(
   input: MigrationAdmissionInput,
@@ -3235,3 +3235,14 @@ export type EncryptedDiscoveryVector =
   | "account-key-head-max-age"
   | "account-key-provider-older-key"
   | "consume-statement-does-not-mint";
+
+/**
+ * Client-side search over at most 1000 candidate ids. Deduplicate and return
+ * only ids whose current destination Check see passes for this accessor.
+ * Malformed/oversized batches and verification errors fail closed. An index
+ * hit, snippet, parent link or group search token cannot grant. Recheck on
+ * display/open and after ACL changes; this result is not an authorization cache.
+ */
+export function filterForumSearchCandidates(
+  graph: object, candidates: ObjectId[], accessor: PrincipalId, now: number,
+): ObjectId[];
