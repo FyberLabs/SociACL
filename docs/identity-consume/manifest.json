@@ -3,8 +3,9 @@
   "contract": "sociacl-identity-consume-v1",
   "packageVersion": "0.10.0",
   "sha256": {
+    "docs/identity-consume/agent-delegation.d.ts": "bed2b6f2749685037372fbd9df5e22498053249b64e101883fca044a26063b5f",
     "docs/identity-consume/ids.d.ts": "303db2a8e551483ed98430106e3868c4b448ef668cf89d48062e752e8a070dba",
-    "docs/identity-consume/index.d.ts": "d1dac2c7fe15de653334887e34c44f9760fa04bdca3084ea6a82b10a070db338",
+    "docs/identity-consume/index.d.ts": "4ebea3d138112e29a8dd08400161ddcf757bdd1cf33b2287372ac29d99c7bdc0",
     "docs/identity-consume/json.d.ts": "75cfd87ea3642d505228ae228eef7edf38dc5f729b5fded383d940a9a0a19f85",
     "docs/identity-consume/records.d.ts": "422196d25d214851def32c33d67fcfb2def34f4085f8dd1a5d543768b0e7592c",
     "docs/identity-consume/types.d.ts": "0b5eb2259c8fce46247944468f2e927ad2cfa27fe2c49873a13972e5ed7f71f5",
@@ -12,6 +13,7 @@
     "docs/identity-consume/witness-checkpoint.d.ts": "e9ed1334f014be74b4c8391e3fa933fe253ff3e76e6f8b768df5d20d924d225f",
     "docs/identity-consume/witness-policy.d.ts": "2c86c87c173cd136dcc1f38cefa90c0f114c1a9e89619dee68041a915b8ad115",
     "docs/s3rch-check.d.ts": "eb573fa416602d12b42ec9ecdb64f7e30361a3795cf5466c497dca43d050d42c",
+    "vectors/agent-delegation/v1.json": "aecdd9e66846dec8dcb63168d2a075787a8b91eed2c73bff375068befb9396cc",
     "vectors/ids/edges.json": "ecb913c2428915ed0a8b79b7477c0715e59b31fc94b8380ebf7d6b22089b0663",
     "vectors/ids/network.json": "0c6522baf13ba83cb92193a7e522993e52414d82bf920b6e2fc19ef25247eb1c",
     "vectors/ids/object.json": "9646c6738725b9438b8ebbf2d41437923b87ec3ff3bbd0ab910abe27ce429640",

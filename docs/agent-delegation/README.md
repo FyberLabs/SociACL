@@ -2,9 +2,10 @@
 
 This consume contract advances #156 and s3r.ch #277/#278. It adds no session
 issuer, JWT, endpoint, or new object permission. The implementation is in
-`typescript/ids/src/agent-delegation.js`. The declarations here are generated,
-standalone copies; `manifest.json` pins them and the shared vector bytes.
-CI rebuilds and checks them with `node scripts/check-agent-contract.mjs`.
+`typescript/ids/src/agent-delegation.js`. The declarations in
+`docs/identity-consume/agent-delegation.d.ts` are generated standalone copies;
+the identity consume manifest pins them and the shared vector bytes.
+CI rebuilds and checks them with `scripts/identity-consume-contract.py`.
 
 An owner's current SEA signing key signs a v1 delegation naming one distinct
 agent SEA key, a canonical HTTPS origin as audience, a sorted unique list of

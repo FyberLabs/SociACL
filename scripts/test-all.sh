@@ -36,7 +36,6 @@ npm run --prefix typescript typecheck
 npm ci --prefix typescript/ids
 IDS_VECTOR_REPORT="${root}/target/ids/ts-vectors.txt" node --test typescript/ids/test/*.js
 npm run --prefix typescript/ids typecheck
-node scripts/check-agent-contract.mjs
 npm run --prefix typescript/ids browser
 npm run --prefix typescript/ids build
 python3 scripts/identity-consume-contract.py
