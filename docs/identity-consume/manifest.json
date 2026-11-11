@@ -11,7 +11,7 @@
     "docs/identity-consume/util.d.ts": "c3d7454af8db7faed2e281e268d96c4ee8a8291049d660ac18cdf58b47cd3448",
     "docs/identity-consume/witness-checkpoint.d.ts": "e9ed1334f014be74b4c8391e3fa933fe253ff3e76e6f8b768df5d20d924d225f",
     "docs/identity-consume/witness-policy.d.ts": "2c86c87c173cd136dcc1f38cefa90c0f114c1a9e89619dee68041a915b8ad115",
-    "docs/s3rch-check.d.ts": "b1e02f8574cfa6c1d7aafb505070f4e01dab73325d63b6b805663768ba9d267c",
+    "docs/s3rch-check.d.ts": "eb573fa416602d12b42ec9ecdb64f7e30361a3795cf5466c497dca43d050d42c",
     "vectors/ids/edges.json": "ecb913c2428915ed0a8b79b7477c0715e59b31fc94b8380ebf7d6b22089b0663",
     "vectors/ids/network.json": "0c6522baf13ba83cb92193a7e522993e52414d82bf920b6e2fc19ef25247eb1c",
     "vectors/ids/object.json": "9646c6738725b9438b8ebbf2d41437923b87ec3ff3bbd0ab910abe27ce429640",

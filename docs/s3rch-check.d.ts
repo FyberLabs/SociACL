@@ -2745,7 +2745,7 @@ export type MigrationAdmission = {
  * including one whose from is still ahead of now. Each edge soul is
  * grantSoul(owner, object, accessor). A wrap named here is not a
  * grant. A reader does not call this. Items kept on the public
- * plaintext path are not rewritten. Whether that path stays is open.
+ * plaintext path are not rewritten. Explicitly public plaintext remains a supported mode.
  */
 export function applyProtocolMigration(
   input: MigrationAdmissionInput,
