@@ -41,7 +41,8 @@ network, live acceptance, fixture provisioning or release publication.
 ## Remaining #156 work
 
 This closes the missing copied declaration/pinning surface for existing
-canonical identity functions. It does not claim #156 complete: delegated agent
-credentials and shared forum transition vectors/API outside Check still need
-implementation. s3r.ch#281 owns replacing application copies and enabling its
+canonical identity functions, including the signed agent delegation and
+revocation contract documented in ../agent-delegation/README.md. It does not
+claim #156 complete: shared forum transition vectors/API outside Check still
+need implementation. s3r.ch#281 owns replacing application copies and enabling its
 pinned manifest check; this PR does not change that application.

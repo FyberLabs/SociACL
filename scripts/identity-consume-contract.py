@@ -9,14 +9,14 @@ ROOT = Path(__file__).resolve().parents[1]
 TARGET = ROOT / 'docs/identity-consume'
 # No optional Zod dependency, browser persistence implementation, or runtime JS.
 FILES = ('index.d.ts', 'types.d.ts', 'ids.d.ts', 'records.d.ts', 'json.d.ts',
-         'util.d.ts', 'witness-policy.d.ts', 'witness-checkpoint.d.ts')
+         'util.d.ts', 'witness-policy.d.ts', 'witness-checkpoint.d.ts', 'agent-delegation.d.ts')
 
 
 def snapshot():
     files = {name: (ROOT/'typescript/ids/dist'/name).read_bytes() for name in FILES}
     hashes = {f'docs/identity-consume/{name}': hashlib.sha256(data).hexdigest()
               for name, data in files.items()}
-    for directory in ('vectors/ids', 'vectors/mesh'):
+    for directory in ('vectors/ids', 'vectors/mesh', 'vectors/agent-delegation'):
         for path in sorted((ROOT/directory).rglob('*.json')):
             hashes[path.relative_to(ROOT).as_posix()] = hashlib.sha256(path.read_bytes()).hexdigest()
     hashes['docs/s3rch-check.d.ts'] = hashlib.sha256((ROOT/'docs/s3rch-check.d.ts').read_bytes()).hexdigest()
