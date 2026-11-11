@@ -34,7 +34,7 @@ test('forum transitions: stored offer, subject accept, owner-only reopen and no 
   assert.equal(offerStep(graph, need, undefined, offer, offer.helper, 10).ok, true);
   assert.equal(admittedOwner(graph, offer.id), undefined);
   const resolved = needStep(graph, need, closed(need, offer), offer, need.subject, 10);
-  assert.equal(resolved.ok, true); assert.equal(resolved.elect, false);
+  assert.equal(resolved.ok, true);
   assert.equal(offerStep(graph, resolved.need, offer, { ...offer, stated: 0 }, offer.helper, 10).ok, false);
   const reopened = { ...need, hamState: 3 };
   assert.equal(needStep(graph, resolved.need, reopened, undefined, need.subject, 10).ok, false);
@@ -92,6 +92,6 @@ for (const entry of transitions.cases) {
     const patch = { ...entry.patch };
     if (patch.acceptedOffer === '$offer') patch.acceptedOffer = offer.id;
     const result = needStep(graph, need, { ...need, hamState: 2, ...patch }, undefined, offer.helper, 10);
-    assert.equal(result.ok, entry.ok); assert.equal(result.elect, false);
+    assert.equal(result.ok, entry.ok);
   });
 }

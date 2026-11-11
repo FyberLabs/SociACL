@@ -3250,13 +3250,13 @@ export function filterForumSearchCandidates(
   graph: object, candidates: ObjectId[], accessor: PrincipalId, now: number,
 ): ObjectId[];
 
-/** Separate data transitions; Check remains a permission answer and never elects. */
+/** Separate data transitions; Check remains a permission answer and never changes ownership. */
 export type ForumNeedTransitionResult =
-  | { ok: true; need: ForumNeed; elect: false }
-  | { ok: false; reason: string; elect: false };
+  | { ok: true; need: ForumNeed }
+  | { ok: false; reason: string };
 export type ForumOfferTransitionResult =
-  | { ok: true; offer: ForumOffer; elect: false }
-  | { ok: false; reason: string; elect: false };
+  | { ok: true; offer: ForumOffer }
+  | { ok: false; reason: string };
 /**
  * Caller authenticates writer, supplies current admitted need, and serializes
  * transitions with durable persistence. No caller-asserted Check boolean.

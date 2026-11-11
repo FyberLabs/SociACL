@@ -49,8 +49,8 @@ function validOffer(o) {
 /** @param {ForumOffer | undefined} a @param {ForumOffer} b */
 const sameOffer = (a, b) => !!a && a.id === b.id && a.need === b.need && a.forumId === b.forumId &&
   a.helper === b.helper && a.body === b.body && a.artifacts === b.artifacts && a.stated === b.stated;
-/** @param {string} reason @returns {{ok:false, reason:string, elect:false}} */
-const denied = reason => ({ ok: false, reason, elect: false });
+/** @param {string} reason @returns {{ok:false, reason:string}} */
+const denied = reason => ({ ok: false, reason });
 
 /** Post once or withdraw a previously admitted offer; tombstones cannot repost.
  * The writer must be authenticated by the caller, never taken from untrusted row data.
@@ -78,7 +78,7 @@ export function acceptForumOfferTransition(graph, need, current, next, writer, n
   const rows = held ?? new Map();
   rows.set(next.id, Object.freeze({ ...next }));
   offers.set(graph, rows);
-  return { ok: true, offer: { ...next }, elect: false };
+  return { ok: true, offer: { ...next } };
 }
 
 /** Resolve from a stored live offer, reopen as owner, or update HAM under Check.
@@ -107,5 +107,5 @@ export function acceptForumNeedTransition(graph, current, next, offer, writer, n
     const see = seeNow(graph, current.id, writer, now);
     if (!see.allowed) return denied(see.reason);
   }
-  return { ok: true, need: { ...next }, elect: false };
+  return { ok: true, need: { ...next } };
 }

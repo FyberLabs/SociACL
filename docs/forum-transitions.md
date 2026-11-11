@@ -25,8 +25,7 @@ cancel it. An accepted offer stays live until the owner reopens the need.
 Resolving requires the owner or subject, an exact stored live offer, and a fresh
 Check for that helper. Reopening requires the owner and clears acceptedOffer.
 HAM updates preserve id, forum, subject, body, severity, spec and accepted offer,
-and require a current Check. All operations keep `elect: false` and leave the
-admitted owner unchanged. Invalid or non-safe JavaScript times fail closed.
+and require a current Check. All operations leave the admitted owner unchanged. Invalid or non-safe JavaScript times fail closed.
 
 The in-memory offer store has the graph's lifetime. After a restart, applications
 must reconstruct it from authenticated, ordered history through the same
