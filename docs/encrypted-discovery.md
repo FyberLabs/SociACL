@@ -710,7 +710,7 @@ The names are `EncryptedDiscoveryVector` in [s3rch-check.d.ts](s3rch-check.d.ts)
 
 `migration-privilege-down`. A reader already has stated 0 and a bumped hamState. That reader is not wrapped and does not have to acknowledge before other readers migrate. The cancel is not held for a receipt.
 
-`migration-public-skipped`. The owner keeps the item on the public plaintext path. No ciphertext replaces the body and no wrap is issued. Whether that path stays is open.
+`migration-public-skipped`. The owner keeps the item on the public plaintext path. No ciphertext replaces the body and no wrap is issued. Explicitly public plaintext remains a supported mode.
 
 `migration-reader-cannot-issue`. The caller is not the owner. The call is rejected. A reader does not re-encrypt the shared soul and does not issue wraps.
 
