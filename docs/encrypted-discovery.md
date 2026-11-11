@@ -428,7 +428,7 @@ A member offline longer than the window still holds the last key they settled. A
 
 Every `WrappedKey` carries its `revisionId` inside the authenticated wrap. A cleartext epoch number is not enough to tell two keys for the same epoch apart. While a candidate is pending, readers still read ciphertext already written under the last settled revision. New writes stay in a buffer. They are not encrypted under the last settled key, and they are not encrypted under the pending candidate, because a later smaller `finalizationId` can replace that candidate. When the window elapses, the owner revalidates every stated-1 snapshot entry. An entry whose `until` is at or before now is expired, and that candidate does not receive the buffer, because the expired reader may already hold its wrap. The buffer is encrypted under a later winner whose snapshot excludes that accessor. Otherwise the buffer is encrypted under the winner that settled. Wraps follow that winner's per-accessor snapshot. If a smaller `finalizationId` later displaces that winner, the owner re-encrypts those writes under the new winner before they are current again. After each switch, readers reject further writes bound to a revision the recomputed winner has superseded, including when the epoch number matches. A device that lost adopts that settled result and does not keep publishing under the superseded revision. An offline device can still become the winner by publishing a smaller `finalizationId` that other replicas then see, and those replicas wait out the signed window before they switch. Expiry does not stop at settlement. `settledKeyOpen` reads the snapshot of `settledRevisionId` and the ACL this replica has merged. It is false when a stated-1 entry has `until` at or before now, or `from` after now. It is also false when that ACL has cancelled the recipient, raised `grantRevision`, moved `until` earlier, or moved `from` later, even while the settled snapshot still lists the recipient live. It is false while `seen` has a winner whose `revisionId` is not `settledRevisionId`, and while `now` is before `winnerSeenAt + settleWindowMs`. A pending successor, including a late smaller id still inside its window, does not leave the old key writable. New writes then stay buffered. They are not encrypted under that settled key. The owner publishes a new revision whose key was not wrapped to that accessor. Ciphertext already written under the old key stays, and readers keep bytes they already unwrapped.
 
-How long an epoch lasts is still open. See [Open choices](#open-choices).
+Epochs rotate on admitted membership changes. No periodic expiry for a quiet group is selected; freshness leases and settle windows remain separate bounds. See [Group policy decisions](#group-policy-decisions).
 
 ## First contact
 
@@ -466,7 +466,7 @@ A wrap for an older epoch does not mint a grant. Check denies the revoked access
 
 **Honest limit, both modes.** Content the revoked party already unwrapped stays readable to them. `re-encrypt` replaces the soul's ciphertext. It does not erase a copy or a DEK they already hold, and the window does not postpone the deny while remaining readers finish the wait. `forward-only` does not pretend to hide the old epoch. A member who was offline for the whole window learns the cancel as soon as they see it, and learns the new key only if they are still a member, after their own observation of the winner has lasted the signed window.
 
-Removing a reader is this revoke, including the owner's choice of mode. Whether adding a member, or a quiet boundary with no removal, also starts a new group epoch is open. See [Open choices](#open-choices).
+Removing a reader is this revoke, including the owner's choice of mode. Adding a member also starts a new group epoch, without automatically sharing historical epochs. A quiet boundary alone has no newly selected periodic rotation requirement. See [Group policy decisions](#group-policy-decisions).
 
 ## Revocation freshness
 
@@ -521,7 +521,7 @@ SociACL runs no index. Check does not call an index. An index hit is not a grant
 
 A per-contact inbox lane is indexed by its lane id hex alone. The index key is not either `PrincipalId` and not a `~pub` path. SociACL does not store that index. [SociACL#71](https://github.com/FyberLabs/SociACL/issues/71) is the Panopticon and Gun wiring, including write-spam limits.
 
-Whether a private group's index is addressed by search tokens, and what those tokens leak to whoever serves the index, is not decided. See [Open choices](#open-choices). This spec does not define a token construction.
+Group search tokens are deferred. Candidate filtering happens on the client through current Check; see [Group policy decisions](#group-policy-decisions). This spec does not define a token construction.
 
 ## Contract types
 
@@ -554,7 +554,7 @@ Copy or re-type [s3rch-check.d.ts](s3rch-check.d.ts). Do not `npm install sociac
 | `AccountKeyLogEntry` / `AccountKeyLogHead` | Provider or wallet signature over the canonical head `{ account, seq, entryHash }`, checked before the chain `{ account, keyPub, seq, prev }` is accepted. The head and the chain must name the account being resolved. A valid head for another account is refused. The account SEA pub does not sign the head. An anchor is a floor: the head seq is at least the anchor seq, and the walk reaches that exact entry. The same-account next-seq shortcut still counts. Seq 0 alone does not. The walk covers `KEYRING_HISTORY_MAX`. A missing head, a signature that does not verify, a broken chain, or no answer refuses. The highest cached `seq` is not the current key |
 | `GroupEpochConfig` | Owner-signed settle window for one group or circle, ordered by `configRevision`. `owner` is in the signed bytes and must equal `ownerOfSet`. A group epoch manifest repeats the winning window. Minimum 1 hour, maximum 72 hours, default 24 hours |
 | `EpochFinalization` / `EpochReplicaView` | Candidates for one step. Smallest `finalizationId` seen wins. The signature covers `finalizationId`. A displaced parent drops descendants off the chain, and the owner rebuilds them outward. Readers keep the last settled key, at `settledEpoch`, until the signed window elapses, then switch. `epochStepCurrent` and `settledKeyOpen` take the replica's ACL. A higher revision, a cancel, or a tighter window closes the settled key for new writes. The window does not delay privilege-down |
-| `GrantStorage` | `public-plain` or `private-row` (whether public-plain stays is open) |
+| `GrantStorage` | `public-plain` for explicitly public content, or encrypted `private-row` |
 | `MeshMembership` | Direct `same-group` or `named-circle` edge. Hopcap 1 |
 | `ObjectSetName` | The group or circle an object names |
 | `GroupSeeGraph` / `checkGroupSee` | Check for those two predicates |
@@ -586,7 +586,7 @@ A current reader is a live grant whose window has not ended. That includes a gra
 
 The ciphertext's epoch and `revisionId` are the replica's current read key, and that key is open for a new write. A displaced revision, or a successor that can still replace the key, is rejected. Before receipts are applied, the owner compares the soul's current `hamState` and body to the prepared snapshot. A mismatch aborts. The owner prepares again from the current item. The row's wrap is the recorded `WrappedKey`, including the authenticated blob. Opening the item verifies the owner signature over the item-auth tuple. Holding the DEK does not make a different body authentic.
 
-Items the owner keeps on the public plaintext path are not rewritten. Whether that path stays is open. See [Open choices](#open-choices).
+Items the owner explicitly keeps on the public plaintext path are not rewritten. This supported public-content mode is never a fallback for failed verification or missing encryption keys. See [Group policy decisions](#group-policy-decisions).
 
 **Honest limit.** Peers that already replicated the plaintext body or the plaintext grant keep that copy. In-place replacement updates the soul for peers that merge the new record. It does not claw back an old replica. A reader who has not acknowledged the wrap keeps the old copy and does not invent a second ciphertext to fill the gap.
 
@@ -710,7 +710,7 @@ The names are `EncryptedDiscoveryVector` in [s3rch-check.d.ts](s3rch-check.d.ts)
 
 `migration-privilege-down`. A reader already has stated 0 and a bumped hamState. That reader is not wrapped and does not have to acknowledge before other readers migrate. The cancel is not held for a receipt.
 
-`migration-public-skipped`. The owner keeps the item on the public plaintext path. No ciphertext replaces the body and no wrap is issued. Whether that path stays is open.
+`migration-public-skipped`. The owner keeps the item on the public plaintext path. No ciphertext replaces the body and no wrap is issued. Explicitly public plaintext remains a supported mode.
 
 `migration-reader-cannot-issue`. The caller is not the owner. The call is rejected. A reader does not re-encrypt the shared soul and does not issue wraps.
 
@@ -848,13 +848,31 @@ The names are `EncryptedDiscoveryVector` in [s3rch-check.d.ts](s3rch-check.d.ts)
 
 `consume-statement-does-not-mint`. A hop, a status statement, a chat node, a manifest, a binding, an `ssig`, and a log entry do not mint a grant.
 
-## Open choices
+## Group policy decisions
 
-Not decided:
+Owner decisions, 2026-11-10 (#29–#31):
 
-1. **Group epoch length.** How long an epoch lasts, and whether every membership change forces a new epoch. Removal of a reader still follows [Rotation on revoke](#rotation-on-revoke): privilege-down, a new DEK or epoch key for the remaining readers, and the owner's `forward-only` or `re-encrypt` choice.
-2. **Public-content mode.** Whether plaintext `MeshSeeGrant` stays for public content, with private rows only when the item is encrypted. Migration skips items that stay on that path.
-3. **Group search tokens.** Whether a private group's index is addressed by search tokens, and what those tokens leak to whoever serves the index. No token scheme is fixed here.
+1. **Group epochs:** rotate on every admitted membership change, including
+   additions and removals. A quiet group has no newly chosen periodic expiry;
+   freshness leases, revocation and the signed settle window remain separate
+   existing bounds. Removal follows [Rotation on revoke](#rotation-on-revoke):
+   immediate privilege-down, a new key for remaining readers, and the owner's
+   `forward-only` or `re-encrypt` choice. An addition must not wrap historical
+   epochs to the new member merely because the new epoch includes them. This
+   defines the publisher policy; it does not claim every consumer enforces it.
+2. **Public-content mode:** retain plaintext `MeshSeeGrant` for explicitly public
+   content. Public classification is an explicit publication decision, never a
+   fallback for missing keys or failed verification. Private content stays
+   encrypted. Migration continues to skip explicitly `public-plain` items.
+3. **Group search tokens:** defer token construction and server-side graph search.
+   Use client-side candidate filtering through current destination Check. No
+   token, index hit or snippet confers authority. A public index contains only
+   public content; private candidates and snippets stay in the authorized
+   encrypted/local index. Re-check after cancellation and before rendering or
+   opening. `filterForumSearchCandidates` is the bounded reference filter.
+
+These decisions resolve the policy questions, not consumer rollout or a new
+index service. No claim of metadata-hiding query transport is made.
 
 ## What this does not do
 

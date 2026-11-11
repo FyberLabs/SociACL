@@ -19,3 +19,20 @@ export function checkForumSee(graph, object, accessor, now) {
   }
   return direct;
 }
+
+/**
+ * Client-side candidate filtering only. Results are ids, never cached grants.
+ * Re-run against current admitted state before display and before opening.
+ * @param {object} graph
+ * @param {import('../ids/src/types.js').ObjectId[]} candidates
+ * @param {import('../ids/src/types.js').PrincipalId} accessor
+ * @param {number} now
+ * @returns {import('../ids/src/types.js').ObjectId[]}
+ */
+export function filterForumSearchCandidates(graph, candidates, accessor, now) {
+  if (!Array.isArray(candidates) || candidates.length > 1000) return [];
+  return [...new Set(candidates)].filter(object => {
+    try { return checkForumSee(graph, object, accessor, now).allowed === true; }
+    catch { return false; }
+  });
+}
