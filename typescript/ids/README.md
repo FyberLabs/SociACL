@@ -390,16 +390,17 @@ present/historical revocation boundary. The browser check
 bundles the runtime dependency graph and rejects Node imports. Node built-ins
 are used only in build/test tooling, outside the shipped runtime.
 
-A push to protected `master` creates `ids-v` plus the `typescript/ids` version when that tag is absent. The job uses `github.token` and the Git refs API. If `master` is not protected, it records a notice and exits without creating the tag, because the pack job would refuse it ([#60](https://github.com/FyberLabs/SociACL/issues/60)). A tag that already points at another commit is left unchanged. A tag that already points at this commit is not recreated; pack still runs so an unpublished release can finish. Pack waits for `test` and `msrv`, requires protected `master`, requires ancestry of `origin/master`, and requires the tag to resolve to this commit and to `ids-v` plus the package version. It installs with scripts disabled, builds, and records a SHA-256. The release job does not check out source. It checks that digest, attests build provenance for the tarball, and attaches `sociacl-ids-0.10.0.tgz` and its SHA-256 file when the GitHub release is absent. A maintainer can still push `ids-v*` directly. The workspace crates use the same automation on `sociacl-v*`. Consumers then install:
+A successful default-branch build publishes a test-only package under
+`ids-test-<commit>`, with its release manifest, SHA-256 and build provenance.
+Stable `ids-v<version>` promotion requires explicit authorization and reuses the
+qualified test bytes. Consumers install the exact qualified package URL and
+commit the lockfile integrity. A declared version is not a published release.
 
-```sh
-npm install https://github.com/FyberLabs/SociACL/releases/download/ids-v0.10.0/sociacl-ids-0.10.0.tgz
-```
-
-Commit the consumer lockfile with tarball integrity. This URL becomes usable
-only after that release exists. This PR does not publish a tag or migrate a
-consumer. Grammar, vector acceptance/rejection, or signing-domain changes bump
-the minor version before 1.0, and the major version from 1.0 onward.
+Grammar, vector acceptance/rejection, or signing-domain changes bump the minor
+version before 1.0, and the major version from 1.0 onward. The next identity
+package version is 0.11.0. Its JavaScript API adds signed agent delegations;
+see [the consume contract](../../docs/agent-delegation/README.md). No Rust
+agent-delegation verifier is claimed by this JavaScript addition.
 
 ## Signed witness-policy exports
 

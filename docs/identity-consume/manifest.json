@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "contract": "sociacl-identity-consume-v1",
-  "packageVersion": "0.10.0",
+  "packageVersion": "0.11.0",
   "sha256": {
     "docs/identity-consume/agent-delegation.d.ts": "bed2b6f2749685037372fbd9df5e22498053249b64e101883fca044a26063b5f",
     "docs/identity-consume/ids.d.ts": "303db2a8e551483ed98430106e3868c4b448ef668cf89d48062e752e8a070dba",
