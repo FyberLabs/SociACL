@@ -44,7 +44,7 @@ function validOffer(o) {
   const creator = objectPrincipal(o.id);
   const ids = o.artifacts === '' ? [] : o.artifacts.split(',');
   return creator.ok && String(creator.value) === o.helper && new Set(ids).size === ids.length &&
-    ids.every(id => minted(id));
+    ids.every(id => parseObjectId(id).ok);
 }
 /** @param {ForumOffer | undefined} a @param {ForumOffer} b */
 const sameOffer = (a, b) => !!a && a.id === b.id && a.need === b.need && a.forumId === b.forumId &&

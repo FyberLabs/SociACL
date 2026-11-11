@@ -95,3 +95,11 @@ for (const entry of transitions.cases) {
     assert.equal(result.ok, entry.ok);
   });
 }
+
+test('forum transitions: derived claim/external artifacts are valid object ids', () => {
+  const { graph, need, offer } = setup();
+  const artifacts = `claim_${'ab'.repeat(32)},ext_${'cd'.repeat(32)}`;
+  assert.equal(offerStep(graph, need, undefined, { ...offer, artifacts: `${artifacts},${artifacts}` }, offer.helper, 10).ok, false);
+  assert.equal(offerStep(graph, need, undefined, { ...offer, artifacts: 'invalid' }, offer.helper, 10).ok, false);
+  assert.equal(offerStep(graph, need, undefined, { ...offer, artifacts }, offer.helper, 10).ok, true);
+});
