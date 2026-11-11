@@ -35,6 +35,5 @@ does not provide a durable replay adapter or remove s3r.ch's existing copies.
 Shared vectors are `vectors/mesh/forum-transitions.json`, with canonical ids in
 `vectors/mesh/forums.json`. PR CI executes those vectors and signed-admission
 regressions for unposted offers, cancellation, mutation, tombstones and owner-only
-reopening. The consume manifest hashes the declarations and vectors. Rust has
-its existing transition tests; these new JSON cases currently run in TypeScript.
+reopening. The consume manifest hashes the declarations and vectors. Rust and TypeScript both execute the shared JSON transition cases.
 No local test or fixture lifecycle is required or authorized by this document.

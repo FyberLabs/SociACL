@@ -2210,3 +2210,35 @@ fn business_souls_and_destination_acl_vectors() {
         }
     }
 }
+
+#[test]
+fn shared_consume_transition_vectors() {
+    let cases: Value = serde_json::from_str(include_str!(
+        "../../../vectors/mesh/forum-transitions.json"
+    )).unwrap();
+    for case in cases["cases"].as_array().unwrap() {
+        let mut world = World::open();
+        world.open.severity = ForumNeedSeverity::Need;
+        world.open.body = "help".into();
+        world.open.spec = None;
+        let mut next = world.open.clone();
+        next.ham_state = 2;
+        for (field, value) in case["patch"].as_object().unwrap() {
+            match field.as_str() {
+                "body" => next.body = value.as_str().unwrap().into(),
+                "severity" => next.severity = ForumNeedSeverity::parse(value.as_str().unwrap()).unwrap(),
+                "hamState" => next.ham_state = value.as_u64().unwrap(),
+                "stated" => next.stated = value.as_u64().unwrap() as u8,
+                "acceptedOffer" => {
+                    assert_eq!(value, "$offer");
+                    next.accepted_offer = Some(world.offer(&world.owner, 7, "help", "").id);
+                }
+                other => panic!("unhandled transition vector field: {other}"),
+            }
+        }
+        let before = world.graph.admitted_owner(&world.need_id).unwrap().0.clone();
+        let result = accept_need_transition(&world.graph, &world.open, &next, None, &world.owner, 10);
+        assert_eq!(result.is_ok(), case["ok"].as_bool().unwrap(), "{}", case["name"]);
+        assert_eq!(world.graph.admitted_owner(&world.need_id).unwrap().0, &before);
+    }
+}
