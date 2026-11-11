@@ -3235,3 +3235,14 @@ export type EncryptedDiscoveryVector =
   | "account-key-head-max-age"
   | "account-key-provider-older-key"
   | "consume-statement-does-not-mint";
+
+/**
+ * Client-side search over at most 1000 candidate ids. Deduplicate and return
+ * only ids whose current destination Check see passes for this accessor.
+ * Malformed/oversized batches and verification errors fail closed. An index
+ * hit, snippet, parent link or group search token cannot grant. Recheck on
+ * display/open and after ACL changes; this result is not an authorization cache.
+ */
+export function filterForumSearchCandidates(
+  graph: object, candidates: ObjectId[], accessor: PrincipalId, now: number,
+): ObjectId[];

@@ -521,7 +521,7 @@ SociACL runs no index. Check does not call an index. An index hit is not a grant
 
 A per-contact inbox lane is indexed by its lane id hex alone. The index key is not either `PrincipalId` and not a `~pub` path. SociACL does not store that index. [SociACL#71](https://github.com/FyberLabs/SociACL/issues/71) is the Panopticon and Gun wiring, including write-spam limits.
 
-Whether a private group's index is addressed by search tokens, and what those tokens leak to whoever serves the index, is not decided. See [Open choices](#open-choices). This spec does not define a token construction.
+Group search tokens are deferred. Candidate filtering happens on the client through current Check; see [Group policy decisions](#group-policy-decisions). This spec does not define a token construction.
 
 ## Contract types
 
@@ -554,7 +554,7 @@ Copy or re-type [s3rch-check.d.ts](s3rch-check.d.ts). Do not `npm install sociac
 | `AccountKeyLogEntry` / `AccountKeyLogHead` | Provider or wallet signature over the canonical head `{ account, seq, entryHash }`, checked before the chain `{ account, keyPub, seq, prev }` is accepted. The head and the chain must name the account being resolved. A valid head for another account is refused. The account SEA pub does not sign the head. An anchor is a floor: the head seq is at least the anchor seq, and the walk reaches that exact entry. The same-account next-seq shortcut still counts. Seq 0 alone does not. The walk covers `KEYRING_HISTORY_MAX`. A missing head, a signature that does not verify, a broken chain, or no answer refuses. The highest cached `seq` is not the current key |
 | `GroupEpochConfig` | Owner-signed settle window for one group or circle, ordered by `configRevision`. `owner` is in the signed bytes and must equal `ownerOfSet`. A group epoch manifest repeats the winning window. Minimum 1 hour, maximum 72 hours, default 24 hours |
 | `EpochFinalization` / `EpochReplicaView` | Candidates for one step. Smallest `finalizationId` seen wins. The signature covers `finalizationId`. A displaced parent drops descendants off the chain, and the owner rebuilds them outward. Readers keep the last settled key, at `settledEpoch`, until the signed window elapses, then switch. `epochStepCurrent` and `settledKeyOpen` take the replica's ACL. A higher revision, a cancel, or a tighter window closes the settled key for new writes. The window does not delay privilege-down |
-| `GrantStorage` | `public-plain` or `private-row` (whether public-plain stays is open) |
+| `GrantStorage` | `public-plain` for explicitly public content, or encrypted `private-row` |
 | `MeshMembership` | Direct `same-group` or `named-circle` edge. Hopcap 1 |
 | `ObjectSetName` | The group or circle an object names |
 | `GroupSeeGraph` / `checkGroupSee` | Check for those two predicates |
@@ -848,13 +848,31 @@ The names are `EncryptedDiscoveryVector` in [s3rch-check.d.ts](s3rch-check.d.ts)
 
 `consume-statement-does-not-mint`. A hop, a status statement, a chat node, a manifest, a binding, an `ssig`, and a log entry do not mint a grant.
 
-## Open choices
+## Group policy decisions
 
-Not decided:
+Owner decisions, 2026-11-10 (#29–#31):
 
-1. **Group epoch length.** How long an epoch lasts, and whether every membership change forces a new epoch. Removal of a reader still follows [Rotation on revoke](#rotation-on-revoke): privilege-down, a new DEK or epoch key for the remaining readers, and the owner's `forward-only` or `re-encrypt` choice.
-2. **Public-content mode.** Whether plaintext `MeshSeeGrant` stays for public content, with private rows only when the item is encrypted. Migration skips items that stay on that path.
-3. **Group search tokens.** Whether a private group's index is addressed by search tokens, and what those tokens leak to whoever serves the index. No token scheme is fixed here.
+1. **Group epochs:** rotate on every admitted membership change, including
+   additions and removals. A quiet group has no newly chosen periodic expiry;
+   freshness leases, revocation and the signed settle window remain separate
+   existing bounds. Removal follows [Rotation on revoke](#rotation-on-revoke):
+   immediate privilege-down, a new key for remaining readers, and the owner's
+   `forward-only` or `re-encrypt` choice. An addition must not wrap historical
+   epochs to the new member merely because the new epoch includes them. This
+   defines the publisher policy; it does not claim every consumer enforces it.
+2. **Public-content mode:** retain plaintext `MeshSeeGrant` for explicitly public
+   content. Public classification is an explicit publication decision, never a
+   fallback for missing keys or failed verification. Private content stays
+   encrypted. Migration continues to skip explicitly `public-plain` items.
+3. **Group search tokens:** defer token construction and server-side graph search.
+   Use client-side candidate filtering through current destination Check. No
+   token, index hit or snippet confers authority. A public index contains only
+   public content; private candidates and snippets stay in the authorized
+   encrypted/local index. Re-check after cancellation and before rendering or
+   opening. `filterForumSearchCandidates` is the bounded reference filter.
+
+These decisions resolve the policy questions, not consumer rollout or a new
+index service. No claim of metadata-hiding query transport is made.
 
 ## What this does not do
 

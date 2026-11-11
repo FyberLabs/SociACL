@@ -7,7 +7,7 @@
  * Stored-id see Check is see.js. Label rows stay out of this module.
  */
 
-export { checkForumSee } from './forum.js';
+export { checkForumSee, filterForumSearchCandidates } from './forum.js';
 
 export { admitPost, checkPost, checkForumChildWrite, factorGrants } from "./post.js";
 
