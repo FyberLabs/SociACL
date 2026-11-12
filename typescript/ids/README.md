@@ -479,3 +479,25 @@ returning. Credential/download/storage failures invalidate this handle's freshne
 `readInstalled()` remains historical and `readFresh()` requires a live lease.
 There is no automatic retry, bootstrap or recovery. See the
 [HTTP and cancellation contract](../../docs/witness-checkpoint-client.md).
+
+### Browser item-key reader wraps
+
+`wrapItemDekToReaders(dek, {epoch, object, revisionId}, readers, named)` and
+`openItemDekReaderWrap(wrap, epriv, epub, expected)` implement the item-DEK reader
+subset of `sociacl-encdisc`'s existing P-256 ECDH/AES-GCM format. Each reader has
+`account`, `pub`, `identityPub` and `epub`; the caller must authenticate that
+binding and obtain `named` from current authorization before wrapping. A call
+accepts at most 64 readers and never returns a partial batch. Each seal generates
+a fresh ephemeral key and nonce; deterministic encryption is not exposed.
+
+A wrap is not a grant. Opening requires independently trusted expected object,
+epoch and revision, plus a separate current Check decision and fresh epoch status.
+The API cannot revoke plaintext or keys already copied by a reader. Rotate and
+rewrap/re-encrypt through the existing epoch protocol when access changes.
+
+The labels contain reader and object routing metadata. Keep the entire wrap in
+confidential grant material; do not publish it directly on a public Gun soul or
+include it in provider URLs. The functions do not persist or transmit anything.
+Group-epoch wrapping and a complete browser vault are outside this API. Temporary
+byte arrays are cleared where practical, but JavaScript cannot guarantee erasure
+of copied arrays, strings, or cryptographic engine memory.

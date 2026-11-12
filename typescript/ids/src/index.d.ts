@@ -17,3 +17,5 @@ export { advanceWitnessPolicy, MAX_WITNESS_POLICY_HISTORY, MAX_WITNESS_STATE_BYT
 export { advanceWitnessCheckpoint, verifyWitnessCheckpoint, MAX_WITNESS_CHECKPOINT_BYTES, MAX_WITNESS_CHECKPOINT_ENVELOPE_BYTES } from './witness-checkpoint.js';
 
 export { AGENT_DELEGATION_DOMAIN, AGENT_REVOCATION_DOMAIN, MAX_AGENT_DELEGATION_SECONDS, agentDelegationBytes, parseAgentDelegation, agentRevocationBytes, parseAgentRevocation, verifyAgentDelegation } from './agent-delegation.js';
+
+export { wrapItemDekToReaders, openItemDekReaderWrap } from './reader-wrap.js';
