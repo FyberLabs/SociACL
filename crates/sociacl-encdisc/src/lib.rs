@@ -262,3 +262,6 @@ pub use vault_history::{VaultVersionHistory, VaultHistoryHead, seal_vault_histor
 
 mod vault_audit;
 pub use vault_audit::{SignedVaultAudit, VaultAuditHistory};
+
+mod vault_journal;
+pub use vault_journal::{VaultJournal,VaultJournalHead,seal_vault_journal,open_vault_journal};

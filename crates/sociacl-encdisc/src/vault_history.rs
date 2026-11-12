@@ -31,6 +31,7 @@ fn authenticate(signed: &SignedVaultVersion, owner: &str, item: &str, epoch: u64
     Ok(canonical::sha256_hex(&bytes))
 }
 impl VaultVersionHistory {
+    pub(crate) fn binding(&self) -> (&str, &str, &str) { (&self.object, &self.owner, &self.item_id) }
     /// Explicit first bootstrap only. The exact signed transcript digest must be
     /// provisioned independently; missing/corrupt retained state is never bootstrap.
     pub fn initialize(signed: &SignedVaultVersion, expected: &VaultReadExpectation,
@@ -94,14 +95,14 @@ pub struct VaultHistoryHead {
     pub ledger_item_id: String, pub ledger_version_id: String, pub ciphertext_digest: String,
 }
 impl VaultVersionHistory {
-    fn encode(&self) -> Result<zeroize::Zeroizing<Vec<u8>>, EncDiscError> {
+    pub(crate) fn encode(&self) -> Result<zeroize::Zeroizing<Vec<u8>>, EncDiscError> {
         let mut fields=vec![HISTORY_DOMAIN.to_owned(),self.object.clone(),self.owner.clone(),self.item_id.clone()];
         for (version,_) in self.versions.values() {
             fields.push(crate::hexutil::encode_hex(&vault_version_signing_bytes(version)?));
         }
         Ok(zeroize::Zeroizing::new(serde_json::to_vec(&fields).map_err(rejected)?))
     }
-    fn decode(bytes:&[u8]) -> Result<Self, EncDiscError> {
+    pub(crate) fn decode(bytes:&[u8]) -> Result<Self, EncDiscError> {
         if bytes.len()>crate::VAULT_ITEM_MAX_BYTES { return Err(EncDiscError::VaultRejected); }
         let fields:Vec<String>=serde_json::from_slice(bytes).map_err(rejected)?;
         if fields.len()<5 || fields.len()>260 || fields[0]!=HISTORY_DOMAIN || fields[1].is_empty() {

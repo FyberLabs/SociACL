@@ -10,9 +10,9 @@ try{
   const packed=JSON.parse(execFileSync('npm',['pack','--ignore-scripts','--json','--pack-destination',temp],{cwd:root,encoding:'utf8'}));
   writeFileSync(join(temp,'package.json'),JSON.stringify({private:true,type:'module'}));
   execFileSync('npm',['install','--ignore-scripts','--no-audit','--no-fund','--cache',join(temp,'cache'),join(temp,packed[0].filename)],{cwd:temp,stdio:'inherit'});
-  const source=`import {sealFirstContactRequest,openFirstContactRequest,pollFirstContact,prepareFirstContactSubmission} from 'sociacl-ids/first-contact';
+  const source=`import {sealFirstContactRequest,openFirstContactRequest,pollFirstContact,restorePendingFirstContacts,prepareFirstContactSubmission} from 'sociacl-ids/first-contact';
 import {openIndependentWitnessPolicyStore,advanceIndependentWitnessPolicy,collectIndependentWitnesses} from 'sociacl-ids/independent-witness';
-for(const fn of [sealFirstContactRequest,openFirstContactRequest,pollFirstContact,prepareFirstContactSubmission,openIndependentWitnessPolicyStore,advanceIndependentWitnessPolicy,collectIndependentWitnesses])if(typeof fn!=='function')throw Error('Missing packed API');`;
+for(const fn of [sealFirstContactRequest,openFirstContactRequest,pollFirstContact,restorePendingFirstContacts,prepareFirstContactSubmission,openIndependentWitnessPolicyStore,advanceIndependentWitnessPolicy,collectIndependentWitnesses])if(typeof fn!=='function')throw Error('Missing packed API');`;
   writeFileSync(join(temp,'check.ts'),source);
   execFileSync(process.execPath,[join(root,'node_modules/typescript/bin/tsc'),'--strict','--noEmit','--target','ES2022','--module','NodeNext','--moduleResolution','NodeNext','check.ts'],{cwd:temp,stdio:'inherit'});
   execFileSync(process.execPath,['check.ts'],{cwd:temp,stdio:'inherit'});

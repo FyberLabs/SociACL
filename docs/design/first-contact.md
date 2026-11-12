@@ -248,3 +248,11 @@ The append callback must use configured Spanopticon and honor its abort signal.
 A returned ciphertext digest confirms only storage acknowledgement, never contact
 acceptance or grant delivery. Missing/disabled-channel freshness still belongs to
 authenticated discovery; this API does not infer it from a stored descriptor.
+
+`restorePendingFirstContacts` recovers still-pending plaintext from the committed
+recipient journal after a restart. It decrypts and reauthenticates current sender
+history, compares replay/request metadata, then takes a descriptor-bound committed
+snapshot to exclude decisions made during crypto. Expiry, rollback, disable and
+rotation fail closed. It performs no network reads, replay reservation, acceptance
+or grant acknowledgement. Use it to restore the inbox, then use polling only for
+new arrivals. User decisions retain their own atomic journal checks.
