@@ -52,6 +52,7 @@ pub struct PresentedGrantDecision {
 }
 
 /// Inputs for one destination re-check. The graph is a separate argument.
+#[derive(Clone)]
 pub struct PresentedGrantInput {
     pub row: BlindedGrantRow,
     pub presentation: GrantPresentation,

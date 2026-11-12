@@ -1366,3 +1366,44 @@ fn owner_path_uses_owner_when_the_accessor_is_the_owner() {
     assert!(decision.result.allowed, "{}", decision.result.reason);
     assert_eq!(decision.result.reason, "owner");
 }
+
+#[test]
+fn vault_consumer_requires_signed_current_version_check_and_durable_commit() {
+    use sociacl_encdisc::{seal_local_vault_item, read_authorized_local_vault, SignedVaultVersion, VaultVersion, VaultReadExpectation, EncDiscError};
+    use sociacl_ids::{parse_principal_id, history_state, PrincipalId, Jwks, SiwePolicy, ResolutionContext};
+    let w=world(); let owner=parse_principal_id(w.alice.account()).unwrap();
+    let password="violet radar platypus 47 granite orchestra";
+    let envelope=seal_local_vault_item(&owner,None,b"private name",b"secret",password).unwrap();
+    let digest=sha256_hex(envelope.bytes());
+    let version=VaultVersion { item_id:envelope.item_id(),version_id:envelope.version_id(),owner:owner.to_string(),parents:vec![],
+        epoch:2,revision_id:w.revision.clone(),ciphertext_digest:digest.clone(),sensitive:true,issued_at:0 };
+    let signature=w.alice.sign_vault_version(&version).unwrap();
+    let mut signed=SignedVaultVersion {version,signature};
+    let expected=VaultReadExpectation {object:"item-1".into(),owner:owner.to_string(),item_id:envelope.item_id(),version_id:envelope.version_id(),
+        ciphertext_digest:digest.clone(),epoch:2,revision_id:w.revision.clone()};
+    let mut payload=grant_of(&w,GrantStated::Live,1);payload.item_ciphertext_digest=digest;
+    let built=build(&w,&payload,false);let binding=bound(&w,&built,20);
+    let authorization=input(&w,built,20,Some(binding),None,Some(status_for(&w,1,GrantStated::Live,2,&w.revision,20)));
+    let jwks=Jwks{keys:vec![]};let links=Default::default();let issuers=Default::default();
+    let policy=SiwePolicy {allowed_domains:vec![],allowed_uris:vec![],allowed_chain_ids:vec![],clock_skew_seconds:0};
+    let history=|p:&PrincipalId,at,until|Ok(history_state(p,&[],at,until));
+    let mut identity=ResolutionContext{jwks:&jwks,links:&links,revocations:&[],now:0,policy:&policy,pinned_iss:&issuers,history:&history,genesis_epub_bindings:&[]};
+    let mut committed=None;
+    let opened=read_authorized_local_vault(&w,&envelope,&signed,&expected,&[],&identity,authorization.clone(),password,||20,|decision|{committed=Some(decision.clone());Ok(())}).unwrap();
+    assert_eq!(opened.content(),b"secret");assert_eq!(committed.as_ref().unwrap().challenges.spent,vec!["nonce-1"]);
+    let mut replay=authorization.clone();replay.challenges=committed.as_ref().unwrap().challenges.clone();
+    assert!(read_authorized_local_vault(&w,&envelope,&signed,&expected,&[],&identity,replay,password,||20,|_|Ok(())).is_err());
+    assert!(read_authorized_local_vault(&w,&envelope,&signed,&expected,&[],&identity,authorization.clone(),password,||20,|_|Err(EncDiscError::VaultStorage)).is_err());
+    let mut clock=[20,20,100000].into_iter();let mut commits=0;
+    assert!(read_authorized_local_vault(&w,&envelope,&signed,&expected,&[],&identity,authorization.clone(),password,||clock.next().unwrap(),|_|{commits+=1;Ok(())}).is_err());
+    assert_eq!(commits,1); // Persisted nonce, but no plaintext after lease expiry.
+    signed.version.sensitive=false;
+    assert!(read_authorized_local_vault(&w,&envelope,&signed,&expected,&[],&identity,authorization.clone(),password,||20,|_|panic!("forged version committed")).is_err());
+    signed.version.sensitive=true;
+    let mut absent=authorization.clone();absent.status=None;
+    assert!(read_authorized_local_vault(&w,&envelope,&signed,&expected,&[],&identity,absent,password,||20,|_|panic!("missing epoch committed")).is_err());
+    let mut wrong=authorization.clone();wrong.presentation.grant.object="other-item".into();
+    assert!(read_authorized_local_vault(&w,&envelope,&signed,&expected,&[],&identity,wrong,password,||20,|_|panic!("wrong item committed")).is_err());
+    let missing=|_:&PrincipalId,_,_|Err(sociacl_ids::Reason::MissingHistory);identity.history=&missing;
+    assert!(read_authorized_local_vault(&w,&envelope,&signed,&expected,&[],&identity,authorization,password,||20,|_|panic!("missing history committed")).is_err());
+}

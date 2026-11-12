@@ -89,3 +89,34 @@ test('shared witness transcripts, rejection fixtures and Rust signatures agree',
   }
   if(process.env.WITNESS_TS_VECTOR)writeFileSync(process.env.WITNESS_TS_VECTOR,JSON.stringify({request,receipts:rows,result:own.value}));
 });
+
+import { collectIndependentWitnesses, type WitnessTransport } from '../contract/independent-witness-client.ts';
+test('collection survives one hanging operator, binds operators and never weakens quorum',async()=>{
+  const r=signed();let aborted=false;
+  const transports=new Map<string,WitnessTransport>([2,3,4].map(n=>[`operator-${n}`,async request=>receipt(request,n)]));
+  transports.set('operator-5',async(_,signal)=>{signal.addEventListener('abort',()=>{aborted=true;});return new Promise(()=>{});});
+  const result=await collectIndependentWitnesses(r,r.recordDigest,[],()=>policy,()=>context,transports,100);
+  assert.equal(aborted,true);assert.deepEqual(result.observation.operators,['operator-2','operator-3','operator-4']);
+  transports.set('operator-4',async request=>receipt(request,2));
+  await assert.rejects(collectIndependentWitnesses(r,r.recordDigest,[],()=>policy,()=>context,transports,100));
+});
+test('collection rejects before sending forged account intent and rechecks expiry and policy after replies',async()=>{
+  const r=signed();let calls=0,changed=false;
+  const transports=new Map<string,WitnessTransport>([2,3,4,5].map(n=>[`operator-${n}`,async request=>{calls++;changed=true;return receipt(request,n);} ]));
+  await assert.rejects(collectIndependentWitnesses({...r,sig:'A'.repeat(86)},r.recordDigest,[],()=>policy,()=>context,transports));
+  assert.equal(calls,0);
+  await assert.rejects(collectIndependentWitnesses(r,r.recordDigest,[],()=>policy,()=>changed?{...context,now:r.expiresAt}:context,transports));
+  changed=false;
+  await assert.rejects(collectIndependentWitnesses(r,r.recordDigest,[],()=>changed?{...policy,epoch:2}:policy,()=>context,transports));
+  changed=false;
+  await assert.rejects(collectIndependentWitnesses(r,r.recordDigest,[],()=>policy,()=>changed?{...context,now:context.now-1}:context,transports));
+});
+
+test('collection detects rollback when the provider mutates a shared context',async()=>{
+  const r=signed(), shared={...context};
+  const transports=new Map<string,WitnessTransport>([2,3,4,5].map(n=>[`operator-${n}`,async request=>{
+    shared.now=context.now-1;
+    return receipt(request,n);
+  }]));
+  await assert.rejects(collectIndependentWitnesses(r,r.recordDigest,[],()=>policy,()=>shared,transports),/clock rollback/);
+});

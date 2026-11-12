@@ -111,6 +111,7 @@ mod store_write;
 mod unicode16;
 mod vault_format;
 mod vault_local;
+mod vault_read;
 #[cfg(unix)]
 mod vault_file;
 mod wrap;
@@ -253,3 +254,5 @@ pub use vault_local::{seal_local_vault_item, open_local_vault_item, LocalVaultEn
     VAULT_ITEM_MAX_BYTES, VAULT_METADATA_MAX_BYTES, VAULT_LOCAL_MAX_BYTES};
 #[cfg(unix)]
 pub use vault_file::{LocalVaultFileStore, VaultFileHead};
+
+pub use vault_read::{read_authorized_local_vault, SignedVaultVersion, VaultReadExpectation};
