@@ -5,6 +5,10 @@ use thiserror::Error;
 /// Messages name the check that failed. They do not include key bytes.
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
 pub enum EncDiscError {
+    #[error("local vault envelope rejected")]
+    VaultRejected,
+    #[error("local vault storage unavailable or conflicting")]
+    VaultStorage,
     #[error("account id is empty")]
     EmptyAccount,
     #[error("device id is empty")]
