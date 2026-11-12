@@ -28,8 +28,8 @@ function point(value) {
  * @param {unknown} value @returns {unknown[]} */
 function list(value) {
   if (!Array.isArray(value)) throw Error();
-  const descriptors = Object.getOwnPropertyDescriptors(value), length = descriptors.length;
-  if (!length || !('value' in length) || !Number.isSafeInteger(length.value) || length.value < 0 || length.value > 64 ||
+  const descriptors = Object.getOwnPropertyDescriptors(/** @type {object} */ (value)), length = descriptors.length;
+  if (!length || !('value' in length) || typeof length.value !== 'number' || !Number.isSafeInteger(length.value) || length.value < 0 || length.value > 64 ||
       Reflect.ownKeys(descriptors).length !== length.value + 1) throw Error();
   const output = [];
   for (let index = 0; index < length.value; index++) {
