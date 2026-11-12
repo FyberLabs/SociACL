@@ -164,8 +164,10 @@ acceptance loads the committed ciphertext, reauthenticates current sender histor
 seals the existing private-lane grant and commits it to the outbox before returning
 it for delivery. The grant targets the sender's authenticated current encryption
 key, not an unchecked reply key. A lost response is reconciled from the committed
-outbox. Callers must revalidate current histories, request expiry and recipient
-rotation sequence before retrying delivery of an outbox grant. A rotated recipient
+outbox. Accepted outbox entries survive request/descriptor expiry, disable and rotation
+until the exact ciphertext is acknowledged after delivery. They count against
+the quota and are never evicted to admit new requests. Callers must revalidate
+current histories and recipient rotation sequence before retrying delivery. A rotated recipient
 uses the existing regrant flow; an old outbox entry is not a fresh grant.
 
 PR CI covers receipt-to-acceptance cryptography, competing transactions, aborts,

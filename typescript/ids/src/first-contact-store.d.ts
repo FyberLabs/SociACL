@@ -3,7 +3,7 @@ export type Descriptor = { channelId:string; revision:number; encryptionEpub:str
 export type Reservation = { replayKey:string; requestId:string; replayUntil:number;
   expiresAt:number; envelope:Uint8Array };
 export type Grant = { ciphertextHex:string; rotationSeq:number };
-export type Row = Reservation & { revision:number; status:'pending'|'accepted'|'rejected'; grant?:Grant };
+export type Row = Reservation & { revision:number; status:'pending'|'accepted'|'rejected'|'delivered'; grant?:Grant };
 export type Decision = {status:'rejected'} | ({status:'accepted'} & Grant);
 export interface FirstContactStore {
   readonly owner:string;
@@ -14,6 +14,7 @@ export interface FirstContactStore {
   pending():Promise<Row[]>;
   decide(descriptor:Descriptor,replayKey:string,requestId:string,decision:Decision):Promise<void>;
   outbox():Promise<Row[]>;
+  acknowledge(replayKey:string,requestId:string,ciphertextHex:string):Promise<void>;
   close():void;
 }
 export function openFirstContactStore(options:{name:string;owner:string;now:()=>number;

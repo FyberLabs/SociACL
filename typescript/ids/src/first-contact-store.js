@@ -3,7 +3,7 @@ import { parsePrincipalId } from './ids.js';
 /** @typedef {{channelId:string,revision:number,encryptionEpub:string,expiresAt:number,maxLifetimeSeconds:number,maxMessageBytes:number}} Descriptor */
 /** @typedef {{replayKey:string,requestId:string,replayUntil:number,expiresAt:number,envelope:Uint8Array}} Reservation */
 /** @typedef {{ciphertextHex:string,rotationSeq:number}} Grant */
-/** @typedef {Reservation & {revision:number,status:'pending'|'accepted'|'rejected',grant?:Grant}} Row */
+/** @typedef {Reservation & {revision:number,status:'pending'|'accepted'|'rejected'|'delivered',grant?:Grant}} Row */
 /** @typedef {{v:1,owner:string,revision:number,clock:number,enabled:boolean,descriptor:Descriptor|null,rows:Record<string,Row>}} State */
 /** @typedef {{status:'rejected'}|({status:'accepted'} & Grant)} Decision */
 const STORE = 'first-contact';
@@ -85,7 +85,7 @@ export async function openFirstContactStore(options) {
           state.clock = t;
           for (const [key, row] of Object.entries(state.rows)) {
             if (!hex(key, 64) || !integer(row.replayUntil)) throw Error('Corrupt replay row');
-            if (row.replayUntil <= t) delete state.rows[key];
+            if (row.replayUntil <= t && row.status !== 'accepted') delete state.rows[key];
           }
           output = change(state, t);
           store.put(state, owner);
@@ -154,10 +154,20 @@ export async function openFirstContactStore(options) {
         row.status = selected.status;
       });
     },
-    outbox: () => transaction((state, t) => {
-      match(state, state.descriptor, t);
-      return clone(Object.values(state.rows).filter(row => row.revision === state.revision && row.status === 'accepted' && row.expiresAt > t));
-    }),
+    // Accepted grants survive request expiry, disable and descriptor rotation.
+    // Never evict an unacknowledged grant to make room for new requests.
+    outbox: () => transaction(state => clone(Object.values(state.rows).filter(row => row.status === 'accepted'))),
+    /** Acknowledge only after successful delivery of this exact ciphertext.
+     * @param {string} replayKey @param {string} requestId @param {string} ciphertextHex
+     */
+    acknowledge(replayKey, requestId, ciphertextHex) {
+      return transaction(state => {
+        const row = state.rows[replayKey];
+        if (!hex(replayKey,64) || !row || row.requestId !== requestId || row.status !== 'accepted' ||
+            row.grant?.ciphertextHex !== ciphertextHex) throw Error('Outbox acknowledgement mismatch');
+        row.status = 'delivered'; delete row.grant;
+      });
+    },
     close: () => db.close(),
   });
 }

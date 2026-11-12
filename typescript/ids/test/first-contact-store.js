@@ -67,3 +67,18 @@ test('stored reservation projects ciphertext fields and refuses expiry and wrong
   await assert.rejects(a.decide(d,r.replayKey,'ff'.repeat(32),grant));
   await assert.rejects(a.decide(d,r.replayKey,r.requestId,{status:'accept'})); a.close();
 });
+
+
+test('committed outbox survives request and descriptor expiry and rotation until acknowledged', async()=>{
+  const o=options();let t=now;o.now=()=>t;
+  let a=await openFirstContactStore(o);const d=await a.activate(policy),r=row(d);
+  await a.reserve(d,r);await a.decide(d,r.replayKey,r.requestId,grant);
+  t=d.expiresAt+1;await a.disable();
+  a.close();a=await openFirstContactStore({...o,create:false});
+  assert.equal((await a.outbox()).length,1);
+  await a.activate({...policy,expiresAt:t+600});assert.equal((await a.outbox()).length,1);
+  await assert.rejects(a.acknowledge(r.replayKey,r.requestId,'ff'.repeat(100)));
+  assert.equal((await a.outbox()).length,1);
+  await a.acknowledge(r.replayKey,r.requestId,grant.ciphertextHex);
+  assert.deepEqual(await a.outbox(),[]);a.close();
+});
