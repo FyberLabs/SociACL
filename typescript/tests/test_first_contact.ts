@@ -206,3 +206,24 @@ test('public polling authenticates ciphertext and commits replay state before di
   await assert.rejects(pollFirstContact(store,async(_,signal)=>{signal.addEventListener('abort',()=>{aborted=true;});return new Promise(()=>{});},privateKey,state,5),/timeout/);
   assert.equal(aborted,true);
 });
+
+import { sealFirstContactRequestBrowser,openFirstContactRequestBrowser } from '../contract/first-contact-browser.ts';
+test('WebCrypto interoperates with Node and Rust and rechecks time after decryption',async()=>{
+  const descriptor={...vectors.descriptor,encryptionEpub:raw.replyEpub};
+  const scalar=Buffer.alloc(32);scalar[31]=2;const privateKey=scalar.toString('base64url');
+  const request=signed(), state=()=>({rotations:[],context:ctx});
+  const browser=await sealFirstContactRequestBrowser(request,descriptor);
+  assert.ok(openFirstContactRequest(browser,privateKey,descriptor,[],ctx).ok);
+  assert.ok((await openFirstContactRequestBrowser(sealFirstContactRequest(request,descriptor),privateKey,descriptor,state)).ok);
+  if(process.env.FIRST_CONTACT_RUST_VECTOR)assert.ok((await openFirstContactRequestBrowser(readFileSync(process.env.FIRST_CONTACT_RUST_VECTOR),privateKey,descriptor,state)).ok);
+  if(process.env.FIRST_CONTACT_TS_VECTOR)writeFileSync(process.env.FIRST_CONTACT_TS_VECTOR,browser);
+  assert.notDeepEqual(browser,await sealFirstContactRequestBrowser(request,descriptor));
+  const tampered=new Uint8Array(browser);tampered[tampered.length-1]=tampered[tampered.length-1]!^1;
+  assert.equal((await openFirstContactRequestBrowser(tampered,privateKey,descriptor,state)).ok,false);
+  let calls=0;
+  assert.equal((await openFirstContactRequestBrowser(browser,privateKey,descriptor,()=>({rotations:[],context:{...ctx,now:++calls===1?ctx.now:raw.expiresAt}}))).ok,false);
+  calls=0;
+  assert.equal((await openFirstContactRequestBrowser(browser,privateKey,descriptor,()=>({rotations:[],context:{...ctx,now:++calls===1?ctx.now:ctx.now-1}}))).ok,false);
+  const change={...descriptor};const opening=openFirstContactRequestBrowser(browser,privateKey,change,state);change.revision++;
+  assert.ok((await opening).ok); // Decryption binds the immutable start snapshot.
+});
