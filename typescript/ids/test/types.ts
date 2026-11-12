@@ -57,3 +57,12 @@ if (advancedCheckpoint.ok) {
   // @ts-expect-error Returned reconciled history is immutable.
   advancedCheckpoint.value.state.history[0].removed = false;
 }
+
+import { wrapItemDekToReaders, openItemDekReaderWrap, type ItemReaderWrap } from '../src/index.js';
+declare const itemWrap: ItemReaderWrap;
+wrapItemDekToReaders(new Uint8Array(32), {}, [], []);
+openItemDekReaderWrap(itemWrap, '', '', {});
+// @ts-expect-error Wrapped routing metadata is immutable.
+itemWrap.revisionId = 'changed';
+// @ts-expect-error The expected current authorization context is mandatory.
+openItemDekReaderWrap(itemWrap, '', '');
