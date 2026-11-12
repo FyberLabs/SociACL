@@ -43,6 +43,7 @@
     "../tests/test_contact_lane.ts",
     "../tests/test_consume.ts",
     "../tests/test_first_contact.ts",
+    "../tests/test_independent_witness.ts",
     "first-contact-inbox.ts"
   ]
 }
