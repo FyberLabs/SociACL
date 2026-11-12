@@ -139,3 +139,33 @@ test('confidential first contact authenticates after opening and never returns a
   const forged = sealFirstContactRequest({ ...request, message: 'forged' }, descriptor);
   assert.equal(openFirstContactRequest(forged, privateKey, descriptor, [], ctx).ok, false);
 });
+
+// Durable discovery observation is distinct from recipient inbox admission.
+import { createRequire } from 'node:module';
+import { firstContactDescriptorBytes } from '../contract/first-contact-descriptor.ts';
+import { openFirstContactFloor } from '../ids/src/first-contact-floor.js';
+import { firstContactDescriptorFloor, observeFirstContactDescriptor } from '../contract/first-contact-discovery.ts';
+test('discovery authenticates before committing floors and refuses a signed same-revision fork',async()=>{
+  const { IDBFactory } = createRequire(new URL('../ids/package.json', import.meta.url))('fake-indexeddb');
+  const signDescriptor=(descriptor:any)=>{
+    const value={v:1 as const,owner:raw.sender,issuedAt:ctx.now,descriptor};
+    const key=new Uint8Array(32);key[31]=1;
+    const signature=signWithKeyring(key,firstContactDescriptorBytes(value),raw.sender);
+    if(!signature.ok)throw Error(signature.reason);
+    return {...value,sig:signature.value};
+  };
+  const descriptor={...vectors.descriptor,encryptionEpub:raw.replyEpub};
+  const signed=signDescriptor(descriptor);
+  const store=await openFirstContactFloor({name:'discovery',owner:raw.sender,
+    anchor:firstContactDescriptorFloor(signed),now:()=>ctx.now,create:true,indexedDB:new IDBFactory()});
+  assert.deepEqual(await observeFirstContactDescriptor(signed,raw.sender,store,[],ctx),signed);
+  const newer=signDescriptor({...descriptor,revision:descriptor.revision+1});
+  await assert.rejects(observeFirstContactDescriptor({...newer,sig:'A'.repeat(86)},raw.sender,store,[],ctx));
+  assert.deepEqual(await store.read(),firstContactDescriptorFloor(signed));
+  await observeFirstContactDescriptor(newer,raw.sender,store,[],ctx);
+  await assert.rejects(observeFirstContactDescriptor(signed,raw.sender,store,[],ctx));
+  const fork=signDescriptor({...newer.descriptor,channelId:'ef'.repeat(32)});
+  await assert.rejects(observeFirstContactDescriptor(fork,raw.sender,store,[],ctx));
+  await assert.rejects(observeFirstContactDescriptor(newer,raw.sender,store,[],{...ctx,history:()=>({ok:false,reason:'missing-history'})}));
+  store.close();
+});
