@@ -180,11 +180,13 @@ test('public polling authenticates ciphertext and commits replay state before di
   const forged=sealFirstContactRequest({...signed(),message:'forged'},descriptor);
   const row=(ciphertext:Uint8Array)=>({id:createHash('sha256').update(ciphertext).digest('hex'),ciphertext});
   const seen=new Set<string>();let writes=0,fail=false,expired=false,disabled=false;
-  const store={owner:raw.sender,descriptor:async()=>{if(disabled)throw Error('disabled');return descriptor;},
+  const store:FirstContactStore={owner:raw.sender,descriptor:async()=>{if(disabled)throw Error('disabled');return descriptor;},
     reserve:async(_d:unknown,r:{replayKey:string})=>{
       if(fail)throw Error('commit failed');if(seen.has(r.replayKey))return false;
       writes++;seen.add(r.replayKey);return true;
-    }} as FirstContactStore;
+    },activate:async()=>{throw Error('unexpected activation');},disable:async()=>{disabled=true;},
+    pending:async()=>[],decide:async()=>{throw Error('polling must not decide');},outbox:async()=>[],
+    acknowledge:async()=>{throw Error('polling must not acknowledge');},close:()=>{}};
   const state=()=>({rotations:[],context:{...ctx,now:expired?raw.expiresAt:ctx.now}});
   const source=async(channel:string)=>{assert.equal(channel,descriptor.channelId);return [row(forged),row(ciphertext),row(ciphertext)];};
   const result=await pollFirstContact(store,source,privateKey,state);
