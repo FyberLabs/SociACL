@@ -19,6 +19,8 @@ bash "${root}/scripts/release-automation.test.sh"
 # The dependency audit uses the pinned TypeScript parser (tooling only).
 npm ci --prefix typescript
 npm ci --prefix typescript/ids
+# Browser declarations do not depend on generated Rust conformance output.
+npm run --prefix typescript/ids typecheck
 node "${root}/scripts/audit-forbidden-names.mjs"
 
 cargo build --workspace --locked
@@ -37,7 +39,6 @@ npm run --prefix typescript typecheck
 
 # Independent browser package: each language reports exactly which shared vectors ran.
 IDS_VECTOR_REPORT="${root}/target/ids/ts-vectors.txt" node --test typescript/ids/test/*.js
-npm run --prefix typescript/ids typecheck
 npm run --prefix typescript/ids browser
 npm run --prefix typescript/ids build
 python3 scripts/identity-consume-contract.py
