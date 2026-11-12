@@ -35,9 +35,9 @@ export function witnessReceiptBytes(r:WitnessRequest,operatorId:string,observedA
  * This cannot validate the underlying rotate/revoke record or provide fork consensus.
  * Existing record verification remains mandatory and does not consume this prototype.
  */
-export function verifyIndependentWitnesses(request:WitnessRequest,receipts:readonly WitnessReceipt[],
+export function admitIndependentWitnessRequest(request:WitnessRequest,
   policy:IndependentWitnessPolicy,expectedRecordDigest:string,rotations:readonly unknown[],context:ResolutionContext):
-  Result<Readonly<{requestId:string;recordDigest:string;policyId:string;epoch:number;operators:readonly string[];timestampUpperBound:number}>> {
+  Result<Readonly<{request:WitnessRequest;policy:IndependentWitnessPolicy}>> {
   try {
     const r=record(request,'epoch,expiresAt,issuedAt,operation,policyId,principal,recordDigest,sig,v') as unknown as WitnessRequest;
     const policyData=record(policy,'epoch,id,maxFaulty,operators,threshold');
@@ -46,8 +46,7 @@ export function verifyIndependentWitnesses(request:WitnessRequest,receipts:reado
       return {...op,keys:array(op.keys,4).map(k=>record(k,'key,notAfter,notBefore'))};
     });
     const p={...policyData,operators:policyOperators} as unknown as IndependentWitnessPolicy;
-    const rows=array(receipts,16).map(input=>record(input,'observedAt,operator,sig')) as unknown as WitnessReceipt[];
-    if(!r || !p || !Array.isArray(p.operators) || !Array.isArray(rows) || p.operators.length<1 || p.operators.length>16 || rows.length>16 ||
+    if(!r || !p || !Array.isArray(p.operators) || p.operators.length<1 || p.operators.length>16 ||
       !hash(p.id) || !integer(p.epoch) || p.epoch<1 || !integer(p.threshold) || p.threshold<1 || !integer(p.maxFaulty) ||
       p.threshold<=p.maxFaulty || p.threshold>p.operators.length-p.maxFaulty ||
       !hash(expectedRecordDigest) || r.recordDigest!==expectedRecordDigest || r.v!==1 ||
@@ -72,6 +71,18 @@ export function verifyIndependentWitnesses(request:WitnessRequest,receipts:reado
     const history=context.history(r.principal,r.issuedAt,context.now);
     if(!history.ok)return history;
     if(history.value.key!==account.value.key || history.value.currentKey!==account.value.key || keys.has(account.value.key)) return fail('missing-history');
+    return ok({request:r,policy:p});
+  }catch{return fail('bad-attestation');}
+}
+export function verifyIndependentWitnesses(request:WitnessRequest,receipts:readonly WitnessReceipt[],
+  policy:IndependentWitnessPolicy,expectedRecordDigest:string,rotations:readonly unknown[],context:ResolutionContext):
+  Result<Readonly<{requestId:string;recordDigest:string;policyId:string;epoch:number;operators:readonly string[];timestampUpperBound:number}>> {
+  try {
+    const admitted=admitIndependentWitnessRequest(request,policy,expectedRecordDigest,rotations,context);
+    if(!admitted.ok)return admitted;
+    const {request:r,policy:p}=admitted.value;
+    const operators=new Map(p.operators.map(op=>[op.id,op]));
+    const rows=array(receipts,16).map(input=>record(input,'observedAt,operator,sig')) as unknown as WitnessReceipt[];
     const seen=new Set<string>();let upper=r.issuedAt;
     for(const receipt of rows) {
       const op=operators.get(receipt.operator);

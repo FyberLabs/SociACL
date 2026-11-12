@@ -110,3 +110,23 @@ request fields and rejection cases. PR CI signs receipts independently in Rust
 and TypeScript, passes each artifact to the other verifier, and compares the
 returned observation. Public fixture scalars are test data only. No witness
 service, policy transition or existing record verifier is activated by parity.
+
+## Consumer collection
+
+`independent-witness-client.ts::collectIndependentWitnesses` composes bounded
+collection with the verifier. Before any transport call it authenticates the
+account intent and provisioned policy. Each configured operator receives one
+immutable request and contributes at most one matching observation. Invalid,
+misattributed and timed-out responses count as unavailable; they never lower the
+threshold or poison an otherwise sufficient quorum. Collection uses a maximum
+ten-second deadline, aborts remaining work and rejects responses that complete
+verification after the monotonic deadline.
+
+The caller provides current authenticated policy/history functions, not data from
+an operator's response. Policy changes, account retirement, expiry and backward
+time invalidate the attempt before its result is returned. Transport adapters
+are trusted configuration and receive an AbortSignal; no returned URL is followed.
+s3r.ch adapters must use its configured Spanopticon interfaces. This collector
+is usable with independently provisioned operators but does not provision them,
+make them independent, or activate the existing single-witness record verifier.
+Durable anti-equivocation and authenticated policy transitions remain required.

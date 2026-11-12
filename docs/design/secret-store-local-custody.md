@@ -90,3 +90,35 @@ version/manifests and confidential wrap routing, the independent head ledger,
 Check plus fresh epoch proof (including bounded offline leases), signed encrypted
 audit admission, and shared cross-client ciphertext vectors. Visor still owns
 execute/use/sign permission brokering. Unlock alone must never bypass those gates.
+
+## Authorized local read composition
+
+`read_authorized_local_vault` now composes custody unlock with the existing
+destination verifier. The caller independently supplies an authenticated binding
+from item ID to ACL object, exact version/ciphertext digest, owner and epoch
+revision. A signed manifest binds the actual envelope; `sign_vault_version` emits
+a compact 64-byte P-256 signature encoded as unpadded base64url, matching the
+identity verifier. The manifest and its signature remain private metadata.
+
+Admission requires current authenticated owner history and the same current
+signing key used by the grant presentation. The existing Check validates the
+item-bound grant, reader enrollment, presenter binding and fresh epoch proof.
+The function overwrites any caller-provided fetched digest with the actual file
+hash. A plain object grant cannot stand in for the item-bound grant. Wrong
+versions, owners, objects, epochs, signatures or missing history fail before KDF
+work. Identity timestamps are seconds; the destination clock is Unix milliseconds.
+
+Unlocking is followed by another current-time admission/Check. Before plaintext
+is returned, a required synchronous consumer callback must durably compare and
+swap the nonce/revision state and independent item expectation against its
+original snapshot. The caller owns that atomic transaction; this library cannot
+prove a dishonest callback wrote durable storage. Expiry and clock rollback are
+checked again after commit. A committed nonce may therefore be consumed with no
+plaintext returned. The public custody-only open API remains for local key
+custody; applications must use the authorized composition for grantee reads.
+
+This adds a headless consumer seam, not a complete vault CLI or protected head
+ledger. It does not authenticate version DAGs, provide conflict retention,
+implement sharing/sync, or replace Visor's execute/use/sign broker. Tests compose
+real signatures and destination proofs with an in-memory commit callback in CI;
+filesystem persistence remains in the scheduled adapter.

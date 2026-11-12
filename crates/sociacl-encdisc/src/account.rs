@@ -231,6 +231,14 @@ impl AccountSeaSecret {
         sea::sign_sea(&self.sea_priv, &message)
     }
 
+    /// Signing binds a version to this account; it does not authorize a read.
+    pub fn sign_vault_version(&self, version: &crate::VaultVersion) -> Result<String, EncDiscError> {
+        if version.owner != self.account { return Err(EncDiscError::VaultRejected); }
+        use base64ct::{Base64UrlUnpadded, Encoding};
+        let signature = sea::sign_sea(&self.sea_priv, &crate::vault_version_signing_bytes(version)?)?;
+        Ok(Base64UrlUnpadded::encode_string(&crate::hexutil::decode_hex(&signature)?))
+    }
+
     pub fn sign_item_auth(&self, fields: &ItemAuthFields) -> Result<String, EncDiscError> {
         canonical::require_digest_hex(&fields.plaintext_digest)?;
         canonical::require_revision_id(&fields.revision_id)?;

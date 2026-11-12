@@ -152,3 +152,15 @@ CI run links establish which checks actually executed. Remaining design work is
 confidential cross-client framing/routing, shared cryptographic vectors, durable
 head/audit state and consumer authorization composition. Revisit this model when
 network sync, a CLI, offline leases, hardware keys or a new consumer is added.
+
+### Authorized-read integration update
+
+`vault_read.rs::read_authorized_local_vault` now connects the current account
+signature, independently supplied item/object/head/epoch expectation, actual
+ciphertext digest, `check_presented_grant`, and passphrase custody. It rechecks
+current time after KDF and commit, so an expiry crossing either boundary yields
+no plaintext. The required consumer commit callback must atomically persist
+nonce/revision state and compare the independent head; a dishonest or non-durable
+callback remains outside the library's guarantees. V2 therefore still requires
+a protected head ledger, while V3 now has an executable composition seam.
+Remaining release/use/sign brokering and cross-client integration are unchanged.
