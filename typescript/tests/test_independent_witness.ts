@@ -57,3 +57,14 @@ test('witness issuance windows, future times and missing account history are rej
   assert.equal(verifyIndependentWitnesses(r,rows,policy,r.recordDigest,[],{...context,history:()=>({ok:false,reason:'missing-history'})}).ok,false);
   assert.equal(verifyIndependentWitnesses(r,rows,policy,r.recordDigest,[],{...context,now:r.expiresAt}).ok,false);
 });
+
+
+test('receipt parsing bounds arrays before crypto and never invokes accessors',()=>{
+  const r=signed(),rows=[2,3,4].map(n=>receipt(r,n));let reads=0;
+  const hostile={...r};Object.defineProperty(hostile,'recordDigest',{get(){reads++;throw Error('getter');}});
+  assert.equal(verifyIndependentWitnesses(hostile,rows,policy,r.recordDigest,[],context).ok,false);assert.equal(reads,0);
+  assert.equal(verify(r,new Array(1000)).ok,false);
+  assert.equal(verify(r,[...rows,{...rows[0]!,extra:true}] as WitnessReceipt[]).ok,false);
+  const getters=[...rows];Object.defineProperty(getters,'0',{get(){reads++;return rows[0];}});
+  assert.equal(verify(r,getters).ok,false);assert.equal(reads,0);
+});

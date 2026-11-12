@@ -2,7 +2,7 @@
 import { sha256 } from '@noble/hashes/sha2.js';
 import { parsePrincipalId, verifySignedAt, verifyKeySignature } from '../ids/src/index.js';
 import type { PrincipalId, ResolutionContext, Result } from '../ids/src/index.js';
-import { lp, hex, integer, fail, ok } from '../ids/src/util.js';
+import { lp, hex, integer, fail, ok, data } from '../ids/src/util.js';
 export const WITNESS_REQUEST_DOMAIN='sociacl-independent-witness-request-v1';
 export const WITNESS_RECEIPT_DOMAIN='sociacl-independent-witness-receipt-v1';
 export type WitnessOperator=Readonly<{id:string;keys:readonly Readonly<{key:PrincipalId;notBefore:number;notAfter:number}>[]}>;
@@ -11,6 +11,18 @@ export type IndependentWitnessPolicy=Readonly<{id:string;epoch:number;threshold:
 export type WitnessRequest=Readonly<{v:1;principal:PrincipalId;operation:'rotate'|'revoke';recordDigest:string;
   policyId:string;epoch:number;issuedAt:number;expiresAt:number;sig:string}>;
 export type WitnessReceipt=Readonly<{operator:string;observedAt:number;sig:string}>;
+function record(input:unknown, fields:string):Record<string,unknown> {
+  const d=data(input);if(!d.ok || Object.keys(d.value).sort().join()!==fields)throw Error('bad-attestation');return d.value;
+}
+function array(input:unknown, maximum:number):unknown[] {
+  if(!Array.isArray(input))throw Error('bad-attestation');
+  const length=Object.getOwnPropertyDescriptor(input,'length');
+  if(!length || !('value' in length) || !integer(length.value) || length.value>maximum)throw Error('bad-attestation');
+  if(Object.getOwnPropertyNames(input).length!==length.value+1)throw Error('bad-attestation');
+  return Array.from({length:length.value},(_,i)=>{
+    const d=Object.getOwnPropertyDescriptor(input,String(i));if(!d || !('value' in d))throw Error('bad-attestation');return d.value;
+  });
+}
 const hash=(s:unknown):s is string=>typeof s==='string' && s.length===64 && /^[0-9a-f]{64}$/.test(s);
 const operator=(s:unknown):s is string=>typeof s==='string' && s.length<=64 && /^[a-z][a-z0-9-]*$/.test(s);
 export function witnessRequestBytes(r:Omit<WitnessRequest,'sig'>):Uint8Array {
@@ -27,7 +39,14 @@ export function verifyIndependentWitnesses(request:WitnessRequest,receipts:reado
   policy:IndependentWitnessPolicy,expectedRecordDigest:string,rotations:readonly unknown[],context:ResolutionContext):
   Result<Readonly<{requestId:string;recordDigest:string;policyId:string;epoch:number;operators:readonly string[];timestampUpperBound:number}>> {
   try {
-    const r=structuredClone(request),p=structuredClone(policy),rows=structuredClone(receipts);
+    const r=record(request,'epoch,expiresAt,issuedAt,operation,policyId,principal,recordDigest,sig,v') as unknown as WitnessRequest;
+    const policyData=record(policy,'epoch,id,maxFaulty,operators,threshold');
+    const policyOperators=array(policyData.operators,16).map(input=>{
+      const op=record(input,'id,keys');
+      return {...op,keys:array(op.keys,4).map(k=>record(k,'key,notAfter,notBefore'))};
+    });
+    const p={...policyData,operators:policyOperators} as unknown as IndependentWitnessPolicy;
+    const rows=array(receipts,16).map(input=>record(input,'observedAt,operator,sig')) as unknown as WitnessReceipt[];
     if(!r || !p || !Array.isArray(p.operators) || !Array.isArray(rows) || p.operators.length<1 || p.operators.length>16 || rows.length>16 ||
       !hash(p.id) || !integer(p.epoch) || p.epoch<1 || !integer(p.threshold) || p.threshold<1 || !integer(p.maxFaulty) ||
       p.threshold<=p.maxFaulty || p.threshold>p.operators.length-p.maxFaulty ||
