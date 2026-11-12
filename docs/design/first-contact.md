@@ -1,4 +1,3 @@
-# First-contact descriptor continuity
 # First contact before a private lane exists
 
 Status: design proposal for #70, not a deployed endpoint. The existing

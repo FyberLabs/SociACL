@@ -28,6 +28,8 @@ export async function openFirstContactFloor(options) {
   });
   db.onversionchange=()=>db.close();
   function time(){const t=now();if(!integer(t))throw Error('Invalid clock');return t;}
+  /** @param {(now:number)=>void} verify @param {number} t */
+  function authenticated(verify,t){if(verify(t)!==undefined)throw Error('Synchronous descriptor verification required');}
   /** @param {Floor|undefined} candidate @param {(now:number)=>void} verify @param {boolean} [initialize] @returns {Promise<Floor>} */
   function transaction(candidate,verify,initialize=false){
     return new Promise((resolve,reject)=>{
@@ -37,7 +39,7 @@ export async function openFirstContactFloor(options) {
       let committedAt=0;
       tx.onabort=()=>reject(failure ?? tx.error ?? Error('Descriptor floor aborted'));
       tx.onerror=()=>{};
-      tx.oncomplete=()=>{try{const t=time();if(t<committedAt)throw Error('Clock rollback');verify(t);resolve(result);}catch(e){reject(e);}};
+      tx.oncomplete=()=>{try{const t=time();if(t<committedAt)throw Error('Clock rollback');authenticated(verify,t);resolve(result);}catch(e){reject(e);}};
       if(tx.durability!=='strict'){failure=Error('Strict durability unavailable');tx.abort();return;}
       const store=tx.objectStore(STORE),get=store.get(owner);
       get.onsuccess=()=>{try{
@@ -45,7 +47,7 @@ export async function openFirstContactFloor(options) {
         if(!saved){if(!initialize)throw Error('Missing descriptor continuity');saved={v:1,owner,...anchor,clock:t};}
         if(saved.v!==1 || saved.owner!==owner || !valid(saved) || !integer(saved.clock) || saved.clock>t ||
           saved.revision<anchor.revision || (saved.revision===anchor.revision && saved.digest!==anchor.digest))throw Error('Invalid descriptor continuity');
-        verify(t);
+        authenticated(verify,t);
         if(candidate){
           if(!valid(candidate) || candidate.revision<saved.revision ||
             (candidate.revision===saved.revision && candidate.digest!==saved.digest))throw Error('Descriptor rollback or equivocation');

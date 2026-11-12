@@ -22,6 +22,7 @@ test('competing connections preserve one descriptor per revision',async()=>{
 test('missing state, failed verification, aborts and expiry across commit yield no accepted result',async()=>{
   const o=options();await assert.rejects(openFirstContactFloor({...o,create:false}));
   const a=await openFirstContactFloor(o);
+  await assert.rejects(a.observe(next,async()=>{}));
   await assert.rejects(a.observe(next,()=>{throw Error('invalid signature');}));assert.deepEqual(await a.read(),anchor);
   const put=IDBObjectStore.prototype.put;
   IDBObjectStore.prototype.put=function(){throw Error('quota');};
