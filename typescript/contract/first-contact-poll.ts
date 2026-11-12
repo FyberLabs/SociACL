@@ -16,8 +16,8 @@ export async function pollFirstContact(store:FirstContactStore,source:FirstConta
   senderState:()=>{rotations:readonly unknown[];context:ResolutionContext},timeoutMs=10000):Promise<readonly VerifiedFirstContact[]> {
   if(!integer(timeoutMs)||timeoutMs<1||timeoutMs>10000)throw Error('Invalid polling deadline');
   const descriptor=Object.freeze({...await store.descriptor()});
-  let observedTime=-1;
-  const currentState=()=>{const state=senderState();if(!integer(state.context.now)||state.context.now<observedTime)throw Error('First-contact clock rollback');observedTime=state.context.now;return state;};
+  let observedTime=-1,clockFailed=false;
+  const currentState=()=>{const state=senderState();if(clockFailed||!integer(state.context.now)||state.context.now<observedTime){clockFailed=true;throw Error('First-contact clock rollback');}observedTime=state.context.now;return state;};
   const controller=new AbortController();let timer:ReturnType<typeof setTimeout>|undefined;
   try {
     const timeout=new Promise<never>((_,reject)=>{timer=setTimeout(()=>{controller.abort();reject(Error('First-contact timeout'));},timeoutMs);});

@@ -200,6 +200,9 @@ test('public polling authenticates ciphertext and commits replay state before di
   expired=false;seen.clear();store.reserve=async(...args)=>{const added=await reserve(...args);disabled=true;return added;};
   await assert.rejects(pollFirstContact(store,source,privateKey,state),/disabled/);
   disabled=false;store.reserve=reserve;
+  let clockCalls=0;
+  await assert.rejects(pollFirstContact(store,async()=>[row(ciphertext)],privateKey,()=>({rotations:[],context:{...ctx,now:++clockCalls===2?ctx.now-1:ctx.now}})),/clock rollback/);
+
   await assert.rejects(pollFirstContact(store,async()=>[{...row(ciphertext),id:'00'.repeat(32)}],privateKey,state),/digest/);
   await assert.rejects(pollFirstContact(store,async()=>new Array(129),privateKey,state),/batch/);
   let aborted=false;
