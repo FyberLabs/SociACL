@@ -665,7 +665,8 @@ test('first contact requires committed replay admission and explicit acceptance 
 
 
 test('public first-contact descriptors bind owner, key and policy without becoming freshness proofs', () => {
-  const keyring=genesisKeyring(),ctx=witnessed();
+  const keyring=genesisKeyring(),ctx={...witnessed(),history:(p:PrincipalId,at:number,until:number)=>
+    p===keyring.principal ? {ok:true as const,value:historyState(p,[],at,until)} : {ok:false as const,reason:'missing-history' as const}};
   const d={channelId:'ab'.repeat(32),revision:2,encryptionEpub:scalarSea(15).pub,
     expiresAt:ctx.now+600,maxLifetimeSeconds:300,maxMessageBytes:1024};
   const signed=signFirstContactDescriptor(keyring,d,[],ctx);

@@ -56,12 +56,12 @@ export function verifyFirstContactDescriptor(input:unknown,expectedOwner:Princip
 /** Sign only after local opt-in has committed its fresh descriptor. */
 export function signFirstContactDescriptor(keyring:AccountKeyring,descriptor:FirstContactSealDescriptor,
   rotations:readonly unknown[],context:ResolutionContext):SignedFirstContactDescriptor {
-  const currentKey=keyring.confirm(rotations,context);
+  keyring.confirm(rotations,context);
   const candidate=parse({v:1,owner:keyring.principal,issuedAt:context.now,descriptor,sig:'A'.repeat(86)});
   if(!candidate.ok)throw Error(candidate.reason);
   const key=unb64(keyring.currentPriv());
   try {
-    const sig=signWithKeyring(key,firstContactDescriptorBytes(candidate.value),currentKey);
+    const sig=signWithKeyring(key,firstContactDescriptorBytes(candidate.value),keyring.pub);
     if(!sig.ok)throw Error(sig.reason);
     const result={...candidate.value,sig:sig.value};
     const verified=verifyFirstContactDescriptor(result,keyring.principal,descriptor.revision,rotations,context);
