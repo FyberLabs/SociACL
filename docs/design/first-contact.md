@@ -29,7 +29,7 @@ per-source and global quotas before decryption/signature work, with optional
 proof-of-work or another deployment-owned abuse control. Rate limits are service
 policy, never an ACL grant. Readers can mute, block or rotate the descriptor;
 old descriptor requests are rejected after expiry. Do not trial-decrypt a shared
-global bucket. Retain dedup ids for the request lifetime and skew horizon. Use
+global bucket. Retain dedup ids through the descriptor expiry as specified below. Use
 an unpredictable reply capability with the same bounded lifetime; do not expose
 a public sender-to-recipient index or reflect arbitrary replies to URLs.
 
@@ -100,5 +100,9 @@ answer, lane id, wrap or grant.
 `vectors/first-contact/v1.json` pins canonical bytes, request ID and replay key.
 PR CI signs with public test scalar 1 and checks tampering, key retirement,
 missing history, descriptor binding, expiry, UTF-8 bounds and nonce reuse.
-This is TypeScript library coverage; Rust parity and encrypted cross-client E2E
-remain unfinished and must run in CI when implemented.
+The Rust `sociacl-ids` first-contact module consumes the same canonical vector and
+enforces the same descriptor, signature, history and replay-horizon boundaries.
+Its parser accepts `serde_json::Value`; JSON decoding rejects unpaired surrogates
+before parsing, and typed Rust strings cannot contain them. Both language suites
+run in PR CI. This covers signed inner payload interoperability only; encrypted
+cross-client E2E remains unfinished and must run in CI when implemented.

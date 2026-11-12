@@ -1,10 +1,12 @@
 //! Canonical identity boundaries. Stored input is never normalized or repaired.
 mod ids;
+mod first_contact;
 mod records;
 mod uri;
 mod witness_policy;
 mod witness_checkpoint;
 pub use ids::*;
+pub use first_contact::*;
 pub use records::*;
 pub use witness_policy::*;
 pub use witness_checkpoint::*;
