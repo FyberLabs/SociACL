@@ -1,10 +1,18 @@
 # Secret, key and small-file store: phase-one protocol plan
 
-Status: design work for #155. No vault, device keystore integration, sync service,
-CLI credential helper or audited cryptographic implementation is shipped here.
-The existing encrypted-discovery implementation is the starting point, not proof
-that a new secret-store protocol is safe. The formal threat model, canonical
-wire bytes and cross-language vectors remain implementation prerequisites.
+Status: design work for #155. Shipped as library building blocks: canonical version
+and audit transcripts, a passphrase-sealed local file with an atomic Unix file store,
+authorized read composed with Check and epoch freshness, signed version history,
+in-memory audit admission, and encrypted history and audit checkpoints (see the
+status updates on #155, most recently PRs #178 to #180). Not shipped: a CLI,
+credential helper, sync service, device-key adapters, agent broker and an audited
+cryptographic implementation. The existing encrypted-discovery implementation is the
+starting point, not proof that a new secret-store protocol is safe. The formal threat
+model and cross-language vectors remain implementation prerequisites.
+
+The multi-slot design that extends this plan (key slots, the portable file profile,
+sharing, brokered agent use with a daily lease, storage, rotation and the build
+slices) is in [secret-store-vault-design.md](secret-store-vault-design.md).
 
 ## Ownership and component boundary
 
