@@ -1,3 +1,4 @@
+import { signFirstContactDescriptor, verifyFirstContactDescriptor } from '../contract/first-contact-descriptor.ts';
 import { createRequire } from 'node:module';
 import { openFirstContactStore } from '../ids/src/first-contact-store.js';
 import { receiveFirstContact, acceptFirstContactRequest } from '../contract/first-contact-inbox.ts';
@@ -660,4 +661,22 @@ test('first contact requires committed replay admission and explicit acceptance 
     assert.equal((await store.outbox())[0]?.grant?.ciphertextHex,grant.ciphertextHex);
     await assert.rejects(acceptFirstContactRequest(store,opened.replayKey,channel.priv,recipient,[],ctx,[],witnessed()));
   } finally { store.close(); }
+});
+
+
+test('public first-contact descriptors bind owner, key and policy without becoming freshness proofs', () => {
+  const keyring=genesisKeyring(),ctx=witnessed();
+  const d={channelId:'ab'.repeat(32),revision:2,encryptionEpub:scalarSea(15).pub,
+    expiresAt:ctx.now+600,maxLifetimeSeconds:300,maxMessageBytes:1024};
+  const signed=signFirstContactDescriptor(keyring,d,[],ctx);
+  const verify=(input:unknown,floor=2)=>verifyFirstContactDescriptor(input,keyring.principal,floor,[],ctx);
+  assert.ok(verify(signed).ok);assert.equal(verify(signed,3).ok,false);
+  for(const patch of [{channelId:'cd'.repeat(32)},{revision:3},{encryptionEpub:scalarSea(16).pub},
+    {expiresAt:d.expiresAt+1},{maxLifetimeSeconds:301},{maxMessageBytes:2048}]) {
+    assert.equal(verify({...signed,descriptor:{...signed.descriptor,...patch}}).ok,false);
+  }
+  assert.equal(verify({...signed,owner:scalarSea(3).pub}).ok,false);
+  assert.equal(verifyFirstContactDescriptor(signed,keyring.principal,2,[],{...ctx,now:d.expiresAt}).ok,false);
+  assert.equal(verifyFirstContactDescriptor(signed,keyring.principal,2,[],
+    {...ctx,history:()=>({ok:false,reason:'missing-history'})}).ok,false);
 });

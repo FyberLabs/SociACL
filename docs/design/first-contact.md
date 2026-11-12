@@ -176,3 +176,13 @@ browser suite additionally exercises real Chromium connections and a process
 restart. That suite is scheduled-only; adding its case does not claim it has run.
 Authenticated descriptor publication and s3r.ch's user-facing flow remain required
 before the public channel is complete.
+
+The public descriptor can be signed with `first-contact-descriptor.ts`. Its
+separate domain binds the expected owner, issuance time, channel, revision,
+encryption key, expiry and both request limits. Verification requires the
+independently expected owner, authenticated current-key history and a locally
+maintained revision floor. Sign only the descriptor returned by committed opt-in;
+never publish the private channel encryption scalar. A descriptor signature
+proves authorship, not freshness: first discovery still needs authenticated
+publication, and a known descriptor revision must not roll back. Old descriptors
+stop working locally on disable/rotation even if a transport replays them.
