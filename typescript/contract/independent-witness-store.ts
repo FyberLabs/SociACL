@@ -4,6 +4,8 @@ import { hex } from '../ids/src/util.js';
 import { openFirstContactFloor } from '../ids/src/first-contact-floor.js';
 import type { PrincipalId, ResolutionContext } from '../ids/src/index.js';
 import { independentWitnessPolicyBytes, type IndependentWitnessPolicy, type WitnessRequest, type WitnessReceipt } from './independent-witness.ts';
+import { collectIndependentWitnesses, type WitnessTransport } from './independent-witness-client.ts';
+import { admitIndependentWitnessRequest, verifyIndependentWitnesses } from './independent-witness.ts';
 import { advanceIndependentWitnessPolicy } from './independent-witness-transition.ts';
 const floor=(policy:IndependentWitnessPolicy)=>({revision:policy.epoch,digest:hex(sha256(independentWitnessPolicyBytes(policy)))});
 function snapshot(policy:IndependentWitnessPolicy):IndependentWitnessPolicy {
@@ -29,6 +31,26 @@ export async function openIndependentWitnessPolicyStore(options:{name:string;pri
     return copy;
   }
   return Object.freeze({read,close:()=>store.close(),
+    /** Collection is usable only if the exact retained membership still applies
+     * when results commit. A concurrent transition cannot return an old quorum. */
+    async collect(request:WitnessRequest,expectedDigest:string,candidate:IndependentWitnessPolicy,
+      currentState:()=>{rotations:readonly unknown[];context:ResolutionContext},
+      transports:ReadonlyMap<string,WitnessTransport>,timeoutMs=10000) {
+      const policy=await read(candidate);
+      const initial=currentState();
+      const admitted=admitIndependentWitnessRequest(request,policy,expectedDigest,initial.rotations,initial.context);
+      if(!admitted.ok)throw Error(admitted.reason);
+      if(admitted.value.request.principal!==principal)throw Error('Wrong witness principal');
+      const result=await collectIndependentWitnesses(admitted.value.request,expectedDigest,initial.rotations,
+        ()=>policy,()=>currentState().context,transports,timeoutMs);
+      await store.observe(floor(policy),now=>{
+        const state=currentState();
+        const verified=verifyIndependentWitnesses(result.request,result.receipts,policy,expectedDigest,
+          state.rotations,{...state.context,now});
+        if(!verified.ok)throw Error(verified.reason);
+      });
+      return result;
+    },
     async advance(previous:IndependentWitnessPolicy,next:IndependentWitnessPolicy,
       oldRequest:WitnessRequest,oldReceipts:readonly WitnessReceipt[],newRequest:WitnessRequest,newReceipts:readonly WitnessReceipt[],
       currentState:()=>{rotations:readonly unknown[];context:ResolutionContext}) {

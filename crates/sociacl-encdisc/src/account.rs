@@ -239,6 +239,14 @@ impl AccountSeaSecret {
         Ok(Base64UrlUnpadded::encode_string(&crate::hexutil::decode_hex(&signature)?))
     }
 
+    /// Sign an audit assertion as this actor. This does not attest Check or delivery.
+    pub fn sign_vault_audit(&self, event: &crate::VaultAudit) -> Result<String, EncDiscError> {
+        if event.actor != self.account { return Err(EncDiscError::VaultRejected); }
+        use base64ct::{Base64UrlUnpadded, Encoding};
+        let signature = sea::sign_sea(&self.sea_priv, &crate::vault_audit_signing_bytes(event)?)?;
+        Ok(Base64UrlUnpadded::encode_string(&crate::hexutil::decode_hex(&signature)?))
+    }
+
     pub fn sign_item_auth(&self, fields: &ItemAuthFields) -> Result<String, EncDiscError> {
         canonical::require_digest_hex(&fields.plaintext_digest)?;
         canonical::require_revision_id(&fields.revision_id)?;

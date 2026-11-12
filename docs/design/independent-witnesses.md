@@ -164,3 +164,10 @@ only when their canonical digest matches. A lost successful transition response
 is reconciled with `read(exactCandidate)`, not by resetting the old floor. This
 consumer store does not provide operator anti-equivocation or independent service
 provisioning, and does not change the existing single-witness runtime verifier.
+
+The retained policy store's `collect` method composes transport collection with
+its exact installed membership. It rejects an old candidate before any transport,
+then rechecks the canonical policy floor and current account history inside a
+strict transaction before returning the observation. A concurrent membership
+transition invalidates the old collection. This is consumer continuity, not an
+operator's durable single-successor decision or activation of legacy verifiers.

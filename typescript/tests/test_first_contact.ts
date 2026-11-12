@@ -230,3 +230,65 @@ test('WebCrypto interoperates with Node and Rust and rechecks time after decrypt
   const change={...descriptor};const opening=openFirstContactRequestBrowser(browser,privateKey,change,state);change.revision++;
   assert.ok((await opening).ok); // Decryption binds the immutable start snapshot.
 });
+
+import { prepareFirstContactSubmission } from '../contract/first-contact-send.ts';
+test('sender retries exact encrypted bytes and checks signed descriptor floors before transport',async()=>{
+  const { IDBFactory }=createRequire(new URL('../ids/package.json',import.meta.url))('fake-indexeddb');
+  const descriptor={...vectors.descriptor,encryptionEpub:raw.replyEpub};
+  const signDescriptor=(d:typeof descriptor)=>{
+    const candidate={v:1 as const,owner:raw.sender,issuedAt:ctx.now,descriptor:d};
+    const key=new Uint8Array(32);key[31]=1;
+    const s=signWithKeyring(key,firstContactDescriptorBytes(candidate),raw.sender);if(!s.ok)throw Error(s.reason);
+    return {...candidate,sig:s.value};
+  };
+  const advertisement=signDescriptor(descriptor);let now=ctx.now;
+  const floor=await openFirstContactFloor({name:'send',owner:raw.sender,anchor:firstContactDescriptorFloor(advertisement),
+    now:()=>now,create:true,indexedDB:new IDBFactory()});
+  const state=()=>({rotations:[],context:{...ctx,now}});
+  let calls=0;const transmitted:Uint8Array[]=[];
+  await assert.rejects(prepareFirstContactSubmission(signed(),{...advertisement,sig:'A'.repeat(86)},raw.sender,floor,state,state));
+  const prepared=await prepareFirstContactSubmission(signed(),advertisement,raw.sender,floor,state,state);
+  await assert.rejects(prepared.submit(async(channel,body)=>{
+    calls++;assert.equal(channel,descriptor.channelId);transmitted.push(new Uint8Array(body));body.fill(0);throw Error('lost response');
+  }));
+  assert.equal(await prepared.submit(async(channel,body)=>{calls++;transmitted.push(body);return prepared.ciphertextId;}),prepared.ciphertextId);
+  assert.deepEqual(transmitted[0],transmitted[1]);assert.equal(calls,2);
+  const key=Buffer.alloc(32);key[31]=2;
+  assert.equal(openFirstContactRequest(transmitted[1]!,key.toString('base64url'),descriptor,[],ctx).ok,true);
+  await assert.rejects(prepared.submit(async()=> '00'.repeat(32)));
+  const next=signDescriptor({...descriptor,revision:descriptor.revision+1});
+  await observeFirstContactDescriptor(next,raw.sender,floor,[],ctx);
+  await assert.rejects(prepared.submit(async()=>{calls++;return prepared.ciphertextId;}));
+  assert.equal(calls,2);floor.close();
+});
+
+test('sender deadline aborts transport and expiry refuses retry without a new write',async()=>{
+  const { IDBFactory }=createRequire(new URL('../ids/package.json',import.meta.url))('fake-indexeddb');
+  const descriptor={...vectors.descriptor,encryptionEpub:raw.replyEpub};
+  const candidate={v:1 as const,owner:raw.sender,issuedAt:ctx.now,descriptor};
+  const key=new Uint8Array(32);key[31]=1;
+  const s=signWithKeyring(key,firstContactDescriptorBytes(candidate),raw.sender);if(!s.ok)throw Error(s.reason);
+  const advertisement={...candidate,sig:s.value};let now=ctx.now;
+  const floor=await openFirstContactFloor({name:'send-expiry',owner:raw.sender,anchor:firstContactDescriptorFloor(advertisement),now:()=>now,create:true,indexedDB:new IDBFactory()});
+  const state=()=>({rotations:[],context:{...ctx,now}});
+  const prepared=await prepareFirstContactSubmission(signed(),advertisement,raw.sender,floor,state,state);
+  let signal:AbortSignal|undefined;
+  await assert.rejects(prepared.submit(async(_channel,_body,s)=>{signal=s;return new Promise(()=>{});},10));
+  assert.equal(signal?.aborted,true);
+  await assert.rejects(prepared.submit(async()=>{
+    const until=performance.now()+30;while(performance.now()<until){} // CI-only blocked-loop regression.
+    return prepared.ciphertextId;
+  },5),/ambiguous/);
+  let delayCommit=false;
+  const delayed={...floor,observe:async (...args:Parameters<typeof floor.observe>)=>{
+    if(delayCommit)await new Promise(resolve=>setTimeout(resolve,30));
+    return floor.observe(...args);
+  }};
+  const slowCommit=await prepareFirstContactSubmission(signed(),advertisement,raw.sender,delayed,state,state);
+  await assert.rejects(slowCommit.submit(async()=>{delayCommit=true;return slowCommit.ciphertextId;},5),/ambiguous/);
+  now=raw.expiresAt;
+  let expiredCalls=0;
+  await assert.rejects(prepared.submit(async()=>{expiredCalls++;return prepared.ciphertextId;}));
+  assert.equal(expiredCalls,0);
+  floor.close();
+});

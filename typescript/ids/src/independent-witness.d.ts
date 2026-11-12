@@ -13,6 +13,7 @@ export function verifyIndependentWitnesses(request:WitnessRequest,receipts:reado
 export function advanceIndependentWitnessPolicy(previous:IndependentWitnessPolicy,next:IndependentWitnessPolicy,principal:PrincipalId,oldRequest:WitnessRequest,oldReceipts:readonly WitnessReceipt[],newRequest:WitnessRequest,newReceipts:readonly WitnessReceipt[],rotations:readonly unknown[],context:ResolutionContext):IndependentWitnessPolicy;
 export function collectIndependentWitnesses(request:WitnessRequest,expectedRecordDigest:string,rotations:readonly unknown[],currentPolicy:()=>IndependentWitnessPolicy,currentContext:()=>ResolutionContext,transports:ReadonlyMap<string,WitnessTransport>,timeoutMs?:number):Promise<Readonly<{request:WitnessRequest;receipts:readonly WitnessReceipt[];observation:WitnessObservation}>>;
 export interface IndependentWitnessPolicyStore {
+  collect(request:WitnessRequest,expectedDigest:string,candidate:IndependentWitnessPolicy,currentState:()=>{rotations:readonly unknown[];context:ResolutionContext},transports:ReadonlyMap<string,WitnessTransport>,timeoutMs?:number):ReturnType<typeof collectIndependentWitnesses>;
   read(candidate:IndependentWitnessPolicy):Promise<IndependentWitnessPolicy>;
   advance(previous:IndependentWitnessPolicy,next:IndependentWitnessPolicy,oldRequest:WitnessRequest,oldReceipts:readonly WitnessReceipt[],newRequest:WitnessRequest,newReceipts:readonly WitnessReceipt[],currentState:()=>{rotations:readonly unknown[];context:ResolutionContext}):Promise<IndependentWitnessPolicy>;
   close():void;

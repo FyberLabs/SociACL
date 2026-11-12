@@ -259,3 +259,6 @@ pub use vault_read::{read_authorized_local_vault, SignedVaultVersion, VaultReadE
 
 mod vault_history;
 pub use vault_history::{VaultVersionHistory, VaultHistoryHead, seal_vault_history, open_vault_history};
+
+mod vault_audit;
+pub use vault_audit::{SignedVaultAudit, VaultAuditHistory};
