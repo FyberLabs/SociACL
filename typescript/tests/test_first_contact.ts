@@ -292,3 +292,45 @@ test('sender deadline aborts transport and expiry refuses retry without a new wr
   assert.equal(expiredCalls,0);
   floor.close();
 });
+
+import { restorePendingFirstContacts } from '../contract/first-contact-restore.ts';
+test('pending recovery survives reopen and rechecks current history and concurrent decisions',async()=>{
+  const {IDBFactory}=createRequire(new URL('../ids/package.json',import.meta.url))('fake-indexeddb');
+  const {openFirstContactStore}=await import('../ids/src/first-contact-store.js');
+  const options={name:'recover-pending',owner:raw.sender,now:()=>ctx.now,indexedDB:new IDBFactory()};
+  let store=await openFirstContactStore({...options,create:true});
+  const d=await store.activate({...vectors.descriptor,encryptionEpub:raw.replyEpub});
+  const ciphertext=sealFirstContactRequest(signed({channelId:d.channelId,descriptorRevision:d.revision}),d);
+  const scalar=Buffer.alloc(32);scalar[31]=2;const epriv=scalar.toString('base64url');
+  const state=()=>({rotations:[],context:ctx});
+  const rows=await pollFirstContact(store,async()=>[{id:createHash('sha256').update(ciphertext).digest('hex'),ciphertext}],epriv,state);
+  assert.equal(rows.length,1);store.close();store=await openFirstContactStore(options);
+  assert.deepEqual(await restorePendingFirstContacts(store,epriv,state),rows);
+  assert.deepEqual(await store.outbox(),[]);
+  assert.deepEqual(await restorePendingFirstContacts(store,epriv,()=>({rotations:[],context:{...ctx,history:()=>({ok:false as const,reason:'missing-history' as const})}})),[]);
+  const other=await openFirstContactStore(options);let reads=0;
+  const pending=store.pending.bind(store);
+  const racing={...store,pending:async(expected?:Parameters<typeof store.pending>[0])=>{
+    if(++reads===2)await other.decide(d,rows[0]!.replayKey,rows[0]!.requestId,{status:'rejected'});
+    return pending(expected);
+  }};
+  assert.deepEqual(await restorePendingFirstContacts(racing,epriv,state),[]);
+  assert.deepEqual(await restorePendingFirstContacts(store,epriv,state),[]);
+  await other.activate({...vectors.descriptor,encryptionEpub:raw.replyEpub});
+  await assert.rejects(store.pending(d));other.close();store.close();
+});
+
+test('pending recovery refuses a channel change after decryption',async()=>{
+  const {IDBFactory}=createRequire(new URL('../ids/package.json',import.meta.url))('fake-indexeddb');
+  const {openFirstContactStore}=await import('../ids/src/first-contact-store.js');
+  const store=await openFirstContactStore({name:'recover-rotation',owner:raw.sender,now:()=>ctx.now,indexedDB:new IDBFactory(),create:true});
+  const policy={...vectors.descriptor,encryptionEpub:raw.replyEpub},d=await store.activate(policy);
+  const ciphertext=sealFirstContactRequest(signed({channelId:d.channelId,descriptorRevision:d.revision}),d);
+  const scalar=Buffer.alloc(32);scalar[31]=2;const epriv=scalar.toString('base64url'),state=()=>({rotations:[],context:ctx});
+  await pollFirstContact(store,async()=>[{id:createHash('sha256').update(ciphertext).digest('hex'),ciphertext}],epriv,state);
+  const pending=store.pending.bind(store);let reads=0;
+  await assert.rejects(restorePendingFirstContacts({...store,pending:async(expected)=>{
+    if(++reads===2)await store.activate(policy);return pending(expected);
+  }},epriv,state),/changed/);
+  store.close();
+});

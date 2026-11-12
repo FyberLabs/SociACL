@@ -1429,6 +1429,26 @@ fn vault_consumer_requires_signed_current_version_check_and_durable_commit() {
     assert!(audit.advance(&forged,&versions,w.bob.account(),&[],&identity).is_err());
     let mut reused=event.clone();reused.outcome="failed".into();
     assert!(saved.advance(&sign_audit(reused),&versions,w.bob.account(),&[],&identity).is_err());
+    // One ciphertext now carries version and audit continuity together.
+    use sociacl_encdisc::{VaultJournal,seal_vault_journal,open_vault_journal};
+    let journal=VaultJournal::new(versions.clone(),saved.clone()).unwrap();
+    let (checkpoint,head)=seal_vault_journal(&journal,None,password).unwrap();
+    let restored=open_vault_journal(&checkpoint,&head,password).unwrap();
+    assert_eq!(restored.audit().head(),saved.head());
+    assert_eq!(restored.audit().event(&event.event_id).unwrap().actor,w.bob.account());
+    assert_eq!(restored.versions().read_expectation().unwrap().object,expected.object);
+    assert!(restored.audit().record_read(&read,restored.versions(),w.bob.account(),&event.device_id,committed.as_ref().unwrap(),0,&[],&identity).is_err());
+    let old=VaultJournal::new(versions.clone(),audit.clone()).unwrap();
+    let (old_checkpoint,old_head)=seal_vault_journal(&old,Some(&head.checkpoint.ledger_item_id),password).unwrap();
+    assert!(open_vault_journal(&old_checkpoint,&head,password).is_err());
+    assert!(open_vault_journal(&checkpoint,&old_head,password).is_err());
+    let mut mismatched=head.clone();mismatched.audit_head=audit.head().into();
+    assert!(open_vault_journal(&checkpoint,&mismatched,password).is_err());
+    let different=VaultReadExpectation{object:"another-object".into(),owner:expected.owner.clone(),item_id:expected.item_id.clone(),
+        version_id:expected.version_id.clone(),ciphertext_digest:expected.ciphertext_digest.clone(),epoch:expected.epoch,revision_id:expected.revision_id.clone()};
+    let other_versions=VaultVersionHistory::initialize(&signed,&different,&sha256_hex(&vault_version_signing_bytes(&signed.version).unwrap()),&[],&identity).unwrap();
+    assert!(VaultJournal::new(other_versions.clone(),saved.clone()).is_err());
+    assert!(saved.advance(&read,&other_versions,w.bob.account(),&[],&identity).is_err());
     signed.version.sensitive=false;
     assert!(read_authorized_local_vault(&w,&envelope,&signed,&expected,&[],&identity,authorization.clone(),password,||20,|_|panic!("forged version committed")).is_err());
     signed.version.sensitive=true;

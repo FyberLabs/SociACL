@@ -108,3 +108,19 @@ state and the item expectation. Signing uses `AccountSeaSecret::sign_vault_audit
 These are in-memory admission and composition APIs. A protected confidential
 atomic backing store, audit checkpoint persistence and CLI integration remain
 required; a signed assertion is not proof every operation was logged.
+
+### Combined encrypted version and audit checkpoint
+
+`VaultJournal` binds an admitted audit history to its original owner/object/item
+and complete admitted version graph. `seal_vault_journal` encrypts both into one
+passphrase-sealed snapshot; `open_vault_journal` requires an independently retained
+exact `VaultJournalHead`. Restore checks canonical encoding, one connected audit
+chain, retained event IDs, nondecreasing times, known version references and the
+expected audit head. A history from another object cannot be attached even when
+its opaque item/version IDs match. The combined plaintext obeys the 1 MiB cap.
+
+Publish through `LocalVaultFileStore` CAS and reconcile ambiguous responses by
+retrying the prepared bytes. This prevents torn version/audit files; it does not
+provide a protected head store, persist verifier nonces or atomically commit all
+authorization state. Those integrations and the CLI remain open. Restored records
+are previously admitted local state, not newly verified network assertions.

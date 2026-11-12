@@ -171,3 +171,10 @@ then rechecks the canonical policy floor and current account history inside a
 strict transaction before returning the observation. A concurrent membership
 transition invalidates the old collection. This is consumer continuity, not an
 operator's durable single-successor decision or activation of legacy verifiers.
+
+The central scheduled `sociacl-browser` suite now includes
+`browser-independent-witness`: real Chromium tabs race conflicting authenticated
+membership transitions, restart the browser process, restore the exact winning
+policy, refuse stale-policy collection before transport and collect under the
+retained winner. This harness is schedule-guarded; source/PR checks do not stand in
+for a successful natural run. It does not provision independent operators.

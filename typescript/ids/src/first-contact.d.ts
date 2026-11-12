@@ -21,3 +21,5 @@ export function verifyFirstContactDescriptor(input:unknown,expectedOwner:Princip
 export function firstContactDescriptorFloor(descriptor:SignedFirstContactDescriptor):DescriptorFloor;
 export function observeFirstContactDescriptor(input:unknown,owner:PrincipalId,store:FirstContactFloor,rotations:readonly unknown[],context:ResolutionContext):Promise<SignedFirstContactDescriptor>;
 export function prepareFirstContactSubmission(input:unknown,advertisement:unknown,owner:PrincipalId,floor:FirstContactFloor,recipientState:FirstContactSenderState,senderState:FirstContactSenderState):Promise<Readonly<{ciphertextId:string;submit(append:FirstContactAppend,timeoutMs?:number):Promise<string>}>>;
+
+export function restorePendingFirstContacts(store:FirstContactStore,epriv:string,currentState:FirstContactSenderState):Promise<readonly VerifiedFirstContact[]>;

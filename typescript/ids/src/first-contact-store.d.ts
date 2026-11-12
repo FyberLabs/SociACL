@@ -11,7 +11,7 @@ export interface FirstContactStore {
   disable():Promise<void>;
   descriptor():Promise<Descriptor>;
   reserve(descriptor:Descriptor,record:Reservation):Promise<boolean>;
-  pending():Promise<Row[]>;
+  pending(expected?:Descriptor):Promise<Row[]>;
   decide(descriptor:Descriptor,replayKey:string,requestId:string,decision:Decision):Promise<void>;
   outbox():Promise<Row[]>;
   acknowledge(replayKey:string,requestId:string,ciphertextHex:string):Promise<void>;

@@ -93,3 +93,14 @@ test('a commit crossing request expiry exposes no successful reservation but kee
   assert.deepEqual(await a.pending(),[]);
   assert.equal(await a.reserve(d,{...r,expiresAt:now+100}),false);a.close();
 });
+
+test('descriptor-bound pending reads reject rotation and commit-crossing expiry',async()=>{
+  let tick=now;
+  const a=await openFirstContactStore({...options(),now:()=>tick}),d=await a.activate(policy),r={...row(d),expiresAt:now+1};
+  await a.reserve(d,r);
+  const original=IDBObjectStore.prototype.put;
+  IDBObjectStore.prototype.put=function(...args){const result=original.apply(this,args);tick=now+1;return result;};
+  try{await assert.rejects(a.pending(d),/expired/);}finally{IDBObjectStore.prototype.put=original;}
+  assert.deepEqual(await a.pending(d),[]);
+  await a.activate(policy);await assert.rejects(a.pending(d));a.close();
+});

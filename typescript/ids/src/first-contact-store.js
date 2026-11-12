@@ -137,10 +137,20 @@ export async function openFirstContactStore(options) {
         return true;
       }, false, () => Math.min(d.expiresAt, r.expiresAt));
     },
-    pending: () => transaction((state, t) => {
-      match(state, state.descriptor, t);
-      return clone(Object.values(state.rows).filter(row => row.revision === state.revision && row.status === 'pending' && row.expiresAt > t));
-    }),
+    /** An expected descriptor binds a resumed read to the channel it decrypted.
+     * Expiry is checked again at commit, including for an empty pending queue.
+     * @param {Descriptor} [expected] */
+    pending(expected) {
+      const descriptor = expected === undefined ? undefined : clone(expected);
+      let expires = Infinity;
+      return transaction((state, t) => {
+        match(state, descriptor ?? state.descriptor, t);
+        if (!state.descriptor) throw Error('Missing descriptor');
+        const rows = Object.values(state.rows).filter(row => row.revision === state.revision && row.status === 'pending' && row.expiresAt > t);
+        expires = Math.min(state.descriptor.expiresAt, ...rows.map(row => row.expiresAt));
+        return clone(rows);
+      }, false, () => expires);
+    },
     /** Explicit user decision after re-opening and authenticating the stored request.
      * Accepted ciphertext is an outbox entry: publish only after this commit succeeds.
      * Conflicting/repeated decisions fail; callers reconcile with outbox(), not reseal.
