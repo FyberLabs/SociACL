@@ -16,10 +16,11 @@ def snapshot():
     files = {name: (ROOT/'typescript/ids/dist'/name).read_bytes() for name in FILES}
     hashes = {f'docs/identity-consume/{name}': hashlib.sha256(data).hexdigest()
               for name, data in files.items()}
-    for directory in ('vectors/ids', 'vectors/mesh', 'vectors/agent-delegation'):
+    for directory in ('vectors/ids', 'vectors/mesh', 'vectors/agent-delegation', 'vectors/first-contact'):
         for path in sorted((ROOT/directory).rglob('*.json')):
             hashes[path.relative_to(ROOT).as_posix()] = hashlib.sha256(path.read_bytes()).hexdigest()
     hashes['docs/s3rch-check.d.ts'] = hashlib.sha256((ROOT/'docs/s3rch-check.d.ts').read_bytes()).hexdigest()
+    hashes['docs/first-contact.d.ts'] = hashlib.sha256((ROOT/'docs/first-contact.d.ts').read_bytes()).hexdigest()
     manifest = {'schema': 1, 'contract': 'sociacl-identity-consume-v1',
                 'packageVersion': json.loads((ROOT/'typescript/ids/package.json').read_text())['version'],
                 'sha256': dict(sorted(hashes.items()))}

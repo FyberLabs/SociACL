@@ -3,6 +3,7 @@
   "contract": "sociacl-identity-consume-v1",
   "packageVersion": "0.11.0",
   "sha256": {
+    "docs/first-contact.d.ts": "8383fae5eb1cac6b454ae3555c00abf0913e7934c300a4b4bd6a98a01ddd3824",
     "docs/identity-consume/agent-delegation.d.ts": "bed2b6f2749685037372fbd9df5e22498053249b64e101883fca044a26063b5f",
     "docs/identity-consume/ids.d.ts": "303db2a8e551483ed98430106e3868c4b448ef668cf89d48062e752e8a070dba",
     "docs/identity-consume/index.d.ts": "4ebea3d138112e29a8dd08400161ddcf757bdd1cf33b2287372ac29d99c7bdc0",
@@ -14,6 +15,7 @@
     "docs/identity-consume/witness-policy.d.ts": "2c86c87c173cd136dcc1f38cefa90c0f114c1a9e89619dee68041a915b8ad115",
     "docs/s3rch-check.d.ts": "0e2465a3c8fa03bdb8c5c5eed4b93fc1636335f5eacfe07c35d9f7e8bafd3a6f",
     "vectors/agent-delegation/v1.json": "aecdd9e66846dec8dcb63168d2a075787a8b91eed2c73bff375068befb9396cc",
+    "vectors/first-contact/v1.json": "391776b37ef0f3e550d1886fb1bf6a3dd73b4ccaa16d21240423d14a93e049b9",
     "vectors/ids/edges.json": "ecb913c2428915ed0a8b79b7477c0715e59b31fc94b8380ebf7d6b22089b0663",
     "vectors/ids/network.json": "0c6522baf13ba83cb92193a7e522993e52414d82bf920b6e2fc19ef25247eb1c",
     "vectors/ids/object.json": "9646c6738725b9438b8ebbf2d41437923b87ec3ff3bbd0ab910abe27ce429640",
