@@ -117,3 +117,11 @@ export type StoreWriteAccount = {
   readonly currentEpub: PrincipalId | null;
   readonly rotations: readonly { readonly seq: number }[];
 };
+
+/** Must be supplied from a current Check/epoch view, never a peer's wrap label. */
+export type ItemWrapContext = Readonly<{ epoch: number; object: string; revisionId: string }>;
+/** Item-DEK reader subset of the shared WrappedKey contract. Clear routing
+ * metadata is visible; keep the entire wrap inside confidential grant material. */
+export type ItemReaderWrap = ItemWrapContext & Readonly<{
+  scope: 'item-dek'; target: 'reader-epub'; targetId: string; wrappedKey: string;
+}>;

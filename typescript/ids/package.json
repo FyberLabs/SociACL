@@ -1,6 +1,6 @@
 {
   "name": "sociacl-ids",
-  "version": "0.11.0",
+  "version": "0.11.1",
   "private": false,
   "type": "module",
   "license": "MIT",
@@ -54,7 +54,7 @@
     "consumer": "node scripts/consumer.mjs",
     "build": "node scripts/build.mjs",
     "prepack": "npm run build",
-    "test:browser-store": "node scripts/browser-store.mjs && node scripts/browser-client.mjs && node scripts/browser-checkpoint-store.mjs && node scripts/browser-checkpoint-client.mjs"
+    "test:browser-store": "node scripts/browser-store.mjs && node scripts/browser-client.mjs && node scripts/browser-checkpoint-store.mjs && node scripts/browser-checkpoint-client.mjs && node scripts/browser-reader-wrap.mjs"
   },
   "dependencies": {
     "@noble/curves": "2.0.1",
