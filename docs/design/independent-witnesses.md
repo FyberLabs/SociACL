@@ -95,8 +95,18 @@ changes. That storage/service rule remains a prerequisite to activating rotation
 
 PR CI covers one unavailable operator, missing quorum, invalid account signatures,
 duplicate votes/keys, mixed records and epochs, unsafe thresholds, key windows,
-missing account history and future times. Still required before adoption: Rust
-parity and frozen shared vectors; authenticated policy transitions and durable
+missing account history and future times. Still required before adoption:
+authenticated policy transitions and durable
 operator anti-equivocation; independent operator provisioning; scheduled outage,
 concurrent-fork and rollback tests; and explicit integration into the existing
 record verifiers. Peer recovery remains a separate pre-enrolled trustee protocol.
+
+## Rust parity and CI exchange
+
+`crates/sociacl-ids/src/independent_witness.rs` implements the experimental
+receipt verifier with the same operator/key bounds, time windows, authenticated
+account history and quorum rules. `vectors/independent-witness/v1.json` freezes
+request fields and rejection cases. PR CI signs receipts independently in Rust
+and TypeScript, passes each artifact to the other verifier, and compares the
+returned observation. Public fixture scalars are test data only. No witness
+service, policy transition or existing record verifier is activated by parity.

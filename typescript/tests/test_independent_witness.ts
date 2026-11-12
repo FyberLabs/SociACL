@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { parsePrincipalId,signWithKeyring,historyState,type PrincipalId,type ResolutionContext } from '../ids/src/index.js';
 import { seaPoint } from '../contract/account-key-seal.ts';
 import { verifyIndependentWitnesses,witnessRequestBytes,witnessReceiptBytes,
@@ -71,4 +71,21 @@ test('receipt parsing bounds arrays before crypto and never invokes accessors',(
   assert.equal(verify(r,[...rows,{...rows[0]!,extra:true}] as WitnessReceipt[]).ok,false);
   const getters=[...rows];Object.defineProperty(getters,'0',{get(){reads++;return rows[0];}});
   assert.equal(verify(r,getters).ok,false);assert.equal(reads,0);
+});
+
+test('shared witness transcripts, rejection fixtures and Rust signatures agree',()=>{
+  const v=JSON.parse(readFileSync(new URL('../../vectors/independent-witness/v1.json',import.meta.url),'utf8'));
+  const request=signed(v.request),rows=[2,3,4].map(n=>receipt(request,n));
+  const fields=v.requestFields.map((s:string)=>{const b=Buffer.from(s),n=Buffer.alloc(4);n.writeUInt32LE(b.length);return Buffer.concat([n,b]);});
+  assert.deepEqual(Buffer.from(witnessRequestBytes(request)),Buffer.concat(fields));
+  for(const patch of v.rejectRequestPatches)assert.equal(verifyIndependentWitnesses({...request,...patch},rows,policy,request.recordDigest,[],context).ok,false);
+  for(const patch of v.rejectPolicyPatches)assert.equal(verify(request,rows,{...policy,...patch}).ok,false);
+  const own=verify(request,rows);assert.ok(own.ok);if(!own.ok)return;
+  if(process.env.WITNESS_RUST_VECTOR){
+    const rust=JSON.parse(readFileSync(process.env.WITNESS_RUST_VECTOR,'utf8'));
+    assert.deepEqual(rust.policy,policy);
+    const checked=verifyIndependentWitnesses(rust.request,rust.receipts,policy,request.recordDigest,[],context);
+    assert.ok(checked.ok);if(checked.ok)assert.deepEqual(checked.value,rust.result);
+  }
+  if(process.env.WITNESS_TS_VECTOR)writeFileSync(process.env.WITNESS_TS_VECTOR,JSON.stringify({request,receipts:rows,result:own.value}));
 });

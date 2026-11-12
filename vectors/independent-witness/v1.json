@@ -1,0 +1,73 @@
+{
+  "request": {
+    "v": 1,
+    "principal": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+    "operation": "rotate",
+    "recordDigest": "3434343434343434343434343434343434343434343434343434343434343434",
+    "policyId": "1212121212121212121212121212121212121212121212121212121212121212",
+    "epoch": 1,
+    "issuedAt": 1700000000,
+    "expiresAt": 1700000300,
+    "sig": ""
+  },
+  "requestFields": [
+    "sociacl-independent-witness-request-v1",
+    "1",
+    "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+    "rotate",
+    "3434343434343434343434343434343434343434343434343434343434343434",
+    "1212121212121212121212121212121212121212121212121212121212121212",
+    "1",
+    "1700000000",
+    "1700000300"
+  ],
+  "now": 1700000020,
+  "observedAt": 1700000010,
+  "operators": [
+    2,
+    3,
+    4,
+    5
+  ],
+  "threshold": 3,
+  "maxFaulty": 1,
+  "notBefore": 1699990000,
+  "notAfter": 1700010000,
+  "rejectRequestPatches": [
+    {
+      "epoch": 2
+    },
+    {
+      "recordDigest": "abababababababababababababababababababababababababababababababab"
+    },
+    {
+      "extra": true
+    },
+    {
+      "issuedAt": "1700000000"
+    },
+    {
+      "expiresAt": 1700000601
+    },
+    {
+      "sig": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    }
+  ],
+  "rejectPolicyPatches": [
+    {
+      "threshold": 2
+    },
+    {
+      "maxFaulty": 3
+    },
+    {
+      "epoch": 2
+    },
+    {
+      "threshold": 9007199254740992
+    },
+    {
+      "extra": true
+    }
+  ]
+}
