@@ -40,6 +40,14 @@
     "./first-contact-floor": {
       "types": "./dist/first-contact-floor.d.ts",
       "default": "./dist/first-contact-floor.js"
+    },
+    "./first-contact": {
+      "types": "./dist/first-contact.d.ts",
+      "default": "./dist/first-contact.js"
+    },
+    "./independent-witness": {
+      "types": "./dist/independent-witness.d.ts",
+      "default": "./dist/independent-witness.js"
     }
   },
   "files": [

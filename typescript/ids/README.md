@@ -505,3 +505,11 @@ of copied arrays, strings, or cryptographic engine memory.
 Node conformance and browser bundle checks run in PR CI. The real Chromium
 reader-wrap case runs in the central scheduled `sociacl-browser` nightly batch;
 it must not be manually dispatched or moved into PR integration execution.
+
+Browser consumers can import `sociacl-ids/first-contact` for asynchronous WebCrypto
+seal/open and replay-journal polling. `sociacl-ids/independent-witness` exposes
+bounded collection, joint-quorum transitions and retained IndexedDB policy floors.
+Both entrypoints include declarations and browser-safe code in the package; they
+need no checkout-relative imports. Independently authenticated history/bootstrap
+and explicit contact acceptance remain mandatory. Neither entrypoint installs a
+product UI, follows returned URLs or activates the legacy witness verifier.
