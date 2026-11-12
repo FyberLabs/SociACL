@@ -11,7 +11,7 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 const cases = [
   ['rust-c-python-runtime', 'bash', ['scripts/test-runtime.sh']],
   ['installed-identity-consumer', 'npm', ['--prefix', 'typescript/ids', 'run', 'consumer']],
-  ...['browser-store', 'browser-client', 'browser-checkpoint-store', 'browser-checkpoint-client']
+  ...['browser-store', 'browser-client', 'browser-checkpoint-store', 'browser-checkpoint-client', 'browser-first-contact']
     .map(name => [name, process.execPath, [`typescript/ids/scripts/${name}.mjs`]]),
 ];
 for (const [name, command, args] of cases) {
