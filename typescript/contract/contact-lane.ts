@@ -8,9 +8,10 @@
  * hex and nothing else. A lane is delivery only. It does not grant.
  *
  * This module does not wire Panopticon or Gun, and it does not open a
- * first-contact channel. Those are SociACL#71 and SociACL#70. #70 inherits
- * this confidential channel: a request carries the grant blob and does not
- * publish the parties or a verifiable signature beside it.
+ * first-contact transport. Those are SociACL#71 and SociACL#70. The signed
+ * first-contact request below belongs inside a separate confidential envelope;
+ * no lane grant exists until recipient acceptance. Never publish the parties
+ * or a verifiable signature beside ciphertext.
  */
 export {
   deriveContactLane,
@@ -21,3 +22,6 @@ export {
   sealContactLaneGrant,
 } from "./contact-lane-seal.ts";
 export type { ContactLaneGrant, ContactTarget, OpenedContactLane } from "./contact-lane-seal.ts";
+
+export { firstContactRequestBytes, parseFirstContactRequest, verifyFirstContactRequest } from './first-contact.ts';
+export type { FirstContactRequest, FirstContactDescriptor, VerifiedFirstContact } from './first-contact.ts';
