@@ -12,7 +12,8 @@ nightly results are advisory and are not release or merge prerequisites.
 JUnit case per executed harness:
 
 - Rust runtime examples, six C FFI examples and six Python binding suites;
-- a packed identity package installed and executed in a clean consumer;
+- a packed identity package installed and executed in a clean consumer, including
+  delegated credentials, revocation, audience and scope boundaries;
 - real Chromium policy store conflict, restart and rollback checks;
 - browser witness fetch/policy validation;
 - checkpoint persistence and checkpoint client validation in Chromium.
@@ -34,3 +35,13 @@ are coverage definitions, not evidence that a scheduled run has passed.
 The historical README coverage snapshot remains historical; the removed PR
 coverage invocation included Python FFI runtime integration. Coverage scripts
 remain available for future CI-owned measurement, not a local acceptance step.
+
+## Recorded scheduled baseline
+
+The [November 11, 2026 SociACL job](https://github.com/FyberLabs/infra/actions/runs/43039946456/job/130588798374)
+passed at owner revision `219f4c76479ff841ffbb50383b763736fa3f943c`.
+Its [artifact](https://github.com/FyberLabs/infra/actions/runs/43039946456/artifacts/13865624144)
+records six passing native harness cases, successful setup, and successful cleanup.
+The overall infra batch failed in other suites; this is SociACL-specific evidence.
+This baseline predates the added installed-delegation assertions. Their execution
+must be checked in a subsequent scheduled run, not inferred from this result.

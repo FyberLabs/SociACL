@@ -9,7 +9,8 @@ try {
   execFileSync('npm',['run','build'],{cwd:root,stdio:'inherit'});
   const packed=JSON.parse(execFileSync('npm',['pack','--ignore-scripts','--json','--pack-destination',temp],{cwd:root,encoding:'utf8'}));
   const consumer=join(temp,'consumer'); cpSync(join(root,'examples/consumer'),consumer,{recursive:true});
+  cpSync(join(root,'../../vectors/agent-delegation/v1.json'),join(consumer,'agent-delegation.json'));
   execFileSync('npm',['install','--cache',join(temp,'empty-cache'),'--ignore-scripts','--no-audit','--no-fund',join(temp,packed[0].filename)],{cwd:consumer,stdio:'inherit'});
-  execFileSync(process.execPath,[join(root,'node_modules/typescript/bin/tsc'),'--strict','--noEmit','--target','ES2022','--module','NodeNext','--moduleResolution','NodeNext','main.ts'],{cwd:consumer,stdio:'inherit'});
+  execFileSync(process.execPath,[join(root,'node_modules/typescript/bin/tsc'),'--strict','--noEmit','--target','ES2022','--module','NodeNext','--moduleResolution','NodeNext','--resolveJsonModule','main.ts'],{cwd:consumer,stdio:'inherit'});
   execFileSync(process.execPath,['main.ts'],{cwd:consumer,stdio:'inherit'});
 } finally { rmSync(temp,{recursive:true,force:true}); }
