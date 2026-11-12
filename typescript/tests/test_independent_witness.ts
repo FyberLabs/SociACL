@@ -1,0 +1,59 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { parsePrincipalId,signWithKeyring,historyState,type PrincipalId,type ResolutionContext } from '../ids/src/index.js';
+import { seaPoint } from '../contract/account-key-seal.ts';
+import { verifyIndependentWitnesses,witnessRequestBytes,witnessReceiptBytes,
+  type IndependentWitnessPolicy,type WitnessRequest,type WitnessReceipt } from '../contract/independent-witness.ts';
+const scalar=(n:number)=>{const b=new Uint8Array(32);b[31]=n;return b;};
+const pub=(n:number)=>{const p=parsePrincipalId(seaPoint(scalar(n)));if(!p.ok)throw Error(p.reason);return p.value;};
+const records=JSON.parse(readFileSync(new URL('../../vectors/ids/records.json',import.meta.url),'utf8'));
+const context:ResolutionContext={...records.context,now:1700000020,links:new Map(),pinnedIss:new Set(),
+  history:(p:PrincipalId,at:number,until:number)=>({ok:true,value:historyState(p,[],at,until)})};
+const policy:IndependentWitnessPolicy={id:'12'.repeat(32),epoch:1,threshold:3,maxFaulty:1,
+  operators:[2,3,4,5].map(n=>({id:`operator-${n}`,keys:[{key:pub(n),notBefore:1699990000,notAfter:1700010000}]}))};
+const signed=(change:Partial<WitnessRequest>={}):WitnessRequest=>{
+  const r={v:1 as const,principal:pub(1),operation:'rotate' as const,recordDigest:'34'.repeat(32),policyId:policy.id,
+    epoch:1,issuedAt:1700000000,expiresAt:1700000300,sig:'',...change};
+  const s=signWithKeyring(scalar(1),witnessRequestBytes(r),r.principal);if(!s.ok)throw Error(s.reason);return {...r,sig:s.value};
+};
+const receipt=(r:WitnessRequest,n:number):WitnessReceipt=>{
+  const operator=`operator-${n}`,observedAt=1700000010;
+  const s=signWithKeyring(scalar(n),witnessReceiptBytes(r,operator,observedAt),pub(n));if(!s.ok)throw Error(s.reason);
+  return {operator,observedAt,sig:s.value};
+};
+const verify=(r:WitnessRequest,rows:WitnessReceipt[],p=policy)=>verifyIndependentWitnesses(r,rows,p,r.recordDigest,[],context);
+
+test('independent receipts tolerate one outage and never replace an account signature',()=>{
+  const r=signed(),rows=[2,3,4].map(n=>receipt(r,n));
+  const result=verify(r,rows);assert.ok(result.ok);if(!result.ok)return;
+  assert.equal(result.value.timestampUpperBound,1700000010);assert.equal('allowed' in result.value,false);
+  assert.equal(verify({...r,sig:'A'.repeat(86)},rows).ok,false);
+  assert.equal(verify(r,rows.slice(0,2)).ok,false);
+  assert.equal(verify(r,[rows[0]!,rows[0]!,rows[1]!]).ok,false);
+  assert.equal(verify(r,[...rows.slice(0,2),receipt(signed({recordDigest:'ab'.repeat(32)}),4)]).ok,false);
+  assert.equal(verify(r,[...rows.slice(0,2),receipt(signed({epoch:2}),4)]).ok,false);
+  assert.equal(verifyIndependentWitnesses(r,rows,policy,'cd'.repeat(32),[],context).ok,false);
+});
+
+test('operator aliases, account-as-witness and unsafe fork thresholds fail closed',()=>{
+  const r=signed(),rows=[2,3,4].map(n=>receipt(r,n));
+  const alias={...policy,operators:policy.operators.map((op,i)=>i===3?{id:'operator-5',keys:policy.operators[0]!.keys}:op)};
+  assert.equal(verify(r,rows,alias).ok,false);
+  const reused={...policy,operators:policy.operators.map((op,i)=>i===3?{id:'operator-5',keys:[{key:pub(1),notBefore:0,notAfter:1700010000}]}:op)};
+  assert.equal(verify(r,rows,reused).ok,false);
+  const twoOfThree={...policy,threshold:2,operators:policy.operators.slice(0,3)};
+  assert.equal(verify(r,rows.slice(0,2),twoOfThree).ok,false);
+  const revoke=signed({operation:'revoke'});
+  assert.ok(verify(revoke,[2,3].map(n=>receipt(revoke,n)),twoOfThree).ok);
+  assert.equal(verify(r,rows,{...policy,threshold:1}).ok,false);
+});
+
+test('witness issuance windows, future times and missing account history are rejected',()=>{
+  const r=signed(),rows=[2,3,4].map(n=>receipt(r,n));
+  const expired={...policy,operators:policy.operators.map(op=>({...op,keys:op.keys.map(k=>({...k,notAfter:1700000010}))}))};
+  assert.equal(verify(r,rows,expired).ok,false);
+  assert.equal(verify(r,[{...rows[0]!,observedAt:context.now+1},...rows.slice(1)]).ok,false);
+  assert.equal(verifyIndependentWitnesses(r,rows,policy,r.recordDigest,[],{...context,history:()=>({ok:false,reason:'missing-history'})}).ok,false);
+  assert.equal(verifyIndependentWitnesses(r,rows,policy,r.recordDigest,[],{...context,now:r.expiresAt}).ok,false);
+});
