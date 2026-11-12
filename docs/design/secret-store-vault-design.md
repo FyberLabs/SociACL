@@ -94,8 +94,8 @@ Optional multifactor decryption: an AND slot (the slot key is derived from two s
 Profile ("vault container v2", working name):
 
 - Keybag: a JWE whose content key is the vault key. Recipients are the slots. `kid` is a random per-slot id, never a principal or object name.
-- Item version: a JWE with a fresh content key (the DEK). Recipients are an `A256KW` entry under the vault key and, for shared items, `ECDH-ES+A256KW` entries to grantee `epub`s or the group epoch key. `enc` is `A256GCM`.
-- The protected header carries the profile id and version, vault id, item id, version id, epoch and algorithm set id. The signed version manifest digest is external associated data, so a ciphertext cannot be moved to another version.
+- Item version: two JWEs. The content JWE has a fresh content key (the DEK). Its recipients are an `A256KW` entry under the vault key and, for shared items, `ECDH-ES+A256KW` entries to grantee `epub`s and an `A256KW` entry under the group epoch key (a symmetric 32-byte secret, so it cannot be an `ECDH-ES` recipient; derive the wrapping key with a domain-separated HKDF). `enc` is `A256GCM`. A separate encrypted, owner-signed manifest JWE carries the epoch, revision id, parents, sensitivity flag and the digest of the content ciphertext, as in `secret-store-format.md`. The manifest signature binds the content digest, so no field depends on a digest that depends on it.
+- The protected header carries only the profile id and version, the opaque vault id, item id and version id (random, per the visibility rules in `secret-store-format.md`) and the algorithm set id. It is authenticated, not encrypted, so epoch, owner, parents and names stay in the encrypted manifest. The opaque ids in the content header, and the content digest in the signed manifest, stop a ciphertext being moved to another version.
 - Algorithm allowlist per profile version. Reject `alg` none, `zip`, `jku`, `jwk`, `x5u`, unknown critical headers, and unprotected headers that matter.
 - Passphrase and PRF slots use Argon2id and HKDF with fixed parameter-set ids (never attacker-chosen values), carried as protected extension parameters, because PBES2 in JWE is PBKDF2 only.
 - Shippable form: one JSON file holding the keybag, encrypted history and audit checkpoint, and item JWEs. Item caps stay at 1 MiB and 16 KiB.
@@ -105,7 +105,7 @@ Why the file is safe on untrusted storage: every secret-bearing field is authent
 ## 5. Sharing through SociACL
 
 1. Grant: the owner states an edge on the item object (`delegate` with an action mask and optional `until`, or `same-group`). Check, not the wrap, is the permission.
-2. Wrap: only for accessors the grant already names. The DEK is wrapped to the grantee `epub`, or the item joins a group whose epoch key is wrapped to members.
+2. Wrap: only for accessors the grant already names. The DEK is wrapped to the grantee `epub` (`ECDH-ES+A256KW`), or to the group epoch key (`A256KW`) when the item joins a group whose epoch key is wrapped to members.
 3. Read: the reader presents the grant. The destination runs Check, fresh epoch proof and signed-version admission (`read_authorized_local_vault`), then opens the wrap.
 4. Revoke: privilege-down is immediate in Check. `rotate_on_revoke` starts a new epoch with wraps for the remaining readers, and sensitive items get a new version with a fresh DEK.
 
@@ -226,7 +226,7 @@ Outcome: a user creates a vault with a passkey (or device key) slot and a recove
 - [ ] Crypto core (TypeScript): the same on WebCrypto, checked against the same vectors.
 - [ ] Slot kinds: PRF passkey, native device key, recovery key, optional passphrase (reusing the existing strength gate).
 - [ ] SAVFILE1 reader and a reseal tool.
-- [ ] SociACL checks: compose the signed-manifest digest as external associated data and route reads through `read_authorized_local_vault`.
+- [ ] SociACL checks: a separate encrypted, owner-signed manifest that binds the content ciphertext digest (no circular binding, epoch kept out of the public header), and reads routed through `read_authorized_local_vault`.
 - [ ] CLI: create, open, put, get, export, slot add and remove.
 - [ ] Browser panel in s3r.ch: open a file with the passkey, show the recovery key once.
 - [ ] Docs: update the secret-store design set.
@@ -262,7 +262,7 @@ Outcome: a user exports and restores a vault, a restored copy is flagged stale u
 Outcome: an owner shares an item with another SociACL principal or group and revokes it, with new versions closed to the revoked reader.
 
 - [ ] Data: capability-addressed recipient ids and confidential wrap manifests (no raw target or object labels in sync bytes).
-- [ ] Crypto core: grantee slots (P-256 key agreement plus key wrap) and group epoch key wraps.
+- [ ] Crypto core: grantee slots (`ECDH-ES+A256KW` to the reader `epub`) and group epoch key wraps (`A256KW` under the symmetric epoch key).
 - [ ] Service and API: wrap storage that stays under the per-principal row cap by using group epoch keys.
 - [ ] SociACL checks: grant edges, the named-set rule, fresh epoch proof on read, and `rotate_on_revoke` wired to vault versions with re-encryption of sensitive items.
 - [ ] Docs: state that revoke cannot recall plaintext already read.
