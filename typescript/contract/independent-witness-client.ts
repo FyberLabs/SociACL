@@ -14,7 +14,7 @@ export async function collectIndependentWitnesses(request:WitnessRequest,expecte
   rotations:readonly unknown[],currentPolicy:()=>IndependentWitnessPolicy,currentContext:()=>ResolutionContext,
   transports:ReadonlyMap<string,WitnessTransport>,timeoutMs=10000) {
   if(!integer(timeoutMs) || timeoutMs<1 || timeoutMs>10000)throw Error('Invalid witness deadline');
-  const context=currentContext();
+  const context=currentContext(), startedAt=context.now;
   const admitted=admitIndependentWitnessRequest(request,currentPolicy(),expectedRecordDigest,rotations,context);
   if(!admitted.ok)throw Error(admitted.reason);
   // Snapshot only sanitized own-data fields, before handing anything to a transport.
@@ -41,7 +41,7 @@ export async function collectIndependentWitnesses(request:WitnessRequest,expecte
       }catch{return undefined;}
     }));
     const fresh=currentContext();
-    if(fresh.now<context.now)throw Error('Witness clock rollback');
+    if(fresh.now<startedAt)throw Error('Witness clock rollback');
     const readmitted=admitIndependentWitnessRequest(r,currentPolicy(),expectedRecordDigest,rotations,fresh);
     if(!readmitted.ok || JSON.stringify(readmitted.value.policy)!==policyBytes)throw Error('Witness policy or account changed');
     const receipts=results.filter((row):row is WitnessReceipt=>row!==undefined && row.observedAt<=fresh.now);

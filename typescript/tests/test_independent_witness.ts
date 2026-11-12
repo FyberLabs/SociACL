@@ -111,3 +111,12 @@ test('collection rejects before sending forged account intent and rechecks expir
   changed=false;
   await assert.rejects(collectIndependentWitnesses(r,r.recordDigest,[],()=>policy,()=>changed?{...context,now:context.now-1}:context,transports));
 });
+
+test('collection detects rollback when the provider mutates a shared context',async()=>{
+  const r=signed(), shared={...context};
+  const transports=new Map<string,WitnessTransport>([2,3,4,5].map(n=>[`operator-${n}`,async request=>{
+    shared.now=context.now-1;
+    return receipt(request,n);
+  }]));
+  await assert.rejects(collectIndependentWitnesses(r,r.recordDigest,[],()=>policy,()=>shared,transports),/clock rollback/);
+});
