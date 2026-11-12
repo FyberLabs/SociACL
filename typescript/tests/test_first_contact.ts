@@ -132,6 +132,9 @@ test('confidential first contact authenticates after opening and never returns a
   assert.equal(openFirstContactRequest(envelope, privateKey, descriptor, [], { ...ctx, now: raw.expiresAt }).ok, false);
   assert.equal(openFirstContactRequest(envelope, privateKey, descriptor, [],
     { ...ctx, history: () => ({ ok: false, reason: 'missing-history' }) }).ok, false);
+  const bom = signed({ message: '\uFEFFhello' });
+  assert.deepEqual(openFirstContactRequest(sealFirstContactRequest(bom, descriptor), privateKey,
+    descriptor, [], ctx), verify(bom));
   const forged = sealFirstContactRequest({ ...request, message: 'forged' }, descriptor);
   assert.equal(openFirstContactRequest(forged, privateKey, descriptor, [], ctx).ok, false);
 });

@@ -3,7 +3,7 @@ import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from 'node:cr
 import { p256 } from '@noble/curves/nist.js';
 import { parsePrincipalId, type ResolutionContext, type Result } from '../ids/src/index.js';
 import { fail } from '../ids/src/util.js';
-import { decodeLengthPrefixed, seaPoint, sharedX, unb64, uncompressedFromSea } from './account-key-seal.ts';
+import { seaPoint, sharedX, unb64, uncompressedFromSea } from './account-key-seal.ts';
 import { lengthPrefixed } from './canonical.ts';
 import { FIRST_CONTACT_DOMAIN, firstContactRequestBytes, parseFirstContactRequest,
   verifyFirstContactRequest, type FirstContactDescriptor, type FirstContactRequest,
@@ -21,6 +21,19 @@ function aadFor(d: FirstContactSealDescriptor, ephemeral: Uint8Array): Uint8Arra
       !Number.isSafeInteger(d.revision) || d.revision < 1) throw Error('bad-record');
   return lengthPrefixed([FIRST_CONTACT_SEAL_DOMAIN, '1', d.channelId, String(d.revision),
     d.encryptionEpub, seaPoint(ephemeral)]);
+}
+function decodePlaintext(bytes: Uint8Array): string[] {
+  const fields: string[] = [];
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const decoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
+  let offset = 0;
+  while (offset < bytes.length) {
+    if (fields.length >= 11 || bytes.length - offset < 4) throw Error('bad-record');
+    const length = view.getUint32(offset, true); offset += 4;
+    if (length > bytes.length - offset) throw Error('bad-record');
+    fields.push(decoder.decode(bytes.subarray(offset, offset + length))); offset += length;
+  }
+  return fields;
 }
 function keyFor(shared: Uint8Array, aad: Uint8Array): Uint8Array {
   return new Uint8Array(hkdfSync('sha256', shared, new Uint8Array(32), aad, 32));
@@ -79,7 +92,7 @@ export function openFirstContactRequest(envelope: Uint8Array, recipientEpriv: st
     const decipher = createDecipheriv('aes-256-gcm', key, nonce);
     decipher.setAAD(aad); decipher.setAuthTag(blob.subarray(blob.length - 16));
     plain = new Uint8Array(Buffer.concat([decipher.update(blob.subarray(78, -16)), decipher.final()]));
-    const f = decodeLengthPrefixed(plain);
+    const f = decodePlaintext(plain);
     if (f.length !== 11 || f[0] !== FIRST_CONTACT_DOMAIN || f[1] !== '1') return fail('bad-record');
     const parsed = parseFirstContactRequest({ v: 1, channelId: f[2], descriptorRevision: Number(f[3]),
       sender: f[4], replyEpub: f[5], nonce: f[6], issuedAt: Number(f[7]), expiresAt: Number(f[8]),

@@ -42,6 +42,12 @@ fn confidential_first_contact_and_cross_language() {
     assert!(open_first_contact_request(&blob, &private, &other, &[], &ctx).is_err());
     scalar[31] = 3;
     assert!(open_first_contact_request(&blob, &Base64UrlUnpadded::encode_string(&scalar), &descriptor, &[], &ctx).is_err());
+    let mut bom = row.clone(); bom["message"] = json!("\u{feff}hello");
+    let bom_request = parse_first_contact_request(&bom).unwrap();
+    scalar[31] = 1;
+    bom["sig"] = json!(sign_with_keyring(&scalar, &first_contact_request_bytes(&bom_request).unwrap(), &r.sender).unwrap());
+    assert_eq!(open_first_contact_request(&seal_first_contact_request(&bom, &descriptor).unwrap(),
+        &private, &descriptor, &[], &ctx).unwrap().request.message, "\u{feff}hello");
     let mut forged = row.clone(); forged["message"] = json!("forged");
     assert!(open_first_contact_request(&seal_first_contact_request(&forged, &descriptor).unwrap(),
         &private, &descriptor, &[], &ctx).is_err());
