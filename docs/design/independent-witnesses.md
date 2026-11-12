@@ -145,4 +145,6 @@ The old policy must come from independently trusted retained state, never from
 the proposal. The returned policy is a candidate for atomic compare-and-swap;
 this verifier does not bootstrap trust, persist a floor, prove latest policy,
 or supply durable single-successor witness decisions. Those remain prerequisites
-for runtime activation, as does Rust transition parity.
+for runtime activation. Rust implements the same transition verifier; CI exchanges
+independently signed old/new quorum bundles in both directions and compares their
+canonical transition digests.

@@ -47,13 +47,29 @@ fn shared_transcripts_quorum_refusals_and_cross_language_signatures(){
     let mut revoke=r.clone();revoke["operation"]=json!("revoke");let revoke=sign_request(revoke);
     let mut two=policy.clone();two["threshold"]=json!(2);two["operators"].as_array_mut().unwrap().pop();
     assert!(verify_independent_witnesses(&revoke,&json!([receipt(&revoke,2,1700000010),receipt(&revoke,3,1700000010)]),&two,expected,&[],&ctx).is_ok());
+    let mut next=policy.clone();next["epoch"]=json!(2);
+    let transition_digest=independent_witness_transition_digest(&policy,&next).unwrap();
+    let mut old=r.clone();old["recordDigest"]=json!(transition_digest);let old=sign_request(old);
+    let mut fresh=old.clone();fresh["epoch"]=json!(2);let fresh=sign_request(fresh);
+    let old_rows=json!([receipt(&old,2,1700000010),receipt(&old,3,1700000010),receipt(&old,4,1700000010)]);
+    let new_rows=json!([receipt(&fresh,2,1700000010),receipt(&fresh,3,1700000010),receipt(&fresh,4,1700000010)]);
+    assert_eq!(advance_independent_witness_policy(&policy,&next,&public(1),&old,&old_rows,&fresh,&new_rows,&[],&ctx).unwrap(),next);
+    assert!(advance_independent_witness_policy(&policy,&next,&public(1),&old,&json!([]),&fresh,&new_rows,&[],&ctx).is_err());
+    assert!(advance_independent_witness_policy(&policy,&next,&public(1),&old,&old_rows,&fresh,&json!([]),&[],&ctx).is_err());
+    let mut skipped=next.clone();skipped["epoch"]=json!(3);
+    assert!(advance_independent_witness_policy(&policy,&skipped,&public(1),&old,&old_rows,&fresh,&new_rows,&[],&ctx).is_err());
+    assert!(advance_independent_witness_policy(&policy,&next,&public(2),&old,&old_rows,&fresh,&new_rows,&[],&ctx).is_err());
+    let transition=json!({"digest":transition_digest,"next":next,"oldRequest":old,"oldReceipts":old_rows,"newRequest":fresh,"newReceipts":new_rows});
     if let Ok(path)=std::env::var("WITNESS_RUST_VECTOR"){
-        std::fs::write(path,serde_json::to_vec(&json!({"request":r,"receipts":rows,"policy":policy,"result":result})).unwrap()).unwrap();
+        std::fs::write(path,serde_json::to_vec(&json!({"request":r,"receipts":rows,"policy":policy,"result":result,"transition":transition})).unwrap()).unwrap();
     }
     if let Ok(path)=std::env::var("WITNESS_TS_VECTOR"){
         let other:Value=serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
         let observed=verify_independent_witnesses(&other["request"],&other["receipts"],&policy,expected,&[],&ctx).unwrap();
         assert_eq!(serde_json::to_value(observed).unwrap(),other["result"]);
+        let t=&other["transition"];
+        assert_eq!(t["digest"],transition["digest"]);
+        assert_eq!(advance_independent_witness_policy(&policy,&t["next"],&public(1),&t["oldRequest"],&t["oldReceipts"],&t["newRequest"],&t["newReceipts"],&[],&ctx).unwrap(),next);
     }
     let missing=|_:&PrincipalId,_,_|Err(Reason::MissingHistory);ctx.history=&missing;
     assert_eq!(verify_independent_witnesses(&r,&rows,&policy,expected,&[],&ctx),Err(Reason::MissingHistory));
