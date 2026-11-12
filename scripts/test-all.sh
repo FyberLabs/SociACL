@@ -18,6 +18,7 @@ bash "${root}/scripts/release-automation.test.sh"
 
 # The dependency audit uses the pinned TypeScript parser (tooling only).
 npm ci --prefix typescript
+npm ci --prefix typescript/ids
 node "${root}/scripts/audit-forbidden-names.mjs"
 
 cargo build --workspace --locked
@@ -29,12 +30,11 @@ FIRST_CONTACT_RUST_VECTOR="${root}/target/ids/first-contact-rust.bin" IDS_VECTOR
 
 npx --prefix typescript tsc --strict --noEmit -p typescript/contract
 MESH_VECTOR_REPORT="${root}/target/mesh/ts-vectors.txt" node --test typescript/tests/*.js
-FIRST_CONTACT_RUST_VECTOR="${root}/target/ids/first-contact-rust.bin" FIRST_CONTACT_TS_VECTOR="${root}/target/ids/first-contact-ts.bin" node --experimental-strip-types --test typescript/tests/test_encdisc_vectors.ts typescript/tests/test_presentation.ts typescript/tests/test_inbox.ts typescript/tests/test_epoch.ts typescript/tests/test_migration.ts typescript/tests/test_account_key.ts typescript/tests/test_account_keyring.ts typescript/tests/test_recovery.ts typescript/tests/test_contact_lane.ts typescript/tests/test_first_contact.ts typescript/tests/test_vault_format.ts typescript/tests/test_consume.ts
+FIRST_CONTACT_RUST_VECTOR="${root}/target/ids/first-contact-rust.bin" FIRST_CONTACT_TS_VECTOR="${root}/target/ids/first-contact-ts.bin" node --experimental-strip-types --test typescript/tests/test_encdisc_vectors.ts typescript/tests/test_presentation.ts typescript/tests/test_inbox.ts typescript/tests/test_epoch.ts typescript/tests/test_migration.ts typescript/tests/test_account_key.ts typescript/tests/test_account_keyring.ts typescript/tests/test_recovery.ts typescript/tests/test_contact_lane.ts typescript/tests/test_first_contact.ts typescript/tests/test_vault_format.ts typescript/tests/test_independent_witness.ts typescript/tests/test_consume.ts
 FIRST_CONTACT_TS_VECTOR="${root}/target/ids/first-contact-ts.bin" cargo test -p sociacl-encdisc --locked --test first_contact
 npm run --prefix typescript typecheck
 
 # Independent browser package: each language reports exactly which shared vectors ran.
-npm ci --prefix typescript/ids
 IDS_VECTOR_REPORT="${root}/target/ids/ts-vectors.txt" node --test typescript/ids/test/*.js
 npm run --prefix typescript/ids typecheck
 npm run --prefix typescript/ids browser

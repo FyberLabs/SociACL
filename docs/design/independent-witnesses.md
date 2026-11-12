@@ -53,3 +53,50 @@ attestation and transition bytes; add duplicate/mixed-digest/mixed-epoch vectors
 model concurrent fork attempts and rollback; provision independently recoverable
 witness lifecycles; prove unavailable quorum fails closed in nightly CI. #62
 stays open until those mechanisms exist and are tested.
+
+## Executable receipt experiment
+
+`typescript/contract/independent-witness.ts` makes the proposed boundaries
+executable without changing existing rotation/revocation wire formats. It is an
+experimental receipt verifier, not a replacement for `verifyRotate`, `verifyRevoke`
+or current witness policy installation. No service trusts its output yet.
+
+An independently authenticated policy names an opaque policy ID, positive epoch,
+threshold, tolerated faulty-operator count, and at most 16 operators with at most
+four bounded-issuance keys each. Operator names and public keys must be unique;
+rotating keys does not increase an operator's vote. Account signing keys cannot
+also be witness keys. Administrative independence remains a deployment assertion,
+not something a list of public keys proves.
+
+The account signs length-prefixed UTF-8 fields: domain
+`sociacl-independent-witness-request-v1`, version `1`, principal, operation
+(`rotate` or `revoke`), exact underlying record digest, policy ID, epoch, issuedAt
+and expiresAt. Decimal spellings are canonical. The request window is at most
+600 seconds. Witnesses sign domain `sociacl-independent-witness-receipt-v1`, the
+SHA-256 hex digest of those request bytes, their operator ID and observedAt.
+Signatures use the existing compact P-256/SHA-256 identity contract. Account
+signature validity and independently authenticated current-key history are checked
+before any quorum result is returned. The caller independently supplies the
+expected underlying record digest; witnesses cannot substitute another record.
+
+Every included receipt must verify inside both its request window and its key's
+issuance window. Duplicate operators, aliases sharing a key, mixed epochs/digests,
+unknown operators and future observation times fail. The returned timestamp upper
+bound is the latest included observation time, not a claim of exact creation time.
+The result contains no grant, account successor, credential or authorization.
+The original account-signed record still needs its full protocol verifier.
+
+For tolerated fault count `f`, require `q > f` and `q <= n-f`. Rotation also
+requires `2q-n > f`. Thus 2-of-3 with one tolerated fault can timestamp revocation
+but is refused for rotation; 3-of-4 can satisfy the rotation intersection bound.
+This does not manufacture fork consensus: honest witnesses must additionally
+persist single-successor decisions before signing, across restarts and key
+changes. That storage/service rule remains a prerequisite to activating rotation.
+
+PR CI covers one unavailable operator, missing quorum, invalid account signatures,
+duplicate votes/keys, mixed records and epochs, unsafe thresholds, key windows,
+missing account history and future times. Still required before adoption: Rust
+parity and frozen shared vectors; authenticated policy transitions and durable
+operator anti-equivocation; independent operator provisioning; scheduled outage,
+concurrent-fork and rollback tests; and explicit integration into the existing
+record verifiers. Peer recovery remains a separate pre-enrolled trustee protocol.
