@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { parsePrincipalId, signWithKeyring, historyState, type ResolutionContext } from '../ids/src/index.js';
 import { firstContactRequestBytes, parseFirstContactRequest, verifyFirstContactRequest,
@@ -104,6 +104,17 @@ test('confidential first contact authenticates after opening and never returns a
   for (const secret of [request.sender, request.replyEpub, request.sig, request.message, request.nonce]) {
     assert.equal(Buffer.from(envelope).includes(Buffer.from(secret)), false);
   }
+  if (process.env.FIRST_CONTACT_RUST_VECTOR) {
+    const rust = openFirstContactRequest(readFileSync(process.env.FIRST_CONTACT_RUST_VECTOR), privateKey, descriptor, [], ctx);
+    assert.equal(rust.ok, true);
+    if (rust.ok) {
+      assert.equal(rust.value.requestId, vectors.requestId);
+      assert.equal(rust.value.replayKey, vectors.replayKey);
+      assert.equal(rust.value.replayUntil, descriptor.expiresAt);
+      assert.equal(rust.value.request.message, request.message);
+    }
+  }
+  if (process.env.FIRST_CONTACT_TS_VECTOR) writeFileSync(process.env.FIRST_CONTACT_TS_VECTOR, envelope);
   const opened = openFirstContactRequest(envelope, privateKey, descriptor, [], ctx);
   assert.deepEqual(opened, verify(request));
   for (const offset of [0, 1, 20, 66, 78, envelope.length - 1]) {

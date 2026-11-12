@@ -131,7 +131,10 @@ Opening verifies the recipient key, authenticated encryption, canonical payload,
 current sender signature/history and descriptor policy before returning verified
 request metadata. Durable replay admission and explicit recipient acceptance
 remain separate. Invalid ciphertext never yields a partially decoded request.
-The TypeScript PR suite exercises randomization, tampering, destination binding,
-wrong keys, bounds, expiry, missing history and forged inner signatures. Rust
-cross-language envelope vectors remain an acceptance gate; this reference alone
-must not be advertised as a deployed public request channel.
+The TypeScript and Rust PR suites exercise randomization, tampering, destination
+binding, wrong keys, bounds, expiry and forged inner signatures; the TypeScript
+suite also checks missing history. CI exchanges freshly sealed ciphertext in both
+directions and compares request identity, replay identity, retention and exact
+message bytes. This reference alone must not be advertised as a deployed public
+request channel; provisioning, replay persistence and explicit acceptance remain
+required.

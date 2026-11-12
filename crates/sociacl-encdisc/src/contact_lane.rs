@@ -493,7 +493,7 @@ fn lane_secret_bytes(hex_text: &str) -> Result<zeroize::Zeroizing<Vec<u8>>, EncD
 }
 
 /// RFC 5869 HKDF-SHA256, L = 32. Salt is HashLen zero bytes. One expand block.
-fn hkdf_sha256(ikm: &[u8], info: &[u8]) -> Result<zeroize::Zeroizing<[u8; 32]>, EncDiscError> {
+pub(crate) fn hkdf_sha256(ikm: &[u8], info: &[u8]) -> Result<zeroize::Zeroizing<[u8; 32]>, EncDiscError> {
     let salt = [0u8; 32];
     let mut prk = zeroize::Zeroizing::new([0u8; 32]);
     {
