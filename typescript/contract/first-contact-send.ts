@@ -45,12 +45,17 @@ export async function prepareFirstContactSubmission(input:unknown,advertisement:
     async submit(append:FirstContactAppend,timeoutMs=10000):Promise<string> {
       if(!integer(timeoutMs)||timeoutMs<1||timeoutMs>10000)throw Error('Invalid submission deadline');
       await floor.observe(expected,authenticate);
-      const controller=new AbortController();let timer:ReturnType<typeof setTimeout>|undefined;
+      const deadline=performance.now()+timeoutMs;
+      const controller=new AbortController();
+      const timely=()=>{if(controller.signal.aborted||performance.now()>=deadline){controller.abort();throw Error('First-contact submission ambiguous');}};
+      let timer:ReturnType<typeof setTimeout>|undefined;
       try {
         const timeout=new Promise<never>((_,reject)=>{timer=setTimeout(()=>{controller.abort();reject(Error('First-contact submission ambiguous'));},timeoutMs);});
         const result=await Promise.race([Promise.resolve().then(()=>append(descriptor.descriptor.channelId,new Uint8Array(ciphertext),controller.signal)),timeout]);
+        timely();
         if(result!==ciphertextId)throw Error('First-contact acknowledgement mismatch');
         await floor.observe(expected,authenticate);
+        timely();
         return ciphertextId;
       }finally{if(timer!==undefined)clearTimeout(timer);controller.abort();}
     },

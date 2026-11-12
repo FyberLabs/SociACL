@@ -275,6 +275,17 @@ test('sender deadline aborts transport and expiry refuses retry without a new wr
   let signal:AbortSignal|undefined;
   await assert.rejects(prepared.submit(async(_channel,_body,s)=>{signal=s;return new Promise(()=>{});},10));
   assert.equal(signal?.aborted,true);
+  await assert.rejects(prepared.submit(async()=>{
+    const until=performance.now()+30;while(performance.now()<until){} // CI-only blocked-loop regression.
+    return prepared.ciphertextId;
+  },5),/ambiguous/);
+  let delayCommit=false;
+  const delayed={...floor,observe:async (...args:Parameters<typeof floor.observe>)=>{
+    if(delayCommit)await new Promise(resolve=>setTimeout(resolve,30));
+    return floor.observe(...args);
+  }};
+  const slowCommit=await prepareFirstContactSubmission(signed(),advertisement,raw.sender,delayed,state,state);
+  await assert.rejects(slowCommit.submit(async()=>{delayCommit=true;return slowCommit.ciphertextId;},5),/ambiguous/);
   now=raw.expiresAt;
   let expiredCalls=0;
   await assert.rejects(prepared.submit(async()=>{expiredCalls++;return prepared.ciphertextId;}));
