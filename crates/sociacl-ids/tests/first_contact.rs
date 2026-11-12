@@ -83,3 +83,27 @@ fn parser_rejects_extra_fields_coercion_and_utf8_overflow() {
     // serde_json rejects unpaired Unicode before a Value can enter the parser.
     assert!(serde_json::from_str::<Value>(r#""\ud800""#).is_err());
 }
+
+#[test]
+fn retired_key_and_omitted_rotation_fail_closed() {
+    let records: Value = serde_json::from_str(include_str!("../../../vectors/ids/records.json")).unwrap();
+    let c = &records["context"];
+    let jwks: Jwks = serde_json::from_value(c["jwks"].clone()).unwrap();
+    let links = c["links"].as_array().unwrap().iter()
+        .map(|pair| (pair[0].as_str().unwrap().to_owned(), pair[1].clone())).collect();
+    let issuers = serde_json::from_value(c["pinnedIss"].clone()).unwrap();
+    let policy = serde_json::from_value(c["policy"].clone()).unwrap();
+    let v = fixture(); let d = descriptor(&v); let row = signed(v["request"].clone());
+    let next = parse_principal_id(row["replyEpub"].as_str().unwrap()).unwrap();
+    let history = |p: &PrincipalId, at, until| {
+        let mut state = history_state(p, &[], at, until);
+        state.current_key = next.clone();
+        Ok(state)
+    };
+    let mut ctx = context(&jwks, &links, &policy, &issuers, &history);
+    ctx.now = c["now"].as_u64().unwrap();
+    assert_eq!(verify_first_contact_request(&row, &[], &ctx, &d), Err(Reason::MissingHistory));
+    let rotation = records["accept"].as_array().unwrap().iter()
+        .find(|r| r["name"] == "wallet-rotate").unwrap()["input"].clone();
+    assert_eq!(verify_first_contact_request(&row, &[rotation], &ctx, &d), Err(Reason::UnwitnessedRetiredKey));
+}
