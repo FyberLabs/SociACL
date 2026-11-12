@@ -208,3 +208,19 @@ discovery and disable publication, s3r.ch transport/UI, bounded public-channel
 storage, delivery reconciliation and service E2E remain separate requirements.
 The existing scheduled Chromium case now covers competing descriptor observations
 and process restart; ordinary PR CI uses an IndexedDB fixture for these contracts.
+
+## Public-channel polling into the recipient journal
+
+`pollFirstContact` connects a provisioned Spanopticon ciphertext source to the
+recipient-owned journal. It bounds the transport deadline and batch, snapshots
+ciphertexts and verifies their digests before asynchronous admission, decrypts
+and authenticates sender history, and reserves each replay key before returning
+plaintext. Invalid signatures do not block other valid rows; duplicate requests
+are skipped. Storage failures abort rather than pretending admission succeeded.
+Authorization is rechecked after commit and before return; a disabled or changed
+descriptor aborts the batch. Expired requests retain their committed replay keys.
+The caller must independently authenticate history and supply the current clock.
+No incoming request is automatically accepted and no outbox grant is delivered.
+The adapter contract returns decoded `{id,ciphertext:Uint8Array}` rows and never
+accepts a destination URL from storage. Product UI, discovery and grant delivery
+remain separate integrations.

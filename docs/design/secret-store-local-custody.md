@@ -122,3 +122,23 @@ ledger. It does not authenticate version DAGs, provide conflict retention,
 implement sharing/sync, or replace Visor's execute/use/sign broker. Tests compose
 real signatures and destination proofs with an in-memory commit callback in CI;
 filesystem persistence remains in the scheduled adapter.
+
+## Signed version history and conflicts
+
+`VaultVersionHistory` admits immutable, owner-signed version records against
+current authenticated account history and independently supplied epoch/revision.
+Explicit initialization requires an independent exact transcript digest and item
+binding. Later records require known parents; missing history never resets to a
+new root. Identical retries preserve state, but reusing a version ID for different
+signed content fails. Concurrent children retain both heads. Only a signed
+joining descendant resolves the conflict; timestamps never select a winner.
+`read_expectation()` refuses ambiguous heads and carries the original object
+binding into the authorized-read API. Sensitive epoch changes cannot reuse a
+parent's ciphertext digest, although a new digest alone cannot prove fresh DEKs.
+
+The bounded in-memory graph retains all accepted version IDs and refuses additions
+at 256 entries rather than forgetting equivocation. This is an admission core,
+not a durable ledger: the consumer must encrypt and atomically retain the graph,
+protect its head from rollback and authenticate current epoch state. The file
+backend still needs that ledger and consumer integration. Retention/pruning needs
+an authenticated checkpoint design before this bound can be raised or compacted.

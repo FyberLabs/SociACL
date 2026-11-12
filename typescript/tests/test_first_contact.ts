@@ -169,3 +169,38 @@ test('discovery authenticates before committing floors and refuses a signed same
   await assert.rejects(observeFirstContactDescriptor(newer,raw.sender,store,[],{...ctx,history:()=>({ok:false,reason:'missing-history'})}));
   store.close();
 });
+
+import { createHash } from 'node:crypto';
+import { pollFirstContact } from '../contract/first-contact-poll.ts';
+import type { FirstContactStore } from '../ids/src/first-contact-store.js';
+test('public polling authenticates ciphertext and commits replay state before disclosure',async()=>{
+  const descriptor={...vectors.descriptor,encryptionEpub:raw.replyEpub};
+  const scalar=Buffer.alloc(32);scalar[31]=2;const privateKey=scalar.toString('base64url');
+  const ciphertext=sealFirstContactRequest(signed(),descriptor);
+  const forged=sealFirstContactRequest({...signed(),message:'forged'},descriptor);
+  const row=(ciphertext:Uint8Array)=>({id:createHash('sha256').update(ciphertext).digest('hex'),ciphertext});
+  const seen=new Set<string>();let writes=0,fail=false,expired=false,disabled=false;
+  const store={owner:raw.sender,descriptor:async()=>{if(disabled)throw Error('disabled');return descriptor;},
+    reserve:async(_d:unknown,r:{replayKey:string})=>{
+      if(fail)throw Error('commit failed');if(seen.has(r.replayKey))return false;
+      writes++;seen.add(r.replayKey);return true;
+    }} as FirstContactStore;
+  const state=()=>({rotations:[],context:{...ctx,now:expired?raw.expiresAt:ctx.now}});
+  const source=async(channel:string)=>{assert.equal(channel,descriptor.channelId);return [row(forged),row(ciphertext),row(ciphertext)];};
+  const result=await pollFirstContact(store,source,privateKey,state);
+  assert.equal(writes,1);assert.equal(result.length,1);assert.equal(result[0]!.request.message,raw.message);
+  assert.deepEqual(await pollFirstContact(store,source,privateKey,state),[]);
+  seen.clear();fail=true;await assert.rejects(pollFirstContact(store,source,privateKey,state),/commit failed/);
+  fail=false;
+  const reserve=store.reserve;store.reserve=async(...args)=>{const added=await reserve(...args);expired=true;return added;};
+  assert.deepEqual(await pollFirstContact(store,source,privateKey,state),[]);
+  assert.equal(seen.size,1);
+  expired=false;seen.clear();store.reserve=async(...args)=>{const added=await reserve(...args);disabled=true;return added;};
+  await assert.rejects(pollFirstContact(store,source,privateKey,state),/disabled/);
+  disabled=false;store.reserve=reserve;
+  await assert.rejects(pollFirstContact(store,async()=>[{...row(ciphertext),id:'00'.repeat(32)}],privateKey,state),/digest/);
+  await assert.rejects(pollFirstContact(store,async()=>new Array(129),privateKey,state),/batch/);
+  let aborted=false;
+  await assert.rejects(pollFirstContact(store,async(_,signal)=>{signal.addEventListener('abort',()=>{aborted=true;});return new Promise(()=>{});},privateKey,state,5),/timeout/);
+  assert.equal(aborted,true);
+});

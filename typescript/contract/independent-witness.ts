@@ -98,3 +98,21 @@ export function verifyIndependentWitnesses(request:WitnessRequest,receipts:reado
       policyId:p.id,epoch:p.epoch,operators:Object.freeze([...seen].sort()),timestampUpperBound:upper}));
   }catch{return fail('bad-attestation');}
 }
+
+/** Canonical policy identity for joint-quorum transitions. Sorting changes no membership. */
+export function independentWitnessPolicyBytes(input:IndependentWitnessPolicy):Uint8Array {
+  const p=record(input,'epoch,id,maxFaulty,operators,threshold');
+  if(!hash(p.id)||!integer(p.epoch)||!integer(p.threshold)||!integer(p.maxFaulty))throw Error('bad-attestation');
+  const ops=array(p.operators,16).map(value=>{
+    const op=record(value,'id,keys');if(!operator(op.id))throw Error('bad-attestation');
+    const keys=array(op.keys,4).map(value=>{
+      const k=record(value,'key,notAfter,notBefore');
+      if(!parsePrincipalId(k.key).ok||!integer(k.notBefore)||!integer(k.notAfter))throw Error('bad-attestation');
+      return {key:k.key as string,notBefore:k.notBefore as number,notAfter:k.notAfter as number};
+    }).sort((a,b)=>a.key<b.key?-1:a.key>b.key?1:0);
+    return {id:op.id,keys};
+  }).sort((a,b)=>a.id<b.id?-1:a.id>b.id?1:0);
+  const fields=['sociacl-independent-witness-policy-v1',p.id,String(p.epoch),String(p.threshold),String(p.maxFaulty),String(ops.length)];
+  for(const op of ops){fields.push(op.id,String(op.keys.length));for(const key of op.keys)fields.push(key.key,String(key.notBefore),String(key.notAfter));}
+  return lp(fields);
+}

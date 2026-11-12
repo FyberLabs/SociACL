@@ -120,3 +120,23 @@ test('collection detects rollback when the provider mutates a shared context',as
   }]));
   await assert.rejects(collectIndependentWitnesses(r,r.recordDigest,[],()=>policy,()=>shared,transports),/clock rollback/);
 });
+
+import { advanceIndependentWitnessPolicy, independentWitnessTransitionDigest } from '../contract/independent-witness-transition.ts';
+test('policy changes require account intent and both old and new rotation quorums',()=>{
+  const next={...policy,epoch:2};
+  const digest=independentWitnessTransitionDigest(policy,next);
+  const old=signed({recordDigest:digest}), fresh=signed({recordDigest:digest,epoch:2});
+  const rows=(r:WitnessRequest)=>[2,3,4].map(n=>receipt(r,n));
+  const advance=(p=next,a=old,b=fresh,oldRows=rows(a),newRows=rows(b))=>
+    advanceIndependentWitnessPolicy(policy,p,pub(1),a,oldRows,b,newRows,[],context);
+  assert.deepEqual(advance(),next);
+  assert.throws(()=>advance(next,old,fresh,rows(old).slice(0,2)));
+  assert.throws(()=>advance(next,old,fresh,rows(old),rows(fresh).slice(0,2)));
+  assert.throws(()=>advance({...next,epoch:3}));
+  assert.throws(()=>advance({...next,threshold:2}));
+  assert.throws(()=>advance(next,{...old,sig:'A'.repeat(86)}));
+  assert.throws(()=>advance(next,signed({recordDigest:digest,operation:'revoke'})));
+  assert.throws(()=>advanceIndependentWitnessPolicy(policy,next,pub(2),old,rows(old),fresh,rows(fresh),[],context));
+  assert.equal(independentWitnessTransitionDigest({...policy,operators:[...policy.operators].reverse()},next),digest);
+  assert.notEqual(independentWitnessTransitionDigest(policy,{...next,operators:next.operators.slice(0,3)}),digest);
+});
