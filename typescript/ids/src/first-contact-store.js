@@ -60,15 +60,22 @@ export async function openFirstContactStore(options) {
   }
   // A single readwrite transaction serializes all tabs for this recipient. Resolve
   // only on completion, never on request success; abort/quota errors expose no row.
-  /** @template T @param {(state:State,t:number)=>T} change @param {boolean} [allowMissing] @returns {Promise<T>} */
-  function transaction(change, allowMissing = false) {
+  /** @template T @param {(state:State,t:number)=>T} change @param {boolean} [allowMissing] @param {()=>number} [deadline] @returns {Promise<T>} */
+  function transaction(change, allowMissing = false, deadline = () => Infinity) {
     return new Promise((resolve, reject) => {
       const tx = db.transaction(STORE, 'readwrite', { durability: 'strict' });
       /** @type {T} */ let output;
+      let committedClock = 0;
       /** @type {unknown} */ let failure;
       tx.onabort = () => reject(failure ?? tx.error ?? Error('Inbox transaction aborted'));
       tx.onerror = () => {};
-      tx.oncomplete = () => resolve(output);
+      tx.oncomplete = () => {
+        try {
+          const finished = time();
+          if (finished < committedClock || finished >= deadline()) throw Error('Clock changed or request expired during commit');
+          resolve(output);
+        } catch (error) { reject(error); }
+      };
       if (tx.durability !== 'strict') { failure = Error('Strict durability unavailable'); tx.abort(); return; }
       const store = tx.objectStore(STORE), read = store.get(owner);
       read.onsuccess = () => {
@@ -82,7 +89,7 @@ export async function openFirstContactStore(options) {
           if (state.v !== 1 || state.owner !== owner || !integer(state.revision) ||
               !integer(state.clock) || state.clock > t || !state.rows || Array.isArray(state.rows) ||
               Object.keys(state.rows).length > MAX_ROWS) throw Error('Corrupt inbox or clock rollback');
-          state.clock = t;
+          state.clock = t; committedClock = t;
           for (const [key, row] of Object.entries(state.rows)) {
             if (!hex(key, 64) || !integer(row.replayUntil)) throw Error('Corrupt replay row');
             if (row.replayUntil <= t && row.status !== 'accepted') delete state.rows[key];
@@ -128,7 +135,7 @@ export async function openFirstContactStore(options) {
         state.rows[r.replayKey] = { replayKey:r.replayKey,requestId:r.requestId,replayUntil:r.replayUntil,
           expiresAt:r.expiresAt,envelope:r.envelope,revision:d.revision,status:'pending' };
         return true;
-      });
+      }, false, () => Math.min(d.expiresAt, r.expiresAt));
     },
     pending: () => transaction((state, t) => {
       match(state, state.descriptor, t);
@@ -141,18 +148,20 @@ export async function openFirstContactStore(options) {
     /** @param {Descriptor} descriptor @param {string} replayKey @param {string} requestId @param {Decision} decision */
     decide(descriptor, replayKey, requestId, decision) {
       const d = clone(descriptor), selected = clone(decision);
+      let expires = d.expiresAt;
       return transaction((state, t) => {
         match(state, d, t);
         const row = state.rows[replayKey];
         if (!hex(replayKey, 64) || !hex(requestId, 64) || !row || row.requestId !== requestId ||
             row.revision !== state.revision || row.status !== 'pending' || row.expiresAt <= t) throw Error('Request is not pending');
+        expires = Math.min(expires, row.expiresAt);
         if (selected?.status === 'accepted') {
           if (!integer(selected.rotationSeq) || !hex(selected.ciphertextHex, selected.ciphertextHex?.length) ||
               selected.ciphertextHex.length < 188 || selected.ciphertextHex.length > 8192 || selected.ciphertextHex.length % 2) throw Error('Invalid lane grant outbox');
           row.grant = { ciphertextHex: selected.ciphertextHex, rotationSeq: selected.rotationSeq };
         } else if (selected?.status !== 'rejected') throw Error('Explicit decision required');
         row.status = selected.status;
-      });
+      }, false, () => expires);
     },
     // Accepted grants survive request expiry, disable and descriptor rotation.
     // Never evict an unacknowledged grant to make room for new requests.

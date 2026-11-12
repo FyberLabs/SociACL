@@ -1,3 +1,8 @@
+import { openFirstContactStore, type FirstContactStore } from 'sociacl-ids/first-contact-store';
+if (typeof openFirstContactStore !== 'function') throw Error('Missing first-contact store export');
+type FirstContactOutbox = Awaited<ReturnType<FirstContactStore['outbox']>>;
+const emptyFirstContactOutbox: FirstContactOutbox = [];
+void emptyFirstContactOutbox;
 import { resolveStoreAccount, type Diagnostic, parseTenantId, mintObjectId, objectSoul, grantSoul, parsePrincipalId, parseEip55, verifyRevokeNow, verifyRevoke, resolveWalletLinkNow, resolveWalletLink, historyState, type Revoke, type ResolutionContext, type ObjectId } from 'sociacl-ids';
 const tenant = parseTenantId('01234567-89ab-cdef-0123-456789abcdef');
 if (!tenant.ok) throw Error(tenant.reason);

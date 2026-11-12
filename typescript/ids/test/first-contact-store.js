@@ -82,3 +82,14 @@ test('committed outbox survives request and descriptor expiry and rotation until
   await a.acknowledge(r.replayKey,r.requestId,grant.ciphertextHex);
   assert.deepEqual(await a.outbox(),[]);a.close();
 });
+
+
+test('a commit crossing request expiry exposes no successful reservation but keeps replay protection', async()=>{
+  const o=options();let t=now;o.now=()=>t;
+  const a=await openFirstContactStore(o),d=await a.activate(policy),r={...row(d),expiresAt:now+1};
+  const original=IDBObjectStore.prototype.put;
+  IDBObjectStore.prototype.put=function(...args){const request=original.apply(this,args);t=now+2;return request;};
+  try{await assert.rejects(a.reserve(d,r),/expired during commit/);}finally{IDBObjectStore.prototype.put=original;}
+  assert.deepEqual(await a.pending(),[]);
+  assert.equal(await a.reserve(d,{...r,expiresAt:now+100}),false);a.close();
+});
