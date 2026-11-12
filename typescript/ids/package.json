@@ -36,6 +36,10 @@
     "./first-contact-store": {
       "types": "./dist/first-contact-store.d.ts",
       "default": "./dist/first-contact-store.js"
+    },
+    "./first-contact-floor": {
+      "types": "./dist/first-contact-floor.d.ts",
+      "default": "./dist/first-contact-floor.js"
     }
   },
   "files": [

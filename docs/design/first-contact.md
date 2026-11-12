@@ -186,3 +186,25 @@ never publish the private channel encryption scalar. A descriptor signature
 proves authorship, not freshness: first discovery still needs authenticated
 publication, and a known descriptor revision must not roll back. Old descriptors
 stop working locally on disable/rotation even if a transport replays them.
+
+## Sender observation continuity
+
+`first-contact-discovery.ts` authenticates a public descriptor and commits its
+revision and canonical intent digest through `sociacl-ids/first-contact-floor`.
+The strict IndexedDB transaction serializes tabs, rejects lower revisions and
+same-revision equivocation, persists a clock floor, and rechecks authentication
+and expiry at commit completion. Re-signing identical bytes does not change the
+intent digest. No plaintext request, contact lane or grant is stored here.
+
+Bootstrap requires an independently authenticated exact descriptor anchor.
+Reopening missing state fails; initialization is explicit and cannot repair an
+existing conflicting floor. Clearing origin storage destroys continuity and
+requires authenticated recovery. Origin storage is trusted; this adapter does
+not defend against malicious same-origin code restoring an entire old database.
+
+An observed floor is not proof that an untrusted directory returned the newest
+descriptor, nor that the owner has not disabled a channel. Authenticated fresh
+discovery and disable publication, s3r.ch transport/UI, bounded public-channel
+storage, delivery reconciliation and service E2E remain separate requirements.
+The existing scheduled Chromium case now covers competing descriptor observations
+and process restart; ordinary PR CI uses an IndexedDB fixture for these contracts.
