@@ -5,7 +5,7 @@ import { openFirstContactFloor } from '../ids/src/first-contact-floor.js';
 import type { PrincipalId, ResolutionContext } from '../ids/src/index.js';
 import { independentWitnessPolicyBytes, type IndependentWitnessPolicy, type WitnessRequest, type WitnessReceipt } from './independent-witness.ts';
 import { collectIndependentWitnesses, type WitnessTransport } from './independent-witness-client.ts';
-import { verifyIndependentWitnesses } from './independent-witness.ts';
+import { admitIndependentWitnessRequest, verifyIndependentWitnesses } from './independent-witness.ts';
 import { advanceIndependentWitnessPolicy } from './independent-witness-transition.ts';
 const floor=(policy:IndependentWitnessPolicy)=>({revision:policy.epoch,digest:hex(sha256(independentWitnessPolicyBytes(policy)))});
 function snapshot(policy:IndependentWitnessPolicy):IndependentWitnessPolicy {
@@ -37,9 +37,11 @@ export async function openIndependentWitnessPolicyStore(options:{name:string;pri
       currentState:()=>{rotations:readonly unknown[];context:ResolutionContext},
       transports:ReadonlyMap<string,WitnessTransport>,timeoutMs=10000) {
       const policy=await read(candidate);
-      if(request.principal!==principal)throw Error('Wrong witness principal');
       const initial=currentState();
-      const result=await collectIndependentWitnesses(request,expectedDigest,initial.rotations,
+      const admitted=admitIndependentWitnessRequest(request,policy,expectedDigest,initial.rotations,initial.context);
+      if(!admitted.ok)throw Error(admitted.reason);
+      if(admitted.value.request.principal!==principal)throw Error('Wrong witness principal');
+      const result=await collectIndependentWitnesses(admitted.value.request,expectedDigest,initial.rotations,
         ()=>policy,()=>currentState().context,transports,timeoutMs);
       await store.observe(floor(policy),now=>{
         const state=currentState();

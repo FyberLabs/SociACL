@@ -276,6 +276,8 @@ test('sender deadline aborts transport and expiry refuses retry without a new wr
   await assert.rejects(prepared.submit(async(_channel,_body,s)=>{signal=s;return new Promise(()=>{});},10));
   assert.equal(signal?.aborted,true);
   now=raw.expiresAt;
-  await assert.rejects(prepared.submit(async()=>{throw Error('must not transport expired request');}));
+  let expiredCalls=0;
+  await assert.rejects(prepared.submit(async()=>{expiredCalls++;return prepared.ciphertextId;}));
+  assert.equal(expiredCalls,0);
   floor.close();
 });

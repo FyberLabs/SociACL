@@ -210,5 +210,7 @@ test('retained-policy collection rejects concurrent membership change and stale 
   const good=new Map<string,WitnessTransport>([2,3,4,5].map(n=>[`operator-${n}`,async request=>receipt(request,n)]));
   assert.equal((await a.collect(current,current.recordDigest,next,state,good)).observation.epoch,2);
   await assert.rejects(a.collect({...current,principal:pub(2)},current.recordDigest,next,state,good));
+  let reads=0;const hostile={...current};Object.defineProperty(hostile,'principal',{get(){reads++;throw Error('getter');}});
+  await assert.rejects(a.collect(hostile,current.recordDigest,next,state,good));assert.equal(reads,0);
   a.close();b.close();
 });
