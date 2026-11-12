@@ -81,7 +81,10 @@ Replay keys hash length-prefixed domain `sociacl-first-contact-replay-v1`, chann
 revision, sender and nonce. They deliberately exclude message, expiry and signature,
 so changing or re-signing a request cannot reuse one nonce. Before displaying or
 accepting a verified request, the recipient atomically reserves that key in its
-durable store until the request's exclusive expiry. A failed reservation, missing
+durable store until the descriptor's exclusive expiry (`replayUntil`). Keeping
+only the shorter request expiry could admit another signed use of the same nonce
+with a later expiry. Descriptor policy, including expiry, is immutable within a
+revision; changing it requires a new revision. A failed reservation, missing
 store or failed commit does not admit the request. The verifier itself is pure
 and does not claim to provide that persistence boundary. Descriptor rotation
 rejects old revisions, and requests cannot outlive the descriptor.

@@ -3,7 +3,7 @@
   "contract": "sociacl-identity-consume-v1",
   "packageVersion": "0.11.0",
   "sha256": {
-    "docs/first-contact.d.ts": "ab7b782b248c1be31ba01d48ab024c090b18d9566f99ea8883d1ab11576b9b51",
+    "docs/first-contact.d.ts": "8383fae5eb1cac6b454ae3555c00abf0913e7934c300a4b4bd6a98a01ddd3824",
     "docs/identity-consume/agent-delegation.d.ts": "bed2b6f2749685037372fbd9df5e22498053249b64e101883fca044a26063b5f",
     "docs/identity-consume/ids.d.ts": "303db2a8e551483ed98430106e3868c4b448ef668cf89d48062e752e8a070dba",
     "docs/identity-consume/index.d.ts": "4ebea3d138112e29a8dd08400161ddcf757bdd1cf33b2287372ac29d99c7bdc0",

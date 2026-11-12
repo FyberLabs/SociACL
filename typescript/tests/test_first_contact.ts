@@ -30,7 +30,7 @@ test('first contact shared canonical bytes preserve exact message and disclose n
   assert.equal(result.value.requestId, vectors.requestId);
   assert.equal(result.value.replayKey, vectors.replayKey);
   assert.equal(result.value.request.message, raw.message);
-  assert.deepEqual(Object.keys(result.value).sort(), ['replayKey', 'request', 'requestId']);
+  assert.deepEqual(Object.keys(result.value).sort(), ['replayKey', 'replayUntil', 'request', 'requestId']);
   assert.equal('allowed' in result.value, false);
   assert.equal('laneId' in result.value, false);
 });
@@ -55,6 +55,12 @@ test('first contact replay key cannot change by re-signing or changing the messa
   if (!a.ok || !b.ok) return;
   assert.equal(a.value.replayKey, b.value.replayKey);
   assert.notEqual(a.value.requestId, b.value.requestId);
+  const shorter = verify(signed({ expiresAt: ctx.now + 1 }));
+  assert.equal(shorter.ok, true);
+  if (!shorter.ok) return;
+  assert.equal(shorter.value.replayKey, a.value.replayKey);
+  assert.equal(shorter.value.replayUntil, vectors.descriptor.expiresAt);
+  assert.equal(a.value.replayUntil, shorter.value.replayUntil);
   const seen = new Set([a.value.replayKey]);
   assert.equal(seen.has(b.value.replayKey), true);
 });

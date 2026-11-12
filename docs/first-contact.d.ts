@@ -15,13 +15,13 @@ export type FirstContactDescriptor = Readonly<{
   maxLifetimeSeconds: number; maxMessageBytes: number;
 }>;
 export type VerifiedFirstContact = Readonly<{
-  request: FirstContactRequest; requestId: string; replayKey: string;
+  request: FirstContactRequest; requestId: string; replayKey: string; replayUntil: number;
 }>;
 export function firstContactRequestBytes(request: Omit<FirstContactRequest, 'sig'>): Uint8Array;
 export function parseFirstContactRequest(input: unknown): Result<FirstContactRequest>;
 /**
  * Caller supplies complete authenticated history and recipient policy. After
- * success, atomically consume replayKey in durable state until request expiry
+ * success, atomically consume replayKey in durable state until replayUntil
  * before display/acceptance. Missing replay state fails closed. Do not send this
  * plaintext to storage: sender, reply point, message and signature are encrypted.
  */

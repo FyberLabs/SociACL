@@ -18,7 +18,7 @@ export type FirstContactDescriptor = Readonly<{
   maxLifetimeSeconds: number; maxMessageBytes: number;
 }>;
 export type VerifiedFirstContact = Readonly<{
-  request: FirstContactRequest; requestId: string; replayKey: string;
+  request: FirstContactRequest; requestId: string; replayKey: string; replayUntil: number;
 }>;
 const hex32 = (value: unknown): value is string => typeof value === 'string' && /^[0-9a-f]{64}$/.test(value);
 const wellFormed = (s: string) => !/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/.test(s);
@@ -48,7 +48,7 @@ export function parseFirstContactRequest(input: unknown): Result<FirstContactReq
 }
 
 /** Authenticate after decryption. No network, replay-store mutation, lane or grant.
- * Before displaying/accepting, atomically reserve replayKey until expiresAt using
+ * Before displaying/accepting, atomically reserve replayKey until replayUntil using
  * durable recipient-owned state. Missing replay state fails closed. The signature
  * is not proof of sender possession beyond this message and never grants access.
  */
@@ -77,5 +77,5 @@ export function verifyFirstContactRequest(input: unknown, rotations: readonly un
     if (history.value.key !== proof.value.key || history.value.currentKey !== proof.value.key) return fail('missing-history');
   } catch { return fail('missing-history'); }
   const replay = lp([FIRST_CONTACT_REPLAY_DOMAIN, r.channelId, String(r.descriptorRevision), r.sender, r.nonce]);
-  return ok(Object.freeze({ request: r, requestId: hex(sha256(bytes)), replayKey: hex(sha256(replay)) }));
+  return ok(Object.freeze({ request: r, requestId: hex(sha256(bytes)), replayKey: hex(sha256(replay)), replayUntil: descriptor.expiresAt }));
 }
