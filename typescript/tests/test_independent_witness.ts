@@ -140,3 +140,11 @@ test('policy changes require account intent and both old and new rotation quorum
   assert.equal(independentWitnessTransitionDigest({...policy,operators:[...policy.operators].reverse()},next),digest);
   assert.notEqual(independentWitnessTransitionDigest(policy,{...next,operators:next.operators.slice(0,3)}),digest);
 });
+
+test('transition parsing never invokes request accessors',()=>{
+  const next={...policy,epoch:2}, digest=independentWitnessTransitionDigest(policy,next);
+  const old=signed({recordDigest:digest}), fresh=signed({recordDigest:digest,epoch:2});let reads=0;
+  const hostile={...old};Object.defineProperty(hostile,'principal',{get(){reads++;throw Error('getter');}});
+  assert.throws(()=>advanceIndependentWitnessPolicy(policy,next,pub(1),hostile,[],fresh,[],[],context));
+  assert.equal(reads,0);
+});

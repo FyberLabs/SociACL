@@ -15,7 +15,7 @@ export type FirstContactSource = (channelId:string,signal:AbortSignal)=>Promise<
 export async function pollFirstContact(store:FirstContactStore,source:FirstContactSource,epriv:string,
   senderState:()=>{rotations:readonly unknown[];context:ResolutionContext},timeoutMs=10000):Promise<readonly VerifiedFirstContact[]> {
   if(!integer(timeoutMs)||timeoutMs<1||timeoutMs>10000)throw Error('Invalid polling deadline');
-  const descriptor=await store.descriptor();
+  const descriptor=Object.freeze({...await store.descriptor()});
   const controller=new AbortController();let timer:ReturnType<typeof setTimeout>|undefined;
   try {
     const timeout=new Promise<never>((_,reject)=>{timer=setTimeout(()=>{controller.abort();reject(Error('First-contact timeout'));},timeoutMs);});
