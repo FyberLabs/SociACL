@@ -137,3 +137,34 @@ if (head.currentKey !== creator.value || head.rotations.length !== 0 ||
     !diagnostics.some(d => d.source === 'rotation' && d.index === 0)) {
   throw Error('invalid store resolution from installed package');
 }
+
+// The nightly harness copies the canonical vector beside this installed consumer.
+// Imports below resolve solely through the tarball, not repository source paths.
+import delegationVector from './agent-delegation.json' with { type: 'json' };
+import { parseAgentDelegation, parseAgentRevocation, verifyAgentDelegation,
+  verifyKeySignature } from 'sociacl-ids';
+const parsedDelegation = parseAgentDelegation(delegationVector.record);
+const parsedRevocation = parseAgentRevocation(delegationVector.revocation);
+if (!parsedDelegation.ok || !parsedRevocation.ok) throw Error('delegation exports rejected shared vector');
+const hex = (bytes: Uint8Array) => Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+if (parsedDelegation.value.id !== delegationVector.id ||
+    hex(parsedDelegation.value.bytes) !== delegationVector.signingBytesHex ||
+    hex(parsedRevocation.value.bytes) !== delegationVector.revocationBytesHex ||
+    !verifyKeySignature(parsedDelegation.value.delegation.principal,
+      delegationVector.record.sig, parsedDelegation.value.bytes).ok) {
+  throw Error('installed delegation wire/signature drift');
+}
+const delegationRequest = { audience: delegationVector.record.audience,
+  agent: parsedDelegation.value.delegation.agent, scopes: ['forum:read'], revocations: [] };
+const allowed = verifyAgentDelegation(delegationVector.record, [], context, delegationRequest);
+if (!allowed.ok || allowed.value.id !== delegationVector.id) throw Error('installed delegation refused');
+const cancelled = verifyAgentDelegation(delegationVector.record, [], context,
+  { ...delegationRequest, revocations: [delegationVector.revocation] });
+if (cancelled.ok || cancelled.reason !== 'revoked-link') throw Error('installed revocation bypass');
+const excessive = verifyAgentDelegation(delegationVector.record, [], context,
+  { ...delegationRequest, scopes: ['forum:write'] });
+if (excessive.ok) throw Error('installed delegation widened scope');
+const wrongAudience = verifyAgentDelegation(delegationVector.record, [], context,
+  { ...delegationRequest, audience: 'https://other.example' });
+if (wrongAudience.ok) throw Error('installed delegation crossed audience');
+console.log('Installed delegation exports, canonical bytes, revocation and scope boundaries work');
