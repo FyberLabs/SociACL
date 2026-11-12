@@ -142,3 +142,22 @@ not a durable ledger: the consumer must encrypt and atomically retain the graph,
 protect its head from rollback and authenticate current epoch state. The file
 backend still needs that ledger and consumer integration. Retention/pruning needs
 an authenticated checkpoint design before this bound can be raised or compacted.
+
+## Encrypted history checkpoints
+
+`seal_vault_history` prepares an encrypted history snapshot and an exact
+`VaultHistoryHead`. The file backend can persist the prepared envelope with its
+existing CAS, fsync and exact-byte retry semantics. `open_vault_history` checks an
+independently retained head before decrypting, then validates canonical encoding,
+owner/object/item binding, immutable IDs, known parents, chronology and a connected
+acyclic graph. Conflicts and old IDs survive restoration; restoring is not a new
+bootstrap. The whole history, including its object name and manifests, is encrypted.
+
+Prepare once and retain those exact bytes for retry after ambiguous publication.
+The head contains private owner/object metadata and must itself remain in protected
+local state, not be published with the ciphertext. Retain it independently after
+the durable write; never discover trust by
+hashing the file being opened. This adds confidential history persistence, not an
+atomic read-nonce/audit transaction, a protected external anchor store or a CLI.
+Restored history still requires fresh signed-version/Check/epoch admission before
+plaintext release. Disk rollback detection depends on the independently held head.

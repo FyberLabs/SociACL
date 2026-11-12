@@ -1,8 +1,8 @@
 /** Multi-operator collection. Provisioned transports are trusted configuration. */
 import { verifyKeySignature } from '../ids/src/index.js';
 import type { ResolutionContext } from '../ids/src/index.js';
-import { data, integer } from '../ids/src/util.js';
-import { admitIndependentWitnessRequest, verifyIndependentWitnesses, witnessReceiptBytes,
+import { data, integer, hex } from '../ids/src/util.js';
+import { admitIndependentWitnessRequest, independentWitnessPolicyBytes, verifyIndependentWitnesses, witnessReceiptBytes,
   type WitnessRequest, type WitnessReceipt, type IndependentWitnessPolicy } from './independent-witness.ts';
 export type WitnessTransport = (request:Readonly<WitnessRequest>,signal:AbortSignal)=>Promise<unknown>;
 /** Never accepts URLs or membership from returned data. Each transport is bound to
@@ -19,7 +19,7 @@ export async function collectIndependentWitnesses(request:WitnessRequest,expecte
   if(!admitted.ok)throw Error(admitted.reason);
   // Snapshot only sanitized own-data fields, before handing anything to a transport.
   const r=Object.freeze({...admitted.value.request});
-  const p=structuredClone(admitted.value.policy), policyBytes=JSON.stringify(p);
+  const p=structuredClone(admitted.value.policy), policyBytes=hex(independentWitnessPolicyBytes(p));
   const deadlineAt=performance.now()+timeoutMs;
   const controller=new AbortController();let timer:ReturnType<typeof setTimeout>|undefined;
   const deadline=new Promise<undefined>(resolve=>{timer=setTimeout(()=>{controller.abort();resolve(undefined);},timeoutMs);});
@@ -43,7 +43,7 @@ export async function collectIndependentWitnesses(request:WitnessRequest,expecte
     const fresh=currentContext();
     if(fresh.now<startedAt)throw Error('Witness clock rollback');
     const readmitted=admitIndependentWitnessRequest(r,currentPolicy(),expectedRecordDigest,rotations,fresh);
-    if(!readmitted.ok || JSON.stringify(readmitted.value.policy)!==policyBytes)throw Error('Witness policy or account changed');
+    if(!readmitted.ok || hex(independentWitnessPolicyBytes(readmitted.value.policy))!==policyBytes)throw Error('Witness policy or account changed');
     const receipts=results.filter((row):row is WitnessReceipt=>row!==undefined && row.observedAt<=fresh.now);
     const observed=verifyIndependentWitnesses(r,receipts,p,expectedRecordDigest,rotations,fresh);
     if(!observed.ok)throw Error(observed.reason);

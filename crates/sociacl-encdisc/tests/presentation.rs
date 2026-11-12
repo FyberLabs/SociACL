@@ -1449,4 +1449,18 @@ fn vault_history_preserves_forks_and_requires_explicit_signed_resolution() {
     rotated.ciphertext_digest="88".repeat(32);
     let newer=resolved.advance(&sign(rotated.clone()),2,&rotated.revision_id,&[],&ctx).unwrap();
     assert!(newer.advance(&sign(child("99",vec![joined.version_id.clone()])),1,&root.revision_id,&[],&ctx).is_err());
+    let password="violet radar platypus 47 granite orchestra";
+    let (sealed,head)=sociacl_encdisc::seal_vault_history(&fork,None,password).unwrap();
+    let restored=sociacl_encdisc::open_vault_history(&sealed,&head,password).unwrap();
+    assert_eq!(restored.heads().collect::<Vec<_>>(),fork.heads().collect::<Vec<_>>());
+    assert!(restored.read_expectation().is_err());
+    assert!(restored.version(&root.version_id).is_some());
+    let (updated,new_head)=sociacl_encdisc::seal_vault_history(&newer,Some(&head.ledger_item_id),password).unwrap();
+    assert!(sociacl_encdisc::open_vault_history(&sealed,&new_head,password).is_err());
+    assert!(sociacl_encdisc::open_vault_history(&updated,&head,password).is_err());
+    let mut wrong=head.clone();wrong.object="wrong-object".into();
+    assert!(sociacl_encdisc::open_vault_history(&sealed,&wrong,password).is_err());
+    let restored=sociacl_encdisc::open_vault_history(&updated,&new_head,password).unwrap();
+    assert_eq!(restored.read_expectation().unwrap().version_id,rotated.version_id);
+
 }

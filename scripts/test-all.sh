@@ -41,6 +41,7 @@ npm run --prefix typescript typecheck
 IDS_VECTOR_REPORT="${root}/target/ids/ts-vectors.txt" node --test typescript/ids/test/*.js
 npm run --prefix typescript/ids browser
 npm run --prefix typescript/ids build
+node typescript/ids/scripts/packed-browser-exports.mjs
 python3 scripts/identity-consume-contract.py
 node typescript/ids/scripts/compare-vectors.mjs "${root}/vectors/ids" target/ids/rust-vectors.txt target/ids/ts-vectors.txt
 node typescript/ids/scripts/compare-vectors.mjs "${root}/vectors/mesh/v2" target/mesh/rust-vectors.txt target/mesh/ts-vectors.txt

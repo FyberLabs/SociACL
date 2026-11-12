@@ -53,3 +53,38 @@ fn private_atomic_cas_restart_retry_and_hostile_paths() {
     fs::write(&file, a.bytes()).unwrap(); assert!(store.read(&winner).is_err());
     fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+#[ignore = "encrypted history persistence belongs to central scheduled CI"]
+fn encrypted_history_survives_file_restart_and_exact_retry() {
+    guard();
+    use sociacl_ids::{history_state, PrincipalId, Jwks, SiwePolicy, ResolutionContext};
+    let fixture:serde_json::Value=serde_json::from_str(include_str!("../../../vectors/encrypted-discovery/sea-fixture.json")).unwrap();
+    let account=GenesisAccount::import(fixture["laneId"].as_str().unwrap(),fixture["signing"]["pub"].as_str().unwrap(),
+        fixture["signing"]["priv"].as_str().unwrap(),fixture["encryption"]["epub"].as_str().unwrap(),fixture["encryption"]["epriv"].as_str().unwrap()).unwrap().into_secret();
+    let version=VaultVersion{item_id:"11".repeat(32),version_id:"22".repeat(32),owner:account.account().into(),parents:vec![],epoch:1,
+        revision_id:"aa".repeat(32),ciphertext_digest:"33".repeat(32),sensitive:true,issued_at:1};
+    let signed=SignedVaultVersion{signature:account.sign_vault_version(&version).unwrap(),version:version.clone()};
+    let expected=VaultReadExpectation{object:"local-secret".into(),owner:version.owner.clone(),item_id:version.item_id.clone(),version_id:version.version_id.clone(),
+        ciphertext_digest:version.ciphertext_digest.clone(),epoch:1,revision_id:version.revision_id.clone()};
+    let jwks=Jwks{keys:vec![]};let links=Default::default();let issuers=Default::default();
+    let policy=SiwePolicy{allowed_domains:vec![],allowed_uris:vec![],allowed_chain_ids:vec![],clock_skew_seconds:0};
+    let history=|p:&PrincipalId,at,until|Ok(history_state(p,&[],at,until));
+    let ctx=ResolutionContext{jwks:&jwks,links:&links,revocations:&[],now:10,policy:&policy,pinned_iss:&issuers,history:&history,genesis_epub_bindings:&[]};
+    let graph=VaultVersionHistory::initialize(&signed,&expected,&sha256_hex(&vault_version_signing_bytes(&version).unwrap()),&[],&ctx).unwrap();
+    let password="violet radar platypus 47 granite orchestra";
+    let (envelope,checkpoint)=seal_vault_history(&graph,None,password).unwrap();
+    let root=std::env::temp_dir().join(format!("sociacl-history-{}",envelope.version_id()));
+    let store=LocalVaultFileStore::open(&root,true).unwrap();
+    let head=store.write(&envelope,None).unwrap();
+    assert_eq!(store.write(&envelope,None).unwrap(),head);
+    drop(store);
+    let store=LocalVaultFileStore::open(&root,false).unwrap();
+    let loaded=store.read(&head).unwrap();
+    let restored=open_vault_history(&loaded,&checkpoint,password).unwrap();
+    assert_eq!(restored.read_expectation().unwrap().object,"local-secret");
+    assert_eq!(restored.read_expectation().unwrap().version_id,version.version_id);
+    let file=root.join(format!("{}.vault",envelope.item_id()));fs::remove_file(file).unwrap();
+    assert!(store.read(&head).is_err());
+    fs::remove_dir_all(root).unwrap();
+}

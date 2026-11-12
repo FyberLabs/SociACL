@@ -154,3 +154,39 @@ test('transition parsing never invokes request accessors',()=>{
   assert.throws(()=>advanceIndependentWitnessPolicy(policy,next,pub(1),hostile,[],fresh,[],[],context));
   assert.equal(reads,0);
 });
+
+import { createRequire } from 'node:module';
+import { openIndependentWitnessPolicyStore } from '../contract/independent-witness-store.ts';
+test('joint policy installation retains its exact floor across reopen and competing transitions',async()=>{
+  const {IDBFactory,IDBObjectStore}=createRequire(new URL('../ids/package.json',import.meta.url))('fake-indexeddb');
+  const options={name:'independent-membership',principal:pub(1),anchor:policy,now:()=>context.now,indexedDB:new IDBFactory()};
+  await assert.rejects(openIndependentWitnessPolicyStore(options));
+  const a=await openIndependentWitnessPolicyStore({...options,create:true}),b=await openIndependentWitnessPolicyStore(options);
+  const next={...policy,epoch:2},alternate={...next,operators:policy.operators.map(op=>({...op,keys:op.keys.map(k=>({...k,notAfter:k.notAfter+1}))}))};
+  const advance=(store:typeof a,p:IndependentWitnessPolicy)=>{
+    const digest=independentWitnessTransitionDigest(policy,p),old=signed({recordDigest:digest}),fresh=signed({recordDigest:digest,epoch:2});
+    return store.advance(policy,p,old,[2,3,4].map(n=>receipt(old,n)),fresh,[2,3,4].map(n=>receipt(fresh,n)),()=>({rotations:[],context}));
+  };
+  const original=IDBObjectStore.prototype.put;
+  IDBObjectStore.prototype.put=function(){throw Error('commit failed');};
+  try{await assert.rejects(advance(a,next));}finally{IDBObjectStore.prototype.put=original;}
+  assert.deepEqual(await a.read(policy),policy);
+  const attempts=await Promise.allSettled([advance(a,next),advance(b,alternate)]);
+  assert.equal(attempts.filter(r=>r.status==='fulfilled').length,1);
+  const winner=attempts[0]!.status==='fulfilled'?next:alternate;
+  a.close();b.close();
+  const reopened=await openIndependentWitnessPolicyStore(options);
+  assert.deepEqual(await reopened.read(winner),winner);
+  await assert.rejects(reopened.read(policy));
+  await assert.rejects(reopened.read(winner===next?alternate:next));
+  await assert.rejects(advance(reopened,winner)); // Lost-response reconciliation uses read(exact candidate).
+  reopened.close();
+});
+
+test('collection accepts reordered policy bytes restored under the same canonical floor',async()=>{
+  const r=signed();let changed=false;
+  const transports=new Map<string,WitnessTransport>([2,3,4,5].map(n=>[`operator-${n}`,async request=>{changed=true;return receipt(request,n);} ]));
+  const observed=await collectIndependentWitnesses(r,r.recordDigest,[],()=>changed?{...policy,operators:[...policy.operators].reverse()}:policy,()=>context,transports);
+  assert.equal(observed.observation.epoch,policy.epoch);
+  assert.deepEqual(observed.observation.operators,['operator-2','operator-3','operator-4','operator-5']);
+});

@@ -148,3 +148,19 @@ or supply durable single-successor witness decisions. Those remain prerequisites
 for runtime activation. Rust implements the same transition verifier; CI exchanges
 independently signed old/new quorum bundles in both directions and compares their
 canonical transition digests.
+
+## Retained consumer membership
+
+`openIndependentWitnessPolicyStore` retains an exact policy digest and epoch in
+strict-durability IndexedDB transactions. It reuses the monotonic floor primitive
+in a separate witness namespace. Bootstrap requires an independently authenticated
+anchor; missing state on reopen fails. Current policy bytes must exactly match the
+retained floor before use. Transitions authenticate joint quorums before work and
+again inside the transaction and at completion with the trusted clock/history.
+Competing same-epoch proposals cannot both install different membership.
+
+Only the floor is stored, so policy bytes may be restored from an untrusted cache
+only when their canonical digest matches. A lost successful transition response
+is reconciled with `read(exactCandidate)`, not by resetting the old floor. This
+consumer store does not provide operator anti-equivocation or independent service
+provisioning, and does not change the existing single-witness runtime verifier.

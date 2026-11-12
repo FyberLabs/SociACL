@@ -211,8 +211,7 @@ and process restart; ordinary PR CI uses an IndexedDB fixture for these contract
 
 ## Public-channel polling into the recipient journal
 
-`pollFirstContact` is a headless/reference adapter using the Node crypto contract,
-not a browser crypto implementation. It connects a provisioned Spanopticon ciphertext source to the
+`pollFirstContact` connects a provisioned Spanopticon ciphertext source to the
 recipient-owned journal. It bounds the transport deadline and batch, snapshots
 ciphertexts and verifies their digests before asynchronous admission, decrypts
 and authenticates sender history, and reserves each replay key before returning
@@ -225,3 +224,14 @@ No incoming request is automatically accepted and no outbox grant is delivered.
 The adapter contract returns decoded `{id,ciphertext:Uint8Array}` rows and never
 accepts a destination URL from storage. Product UI, discovery and grant delivery
 remain separate integrations.
+
+## Browser crypto and polling
+
+`first-contact-browser.ts` implements the same P-256/HKDF-SHA256/AES-GCM envelope
+with WebCrypto and browser-safe dependencies. The Node and Rust wire formats are
+unchanged. Decryption snapshots ciphertext and descriptor before asynchronous
+crypto, then rechecks current sender history and the trusted clock. Polling now
+uses this browser-safe opener and performs a final synchronous authorization check
+across the batch before returning plaintext. Browser bundling is checked in PR CI;
+real Chromium concurrent-poll/restart coverage runs only in the scheduled batch.
+The product UI, authenticated discovery and grant-outbox delivery remain open.

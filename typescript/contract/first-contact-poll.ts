@@ -3,8 +3,8 @@ import { sha256 } from '@noble/hashes/sha2.js';
 import { data, hex, integer } from '../ids/src/util.js';
 import type { ResolutionContext } from '../ids/src/index.js';
 import type { FirstContactStore } from '../ids/src/first-contact-store.js';
-import { openFirstContactRequest } from './first-contact-seal.ts';
-import type { VerifiedFirstContact } from './first-contact.ts';
+import { openFirstContactRequestBrowser } from './first-contact-browser.ts';
+import { verifyFirstContactRequest, type VerifiedFirstContact } from './first-contact.ts';
 
 /** Bind this adapter to the configured Spanopticon origin, never a returned URL. */
 export type FirstContactSource = (channelId:string,signal:AbortSignal)=>Promise<unknown>;
@@ -16,6 +16,8 @@ export async function pollFirstContact(store:FirstContactStore,source:FirstConta
   senderState:()=>{rotations:readonly unknown[];context:ResolutionContext},timeoutMs=10000):Promise<readonly VerifiedFirstContact[]> {
   if(!integer(timeoutMs)||timeoutMs<1||timeoutMs>10000)throw Error('Invalid polling deadline');
   const descriptor=Object.freeze({...await store.descriptor()});
+  let observedTime=-1,clockFailed=false;
+  const currentState=()=>{const state=senderState();if(clockFailed||!integer(state.context.now)||state.context.now<observedTime){clockFailed=true;throw Error('First-contact clock rollback');}observedTime=state.context.now;return state;};
   const controller=new AbortController();let timer:ReturnType<typeof setTimeout>|undefined;
   try {
     const timeout=new Promise<never>((_,reject)=>{timer=setTimeout(()=>{controller.abort();reject(Error('First-contact timeout'));},timeoutMs);});
@@ -36,15 +38,15 @@ export async function pollFirstContact(store:FirstContactStore,source:FirstConta
     }
     const accepted:{ciphertext:Uint8Array;checkedAt:number}[]=[];
     for(const row of rows) {
-      const state=senderState(),started=state.context.now;
-      const opened=openFirstContactRequest(row.ciphertext,epriv,descriptor,state.rotations,state.context);
+      const state=currentState(),started=state.context.now;
+      const opened=await openFirstContactRequestBrowser(row.ciphertext,epriv,descriptor,currentState);
       if(!opened.ok)continue;
       const v=opened.value;
       if(!await store.reserve(descriptor,{replayKey:v.replayKey,requestId:v.requestId,replayUntil:v.replayUntil,
         expiresAt:v.request.expiresAt,envelope:row.ciphertext}))continue;
-      const fresh=senderState();
+      const fresh=currentState();
       if(fresh.context.now<started)throw Error('First-contact clock rollback');
-      const checked=openFirstContactRequest(row.ciphertext,epriv,descriptor,fresh.rotations,fresh.context);
+      const checked=await openFirstContactRequestBrowser(row.ciphertext,epriv,descriptor,currentState);
       if(!checked.ok)continue; // Keep replay protection even if authorization expired during commit.
       accepted.push({ciphertext:row.ciphertext,checkedAt:fresh.context.now});
     }
@@ -54,11 +56,16 @@ export async function pollFirstContact(store:FirstContactStore,source:FirstConta
     }
     const result:VerifiedFirstContact[]=[];
     for(const row of accepted) {
-      const fresh=senderState();
+      const fresh=currentState();
       if(fresh.context.now<row.checkedAt)throw Error('First-contact clock rollback');
-      const checked=openFirstContactRequest(row.ciphertext,epriv,descriptor,fresh.rotations,fresh.context);
+      const checked=await openFirstContactRequestBrowser(row.ciphertext,epriv,descriptor,currentState);
       if(checked.ok)result.push(checked.value);
     }
-    return Object.freeze(result);
+    const finalDescriptor=await store.descriptor();
+    for(const key of ['channelId','revision','encryptionEpub','expiresAt','maxLifetimeSeconds','maxMessageBytes'] as const) {
+      if(finalDescriptor[key]!==descriptor[key])throw Error('First-contact descriptor changed');
+    }
+    const final=currentState();
+    return Object.freeze(result.filter(v=>verifyFirstContactRequest(v.request,final.rotations,final.context,descriptor).ok));
   }finally{if(timer!==undefined)clearTimeout(timer);controller.abort();}
 }

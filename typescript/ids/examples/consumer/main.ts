@@ -1,3 +1,8 @@
+import {sealFirstContactRequest,openFirstContactRequest,pollFirstContact} from 'sociacl-ids/first-contact';
+import {openIndependentWitnessPolicyStore,advanceIndependentWitnessPolicy,collectIndependentWitnesses} from 'sociacl-ids/independent-witness';
+for(const fn of [sealFirstContactRequest,openFirstContactRequest,pollFirstContact,openIndependentWitnessPolicyStore,advanceIndependentWitnessPolicy,collectIndependentWitnesses]){
+  if(typeof fn!=='function')throw Error('Missing browser consumer export');
+}
 import { openFirstContactStore, type FirstContactStore } from 'sociacl-ids/first-contact-store';
 if (typeof openFirstContactStore !== 'function') throw Error('Missing first-contact store export');
 type FirstContactOutbox = Awaited<ReturnType<FirstContactStore['outbox']>>;
