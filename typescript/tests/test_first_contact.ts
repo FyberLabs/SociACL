@@ -61,8 +61,13 @@ test('first contact replay key cannot change by re-signing or changing the messa
   assert.equal(shorter.value.replayKey, a.value.replayKey);
   assert.equal(shorter.value.replayUntil, vectors.descriptor.expiresAt);
   assert.equal(a.value.replayUntil, shorter.value.replayUntil);
-  const seen = new Set([a.value.replayKey]);
-  assert.equal(seen.has(b.value.replayKey), true);
+  const reservations = new Map([[shorter.value.replayKey, shorter.value.replayUntil]]);
+  const laterTime = ctx.now + 2; // The first request expired one second earlier.
+  const later = verify(signed(), vectors.descriptor, { ...ctx, now: laterTime });
+  assert.equal(later.ok, true);
+  if (!later.ok) return;
+  assert.ok((reservations.get(later.value.replayKey) ?? 0) > laterTime,
+    'the descriptor deadline still blocks the later signed nonce reuse');
 });
 
 test('first contact parser rejects coercions, getters, malformed unicode and oversized messages', () => {
