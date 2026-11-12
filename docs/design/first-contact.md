@@ -211,7 +211,8 @@ and process restart; ordinary PR CI uses an IndexedDB fixture for these contract
 
 ## Public-channel polling into the recipient journal
 
-`pollFirstContact` connects a provisioned Spanopticon ciphertext source to the
+`pollFirstContact` is a headless/reference adapter using the Node crypto contract,
+not a browser crypto implementation. It connects a provisioned Spanopticon ciphertext source to the
 recipient-owned journal. It bounds the transport deadline and batch, snapshots
 ciphertexts and verifies their digests before asynchronous admission, decrypts
 and authenticates sender history, and reserves each replay key before returning
