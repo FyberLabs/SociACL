@@ -20,7 +20,7 @@ export type FirstContactDescriptor = Readonly<{
 export type VerifiedFirstContact = Readonly<{
   request: FirstContactRequest; requestId: string; replayKey: string; replayUntil: number;
 }>;
-const hex32 = (value: unknown): value is string => typeof value === 'string' && /^[0-9a-f]{64}$/.test(value);
+const hex32 = (value: unknown): value is string => typeof value === 'string' && value.length === 64 && /^[0-9a-f]{64}$/.test(value);
 const wellFormed = (s: string) => !/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/.test(s);
 
 /** Encode already validated fields with little-endian UTF-8 length prefixes. */
@@ -39,7 +39,7 @@ export function parseFirstContactRequest(input: unknown): Result<FirstContactReq
       !integer(r.issuedAt) || !integer(r.expiresAt) || (r.expiresAt as number) <= (r.issuedAt as number)) return fail('bad-record');
   const sender = parsePrincipalId(r.sender), reply = parsePrincipalId(r.replyEpub);
   if (!sender.ok) return sender; if (!reply.ok) return reply;
-  if (typeof r.sig !== 'string' || !/^[A-Za-z0-9_-]{86}$/.test(r.sig) ||
+  if (typeof r.sig !== 'string' || r.sig.length !== 86 || !/^[A-Za-z0-9_-]{86}$/.test(r.sig) ||
       typeof r.message !== 'string' || r.message.length > FIRST_CONTACT_MAX_MESSAGE_BYTES ||
       !wellFormed(r.message) || new TextEncoder().encode(r.message).length > FIRST_CONTACT_MAX_MESSAGE_BYTES) return fail('bad-record');
   return ok(Object.freeze({ v: 1, channelId: r.channelId, descriptorRevision: r.descriptorRevision as number,

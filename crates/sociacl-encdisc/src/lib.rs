@@ -92,6 +92,7 @@ mod delivery;
 mod emoji_variation;
 mod epoch;
 mod error;
+mod first_contact;
 mod grant;
 mod hexutil;
 mod identity;
@@ -237,3 +238,6 @@ pub use writer::{
     signature_covers_claimed_id, verify_inbox_envelope, AuthenticatedWriterChannel, InboxEnvelope,
     WriterAppendAuth, WriterAppendProof,
 };
+
+pub use first_contact::{seal_first_contact_request, open_first_contact_request,
+    FirstContactSealDescriptor, FIRST_CONTACT_SEAL_DOMAIN, FIRST_CONTACT_ENVELOPE_MAX_BYTES};

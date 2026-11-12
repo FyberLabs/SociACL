@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { parsePrincipalId, signWithKeyring, historyState, type ResolutionContext } from '../ids/src/index.js';
 import { firstContactRequestBytes, parseFirstContactRequest, verifyFirstContactRequest,
   type FirstContactRequest } from '../contract/first-contact.ts';
+import { sealFirstContactRequest, openFirstContactRequest } from '../contract/first-contact-seal.ts';
 const vectors = JSON.parse(readFileSync(new URL('../../vectors/first-contact/v1.json', import.meta.url), 'utf8'));
 const records = JSON.parse(readFileSync(new URL('../../vectors/ids/records.json', import.meta.url), 'utf8'));
 const raw = vectors.request;
@@ -77,7 +78,8 @@ test('first contact parser rejects coercions, getters, malformed unicode and ove
   assert.equal(parseFirstContactRequest(hostile).ok, false); assert.equal(reads, 0);
   for (const patch of [{ extra: true }, { descriptorRevision: '1' }, { issuedAt: -0 },
     { message: '\ud800' }, { message: 'é'.repeat(2049) }, { nonce: 'AB'.repeat(32) },
-    { replyEpub: 'https://attacker.example' }, { sig: '' }]) {
+    { replyEpub: 'https://attacker.example' }, { sig: '' },
+    { channelId: request.channelId + '\n' }, { nonce: request.nonce + '\n' }, { sig: request.sig + '\n' }]) {
     assert.equal(parseFirstContactRequest({ ...request, ...patch }).ok, false);
   }
   assert.equal(verify(request, vectors.descriptor, { ...ctx, history: () => ({ ok: false, reason: 'missing-history' }) }).ok, false);
@@ -90,4 +92,50 @@ test('first contact does not accept a retired sender key', () => {
     { ...vectors.descriptor, expiresAt: ctx.now + 200, maxLifetimeSeconds: 86400 });
   assert.equal(result.ok, false);
   if (!result.ok) assert.equal(result.reason, 'unwitnessed-retired-key');
+});
+
+
+test('confidential first contact authenticates after opening and never returns a grant', () => {
+  const descriptor = { ...vectors.descriptor, encryptionEpub: raw.replyEpub };
+  const scalar = Buffer.alloc(32); scalar[31] = 2;
+  const privateKey = scalar.toString('base64url');
+  const request = signed();
+  const envelope = sealFirstContactRequest(request, descriptor);
+  assert.notDeepEqual(envelope, sealFirstContactRequest(request, descriptor));
+  for (const secret of [request.sender, request.replyEpub, request.sig, request.message, request.nonce]) {
+    assert.equal(Buffer.from(envelope).includes(Buffer.from(secret)), false);
+  }
+  if (process.env.FIRST_CONTACT_RUST_VECTOR) {
+    const rust = openFirstContactRequest(readFileSync(process.env.FIRST_CONTACT_RUST_VECTOR), privateKey, descriptor, [], ctx);
+    assert.equal(rust.ok, true);
+    if (rust.ok) {
+      assert.equal(rust.value.requestId, vectors.requestId);
+      assert.equal(rust.value.replayKey, vectors.replayKey);
+      assert.equal(rust.value.replayUntil, descriptor.expiresAt);
+      assert.equal(rust.value.request.message, request.message);
+    }
+  }
+  if (process.env.FIRST_CONTACT_TS_VECTOR) writeFileSync(process.env.FIRST_CONTACT_TS_VECTOR, envelope);
+  const opened = openFirstContactRequest(envelope, privateKey, descriptor, [], ctx);
+  assert.deepEqual(opened, verify(request));
+  for (const offset of [0, 1, 20, 66, 78, envelope.length - 1]) {
+    const tampered = new Uint8Array(envelope); tampered[offset] = (tampered[offset] ?? 0) ^ 1;
+    assert.equal(openFirstContactRequest(tampered, privateKey, descriptor, [], ctx).ok, false);
+  }
+  for (const patch of [{ revision: 2 }, { channelId: 'ab'.repeat(32) }, { encryptionEpub: raw.sender }]) {
+    assert.equal(openFirstContactRequest(envelope, privateKey, { ...descriptor, ...patch }, [], ctx).ok, false);
+  }
+  scalar[31] = 3;
+  assert.equal(openFirstContactRequest(envelope, scalar.toString('base64url'), descriptor, [], ctx).ok, false);
+  for (const blob of [envelope.slice(0, -1), new Uint8Array(8193), new Uint8Array(93)]) {
+    assert.equal(openFirstContactRequest(blob, privateKey, descriptor, [], ctx).ok, false);
+  }
+  assert.equal(openFirstContactRequest(envelope, privateKey, descriptor, [], { ...ctx, now: raw.expiresAt }).ok, false);
+  assert.equal(openFirstContactRequest(envelope, privateKey, descriptor, [],
+    { ...ctx, history: () => ({ ok: false, reason: 'missing-history' }) }).ok, false);
+  const bom = signed({ message: '\uFEFFhello' });
+  assert.deepEqual(openFirstContactRequest(sealFirstContactRequest(bom, descriptor), privateKey,
+    descriptor, [], ctx), verify(bom));
+  const forged = sealFirstContactRequest({ ...request, message: 'forged' }, descriptor);
+  assert.equal(openFirstContactRequest(forged, privateKey, descriptor, [], ctx).ok, false);
 });
