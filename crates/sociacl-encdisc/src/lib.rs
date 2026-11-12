@@ -109,6 +109,7 @@ mod sea;
 mod see;
 mod store_write;
 mod unicode16;
+mod vault_format;
 mod wrap;
 mod writer;
 
@@ -241,3 +242,6 @@ pub use writer::{
 
 pub use first_contact::{seal_first_contact_request, open_first_contact_request,
     FirstContactSealDescriptor, FIRST_CONTACT_SEAL_DOMAIN, FIRST_CONTACT_ENVELOPE_MAX_BYTES};
+
+pub use vault_format::{vault_version_signing_bytes, vault_audit_signing_bytes, VaultVersion, VaultAudit,
+    VAULT_VERSION_DOMAIN, VAULT_AUDIT_DOMAIN, VAULT_MAX_PARENTS};
