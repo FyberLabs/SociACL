@@ -12,3 +12,12 @@ export function verifyFirstContactRequest(input:unknown,rotations:readonly unkno
 export function sealFirstContactRequest(input:unknown,descriptor:FirstContactSealDescriptor):Promise<Uint8Array>;
 export function openFirstContactRequest(envelope:Uint8Array,recipientEpriv:string,descriptor:FirstContactSealDescriptor,currentState:FirstContactSenderState):Promise<Result<VerifiedFirstContact>>;
 export function pollFirstContact(store:FirstContactStore,source:FirstContactSource,epriv:string,currentState:FirstContactSenderState,timeoutMs?:number):Promise<readonly VerifiedFirstContact[]>;
+
+import type {FirstContactFloor,DescriptorFloor} from './first-contact-floor.js';
+export type SignedFirstContactDescriptor=Readonly<{v:1;owner:PrincipalId;issuedAt:number;descriptor:FirstContactSealDescriptor;sig:string}>;
+export type FirstContactAppend=(channel:string,ciphertext:Uint8Array,signal:AbortSignal)=>Promise<unknown>;
+export function firstContactDescriptorBytes(value:Omit<SignedFirstContactDescriptor,'sig'>):Uint8Array;
+export function verifyFirstContactDescriptor(input:unknown,expectedOwner:PrincipalId,minimumRevision:number,rotations:readonly unknown[],context:ResolutionContext):Result<SignedFirstContactDescriptor>;
+export function firstContactDescriptorFloor(descriptor:SignedFirstContactDescriptor):DescriptorFloor;
+export function observeFirstContactDescriptor(input:unknown,owner:PrincipalId,store:FirstContactFloor,rotations:readonly unknown[],context:ResolutionContext):Promise<SignedFirstContactDescriptor>;
+export function prepareFirstContactSubmission(input:unknown,advertisement:unknown,owner:PrincipalId,floor:FirstContactFloor,recipientState:FirstContactSenderState,senderState:FirstContactSenderState):Promise<Readonly<{ciphertextId:string;submit(append:FirstContactAppend,timeoutMs?:number):Promise<string>}>>;

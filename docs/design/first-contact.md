@@ -235,3 +235,16 @@ uses this browser-safe opener and performs a final synchronous authorization che
 across the batch before returning plaintext. Browser bundling is checked in PR CI;
 real Chromium concurrent-poll/restart coverage runs only in the scheduled batch.
 The product UI, authenticated discovery and grant-outbox delivery remain open.
+
+### Prepared browser submission
+
+The `sociacl-ids/first-contact` export includes descriptor verification and
+`prepareFirstContactSubmission`. Supply independently authenticated discovery,
+recipient/sender history providers and the recipient's retained descriptor floor.
+The prepared object keeps one ciphertext and exposes `submit`; retry that same
+object after a lost response instead of encrypting again. Every attempt checks
+current histories, expiry and the floor before sending and after acknowledgement.
+The append callback must use configured Spanopticon and honor its abort signal.
+A returned ciphertext digest confirms only storage acknowledgement, never contact
+acceptance or grant delivery. Missing/disabled-channel freshness still belongs to
+authenticated discovery; this API does not infer it from a stored descriptor.

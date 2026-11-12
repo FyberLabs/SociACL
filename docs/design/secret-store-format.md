@@ -90,3 +90,21 @@ and headless consumer before sync and
 platform device adapters. Each runtime stage belongs in the scheduled CI batch.
 Hardware protection, provider activation, independent audit and GA are separate
 milestones; the signing format does not claim any of them.
+
+### Signed audit admission
+
+`VaultAuditHistory` admits signed events against authenticated version history
+and an independently selected actor. Bootstrap requires an exact trusted genesis
+transcript digest; missing state cannot implicitly bootstrap. Advance retains all
+IDs (up to 256), accepts exact transcript retries and rejects predecessor forks,
+event-ID reuse, unknown versions, backward times and retired/forged actor keys.
+`record_read` additionally binds a fresh event to the current unambiguous version,
+accessor, device, decision outcome and supplied decision time. An allowed entry
+records Check authorization, not successful plaintext delivery after commit.
+
+The read consumer can call `record_read` inside `read_authorized_local_vault`'s
+commit callback and atomically persist the candidate alongside nonce/revision
+state and the item expectation. Signing uses `AccountSeaSecret::sign_vault_audit`.
+These are in-memory admission and composition APIs. A protected confidential
+atomic backing store, audit checkpoint persistence and CLI integration remain
+required; a signed assertion is not proof every operation was logged.

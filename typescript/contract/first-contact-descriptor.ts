@@ -4,7 +4,7 @@ import type { PrincipalId, ResolutionContext, Result } from '../ids/src/index.js
 import { data, integer, lp, fail, ok } from '../ids/src/util.js';
 import type { FirstContactSealDescriptor } from './first-contact-seal.ts';
 import type { AccountKeyring } from './account-keyring.ts';
-import { unb64 } from './account-key-seal.ts';
+import { unb64 } from '../ids/src/util.js';
 
 export const FIRST_CONTACT_DESCRIPTOR_DOMAIN = 'sociacl-first-contact-descriptor-v1';
 export type SignedFirstContactDescriptor = Readonly<{

@@ -1397,6 +1397,38 @@ fn vault_consumer_requires_signed_current_version_check_and_durable_commit() {
     let mut clock=[20,20,100000].into_iter();let mut commits=0;
     assert!(read_authorized_local_vault(&w,&envelope,&signed,&expected,&[],&identity,authorization.clone(),password,||clock.next().unwrap(),|_|{commits+=1;Ok(())}).is_err());
     assert_eq!(commits,1); // Persisted nonce, but no plaintext after lease expiry.
+    // Audit and verifier state must be committed together. The core supplies the
+    // authenticated candidate; this fixture exercises the consumer commit boundary.
+    use sociacl_encdisc::{VaultVersionHistory,VaultAuditHistory,VaultAudit,SignedVaultAudit,vault_version_signing_bytes,vault_audit_signing_bytes};
+    let versions=VaultVersionHistory::initialize(&signed,&expected,&sha256_hex(&vault_version_signing_bytes(&signed.version).unwrap()),&[],&identity).unwrap();
+    let genesis=VaultAudit{event_id:"aa".repeat(32),item_id:expected.item_id.clone(),version_id:expected.version_id.clone(),
+        actor:w.alice.account().into(),device_id:"bb".repeat(32),operation:"put".into(),outcome:"allowed".into(),issued_at:0,previous_digest:"00".repeat(32)};
+    let anchor=sha256_hex(&vault_audit_signing_bytes(&genesis).unwrap());
+    let first=SignedVaultAudit{signature:w.alice.sign_vault_audit(&genesis).unwrap(),event:genesis};
+    let audit=VaultAuditHistory::initialize(&first,&versions,w.alice.account(),&anchor,&[],&identity).unwrap();
+    let event=VaultAudit{event_id:"cc".repeat(32),actor:w.bob.account().into(),operation:"read".into(),previous_digest:audit.head().into(),..first.event.clone()};
+    let sign_audit=|event:VaultAudit|SignedVaultAudit{signature:w.bob.sign_vault_audit(&event).unwrap(),event};
+    let read=sign_audit(event.clone());let mut persisted_audit=None;
+    let opened=read_authorized_local_vault(&w,&envelope,&signed,&expected,&[],&identity,authorization.clone(),password,||20,|decision|{
+        let candidate=audit.record_read(&read,&versions,&authorization.accessor,&event.device_id,decision,0,&[],&identity)?;
+        committed=Some(decision.clone());persisted_audit=Some(candidate);Ok(())
+    }).unwrap();
+    assert_eq!(opened.content(),b"secret");
+    let saved=persisted_audit.unwrap();assert_ne!(saved.head(),audit.head());
+    assert_eq!(saved.event(&event.event_id).unwrap().outcome,"allowed");
+    assert_eq!(saved.advance(&read,&versions,w.bob.account(),&[],&identity).unwrap().head(),saved.head());
+    assert!(saved.record_read(&read,&versions,w.bob.account(),&event.device_id,committed.as_ref().unwrap(),0,&[],&identity).is_err());
+    let mut bad=event.clone();bad.outcome="denied".into();
+    assert!(audit.record_read(&sign_audit(bad),&versions,w.bob.account(),&event.device_id,committed.as_ref().unwrap(),0,&[],&identity).is_err());
+    assert!(audit.record_read(&read,&versions,w.alice.account(),&event.device_id,committed.as_ref().unwrap(),0,&[],&identity).is_err());
+    let mut fork=event.clone();fork.event_id="dd".repeat(32);
+    assert!(saved.advance(&sign_audit(fork),&versions,w.bob.account(),&[],&identity).is_err());
+    let mut unknown=event.clone();unknown.version_id="ee".repeat(32);
+    assert!(audit.advance(&sign_audit(unknown),&versions,w.bob.account(),&[],&identity).is_err());
+    let mut forged=read.clone();forged.signature="A".repeat(86);
+    assert!(audit.advance(&forged,&versions,w.bob.account(),&[],&identity).is_err());
+    let mut reused=event.clone();reused.outcome="failed".into();
+    assert!(saved.advance(&sign_audit(reused),&versions,w.bob.account(),&[],&identity).is_err());
     signed.version.sensitive=false;
     assert!(read_authorized_local_vault(&w,&envelope,&signed,&expected,&[],&identity,authorization.clone(),password,||20,|_|panic!("forged version committed")).is_err());
     signed.version.sensitive=true;

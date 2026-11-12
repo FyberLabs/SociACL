@@ -190,3 +190,25 @@ test('collection accepts reordered policy bytes restored under the same canonica
   assert.equal(observed.observation.epoch,policy.epoch);
   assert.deepEqual(observed.observation.operators,['operator-2','operator-3','operator-4','operator-5']);
 });
+
+test('retained-policy collection rejects concurrent membership change and stale policy before sending',async()=>{
+  const {IDBFactory}=createRequire(new URL('../ids/package.json',import.meta.url))('fake-indexeddb');
+  const options={name:'collection-floor',principal:pub(1),anchor:policy,now:()=>context.now,indexedDB:new IDBFactory()};
+  const a=await openIndependentWitnessPolicyStore({...options,create:true}),b=await openIndependentWitnessPolicyStore(options);
+  const r=signed(),state=()=>({rotations:[],context});let calls=0;
+  const next={...policy,epoch:2},digest=independentWitnessTransitionDigest(policy,next);
+  const old=signed({recordDigest:digest}),fresh=signed({recordDigest:digest,epoch:2});
+  let transition:Promise<unknown>|undefined;
+  const transports=new Map<string,WitnessTransport>([2,3,4,5].map(n=>[`operator-${n}`,async request=>{
+    calls++;transition??=b.advance(policy,next,old,[2,3,4].map(n=>receipt(old,n)),fresh,[2,3,4].map(n=>receipt(fresh,n)),state);
+    await transition;return receipt(request,n);
+  }]));
+  await assert.rejects(a.collect(r,r.recordDigest,policy,state,transports));
+  assert.equal(calls,4);assert.deepEqual(await a.read(next),next);
+  await assert.rejects(a.collect(r,r.recordDigest,policy,state,transports));assert.equal(calls,4);
+  const current=signed({epoch:2});
+  const good=new Map<string,WitnessTransport>([2,3,4,5].map(n=>[`operator-${n}`,async request=>receipt(request,n)]));
+  assert.equal((await a.collect(current,current.recordDigest,next,state,good)).observation.epoch,2);
+  await assert.rejects(a.collect({...current,principal:pub(2)},current.recordDigest,next,state,good));
+  a.close();b.close();
+});
