@@ -106,3 +106,32 @@ Its parser accepts `serde_json::Value`; JSON decoding rejects unpaired surrogate
 before parsing, and typed Rust strings cannot contain them. Both language suites
 run in PR CI. This covers signed inner payload interoperability only; encrypted
 cross-client E2E remains unfinished and must run in CI when implemented.
+
+## Confidential envelope v1 reference
+
+`typescript/contract/first-contact-seal.ts` supplies a bounded envelope, separate
+from grant encryption. The binary layout is version byte `01`, a 65-byte
+uncompressed ephemeral P-256 point, 12 random nonce bytes, AES-256-GCM ciphertext,
+and a 16-byte tag, with an 8192-byte total cap. Each seal uses a fresh random
+scalar and nonce. The trusted descriptor adds a dedicated `encryptionEpub`.
+Never obtain that key or the descriptor policy from the received envelope.
+
+Associated data is length-prefixed UTF-8: `sociacl-first-contact-seal-v1`, `1`,
+channel ID, canonical decimal descriptor revision, recipient encryption SEA
+point, ephemeral SEA point. HKDF-SHA256 takes the 32-byte ECDH x coordinate as
+IKM, 32 zero salt bytes, that same associated data as info, and produces the
+32-byte AES key. The plaintext is the canonical ten signing fields followed by
+the compact signature as an eleventh length-prefixed field. Decoding must
+round-trip exactly; noncanonical decimals, invalid UTF-8 and trailing data fail.
+The public envelope contains no sender, reply key, signature or private lane.
+Ciphertext length still exposes approximate message length; padding is not part
+of this version.
+
+Opening verifies the recipient key, authenticated encryption, canonical payload,
+current sender signature/history and descriptor policy before returning verified
+request metadata. Durable replay admission and explicit recipient acceptance
+remain separate. Invalid ciphertext never yields a partially decoded request.
+The TypeScript PR suite exercises randomization, tampering, destination binding,
+wrong keys, bounds, expiry, missing history and forged inner signatures. Rust
+cross-language envelope vectors remain an acceptance gate; this reference alone
+must not be advertised as a deployed public request channel.
