@@ -1407,3 +1407,46 @@ fn vault_consumer_requires_signed_current_version_check_and_durable_commit() {
     let missing=|_:&PrincipalId,_,_|Err(sociacl_ids::Reason::MissingHistory);identity.history=&missing;
     assert!(read_authorized_local_vault(&w,&envelope,&signed,&expected,&[],&identity,authorization,password,||20,|_|panic!("missing history committed")).is_err());
 }
+
+#[test]
+fn vault_history_preserves_forks_and_requires_explicit_signed_resolution() {
+    use sociacl_encdisc::{VaultVersion, SignedVaultVersion, VaultReadExpectation, VaultVersionHistory, vault_version_signing_bytes};
+    use sociacl_ids::{history_state, PrincipalId, Jwks, SiwePolicy, ResolutionContext};
+    let w=world();
+    let jwks=Jwks{keys:vec![]};let links=Default::default();let issuers=Default::default();
+    let policy=SiwePolicy{allowed_domains:vec![],allowed_uris:vec![],allowed_chain_ids:vec![],clock_skew_seconds:0};
+    let history=|p:&PrincipalId,at,until|Ok(history_state(p,&[],at,until));
+    let ctx=ResolutionContext{jwks:&jwks,links:&links,revocations:&[],now:100,policy:&policy,pinned_iss:&issuers,history:&history,genesis_epub_bindings:&[]};
+    let root=VaultVersion{item_id:"11".repeat(32),version_id:"22".repeat(32),owner:w.alice.account().into(),parents:vec![],
+        epoch:1,revision_id:"aa".repeat(32),ciphertext_digest:"33".repeat(32),sensitive:true,issued_at:1};
+    let sign=|v:VaultVersion|SignedVaultVersion{signature:w.alice.sign_vault_version(&v).unwrap(),version:v};
+    let expected=VaultReadExpectation{object:"item-1".into(),owner:root.owner.clone(),item_id:root.item_id.clone(),version_id:root.version_id.clone(),
+        ciphertext_digest:root.ciphertext_digest.clone(),epoch:1,revision_id:root.revision_id.clone()};
+    let digest=sha256_hex(&vault_version_signing_bytes(&root).unwrap());
+    let initial=VaultVersionHistory::initialize(&sign(root.clone()),&expected,&digest,&[],&ctx).unwrap();
+    assert!(VaultVersionHistory::initialize(&sign(root.clone()),&expected,&"00".repeat(32),&[],&ctx).is_err());
+    let child=|id:&str,parents:Vec<String>|VaultVersion{version_id:id.repeat(32),parents,issued_at:2,ciphertext_digest:id.repeat(32),..root.clone()};
+    let a=child("44",vec![root.version_id.clone()]);let b=child("55",vec![root.version_id.clone()]);
+    let one=initial.advance(&sign(a.clone()),1,&root.revision_id,&[],&ctx).unwrap();
+    let fork=one.advance(&sign(b.clone()),1,&root.revision_id,&[],&ctx).unwrap();
+    assert_eq!(fork.heads().count(),2);assert!(fork.read_expectation().is_err());
+    assert_eq!(initial.heads().collect::<Vec<_>>(),vec![root.version_id.as_str()]);
+    let joined=child("66",vec![a.version_id.clone(),b.version_id.clone()]);
+    let resolved=fork.advance(&sign(joined.clone()),1,&root.revision_id,&[],&ctx).unwrap();
+    assert_eq!(resolved.read_expectation().unwrap().version_id,joined.version_id);
+    assert_eq!(resolved.read_expectation().unwrap().object,"item-1");
+    assert!(resolved.version(&root.version_id).is_some());
+    assert_eq!(resolved.advance(&sign(a.clone()),1,&root.revision_id,&[],&ctx).unwrap().heads().count(),1);
+    let mut equivocation=a.clone();equivocation.ciphertext_digest="99".repeat(32);
+    assert!(resolved.advance(&sign(equivocation),1,&root.revision_id,&[],&ctx).is_err());
+    assert!(resolved.advance(&sign(child("77",vec![])),1,&root.revision_id,&[],&ctx).is_err());
+    assert!(resolved.advance(&sign(child("77",vec!["88".repeat(32)])),1,&root.revision_id,&[],&ctx).is_err());
+    let mut forged=sign(child("77",vec![joined.version_id.clone()]));forged.signature="A".repeat(86);
+    assert!(resolved.advance(&forged,1,&root.revision_id,&[],&ctx).is_err());
+    let mut rotated=child("77",vec![joined.version_id.clone()]);rotated.epoch=2;rotated.revision_id="bb".repeat(32);
+    rotated.ciphertext_digest=joined.ciphertext_digest.clone();
+    assert!(resolved.advance(&sign(rotated.clone()),2,&rotated.revision_id,&[],&ctx).is_err());
+    rotated.ciphertext_digest="88".repeat(32);
+    let newer=resolved.advance(&sign(rotated.clone()),2,&rotated.revision_id,&[],&ctx).unwrap();
+    assert!(newer.advance(&sign(child("99",vec![joined.version_id.clone()])),1,&root.revision_id,&[],&ctx).is_err());
+}

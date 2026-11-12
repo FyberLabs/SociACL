@@ -81,13 +81,19 @@ test('shared witness transcripts, rejection fixtures and Rust signatures agree',
   for(const patch of v.rejectRequestPatches)assert.equal(verifyIndependentWitnesses({...request,...patch},rows,policy,request.recordDigest,[],context).ok,false);
   for(const patch of v.rejectPolicyPatches)assert.equal(verify(request,rows,{...policy,...patch}).ok,false);
   const own=verify(request,rows);assert.ok(own.ok);if(!own.ok)return;
+  const next={...policy,epoch:2},digest=independentWitnessTransitionDigest(policy,next);
+  const oldRequest=signed({recordDigest:digest}),newRequest=signed({recordDigest:digest,epoch:2});
+  const transition={digest,next,oldRequest,newRequest,oldReceipts:[2,3,4].map(n=>receipt(oldRequest,n)),newReceipts:[2,3,4].map(n=>receipt(newRequest,n))};
   if(process.env.WITNESS_RUST_VECTOR){
     const rust=JSON.parse(readFileSync(process.env.WITNESS_RUST_VECTOR,'utf8'));
     assert.deepEqual(rust.policy,policy);
+    assert.equal(rust.transition.digest,digest);
+    const t=rust.transition;
+    assert.deepEqual(advanceIndependentWitnessPolicy(policy,t.next,pub(1),t.oldRequest,t.oldReceipts,t.newRequest,t.newReceipts,[],context),next);
     const checked=verifyIndependentWitnesses(rust.request,rust.receipts,policy,request.recordDigest,[],context);
     assert.ok(checked.ok);if(checked.ok)assert.deepEqual(checked.value,rust.result);
   }
-  if(process.env.WITNESS_TS_VECTOR)writeFileSync(process.env.WITNESS_TS_VECTOR,JSON.stringify({request,receipts:rows,result:own.value}));
+  if(process.env.WITNESS_TS_VECTOR)writeFileSync(process.env.WITNESS_TS_VECTOR,JSON.stringify({request,receipts:rows,result:own.value,transition}));
 });
 
 import { collectIndependentWitnesses, type WitnessTransport } from '../contract/independent-witness-client.ts';
@@ -119,4 +125,32 @@ test('collection detects rollback when the provider mutates a shared context',as
     return receipt(request,n);
   }]));
   await assert.rejects(collectIndependentWitnesses(r,r.recordDigest,[],()=>policy,()=>shared,transports),/clock rollback/);
+});
+
+import { advanceIndependentWitnessPolicy, independentWitnessTransitionDigest } from '../contract/independent-witness-transition.ts';
+test('policy changes require account intent and both old and new rotation quorums',()=>{
+  const next={...policy,epoch:2};
+  const digest=independentWitnessTransitionDigest(policy,next);
+  const old=signed({recordDigest:digest}), fresh=signed({recordDigest:digest,epoch:2});
+  const rows=(r:WitnessRequest)=>[2,3,4].map(n=>receipt(r,n));
+  const advance=(p=next,a=old,b=fresh,oldRows=rows(a),newRows=rows(b))=>
+    advanceIndependentWitnessPolicy(policy,p,pub(1),a,oldRows,b,newRows,[],context);
+  assert.deepEqual(advance(),next);
+  assert.throws(()=>advance(next,old,fresh,rows(old).slice(0,2)));
+  assert.throws(()=>advance(next,old,fresh,rows(old),rows(fresh).slice(0,2)));
+  assert.throws(()=>advance({...next,epoch:3}));
+  assert.throws(()=>advance({...next,threshold:2}));
+  assert.throws(()=>advance(next,{...old,sig:'A'.repeat(86)}));
+  assert.throws(()=>advance(next,signed({recordDigest:digest,operation:'revoke'})));
+  assert.throws(()=>advanceIndependentWitnessPolicy(policy,next,pub(2),old,rows(old),fresh,rows(fresh),[],context));
+  assert.equal(independentWitnessTransitionDigest({...policy,operators:[...policy.operators].reverse()},next),digest);
+  assert.notEqual(independentWitnessTransitionDigest(policy,{...next,operators:next.operators.slice(0,3)}),digest);
+});
+
+test('transition parsing never invokes request accessors',()=>{
+  const next={...policy,epoch:2}, digest=independentWitnessTransitionDigest(policy,next);
+  const old=signed({recordDigest:digest}), fresh=signed({recordDigest:digest,epoch:2});let reads=0;
+  const hostile={...old};Object.defineProperty(hostile,'principal',{get(){reads++;throw Error('getter');}});
+  assert.throws(()=>advanceIndependentWitnessPolicy(policy,next,pub(1),hostile,[],fresh,[],[],context));
+  assert.equal(reads,0);
 });

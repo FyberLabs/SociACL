@@ -130,3 +130,21 @@ s3r.ch adapters must use its configured Spanopticon interfaces. This collector
 is usable with independently provisioned operators but does not provision them,
 make them independent, or activate the existing single-witness record verifier.
 Durable anti-equivocation and authenticated policy transitions remain required.
+
+## Joint-quorum policy transitions
+
+`advanceIndependentWitnessPolicy` authenticates an exact old-to-new policy
+transition. Canonical policy transcripts bind every operator, key issuance window,
+threshold and fault bound. The policy ID remains fixed and the epoch advances by
+exactly one. Account-signed rotation requests under both policies must bind the
+same domain-separated transition digest, and both independently satisfy the
+rotation quorum rule. Neither the outgoing nor incoming operator set can change
+membership alone. Reordering keys or operators does not change policy identity.
+
+The old policy must come from independently trusted retained state, never from
+the proposal. The returned policy is a candidate for atomic compare-and-swap;
+this verifier does not bootstrap trust, persist a floor, prove latest policy,
+or supply durable single-successor witness decisions. Those remain prerequisites
+for runtime activation. Rust implements the same transition verifier; CI exchanges
+independently signed old/new quorum bundles in both directions and compares their
+canonical transition digests.

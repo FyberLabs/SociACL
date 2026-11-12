@@ -256,3 +256,6 @@ pub use vault_local::{seal_local_vault_item, open_local_vault_item, LocalVaultEn
 pub use vault_file::{LocalVaultFileStore, VaultFileHead};
 
 pub use vault_read::{read_authorized_local_vault, SignedVaultVersion, VaultReadExpectation};
+
+mod vault_history;
+pub use vault_history::VaultVersionHistory;

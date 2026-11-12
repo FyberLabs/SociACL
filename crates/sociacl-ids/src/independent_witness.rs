@@ -105,3 +105,51 @@ pub fn verify_independent_witnesses(request: &Value, receipts: &Value, policy: &
     Ok(IndependentWitnessObservation { request_id: digest(&bytes), record_digest:r.record_digest,
         policy_id:r.policy_id,epoch:r.epoch,operators:seen.into_iter().collect(),timestamp_upper_bound:upper })
 }
+
+/// Canonical membership transcript; semantic authorization is checked by the verifier.
+pub fn independent_witness_policy_bytes(policy: &Value) -> Result<Vec<u8>, Reason> {
+    fields(policy, &["id","epoch","threshold","maxFaulty","operators"])?;
+    let id = text(&policy["id"],64)?;
+    if !hash(id) { return Err(Reason::BadAttestation); }
+    let mut out = vec!["sociacl-independent-witness-policy-v1".to_owned(), id.to_owned(),
+        number(&policy["epoch"])?.to_string(), number(&policy["threshold"])?.to_string(), number(&policy["maxFaulty"])?.to_string()];
+    let mut ops = Vec::new();
+    for op in array(&policy["operators"],16)? {
+        fields(op, &["id","keys"])?;
+        let name = text(&op["id"],64)?;
+        if !operator(name) { return Err(Reason::BadAttestation); }
+        let mut keys = Vec::new();
+        for key in array(&op["keys"],4)? {
+            fields(key, &["key","notBefore","notAfter"])?;
+            let principal = parse_principal_id(text(&key["key"],87)?)?;
+            keys.push((principal.to_string(),number(&key["notBefore"])?,number(&key["notAfter"])?));
+        }
+        keys.sort_by(|a,b| a.0.cmp(&b.0));
+        ops.push((name.to_owned(),keys));
+    }
+    ops.sort_by(|a,b| a.0.cmp(&b.0)); out.push(ops.len().to_string());
+    for (name,keys) in ops {
+        out.push(name); out.push(keys.len().to_string());
+        for (key,before,after) in keys { out.extend([key,before.to_string(),after.to_string()]); }
+    }
+    length_prefixed(&out.iter().map(String::as_str).collect::<Vec<_>>())
+}
+pub fn independent_witness_transition_digest(previous: &Value, next: &Value) -> Result<String, Reason> {
+    Ok(digest(&length_prefixed(&["sociacl-independent-witness-transition-v1",
+        &digest(&independent_witness_policy_bytes(previous)?), &digest(&independent_witness_policy_bytes(next)?)])?))
+}
+/// Independently trusted previous policy, exact next epoch, account intent and
+/// both rotation quorums. Returns a candidate for caller-owned durable CAS only.
+pub fn advance_independent_witness_policy(previous: &Value, next: &Value, principal: &PrincipalId,
+    old_request: &Value, old_receipts: &Value, new_request: &Value, new_receipts: &Value,
+    rotations: &[Value], ctx: &ResolutionContext<'_>) -> Result<Value, Reason> {
+    let digest = independent_witness_transition_digest(previous,next)?;
+    let old = parse_witness_request(old_request)?; let fresh = parse_witness_request(new_request)?;
+    if previous["id"] != next["id"] || number(&next["epoch"])? != number(&previous["epoch"])? + 1 ||
+        old.principal != *principal || fresh.principal != *principal || old.operation != "rotate" || fresh.operation != "rotate" {
+        return Err(Reason::BadAttestation);
+    }
+    verify_independent_witnesses(old_request,old_receipts,previous,&digest,rotations,ctx)?;
+    verify_independent_witnesses(new_request,new_receipts,next,&digest,rotations,ctx)?;
+    Ok(next.clone())
+}
