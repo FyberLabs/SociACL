@@ -606,11 +606,14 @@ test("grant open, the wrong party, tamper, a stale grant, and a re-grant", () =>
 test("builders and the deterministic seal are not production exports", () => {
   assert.deepEqual(Object.keys(contactLane).sort(), [
     "deriveContactLane",
+    "firstContactRequestBytes",
     "laneLookupKey",
     "openContactLaneGrant",
+    "parseFirstContactRequest",
     "regrantContactLanes",
     "resolveContactLane",
     "sealContactLaneGrant",
+    "verifyFirstContactRequest",
   ]);
   const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as {
     exports: Record<string, string>;
