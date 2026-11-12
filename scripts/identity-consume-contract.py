@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 TARGET = ROOT / 'docs/identity-consume'
 # No optional Zod dependency, browser persistence implementation, or runtime JS.
 FILES = ('index.d.ts', 'types.d.ts', 'ids.d.ts', 'records.d.ts', 'json.d.ts',
-         'util.d.ts', 'witness-policy.d.ts', 'witness-checkpoint.d.ts', 'agent-delegation.d.ts')
+         'util.d.ts', 'witness-policy.d.ts', 'witness-checkpoint.d.ts', 'agent-delegation.d.ts', 'reader-wrap.d.ts')
 
 
 def snapshot():
@@ -19,6 +19,9 @@ def snapshot():
     for directory in ('vectors/ids', 'vectors/mesh', 'vectors/agent-delegation', 'vectors/first-contact'):
         for path in sorted((ROOT/directory).rglob('*.json')):
             hashes[path.relative_to(ROOT).as_posix()] = hashlib.sha256(path.read_bytes()).hexdigest()
+    for name in ('wrap.json', 'sea-fixture.json'):
+        path = ROOT/'vectors/encrypted-discovery'/name
+        hashes[path.relative_to(ROOT).as_posix()] = hashlib.sha256(path.read_bytes()).hexdigest()
     hashes['docs/s3rch-check.d.ts'] = hashlib.sha256((ROOT/'docs/s3rch-check.d.ts').read_bytes()).hexdigest()
     hashes['docs/first-contact.d.ts'] = hashlib.sha256((ROOT/'docs/first-contact.d.ts').read_bytes()).hexdigest()
     manifest = {'schema': 1, 'contract': 'sociacl-identity-consume-v1',
