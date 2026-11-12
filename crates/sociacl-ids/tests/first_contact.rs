@@ -76,7 +76,10 @@ fn parser_rejects_extra_fields_coercion_and_utf8_overflow() {
     for (field, value) in [("extra", json!(true)), ("descriptorRevision", json!("1")),
         ("issuedAt", json!(-0.0)), ("expiresAt", json!(9007199254740992u64)),
         ("nonce", json!("AB".repeat(32))), ("message", json!("é".repeat(2049))),
-        ("replyEpub", json!("https://attacker.example")), ("sig", json!(""))] {
+        ("replyEpub", json!("https://attacker.example")), ("sig", json!("")),
+        ("channelId", json!(format!("{}\n", row["channelId"].as_str().unwrap()))),
+        ("nonce", json!(format!("{}\n", row["nonce"].as_str().unwrap()))),
+        ("sig", json!(format!("{}\n", row["sig"].as_str().unwrap())))] {
         let mut altered = row.clone(); altered[field] = value;
         assert!(parse_first_contact_request(&altered).is_err(), "{field}");
     }

@@ -78,7 +78,8 @@ test('first contact parser rejects coercions, getters, malformed unicode and ove
   assert.equal(parseFirstContactRequest(hostile).ok, false); assert.equal(reads, 0);
   for (const patch of [{ extra: true }, { descriptorRevision: '1' }, { issuedAt: -0 },
     { message: '\ud800' }, { message: 'é'.repeat(2049) }, { nonce: 'AB'.repeat(32) },
-    { replyEpub: 'https://attacker.example' }, { sig: '' }]) {
+    { replyEpub: 'https://attacker.example' }, { sig: '' },
+    { channelId: request.channelId + '\n' }, { nonce: request.nonce + '\n' }, { sig: request.sig + '\n' }]) {
     assert.equal(parseFirstContactRequest({ ...request, ...patch }).ok, false);
   }
   assert.equal(verify(request, vectors.descriptor, { ...ctx, history: () => ({ ok: false, reason: 'missing-history' }) }).ok, false);
