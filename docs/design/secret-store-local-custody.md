@@ -50,7 +50,7 @@ caller's responsibility. No API accepts caller-supplied nonces or DEKs.
 ## File and head contract
 
 The caller supplies a trusted parent directory. Explicit initialization creates
-one 0700 directory; reopening never creates or repairs missing state. The backend
+one 0700 directory and fsyncs its trusted parent before reporting success; reopening never creates or repairs missing state. The backend
 checks directory identity and mode, uses no-follow file opens and admits only
 0600 regular files with one hard link and matching directory ownership. Item
 filenames contain only the opaque 64-character lowercase hex ID.

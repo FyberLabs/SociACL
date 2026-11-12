@@ -31,7 +31,15 @@ impl LocalVaultFileStore {
         if create { DirBuilder::new().mode(0o700).create(path).map_err(storage)?; }
         let metadata = fs::symlink_metadata(path).map_err(storage)?;
         if !metadata.is_dir() || metadata.permissions().mode() & 0o7777 != 0o700 { return Err(EncDiscError::VaultStorage); }
-        Ok(Self { root: fs::canonicalize(path).map_err(storage)?, device: metadata.dev(), inode: metadata.ino(), owner: metadata.uid() })
+        let root = fs::canonicalize(path).map_err(storage)?;
+        if create {
+            // Persist the new root's name as well as later entries inside it.
+            // A failed sync leaves initialization ambiguous, never successful.
+            let parent = root.parent().ok_or(EncDiscError::VaultStorage)?;
+            OpenOptions::new().read(true).custom_flags(libc::O_NOFOLLOW | libc::O_DIRECTORY)
+                .open(parent).map_err(storage)?.sync_all().map_err(storage)?;
+        }
+        Ok(Self { root, device: metadata.dev(), inode: metadata.ino(), owner: metadata.uid() })
     }
     fn directory(&self) -> Result<File, EncDiscError> {
         let directory = OpenOptions::new().read(true).custom_flags(libc::O_NOFOLLOW | libc::O_DIRECTORY).open(&self.root).map_err(storage)?;
