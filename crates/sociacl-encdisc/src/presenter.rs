@@ -40,11 +40,13 @@ pub struct VerifierChallengeState {
 }
 
 /// Private brand. Not a reflectable property and not `Copy` for callers.
+#[derive(Clone)]
 struct ChannelBrand {
     _private: (),
 }
 
 /// Transport-minted capability. `open` is the only constructor.
+#[derive(Clone)]
 pub struct AuthenticatedPresenterChannel {
     accessor: String,
     reader_pub: String,
