@@ -67,3 +67,15 @@ test('input arrays and records are snapshotted without invoking accessors', asyn
   const result = await pending; assert.equal(result.ok, true); assert.deepEqual((await open(result.value[0])).value, dek);
   const revoked = Proxy.revocable([], {}); revoked.revoke(); assert.equal((await seal(revoked.proxy)).ok, false);
 });
+
+test('typed-array length overrides never forge a DEK or execute a getter', async () => {
+  let calls = 0;
+  const short = new Uint8Array(31);
+  Object.defineProperty(short, 'length', { get() { calls++; return 32; } });
+  assert.equal((await seal([reader], [reader.account], context, short)).ok, false);
+  class DecoratedKey extends Uint8Array { get length() { calls++; throw Error('must not read caller length'); } }
+  const valid = new DecoratedKey(dek);
+  const result = await seal([reader], [reader.account], context, valid);
+  assert.equal(result.ok, true); assert.deepEqual((await open(result.value[0])).value, dek);
+  assert.equal(calls, 0);
+});

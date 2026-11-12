@@ -8,6 +8,7 @@ import { data, integer, lp, hex, unhex, unb64, b64, ok, fail } from './util.js';
 /** @import {Result, ItemReaderWrap, ItemWrapContext} from './types.js' */
 const ERROR = 'bad-record';
 const DOMAIN = 's3rch-wrapped-key-v1';
+const intrinsicByteLength = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(Uint8Array.prototype), 'byteLength')?.get;
 
 /** @param {unknown} input @returns {ItemWrapContext} */
 function binding(input) {
@@ -55,8 +56,9 @@ async function aesKey(secret, peer) {
 export async function wrapItemDekToReaders(dek, context, readers, named) {
   /** @type {Uint8Array | undefined} */ let key;
   try {
-    if (!(dek instanceof Uint8Array) || dek.length !== 32) throw Error();
+    if (!ArrayBuffer.isView(dek) || !(dek instanceof Uint8Array) || intrinsicByteLength?.call(dek) !== 32) throw Error();
     key = new Uint8Array(dek);
+    if (key.byteLength !== 32) throw Error();
     const scope = binding(context);
     const readerList = list(readers), namedList = list(named);
     const authorized = new Set(namedList.map(value => { const p = parsePrincipalId(value); if (!p.ok) throw Error(); return p.value; }));
@@ -98,7 +100,7 @@ export async function openItemDekReaderWrap(input, epriv, epub, expected) {
     const scope = binding(expected), target = point(epub), d = data(input);
     if (!d.ok || Object.keys(d.value).sort().join() !== 'epoch,object,revisionId,scope,target,targetId,wrappedKey') throw Error();
     const wrap = d.value;
-    if (wrap.scope !== 'item-dek' || wrap.target !== 'reader-epub' || wrap.targetId !== target.name ||
+    if (!integer(wrap.epoch) || wrap.scope !== 'item-dek' || wrap.target !== 'reader-epub' || wrap.targetId !== target.name ||
         wrap.epoch !== scope.epoch || wrap.object !== scope.object || wrap.revisionId !== scope.revisionId ||
         typeof wrap.wrappedKey !== 'string' || wrap.wrappedKey.length > 16384 || !/^(?:[a-f0-9]{2}){95,}$/.test(wrap.wrappedKey) ||
         typeof epriv !== 'string' || epriv.length !== 43) throw Error();
