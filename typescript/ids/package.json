@@ -32,6 +32,10 @@
     "./checkpoint-client": {
       "types": "./dist/checkpoint-client.d.ts",
       "default": "./dist/checkpoint-client.js"
+    },
+    "./first-contact-store": {
+      "types": "./dist/first-contact-store.d.ts",
+      "default": "./dist/first-contact-store.js"
     }
   },
   "files": [

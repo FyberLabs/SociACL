@@ -138,3 +138,51 @@ directions and compares request identity, replay identity, retention and exact
 message bytes. This reference alone must not be advertised as a deployed public
 request channel; provisioning, replay persistence and explicit acceptance remain
 required.
+
+## Recipient replay journal and explicit acceptance
+
+The browser `sociacl-ids/first-contact-store` adapter uses strict IndexedDB
+readwrite transactions, resolving only after commit. Opt-in and rotation generate
+new random channel IDs; the recipient advertises the returned descriptor over an
+authenticated channel. Disable stops receipt and decisions immediately. Descriptor
+policy is immutable within a revision. The store bounds descriptors to seven days
+and retains at most 256 unexpired replay entries per recipient. Overflow refuses
+new requests instead of evicting live replay protection. A backward clock fails.
+
+The journal contains the encrypted request, its opaque request/replay IDs,
+deadlines and decision, never plaintext messages. Duplicate reservations cannot
+replace an envelope, extend its deadline or change its decision. Rejection and
+acceptance retain the replay tombstone through descriptor expiry, even after the
+shorter request expires. Missing storage is not implicitly bootstrapped. After
+origin-data loss, explicit setup publishes a fresh channel instead of reopening an
+old descriptor without its replay history. Origin compromise and externally
+rolled-back browser profiles remain outside IndexedDB's durability guarantee.
+
+`first-contact-inbox.ts` demonstrates the crypto/storage boundary: receive opens
+and verifies a request, reserves it durably, then returns it for display. Explicit
+acceptance loads the committed ciphertext, reauthenticates current sender history,
+seals the existing private-lane grant and commits it to the outbox before returning
+it for delivery. The grant targets the sender's authenticated current encryption
+key, not an unchecked reply key. A lost response is reconciled from the committed
+outbox. Accepted outbox entries survive request/descriptor expiry, disable and rotation
+until the exact ciphertext is acknowledged after delivery. They count against
+the quota and are never evicted to admit new requests. Callers must revalidate
+current histories and recipient rotation sequence before retrying delivery. A rotated recipient
+uses the existing regrant flow; an old outbox entry is not a fresh grant.
+
+PR CI covers receipt-to-acceptance cryptography, competing transactions, aborts,
+quotas, replay retention, disable/rotation and restart. The central scheduled
+browser suite additionally exercises real Chromium connections and a process
+restart. That suite is scheduled-only; adding its case does not claim it has run.
+Authenticated descriptor publication and s3r.ch's user-facing flow remain required
+before the public channel is complete.
+
+The public descriptor can be signed with `first-contact-descriptor.ts`. Its
+separate domain binds the expected owner, issuance time, channel, revision,
+encryption key, expiry and both request limits. Verification requires the
+independently expected owner, authenticated current-key history and a locally
+maintained revision floor. Sign only the descriptor returned by committed opt-in;
+never publish the private channel encryption scalar. A descriptor signature
+proves authorship, not freshness: first discovery still needs authenticated
+publication, and a known descriptor revision must not roll back. Old descriptors
+stop working locally on disable/rotation even if a transport replays them.

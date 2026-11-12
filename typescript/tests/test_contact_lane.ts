@@ -1,3 +1,10 @@
+import { signFirstContactDescriptor, verifyFirstContactDescriptor } from '../contract/first-contact-descriptor.ts';
+import { createRequire } from 'node:module';
+import { openFirstContactStore } from '../ids/src/first-contact-store.js';
+import { receiveFirstContact, acceptFirstContactRequest } from '../contract/first-contact-inbox.ts';
+import { sealFirstContactRequest } from '../contract/first-contact-seal.ts';
+import { firstContactRequestBytes } from '../contract/first-contact.ts';
+import { signWithKeyring, parsePrincipalId } from '../ids/src/index.js';
 import assert from "node:assert/strict";
 import { createHash, hkdfSync } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -622,4 +629,55 @@ test("builders and the deterministic seal are not production exports", () => {
   assert.equal(exported.includes("sealContactLaneGrantWith"), false);
   assert.equal(exported.includes("contact-lane-deterministic"), false);
   assert.equal(exported.includes("contactLaneInfo"), false);
+});
+
+
+test('first contact requires committed replay admission and explicit acceptance before a lane grant exists', async () => {
+  const { IDBFactory } = createRequire(new URL('../ids/package.json', import.meta.url))('fake-indexeddb') as { IDBFactory: new () => IDBFactory };
+  const recipient = genesisKeyring(), sender = scalarSea(3), senderEnc = scalarSea(4), channel = scalarSea(15);
+  const binding = signGenesisEpub(sender.pub, senderEnc.pub, records.context.now - 40, 3);
+  const ctx = { ...contextWith([binding]), history: (p: PrincipalId, at:number, until:number) =>
+    ({ok:true as const,value:historyState(p,[],at,until)}) };
+  const store = await openFirstContactStore({ name:'first-contact-flow',owner:recipient.principal,
+    now:()=>ctx.now,create:true,indexedDB:new IDBFactory() });
+  try {
+    const d = await store.activate({ encryptionEpub:channel.pub,expiresAt:ctx.now+600,maxLifetimeSeconds:300,maxMessageBytes:1024 });
+    const principal = parsePrincipalId(sender.pub); assert.ok(principal.ok); if(!principal.ok) return;
+    const reply = parsePrincipalId(senderEnc.pub); assert.ok(reply.ok); if(!reply.ok) return;
+    const r = {v:1 as const,channelId:d.channelId,descriptorRevision:d.revision,sender:principal.value,
+      replyEpub:reply.value,nonce:'aa'.repeat(32),issuedAt:ctx.now,expiresAt:ctx.now+300,message:'Hello'};
+    const sig = signWithKeyring(Buffer.from(sender.priv,'base64url'),firstContactRequestBytes(r),principal.value);
+    assert.ok(sig.ok); if(!sig.ok) return;
+    const envelope = sealFirstContactRequest({...r,sig:sig.value},d);
+    const opened = await receiveFirstContact(store,envelope,channel.priv,[],ctx);
+    assert.deepEqual(await store.outbox(),[]);
+    await assert.rejects(receiveFirstContact(store,envelope,channel.priv,[],ctx),/replayed/);
+    await assert.rejects(acceptFirstContactRequest(store,opened.replayKey,channel.priv,recipient,[],
+      {...ctx,history:()=>({ok:false,reason:'missing-history'})},[],witnessed()));
+    assert.deepEqual(await store.outbox(),[]);
+    const grant = await acceptFirstContactRequest(store,opened.replayKey,channel.priv,recipient,[],ctx,[],witnessed());
+    const lane = openContactLaneGrant(sender.pub,senderEnc.priv,grant,recipient.principal,[],witnessed());
+    assert.equal(lane.laneId,resolveContactLane(recipient,sender.pub,recipient.rotationSeq));
+    assert.equal((await store.outbox())[0]?.grant?.ciphertextHex,grant.ciphertextHex);
+    await assert.rejects(acceptFirstContactRequest(store,opened.replayKey,channel.priv,recipient,[],ctx,[],witnessed()));
+  } finally { store.close(); }
+});
+
+
+test('public first-contact descriptors bind owner, key and policy without becoming freshness proofs', () => {
+  const keyring=genesisKeyring(),ctx={...witnessed(),history:(p:PrincipalId,at:number,until:number)=>
+    p===keyring.principal ? {ok:true as const,value:historyState(p,[],at,until)} : {ok:false as const,reason:'missing-history' as const}};
+  const d={channelId:'ab'.repeat(32),revision:2,encryptionEpub:scalarSea(15).pub,
+    expiresAt:ctx.now+600,maxLifetimeSeconds:300,maxMessageBytes:1024};
+  const signed=signFirstContactDescriptor(keyring,d,[],ctx);
+  const verify=(input:unknown,floor=2)=>verifyFirstContactDescriptor(input,keyring.principal,floor,[],ctx);
+  assert.ok(verify(signed).ok);assert.equal(verify(signed,3).ok,false);
+  for(const patch of [{channelId:'cd'.repeat(32)},{revision:3},{encryptionEpub:scalarSea(16).pub},
+    {expiresAt:d.expiresAt+1},{maxLifetimeSeconds:301},{maxMessageBytes:2048}]) {
+    assert.equal(verify({...signed,descriptor:{...signed.descriptor,...patch}}).ok,false);
+  }
+  assert.equal(verify({...signed,owner:scalarSea(3).pub}).ok,false);
+  assert.equal(verifyFirstContactDescriptor(signed,keyring.principal,2,[],{...ctx,now:d.expiresAt}).ok,false);
+  assert.equal(verifyFirstContactDescriptor(signed,keyring.principal,2,[],
+    {...ctx,history:()=>({ok:false,reason:'missing-history'})}).ok,false);
 });

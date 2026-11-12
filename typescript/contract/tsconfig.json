@@ -42,6 +42,7 @@
     "../tests/test_recovery.ts",
     "../tests/test_contact_lane.ts",
     "../tests/test_consume.ts",
-    "../tests/test_first_contact.ts"
+    "../tests/test_first_contact.ts",
+    "first-contact-inbox.ts"
   ]
 }
