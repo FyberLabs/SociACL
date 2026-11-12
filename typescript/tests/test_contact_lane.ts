@@ -1,3 +1,4 @@
+import { pollFirstContact } from '../contract/first-contact-poll.ts';
 import { signFirstContactDescriptor, verifyFirstContactDescriptor } from '../contract/first-contact-descriptor.ts';
 import { createRequire } from 'node:module';
 import { openFirstContactStore } from '../ids/src/first-contact-store.js';
@@ -632,7 +633,7 @@ test("builders and the deterministic seal are not production exports", () => {
 });
 
 
-test('first contact requires committed replay admission and explicit acceptance before a lane grant exists', async () => {
+for (const mode of ['direct','poll'] as const) test(`first contact ${mode} requires committed replay admission and explicit acceptance before a lane grant exists`, async () => {
   const { IDBFactory } = createRequire(new URL('../ids/package.json', import.meta.url))('fake-indexeddb') as { IDBFactory: new () => IDBFactory };
   const recipient = genesisKeyring(), sender = scalarSea(3), senderEnc = scalarSea(4), channel = scalarSea(15);
   const binding = signGenesisEpub(sender.pub, senderEnc.pub, records.context.now - 40, 3);
@@ -649,7 +650,10 @@ test('first contact requires committed replay admission and explicit acceptance 
     const sig = signWithKeyring(Buffer.from(sender.priv,'base64url'),firstContactRequestBytes(r),principal.value);
     assert.ok(sig.ok); if(!sig.ok) return;
     const envelope = sealFirstContactRequest({...r,sig:sig.value},d);
-    const opened = await receiveFirstContact(store,envelope,channel.priv,[],ctx);
+    const rows=[{id:createHash('sha256').update(envelope).digest('hex'),ciphertext:envelope}];
+    const polled=mode==='poll'?await Promise.all([1,2].map(()=>pollFirstContact(store,async()=>rows,channel.priv,()=>({rotations:[],context:ctx})))):[];
+    if(mode==='poll')assert.equal(polled.flat().length,1);
+    const opened = mode==='direct'?await receiveFirstContact(store,envelope,channel.priv,[],ctx):polled.flat()[0]!;
     assert.deepEqual(await store.outbox(),[]);
     await assert.rejects(receiveFirstContact(store,envelope,channel.priv,[],ctx),/replayed/);
     await assert.rejects(acceptFirstContactRequest(store,opened.replayKey,channel.priv,recipient,[],
