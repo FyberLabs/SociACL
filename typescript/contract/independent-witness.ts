@@ -24,7 +24,7 @@ function array(input:unknown, maximum:number):unknown[] {
   });
 }
 const hash=(s:unknown):s is string=>typeof s==='string' && s.length===64 && /^[0-9a-f]{64}$/.test(s);
-const operator=(s:unknown):s is string=>typeof s==='string' && s.length<=64 && /^[a-z][a-z0-9-]*$/.test(s);
+const operator=(s:unknown):s is string=>typeof s==='string' && s.length<=64 && /^[a-z]/.test(s) && !/[^a-z0-9-]/.test(s);
 export function witnessRequestBytes(r:Omit<WitnessRequest,'sig'>):Uint8Array {
   return lp([WITNESS_REQUEST_DOMAIN,'1',r.principal,r.operation,r.recordDigest,r.policyId,String(r.epoch),String(r.issuedAt),String(r.expiresAt)]);
 }

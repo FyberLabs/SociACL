@@ -64,6 +64,10 @@ test('receipt parsing bounds arrays before crypto and never invokes accessors',(
   const hostile={...r};Object.defineProperty(hostile,'recordDigest',{get(){reads++;throw Error('getter');}});
   assert.equal(verifyIndependentWitnesses(hostile,rows,policy,r.recordDigest,[],context).ok,false);assert.equal(reads,0);
   assert.equal(verify(r,new Array(1000)).ok,false);
+  for(const suffix of ['\n','\r']) {
+    const malformed={...policy,operators:policy.operators.map((op,i)=>i===0?{...op,id:op.id+suffix}:op)};
+    assert.equal(verify(r,rows,malformed).ok,false);
+  }
   assert.equal(verify(r,[...rows,{...rows[0]!,extra:true}] as WitnessReceipt[]).ok,false);
   const getters=[...rows];Object.defineProperty(getters,'0',{get(){reads++;return rows[0];}});
   assert.equal(verify(r,getters).ok,false);assert.equal(reads,0);
