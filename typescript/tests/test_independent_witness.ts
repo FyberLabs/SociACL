@@ -182,3 +182,11 @@ test('joint policy installation retains its exact floor across reopen and compet
   await assert.rejects(advance(reopened,winner)); // Lost-response reconciliation uses read(exact candidate).
   reopened.close();
 });
+
+test('collection accepts reordered policy bytes restored under the same canonical floor',async()=>{
+  const r=signed();let changed=false;
+  const transports=new Map<string,WitnessTransport>([2,3,4,5].map(n=>[`operator-${n}`,async request=>{changed=true;return receipt(request,n);} ]));
+  const observed=await collectIndependentWitnesses(r,r.recordDigest,[],()=>changed?{...policy,operators:[...policy.operators].reverse()}:policy,()=>context,transports);
+  assert.equal(observed.observation.epoch,policy.epoch);
+  assert.deepEqual(observed.observation.operators,['operator-2','operator-3','operator-4','operator-5']);
+});

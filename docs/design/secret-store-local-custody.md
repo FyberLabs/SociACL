@@ -154,7 +154,9 @@ acyclic graph. Conflicts and old IDs survive restoration; restoring is not a new
 bootstrap. The whole history, including its object name and manifests, is encrypted.
 
 Prepare once and retain those exact bytes for retry after ambiguous publication.
-Retain the new head independently after the durable write; never discover trust by
+The head contains private owner/object metadata and must itself remain in protected
+local state, not be published with the ciphertext. Retain it independently after
+the durable write; never discover trust by
 hashing the file being opened. This adds confidential history persistence, not an
 atomic read-nonce/audit transaction, a protected external anchor store or a CLI.
 Restored history still requires fresh signed-version/Check/epoch admission before
