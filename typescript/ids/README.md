@@ -501,3 +501,7 @@ include it in provider URLs. The functions do not persist or transmit anything.
 Group-epoch wrapping and a complete browser vault are outside this API. Temporary
 byte arrays are cleared where practical, but JavaScript cannot guarantee erasure
 of copied arrays, strings, or cryptographic engine memory.
+
+Node conformance and browser bundle checks run in PR CI. The real Chromium
+reader-wrap case runs in the central scheduled `sociacl-browser` nightly batch;
+it must not be manually dispatched or moved into PR integration execution.
