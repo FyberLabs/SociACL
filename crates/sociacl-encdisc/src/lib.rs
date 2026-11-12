@@ -110,6 +110,9 @@ mod see;
 mod store_write;
 mod unicode16;
 mod vault_format;
+mod vault_local;
+#[cfg(unix)]
+mod vault_file;
 mod wrap;
 mod writer;
 
@@ -245,3 +248,8 @@ pub use first_contact::{seal_first_contact_request, open_first_contact_request,
 
 pub use vault_format::{vault_version_signing_bytes, vault_audit_signing_bytes, VaultVersion, VaultAudit,
     VAULT_VERSION_DOMAIN, VAULT_AUDIT_DOMAIN, VAULT_MAX_PARENTS};
+
+pub use vault_local::{seal_local_vault_item, open_local_vault_item, LocalVaultEnvelope, OpenedLocalVaultItem,
+    VAULT_ITEM_MAX_BYTES, VAULT_METADATA_MAX_BYTES, VAULT_LOCAL_MAX_BYTES};
+#[cfg(unix)]
+pub use vault_file::{LocalVaultFileStore, VaultFileHead};

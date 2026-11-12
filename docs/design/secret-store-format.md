@@ -2,8 +2,9 @@
 
 Status: phase-one contract for #155. The Rust `vault_format` module and
 TypeScript `vault-format.ts` encode signing transcripts only. There is no vault
-read API, item encryption, filesystem backend, synchronization, device-key adapter
-or permission broker in this change. `vectors/vault/v1.json` defines the ordered
+authorized read API, synchronization, hardware device-key adapter or permission
+broker. Local custody encryption and a Unix snapshot backend are specified separately
+in [local custody](secret-store-local-custody.md); they do not authorize reads. `vectors/vault/v1.json` defines the ordered
 fields consumed by both language suites in CI.
 
 ## Identity and visibility
@@ -81,9 +82,11 @@ Visor's broker responsibility, independently of successful vault decryption.
 ## Acceptance sequence
 
 Canonical transcript parity is covered by PR CI. Still required in phase one:
-the repository-grounded threat model, exact confidential framing and routing,
+exact confidential network framing and routing,
 shared seal/open/tamper vectors, and conflict/rollback/audit-head admission vectors.
-Then implement the local core/backend, CLI and headless consumer before sync and
+The [threat model](secret-store-threat-model.md) and local custody baseline are
+recorded. Complete signed-version admission and durable head state, then the CLI
+and headless consumer before sync and
 platform device adapters. Each runtime stage belongs in the scheduled CI batch.
 Hardware protection, provider activation, independent audit and GA are separate
 milestones; the signing format does not claim any of them.
