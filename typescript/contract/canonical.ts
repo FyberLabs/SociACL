@@ -6,7 +6,7 @@
  * the canonical bytes. It does not wrap keys and it does not run Check.
  * authorFastMatches only compares a revision id. It does not grant.
  */
-import { createHash } from "node:crypto";
+import { sha256 } from "@noble/hashes/sha2.js";
 import type {
   EpochManifestBody,
   InboxEntryBody,
@@ -28,7 +28,7 @@ const DOMAIN_INBOX_STAMP = "s3rch-inbox-stamp-v1";
 const DOMAIN_WRAP_RECEIPT = "s3rch-wrap-receipt-v1";
 
 export function sha256Hex(bytes: Uint8Array): string {
-  return createHash("sha256").update(bytes).digest("hex");
+  return Array.from(sha256(bytes), byte => byte.toString(16).padStart(2, "0")).join("");
 }
 
 /** ASCII decimal, no sign, no leading zeros. Zero is "0". */

@@ -45,6 +45,8 @@
     "../tests/test_first_contact.ts",
     "../tests/test_vault_format.ts",
     "../tests/test_independent_witness.ts",
-    "first-contact-inbox.ts"
+    "first-contact-inbox.ts",
+    "private-media.ts",
+    "../tests/test_private_media.ts"
   ]
 }
