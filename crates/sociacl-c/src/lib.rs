@@ -1,5 +1,8 @@
 //! C FFI wrapping live Check and the Case C client path.
 
+mod epoch_status;
+pub use epoch_status::sociacl_verify_epoch_status;
+
 use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_int};
 use std::ptr;
