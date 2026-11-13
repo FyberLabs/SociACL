@@ -51,6 +51,16 @@ the same protected view before any wrap delivery. A concurrent cancellation,
 rotation, policy change or item-head change invalidates that fence. This bridge
 performs no storage, enrollment, key release or grant creation.
 
+`sociacl_verify_epoch_history` accepts the same bounded input and authenticates
+every supplied manifest/finalization using the same strict parser and reference
+insertion checks, but skips settled-key selection. It lets an owner service
+authenticate pending records before retaining their first observation time.
+It does not prove completeness, connected ancestry, anchor/floor matching,
+current-snapshot admissibility or settlement. Expected-key and anchor fields
+remain shape-checked but are not matched by this operation. Admission must retain
+all prior records and independently check lineage and owner enrollment; delivery
+must still call `sociacl_match_settled_epoch` and current Check.
+
 CI covers signed direct/group settlement, stale proposed keys, altered ACLs,
 wrong anchors/floors, tampered finalizations and bounded strict parsing. Local
 native execution is not part of this workflow.

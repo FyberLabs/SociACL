@@ -30,6 +30,10 @@ int sociacl_verify_private_grant(const uint8_t *proof, size_t proof_len,
    grant. Pointer must be readable for its length and is never retained.
    See docs/epoch-selection-c-bridge.md. */
 int sociacl_match_settled_epoch(const uint8_t *input, size_t input_len);
+/* Same bounded input and signature checks, but no settled-key selection.
+   Used to authenticate pending history before retaining its first-seen time.
+   This does not establish lineage completeness, anchor/floor matching or Check. */
+int sociacl_verify_epoch_history(const uint8_t *input, size_t input_len);
 
 /* Authenticate a signed epoch manifest and its ACL snapshot. Both JSON buffers
    are 1..65536 bytes. Expected owner key/object/epoch/revision come from trusted

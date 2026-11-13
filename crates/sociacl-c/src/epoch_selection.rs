@@ -43,7 +43,7 @@ fn shape(raw: &[u8]) -> bool {
     }
     v["finalizations"].as_array().unwrap().iter().all(|row| row["proof"].is_object())
 }
-fn matches(raw: &[u8]) -> Option<()> {
+fn matches(raw: &[u8], select: bool) -> Option<()> {
     if !shape(raw) { return None; }
     let input: Input = serde_json::from_slice(raw).ok()?;
     if input.object.is_empty() || input.object.len() > 1024 || input.object.chars().any(char::is_control)
@@ -76,6 +76,7 @@ fn matches(raw: &[u8]) -> Option<()> {
             signature: p.signature,
         }, row.seen_at, &row.owner_pub).ok()?;
     }
+    if !select { return Some(()); }
     let selected = chain.settled_current_key(&current, input.now_ms, input.group_window_ms,
         &input.anchor_finalization_id, input.minimum_epoch)?;
     if selected.epoch != input.expected_epoch || selected.revision_id != input.expected_revision_id {
@@ -94,7 +95,20 @@ fn matches(raw: &[u8]) -> Option<()> {
 pub unsafe extern "C" fn sociacl_match_settled_epoch(input: *const u8, input_len: usize) -> std::os::raw::c_int {
     if input.is_null() || input_len == 0 || input_len > MAX_BYTES { return 0; }
     let raw = unsafe { std::slice::from_raw_parts(input, input_len) };
-    i32::from(matches(raw).is_some())
+    i32::from(matches(raw, true).is_some())
+}
+
+/// Authenticate bounded manifest/finalization history before retaining a pending
+/// successor. This does not select a key, prove completeness or authorize access.
+/// The caller still owns enrollment, retained clocks, lineage and rollback state.
+///
+/// # Safety
+/// The pointer must be readable for input_len bytes. No pointer is retained.
+#[no_mangle]
+pub unsafe extern "C" fn sociacl_verify_epoch_history(input: *const u8, input_len: usize) -> std::os::raw::c_int {
+    if input.is_null() || input_len == 0 || input_len > MAX_BYTES { return 0; }
+    let raw = unsafe { std::slice::from_raw_parts(input, input_len) };
+    i32::from(matches(raw, false).is_some())
 }
 
 #[cfg(test)]
@@ -131,6 +145,21 @@ mod tests {
             assert_eq!(call(&doc), 1);
             let mut pending = doc.clone(); pending["nowMs"] = json!(3_600_099);
             assert_eq!(call(&pending), 0);
+        }
+    }
+    #[test]
+    fn authenticated_pending_history_is_not_a_settled_read_key() {
+        let mut doc=fixture(None); doc["nowMs"]=json!(100);
+        let raw=serde_json::to_vec(&doc).unwrap();
+        assert_eq!(call(&doc),0);
+        assert_eq!(unsafe{sociacl_verify_epoch_history(raw.as_ptr(),raw.len())},1);
+        doc["finalizations"][0]["proof"]["signature"]=json!("0".repeat(128));
+        let bad=serde_json::to_vec(&doc).unwrap();
+        assert_eq!(unsafe{sociacl_verify_epoch_history(bad.as_ptr(),bad.len())},0);
+        unsafe {
+            assert_eq!(sociacl_verify_epoch_history(std::ptr::null(),1),0);
+            assert_eq!(sociacl_verify_epoch_history(raw.as_ptr(),0),0);
+            assert_eq!(sociacl_verify_epoch_history(raw.as_ptr(),MAX_BYTES+1),0);
         }
     }
     #[test]
