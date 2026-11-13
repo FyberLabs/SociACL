@@ -513,3 +513,21 @@ Both entrypoints include declarations and browser-safe code in the package; they
 need no checkout-relative imports. Independently authenticated history/bootstrap
 and explicit contact acceptance remain mandatory. Neither entrypoint installs a
 product UI, follows returned URLs or activates the legacy witness verifier.
+
+### Private media owner signatures
+
+The `sociacl-ids/private-media` browser entry exports `signPrivateMediaGrant`,
+`signPrivateMediaEpoch`, `signPrivateMediaFinalization`, and
+`signPrivateMediaStatus`. These produce the existing confidential-media Rust
+transcripts, using a client-held SEA scalar and an independently resolved current
+signing public key. The working key copy is cleared; the caller retains its key.
+They never enroll a reader, mint a current permission, establish complete history,
+or skip settlement. The protected ACL source must authenticate every result.
+
+Inputs are strict, bounded data records. The initial producer supports direct
+snapshots with at most 64 enrolled recipients, preserving sorted snapshot order
+and zero direct HAM state. Epochs advance one step; candidate sets must already
+be authenticated, sorted and unique. Status validity is at most 60 seconds.
+Groups, delegated status signers and caller-supplied freshness are not enabled by
+these helpers. A rejected fence requires a fresh protected owner view and explicit
+reconciliation before signing again; do not automatically replay old signatures.

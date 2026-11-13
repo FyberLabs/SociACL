@@ -37,6 +37,9 @@ FIRST_CONTACT_TS_VECTOR="${root}/target/ids/first-contact-ts.bin" cargo test -p 
 WITNESS_TS_VECTOR="${root}/target/ids/witness-ts.json" cargo test -p sociacl-ids --locked --test independent_witness
 npm run --prefix typescript typecheck
 
+PRIVATE_MEDIA_VECTOR="${root}/target/ids/private-media.json" node --experimental-strip-types --test --experimental-test-coverage --test-coverage-include=typescript/contract/private-media.ts --test-coverage-lines=90 --test-coverage-branches=80 typescript/tests/test_private_media.ts
+python3 scripts/private-media-native.py
+
 # Independent browser package: each language reports exactly which shared vectors ran.
 IDS_VECTOR_REPORT="${root}/target/ids/ts-vectors.txt" node --test typescript/ids/test/*.js
 node --check typescript/ids/scripts/browser-first-contact.mjs

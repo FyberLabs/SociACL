@@ -48,6 +48,10 @@
     "./independent-witness": {
       "types": "./dist/independent-witness.d.ts",
       "default": "./dist/independent-witness.js"
+    },
+    "./private-media": {
+      "types": "./dist/private-media.d.ts",
+      "default": "./dist/private-media.js"
     }
   },
   "files": [
