@@ -138,6 +138,37 @@ mod tests {
         }
     }
     #[test]
+    fn newer_pending_epoch_refuses_old_key_then_selects_new_settled_key() {
+        let mut doc = fixture(None);
+        let owner = GenesisAccount::generate().unwrap().into_secret();
+        let mut row = doc["manifests"][0].clone();
+        let body = sociacl_encdisc::EpochManifestBody {
+            object:"media".into(), epoch:2, previous_epoch:1, device_id:"device".into(),
+            key_commitment:"next-commitment".into(), settle_window_ms:3_600_000,
+            acl_snapshot:row["document"]["manifest"]["aclSnapshot"].as_str().unwrap().into(), status_auth_pub:None,
+        };
+        let revision = sociacl_encdisc::epoch_revision_id(&body).unwrap();
+        let m = &mut row["document"]["manifest"];
+        m["epoch"]=json!(2); m["previousEpoch"]=json!(1); m["keyCommitment"]=json!("next-commitment");
+        m["revisionId"]=json!(revision); m["signature"]=json!(owner.sign_epoch_manifest(&revision).unwrap());
+        row["expected"]["epoch"]=json!(2); row["expected"]["revisionId"]=json!(revision);
+        row["expected"]["ownerPub"]=json!(owner.sea_pub());
+        doc["manifests"].as_array_mut().unwrap().push(row);
+        let parent=doc["anchorFinalizationId"].as_str().unwrap();
+        let fin=EpochFinalization::seal("media",1,2,&revision,vec![revision.clone()],parent,"").unwrap();
+        let row=json!({"ownerPub":owner.sea_pub(),"seenAt":200,"proof":{
+            "object":"media","previousEpoch":1,"epoch":2,"revisionId":revision,
+            "candidateRevisionIds":[revision],"previousFinalizationId":parent,
+            "finalizationId":fin.finalization_id,"signature":owner.sign_epoch_finalization(&fin.finalization_id).unwrap()}});
+        doc["finalizations"].as_array_mut().unwrap().push(row);
+        assert_eq!(call(&doc),0); // Old key does not match the latest winner.
+        doc["expectedEpoch"]=json!(2); doc["expectedRevisionId"]=json!(revision);
+        assert_eq!(call(&doc),0); // New winner is still pending.
+        doc["nowMs"]=json!(3_600_200); assert_eq!(call(&doc),1);
+        doc["finalizations"].as_array_mut().unwrap().reverse();
+        assert_eq!(call(&doc),1); // Retained observation times, not insertion order.
+    }
+    #[test]
     fn binding_floors_clock_and_current_acl_refuse() {
         let doc = fixture(None);
         for (path, value) in [
