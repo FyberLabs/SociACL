@@ -51,3 +51,11 @@ test('finalization candidates and status windows reject ambiguity',()=>{
     {zookie:{...statusDraft.zookie,object:'bad'}},{zookie:{...statusDraft.zookie,snapshotHash:'bad'}}])
     assert.throws(()=>signPrivateMediaStatus({...statusDraft,...change},scalar,owner));
 });
+
+test('oversized arrays reject before enumerating entries',()=>{
+  let enumerations=0;
+  const oversized=new Proxy(new Array(65),{ownKeys(target){enumerations++;return Reflect.ownKeys(target);}});
+  assert.throws(()=>signPrivateMediaEpoch(draft,{entries:oversized},scalar,owner));
+  assert.throws(()=>signPrivateMediaFinalization({...finalDraft,candidateRevisionIds:oversized},scalar,owner));
+  assert.equal(enumerations,0);
+});

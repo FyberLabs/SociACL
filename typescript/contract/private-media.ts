@@ -21,8 +21,10 @@ function label(value: unknown): string { if (typeof value !== 'string' || !/^[\x
 function stated(value: unknown): 0 | 1 { if (value !== 0 && value !== 1 || Object.is(value, -0)) throw Error('Invalid private media state'); return value; }
 function list(input: unknown): unknown[] {
   if (!Array.isArray(input)) throw Error('Invalid private media list');
-  const ds = Object.getOwnPropertyDescriptors(input as object), length = number(ds.length?.value);
-  if (length > 64 || Reflect.ownKeys(ds).length !== length + 1) throw Error('Invalid private media list');
+  const length = number(Object.getOwnPropertyDescriptor(input, 'length')?.value);
+  if (length > 64) throw Error('Invalid private media list');
+  const ds = Object.getOwnPropertyDescriptors(input as object);
+  if (Reflect.ownKeys(ds).length !== length + 1) throw Error('Invalid private media list');
   const result: unknown[] = [];
   for (let n=0; n<length; n++) { const d=ds[String(n)]; if (!d || !('value' in d)) throw Error('Invalid private media list'); result.push(d.value); }
   return result;
