@@ -48,7 +48,7 @@ fn shape(raw: &[u8]) -> bool {
     entries.len() <= 128 && entries.iter().all(serde_json::Value::is_object)
         && (v["snapshot"]["objectSet"].is_null() || v["snapshot"]["objectSet"].is_object())
 }
-fn verify(document: &[u8], expected: &[u8]) -> Option<()> {
+pub(crate) fn verified_document(document: &[u8], expected: &[u8]) -> Option<(EpochManifest, AclSnapshotBody)> {
     // Validate shape, then deserialize the original bytes to reject duplicates.
     if !shape(document) || !serde_json::from_slice::<serde_json::Value>(expected).ok()?.is_object() {
         return None;
@@ -62,6 +62,29 @@ fn verify(document: &[u8], expected: &[u8]) -> Option<()> {
         || [m.previous_epoch, m.epoch, m.settle_window_ms].iter().any(|n| *n > MAX_SAFE) {
         return None;
     }
+    let snapshot = convert_snapshot(s)?;
+    let manifest = EpochManifest {
+        object: m.object, previous_epoch: m.previous_epoch, epoch: m.epoch,
+        device_id: m.device_id, revision_id: m.revision_id, key_commitment: m.key_commitment,
+        settle_window_ms: m.settle_window_ms, acl_snapshot: m.acl_snapshot,
+        status_auth_pub: m.status_auth_pub, signature: m.signature,
+    };
+    manifest.verify(&snapshot, &e.owner_pub).ok()?;
+    Some((manifest, snapshot))
+}
+
+pub(crate) fn parse_snapshot(raw: &[u8]) -> Option<AclSnapshotBody> {
+    let value: serde_json::Value = serde_json::from_slice(raw).ok()?;
+    if !value.is_object() { return None; }
+    let entries = value["entries"].as_array()?;
+    if entries.len() > 128 || !entries.iter().all(serde_json::Value::is_object)
+        || !(value["objectSet"].is_null() || value["objectSet"].is_object()) { return None; }
+    let result = convert_snapshot(serde_json::from_slice(raw).ok()?)?;
+    sociacl_encdisc::acl_snapshot_id(&result).ok()?;
+    Some(result)
+}
+
+fn convert_snapshot(s: Snapshot) -> Option<AclSnapshotBody> {
     let mut entries = Vec::with_capacity(s.entries.len());
     for row in s.entries {
         if !text(&row.accessor, false) || !text(&row.set_id, true)
@@ -87,13 +110,7 @@ fn verify(document: &[u8], expected: &[u8]) -> Option<()> {
                 stated: stated(row.stated)?, ham_state: row.ham_state })
         }
     };
-    let manifest = EpochManifest {
-        object: m.object, previous_epoch: m.previous_epoch, epoch: m.epoch,
-        device_id: m.device_id, revision_id: m.revision_id, key_commitment: m.key_commitment,
-        settle_window_ms: m.settle_window_ms, acl_snapshot: m.acl_snapshot,
-        status_auth_pub: m.status_auth_pub, signature: m.signature,
-    };
-    manifest.verify(&AclSnapshotBody { object_set, entries }, &e.owner_pub).ok()
+    Some(AclSnapshotBody { object_set, entries })
 }
 
 /// Match an owner-signed manifest and snapshot to independently trusted context.
@@ -110,16 +127,16 @@ pub unsafe extern "C" fn sociacl_verify_epoch_manifest(
         || document_len > MAX_DOCUMENT || expected_len > MAX_DOCUMENT { return 0; }
     let document = unsafe { std::slice::from_raw_parts(document, document_len) };
     let expected = unsafe { std::slice::from_raw_parts(expected, expected_len) };
-    i32::from(verify(document, expected).is_some())
+    i32::from(verified_document(document, expected).is_some())
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use serde_json::{json, Value};
     use sociacl_encdisc::{acl_snapshot_id, epoch_revision_id, GenesisAccount, EpochManifestBody};
 
-    fn fixture(group: Option<GroupPredicate>) -> (Value, Value) {
+    pub(crate) fn fixture(group: Option<GroupPredicate>) -> (Value, Value) {
         let owner = GenesisAccount::generate().unwrap().into_secret();
         let scope = match group {
             Some(GroupPredicate::SameGroup) => AclScope::SameGroup,
