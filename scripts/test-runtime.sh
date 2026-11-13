@@ -27,6 +27,7 @@ run_c verbs examples/verbs.c
 run_c elect examples/elect.c
 run_c epoch-status examples/epoch_status.c
 run_c epoch-manifest examples/epoch_manifest.c
+run_c epoch-selection examples/epoch_selection.c
 
 PYTHONPATH=python python3 python/tests/test_check.py
 PYTHONPATH=python python3 python/tests/test_client.py

@@ -16,6 +16,13 @@ extern "C" {
 typedef struct sociacl_plane sociacl_plane;
 typedef struct sociacl_client sociacl_client;
 
+/* Match the latest settled epoch from trusted complete history, current ACL,
+   owner-key bindings, anchor, clock and floor. 1..524288 input bytes; 1 on match,
+   0 on refusal. Pending state does not fall back to an old key. Not a Check
+   grant. Pointer must be readable for its length and is never retained.
+   See docs/epoch-selection-c-bridge.md. */
+int sociacl_match_settled_epoch(const uint8_t *input, size_t input_len);
+
 /* Authenticate a signed epoch manifest and its ACL snapshot. Both JSON buffers
    are 1..65536 bytes. Expected owner key/object/epoch/revision come from trusted
    caller state. Returns 1 for a matching signature and snapshot, else 0.
