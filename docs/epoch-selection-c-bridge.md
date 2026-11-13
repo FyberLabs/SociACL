@@ -4,7 +4,8 @@
 Rust `EpochChain` selects the expected latest settled winner from the supplied
 history and current ACL. Otherwise it returns 0. It authenticates every manifest
 and finalization and uses the reference snapshot comparison and settlement rule.
-Pending successors refuse; this conservative service adapter never falls back
+Authenticated historical ancestry is retained even when an ancestor's ACL has changed or expired. Current-snapshot admissibility applies to the latest
+winner. Pending successors refuse; this conservative service adapter never falls back
 to an older read key.
 
 This is a **trusted-service input**, not a client request format. The caller must

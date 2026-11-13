@@ -22,6 +22,32 @@ const CANONICAL: &str = include_str!("../../../vectors/encrypted-discovery/canon
 const FAR: u64 = 4_000_000_000_000;
 const REV: &str = "abababababababababababababababababababababababababababababababab";
 
+#[test]
+fn settled_current_descendant_retains_cancelled_and_expired_ancestry() {
+    for expired in [false, true] {
+        let owner = GenesisAccount::generate().unwrap().into_secret();
+        let mut prior = AclSnapshotBody { object_set: None,
+            entries: vec![direct_entry("reader", 1, GrantStated::Live)] };
+        if expired { prior.entries[0].until = 50; }
+        let current = AclSnapshotBody { object_set: None,
+            entries: vec![direct_entry("reader", 2, GrantStated::Cancelled)] };
+        let first = manifest_for(&owner,"object",1,0,"device","key1",SETTLE_WINDOW_MIN_MS,&prior);
+        let next = manifest_for(&owner,"object",2,1,"device","key2",SETTLE_WINDOW_MIN_MS,&current);
+        let root = fin_for(&owner,"object",0,1,&first.revision_id,"");
+        let child = fin_for(&owner,"object",1,2,&next.revision_id,&root.finalization_id);
+        let mut chain = chain_with(&owner,&first,&prior);
+        chain.insert_manifest(next.clone(),current.clone(),owner.sea_pub()).unwrap();
+        chain.insert_finalization(root.clone(),0,owner.sea_pub()).unwrap();
+        chain.insert_finalization(child,100,owner.sea_pub()).unwrap();
+        assert!(chain.settled_current_key(&current,SETTLE_WINDOW_MIN_MS+99,None,&root.finalization_id,1).is_none());
+        let key = chain.settled_current_key(&current,SETTLE_WINDOW_MIN_MS+100,None,&root.finalization_id,1).unwrap();
+        assert_eq!(key.epoch,2);
+        assert_eq!(key.revision_id,next.revision_id);
+        assert!(chain.settled_current_key(&prior,SETTLE_WINDOW_MIN_MS+100,None,&root.finalization_id,1).is_none());
+        assert!(chain.settled_current_key(&current,SETTLE_WINDOW_MIN_MS+100,None,&root.finalization_id,3).is_none());
+    }
+}
+
 fn vector_hash(name: &str) -> String {
     let document: serde_json::Value = serde_json::from_str(CANONICAL).unwrap();
     document["cases"]

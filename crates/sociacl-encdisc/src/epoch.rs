@@ -797,7 +797,41 @@ impl EpochChain {
         now: u64,
         group_window: Option<u64>,
     ) -> Vec<&EpochFinalization> {
-        let effective = self.effective(current, now, group_window);
+        self.chain_winners(self.effective(current, now, group_window))
+    }
+
+    /// Select a settled current descendant without discarding authenticated
+    /// ancestry whose old ACL has since changed or expired. Current snapshot
+    /// admissibility applies only to the latest winner, never to its ancestors.
+    /// The caller retains complete history, anchor, floor and current Check.
+    pub fn settled_current_key(
+        &self,
+        current: &AclSnapshotBody,
+        now: u64,
+        group_window: Option<u64>,
+        anchor_finalization_id: &str,
+        minimum_epoch: u64,
+    ) -> Option<EpochReadKey> {
+        let winners = self.chain_winners(self.finalizations.iter().collect());
+        if winners.first()?.finalization_id != anchor_finalization_id {
+            return None;
+        }
+        let winner = *winners.last()?;
+        if winner.epoch < minimum_epoch {
+            return None;
+        }
+        let stored = self.manifests.iter().find(|row| row.manifest.revision_id == winner.revision_id)?;
+        if !self.manifest_admissible(stored, current, now, group_window) {
+            return None;
+        }
+        let observed = self.finalizations.iter().find(|row| row.finalization.finalization_id == winner.finalization_id)?;
+        if now < observed.seen_at.saturating_add(stored.manifest.settle_window_ms) {
+            return None;
+        }
+        Some(EpochReadKey { revision_id: winner.revision_id.clone(), epoch: winner.epoch })
+    }
+
+    fn chain_winners<'a>(&'a self, effective: Vec<&'a StoredFinalization>) -> Vec<&'a EpochFinalization> {
         let mut parent = String::new();
         let mut parent_epoch: Option<u64> = None;
         let mut winners = Vec::new();

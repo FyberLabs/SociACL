@@ -2,7 +2,7 @@
 //! bindings and current ACL inputs belong to the trusted service, not a client.
 use serde::Deserialize;
 use serde_json::value::RawValue;
-use sociacl_encdisc::{epoch_step_current, EpochChain, EpochFinalization};
+use sociacl_encdisc::{EpochChain, EpochFinalization};
 use crate::epoch_manifest::{parse_snapshot, verified_document};
 
 const MAX_BYTES: usize = 524_288;
@@ -76,13 +76,9 @@ fn matches(raw: &[u8]) -> Option<()> {
             signature: p.signature,
         }, row.seen_at, &row.owner_pub).ok()?;
     }
-    let winners = chain.on_chain_winners(&current, input.now_ms, input.group_window_ms);
-    if winners.first()?.finalization_id != input.anchor_finalization_id { return None; }
-    let winner = *winners.last()?;
-    if winner.epoch < input.minimum_epoch || winner.epoch != input.expected_epoch
-        || winner.revision_id != input.expected_revision_id { return None; }
-    let view = chain.replica_view(winner.epoch, &current, input.now_ms, input.group_window_ms, "");
-    if !epoch_step_current(&view, snapshots.get(&winner.revision_id)?, &current, input.now_ms) {
+    let selected = chain.settled_current_key(&current, input.now_ms, input.group_window_ms,
+        &input.anchor_finalization_id, input.minimum_epoch)?;
+    if selected.epoch != input.expected_epoch || selected.revision_id != input.expected_revision_id {
         return None;
     }
     Some(())
