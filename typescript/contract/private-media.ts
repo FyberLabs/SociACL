@@ -2,11 +2,10 @@
  * establish enrollment, current authorization, settlement or freshness. */
 import { p256 } from '@noble/curves/nist.js';
 import { data, integer, hex, unb64 } from '../ids/src/util.js';
-import { parsePrincipalId, parseObjectId } from '../ids/src/ids.js';
-import { signWithKeyring } from '../ids/src/records.js';
+import { parsePrincipalId, parseObjectId, signWithKeyring } from '../ids/src/index.js';
 import { grantPayloadBytes, epochRevisionId, epochStatusBytes } from './canonical.ts';
 import { aclSnapshotId, epochManifestSigBytes, epochFinalizationSigBytes, epochFinalizationId, settleWindowInRange } from './epoch.ts';
-import type { AclSnapshotBody, AclSnapshotEntry } from '../../docs/s3rch-check.js';
+import type { AclSnapshotBody, AclSnapshotEntry, ObjectId } from '../../docs/s3rch-check.js';
 
 function record(input: unknown, keys: string[]) {
   const d = data(input);
@@ -15,7 +14,7 @@ function record(input: unknown, keys: string[]) {
 }
 function number(value: unknown): number { if (!integer(value)) throw Error('Invalid private media number'); return value as number; }
 function principal(value: unknown) { const p = parsePrincipalId(value); if (!p.ok) throw Error('Invalid private media principal'); return p.value; }
-function object(value: unknown): string { const p = parseObjectId(value); if (!p.ok || typeof value !== 'string' || !value.startsWith('media_')) throw Error('Invalid private media object'); return value; }
+function object(value: unknown): ObjectId { const p = parseObjectId(value); if (!p.ok || typeof value !== 'string' || !value.startsWith('media_')) throw Error('Invalid private media object'); return value as ObjectId; }
 function digest(value: unknown): string { if (typeof value !== 'string' || !/^[a-f0-9]{64}$/.test(value)) throw Error('Invalid private media digest'); return value; }
 function label(value: unknown): string { if (typeof value !== 'string' || !/^[\x21-\x7e]{1,128}$/.test(value)) throw Error('Invalid private media label'); return value; }
 function stated(value: unknown): 0 | 1 { if (value !== 0 && value !== 1 || Object.is(value, -0)) throw Error('Invalid private media state'); return value; }
