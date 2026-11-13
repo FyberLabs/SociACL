@@ -43,7 +43,9 @@ fn settled_current_descendant_retains_cancelled_and_expired_ancestry() {
         let key = chain.settled_current_key(&current,SETTLE_WINDOW_MIN_MS+100,None,&root.finalization_id,1).unwrap();
         assert_eq!(key.epoch,2);
         assert_eq!(key.revision_id,next.revision_id);
-        assert!(chain.settled_current_key(&prior,SETTLE_WINDOW_MIN_MS+100,None,&root.finalization_id,1).is_none());
+        let mut newer_current = prior.clone();
+        newer_current.entries[0].grant_revision = 3;
+        assert!(chain.settled_current_key(&newer_current,SETTLE_WINDOW_MIN_MS+100,None,&root.finalization_id,1).is_none());
         assert!(chain.settled_current_key(&current,SETTLE_WINDOW_MIN_MS+100,None,&root.finalization_id,3).is_none());
     }
 }
