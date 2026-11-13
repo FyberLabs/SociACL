@@ -16,6 +16,17 @@ extern "C" {
 typedef struct sociacl_plane sociacl_plane;
 typedef struct sociacl_client sociacl_client;
 
+/* Authenticate a signed epoch manifest and its ACL snapshot. Both JSON buffers
+   are 1..65536 bytes. Expected owner key/object/epoch/revision come from trusted
+   caller state. Returns 1 for a matching signature and snapshot, else 0.
+   Does NOT establish completeness, current epoch, settlement, Check or a grant.
+   Pointers must be readable for their lengths and are not retained.
+   See docs/epoch-manifest-c-bridge.md. */
+int sociacl_verify_epoch_manifest(
+    const uint8_t *document, size_t document_len,
+    const uint8_t *expected, size_t expected_len
+);
+
 /* Verify Rust epoch-status evidence against independently trusted expected state.
    UTF-8 JSON buffers are 1..16384 bytes; no trailing NUL is required. Pointers
    must reference readable buffers for the supplied lengths. Returns 1 only for
