@@ -6,6 +6,8 @@ mod epoch_manifest;
 pub use epoch_manifest::sociacl_verify_epoch_manifest;
 mod epoch_selection;
 pub use epoch_selection::sociacl_match_settled_epoch;
+mod private_grant;
+pub use private_grant::sociacl_verify_private_grant;
 
 use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_int};

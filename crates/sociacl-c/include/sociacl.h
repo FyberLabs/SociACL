@@ -16,6 +16,14 @@ extern "C" {
 typedef struct sociacl_plane sociacl_plane;
 typedef struct sociacl_client sociacl_client;
 
+/* Match an existing confidential SignedGrantPayload signature and trusted expected
+   fields. JSON buffers are 1..65536 bytes. Cancellation matches too: this is not
+   current Check, enrollment, settlement or permission to deliver a key.
+   Pointers must be readable for their lengths; neither is retained.
+   See docs/private-grant-c-bridge.md. */
+int sociacl_verify_private_grant(const uint8_t *proof, size_t proof_len,
+                               const uint8_t *expected, size_t expected_len);
+
 /* Match the latest settled epoch from trusted complete history, current ACL,
    owner-key bindings, anchor, clock and floor. 1..524288 input bytes; 1 on match,
    0 on refusal. Pending state does not fall back to an old key. Not a Check
