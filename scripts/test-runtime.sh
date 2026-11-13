@@ -25,6 +25,7 @@ run_c social-light examples/social_light.c
 run_c gun examples/gun.c
 run_c verbs examples/verbs.c
 run_c elect examples/elect.c
+run_c epoch-status examples/epoch_status.c
 
 PYTHONPATH=python python3 python/tests/test_check.py
 PYTHONPATH=python python3 python/tests/test_client.py

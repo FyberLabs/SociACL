@@ -16,6 +16,19 @@ extern "C" {
 typedef struct sociacl_plane sociacl_plane;
 typedef struct sociacl_client sociacl_client;
 
+/* Verify Rust epoch-status evidence against independently trusted expected state.
+   UTF-8 JSON buffers are 1..16384 bytes; no trailing NUL is required. Pointers
+   must reference readable buffers for the supplied lengths. Returns 1 only for
+   exact binding, valid owner SEA signature and freshness; all refusals return 0.
+   A verified status (including stated=0 cancellation) NEVER grants access.
+   Current Check, enrolled owner key, epoch selection and rollback custody remain
+   the caller's responsibility. See docs/epoch-status-c-bridge.md for JSON fields. */
+int sociacl_verify_epoch_status(
+    const uint8_t *proof, size_t proof_len,
+    const uint8_t *expected, size_t expected_len,
+    uint64_t now_ms, uint64_t skew_ms, uint64_t policy_max_age_ms
+);
+
 sociacl_plane *sociacl_plane_new(void);
 void sociacl_plane_free(sociacl_plane *plane);
 
