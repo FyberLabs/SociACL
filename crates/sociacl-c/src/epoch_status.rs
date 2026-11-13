@@ -50,8 +50,18 @@ fn digest(value: &str) -> bool {
     value.len() == 64 && value.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
+fn object_shape(document: &[u8]) -> bool {
+    let Ok(value) = serde_json::from_slice::<serde_json::Value>(document) else { return false; };
+    value.is_object() && value.get("zookie").is_some_and(serde_json::Value::is_object)
+}
+
 fn verify(proof: &[u8], expected: &[u8], now: u64, skew: u64, max_age: u64) -> bool {
     if [now, skew, max_age].iter().any(|n| *n > MAX_SAFE) {
+        return false;
+    }
+    // Derived Serde structs accept positional arrays. Check the object shape,
+    // then deserialize the ORIGINAL bytes so duplicate fields still fail.
+    if !object_shape(proof) || !object_shape(expected) {
         return false;
     }
     let (Ok(proof), Ok(expected)) = (serde_json::from_slice::<Proof>(proof), serde_json::from_slice::<Expected>(expected)) else {
@@ -187,6 +197,24 @@ mod tests {
         for raw in [b"{".to_vec(), vec![0xff], format!("{{\"epoch\":3,{}", &proof.to_string()[1..]).into_bytes()] {
             assert!(!verify(&raw, &expected, 10_000, 0, 1000));
         }
+    }
+
+    #[test]
+    fn positional_struct_arrays_are_not_the_json_object_contract() {
+        let (proof, expected) = fixture(GrantStated::Live);
+        let positional = |row: &Value, fields: &[&str]| Value::Array(fields.iter().map(|field| row[*field].clone()).collect());
+        let proof_array = positional(&proof, &["object", "epoch", "revisionId", "accessor", "grantRevision", "stated", "signedAt", "maxAgeMs", "signature", "zookie"]);
+        let expected_array = positional(&expected, &["ownerPub", "object", "epoch", "revisionId", "accessor", "grantRevision", "stated", "zookie"]);
+        assert_eq!(call(&proof_array, &expected, 10_000, 0, 1000), 0);
+        assert_eq!(call(&proof, &expected_array, 10_000, 0, 1000), 0);
+        let mut proof_array = proof.clone();
+        let mut expected_array = expected.clone();
+        let zookie = positional(&proof["zookie"], &["object", "objectVersion", "snapshotHash"]);
+        proof_array["zookie"] = zookie.clone();
+        expected_array["zookie"] = zookie;
+        assert_eq!(call(&proof_array, &expected, 10_000, 0, 1000), 0);
+        assert_eq!(call(&proof, &expected_array, 10_000, 0, 1000), 0);
+        assert_eq!(call(&proof_array, &expected_array, 10_000, 0, 1000), 0);
     }
 
     #[test]

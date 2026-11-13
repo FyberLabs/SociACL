@@ -19,7 +19,7 @@ The proof uses the existing `EpochStatusProof` shape in `s3rch-check.d.ts`:
   "stated": 1,
   "signedAt": 10000,
   "maxAgeMs": 2000,
-  "signature": "<existing SEA signature>",
+  "signature": "<128 lowercase hexadecimal characters, low-s P1363>",
   "zookie": {
     "object": "media-object",
     "objectVersion": 4,
@@ -41,6 +41,8 @@ uses the smaller of the proof's age limit and that policy maximum, exactly as in
 the Rust reference. Object/accessor strings are bounded to 1024 UTF-8 bytes and
 exclude control characters. Revision and snapshot digests are lowercase SHA-256
 hex strings. Cryptographic verification uses the enrolled owner's SEA public key.
+The signature encoding is the Rust reference's low-s P1363 hexadecimal encoding,
+not a SEA JSON envelope, base64url signature, DER encoding or an extra pre-hash.
 
 Return value `1` means only that this signed evidence matches that trusted
 context and freshness policy. In particular, a valid cancellation (`stated: 0`)
