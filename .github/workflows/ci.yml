@@ -62,7 +62,7 @@ jobs:
       - name: Audit sources and run unit/contract tests
         run: ./scripts/test-all.sh
 
-      - name: Epoch-status C bridge coverage
+      - name: Epoch C bridge coverage
         run: |
           rustup component add llvm-tools-preview
           cargo install cargo-llvm-cov --locked
@@ -70,20 +70,22 @@ jobs:
           cargo llvm-cov -p sociacl-c --lib --locked --lcov --output-path target/coverage/epoch-status.lcov
           python3 - <<'PY'
           from pathlib import Path
-          lines = {}
-          selected = False
+          coverage_lines = {name: {} for name in ('epoch_status.rs', 'epoch_manifest.rs')}
+          selected = None
           for row in Path('target/coverage/epoch-status.lcov').read_text().splitlines():
               if row.startswith('SF:'):
-                  selected = row.endswith('/sociacl-c/src/epoch_status.rs')
+                  selected = next((name for name in coverage_lines if row.endswith('/sociacl-c/src/' + name)), None)
               elif selected and row.startswith('DA:'):
                   number, count, *_ = row[3:].split(',')
+                  lines = coverage_lines[selected]
                   lines[number] = lines.get(number, False) or int(count) > 0
-          if not lines:
-              raise SystemExit('Epoch-status coverage missing')
-          coverage = 100 * sum(lines.values()) / len(lines)
-          print(f'Epoch-status C bridge line coverage: {coverage:.2f}%')
-          if coverage < 90:
-              raise SystemExit('Epoch-status C bridge requires 90% line coverage')
+          for name, lines in coverage_lines.items():
+              if not lines:
+                  raise SystemExit(f'{name} coverage missing')
+              coverage = 100 * sum(lines.values()) / len(lines)
+              print(f'{name} C bridge line coverage: {coverage:.2f}%')
+              if coverage < 90:
+                  raise SystemExit(f'{name} C bridge requires 90% line coverage')
           PY
 
       - name: Production install can load sociacl/gun

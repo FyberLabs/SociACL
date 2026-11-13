@@ -2,6 +2,8 @@
 
 mod epoch_status;
 pub use epoch_status::sociacl_verify_epoch_status;
+mod epoch_manifest;
+pub use epoch_manifest::sociacl_verify_epoch_manifest;
 
 use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_int};
