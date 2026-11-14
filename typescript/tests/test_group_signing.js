@@ -66,3 +66,30 @@ test('producer cancellation lists are bounded data arrays without getter or iter
   const row=signGroupCancel({...cancel('membership'),prior},scalar(2),keys.p2);
   prior.length=0;assert.equal(row.prior.length,1);
 });
+
+test('producers refuse malformed identity, state and cancellation boundaries before signing',()=>{
+  const shared=[{set:edge.object},{setOwner:'bad'},{setOwner:keys.p2},{member:'bad'},
+    {stated:2},{stated:-0},{hamState:-1},{hamState:1.5},{issuedAt:NaN},
+    {cancels:['b'.repeat(64),'a'.repeat(64)]},{cancels:['a'.repeat(64),'a'.repeat(64)]}];
+  for(const patch of [...shared,{role:'owner'}])
+    assert.throws(()=>signMembershipAssent({...member,...patch},scalar(2),keys.p2));
+  for(const patch of [{owner:'bad'},{owner:keys.p2},{object:'bad'},{set:edge.object},
+    {stated:2},{stated:-0},{hamState:-1},{hamState:1.5},
+    {cancels:['b'.repeat(64),'a'.repeat(64)]},{cancels:['a'.repeat(64),'a'.repeat(64)]}])
+    assert.throws(()=>signObjectSet({...edge,...patch},scalar(1),keys.p));
+  for(const kind of ['membership','object-set']){
+    const draft=cancel(kind),n=kind==='membership'?2:1,pub=kind==='membership'?keys.p2:keys.p;
+    for(const patch of [{kind:'invalid'},{set:edge.object},{member:'bad'},{setOwner:'bad'},
+      {setOwner:keys.p2},{signer:'bad'},{cancelId:'bad'},{cancelId:1},
+      {prior:[draft.cancelId]},{prior:['c'.repeat(64),'b'.repeat(64)]},
+      {prior:['b'.repeat(64),'b'.repeat(64)]},{rowSoul:1},
+      ...(kind==='object-set'?[{object:'bad'},{signer:keys.p2}]:[])])
+      assert.throws(()=>signGroupCancel({...draft,...patch},scalar(n),pub));
+  }
+  // A valid withdrawal uses the same canonical producer, without granting.
+  for(const sign of [signMembershipAssent,signObjectSet]){
+    const membership=sign===signMembershipAssent,draft=membership?member:edge;
+    const row=sign({...draft,stated:0},scalar(membership?2:1),membership?keys.p2:keys.p);
+    assert.equal(row.stated,0);
+  }
+});
