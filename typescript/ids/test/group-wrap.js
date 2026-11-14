@@ -46,3 +46,14 @@ test('group wrap inputs are detached before the first asynchronous operation',as
  assert.equal((await seal(dek,group,getter)).ok,false);assert.equal(called,false);
  const hidden={...context,[Symbol('extra')]:1};assert.equal((await seal(dek,group,hidden)).ok,false);
 });
+
+test('the exact AES import buffer is cleared after success and rejection',async()=>{
+ const original=crypto.subtle.importKey;
+ try {
+  for(const reject of [false,true]) {
+   let raw;
+   crypto.subtle.importKey=async function(...args){raw=args[1];if(reject)throw Error('refused');return original.apply(this,args);};
+   assert.equal((await seal()).ok,!reject);assert.ok(raw instanceof Uint8Array);assert.ok(raw.every(value=>value===0));
+  }
+ }finally{crypto.subtle.importKey=original;}
+});

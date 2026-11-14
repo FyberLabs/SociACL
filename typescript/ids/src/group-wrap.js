@@ -23,9 +23,9 @@ function keyCopy(input) {
 const prefix=held=>lp(['s3rch-wrapped-key-v1','item-dek',String(held.epoch),'group-epoch',held.group,held.object,held.group,held.revisionId]);
 /** @param {Uint8Array} groupKey */
 async function aesKey(groupKey) {
-  const encoded=lp(['s3rch-group-epoch-wrap-v1',hex(groupKey)]),material=sha256(encoded);
-  try{return await crypto.subtle.importKey('raw',new Uint8Array(material),'AES-GCM',false,['encrypt','decrypt']);}
-  finally{encoded.fill(0);material.fill(0);}
+  const encoded=lp(['s3rch-group-epoch-wrap-v1',hex(groupKey)]),material=sha256(encoded),raw=new Uint8Array(material);
+  try{return await crypto.subtle.importKey('raw',raw,'AES-GCM',false,['encrypt','decrypt']);}
+  finally{encoded.fill(0);material.fill(0);raw.fill(0);}
 }
 /** Wrap an item key once to a current group epoch. All inputs are copied before
  * awaiting crypto. A fresh nonce is always generated; callers cannot supply it.
