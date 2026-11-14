@@ -32,7 +32,10 @@ async function aesKey(groupKey) {
  * @param {Uint8Array} dek @param {Uint8Array} groupKey @param {unknown} expected
  * @returns {Promise<import('./types.js').Result<GroupItemWrap>>} */
 export async function wrapItemDekToGroupEpoch(dek,groupKey,expected) {
-  /** @type {Uint8Array|undefined} */let key,group,plain,tail;
+  /** @type {Uint8Array|undefined} */let key;
+  /** @type {Uint8Array|undefined} */let group;
+  /** @type {Uint8Array|undefined} */let plain;
+  /** @type {Uint8Array|undefined} */let tail;
   try {
     key=keyCopy(dek);group=keyCopy(groupKey);const held=context(expected);
     const nonce=crypto.getRandomValues(new Uint8Array(12));tail=lp([hex(key)]);plain=new Uint8Array([...prefix(held),...tail]);
@@ -47,7 +50,8 @@ export async function wrapItemDekToGroupEpoch(dek,groupKey,expected) {
  * @param {unknown} input @param {Uint8Array} groupKey @param {unknown} expected
  * @returns {Promise<import('./types.js').Result<Uint8Array>>} */
 export async function openGroupEpochWrap(input,groupKey,expected) {
-  /** @type {Uint8Array|undefined} */let group,plain;
+  /** @type {Uint8Array|undefined} */let group;
+  /** @type {Uint8Array|undefined} */let plain;
   try {
     group=keyCopy(groupKey);const held=context(expected),d=data(input);
     if(!d.ok||Reflect.ownKeys(/** @type {object} */(input)).length!==8||
