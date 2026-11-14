@@ -1,7 +1,7 @@
 /** Private owner signatures are not proof of authorization or settlement.
  * Inputs must come from a current protected owner view. Keys remain client-side. */
 export type PrivateMediaGrant = Readonly<{object:string;owner:string;accessor:string;from:number;until:number;stated:0|1;epoch:number;grantRevision:number;itemCiphertextDigest:string}>;
-export type PrivateMediaSnapshot = Readonly<{entries:readonly Readonly<{accessor:string;grantRevision:number;stated:0|1;from:number;until:number;scope:'direct';setId:'';hamState:0}>[]}>;
+export type PrivateMediaSnapshot = Readonly<{entries:readonly Readonly<{accessor:string;grantRevision:number;stated:0|1;from:number;until:number;scope:'direct'|'same-group'|'named-circle';setId:string;hamState:number}>[];objectSet?:Readonly<{predicate:'same-group'|'named-circle';setId:string;stated:0|1;hamState:number}>}>;
 export type PrivateMediaManifest = Readonly<{object:string;previousEpoch:number;epoch:number;deviceId:string;keyCommitment:string;settleWindowMs:number;aclSnapshot:string;revisionId:string;signature:string}>;
 export type PrivateMediaFinalization = Readonly<{object:string;previousEpoch:number;epoch:number;revisionId:string;candidateRevisionIds:readonly string[];previousFinalizationId:string;finalizationId:string;signature:string}>;
 export type PrivateMediaStatus = Readonly<{object:string;epoch:number;revisionId:string;accessor:string;grantRevision:number;stated:0|1;signedAt:number;maxAgeMs:number;zookie:Readonly<{object:string;objectVersion:number;snapshotHash:string}>;signature:string}>;

@@ -44,3 +44,27 @@ for field,value in [('tenant','22222222-2222-4222-8222-222222222222'),('object',
     assert pair('sociacl_verify_private_deletion',deletion['proof'],{**expected,field:value},2000)==0,field
 assert pair('sociacl_verify_private_deletion',f['cancel']['proof'],expected,2000)==0
 print('Browser deletion command matches native exact-scope verification; unshare refuses')
+
+# Group snapshots bind separate member and object-set HAM state. A valid
+# signature cannot conceal subsequent withdrawal or a newer object-set edge.
+g=f['groupEpoch'];m=g['manifest']
+expected={'ownerPub':f['owner'],'object':f['object'],'epoch':1,'revisionId':m['revisionId']}
+assert pair('sociacl_verify_epoch_manifest',g,expected)==1
+for field in ['hamState','stated']:
+    changed=json.loads(json.dumps(g));changed['snapshot']['objectSet'][field]=0
+    assert pair('sociacl_verify_epoch_manifest',changed,expected)==0
+history={'object':f['object'],'manifests':[{'document':g,'expected':expected}],
+    'finalizations':[{'proof':f['groupFinalization'],'ownerPub':f['owner'],'seenAt':1000}],
+    'current':g['snapshot'],'nowMs':3601000,'groupWindowMs':3600000,
+    'anchorFinalizationId':f['groupFinalization']['finalizationId'],
+    'minimumEpoch':1,'expectedEpoch':1,'expectedRevisionId':m['revisionId']}
+raw=json.dumps(history).encode();assert fn(raw,len(raw))==1
+# The trusted consumer must independently resolve the group settlement policy.
+missing=json.loads(json.dumps(history));missing.pop('groupWindowMs')
+raw=json.dumps(missing).encode();assert fn(raw,len(raw))==0
+for part in ['member','edge']:
+    changed=json.loads(json.dumps(history))
+    row=next(e for e in changed['current']['entries'] if e['scope']!='direct') if part=='member' else changed['current']['objectSet']
+    row['stated']=0;row['hamState']+=1
+    raw=json.dumps(changed).encode();assert fn(raw,len(raw))==0
+print('Browser group epoch binds native member withdrawal and independent object-set cancellation')
