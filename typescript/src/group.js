@@ -979,7 +979,7 @@ function signingDraft(input,keys) {
   const name=Object.hasOwn(got.value,'cancels')?'cancels':'prior';
   const values=got.value[name];
   if(!Array.isArray(values))throw Error('Invalid group cancellation ids');
-  const ds=Object.getOwnPropertyDescriptors(values),length=ds.length?.value;
+  const ds=Object.getOwnPropertyDescriptors(/** @type {object} */(values)),length=ds.length?.value;
   if(!integer(length)||length>64||Reflect.ownKeys(ds).length!==length+1)throw Error('Invalid group cancellation ids');
   const detached=[];
   for(let index=0;index<length;index++) {
@@ -995,9 +995,10 @@ function signingDraft(input,keys) {
  */
 function signGroupRow(parsed,scalar,currentKey) {
   if(!parsed.ok)throw Error(parsed.reason);
-  const signed=signWithKeyring(scalar,parsed.bytes,currentKey);
+  const key=parsePrincipalId(currentKey);if(!key.ok)throw Error(key.reason);
+  const signed=signWithKeyring(scalar,parsed.bytes,key.value);
   if(!signed.ok)throw Error(signed.reason);
-  const row={...parsed.value,sig:signed.value};
+  const row=/** @type {T} */({...parsed.value,sig:signed.value});
   if('cancels' in row)Object.freeze(row.cancels);
   if('prior' in row)Object.freeze(row.prior);
   return Object.freeze(row);
