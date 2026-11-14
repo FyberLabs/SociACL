@@ -30,6 +30,12 @@ int sociacl_verify_private_deletion(const uint8_t *proof, size_t proof_len,
 int sociacl_verify_private_grant(const uint8_t *proof, size_t proof_len,
                                const uint8_t *expected, size_t expected_len);
 
+/* Match an existing group settlement configuration to independently trusted
+   set owner, current key, predicate, window and revision. Buffers: 1..16384 bytes.
+   Not latest-policy selection, ownership admission, Check or epoch settlement. */
+int sociacl_verify_group_epoch_config(const uint8_t *proof, size_t proof_len,
+                                     const uint8_t *expected, size_t expected_len);
+
 /* Match the latest settled epoch from trusted complete history, current ACL,
    owner-key bindings, anchor, clock and floor. 1..524288 input bytes; 1 on match,
    0 on refusal. Pending state does not fall back to an old key. Not a Check

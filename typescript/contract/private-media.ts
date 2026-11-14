@@ -2,9 +2,9 @@
  * establish enrollment, current authorization, settlement or freshness. */
 import { p256 } from '@noble/curves/nist.js';
 import { data, integer, hex, unb64 } from '../ids/src/util.js';
-import { parsePrincipalId, parseObjectId, signWithKeyring } from '../ids/src/index.js';
+import { parsePrincipalId, parseObjectId, objectPrincipal, signWithKeyring } from '../ids/src/index.js';
 import { grantPayloadBytes, epochRevisionId, epochStatusBytes } from './canonical.ts';
-import { aclSnapshotId, epochManifestSigBytes, epochFinalizationSigBytes, epochFinalizationId, settleWindowInRange } from './epoch.ts';
+import { aclSnapshotId, epochManifestSigBytes, epochFinalizationSigBytes, epochFinalizationId, settleWindowInRange, groupEpochConfigBytes } from './epoch.ts';
 import type { AclSnapshotBody, AclSnapshotEntry, ObjectId } from '../../docs/s3rch-check.js';
 
 function record(input: unknown, keys: string[]) {
@@ -122,4 +122,16 @@ export function signPrivateMediaDeletion(input: unknown, scalar: Uint8Array, cur
   if(claims.expiresAt<=claims.issuedAt||claims.expiresAt-claims.issuedAt>60000)throw Error('Invalid deletion window');
   const bytes=new TextEncoder().encode('SOCIACL_PRIVATE_MEDIA_DELETE_V1\n'+JSON.stringify([claims.tenant,claims.object,claims.owner,claims.objectVersion,claims.fence,claims.issuedAt,claims.expiresAt]));
   return {claims,proof:{deletionBytes:hex(bytes),signature:sign(scalar,currentKey,bytes)}};
+}
+
+/** Sign the existing group policy transcript. Consumers independently resolve
+ * set ownership/current keys and select the current revision; this is not Check. */
+export function signPrivateMediaGroupConfig(input: unknown, scalar: Uint8Array, currentKey: string) {
+  const r=record(input,['owner','setId','predicate','settleWindowMs','configRevision']);
+  const owner=principal(r.owner),setOwner=objectPrincipal(r.setId);
+  if(typeof r.setId!=='string'||!r.setId.startsWith('set_')||!parseObjectId(r.setId).ok||!setOwner.ok||setOwner.value!==owner||
+      (r.predicate!=='same-group'&&r.predicate!=='named-circle'))throw Error('Invalid private media group policy scope');
+  const body={owner,setId:r.setId,predicate:r.predicate,settleWindowMs:number(r.settleWindowMs),configRevision:number(r.configRevision)};
+  if(!settleWindowInRange(body.settleWindowMs))throw Error('Invalid private media group policy window');
+  return {...body,signature:sign(scalar,currentKey,groupEpochConfigBytes(body.owner,body.setId,body.predicate,body.settleWindowMs,body.configRevision))};
 }

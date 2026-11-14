@@ -12,3 +12,6 @@ export function signPrivateMediaStatus(input:unknown,scalar:Uint8Array,currentKe
 
 export type PrivateMediaDeletion = Readonly<{tenant:string;object:string;owner:string;objectVersion:number;fence:string;issuedAt:number;expiresAt:number}>;
 export function signPrivateMediaDeletion(input:unknown,scalar:Uint8Array,currentKey:string):Readonly<{claims:PrivateMediaDeletion;proof:Readonly<{deletionBytes:string;signature:string}>}>;
+
+export type PrivateMediaGroupConfig = Readonly<{owner:string;setId:string;predicate:'same-group'|'named-circle';settleWindowMs:number;configRevision:number;signature:string}>;
+export function signPrivateMediaGroupConfig(input:unknown,scalar:Uint8Array,currentKey:string):PrivateMediaGroupConfig;
