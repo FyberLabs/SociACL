@@ -54,3 +54,15 @@ test('signing rejects unsupported fields, accessors, malformed drafts and mismat
   assert.throws(()=>signGroupCancel(null,scalar(1),keys.p));
   assert.throws(()=>signGroupCancel({...cancel('membership'),object:edge.object},scalar(2),keys.p2));
 });
+
+test('producer cancellation lists are bounded data arrays without getter or iterator execution',()=>{
+  let accessed=false;
+  const getter=Object.defineProperty(['a'.repeat(64)],'0',{get(){accessed=true;return 'a'.repeat(64);}});
+  const iterator=[];iterator[Symbol.iterator]=function*(){accessed=true;yield 'a'.repeat(64);};
+  for(const list of [getter,iterator,new Array(1),Array(65).fill('a'.repeat(64)),[1],null])
+    assert.throws(()=>signMembershipAssent({...member,cancels:list},scalar(2),keys.p2));
+  assert.equal(accessed,false);
+  const prior=['b'.repeat(64)];
+  const row=signGroupCancel({...cancel('membership'),prior},scalar(2),keys.p2);
+  prior.length=0;assert.equal(row.prior.length,1);
+});

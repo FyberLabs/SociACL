@@ -975,7 +975,19 @@ function signingDraft(input,keys) {
   const got=data(input);
   if(!got.ok||Reflect.ownKeys(/** @type {object} */(input)).length!==keys.length||
       Object.keys(got.value).sort().join()!==keys.sort().join())throw Error('Invalid group signing draft');
-  return {...got.value,sig:''};
+  const draft={...got.value,sig:''};
+  const name=Object.hasOwn(got.value,'cancels')?'cancels':'prior';
+  const values=got.value[name];
+  if(!Array.isArray(values))throw Error('Invalid group cancellation ids');
+  const ds=Object.getOwnPropertyDescriptors(values),length=ds.length?.value;
+  if(!integer(length)||length>64||Reflect.ownKeys(ds).length!==length+1)throw Error('Invalid group cancellation ids');
+  const detached=[];
+  for(let index=0;index<length;index++) {
+    const entry=ds[String(index)];
+    if(!entry||!('value' in entry)||typeof entry.value!=='string')throw Error('Invalid group cancellation ids');
+    detached.push(entry.value);
+  }
+  return {...draft,[name]:detached};
 }
 /** @template {MembershipAssent|ObjectSetRow|GroupCancel} T
  * @param {{ok:true,value:T,bytes:Uint8Array}|{ok:false,reason:string}} parsed
