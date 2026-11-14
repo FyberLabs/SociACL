@@ -10,7 +10,9 @@ try{
   const packed=JSON.parse(execFileSync('npm',['pack','--ignore-scripts','--json','--pack-destination',temp],{cwd:root,encoding:'utf8'}));
   writeFileSync(join(temp,'package.json'),JSON.stringify({private:true,type:'module'}));
   execFileSync('npm',['install','--ignore-scripts','--no-audit','--no-fund','--cache',join(temp,'cache'),join(temp,packed[0].filename)],{cwd:temp,stdio:'inherit'});
-  const source=`import {wrapItemDekToGroupEpoch,openGroupEpochWrap} from 'sociacl-ids/group-wrap';
+  const source=`import {wrapGroupKeyToMembers,openGroupKeyReaderWrap} from 'sociacl-ids/group-reader-wrap';
+for(const fn of [wrapGroupKeyToMembers,openGroupKeyReaderWrap])if(typeof fn!=='function')throw Error('Missing group reader API');
+import {wrapItemDekToGroupEpoch,openGroupEpochWrap} from 'sociacl-ids/group-wrap';
 for(const fn of [wrapItemDekToGroupEpoch,openGroupEpochWrap])if(typeof fn!=='function')throw Error('Missing group wrap API');
 import {signPrivateMediaGrant,signPrivateMediaEpoch,signPrivateMediaFinalization,signPrivateMediaStatus,signPrivateMediaDeletion,signPrivateMediaGroupConfig} from 'sociacl-ids/private-media';
 for(const fn of [signPrivateMediaGrant,signPrivateMediaEpoch,signPrivateMediaFinalization,signPrivateMediaStatus,signPrivateMediaDeletion,signPrivateMediaGroupConfig])if(typeof fn!=='function')throw Error('Missing media producer');

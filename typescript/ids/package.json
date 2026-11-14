@@ -56,6 +56,10 @@
     "./group-wrap": {
       "types": "./dist/group-wrap.d.ts",
       "default": "./dist/group-wrap.js"
+    },
+    "./group-reader-wrap": {
+      "types": "./dist/group-reader-wrap.d.ts",
+      "default": "./dist/group-reader-wrap.js"
     }
   },
   "files": [

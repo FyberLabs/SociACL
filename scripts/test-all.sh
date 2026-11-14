@@ -45,6 +45,10 @@ GROUP_WRAP_RUST_VECTOR="${root}/target/ids/group-wrap-rust.json" cargo test -p s
 GROUP_WRAP_RUST_VECTOR="${root}/target/ids/group-wrap-rust.json" GROUP_WRAP_TS_VECTOR="${root}/target/ids/group-wrap-ts.json" node --test --experimental-test-coverage --test-coverage-include=typescript/ids/src/group-wrap.js --test-coverage-lines=90 --test-coverage-branches=80 typescript/ids/test/group-wrap.js
 GROUP_WRAP_TS_VECTOR="${root}/target/ids/group-wrap-ts.json" cargo test -p sociacl-encdisc --locked --test browser_group_wrap
 
+GROUP_MEMBER_RUST_VECTOR="${root}/target/ids/group-member-rust.json" cargo test -p sociacl-encdisc --locked --test browser_group_member_wrap
+GROUP_MEMBER_RUST_VECTOR="${root}/target/ids/group-member-rust.json" GROUP_MEMBER_TS_VECTOR="${root}/target/ids/group-member-ts.json" node --test --experimental-test-coverage --test-coverage-include=typescript/ids/src/group-reader-wrap.js --test-coverage-lines=90 --test-coverage-branches=80 typescript/ids/test/group-reader-wrap.js
+GROUP_MEMBER_TS_VECTOR="${root}/target/ids/group-member-ts.json" cargo test -p sociacl-encdisc --locked --test browser_group_member_wrap
+
 # Independent browser package: each language reports exactly which shared vectors ran.
 IDS_VECTOR_REPORT="${root}/target/ids/ts-vectors.txt" node --test typescript/ids/test/*.js
 node --check typescript/ids/scripts/browser-first-contact.mjs
