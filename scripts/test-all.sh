@@ -37,6 +37,7 @@ WITNESS_RUST_VECTOR="${root}/target/ids/witness-rust.json" WITNESS_TS_VECTOR="${
 FIRST_CONTACT_TS_VECTOR="${root}/target/ids/first-contact-ts.bin" cargo test -p sociacl-encdisc --locked --test first_contact
 WITNESS_TS_VECTOR="${root}/target/ids/witness-ts.json" cargo test -p sociacl-ids --locked --test independent_witness
 npm run --prefix typescript typecheck
+node --test --experimental-test-coverage --test-coverage-include=typescript/src/group.js --test-coverage-lines=90 --test-coverage-branches=80 typescript/tests/test_group.js typescript/tests/test_group_signing.js typescript/tests/test_see.js
 
 PRIVATE_MEDIA_VECTOR="${root}/target/ids/private-media.json" node --experimental-strip-types --test --experimental-test-coverage --test-coverage-include=typescript/contract/private-media.ts --test-coverage-lines=90 --test-coverage-branches=80 typescript/tests/test_private_media.ts
 python3 scripts/private-media-native.py
