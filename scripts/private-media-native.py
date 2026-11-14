@@ -55,9 +55,13 @@ for field in ['hamState','stated']:
     assert pair('sociacl_verify_epoch_manifest',changed,expected)==0
 history={'object':f['object'],'manifests':[{'document':g,'expected':expected}],
     'finalizations':[{'proof':f['groupFinalization'],'ownerPub':f['owner'],'seenAt':1000}],
-    'current':g['snapshot'],'nowMs':3601000,'anchorFinalizationId':f['groupFinalization']['finalizationId'],
+    'current':g['snapshot'],'nowMs':3601000,'groupWindowMs':3600000,
+    'anchorFinalizationId':f['groupFinalization']['finalizationId'],
     'minimumEpoch':1,'expectedEpoch':1,'expectedRevisionId':m['revisionId']}
 raw=json.dumps(history).encode();assert fn(raw,len(raw))==1
+# The trusted consumer must independently resolve the group settlement policy.
+missing=json.loads(json.dumps(history));missing.pop('groupWindowMs')
+raw=json.dumps(missing).encode();assert fn(raw,len(raw))==0
 for part in ['member','edge']:
     changed=json.loads(json.dumps(history))
     row=next(e for e in changed['current']['entries'] if e['scope']!='direct') if part=='member' else changed['current']['objectSet']
