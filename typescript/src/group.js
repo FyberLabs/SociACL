@@ -835,6 +835,34 @@ export function snapshotUnderstatesGroup(graph, object, members, objectSet) {
   return false;
 }
 
+/**
+ * Copy the admitted group's current membership and object-set ordering state.
+ * Callers must admit/reverify rows against current authenticated histories first.
+ * This is snapshot material, not a grant, signed epoch or delivery decision.
+ * Incomplete membership is stated 0; the owner shortcut never adds membership.
+ * @param {object} graph
+ * @param {string} object
+ * @returns {{members: {accessor: string, predicate: GroupPredicate, setId: string, stated: 0 | 1, hamState: number}[], objectSet: {predicate: GroupPredicate, setId: string, stated: 0 | 1, hamState: number}} | null}
+ */
+export function groupSnapshot(graph, object) {
+  if (!graphObject(graph)) return null;
+  const id = parseObjectId(object);
+  if (!id.ok || !admittedOwner(graph, id.value)) return null;
+  const edge = objectSetTable(graph).get(id.value);
+  if (!edge) return null;
+  /** @type {{accessor: string, predicate: GroupPredicate, setId: string, stated: 0 | 1, hamState: number}[]} */
+  const members = [];
+  for (const row of membershipTable(graph).values()) {
+    if (row.predicate !== edge.predicate || row.set !== edge.set) continue;
+    members.push({accessor: row.member, predicate: row.predicate, setId: row.set,
+      stated: membershipLive(row) ? 1 : 0,
+      hamState: Math.max(row.memberAssent?.hamState ?? 0, row.setAssent?.hamState ?? 0)});
+  }
+  members.sort((a,b) => a.accessor < b.accessor ? -1 : a.accessor > b.accessor ? 1 : 0);
+  return {members, objectSet: {predicate: edge.predicate, setId: edge.set,
+    stated: objectSetLive(edge) ? 1 : 0, hamState: edge.assent?.hamState ?? 0}};
+}
+
 export class MemoryGroupGraph {
   /**
    * @param {string} object

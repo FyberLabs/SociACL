@@ -112,6 +112,7 @@ jobs:
             if (typeof gun.admitPost !== 'function') throw new Error('admitPost');
             if (typeof gun.checkPost !== 'function') throw new Error('checkPost');
             if (typeof group.MemoryGroupGraph !== 'function') throw new Error('MemoryGroupGraph');
+            if (typeof group.groupSnapshot !== 'function') throw new Error('groupSnapshot');
             try {
               await import('sociacl/ir');
               throw new Error('unsigned IR adapter is exported');

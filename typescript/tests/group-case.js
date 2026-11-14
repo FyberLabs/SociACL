@@ -1,8 +1,9 @@
+import assert from 'node:assert/strict';
 /**
  * Shared group-vector runner. Admission verifies v2 rows.
  * The runner does not enroll a signer.
  */
-import { admitGroupCancel, admitMembership, admitObjectSet, checkGroupPresentation, checkGroupSee, MemoryGroupGraph, reverifyGroup, snapshotUnderstatesGroup } from '../src/group.js';
+import { admitGroupCancel, admitMembership, admitObjectSet, checkGroupPresentation, checkGroupSee, MemoryGroupGraph, reverifyGroup, groupSnapshot, snapshotUnderstatesGroup } from '../src/group.js';
 import { checkForumChildWrite } from '../src/post.js';
 import { checkForumSee } from '../src/forum.js';
 import { admitRow, putObject } from '../src/see.js';
@@ -99,6 +100,11 @@ export function runGroupCase(steps, options) {
       );
       if (got.allowed !== step.allowed || got.reason !== step.reason) failStep(step, got);
       if (step.hop && !got.hop) failStep(step, got);
+      if (got.reason !== 'owner') {
+        const current = groupSnapshot(graph, step.object);
+        const member = current?.members.find(row => row.accessor === step.accessor);
+        assert.equal(Boolean(current?.objectSet.stated === 1 && current.objectSet.predicate === step.predicate && member?.stated === 1), got.allowed);
+      }
       continue;
     }
     if (step.op === 'check-presentation') {
@@ -118,6 +124,15 @@ export function runGroupCase(steps, options) {
     if (step.op === 'snapshot') {
       const got = snapshotUnderstatesGroup(graph, step.object, step.members, step.objectSet ?? null);
       if (got !== step.understates) failStep(step, got);
+      const current = groupSnapshot(graph, step.object);
+      if (current) {
+        assert.equal(snapshotUnderstatesGroup(graph, step.object, current.members, current.objectSet), false);
+        assert.deepEqual(current.members.map(row => row.accessor), current.members.map(row => row.accessor).sort());
+        const before = structuredClone(current);
+        current.members.length = 0;
+        current.objectSet.hamState = -1;
+        assert.deepEqual(groupSnapshot(graph, step.object), before);
+      }
       continue;
     }
     failStep(step, 'unknown');

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { admitMembership, checkGroupSee, MemoryGroupGraph } from "../src/group.js";
+import { admitMembership, checkGroupSee, groupSnapshot, MemoryGroupGraph } from "../src/group.js";
 
 test("a bare history array is missing-history for group admission", () => {
   const graph = new MemoryGroupGraph();
@@ -32,4 +32,9 @@ test("a hop alone does not grant group see", () => {
   const got = checkGroupSee(graph, "same-group", "chat_ab", "bob", 1, null, { channel: "convention-badge" });
   assert.equal(got.allowed, false);
   assert.equal(got.hop?.channel, "convention-badge");
+});
+
+test("group snapshots require admitted ownership and an object-set edge", () => {
+  assert.equal(groupSnapshot(new MemoryGroupGraph(), "invalid"), null);
+  assert.equal(groupSnapshot({}, "invalid"), null);
 });
