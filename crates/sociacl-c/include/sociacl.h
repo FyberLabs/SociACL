@@ -21,6 +21,12 @@ typedef struct sociacl_client sociacl_client;
    current Check, enrollment, settlement or permission to deliver a key.
    Pointers must be readable for their lengths; neither is retained.
    See docs/private-grant-c-bridge.md. */
+/* Explicit deletion intent only. Current owner authority, irreversible source
+ * tombstone, provider cleanup and exact-once quota release remain separate. */
+int sociacl_verify_private_deletion(const uint8_t *proof, size_t proof_len,
+                                   const uint8_t *expected, size_t expected_len,
+                                   uint64_t now_ms);
+
 int sociacl_verify_private_grant(const uint8_t *proof, size_t proof_len,
                                const uint8_t *expected, size_t expected_len);
 

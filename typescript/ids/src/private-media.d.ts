@@ -9,3 +9,6 @@ export function signPrivateMediaGrant(input:unknown,scalar:Uint8Array,currentKey
 export function signPrivateMediaEpoch(input:unknown,snapshot:unknown,scalar:Uint8Array,currentKey:string):Readonly<{manifest:PrivateMediaManifest;snapshot:PrivateMediaSnapshot}>;
 export function signPrivateMediaFinalization(input:unknown,scalar:Uint8Array,currentKey:string):PrivateMediaFinalization;
 export function signPrivateMediaStatus(input:unknown,scalar:Uint8Array,currentKey:string):PrivateMediaStatus;
+
+export type PrivateMediaDeletion = Readonly<{tenant:string;object:string;owner:string;objectVersion:number;fence:string;issuedAt:number;expiresAt:number}>;
+export function signPrivateMediaDeletion(input:unknown,scalar:Uint8Array,currentKey:string):Readonly<{claims:PrivateMediaDeletion;proof:Readonly<{deletionBytes:string;signature:string}>}>;

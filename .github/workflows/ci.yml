@@ -70,7 +70,7 @@ jobs:
           cargo llvm-cov -p sociacl-c --lib --locked --lcov --output-path target/coverage/epoch-status.lcov
           python3 - <<'PY'
           from pathlib import Path
-          coverage_lines = {name: {} for name in ('epoch_status.rs', 'epoch_manifest.rs', 'epoch_selection.rs', 'private_grant.rs')}
+          coverage_lines = {name: {} for name in ('epoch_status.rs', 'epoch_manifest.rs', 'epoch_selection.rs', 'private_grant.rs', 'private_deletion.rs')}
           selected = None
           for row in Path('target/coverage/epoch-status.lcov').read_text().splitlines():
               if row.startswith('SF:'):
