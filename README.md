@@ -159,3 +159,12 @@ See [ARCHITECTURE.md](ARCHITECTURE.md), [docs/verbs.md](docs/verbs.md), [docs/ne
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+
+The TypeScript `sociacl/group` export `groupSnapshot(graph, object)` copies the
+admitted membership and object-set ordering state for epoch preparation. It
+retains removals and separate HAM values, sorts members by accessor, and never
+adds membership through the owner shortcut. Callers must first admit/reverify
+rows against current authenticated histories. A snapshot is not a grant, epoch
+signature, settlement result or delivery permission. Returned values are detached
+from the admitted graph; changing them cannot change its authorization decisions.
