@@ -63,6 +63,7 @@
  */
 
 import {
+  signWithKeyring,
   historyState,
   membershipSoul,
   objectPrincipal,
@@ -74,7 +75,7 @@ import {
   verifyKeySignature,
   verifySignedAt,
 } from '../ids/src/index.js';
-import { integer, lp } from '../ids/src/util.js';
+import { data, integer, lp } from '../ids/src/util.js';
 import { admittedOwner, checkSee } from './see.js';
 
 export { checkPost, factorGrants } from './post.js';
@@ -965,4 +966,53 @@ export class MemoryGroupGraph {
       }
     }
   }
+}
+
+/** Exact data-only draft. Current-key producers cannot attach retired-key attestations.
+ * @param {unknown} input @param {string[]} keys @returns {Record<string,unknown>}
+ */
+function signingDraft(input,keys) {
+  const got=data(input);
+  if(!got.ok||Reflect.ownKeys(/** @type {object} */(input)).length!==keys.length||
+      Object.keys(got.value).sort().join()!==keys.sort().join())throw Error('Invalid group signing draft');
+  return {...got.value,sig:''};
+}
+/** @template {MembershipAssent|ObjectSetRow|GroupCancel} T
+ * @param {{ok:true,value:T,bytes:Uint8Array}|{ok:false,reason:string}} parsed
+ * @param {Uint8Array} scalar @param {string} currentKey @returns {Readonly<T>}
+ */
+function signGroupRow(parsed,scalar,currentKey) {
+  if(!parsed.ok)throw Error(parsed.reason);
+  const signed=signWithKeyring(scalar,parsed.bytes,currentKey);
+  if(!signed.ok)throw Error(signed.reason);
+  const row={...parsed.value,sig:signed.value};
+  if('cancels' in row)Object.freeze(row.cancels);
+  if('prior' in row)Object.freeze(row.prior);
+  return Object.freeze(row);
+}
+/** Sign one party's assent using an independently resolved current key. This
+ * does not establish the other party's assent, enrollment or authorization.
+ * @param {unknown} input @param {Uint8Array} scalar @param {string} currentKey
+ */
+export function signMembershipAssent(input,scalar,currentKey) {
+  return signGroupRow(parseMembershipAssent(signingDraft(input,
+    ['role','predicate','set','member','setOwner','stated','hamState','issuedAt','cancels'])),scalar,currentKey);
+}
+/** Sign the media owner's object-set edge, never a membership.
+ * @param {unknown} input @param {Uint8Array} scalar @param {string} currentKey
+ */
+export function signObjectSet(input,scalar,currentKey) {
+  return signGroupRow(parseObjectSet(signingDraft(input,
+    ['owner','object','predicate','set','stated','hamState','issuedAt','cancels'])),scalar,currentKey);
+}
+/** Sign a current-key membership or object-set cancellation. Retired-key
+ * witnesses remain a separate operation and cannot be injected into this draft.
+ * @param {unknown} input @param {Uint8Array} scalar @param {string} currentKey
+ */
+export function signGroupCancel(input,scalar,currentKey) {
+  const shape=data(input);
+  if(!shape.ok)throw Error('Invalid group signing draft');
+  const keys=['kind','rowSoul','cancelId','prior','signer','predicate','set','member','setOwner','issuedAt'];
+  if(shape.value.kind==='object-set')keys.push('object');
+  return signGroupRow(parseGroupCancel(signingDraft(input,keys)),scalar,currentKey);
 }
