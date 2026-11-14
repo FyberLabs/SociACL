@@ -34,7 +34,7 @@ async function aesKey(groupKey) {
 export async function wrapItemDekToGroupEpoch(dek,groupKey,expected) {
   /** @type {Uint8Array|undefined} */let key;
   /** @type {Uint8Array|undefined} */let group;
-  /** @type {Uint8Array|undefined} */let plain;
+  /** @type {Uint8Array<ArrayBuffer>|undefined} */let plain;
   /** @type {Uint8Array|undefined} */let tail;
   try {
     key=keyCopy(dek);group=keyCopy(groupKey);const held=context(expected);
@@ -51,7 +51,7 @@ export async function wrapItemDekToGroupEpoch(dek,groupKey,expected) {
  * @returns {Promise<import('./types.js').Result<Uint8Array>>} */
 export async function openGroupEpochWrap(input,groupKey,expected) {
   /** @type {Uint8Array|undefined} */let group;
-  /** @type {Uint8Array|undefined} */let plain;
+  /** @type {Uint8Array<ArrayBuffer>|undefined} */let plain;
   try {
     group=keyCopy(groupKey);const held=context(expected),d=data(input);
     if(!d.ok||Reflect.ownKeys(/** @type {object} */(input)).length!==8||
