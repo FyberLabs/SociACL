@@ -5,7 +5,8 @@ and `signGroupCancel`. Each accepts an unsigned data-only draft, a caller-held
 32-byte signing scalar and an independently resolved current signing key. They
 reuse the existing row parsers and canonical transcripts, return immutable signed
 rows, and retain no key. Signature and witness fields cannot be injected into
-a draft; retired-key attestation is a separate operation.
+a draft; retired-key attestation is a separate operation. Cancellation id arrays
+are data-only and bounded to 64 entries.
 
 An assent signs only its own party's statement. Producing a row does not enroll
 any identity, establish the second assent, grant access, select an epoch or
