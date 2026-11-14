@@ -44,9 +44,10 @@ const prefix = (context, epub) => lp([DOMAIN, 'item-dek', String(context.epoch),
 /** @param {Uint8Array} secret @param {Uint8Array} peer */
 async function aesKey(secret, peer) {
   const shared = p256.getSharedSecret(secret, peer, false);
-  const material = sha256(lp(['s3rch-sea-secret-v1', hex(shared.subarray(1, 33))]));
-  try { return await crypto.subtle.importKey('raw', new Uint8Array(material), 'AES-GCM', false, ['encrypt', 'decrypt']); }
-  finally { shared.fill(0); material.fill(0); }
+  const encoded = lp(['s3rch-sea-secret-v1', hex(shared.subarray(1, 33))]);
+  const material = sha256(encoded), raw = new Uint8Array(material);
+  try { return await crypto.subtle.importKey('raw', raw, 'AES-GCM', false, ['encrypt', 'decrypt']); }
+  finally { shared.fill(0); encoded.fill(0); material.fill(0); raw.fill(0); }
 }
 
 /** Wrap only to the already-authorized enrolled readers. No partial result is

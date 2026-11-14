@@ -81,3 +81,14 @@ test('typed-array length overrides never forge a DEK or execute a getter', async
   assert.equal(result.ok, true); assert.deepEqual((await open(result.value[0])).value, dek);
   assert.equal(calls, 0);
 });
+
+test('reader-wrap AES import buffers are wiped on success and crypto rejection',async()=>{
+ const original=crypto.subtle.importKey;
+ try {
+  for(const reject of [false,true]){
+   let raw;
+   crypto.subtle.importKey=async function(...args){raw=args[1];if(reject)throw Error('refused');return original.apply(this,args);};
+   assert.equal((await seal()).ok,!reject);assert.ok(raw instanceof Uint8Array);assert.ok(raw.every(value=>value===0));
+  }
+ }finally{crypto.subtle.importKey=original;}
+});
