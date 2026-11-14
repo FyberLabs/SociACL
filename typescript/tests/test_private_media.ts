@@ -10,6 +10,12 @@ const claims={object,owner,accessor:owner,from:0,until:7200000,stated:1,epoch:1,
 const snapshot={entries:[{accessor:owner,grantRevision:1,stated:1,from:0,until:7200000,scope:'direct',setId:'',hamState:0}]};
 const draft={object,previousEpoch:0,epoch:1,deviceId:'browser',keyCommitment:'b'.repeat(64),settleWindowMs:3600000};
 const epoch=signPrivateMediaEpoch(draft,snapshot,scalar,owner);
+const groupSnapshot={entries:[...snapshot.entries,{accessor:other,grantRevision:1,stated:1,from:0,until:7200000,
+  scope:'same-group',setId:object.replace('media_','set_'),hamState:3}].sort((a,b)=>a.accessor<b.accessor?-1:1),
+  objectSet:{predicate:'same-group',setId:object.replace('media_','set_'),stated:1,hamState:5}};
+const groupEpoch=signPrivateMediaEpoch(draft,groupSnapshot,scalar,owner);
+const groupFinalization=signPrivateMediaFinalization({object,previousEpoch:0,epoch:1,revisionId:groupEpoch.manifest.revisionId,
+  candidateRevisionIds:[groupEpoch.manifest.revisionId],previousFinalizationId:''},scalar,owner);
 const finalDraft={object,previousEpoch:0,epoch:1,revisionId:epoch.manifest.revisionId,candidateRevisionIds:[epoch.manifest.revisionId],previousFinalizationId:''};
 const statusDraft={object,epoch:1,revisionId:epoch.manifest.revisionId,accessor:owner,grantRevision:1,stated:1,signedAt:3601000,maxAgeMs:60000,zookie:{object,objectVersion:3,snapshotHash:epoch.manifest.aclSnapshot}};
 test('browser producers preserve drafts and caller-held keys',()=>{
@@ -20,7 +26,7 @@ test('browser producers preserve drafts and caller-held keys',()=>{
   const finalization=signPrivateMediaFinalization(finalDraft,scalar,owner);
   const status=signPrivateMediaStatus(statusDraft,scalar,owner);
   if(process.env.PRIVATE_MEDIA_VECTOR)writeFileSync(process.env.PRIVATE_MEDIA_VECTOR,JSON.stringify({owner,object,grant,
-    cancel:signPrivateMediaGrant({...claims,stated:0,grantRevision:2},scalar,owner),epoch,finalization,status,deletion:signPrivateMediaDeletion(deletionDraft,scalar,owner)}));
+    cancel:signPrivateMediaGrant({...claims,stated:0,grantRevision:2},scalar,owner),epoch,finalization,status,groupEpoch,groupFinalization,deletion:signPrivateMediaDeletion(deletionDraft,scalar,owner)}));
 });
 test('grant fields, key mismatch and accessors reject before signing',()=>{
   for(const change of [{epoch:0},{grantRevision:0},{from:7200000},{until:-1},{until:-0},{stated:2},{stated:-0},{owner:'bad'},
@@ -73,4 +79,33 @@ test('deletion is explicit, scoped, bounded and preserves the caller key',()=>{
  assert.throws(()=>signPrivateMediaDeletion({...claims,stated:0},scalar,owner));
  let reads=0;const hostile={...deletionDraft};Object.defineProperty(hostile,'fence',{get(){reads++;return deletionDraft.fence;}});
  assert.throws(()=>signPrivateMediaDeletion(hostile,scalar,owner));assert.equal(reads,0);
+});
+
+test('group epochs preserve independent membership and object-set state alongside direct entries',()=>{
+  const held=structuredClone(groupSnapshot),key=scalar.slice();
+  assert.deepEqual(groupEpoch.snapshot,held);assert.deepEqual(groupSnapshot,held);assert.deepEqual(scalar,key);
+  assert.notEqual(groupEpoch.manifest.aclSnapshot,epoch.manifest.aclSnapshot);
+  for(const scope of ['same-group','named-circle']) {
+    const changed=structuredClone(groupSnapshot);changed.objectSet.predicate=scope;
+    changed.entries=changed.entries.map(e=>e.scope==='direct'?e:{...e,scope});
+    assert.deepEqual(signPrivateMediaEpoch(draft,changed,scalar,owner).snapshot,changed);
+  }
+  for(const part of ['member','edge']) {
+    const changed=structuredClone(groupSnapshot);
+    if(part==='member')changed.entries.find(e=>e.scope!=='direct')!.stated=0;else changed.objectSet.stated=0;
+    assert.notEqual(signPrivateMediaEpoch(draft,changed,scalar,owner).manifest.revisionId,groupEpoch.manifest.revisionId);
+  }
+  groupEpoch.snapshot.entries[0]!.hamState=99;
+  assert.deepEqual(groupSnapshot,held);groupEpoch.snapshot.entries[0]!.hamState=held.entries[0]!.hamState;
+});
+test('group epoch input refuses wrong scope, edge, duplicate accessor and hostile fields',()=>{
+  for(const change of [{predicate:'direct'},{setId:'set_bad'},{setId:object},{stated:2},{stated:-0},{hamState:-1},{hamState:-0},{extra:1}])
+    assert.throws(()=>signPrivateMediaEpoch(draft,{...groupSnapshot,objectSet:{...groupSnapshot.objectSet,...change}},scalar,owner));
+  const member=groupSnapshot.entries.find(e=>e.scope!=='direct')!;
+  for(const change of [{scope:'direct'},{scope:'see'},{setId:object},{hamState:-1},{stated:2},{accessor:'bad'}])
+    assert.throws(()=>signPrivateMediaEpoch(draft,{...groupSnapshot,entries:[{...member,...change}]},scalar,owner));
+  assert.throws(()=>signPrivateMediaEpoch(draft,{...groupSnapshot,entries:[member,member]},scalar,owner));
+  assert.throws(()=>signPrivateMediaEpoch(draft,{...groupSnapshot,objectSet:undefined},scalar,owner));
+  let reads=0;const hostile={...groupSnapshot.objectSet};Object.defineProperty(hostile,'hamState',{get(){reads++;return 5;}});
+  assert.throws(()=>signPrivateMediaEpoch(draft,{...groupSnapshot,objectSet:hostile},scalar,owner));assert.equal(reads,0);
 });

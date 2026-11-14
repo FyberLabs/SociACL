@@ -37,14 +37,30 @@ function sign(scalar: Uint8Array, currentKey: string, bytes: Uint8Array): string
   const canonical = signature.hasHighS() ? new p256.Signature(signature.r, p256.Point.Fn.ORDER - signature.s) : signature;
   return hex(canonical.toBytes('compact'));
 }
-function directSnapshot(input: unknown): AclSnapshotBody {
-  const raw = record(input, ['entries']);
-  const entries: AclSnapshotEntry[] = list(raw.entries).map(input => {
-    const r = record(input, ['accessor','grantRevision','stated','from','until','scope','setId','hamState']);
-    if (r.scope !== 'direct' || r.setId !== '' || r.hamState !== 0 || Object.is(r.hamState,-0)) throw Error('Only direct private media snapshots are supported');
-    return {accessor:principal(r.accessor),grantRevision:number(r.grantRevision),stated:stated(r.stated),from:number(r.from),until:number(r.until),scope:'direct',setId:'',hamState:0};
+function mediaSnapshot(input: unknown): AclSnapshotBody {
+  const shape=data(input);
+  if(!shape.ok)throw Error('Invalid private media snapshot');
+  const hasEdge=Object.hasOwn(shape.value,'objectSet');
+  const raw=record(input,hasEdge?['entries','objectSet']:['entries']);
+  let objectSet: AclSnapshotBody['objectSet'];
+  if(hasEdge) {
+    const r=record(raw.objectSet,['predicate','setId','stated','hamState']);
+    if((r.predicate!=='same-group'&&r.predicate!=='named-circle')||typeof r.setId!=='string'||
+        !r.setId.startsWith('set_')||!parseObjectId(r.setId).ok)throw Error('Invalid private media object set');
+    objectSet={predicate:r.predicate,setId:r.setId,stated:stated(r.stated),hamState:number(r.hamState)};
+  }
+  const entries: AclSnapshotEntry[]=list(raw.entries).map(input=>{
+    const r=record(input,['accessor','grantRevision','stated','from','until','scope','setId','hamState']);
+    const hamState=number(r.hamState);
+    if(r.scope==='direct') {
+      if(r.setId!==''||hamState!==0)throw Error('Invalid direct private media scope');
+    } else if(!objectSet||r.scope!==objectSet.predicate||r.setId!==objectSet.setId) {
+      throw Error('Invalid private media membership scope');
+    }
+    return {accessor:principal(r.accessor),grantRevision:number(r.grantRevision),stated:stated(r.stated),
+      from:number(r.from),until:number(r.until),scope:r.scope as AclSnapshotEntry['scope'],setId:r.setId as string,hamState};
   });
-  const result = {entries}; aclSnapshotId(result); return result;
+  const result={entries,...(objectSet?{objectSet}:{})};aclSnapshotId(result);return result;
 }
 
 /** Sign a live grant or cancellation. Current key must come from the protected
@@ -58,11 +74,11 @@ export function signPrivateMediaGrant(input: unknown, scalar: Uint8Array, curren
   return {claims,proof:{grantBytes:hex(bytes),signature:sign(scalar,currentKey,bytes)}};
 }
 
-/** Builds one direct-snapshot epoch candidate. Call only after independently
+/** Builds one direct or group snapshot epoch candidate. Call only after independently
  * resolving the complete snapshot and enrolled keys; this does not settle it. */
 export function signPrivateMediaEpoch(input: unknown, snapshot: unknown, scalar: Uint8Array, currentKey: string) {
   const r = record(input,['object','previousEpoch','epoch','deviceId','keyCommitment','settleWindowMs']);
-  const held = directSnapshot(snapshot);
+  const held = mediaSnapshot(snapshot);
   const body = {object:object(r.object),previousEpoch:number(r.previousEpoch),epoch:number(r.epoch),deviceId:label(r.deviceId),
     keyCommitment:digest(r.keyCommitment),settleWindowMs:number(r.settleWindowMs),aclSnapshot:aclSnapshotId(held)};
   if (body.epoch !== body.previousEpoch+1 || !settleWindowInRange(body.settleWindowMs)) throw Error('Invalid private media epoch step');
