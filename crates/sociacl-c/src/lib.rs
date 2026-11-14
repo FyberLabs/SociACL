@@ -3042,3 +3042,6 @@ mod tests {
         sociacl_plane_free(plane);
     }
 }
+
+mod private_deletion;
+pub use private_deletion::sociacl_verify_private_deletion;

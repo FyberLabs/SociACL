@@ -34,3 +34,13 @@ raw=json.dumps(history).encode();assert fn(raw,len(raw))==1
 history['finalizations'][0]['proof']['signature']='0'*128
 raw=json.dumps(history).encode();assert fn(raw,len(raw))==0
 print('Browser grants, cancellation, manifest, finalization and status match native verification')
+
+deletion=f['deletion'];expected={**deletion['claims'],'ownerPub':f['owner']}
+assert pair('sociacl_verify_private_deletion',deletion['proof'],expected,1000)==1
+assert pair('sociacl_verify_private_deletion',deletion['proof'],expected,61000)==0
+assert pair('sociacl_verify_private_deletion',deletion['proof'],expected,999)==0
+for field,value in [('tenant','22222222-2222-4222-8222-222222222222'),('object',f['object']+'x'),
+                    ('owner','other'),('ownerPub','other'),('objectVersion',4),('fence','b'*64),('issuedAt',1001),('expiresAt',60000)]:
+    assert pair('sociacl_verify_private_deletion',deletion['proof'],{**expected,field:value},2000)==0,field
+assert pair('sociacl_verify_private_deletion',f['cancel']['proof'],expected,2000)==0
+print('Browser deletion command matches native exact-scope verification; unshare refuses')

@@ -94,3 +94,16 @@ export function signPrivateMediaStatus(input: unknown, scalar: Uint8Array, curre
   const bytes=epochStatusBytes({...body,zookieObject:body.zookie.object,zookieVersion:body.zookie.objectVersion,zookieSnapshot:body.zookie.snapshotHash});
   return {...body,signature:sign(scalar,currentKey,bytes)};
 }
+
+/** Explicit irreversible deletion intent, never inferred from unshare or expiry.
+ * Consumers must bind these claims to current protected owner state before
+ * tombstoning, and separately complete storage cleanup and quota release. */
+export function signPrivateMediaDeletion(input: unknown, scalar: Uint8Array, currentKey: string) {
+  const r=record(input,['tenant','object','owner','objectVersion','fence','issuedAt','expiresAt']);
+  if(typeof r.tenant!=='string'||! /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(r.tenant)||r.tenant==='00000000-0000-0000-0000-000000000000')throw Error('Invalid deletion tenant');
+  const claims={tenant:r.tenant,object:object(r.object),owner:principal(r.owner),objectVersion:number(r.objectVersion),
+    fence:digest(r.fence),issuedAt:number(r.issuedAt),expiresAt:number(r.expiresAt)};
+  if(claims.expiresAt<=claims.issuedAt||claims.expiresAt-claims.issuedAt>60000)throw Error('Invalid deletion window');
+  const bytes=new TextEncoder().encode('SOCIACL_PRIVATE_MEDIA_DELETE_V1\n'+JSON.stringify([claims.tenant,claims.object,claims.owner,claims.objectVersion,claims.fence,claims.issuedAt,claims.expiresAt]));
+  return {claims,proof:{deletionBytes:hex(bytes),signature:sign(scalar,currentKey,bytes)}};
+}

@@ -2,9 +2,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync } from 'node:fs';
-import { signPrivateMediaGrant, signPrivateMediaEpoch, signPrivateMediaFinalization, signPrivateMediaStatus } from '../contract/private-media.ts';
+import { signPrivateMediaGrant, signPrivateMediaEpoch, signPrivateMediaFinalization, signPrivateMediaStatus, signPrivateMediaDeletion } from '../contract/private-media.ts';
 const {p:owner,p2:other,obj} = JSON.parse(readFileSync(new URL('../ids/test/test-keys.json',import.meta.url),'utf8'));
 const object=String(obj).replace('room_','media_'), scalar=new Uint8Array(32);scalar[31]=1;
+const deletionDraft={tenant:'11111111-1111-4111-8111-111111111111',object,owner,objectVersion:3,fence:'a'.repeat(64),issuedAt:1000,expiresAt:61000};
 const claims={object,owner,accessor:owner,from:0,until:7200000,stated:1,epoch:1,grantRevision:1,itemCiphertextDigest:'a'.repeat(64)};
 const snapshot={entries:[{accessor:owner,grantRevision:1,stated:1,from:0,until:7200000,scope:'direct',setId:'',hamState:0}]};
 const draft={object,previousEpoch:0,epoch:1,deviceId:'browser',keyCommitment:'b'.repeat(64),settleWindowMs:3600000};
@@ -19,7 +20,7 @@ test('browser producers preserve drafts and caller-held keys',()=>{
   const finalization=signPrivateMediaFinalization(finalDraft,scalar,owner);
   const status=signPrivateMediaStatus(statusDraft,scalar,owner);
   if(process.env.PRIVATE_MEDIA_VECTOR)writeFileSync(process.env.PRIVATE_MEDIA_VECTOR,JSON.stringify({owner,object,grant,
-    cancel:signPrivateMediaGrant({...claims,stated:0,grantRevision:2},scalar,owner),epoch,finalization,status}));
+    cancel:signPrivateMediaGrant({...claims,stated:0,grantRevision:2},scalar,owner),epoch,finalization,status,deletion:signPrivateMediaDeletion(deletionDraft,scalar,owner)}));
 });
 test('grant fields, key mismatch and accessors reject before signing',()=>{
   for(const change of [{epoch:0},{grantRevision:0},{from:7200000},{until:-1},{until:-0},{stated:2},{stated:-0},{owner:'bad'},
@@ -58,4 +59,18 @@ test('oversized arrays reject before enumerating entries',()=>{
   assert.throws(()=>signPrivateMediaEpoch(draft,{entries:oversized},scalar,owner));
   assert.throws(()=>signPrivateMediaFinalization({...finalDraft,candidateRevisionIds:oversized},scalar,owner));
   assert.equal(enumerations,0);
+});
+
+test('deletion is explicit, scoped, bounded and preserves the caller key',()=>{
+ const original=structuredClone(deletionDraft),held=scalar.slice();
+ const signed=signPrivateMediaDeletion(deletionDraft,scalar,owner);
+ assert.deepEqual(signed.claims,original);assert.deepEqual(deletionDraft,original);assert.deepEqual(scalar,held);
+ assert.match(Buffer.from(signed.proof.deletionBytes,'hex').toString(),/^SOCIACL_PRIVATE_MEDIA_DELETE_V1\n/);
+ for(const change of [{tenant:'bad'},{tenant:'00000000-0000-0000-0000-000000000000'},{tenant:1},{object:'room_bad'},
+  {owner:'bad'},{objectVersion:-1},{objectVersion:-0},{objectVersion:2**54},{fence:'A'.repeat(64)},{issuedAt:-1},{expiresAt:1000},{expiresAt:61001},{extra:true}])
+  assert.throws(()=>signPrivateMediaDeletion({...deletionDraft,...change},scalar,owner));
+ assert.throws(()=>signPrivateMediaDeletion(deletionDraft,scalar,other));
+ assert.throws(()=>signPrivateMediaDeletion({...claims,stated:0},scalar,owner));
+ let reads=0;const hostile={...deletionDraft};Object.defineProperty(hostile,'fence',{get(){reads++;return deletionDraft.fence;}});
+ assert.throws(()=>signPrivateMediaDeletion(hostile,scalar,owner));assert.equal(reads,0);
 });
