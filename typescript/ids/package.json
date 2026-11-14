@@ -52,6 +52,10 @@
     "./private-media": {
       "types": "./dist/private-media.d.ts",
       "default": "./dist/private-media.js"
+    },
+    "./group-wrap": {
+      "types": "./dist/group-wrap.d.ts",
+      "default": "./dist/group-wrap.js"
     }
   },
   "files": [
