@@ -53,6 +53,10 @@
       "types": "./dist/private-media.d.ts",
       "default": "./dist/private-media.js"
     },
+    "./group-signing": {
+      "types": "./dist/group-signing.d.ts",
+      "default": "./dist/group-signing.js"
+    },
     "./group-wrap": {
       "types": "./dist/group-wrap.d.ts",
       "default": "./dist/group-wrap.js"
