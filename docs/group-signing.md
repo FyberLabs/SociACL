@@ -12,3 +12,9 @@ An assent signs only its own party's statement. Producing a row does not enroll
 any identity, establish the second assent, grant access, select an epoch or
 replace current protected admission. Consumers still resolve the signer and key
 under the appropriate current identity history before signing and submitting.
+
+Browser consumers import the same producers and soul constructors from
+`sociacl-ids/group-signing`. The packed entrypoint bundles the shared row
+implementation and includes explicit TypeScript declarations. CI typechecks and
+executes the installed tarball, including a real signed row and supplied-signature
+refusal; the existing group contracts cover canonical bytes and admission.
