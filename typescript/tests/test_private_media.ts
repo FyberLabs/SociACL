@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync } from 'node:fs';
-import { signPrivateMediaGrant, signPrivateMediaEpoch, signPrivateMediaFinalization, signPrivateMediaStatus, signPrivateMediaDeletion } from '../contract/private-media.ts';
+import { signPrivateMediaGrant, signPrivateMediaEpoch, signPrivateMediaFinalization, signPrivateMediaStatus, signPrivateMediaDeletion, signPrivateMediaGroupConfig } from '../contract/private-media.ts';
 const {p:owner,p2:other,obj} = JSON.parse(readFileSync(new URL('../ids/test/test-keys.json',import.meta.url),'utf8'));
 const object=String(obj).replace('room_','media_'), scalar=new Uint8Array(32);scalar[31]=1;
 const deletionDraft={tenant:'11111111-1111-4111-8111-111111111111',object,owner,objectVersion:3,fence:'a'.repeat(64),issuedAt:1000,expiresAt:61000};
@@ -13,6 +13,8 @@ const epoch=signPrivateMediaEpoch(draft,snapshot,scalar,owner);
 const groupSnapshot={entries:[...snapshot.entries,{accessor:other,grantRevision:1,stated:1,from:0,until:7200000,
   scope:'same-group',setId:object.replace('media_','set_'),hamState:3}].sort((a,b)=>a.accessor<b.accessor?-1:1),
   objectSet:{predicate:'same-group',setId:object.replace('media_','set_'),stated:1,hamState:5}};
+const groupPolicies=['same-group','named-circle'].map(predicate=>signPrivateMediaGroupConfig({owner,
+  setId:object.replace('media_','set_'),predicate,settleWindowMs:3600000,configRevision:2},scalar,owner));
 const groupEpoch=signPrivateMediaEpoch(draft,groupSnapshot,scalar,owner);
 const groupFinalization=signPrivateMediaFinalization({object,previousEpoch:0,epoch:1,revisionId:groupEpoch.manifest.revisionId,
   candidateRevisionIds:[groupEpoch.manifest.revisionId],previousFinalizationId:''},scalar,owner);
@@ -26,7 +28,7 @@ test('browser producers preserve drafts and caller-held keys',()=>{
   const finalization=signPrivateMediaFinalization(finalDraft,scalar,owner);
   const status=signPrivateMediaStatus(statusDraft,scalar,owner);
   if(process.env.PRIVATE_MEDIA_VECTOR)writeFileSync(process.env.PRIVATE_MEDIA_VECTOR,JSON.stringify({owner,object,grant,
-    cancel:signPrivateMediaGrant({...claims,stated:0,grantRevision:2},scalar,owner),epoch,finalization,status,groupEpoch,groupFinalization,deletion:signPrivateMediaDeletion(deletionDraft,scalar,owner)}));
+    cancel:signPrivateMediaGrant({...claims,stated:0,grantRevision:2},scalar,owner),epoch,finalization,status,groupEpoch,groupFinalization,groupPolicies,deletion:signPrivateMediaDeletion(deletionDraft,scalar,owner)}));
 });
 test('grant fields, key mismatch and accessors reject before signing',()=>{
   for(const change of [{epoch:0},{grantRevision:0},{from:7200000},{until:-1},{until:-0},{stated:2},{stated:-0},{owner:'bad'},
@@ -108,4 +110,16 @@ test('group epoch input refuses wrong scope, edge, duplicate accessor and hostil
   assert.throws(()=>signPrivateMediaEpoch(draft,{...groupSnapshot,objectSet:undefined},scalar,owner));
   let reads=0;const hostile={...groupSnapshot.objectSet};Object.defineProperty(hostile,'hamState',{get(){reads++;return 5;}});
   assert.throws(()=>signPrivateMediaEpoch(draft,{...groupSnapshot,objectSet:hostile},scalar,owner));assert.equal(reads,0);
+});
+
+test('group policy signs exact owner scope and bounded policy without retaining keys',()=>{
+  const draft={owner,setId:object.replace('media_','set_'),predicate:'same-group',settleWindowMs:3600000,configRevision:2};
+  const held=structuredClone(draft),key=scalar.slice();
+  assert.deepEqual(signPrivateMediaGroupConfig(draft,scalar,owner),groupPolicies[0]);assert.deepEqual(draft,held);assert.deepEqual(scalar,key);
+  for(const change of [{owner:other},{owner:'bad'},{setId:object},{setId:'set_bad'},{predicate:'direct'},
+      {settleWindowMs:1},{settleWindowMs:259200001},{configRevision:-1},{configRevision:-0},{configRevision:2**54},{extra:1}])
+    assert.throws(()=>signPrivateMediaGroupConfig({...draft,...change},scalar,owner));
+  assert.throws(()=>signPrivateMediaGroupConfig(draft,scalar,other));
+  let reads=0;const hostile={...draft};Object.defineProperty(hostile,'configRevision',{get(){reads++;return 2;}});
+  assert.throws(()=>signPrivateMediaGroupConfig(hostile,scalar,owner));assert.equal(reads,0);
 });

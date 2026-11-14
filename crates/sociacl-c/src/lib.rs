@@ -1,5 +1,8 @@
 //! C FFI wrapping live Check and the Case C client path.
 
+mod group_config;
+pub use group_config::sociacl_verify_group_epoch_config;
+
 mod epoch_status;
 pub use epoch_status::sociacl_verify_epoch_status;
 mod epoch_manifest;

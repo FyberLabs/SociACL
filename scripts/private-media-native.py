@@ -68,3 +68,12 @@ for part in ['member','edge']:
     row['stated']=0;row['hamState']+=1
     raw=json.dumps(changed).encode();assert fn(raw,len(raw))==0
 print('Browser group epoch binds native member withdrawal and independent object-set cancellation')
+
+for policy in f['groupPolicies']:
+    expected={k:v for k,v in policy.items() if k!='signature'}
+    expected['ownerPub']=f['owner']
+    assert pair('sociacl_verify_group_epoch_config',policy,expected)==1
+    for field,value in [('owner','other'),('ownerPub','wrong'),('setId','other'),('predicate','direct'),
+                        ('settleWindowMs',7200000),('configRevision',3)]:
+        assert pair('sociacl_verify_group_epoch_config',policy,{**expected,field:value})==0
+print('Browser group settlement policy matches native exact-scope signature verification')
