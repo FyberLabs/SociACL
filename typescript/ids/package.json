@@ -41,6 +41,10 @@
       "types": "./dist/first-contact-floor.d.ts",
       "default": "./dist/first-contact-floor.js"
     },
+    "./contact-lane": {
+      "types": "./dist/contact-lane.d.ts",
+      "default": "./dist/contact-lane.js"
+    },
     "./first-contact": {
       "types": "./dist/first-contact.d.ts",
       "default": "./dist/first-contact.js"
