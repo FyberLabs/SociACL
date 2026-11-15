@@ -155,8 +155,8 @@ export async function openFirstContactStore(options) {
      * Accepted ciphertext is an outbox entry: publish only after this commit succeeds.
      * Conflicting/repeated decisions fail; callers reconcile with outbox(), not reseal.
      */
-    /** @param {Descriptor} descriptor @param {string} replayKey @param {string} requestId @param {Decision} decision */
-    decide(descriptor, replayKey, requestId, decision) {
+    /** @param {Descriptor} descriptor @param {string} replayKey @param {string} requestId @param {Decision} decision @param {()=>void} [validateAuthority] */
+    decide(descriptor, replayKey, requestId, decision, validateAuthority) {
       const d = clone(descriptor), selected = clone(decision);
       let expires = d.expiresAt;
       return transaction((state, t) => {
@@ -170,6 +170,7 @@ export async function openFirstContactStore(options) {
               selected.ciphertextHex.length < 188 || selected.ciphertextHex.length > 8192 || selected.ciphertextHex.length % 2) throw Error('Invalid lane grant outbox');
           row.grant = { ciphertextHex: selected.ciphertextHex, rotationSeq: selected.rotationSeq };
         } else if (selected?.status !== 'rejected') throw Error('Explicit decision required');
+        if (validateAuthority !== undefined && (typeof validateAuthority !== 'function' || validateAuthority() !== undefined)) throw Error('Synchronous authority validation required');
         row.status = selected.status;
       }, false, () => expires);
     },

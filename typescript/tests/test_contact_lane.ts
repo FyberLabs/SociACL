@@ -667,6 +667,16 @@ for (const mode of ['direct','poll','browser'] as const) test(`first contact ${m
     if (mode === 'browser') {
       await assert.rejects(acceptBrowserRequest(store, opened.replayKey, '00'.repeat(32), channel.priv, () => ({rotations:[],context:ctx}), issuer));
       assert.deepEqual(await store.outbox(), []);
+      let available = true;
+      const changingIssuer = () => { const value = issuer(); return available ? value : { ...value,
+        context: { ...value.context, history: () => ({ok:false as const,reason:'missing-history' as const}) } }; };
+      const interrupted = { ...store, decide: (...args: Parameters<typeof store.decide>) => {
+        available = false; return store.decide(...args);
+      } };
+      await assert.rejects(acceptBrowserRequest(interrupted, opened.replayKey, opened.requestId, channel.priv,
+        () => ({rotations:[],context:ctx}), changingIssuer), /first-contact-stale/);
+      assert.deepEqual(await store.outbox(), []);
+      assert.equal((await store.pending()).length, 1);
     }
     const grant = mode === 'browser'
       ? await acceptBrowserRequest(store, opened.replayKey, opened.requestId, channel.priv, () => ({rotations:[],context:ctx}), issuer)

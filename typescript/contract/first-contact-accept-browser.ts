@@ -3,6 +3,7 @@ import type { FirstContactStore } from '../ids/src/first-contact-store.js';
 import type { ContactLaneIssuerState, ContactLaneRecipientState } from '../ids/src/contact-lane.js';
 import { openFirstContactRequestBrowser } from './first-contact-browser.ts';
 import { verifyFirstContactRequest } from './first-contact.ts';
+import { resolveCurrentKey, parsePrincipalId } from '../ids/src/index.js';
 import { integer } from '../ids/src/util.js';
 import { sealContactLaneGrant } from './contact-lane-browser.ts';
 
@@ -43,10 +44,31 @@ export async function acceptFirstContactRequest(store: FirstContactStore, replay
   const initial = currentIssuer();
   if (initial.issuer.principal !== store.owner) throw Error('wrong-recipient');
   const seq = initial.issuer.rotationSeq;
+  const recipient = parsePrincipalId(store.owner);
+  if (!recipient.ok) throw Error('wrong-recipient');
+  const peer = currentSender();
+  const peerAuthority = resolveCurrentKey(value.request.sender, peer.rotations, peer.context);
+  const ownerAuthority = resolveCurrentKey(recipient.value, initial.rotations, initial.context);
+  if (!peerAuthority.ok || !peerAuthority.value.currentEpub || !ownerAuthority.ok) throw Error('first-contact-stale');
+  const peerKey = peerAuthority.value.currentKey, peerEpub = peerAuthority.value.currentEpub,
+    peerSeq = peerAuthority.value.rotations.length, ownerKey = ownerAuthority.value.currentKey;
+  const validateAuthority = () => {
+    const fresh = currentSender(), owner = currentIssuer();
+    const sender = resolveCurrentKey(value.request.sender, fresh.rotations, fresh.context);
+    const recipientNow = resolveCurrentKey(recipient.value, owner.rotations, owner.context);
+    const senderHistory = fresh.context.history(value.request.sender, fresh.context.now, fresh.context.now);
+    const ownerHistory = owner.context.history(recipient.value, owner.context.now, owner.context.now);
+    if (!verifyFirstContactRequest(value.request, fresh.rotations, fresh.context, descriptor).ok ||
+        !sender.ok || sender.value.currentKey !== peerKey || sender.value.currentEpub !== peerEpub || sender.value.rotations.length !== peerSeq ||
+        !recipientNow.ok || recipientNow.value.currentKey !== ownerKey || recipientNow.value.rotations.length !== seq ||
+        !senderHistory.ok || senderHistory.value.currentKey !== peerKey || !ownerHistory.ok || ownerHistory.value.currentKey !== ownerKey)
+      throw Error('first-contact-stale');
+  };
+  validateAuthority();
   const grant = await sealContactLaneGrant(value.request.sender, currentSender, currentIssuer);
-  const fresh = currentSender(), owner = currentIssuer();
-  if (!verifyFirstContactRequest(value.request, fresh.rotations, fresh.context, descriptor).ok ||
-      owner.issuer.principal !== store.owner || owner.issuer.rotationSeq !== seq) throw Error('first-contact-stale');
-  await store.decide(descriptor, replayKey, expectedRequestId, { status: 'accepted', ciphertextHex: grant.ciphertextHex, rotationSeq: seq });
+  validateAuthority();
+  await store.decide(descriptor, replayKey, expectedRequestId,
+    { status: 'accepted', ciphertextHex: grant.ciphertextHex, rotationSeq: seq }, validateAuthority);
+  validateAuthority();
   return grant;
 }
