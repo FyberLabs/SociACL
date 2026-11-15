@@ -124,10 +124,11 @@ test('membership preparation preserves separate consent and cancellation state',
   put('set',1,4,[cancellation.cancelId]);assert.equal(read().stated,1);
   put('member',0,5,[cancellation.cancelId]);assert.equal(read().stated,0);
   assert.equal(read().memberAssent.hamState,5);
-  const unavailable={...resolver,ctx:{...resolver.ctx,history:()=>({ok:false,reason:'missing-history'})}};
-  assert.equal(reverifyGroup(graph,member.member,unavailable).ok,true);
-  assert.equal(read().memberAssent,null);assert.deepEqual(read().cancels,[]);
+  const unavailable={...resolver,rotations:()=>undefined};
+  assert.deepEqual(reverifyGroup(graph,member.member,unavailable),{ok:false,reason:'missing-history'});
+  assert.equal(read().memberAssent.stated,0);assert.equal(read().stated,0);
+  const rotated={...resolver,rotations:()=>vectors.context.rotationSets.rotated};
+  assert.equal(reverifyGroup(graph,member.setOwner,rotated).ok,true);
+  assert.equal(read().setAssent,null);assert.equal(read().memberAssent.stated,0);
   assert.equal(read().stated,0);
-  assert.equal(reverifyGroup(graph,member.setOwner,unavailable).ok,true);
-  assert.equal(read(),null);
 });
