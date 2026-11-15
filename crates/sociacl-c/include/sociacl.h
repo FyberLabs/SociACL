@@ -33,6 +33,12 @@ int sociacl_verify_private_grant(const uint8_t *proof, size_t proof_len,
 /* Match an existing group settlement configuration to independently trusted
    set owner, current key, predicate, window and revision. Buffers: 1..16384 bytes.
    Not latest-policy selection, ownership admission, Check or epoch settlement. */
+/* Independent group epochs. Trusted history/current bindings are service inputs;
+ * these verifiers do not grant access or prove history completeness. */
+int sociacl_verify_group_epoch_manifest(const unsigned char *document, size_t document_len, const unsigned char *expected, size_t expected_len);
+int sociacl_match_settled_group_epoch(const unsigned char *input, size_t input_len);
+int sociacl_verify_group_epoch_history(const unsigned char *input, size_t input_len);
+
 int sociacl_verify_group_epoch_config(const uint8_t *proof, size_t proof_len,
                                      const uint8_t *expected, size_t expected_len);
 
