@@ -9,7 +9,7 @@
  *
  * Passphrase recovery lives in recovery.ts.
  */
-import { validateKeyringFields, confirmKeyring, requireLaneSet, requireContactSet, requireBoundedRotationSeq, requireHistoryCounts } from './keyring-validation.ts';
+import { signingPoint, encryptionPoint, validateKeyringFields, confirmKeyring, requireLaneSet, requireContactSet, requireBoundedRotationSeq, requireHistoryCounts } from './keyring-validation.ts';
 import { KEYRING_HISTORY_MAX } from "./keyring-limits.ts";
 import { randomBytes } from "node:crypto";
 import { p256 } from "@noble/curves/nist.js";

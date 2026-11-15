@@ -108,12 +108,12 @@ function scalarPoint(secret: string): string {
     return b64(point.subarray(1, 33)) + '.' + b64(point.subarray(33));
   } finally { bytes.fill(0); }
 }
-function signingPoint(pub: string, priv: string): PrincipalId {
+export function signingPoint(pub: string, priv: string): PrincipalId {
   const parsed = parsePrincipalId(pub);
   if (!parsed.ok || parsed.value !== pub || scalarPoint(priv) !== pub) throw Error('pub-mismatch');
   return parsed.value;
 }
-function encryptionPoint(pub: string, priv: string | null): PrincipalId {
+export function encryptionPoint(pub: string, priv: string | null): PrincipalId {
   const parsed = parsePrincipalId(pub);
   if (!parsed.ok || parsed.value !== pub) throw Error('epub-mismatch');
   if (priv !== null && scalarPoint(priv) !== pub) throw Error('epub-mismatch');

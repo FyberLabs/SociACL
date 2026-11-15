@@ -14,7 +14,7 @@ const state=()=>{
  return {rotations:v.rotationNames.map(name=>records.accept.find(r=>r.name===name).input),context:{
   jwks:records.context.jwks,links:new Map(records.context.links),revocations:[],now:records.context.now,
   policy:records.context.policy,pinnedIss:new Set(records.context.pinnedIss),genesisEpubBindings:v.genesisBindings,
-  history:(p,at,until)=>records.context.authenticatedAccounts.includes(p)?{ok:true,value:historyState(p,[],at,until)}:{ok:false,reason:'missing-history'}};
+  history:(p,at,until)=>records.context.authenticatedAccounts.includes(p)?{ok:true,value:historyState(p,[],at,until)}:{ok:false,reason:'missing-history'}}};
 };
 const authority={
  async validateKeyring(bytes,expected){validateKeyring(bytes,expected,state);},
