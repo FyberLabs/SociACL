@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {historyState,verifyKeySignature} from '../ids/src/index.js';
 import {signMembershipAssent,signObjectSet,signGroupCancel,parseMembershipAssent,parseObjectSet,parseGroupCancel,
-  membershipSoul,objectSetSoul,groupMembershipState,MemoryGroupGraph,admitMembership,admitGroupCancel,reverifyGroup} from '../src/group.js';
+  membershipSoul,objectSetSoul,groupMembershipState,groupCohortSnapshot,MemoryGroupGraph,admitMembership,admitGroupCancel,reverifyGroup} from '../src/group.js';
 import {runGroupCase} from './group-case.js';
 const vectors=JSON.parse(readFileSync(new URL('../../vectors/mesh/v2/group.json',import.meta.url)));
 const keys=JSON.parse(readFileSync(new URL('../ids/test/test-keys.json',import.meta.url)));
@@ -131,4 +131,33 @@ test('membership preparation preserves separate consent and cancellation state',
   assert.equal(reverifyGroup(graph,member.setOwner,rotated).ok,true);
   assert.equal(read().setAssent,null);assert.equal(read().memberAssent.stated,0);
   assert.equal(read().stated,0);
+});
+
+
+test('group cohort snapshot is detached from media edges and keeps consent ordering',()=>{
+  const graph=new MemoryGroupGraph();
+  const resolver={ctx:context(vectors.context),rotations:()=>vectors.context.rotationSets.genesis};
+  const read=()=>groupCohortSnapshot(graph,member.predicate,member.set);
+  for(const args of [[null,member.predicate,member.set],[graph,'invalid',member.set],[graph,member.predicate,'bad']])
+    assert.equal(groupCohortSnapshot(...args),null);
+  assert.deepEqual(read().members,[]);
+  const put=(role,stated,hamState,cancels=[])=>{
+    const row=signMembershipAssent({...member,role,stated,hamState,cancels},scalar(role==='member'?2:1),role==='member'?keys.p2:keys.p);
+    assert.equal(admitMembership(graph,row,resolver).ok,true);
+  };
+  put('set',1,1);const invitation=read();
+  assert.equal(invitation.setOwner,member.setOwner);
+  assert.deepEqual(invitation.members,[{accessor:member.member,stated:0,hamState:1}]);
+  put('member',1,2);assert.deepEqual(read().members,[{accessor:member.member,stated:1,hamState:2}]);
+  assert.equal(invitation.members[0].stated,0);
+  assert.throws(()=>invitation.members.push({}),TypeError);
+  assert.throws(()=>{invitation.members[0].stated=1;},TypeError);
+  assert.deepEqual(groupCohortSnapshot(graph,'named-circle',member.set).members,[]);
+  const cancellation=signGroupCancel(cancel('membership'),scalar(2),keys.p2);
+  assert.equal(admitGroupCancel(graph,cancellation,resolver).ok,true);assert.equal(read().members[0].stated,0);
+  put('member',1,3,[cancellation.cancelId]);assert.equal(read().members[0].stated,0);
+  put('set',1,4,[cancellation.cancelId]);assert.equal(read().members[0].stated,1);
+  put('member',0,5,[cancellation.cancelId]);assert.equal(read().members[0].hamState,5);assert.equal(read().members[0].stated,0);
+  assert.equal(reverifyGroup(graph,member.setOwner,{...resolver,rotations:()=>vectors.context.rotationSets.rotated}).ok,true);
+  assert.equal(read().members[0].stated,0);
 });

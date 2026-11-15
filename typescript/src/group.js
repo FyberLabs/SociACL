@@ -891,6 +891,31 @@ export function groupMembershipState(graph, predicate, set, member) {
     stated: membershipLive(row) ? 1 : 0});
 }
 
+/**
+ * Detached membership ordering for one group, independent of media bindings.
+ * Admit/reverify current authenticated histories before reading. This neither
+ * creates an owner membership nor proves a grant, epoch or delivery decision.
+ * Missing or unilateral consent remains stated 0, preserving removal ordering.
+ * @param {object} graph
+ * @param {string} predicate
+ * @param {string} set
+ */
+export function groupCohortSnapshot(graph, predicate, set) {
+  if (!graphObject(graph) || !predicateOf(predicate)) return null;
+  const scope = parseSetId(set);
+  if (!scope.ok) return null;
+  /** @type {{accessor: string, stated: 0 | 1, hamState: number}[]} */
+  const members = [];
+  for (const row of membershipTable(graph).values()) {
+    if (row.predicate !== predicate || row.set !== scope.id) continue;
+    members.push({accessor: row.member, stated: membershipLive(row) ? 1 : 0,
+      hamState: Math.max(row.memberAssent?.hamState ?? 0, row.setAssent?.hamState ?? 0)});
+  }
+  members.sort((a,b) => a.accessor < b.accessor ? -1 : a.accessor > b.accessor ? 1 : 0);
+  return Object.freeze({predicate, setId: scope.id, setOwner: scope.owner,
+    members: Object.freeze(members.map(member => Object.freeze(member)))});
+}
+
 export class MemoryGroupGraph {
   /**
    * @param {string} object
