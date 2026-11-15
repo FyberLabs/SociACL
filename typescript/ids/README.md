@@ -544,7 +544,22 @@ and after WebCrypto, rejecting changed signing authority or a backwards clock.
 Invalid envelopes and unavailable authority reject with `lane-grant-rejected`.
 
 A lane is a delivery capability, not permission to read contact objects. This
-entrypoint does not implement contact acceptance, grant issuance, revocation
-storage, or a contacts UI. Callers must retain current history and explicitly
+entrypoint does not implement revocation storage or a contacts UI. Callers must retain current history and explicitly
 accept contacts. Secret byte copies are cleared where practical; JavaScript
 strings and cryptographic engine memory cannot be guaranteed erased.
+
+The contact-lane entrypoint also exports asynchronous `sealContactLaneGrant`.
+Supply fresh sender history and a caller-owned unlocked keyring snapshot through
+`ContactLaneIssuerState`. Current and retired base lanes/contact secrets must be
+complete, with the current value last. It verifies the signing key and recipient
+rotation sequence and refuses missing witnessed sender encryption keys. Both
+identities are rechecked after encryption; there is no Gun epub fallback.
+
+`sociacl-ids/first-contact` exports `acceptFirstContactRequest` for an explicit
+recipient decision bound to the displayed request ID. It reloads the pending
+ciphertext, authenticates it with fresh history, seals the existing lane grant,
+and commits acceptance and grant ciphertext atomically before returning it.
+Concurrent rejection, channel changes and stale identities fail closed. After an
+ambiguous response, recover the existing outbox; do not accept a duplicate request
+or acknowledge delivery without an authenticated transport receipt. Delivery must
+recheck current authority. These APIs do not publish descriptors or provide a vault.

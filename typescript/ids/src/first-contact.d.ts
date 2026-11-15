@@ -23,3 +23,6 @@ export function observeFirstContactDescriptor(input:unknown,owner:PrincipalId,st
 export function prepareFirstContactSubmission(input:unknown,advertisement:unknown,owner:PrincipalId,floor:FirstContactFloor,recipientState:FirstContactSenderState,senderState:FirstContactSenderState):Promise<Readonly<{ciphertextId:string;submit(append:FirstContactAppend,timeoutMs?:number):Promise<string>}>>;
 
 export function restorePendingFirstContacts(store:FirstContactStore,epriv:string,currentState:FirstContactSenderState):Promise<readonly VerifiedFirstContact[]>;
+
+import type {ContactLaneGrant,ContactLaneIssuerState,ContactLaneRecipientState} from './contact-lane.js';
+export function acceptFirstContactRequest(store:FirstContactStore,replayKey:string,expectedRequestId:string,epriv:string,senderState:ContactLaneRecipientState,issuerState:ContactLaneIssuerState):Promise<ContactLaneGrant>;

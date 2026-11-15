@@ -121,3 +121,72 @@ export async function openContactLaneGrant(
   } catch { throw Error('lane-grant-rejected'); }
   finally { scalar?.fill(0); shared?.fill(0); material?.fill(0); key?.fill(0); plain?.fill(0); }
 }
+
+import type { ContactLaneIssuerState } from '../ids/src/contact-lane.js';
+
+/** Seal only from an explicitly unlocked, current keyring and witnessed sender
+ * encryption key. Refresh both authorities after WebCrypto before disclosure. */
+export async function sealContactLaneGrant(senderPrincipal: string,
+  senderState: ContactLaneRecipientState, issuerState: ContactLaneIssuerState): Promise<ContactLaneGrant> {
+  let signing: Uint8Array | undefined, ephemeral: Uint8Array | undefined,
+    shared: Uint8Array | undefined, material: Uint8Array | undefined,
+    key: Uint8Array | undefined, plain: Uint8Array | undefined;
+  try {
+    const sender = principal(senderPrincipal);
+    const original = issuerState(), snapshot = original.issuer;
+    const owner = principal(snapshot.principal);
+    const seq = snapshot.rotationSeq, secret = snapshot.contactSecretHex, privateKey = snapshot.signingPriv;
+    if (!integer(seq) || !integer(original.context.now)) throw Error('bad-keyring');
+    const startedAt = original.context.now;
+    const baseLanes = [...snapshot.baseLaneIds], secrets = [...snapshot.contactSecrets];
+    if (baseLanes.length !== seq + 1 || secrets.length !== seq + 1 || secrets[seq] !== secret ||
+        baseLanes.some(v => !LANE.test(v)) || secrets.some(v => !LANE.test(v))) throw Error('bad-keyring');
+    const laneId = deriveContactLane(secret, owner, sender);
+    if (baseLanes.includes(laneId) || secrets.includes(laneId)) throw Error('bad-lane');
+    signing = unb64(privateKey);
+    if (signing.length !== 32) throw Error('bad-key');
+    const signingKey = sea(p256.getPublicKey(signing, false));
+    const ownerResolution = resolveCurrentKey(owner, original.rotations, original.context);
+    const ownerHistory = original.context.history(owner, startedAt, startedAt);
+    if (!ownerResolution.ok || ownerResolution.value.currentKey !== signingKey ||
+        ownerResolution.value.rotations.length !== seq || !ownerHistory.ok || ownerHistory.value.currentKey !== signingKey) throw Error('bad-authority');
+    const peer = senderState(), peerAt = peer.context.now;
+    if (!integer(peerAt)) throw Error('bad-time');
+    const resolved = resolveCurrentKey(sender, peer.rotations, peer.context);
+    const history = peer.context.history(sender, peerAt, peerAt);
+    if (!resolved.ok || !resolved.value.currentEpub || !history.ok || history.value.currentKey !== resolved.value.currentKey) throw Error('epub-unknown');
+    const senderEpub = resolved.value.currentEpub, senderKey = resolved.value.currentKey, senderSeq = resolved.value.rotations.length;
+    ephemeral = p256.utils.randomSecretKey();
+    const ephemeralPoint = p256.getPublicKey(ephemeral, false), ephemeralPub = sea(ephemeralPoint);
+    const nonce = crypto.getRandomValues(new Uint8Array(12));
+    const signature = hex(p256.sign(lp([SIGNATURE_DOMAIN, laneId, owner, sender, senderEpub, String(seq)]), signing, { lowS: true, prehash: true }));
+    plain = lp([DOMAIN, laneId, owner, String(seq), signature]);
+    shared = p256.getSharedSecret(ephemeral, point(senderEpub), false);
+    material = lp([DOMAIN, hex(shared.subarray(1, 33)), owner, sender, senderEpub, ephemeralPub, String(seq)]);
+    key = sha256(material); material.fill(0); shared.fill(0);
+    const aad = lp([DOMAIN, owner, sender, senderEpub, ephemeralPub, String(seq)]);
+    const cryptoKey = await crypto.subtle.importKey('raw', buffer(key), 'AES-GCM', false, ['encrypt']);
+    const encrypted = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv: buffer(nonce),
+      additionalData: buffer(aad), tagLength: 128 }, cryptoKey, buffer(plain)));
+    const latest = issuerState(), current = latest.issuer;
+    if (!integer(latest.context.now) || latest.context.now < startedAt || current.principal !== owner ||
+        current.rotationSeq !== seq || current.signingPriv !== privateKey || current.contactSecretHex !== secret ||
+        current.baseLaneIds.length !== baseLanes.length || current.baseLaneIds.some((v,i) => v !== baseLanes[i]) ||
+        current.contactSecrets.length !== secrets.length || current.contactSecrets.some((v,i) => v !== secrets[i])) throw Error('stale-keyring');
+    const freshOwner = resolveCurrentKey(owner, latest.rotations, latest.context);
+    const freshOwnerHistory = latest.context.history(owner, latest.context.now, latest.context.now);
+    if (!freshOwner.ok || freshOwner.value.currentKey !== signingKey || freshOwner.value.rotations.length !== seq ||
+        !freshOwnerHistory.ok || freshOwnerHistory.value.currentKey !== signingKey) throw Error('stale-authority');
+    const latestPeer = senderState();
+    if (!integer(latestPeer.context.now) || latestPeer.context.now < peerAt) throw Error('bad-time');
+    const freshPeer = resolveCurrentKey(sender, latestPeer.rotations, latestPeer.context);
+    const freshPeerHistory = latestPeer.context.history(sender, latestPeer.context.now, latestPeer.context.now);
+    if (!freshPeer.ok || freshPeer.value.currentKey !== senderKey || freshPeer.value.currentEpub !== senderEpub ||
+        freshPeer.value.rotations.length !== senderSeq || !freshPeerHistory.ok || freshPeerHistory.value.currentKey !== senderKey) throw Error('stale-authority');
+    const blob = new Uint8Array(78 + encrypted.length); blob[0] = 1;
+    blob.set(ephemeralPoint, 1); blob.set(nonce, 66); blob.set(encrypted, 78);
+    if (blob.length > 4096) throw Error('bad-grant');
+    return Object.freeze({ ciphertextHex: hex(blob) });
+  } catch { throw Error('lane-grant-rejected'); }
+  finally { signing?.fill(0); ephemeral?.fill(0); shared?.fill(0); material?.fill(0); key?.fill(0); plain?.fill(0); }
+}
