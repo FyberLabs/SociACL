@@ -41,6 +41,8 @@ node --test --experimental-test-coverage --test-coverage-include=typescript/src/
 
 PRIVATE_MEDIA_VECTOR="${root}/target/ids/private-media.json" node --experimental-strip-types --test --experimental-test-coverage --test-coverage-include=typescript/contract/private-media.ts --test-coverage-lines=90 --test-coverage-branches=80 typescript/tests/test_private_media.ts
 python3 scripts/private-media-native.py
+GROUP_KEY_VECTOR="${root}/target/ids/group-key.json" node --experimental-strip-types --test --experimental-test-coverage --test-coverage-include=typescript/contract/group-key-epoch.ts --test-coverage-lines=90 --test-coverage-branches=80 typescript/tests/test_group_key_epoch.ts
+python3 scripts/group-key-native.py
 
 GROUP_WRAP_RUST_VECTOR="${root}/target/ids/group-wrap-rust.json" cargo test -p sociacl-encdisc --locked --test browser_group_wrap
 GROUP_WRAP_RUST_VECTOR="${root}/target/ids/group-wrap-rust.json" GROUP_WRAP_TS_VECTOR="${root}/target/ids/group-wrap-ts.json" node --test --experimental-test-coverage --test-coverage-include=typescript/ids/src/group-wrap.js --test-coverage-lines=90 --test-coverage-branches=80 typescript/ids/test/group-wrap.js

@@ -23,8 +23,8 @@ import {wrapGroupKeyToMembers,openGroupKeyReaderWrap} from 'sociacl-ids/group-re
 for(const fn of [wrapGroupKeyToMembers,openGroupKeyReaderWrap])if(typeof fn!=='function')throw Error('Missing group reader API');
 import {wrapItemDekToGroupEpoch,openGroupEpochWrap} from 'sociacl-ids/group-wrap';
 for(const fn of [wrapItemDekToGroupEpoch,openGroupEpochWrap])if(typeof fn!=='function')throw Error('Missing group wrap API');
-import {signPrivateMediaGrant,signPrivateMediaEpoch,signPrivateMediaFinalization,signPrivateMediaStatus,signPrivateMediaDeletion,signPrivateMediaGroupConfig} from 'sociacl-ids/private-media';
-for(const fn of [signPrivateMediaGrant,signPrivateMediaEpoch,signPrivateMediaFinalization,signPrivateMediaStatus,signPrivateMediaDeletion,signPrivateMediaGroupConfig])if(typeof fn!=='function')throw Error('Missing media producer');
+import {signPrivateMediaGrant,signPrivateMediaEpoch,signPrivateMediaFinalization,signPrivateMediaStatus,signPrivateMediaDeletion,signPrivateMediaGroupConfig,parseGroupKeySnapshot,groupKeySnapshotId,signPrivateGroupEpoch,signPrivateGroupFinalization} from 'sociacl-ids/private-media';
+for(const fn of [signPrivateMediaGrant,signPrivateMediaEpoch,signPrivateMediaFinalization,signPrivateMediaStatus,signPrivateMediaDeletion,signPrivateMediaGroupConfig,parseGroupKeySnapshot,groupKeySnapshotId,signPrivateGroupEpoch,signPrivateGroupFinalization])if(typeof fn!=='function')throw Error('Missing media producer');
 import {sealFirstContactRequest,openFirstContactRequest,pollFirstContact,restorePendingFirstContacts,prepareFirstContactSubmission} from 'sociacl-ids/first-contact';
 import {openIndependentWitnessPolicyStore,advanceIndependentWitnessPolicy,collectIndependentWitnesses} from 'sociacl-ids/independent-witness';
 for(const fn of [sealFirstContactRequest,openFirstContactRequest,pollFirstContact,restorePendingFirstContacts,prepareFirstContactSubmission,openIndependentWitnessPolicyStore,advanceIndependentWitnessPolicy,collectIndependentWitnesses])if(typeof fn!=='function')throw Error('Missing packed API');`;
