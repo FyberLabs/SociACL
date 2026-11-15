@@ -265,3 +265,6 @@ pub use vault_audit::{SignedVaultAudit, VaultAuditHistory};
 
 mod vault_journal;
 pub use vault_journal::{VaultJournal,VaultJournalHead,seal_vault_journal,open_vault_journal};
+
+mod group_epoch;
+pub use group_epoch::{group_key_snapshot_bytes, group_key_snapshot_id, GroupKeyMember, GroupKeySnapshot};

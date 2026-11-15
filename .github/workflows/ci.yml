@@ -88,6 +88,24 @@ jobs:
                   raise SystemExit(f'{name} C bridge requires 90% line coverage')
           PY
 
+      - name: Independent group snapshot coverage (CI only)
+        run: |
+          cargo llvm-cov -p sociacl-encdisc --test group_key_epoch --locked --lcov --output-path target/coverage/group-key.lcov
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          selected = False
+          lines = {}
+          for row in Path('target/coverage/group-key.lcov').read_text().splitlines():
+              if row.startswith('SF:'):
+                  selected = row.endswith('/sociacl-encdisc/src/group_epoch.rs')
+              elif selected and row.startswith('DA:'):
+                  number, count, *_ = row[3:].split(',')
+                  lines[number] = lines.get(number, False) or int(count) > 0
+          if not lines or 100 * sum(lines.values()) / len(lines) < 90:
+              raise SystemExit('Independent group snapshot requires 90% line coverage')
+          print(f'Independent group snapshot line coverage: {100 * sum(lines.values()) / len(lines):.2f}%')
+          PYCODE
+
       - name: Production install can load sociacl/gun
         working-directory: typescript
         run: |
