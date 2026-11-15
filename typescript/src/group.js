@@ -864,6 +864,33 @@ export function groupSnapshot(graph, object) {
     stated: objectSetLive(edge) ? 1 : 0, hamState: edge.assent?.hamState ?? 0}};
 }
 
+/**
+ * Read each party's admitted state for preparing a membership response.
+ * Callers must admit/reverify against current authenticated histories first.
+ * This is not an invitation, a grant, or a delivery decision. Missing assent
+ * stays null, including when the member is also the set owner.
+ * @param {object} graph
+ * @param {string} predicate
+ * @param {string} set
+ * @param {string} member
+ */
+export function groupMembershipState(graph, predicate, set, member) {
+  if (!graphObject(graph) || !predicateOf(predicate)) return null;
+  const scope = parseSetId(set);
+  const who = parsePrincipalId(member);
+  if (!scope.ok || !who.ok) return null;
+  const row = membershipTable(graph).get(membershipSoul(scope.owner, predicate, scope.id, who.value));
+  if (!row) return null;
+  /** @param {StoredAssent | null} assent */
+  const copy = (assent) => assent ? Object.freeze({stated: assent.stated,
+    hamState: assent.hamState, cancels: Object.freeze([...assent.observed])}) : null;
+  return Object.freeze({predicate: row.predicate, set: row.set,
+    member: row.member, setOwner: row.setOwner,
+    memberAssent: copy(row.memberAssent), setAssent: copy(row.setAssent),
+    cancels: Object.freeze([...row.cancels.keys()].sort()),
+    stated: membershipLive(row) ? 1 : 0});
+}
+
 export class MemoryGroupGraph {
   /**
    * @param {string} object

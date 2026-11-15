@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {historyState,verifyKeySignature} from '../ids/src/index.js';
 import {signMembershipAssent,signObjectSet,signGroupCancel,parseMembershipAssent,parseObjectSet,parseGroupCancel,
-  membershipSoul,objectSetSoul} from '../src/group.js';
+  membershipSoul,objectSetSoul,groupMembershipState,MemoryGroupGraph,admitMembership,admitGroupCancel,reverifyGroup} from '../src/group.js';
 import {runGroupCase} from './group-case.js';
 const vectors=JSON.parse(readFileSync(new URL('../../vectors/mesh/v2/group.json',import.meta.url)));
 const keys=JSON.parse(readFileSync(new URL('../ids/test/test-keys.json',import.meta.url)));
@@ -92,4 +92,42 @@ test('producers refuse malformed identity, state and cancellation boundaries bef
     const row=sign({...draft,stated:0},scalar(membership?2:1),membership?keys.p2:keys.p);
     assert.equal(row.stated,0);
   }
+});
+
+test('membership preparation preserves separate consent and cancellation state',()=>{
+  const graph=new MemoryGroupGraph();
+  const resolver={ctx:context(vectors.context),rotations:()=>vectors.context.rotationSets.genesis};
+  const read=()=>groupMembershipState(graph,member.predicate,member.set,member.member);
+  assert.equal(read(),null);
+  for(const args of [[null,member.predicate,member.set,member.member],
+    [graph,'invalid',member.set,member.member],[graph,member.predicate,'bad',member.member],
+    [graph,member.predicate,member.set,'bad']])assert.equal(groupMembershipState(...args),null);
+  const put=(role,stated,hamState,cancels=[])=>{
+    const row=signMembershipAssent({...member,role,stated,hamState,cancels},scalar(role==='member'?2:1),role==='member'?keys.p2:keys.p);
+    assert.equal(admitMembership(graph,row,resolver).ok,true);
+  };
+  put('set',1,1);
+  const invitation=read();
+  assert.equal(invitation.memberAssent,null);assert.equal(invitation.setAssent.stated,1);
+  assert.equal(invitation.stated,0);assert.equal(invitation.setOwner,member.setOwner);
+  assert.equal(groupMembershipState(graph,member.predicate,member.set,member.setOwner),null);
+  put('member',1,2);assert.equal(read().stated,1);
+  assert.equal(invitation.memberAssent,null);
+  const cancellation=signGroupCancel(cancel('membership'),scalar(2),keys.p2);
+  assert.equal(admitGroupCancel(graph,cancellation,resolver).ok,true);
+  const cancelled=read();assert.equal(cancelled.stated,0);
+  assert.deepEqual(cancelled.cancels,[cancellation.cancelId]);
+  assert.throws(()=>cancelled.cancels.push('b'.repeat(64)),TypeError);
+  assert.throws(()=>{cancelled.setAssent.stated=0;},TypeError);
+  assert.throws(()=>cancelled.memberAssent.cancels.push(cancellation.cancelId),TypeError);
+  put('member',1,3,[cancellation.cancelId]);assert.equal(read().stated,0);
+  put('set',1,4,[cancellation.cancelId]);assert.equal(read().stated,1);
+  put('member',0,5,[cancellation.cancelId]);assert.equal(read().stated,0);
+  assert.equal(read().memberAssent.hamState,5);
+  const unavailable={...resolver,ctx:{...resolver.ctx,history:()=>({ok:false,reason:'missing-history'})}};
+  assert.equal(reverifyGroup(graph,member.member,unavailable).ok,true);
+  assert.equal(read().memberAssent,null);assert.deepEqual(read().cancels,[]);
+  assert.equal(read().stated,0);
+  assert.equal(reverifyGroup(graph,member.setOwner,unavailable).ok,true);
+  assert.equal(read(),null);
 });
