@@ -563,3 +563,42 @@ Concurrent rejection, channel changes and stale identities fail closed. After an
 ambiguous response, recover the existing outbox; do not accept a duplicate request
 or acknowledge delivery without an authenticated transport receipt. Delivery must
 recheck current authority. These APIs do not publish descriptors or provide a vault.
+
+### Complete browser keyring import and export
+
+`sociacl-ids/keyring` exposes `importKeyring`, `exportKeyring`, `validateKeyring`,
+`openKeyringContent` and `closeKeyring`. It shares the canonical Node keyring
+codec and validation rules, accepts bounded v2/v3 bytes, and preserves signing
+and encryption secrets, retired encryption keys, genesis binding, content epoch,
+rotation sequence, lane history and contact-secret history. Import never creates
+keys or sessions. The frozen returned handle exposes public metadata only.
+
+Every import and export requires an owner-supplied `KeyringState` callback with
+complete authenticated rotations and a `ResolutionContext`. Do not construct
+that state from transfer metadata. The SDK's separate `IdentityAdapter.current`
+checkpoint must still obtain fresh current-key/revocation authority from ACL.
+For example, after fetching authenticated owner state:
+
+```ts
+import {validateKeyring} from 'sociacl-ids/keyring';
+import type {IdentityAdapter} from 'sea-device-link';
+const validate: IdentityAdapter['validateKeyring'] = async (bytes, identity) => {
+  const state = await fetchAuthenticatedOwnerState(identity.principal);
+  validateKeyring(bytes, identity, () => state);
+};
+```
+
+The application supplies `fetchAuthenticatedOwnerState`; it is not a library API.
+For a receiver, call `importKeyring` inside the SDK storage adapter's atomic commit,
+after `beforeCommit` and an abort/expiry check. Persist the locally encrypted full
+keyring and completion receipt together. Do not overwrite a different identity.
+Never put plaintext exported bytes in QR codes, URLs, logs or persistent storage.
+Encrypt them with the SDK and overwrite caller-owned byte buffers promptly.
+`closeKeyring` drops private references; JavaScript strings cannot be guaranteed
+zeroized. `openKeyringContent` selects current or retained encryption keys, but
+its expected item/epoch scope must come from current authorization, not the wrap.
+
+The browser keyring SDK CI contract packs both packages, checks declarations and
+browser bundling, and exercises transfer, uncertain completion reconciliation,
+full-history preservation and historical DEK opening against the merged SDK.
+These are synthetic unit/contract checks, not deployment or live acceptance.

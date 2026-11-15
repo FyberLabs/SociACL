@@ -68,6 +68,10 @@
     "./group-reader-wrap": {
       "types": "./dist/group-reader-wrap.d.ts",
       "default": "./dist/group-reader-wrap.js"
+    },
+    "./keyring": {
+      "types": "./dist/keyring.d.ts",
+      "default": "./dist/keyring.js"
     }
   },
   "files": [

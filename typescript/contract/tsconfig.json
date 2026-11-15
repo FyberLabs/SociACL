@@ -47,6 +47,9 @@
     "../tests/test_independent_witness.ts",
     "first-contact-inbox.ts",
     "private-media.ts",
-    "../tests/test_private_media.ts"
+    "../tests/test_private_media.ts",
+    "keyring-browser.ts",
+    "keyring-validation.ts",
+    "../tests/test_browser_keyring.ts"
   ]
 }

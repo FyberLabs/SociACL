@@ -1,0 +1,32 @@
+name: Browser keyring SDK contract
+on:
+  pull_request:
+  push:
+    branches: [master]
+permissions:
+  contents: read
+jobs:
+  keyring-sdk:
+    runs-on: ${{ github.event.repository.private && fromJSON('["self-hosted", "linux", "x64", "debrunner"]') || 'ubuntu-latest' }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: hyperme-sh/controlplane-sdk
+          ref: 006611d80fe60b303288447204271cde5ba35332
+          path: sdk-contract-source
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - run: npm ci --prefix typescript && npm ci --prefix typescript/ids
+      - run: npm run --prefix typescript/ids build
+      - run: node --experimental-strip-types --test typescript/tests/test_browser_keyring.ts
+      - run: npm ci --prefix sdk-contract-source/packages/sea-device-link && npm run --prefix sdk-contract-source/packages/sea-device-link build
+      - run: node typescript/ids/scripts/keyring-sdk-contract.mjs
+        env:
+          SEA_DEVICE_LINK_SDK: ${{ github.workspace }}/sdk-contract-source/packages/sea-device-link

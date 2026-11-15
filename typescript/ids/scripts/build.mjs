@@ -17,6 +17,7 @@ for (const name of readdirSync(new URL('src/',root)).filter(f=>f.endsWith('.js')
 // Browser consumer entrypoints bundle the reference contracts, never Node crypto.
 const {build}=await import('esbuild');
 const consumerEntries={
+  'keyring': "export {importKeyring,exportKeyring,validateKeyring,closeKeyring,openKeyringContent} from '../../contract/keyring-browser.ts';",
   'contact-lane': "export {deriveContactLane,laneLookupKey,openContactLaneGrant,sealContactLaneGrant} from '../../contract/contact-lane-browser.ts';",
   'group-signing': "export {signMembershipAssent,signObjectSet,signGroupCancel,membershipSoul,objectSetSoul} from '../../src/group.js';",
   'private-media': "export {signPrivateMediaGrant,signPrivateMediaEpoch,signPrivateMediaFinalization,signPrivateMediaStatus,signPrivateMediaDeletion,signPrivateMediaGroupConfig} from '../../contract/private-media.ts'; export {parseGroupKeySnapshot,groupKeySnapshotId,signPrivateGroupEpoch,signPrivateGroupFinalization} from '../../contract/group-key-epoch.ts';",
