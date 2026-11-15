@@ -531,3 +531,20 @@ be authenticated, sorted and unique. Status validity is at most 60 seconds.
 Groups, delegated status signers and caller-supplied freshness are not enabled by
 these helpers. A rejected fence requires a fresh protected owner view and explicit
 reconciliation before signing again; do not automatically replay old signatures.
+
+### Contact-lane grant opening
+
+`sociacl-ids/contact-lane` exports `deriveContactLane`, `laneLookupKey`, and
+asynchronous `openContactLaneGrant`. It opens the existing confidential P-256 /
+AES-GCM grant format; the lane and recipient signature remain inside ciphertext.
+The opener takes `(senderPrincipal, senderEpriv, grant, expectedRecipient,
+currentState)`. `currentState()` must return current independently authenticated
+recipient rotations and resolution context every time: the opener calls it before
+and after WebCrypto, rejecting changed signing authority or a backwards clock.
+Invalid envelopes and unavailable authority reject with `lane-grant-rejected`.
+
+A lane is a delivery capability, not permission to read contact objects. This
+entrypoint does not implement contact acceptance, grant issuance, revocation
+storage, or a contacts UI. Callers must retain current history and explicitly
+accept contacts. Secret byte copies are cleared where practical; JavaScript
+strings and cryptographic engine memory cannot be guaranteed erased.

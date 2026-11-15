@@ -1,3 +1,7 @@
+import {deriveContactLane, laneLookupKey, openContactLaneGrant, type ContactLaneRecipientState} from 'sociacl-ids/contact-lane';
+for (const fn of [deriveContactLane,laneLookupKey,openContactLaneGrant]) { if(typeof fn !== 'function') throw Error('Missing contact-lane export'); }
+const contactStateType: ContactLaneRecipientState | undefined = undefined;
+void contactStateType;
 import {sealFirstContactRequest,openFirstContactRequest,pollFirstContact} from 'sociacl-ids/first-contact';
 import {openIndependentWitnessPolicyStore,advanceIndependentWitnessPolicy,collectIndependentWitnesses} from 'sociacl-ids/independent-witness';
 for(const fn of [sealFirstContactRequest,openFirstContactRequest,pollFirstContact,openIndependentWitnessPolicyStore,advanceIndependentWitnessPolicy,collectIndependentWitnesses]){

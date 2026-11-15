@@ -685,3 +685,73 @@ test('public first-contact descriptors bind owner, key and policy without becomi
   assert.equal(verifyFirstContactDescriptor(signed,keyring.principal,2,[],
     {...ctx,history:()=>({ok:false,reason:'missing-history'})}).ok,false);
 });
+
+// Browser consumer uses the same persisted envelope as the Rust/Node corpus.
+import {
+  deriveContactLane as deriveBrowserLane,
+  openContactLaneGrant as openBrowserGrant,
+} from '../contract/contact-lane-browser.ts';
+
+// This grant corpus uses a different genesis account from records.json.
+function browserRecipientContext(): ResolutionContext {
+  const context = witnessed();
+  return { ...context, history: (principal, at, until) => principal === vector.recipient
+    ? { ok: true, value: historyState(principal, [], at, until) }
+    : context.history(principal, at, until) };
+}
+
+test('browser lane derivation preserves directional canonical vectors', () => {
+  assert.equal(deriveBrowserLane(vector.contactLaneSecretHex, vector.recipient, vector.sender), vector.laneId);
+  assert.equal(deriveBrowserLane(vector.contactLaneSecretHex, vector.sender, vector.recipient), vector.swappedLaneId);
+  assert.equal(deriveBrowserLane(vector.wrongSecretHex, vector.recipient, vector.sender), vector.wrongSecretLaneId);
+  assert.throws(() => deriveBrowserLane(vector.contactLaneSecretHex.toUpperCase(), vector.recipient, vector.sender));
+});
+
+test('browser opens canonical grant and rereads authority after WebCrypto', async () => {
+  let reads = 0;
+  const grant = Object.freeze({ ciphertextHex: vector.grant.ciphertextHex });
+  const opened = await openBrowserGrant(vector.sender, ring.mint.epriv, grant, vector.recipient, () => {
+    reads++;
+    return { rotations: [], context: browserRecipientContext() };
+  });
+  assert.deepEqual(opened, openContactLaneGrant(vector.sender, ring.mint.epriv, grant, vector.recipient, [], witnessed()));
+  assert.equal(reads, 2);
+});
+
+test('browser rejects wrong parties, keys and malformed or tampered envelopes uniformly', async () => {
+  const state = () => ({ rotations: [], context: browserRecipientContext() });
+  const open = (ciphertextHex: string, sender = vector.sender, epriv = ring.mint.epriv, recipient = vector.recipient) =>
+    openBrowserGrant(sender, epriv, { ciphertextHex }, recipient, state);
+  for (const blob of ['', '00', 'gg'.repeat(94), vector.grant.ciphertextHex.toUpperCase(),
+    '02' + vector.grant.ciphertextHex.slice(2), '0102' + vector.grant.ciphertextHex.slice(4),
+    vector.grant.ciphertextHex.slice(0, -2) + '00', '00'.repeat(4097)]) {
+    await assert.rejects(open(blob), /^Error: lane-grant-rejected$/);
+  }
+  await assert.rejects(open(vector.grant.ciphertextHex, vector.otherSender), /lane-grant-rejected/);
+  await assert.rejects(open(vector.grant.ciphertextHex, vector.sender, ring.genesis.epriv), /lane-grant-rejected/);
+  await assert.rejects(open(vector.grant.ciphertextHex, vector.sender, ring.mint.epriv, vector.otherSender), /lane-grant-rejected/);
+  let getterCalls = 0;
+  await assert.rejects(openBrowserGrant(vector.sender, ring.mint.epriv, {
+    get ciphertextHex() { getterCalls++; return vector.grant.ciphertextHex; },
+  }, vector.recipient, state), /lane-grant-rejected/);
+  assert.equal(getterCalls, 0);
+});
+
+test('browser withholds decrypted lane when authority becomes unavailable or clock rolls back', async () => {
+  for (const change of ['history', 'clock'] as const) {
+    let reads = 0;
+    await assert.rejects(openBrowserGrant(vector.sender, ring.mint.epriv, vector.grant, vector.recipient, () => {
+      const context = browserRecipientContext();
+      if (++reads === 1) return { rotations: [], context };
+      return { rotations: [], context: change === 'clock' ? { ...context, now: context.now - 1 } :
+        { ...context, history: () => ({ ok: false as const, reason: 'missing-history' as const }) } };
+    }), /lane-grant-rejected/);
+    assert.equal(reads, 2);
+  }
+});
+
+
+test('browser refuses a grant without independently authenticated recipient history', async () => {
+  await assert.rejects(openBrowserGrant(vector.sender, ring.mint.epriv, vector.grant, vector.recipient,
+    () => ({ rotations: [], context: witnessed() })), /lane-grant-rejected/);
+});

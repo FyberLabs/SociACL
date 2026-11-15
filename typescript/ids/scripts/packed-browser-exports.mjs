@@ -11,7 +11,12 @@ try{
   writeFileSync(join(temp,'package.json'),JSON.stringify({private:true,type:'module'}));
   execFileSync('npm',['install','--ignore-scripts','--no-audit','--no-fund','--cache',join(temp,'cache'),join(temp,packed[0].filename)],{cwd:temp,stdio:'inherit'});
   const keys=JSON.parse(readFileSync(new URL('test/test-keys.json',new URL('../',import.meta.url))));
-  const source=`import {signMembershipAssent,signObjectSet,signGroupCancel,membershipSoul,objectSetSoul} from 'sociacl-ids/group-signing';
+  const lane=JSON.parse(readFileSync(new URL('../../../vectors/encrypted-discovery/contact-lane.json',import.meta.url)));
+  const source=`import {deriveContactLane,laneLookupKey,openContactLaneGrant,type ContactLaneRecipientState} from 'sociacl-ids/contact-lane';
+const lane=${JSON.stringify(lane)};
+if(deriveContactLane(lane.contactLaneSecretHex,lane.recipient,lane.sender)!==lane.laneId||laneLookupKey(lane.laneId)!==lane.laneId||typeof openContactLaneGrant!=='function')throw Error('Packed contact lane failed');
+const contactState:ContactLaneRecipientState|undefined=undefined;void contactState;
+import {signMembershipAssent,signObjectSet,signGroupCancel,membershipSoul,objectSetSoul} from 'sociacl-ids/group-signing';
 for(const fn of [signMembershipAssent,signObjectSet,signGroupCancel,membershipSoul,objectSetSoul])if(typeof fn!=='function')throw Error('Missing group signer');
 const keys=${JSON.stringify(keys)},scalar=new Uint8Array(32);scalar[31]=1;
 const set=keys.obj.replace('room_','set_');
