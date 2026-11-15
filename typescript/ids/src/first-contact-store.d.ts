@@ -12,7 +12,7 @@ export interface FirstContactStore {
   descriptor():Promise<Descriptor>;
   reserve(descriptor:Descriptor,record:Reservation):Promise<boolean>;
   pending(expected?:Descriptor):Promise<Row[]>;
-  decide(descriptor:Descriptor,replayKey:string,requestId:string,decision:Decision):Promise<void>;
+  decide(descriptor:Descriptor,replayKey:string,requestId:string,decision:Decision,validateAuthority?:()=>void):Promise<void>;
   outbox():Promise<Row[]>;
   acknowledge(replayKey:string,requestId:string,ciphertextHex:string):Promise<void>;
   close():void;

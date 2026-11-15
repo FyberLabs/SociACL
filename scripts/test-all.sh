@@ -55,6 +55,7 @@ GROUP_MEMBER_TS_VECTOR="${root}/target/ids/group-member-ts.json" cargo test -p s
 # Independent browser package: each language reports exactly which shared vectors ran.
 IDS_VECTOR_REPORT="${root}/target/ids/ts-vectors.txt" node --test typescript/ids/test/*.js
 node --check typescript/ids/scripts/browser-first-contact.mjs
+node --check typescript/ids/scripts/browser-contact-acceptance.mjs
 node --check typescript/ids/scripts/browser-independent-witness.mjs
 npm run --prefix typescript/ids browser
 npm run --prefix typescript/ids build

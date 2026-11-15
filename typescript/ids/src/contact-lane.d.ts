@@ -8,3 +8,10 @@ export function deriveContactLane(contactSecretHex:string,recipient:string,sende
 export function laneLookupKey(laneId:string):string;
 /** Invalid input or changed authority rejects with lane-grant-rejected. */
 export function openContactLaneGrant(senderPrincipal:string,senderEpriv:string,grant:ContactLaneGrant,expectedRecipient:string,currentState:ContactLaneRecipientState):Promise<OpenedContactLane>;
+/** Caller-owned unlocked keyring snapshot; never constructed from network rows.
+ * baseLaneIds includes current and retired disclosed lanes; contactSecrets includes
+ * current and retired contact secrets. Both lists must be complete for this keyring.
+ */
+export type ContactLaneIssuer=Readonly<{principal:string;signingPriv:string;contactSecretHex:string;rotationSeq:number;baseLaneIds:readonly string[];contactSecrets:readonly string[]}>;
+export type ContactLaneIssuerState=()=>{issuer:ContactLaneIssuer;rotations:readonly unknown[];context:ResolutionContext};
+export function sealContactLaneGrant(senderPrincipal:string,senderState:ContactLaneRecipientState,issuerState:ContactLaneIssuerState):Promise<ContactLaneGrant>;

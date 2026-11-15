@@ -633,7 +633,7 @@ test("builders and the deterministic seal are not production exports", () => {
 });
 
 
-for (const mode of ['direct','poll'] as const) test(`first contact ${mode} requires committed replay admission and explicit acceptance before a lane grant exists`, async () => {
+for (const mode of ['direct','poll','browser','browser-after-commit'] as const) test(`first contact ${mode} requires committed replay admission and explicit acceptance before a lane grant exists`, async () => {
   const { IDBFactory } = createRequire(new URL('../ids/package.json', import.meta.url))('fake-indexeddb') as { IDBFactory: new () => IDBFactory };
   const recipient = genesisKeyring(), sender = scalarSea(3), senderEnc = scalarSea(4), channel = scalarSea(15);
   const binding = signGenesisEpub(sender.pub, senderEnc.pub, records.context.now - 40, 3);
@@ -653,13 +653,49 @@ for (const mode of ['direct','poll'] as const) test(`first contact ${mode} requi
     const rows=[{id:createHash('sha256').update(envelope).digest('hex'),ciphertext:envelope}];
     const polled=mode==='poll'?await Promise.all([1,2].map(()=>pollFirstContact(store,async()=>rows,channel.priv,()=>({rotations:[],context:ctx})))):[];
     if(mode==='poll')assert.equal(polled.flat().length,1);
-    const opened = mode==='direct'?await receiveFirstContact(store,envelope,channel.priv,[],ctx):polled.flat()[0]!;
+    const opened = mode!=='poll'?await receiveFirstContact(store,envelope,channel.priv,[],ctx):polled.flat()[0]!;
     assert.deepEqual(await store.outbox(),[]);
     await assert.rejects(receiveFirstContact(store,envelope,channel.priv,[],ctx),/replayed/);
     await assert.rejects(acceptFirstContactRequest(store,opened.replayKey,channel.priv,recipient,[],
       {...ctx,history:()=>({ok:false,reason:'missing-history'})},[],witnessed()));
     assert.deepEqual(await store.outbox(),[]);
-    const grant = await acceptFirstContactRequest(store,opened.replayKey,channel.priv,recipient,[],ctx,[],witnessed());
+    const issuer = () => ({ issuer: { principal: recipient.principal, signingPriv: recipient.currentPriv(),
+      contactSecretHex: recipient.contactLaneSecret(), rotationSeq: recipient.rotationSeq,
+      baseLaneIds: [...recipient.priorLanes(), recipient.laneId()],
+      contactSecrets: [...recipient.priorContactSecrets(), recipient.contactLaneSecret()] },
+      rotations: [], context: { ...witnessed(), history: ctx.history } });
+    if (mode === 'browser') {
+      await assert.rejects(acceptBrowserRequest(store, opened.replayKey, '00'.repeat(32), channel.priv, () => ({rotations:[],context:ctx}), issuer));
+      assert.deepEqual(await store.outbox(), []);
+      let available = true;
+      const changingIssuer = () => { const value = issuer(); return available ? value : { ...value,
+        context: { ...value.context, history: () => ({ok:false as const,reason:'missing-history' as const}) } }; };
+      const interrupted = { ...store, decide: (...args: Parameters<typeof store.decide>) => {
+        available = false; return store.decide(...args);
+      } };
+      await assert.rejects(acceptBrowserRequest(interrupted, opened.replayKey, opened.requestId, channel.priv,
+        () => ({rotations:[],context:ctx}), changingIssuer), /first-contact-stale/);
+      assert.deepEqual(await store.outbox(), []);
+      assert.equal((await store.pending()).length, 1);
+    }
+    if (mode === 'browser-after-commit') {
+      let available = true;
+      const changingIssuer = () => { const value = issuer(); return available ? value : { ...value,
+        context: { ...value.context, history: () => ({ok:false as const,reason:'missing-history' as const}) } }; };
+      const interrupted = { ...store, decide: async (...args: Parameters<typeof store.decide>) => {
+        await store.decide(...args); available = false;
+      } };
+      await assert.rejects(acceptBrowserRequest(interrupted, opened.replayKey, opened.requestId, channel.priv,
+        () => ({rotations:[],context:ctx}), changingIssuer), /first-contact-stale/);
+      // A commit is not rolled back or reissued after an ambiguous response.
+      // The retained ciphertext must be revalidated by the delivery adapter.
+      assert.equal((await store.outbox()).length, 1);
+      assert.equal((await store.pending()).length, 0);
+      return;
+    }
+    const grant = mode === 'browser'
+      ? await acceptBrowserRequest(store, opened.replayKey, opened.requestId, channel.priv, () => ({rotations:[],context:ctx}), issuer)
+      : await acceptFirstContactRequest(store,opened.replayKey,channel.priv,recipient,[],ctx,[],witnessed());
     const lane = openContactLaneGrant(sender.pub,senderEnc.priv,grant,recipient.principal,[],witnessed());
     assert.equal(lane.laneId,resolveContactLane(recipient,sender.pub,recipient.rotationSeq));
     assert.equal((await store.outbox())[0]?.grant?.ciphertextHex,grant.ciphertextHex);
@@ -754,4 +790,38 @@ test('browser withholds decrypted lane when authority becomes unavailable or clo
 test('browser refuses a grant without independently authenticated recipient history', async () => {
   await assert.rejects(openBrowserGrant(vector.sender, ring.mint.epriv, vector.grant, vector.recipient,
     () => ({ rotations: [], context: witnessed() })), /lane-grant-rejected/);
+});
+
+import { acceptFirstContactRequest as acceptBrowserRequest } from '../contract/first-contact-accept-browser.ts';
+import { sealContactLaneGrant as sealBrowserGrant } from '../contract/contact-lane-browser.ts';
+
+test('browser seal interoperates with Node and refuses issuer or sender authority changes', async () => {
+  const sender = scalarSea(3), enc = scalarSea(4), recipient = genesisKeyring();
+  const ctx = contextWith([signGenesisEpub(sender.pub, enc.pub, records.context.now - 40, 3)]);
+  const history = (p: PrincipalId, at: number, until: number) =>
+    ({ ok: true as const, value: historyState(p, [], at, until) });
+  const peer = () => ({ rotations: [], context: { ...ctx, history } });
+  const issuer = () => ({ issuer: { principal: recipient.principal, signingPriv: recipient.currentPriv(),
+    contactSecretHex: recipient.contactLaneSecret(), rotationSeq: 0,
+    baseLaneIds: [recipient.laneId()], contactSecrets: [recipient.contactLaneSecret()] },
+    rotations: [], context: { ...witnessed(), history } });
+  const grant = await sealBrowserGrant(sender.pub, peer, issuer);
+  const opened = openContactLaneGrant(sender.pub, enc.priv, grant, recipient.principal, [], witnessed());
+  assert.equal(opened.laneId, resolveContactLane(recipient, sender.pub, 0));
+  for (const change of ['key', 'secret', 'clock', 'history', 'epub'] as const) {
+    let ownerReads = 0, peerReads = 0;
+    await assert.rejects(sealBrowserGrant(sender.pub, () => {
+      const value = peer();
+      if (++peerReads > 1 && change === 'epub') return { ...value, context: { ...value.context, genesisEpubBindings: [] } };
+      return value;
+    }, () => {
+      const value = issuer(); if (++ownerReads === 1) return value;
+      if (change === 'key') value.issuer.signingPriv = scalarSea(20).priv;
+      if (change === 'secret') value.issuer.contactSecretHex = '99'.repeat(32);
+      if (change === 'clock') value.context.now--;
+      if (change === 'history') return { ...value, context: { ...value.context, history: () => ({ok:false as const,reason:'missing-history' as const}) } };
+      return value;
+    }), /lane-grant-rejected/);
+  }
+  await assert.rejects(sealBrowserGrant(sender.pub, () => ({rotations:[],context:{...ctx,history,genesisEpubBindings:[]}}), issuer), /lane-grant-rejected/);
 });
