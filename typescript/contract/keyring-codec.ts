@@ -2,7 +2,6 @@
  * Length-prefixed account keyring. Shared by the recovery copy and device
  * delivery. Secrets stay in the plaintext only until the caller seals it.
  */
-import type { AccountKeyring } from "./account-keyring.ts";
 import { canonicalDecimal, lengthPrefixed } from "./canonical.ts";
 import { KEYRING_HISTORY_MAX, KEYRING_SERIAL_MAX, KEYRING_SERIAL_V2_MAX } from "./keyring-limits.ts";
 
@@ -26,7 +25,25 @@ export type KeyringFields = {
   rotationSeq: number;
 };
 
-export function encodeKeyring(keyring: AccountKeyring): Uint8Array {
+/** Structural contract implemented by the canonical Node keyring and the
+ * browser's privately held imported keyring. No Node implementation dependency. */
+export interface KeyringSource {
+  readonly principal: string;
+  readonly genesisEpub: string;
+  readonly pub: string;
+  readonly epub: string;
+  readonly contentEpoch: number;
+  readonly rotationSeq: number;
+  currentPriv(): string;
+  currentEpriv(): string;
+  retired(): readonly { epub: string; epriv: string }[];
+  laneId(): string;
+  priorLanes(): readonly string[];
+  contactLaneSecret(): string;
+  priorContactSecrets(): readonly string[];
+}
+
+export function encodeKeyring(keyring: KeyringSource): Uint8Array {
   const retired = keyring.retired();
   const prior = keyring.priorLanes();
   const priorContact = keyring.priorContactSecrets();

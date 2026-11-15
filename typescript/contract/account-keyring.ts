@@ -9,6 +9,7 @@
  *
  * Passphrase recovery lives in recovery.ts.
  */
+import { signingPoint, encryptionPoint, validateKeyringFields, confirmKeyring, requireLaneSet, requireContactSet, requireBoundedRotationSeq, requireHistoryCounts } from './keyring-validation.ts';
 import { KEYRING_HISTORY_MAX } from "./keyring-limits.ts";
 import { randomBytes } from "node:crypto";
 import { p256 } from "@noble/curves/nist.js";
@@ -281,23 +282,7 @@ export class AccountKeyring {
   }
 
   confirm(rotations: readonly unknown[], context: ResolutionContext): PrincipalId {
-    const resolved = resolveCurrentKey(this.principal, rotations, context);
-    if (!resolved.ok) throw new Error(resolved.reason);
-    if (resolved.value.currentKey !== this.pub) throw new Error("pub-mismatch");
-    if (resolved.value.currentEpub == null) throw new Error("epub-unknown");
-    if (resolved.value.currentEpub !== this.epub) throw new Error("epub-mismatch");
-    if (resolved.value.bindingEpub != null && resolved.value.bindingEpub !== this.genesisEpub) {
-      throw new Error("epub-mismatch");
-    }
-    if (resolved.value.rotations.length !== this.rotationSeq) throw new Error("rotation-rejected");
-    if (this.contentEpoch < resolved.value.rotations.length) throw new Error("content-epoch");
-    for (const row of resolved.value.rotations) {
-      if (row.nextEpub && row.nextEpub !== this.epub && !this.#retired.some((retired) => retired.epub === row.nextEpub)) {
-        throw new Error("epub-mismatch");
-      }
-    }
-    if (this.#retired.length > 1024) throw new Error("too-many-keys");
-    return resolved.value.currentEpub;
+    return confirmKeyring(this, rotations, context);
   }
 
   /**
@@ -493,55 +478,13 @@ function hold(
   contentEpoch: number,
   rotationSeq: number,
 ): AccountKeyring {
-  requireBoundedRotationSeq(rotationSeq);
-  requireHistoryCounts(priorLanes.length, priorContactSecrets.length);
-  if (retired.length > 1024) throw new Error("too-many-keys");
-  if (!Number.isSafeInteger(contentEpoch) || contentEpoch < 0) throw new Error("content-epoch");
-  requireLaneSet(laneId, priorLanes);
-  requireContactSet(contactLaneSecret, priorContactSecrets, laneId, priorLanes);
-  const genesisEpub = encryptionPoint(genesisEpubText, null);
-  if (genesisEpub === principal) throw new Error("epub-mismatch");
-  const currentPub = signingPoint(currentPubText, currentPriv);
-  const currentEpub = encryptionPoint(currentEpubText, currentEpriv);
-  if (currentEpub === currentPub || currentEpub === principal) throw new Error("epub-mismatch");
-  if (currentPub !== principal && currentEpub === genesisEpub) throw new Error("epub-mismatch");
-  const retiredKeys: RetiredSecret[] = [];
-  const seen = new Set<string>([currentEpub]);
-  for (const row of retired) {
-    const point = encryptionPoint(row.epub, row.epriv);
-    // The genesis epub is retired once the signing key moves. It is not a second current epub.
-    if (seen.has(point) || point === currentPub || point === principal) throw new Error("epub-reuse");
-    seen.add(point);
-    retiredKeys.push({ epub: point, epriv: row.epriv });
-  }
-  if (currentPub !== principal && !retiredKeys.some((row) => row.epub === genesisEpub)) {
-    throw new Error("epub-mismatch");
-  }
-  return new AccountKeyring(
-    principal,
-    genesisEpub,
-    currentPub,
-    currentPriv,
-    currentEpub,
-    currentEpriv,
-    retiredKeys,
-    laneId,
-    [...priorLanes],
-    contactLaneSecret,
-    [...priorContactSecrets],
-    contentEpoch,
-    rotationSeq,
-    keyringSeal,
-  );
-}
-
-function requireLaneSet(laneId: string, priorLanes: readonly string[]): void {
-  if (!/^[0-9a-f]{64}$/u.test(laneId)) throw new Error("bad-lane");
-  const seen = new Set<string>([laneId]);
-  for (const prior of priorLanes) {
-    if (!/^[0-9a-f]{64}$/u.test(prior) || seen.has(prior)) throw new Error("bad-lane");
-    seen.add(prior);
-  }
+  const fields = validateKeyringFields({principal, genesisEpub: genesisEpubText,
+    pub: currentPubText, priv: currentPriv, epub: currentEpubText, epriv: currentEpriv,
+    retired: [...retired], laneId, priorLanes: [...priorLanes], contactLaneSecret,
+    priorContactSecrets: [...priorContactSecrets], contentEpoch, rotationSeq});
+  return new AccountKeyring(principal, fields.genesisEpub as PrincipalId, fields.pub as PrincipalId,
+    currentPriv, fields.epub as PrincipalId, currentEpriv, fields.retired as RetiredSecret[], laneId,
+    fields.priorLanes, contactLaneSecret, fields.priorContactSecrets, contentEpoch, rotationSeq, keyringSeal);
 }
 
 function reusesLane(keyring: AccountKeyring, laneId: string): boolean {
@@ -556,37 +499,11 @@ function disclosedLane(secret: string, laneId: string, keyring: AccountKeyring):
   return secret === laneId || secret === keyring.laneId() || keyring.priorLanes().includes(secret);
 }
 
-function requireContactSet(
-  secret: string,
-  prior: readonly string[],
-  laneId: string,
-  priorLanes: readonly string[],
-): void {
-  const disclosed = new Set<string>([laneId, ...priorLanes]);
-  if (!/^[0-9a-f]{64}$/u.test(secret) || disclosed.has(secret)) throw new Error("bad-lane");
-  const seen = new Set<string>([secret]);
-  for (const held of prior) {
-    if (!/^[0-9a-f]{64}$/u.test(held) || seen.has(held) || disclosed.has(held)) {
-      throw new Error("bad-lane");
-    }
-    seen.add(held);
-  }
-}
-
 function randomDisjoint(banned: readonly string[]): string {
   for (;;) {
     const lane = bytesToHex(randomBytes(32));
     if (!banned.includes(lane)) return lane;
   }
-}
-
-function requireBoundedRotationSeq(rotationSeq: number): void {
-  if (!Number.isSafeInteger(rotationSeq) || rotationSeq < 0) throw new Error("keyring-rejected");
-  if (rotationSeq > KEYRING_HISTORY_MAX) throw new Error("keyring-too-large");
-}
-
-function requireHistoryCounts(lanes: number, contacts: number): void {
-  if (lanes > KEYRING_HISTORY_MAX || contacts > KEYRING_HISTORY_MAX) throw new Error("keyring-too-large");
 }
 
 function holdsPoint(keyring: AccountKeyring, point: PrincipalId): boolean {
@@ -602,25 +519,6 @@ function holdsPoint(keyring: AccountKeyring, point: PrincipalId): boolean {
 function requireDevice(localId: string): void {
   if (localId.length === 0) throw new Error("empty-device");
   if (parsePrincipalId(localId).ok || parseEip55(localId).ok) throw new Error("device-id");
-}
-
-function signingPoint(seaPub: string, seaPriv: string): PrincipalId {
-  const parsed = parsePrincipalId(seaPub);
-  if (!parsed.ok || parsed.value !== seaPub || seaPoint(unb64(seaPriv)) !== seaPub) throw new Error("pub-mismatch");
-  const scalar = unb64(seaPriv);
-  scalar.fill(0);
-  return parsed.value;
-}
-
-function encryptionPoint(epub: string, epriv: string | null): PrincipalId {
-  const parsed = parsePrincipalId(epub);
-  if (!parsed.ok || parsed.value !== epub) throw new Error("epub-mismatch");
-  if (epriv == null) return parsed.value;
-  const scalar = unb64(epriv);
-  const derived = seaPoint(scalar);
-  scalar.fill(0);
-  if (derived !== epub) throw new Error("epub-mismatch");
-  return parsed.value;
 }
 
 function randomScalar(): Uint8Array {
