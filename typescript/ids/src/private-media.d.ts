@@ -15,3 +15,9 @@ export function signPrivateMediaDeletion(input:unknown,scalar:Uint8Array,current
 
 export type PrivateMediaGroupConfig = Readonly<{owner:string;setId:string;predicate:'same-group'|'named-circle';settleWindowMs:number;configRevision:number;signature:string}>;
 export function signPrivateMediaGroupConfig(input:unknown,scalar:Uint8Array,currentKey:string):PrivateMediaGroupConfig;
+
+export type PrivateGroupSnapshot=Readonly<{predicate:'same-group'|'named-circle';setId:string;setOwner:string;ownerSigningPub:string;ownerEncryptionPub:string;ownerIdentityHead:number;members:readonly Readonly<{accessor:string;stated:number;hamState:number;signingPub:string;encryptionPub:string;identityHead:number}>[]}>;
+export function parseGroupKeySnapshot(input:unknown):PrivateGroupSnapshot;
+export function groupKeySnapshotId(input:unknown):string;
+export function signPrivateGroupEpoch(input:unknown,snapshot:unknown,scalar:Uint8Array,currentKey:string):Readonly<{manifest:PrivateMediaManifest;snapshot:PrivateGroupSnapshot}>;
+export function signPrivateGroupFinalization(input:unknown,scalar:Uint8Array,currentKey:string):PrivateMediaFinalization;
