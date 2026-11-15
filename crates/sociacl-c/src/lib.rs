@@ -3048,3 +3048,6 @@ mod tests {
 
 mod private_deletion;
 pub use private_deletion::sociacl_verify_private_deletion;
+
+mod group_epoch;
+pub use group_epoch::{sociacl_verify_group_epoch_manifest, sociacl_match_settled_group_epoch, sociacl_verify_group_epoch_history};
