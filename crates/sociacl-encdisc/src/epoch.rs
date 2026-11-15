@@ -707,7 +707,13 @@ pub fn select_group_epoch_config<'a>(
 #[derive(Clone, Debug)]
 struct StoredManifest {
     manifest: EpochManifest,
-    snapshot: AclSnapshotBody,
+    snapshot: StoredSnapshot,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum StoredSnapshot {
+    Media(AclSnapshotBody),
+    Group(crate::GroupKeySnapshot),
 }
 
 #[derive(Clone, Debug)]
@@ -756,14 +762,67 @@ impl EpochChain {
             .find(|row| row.manifest.revision_id == manifest.revision_id)
         {
             if existing.manifest.acl_snapshot != manifest.acl_snapshot
-                || existing.snapshot != snapshot
+                || existing.snapshot != StoredSnapshot::Media(snapshot.clone())
             {
                 return Err(EncDiscError::EpochRejected);
             }
             return Ok(());
         }
-        self.manifests.push(StoredManifest { manifest, snapshot });
+        if self.manifests.iter().any(|row| matches!(row.snapshot, StoredSnapshot::Group(_))) {
+            return Err(EncDiscError::EpochRejected);
+        }
+        self.manifests.push(StoredManifest { manifest, snapshot: StoredSnapshot::Media(snapshot) });
         Ok(())
+    }
+
+    /// Admit an independently scoped group key manifest. The supplied owner key
+    /// and cohort must already be authenticated by protected identity history.
+    pub fn insert_group_manifest(
+        &mut self, manifest: EpochManifest, snapshot: crate::GroupKeySnapshot, owner_pub: &str,
+    ) -> Result<(), EncDiscError> {
+        if manifest.object != self.object || manifest.object != snapshot.set_id
+            || owner_pub != snapshot.owner_signing_pub || manifest.device_id.is_empty()
+            || manifest.status_auth_pub.is_some() || !settle_window_in_range(manifest.settle_window_ms)
+            || self.manifests.iter().any(|row| matches!(row.snapshot, StoredSnapshot::Media(_))) {
+            return Err(EncDiscError::EpochRejected);
+        }
+        canonical::require_revision_id(&manifest.key_commitment)?;
+        canonical::require_revision_id(&manifest.revision_id)?;
+        if crate::group_key_snapshot_id(&snapshot)? != manifest.acl_snapshot
+            || canonical::epoch_revision_id(&manifest.body())? != manifest.revision_id {
+            return Err(EncDiscError::EpochRejected);
+        }
+        sea::verify_sea(owner_pub, &canonical::epoch_manifest_sig_bytes(&manifest.revision_id)?, &manifest.signature)?;
+        if let Some(existing) = self.manifests.iter().find(|row| row.manifest.revision_id == manifest.revision_id) {
+            return if existing.snapshot == StoredSnapshot::Group(snapshot) { Ok(()) } else { Err(EncDiscError::EpochRejected) };
+        }
+        self.manifests.push(StoredManifest { manifest, snapshot: StoredSnapshot::Group(snapshot) });
+        Ok(())
+    }
+
+    /// Select only the latest settled group-chain winner under the current
+    /// owner-signed policy and exact current cohort/key bindings. No fallback
+    /// after withdrawal, rotation, policy change or a pending successor.
+    pub fn settled_group_key(
+        &self, current: &crate::GroupKeySnapshot, now: u64, config: &GroupEpochConfig,
+        anchor_finalization_id: &str, minimum_epoch: u64,
+    ) -> Option<EpochReadKey> {
+        const MAX_SAFE: u64 = 9_007_199_254_740_991;
+        if now > MAX_SAFE || minimum_epoch > MAX_SAFE || current.set_id != self.object
+            || config.set_id != current.set_id || config.predicate != current.predicate
+            || config.owner != current.set_owner { return None; }
+        config.verify(&current.owner_signing_pub, Some(&current.set_owner)).ok()?;
+        crate::group_key_snapshot_id(current).ok()?;
+        let winners = self.chain_winners(self.finalizations.iter().collect());
+        if winners.first()?.finalization_id != anchor_finalization_id { return None; }
+        let winner = *winners.last()?;
+        if winner.epoch < minimum_epoch { return None; }
+        let stored = self.manifests.iter().find(|row| row.manifest.revision_id == winner.revision_id)?;
+        let StoredSnapshot::Group(snapshot) = &stored.snapshot else { return None; };
+        if snapshot != current || stored.manifest.settle_window_ms != config.settle_window_ms { return None; }
+        let observed = self.finalizations.iter().find(|row| row.finalization.finalization_id == winner.finalization_id)?;
+        if now < observed.seen_at.checked_add(stored.manifest.settle_window_ms)? { return None; }
+        Some(EpochReadKey { revision_id: winner.revision_id.clone(), epoch: winner.epoch })
     }
 
     pub fn insert_finalization(
@@ -1010,7 +1069,8 @@ impl EpochChain {
         now: u64,
         group_window: Option<u64>,
     ) -> bool {
-        let grouped = stored.snapshot.object_set.is_some();
+        let StoredSnapshot::Media(snapshot) = &stored.snapshot else { return false; };
+        let grouped = snapshot.object_set.is_some();
         if grouped {
             let Some(window) = group_window else {
                 return false;
@@ -1021,7 +1081,7 @@ impl EpochChain {
         } else if group_window.is_some() {
             return false;
         }
-        snapshot_matches(&stored.snapshot, current, now)
+        snapshot_matches(snapshot, current, now)
     }
 
     fn require_finalization(
