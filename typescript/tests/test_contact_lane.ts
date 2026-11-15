@@ -633,7 +633,7 @@ test("builders and the deterministic seal are not production exports", () => {
 });
 
 
-for (const mode of ['direct','poll','browser'] as const) test(`first contact ${mode} requires committed replay admission and explicit acceptance before a lane grant exists`, async () => {
+for (const mode of ['direct','poll','browser','browser-after-commit'] as const) test(`first contact ${mode} requires committed replay admission and explicit acceptance before a lane grant exists`, async () => {
   const { IDBFactory } = createRequire(new URL('../ids/package.json', import.meta.url))('fake-indexeddb') as { IDBFactory: new () => IDBFactory };
   const recipient = genesisKeyring(), sender = scalarSea(3), senderEnc = scalarSea(4), channel = scalarSea(15);
   const binding = signGenesisEpub(sender.pub, senderEnc.pub, records.context.now - 40, 3);
@@ -677,6 +677,21 @@ for (const mode of ['direct','poll','browser'] as const) test(`first contact ${m
         () => ({rotations:[],context:ctx}), changingIssuer), /first-contact-stale/);
       assert.deepEqual(await store.outbox(), []);
       assert.equal((await store.pending()).length, 1);
+    }
+    if (mode === 'browser-after-commit') {
+      let available = true;
+      const changingIssuer = () => { const value = issuer(); return available ? value : { ...value,
+        context: { ...value.context, history: () => ({ok:false as const,reason:'missing-history' as const}) } }; };
+      const interrupted = { ...store, decide: async (...args: Parameters<typeof store.decide>) => {
+        await store.decide(...args); available = false;
+      } };
+      await assert.rejects(acceptBrowserRequest(interrupted, opened.replayKey, opened.requestId, channel.priv,
+        () => ({rotations:[],context:ctx}), changingIssuer), /first-contact-stale/);
+      // A commit is not rolled back or reissued after an ambiguous response.
+      // The retained ciphertext must be revalidated by the delivery adapter.
+      assert.equal((await store.outbox()).length, 1);
+      assert.equal((await store.pending()).length, 0);
+      return;
     }
     const grant = mode === 'browser'
       ? await acceptBrowserRequest(store, opened.replayKey, opened.requestId, channel.priv, () => ({rotations:[],context:ctx}), issuer)
