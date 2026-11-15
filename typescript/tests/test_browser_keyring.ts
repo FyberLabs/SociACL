@@ -66,11 +66,16 @@ test('owner revocation and stale authenticated history refuse import and export'
  const revoked=records.reject.find((r:any)=>r.name==='revoked-recovery').revocations;
  const badStates=[
   ()=>{const s=state(v);return {...s,context:{...s.context,revocations:revoked}};},
-  ()=>{const s=state(v);return {...s,context:{...s.context,history:(p:PrincipalId)=>({ok:true as const,value:historyState(p,[],0,1)})}};},
+  ()=>{const s=state(v);return {...s,context:{...s.context,now:0}};},
  ];
  for(const badState of badStates){
   assert.throws(()=>importKeyring(encoded,expected(v),badState),/keyring-rejected/);
   assert.throws(()=>exportKeyring(handle,badState),/keyring-rejected/);
  }
  closeKeyring(handle);
+});
+
+test('old genesis keyring is rejected against authenticated rotated owner state',()=>{
+ const old=vectors.accept[0],current=vectors.accept[1];
+ assert.throws(()=>importKeyring(bytes(old.encodedHex),expected(old),()=>state(current)),/keyring-rejected/);
 });
