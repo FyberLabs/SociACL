@@ -1,7 +1,7 @@
 // Executed from an isolated packed-package directory by CI, never shared TEST.
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {importKeyring,exportKeyring,validateKeyring,closeKeyring,openKeyringContent} from 'sociacl-ids/keyring';
+import {admitKeyring,exportCurrentPair,importKeyring,exportKeyring,validateKeyring,closeKeyring,openKeyringContent} from 'sociacl-ids/keyring';
 import {historyState,wrapItemDekToReaders} from 'sociacl-ids';
 import {Sender,Receiver,reconcile} from 'sea-device-link';
 const vectors=JSON.parse(readFileSync(process.env.KEYRING_VECTOR,'utf8'));
@@ -21,7 +21,9 @@ const authority={
  // Synthetic owner checkpoint for the SDK contract; NOT a production ACL adapter.
  async current(binding){assert.deepEqual(binding.identity,identity);state();return {revision:'synthetic-current',validUntil:binding.expiresAt};},
 };
-const source=importKeyring(raw,identity,state),encoded=exportKeyring(source,state);
+const source=admitKeyring(v.fields,identity,state),encoded=exportKeyring(source,state);
+assert.deepEqual(encoded,raw);
+assert.deepEqual(exportCurrentPair(source,state),{pub:v.fields.pub,priv:v.fields.priv,epub:v.fields.epub,epriv:v.fields.epriv});
 const scope={sourceOrigin:'https://source.example',destinationOrigin:'https://destination.example',application:'keyring-contract',tenant:'synthetic',audience:'ci'};
 const receiver=await Receiver.create(scope),sender=await Sender.create({request:receiver.request,expectedScope:scope,identity,keyring:encoded,authority});
 encoded.fill(0);closeKeyring(source);

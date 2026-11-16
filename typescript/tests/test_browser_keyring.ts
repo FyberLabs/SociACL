@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {test} from 'node:test';
-import {importKeyring,exportKeyring,validateKeyring,closeKeyring,openKeyringContent} from '../contract/keyring-browser.ts';
+import {admitKeyring,exportCurrentPair,importKeyring,exportKeyring,validateKeyring,closeKeyring,openKeyringContent} from '../contract/keyring-browser.ts';
 import {AccountKeyring} from '../contract/account-keyring.ts';
 import {decodeKeyring,encodeKeyring} from '../contract/keyring-codec.ts';
 import {historyState, type ResolutionContext, type PrincipalId} from '../ids/src/index.js';
@@ -78,4 +78,29 @@ test('owner revocation and stale authenticated history refuse import and export'
 test('old genesis keyring is rejected against authenticated rotated owner state',()=>{
  const old=vectors.accept[0],current=vectors.accept[1];
  assert.throws(()=>importKeyring(bytes(old.encodedHex),expected(old),()=>state(current)),/keyring-rejected/);
+});
+
+for(const v of vectors.accept)test(`complete fields and current pair preserve ${v.name}`,()=>{
+ const material=structuredClone(v.fields),handle=admitKeyring(material,expected(v),()=>state(v));
+ material.priv='changed';material.retired.length=0;material.priorLanes.length=0;
+ assert.deepEqual(exportKeyring(handle,()=>state(v)),bytes(v.encodedHex));
+ const pair=exportCurrentPair(handle,()=>state(v));
+ assert.deepEqual(pair,{pub:v.fields.pub,priv:v.fields.priv,epub:v.fields.epub,epriv:v.fields.epriv});
+ pair.priv='changed';assert.equal(exportCurrentPair(handle,()=>state(v)).priv,v.fields.priv);
+ assert.throws(()=>exportCurrentPair({...handle},()=>state(v)),/^Error: keyring-rejected$/);
+ assert.throws(()=>exportCurrentPair(handle,()=>{closeKeyring(handle);return state(v);}),/^Error: keyring-rejected$/);
+ assert.throws(()=>exportCurrentPair(handle,()=>state(v)),/^Error: keyring-rejected$/);
+});
+test('field admission refuses incomplete, oversized, accessor and stale material',()=>{
+ const v=vectors.accept[1];let invoked=false;
+ const bad=[{...v.fields,retired:[]},{...v.fields,priorContactSecrets:[]},
+  {...v.fields,priorLanes:Array(1025).fill('ab'.repeat(32))},{...v.fields,priv:'a'.repeat(524289)},
+  {...v.fields,privateExtra:'secret'},Object.defineProperty({...v.fields},'priv',{get(){invoked=true;return v.fields.priv;}}),
+  {...v.fields,priorLanes:Object.defineProperty([v.fields.priorLanes[0]],'0',{get(){invoked=true;return v.fields.priorLanes[0];}})}];
+ for(const material of bad)assert.throws(()=>admitKeyring(material,expected(v),()=>state(v)),/^Error: keyring-rejected$/);
+ assert.equal(invoked,false);
+ assert.throws(()=>admitKeyring(v.fields,expected(v),()=>({...state(v),rotations:[]})),/^Error: keyring-rejected$/);
+ const handle=admitKeyring(v.fields,expected(v),()=>state(v));
+ assert.throws(()=>exportCurrentPair(handle,()=>({...state(v),rotations:[]})),/^Error: keyring-rejected$/);
+ closeKeyring(handle);
 });

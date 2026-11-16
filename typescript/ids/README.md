@@ -602,3 +602,19 @@ The browser keyring SDK CI contract packs both packages, checks declarations and
 browser bundling, and exercises transfer, uncertain completion reconciliation,
 full-history preservation and historical DEK opening against the merged SDK.
 These are synthetic unit/contract checks, not deployment or live acceptance.
+
+### Adapting existing complete local material
+
+`admitKeyring(material, expected, currentState)` admits an explicit complete
+`KeyringMaterial` snapshot through the same canonical validator and codec as
+`importKeyring`. It creates no keys and supplies no defaults. Include all retired
+encryption keys and contact/base-lane history; missing material must be recovered
+through the owning recovery flow, never replaced with a four-field SEA pair.
+
+`exportCurrentPair(handle, currentState)` explicitly returns a fresh plaintext
+`{pub, priv, epub, epriv}` copy for an existing local SEA signer or wrapping adapter.
+It requires a live handle and fresh current authority. This pair is NOT a complete
+transfer or recovery export: use `exportKeyring` for that. Never log it, send it to
+a server or persist it without destination-local protection. JavaScript strings
+cannot guarantee erasure; keep references short-lived. Neither API grants access,
+issues sessions, mints a principal or replaces current authorization.

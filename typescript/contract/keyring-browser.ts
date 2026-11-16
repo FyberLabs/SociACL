@@ -5,7 +5,7 @@ import { validateKeyringFields, confirmKeyring } from './keyring-validation.ts';
 import { KEYRING_SERIAL_MAX } from './keyring-limits.ts';
 import { data } from '../ids/src/util.js';
 import { openItemDekReaderWrap } from '../ids/src/reader-wrap.js';
-import type { KeyringIdentity, ImportedKeyring, KeyringState } from '../ids/src/keyring.js';
+import type { KeyringIdentity, ImportedKeyring, KeyringState, KeyringMaterial } from '../ids/src/keyring.js';
 import type { ItemWrapContext } from '../ids/src/types.js';
 
 const held = new WeakMap<ImportedKeyring, KeyringFields>();
@@ -83,4 +83,48 @@ export async function openKeyringContent(handle: ImportedKeyring, wrap: unknown,
     if (held.get(handle) !== fields) rejected();
     return opened;
   } catch { opened?.fill(0); return rejected(); }
+}
+
+
+function boundedString(value:unknown,maximum=87):string {
+  if(typeof value!=='string'||value.length<1||value.length>maximum)rejected();
+  return value;
+}
+function boundedArray<T>(input:unknown,parse:(value:unknown)=>T):T[] {
+  if(!Array.isArray(input)||input.length>1024)rejected();
+  const out:T[]=[];
+  for(let i=0;i<input.length;i++){
+    const d=Object.getOwnPropertyDescriptor(input,String(i));
+    if(!d||!('value' in d))rejected();
+    out.push(parse(d.value));
+  }
+  return out;
+}
+/** Bridge existing owner-held fields to the canonical browser import. No codec
+ * or history validator is delegated to the consuming application. */
+export function admitKeyring(material:KeyringMaterial,expected:KeyringIdentity,currentState:KeyringState):ImportedKeyring {
+  let bytes:Uint8Array|undefined;
+  try {
+    const parsed=data(material);if(!parsed.ok)rejected();const m=parsed.value;
+    if(Object.keys(m).sort().join()!=='contactLaneSecret,contentEpoch,epriv,epub,genesisEpub,laneId,principal,priorContactSecrets,priorLanes,priv,pub,retired,rotationSeq')rejected();
+    const f:KeyringFields={principal:boundedString(m.principal),genesisEpub:boundedString(m.genesisEpub),
+      pub:boundedString(m.pub),priv:boundedString(m.priv,43),epub:boundedString(m.epub),epriv:boundedString(m.epriv,43),
+      laneId:boundedString(m.laneId,64),contactLaneSecret:boundedString(m.contactLaneSecret,64),
+      priorLanes:boundedArray(m.priorLanes,v=>boundedString(v,64)),
+      priorContactSecrets:boundedArray(m.priorContactSecrets,v=>boundedString(v,64)),
+      retired:boundedArray(m.retired,v=>{const r=data(v);if(!r.ok||Object.keys(r.value).sort().join()!=='epriv,epub')rejected();
+        return {epub:boundedString(r.value.epub),epriv:boundedString(r.value.epriv,43)};}),
+      contentEpoch:m.contentEpoch as number,rotationSeq:m.rotationSeq as number};
+    const validated=validateKeyringFields(f);
+    bytes=encodeKeyring(source(validated));
+    return importKeyring(bytes,expected,currentState);
+  } catch {return rejected();}
+  finally {bytes?.fill(0);}
+}
+export function exportCurrentPair(handle:ImportedKeyring,currentState:KeyringState):{pub:string;priv:string;epub:string;epriv:string} {
+  try {
+    const f=held.get(handle);if(!f)rejected();confirm(f,currentState);
+    if(held.get(handle)!==f)rejected();
+    return {pub:f.pub,priv:f.priv,epub:f.epub,epriv:f.epriv};
+  } catch {return rejected();}
 }
