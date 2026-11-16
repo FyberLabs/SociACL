@@ -18,3 +18,15 @@ export function validateKeyring(bytes:Uint8Array,expected:KeyringIdentity,curren
 export function closeKeyring(handle:ImportedKeyring):void;
 /** Does not replace Check: expected scope must come from current authorization. */
 export function openKeyringContent(handle:ImportedKeyring,wrap:unknown,expected:ItemWrapContext):Promise<Uint8Array>;
+
+/** Complete owner-held fields. No missing history is inferred or generated. */
+export type KeyringMaterial = {
+ principal:string;genesisEpub:string;pub:string;priv:string;epub:string;epriv:string;
+ retired:{epub:string;epriv:string}[];laneId:string;priorLanes:string[];
+ contactLaneSecret:string;priorContactSecrets:string[];contentEpoch:number;rotationSeq:number;
+};
+/** Admit a snapshot of existing complete material through canonical validation. */
+export function admitKeyring(material:KeyringMaterial,expected:KeyringIdentity,currentState:KeyringState):ImportedKeyring;
+/** Explicit plaintext export for existing local SEA consumers. Fresh authority is
+ * required. Caller owns the returned copy; never persist or log it unprotected. */
+export function exportCurrentPair(handle:ImportedKeyring,currentState:KeyringState):{pub:string;priv:string;epub:string;epriv:string};
