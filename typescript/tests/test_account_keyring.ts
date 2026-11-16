@@ -1,3 +1,4 @@
+import {prepareKeyringRotationFields} from '../contract/keyring-rotation.ts';
 import assert from "node:assert/strict";
 import { createCipheriv, createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -1299,4 +1300,24 @@ test("shared versioned plaintext caps are enforced before key material validatio
     if (row.error) assert.throws(() => decodeKeyring(bytes), { message: row.error });
     else assert.equal(decodeKeyring(bytes).priv.length, row.bytes - base);
   }
+});
+
+
+test('portable rotation accepts canonical browser fields and preserves the native keyring contract',()=>{
+  const original=AccountKeyring.fromGenesis(genesis(),vector.genesis.contactLaneSecret);
+  const fields=decodeKeyring(encodeKeyring(original));
+  const before=JSON.stringify(fields);
+  const source={...fields,currentPriv:()=>fields.priv,currentEpriv:()=>fields.epriv,
+    retired:()=>fields.retired,laneId:()=>fields.laneId,priorLanes:()=>fields.priorLanes,
+    contactLaneSecret:()=>fields.contactLaneSecret,priorContactSecrets:()=>fields.priorContactSecrets};
+  const mint=()=>({...vectorMint(),contactLaneSecret:'f1'.repeat(32)});
+  const prepared=prepareKeyringRotationFields(source,['lost','kept'],'lost',[],witnessedContext(),mint,()=>{throw Error('unexpected random contact secret');});
+  const native=rotateKeyring(original,['lost','kept'],'lost',[],witnessedContext(),mint);
+  assert.deepEqual(prepared.fields,decodeKeyring(encodeKeyring(native.keyring)));
+  assert.deepEqual(prepared.draft,native.draft);
+  assert.equal(JSON.stringify(fields),before);
+  assert.equal(prepared.fields.principal,fields.principal);
+  assert.equal(prepared.fields.rotationSeq,fields.rotationSeq+1);
+  assert.deepEqual(prepared.fields.retired.at(-1),{epub:fields.epub,epriv:fields.epriv});
+  assert.throws(()=>prepareKeyringRotationFields(source,['lost'],'lost',[],emptyContext(),mint,()=>''));
 });

@@ -25,6 +25,7 @@ jobs:
           package-manager-cache: false
       - run: npm ci --prefix typescript && npm ci --prefix typescript/ids
       - run: npm run --prefix typescript/ids build
+      - run: node typescript/ids/scripts/check-rotation-portable.mjs
       - run: node --experimental-strip-types --test typescript/tests/test_browser_keyring.ts
       - run: node --experimental-strip-types --test --experimental-test-coverage --test-coverage-include=typescript/contract/recovery-browser.ts --test-coverage-lines=95 --test-coverage-branches=75 typescript/tests/test_browser_recovery.ts
       - run: npx --prefix typescript/ids playwright install --with-deps chromium
