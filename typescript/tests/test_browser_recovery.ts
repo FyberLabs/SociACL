@@ -97,3 +97,41 @@ test('WebCrypto input copies are wiped after successful and failed encryption',a
   }
  }finally{subtle.importKey=originalImport;subtle.encrypt=originalEncrypt;closeKeyring(handle);}
 });
+
+
+test('current-copy signatures agree with native store CAS and reject replay',async()=>{
+ const {signRecoveryCurrentPut}=await import('../contract/recovery-browser.ts');
+ const {MemoryRecoveryStore}=await import('../contract/recovery-seal.ts');
+ const {HeadFloor}=await import('../contract/store-write.ts');
+ const handle=await openRecoveryKeyring(new TextEncoder().encode(legacy.passphraseUtf8),envelope(legacy),expected,state);
+ const account={currentKey:expected.pub,currentEpub:expected.epub,rotations:[]};
+ const store=new MemoryRecoveryStore(()=>account as any,new HeadFloor());
+ const head={sequence:0,currentKey:expected.pub,currentEpub:expected.epub};
+ try{
+  const view={generation:0,head,row:null},e=envelope(legacy);
+  const op=signRecoveryCurrentPut(handle,e,view,()=>{view.generation=99;e.bytes.fill(0);return state();});
+  const row={...op.row,bytes:new Uint8Array(Buffer.from(op.row.bytesHex,'hex'))};
+  store.put(row as any,op.signature);
+  assert.equal(store.writeGeneration(expected.principal),1);
+  assert.throws(()=>store.put(row as any,op.signature),/store-rejected/);
+  const next=signRecoveryCurrentPut(handle,envelope(),{generation:1,head,row:envelope(legacy)},state);
+  store.put({...next.row,bytes:new Uint8Array(Buffer.from(next.row.bytesHex,'hex'))} as any,next.signature);
+  assert.equal(store.writeGeneration(expected.principal),2);
+ }finally{closeKeyring(handle);}
+});
+test('current-copy signer refuses invalid views, stale heads, malformed envelopes and closed handles',async()=>{
+ const {signRecoveryCurrentPut}=await import('../contract/recovery-browser.ts');
+ const handle=await openRecoveryKeyring(new TextEncoder().encode(legacy.passphraseUtf8),envelope(legacy),expected,state);
+ const head={sequence:0,currentKey:expected.pub,currentEpub:expected.epub},view={generation:0,head,row:null};
+ try{
+  for(const v of [{...view,extra:1},{...view,head:{}},{...view,head:{...head,sequence:1}},
+   {...view,generation:-1},{...view,generation:Number.MAX_SAFE_INTEGER},{...view,row:{}},
+   {...view,row:{...envelope(),principal:'foreign'}}])assert.throws(()=>signRecoveryCurrentPut(handle,envelope(),v as any,state),/recovery-rejected/);
+  for(const e of [{...envelope(),extra:1},{...envelope(),rotationSeq:1},{...envelope(),bytes:new Uint8Array(524414)},
+   {...envelope(),bytes:new Uint8Array(33)},{...envelope(),signingPub:'invalid'},
+   {...envelope(),epub:expected.pub}])assert.throws(()=>signRecoveryCurrentPut(handle,e,view,state),/recovery-rejected/);
+  assert.throws(()=>signRecoveryCurrentPut(handle,envelope(),view,()=>{throw Error();}),/recovery-rejected/);
+  let calls=0;assert.throws(()=>signRecoveryCurrentPut(handle,envelope(),view,()=>{if(++calls>1)throw Error();return state();}),/recovery-rejected/);
+  closeKeyring(handle);assert.throws(()=>signRecoveryCurrentPut(handle,envelope(),view,state),/recovery-rejected/);
+ }finally{closeKeyring(handle);}
+});

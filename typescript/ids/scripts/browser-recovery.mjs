@@ -8,7 +8,7 @@ import {build} from 'esbuild';
 import {chromium} from 'playwright';
 const read=async name=>JSON.parse(await readFile(new URL('../../../vectors/'+name,import.meta.url),'utf8'));
 const ring=await read('encrypted-discovery/account-keyring.json'),records=await read('ids/records.json'),legacy=await read('encrypted-discovery/recovery-legacy-strength.json');
-const bundled=await build({stdin:{contents:"export {openRecoveryKeyring,sealRecoveryKeyring} from './dist/recovery.js';export {exportKeyring,closeKeyring} from './dist/keyring.js';export {historyState} from './dist/index.js';",resolveDir:fileURLToPath(new URL('../',import.meta.url))},bundle:true,platform:'browser',format:'esm',write:false,metafile:true});
+const bundled=await build({stdin:{contents:"export {openRecoveryKeyring,sealRecoveryKeyring,signRecoveryCurrentPut} from './dist/recovery.js';export {exportKeyring,closeKeyring} from './dist/keyring.js';export {historyState} from './dist/index.js';",resolveDir:fileURLToPath(new URL('../',import.meta.url))},bundle:true,platform:'browser',format:'esm',write:false,metafile:true});
 for(const input of Object.values(bundled.metafile.inputs))for(const ref of input.imports)if(ref.path.startsWith('node:'))throw Error('Node import in recovery');
 const server=createServer((req,res)=>{res.setHeader('Content-Type',req.url==='/recovery.js'?'text/javascript':'text/html');res.end(req.url==='/recovery.js'?bundled.outputFiles[0].text:'<!doctype html><title>Recovery contract</title>');});
 let browser;
@@ -22,10 +22,13 @@ try{
   const encoded=m.exportKeyring(handle,state);const size=encoded.length;encoded.fill(0);
   let weak=false;try{await m.sealRecoveryKeyring(handle,pass,state);}catch(e){weak=e.message==='recovery-weak-passphrase';}
   const freshPass=new TextEncoder().encode('Otters juggle violet satellites beyond Jupiter 739!');
-  const sealed=await m.sealRecoveryKeyring(handle,freshPass,state);const reopened=await m.openRecoveryKeyring(freshPass,sealed,expected,state);m.closeKeyring(reopened);freshPass.fill(0);m.closeKeyring(handle);
+  const sealed=await m.sealRecoveryKeyring(handle,freshPass,state);const reopened=await m.openRecoveryKeyring(freshPass,sealed,expected,state);m.closeKeyring(reopened);freshPass.fill(0);
+  const put=m.signRecoveryCurrentPut(handle,sealed,{generation:0,head:{sequence:0,currentKey:g.signingPub,currentEpub:g.epub},row:null},state);
+  const signed=put.action==='put'&&/^[0-9a-f]{128}$/.test(put.signature)&&put.row.bytesHex.length===sealed.bytes.length*2;
+  m.closeKeyring(handle);
   let closed=false,tampered=false;try{m.exportKeyring(handle,state);}catch{closed=true;}
   bytes[bytes.length-1]^=1;try{await m.openRecoveryKeyring(pass,e,expected,state);}catch{tampered=true;}pass.fill(0);
-  return {opened:size>0,closed,tampered,weak};
+  return {opened:size>0,closed,tampered,weak,signed};
  },{ring,records,legacy});
- assert.deepEqual(result,{opened:true,closed:true,tampered:true,weak:true});console.log('Chromium recovery: legacy passphrase, shared keyring handle, close and tamper refusal passed');
+ assert.deepEqual(result,{opened:true,closed:true,tampered:true,weak:true,signed:true});console.log('Chromium recovery: legacy passphrase, shared keyring handle, close and tamper refusal passed');
 }finally{await browser?.close();server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}

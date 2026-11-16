@@ -1,11 +1,13 @@
+import {nextStoreGeneration,signStoreWrite,recoveryEnvelopeHash,REPLACED_NONE} from './store-write.ts';
+import {parsePrincipalId} from '../ids/src/index.js';
 /** Browser opening of existing recovery copies. No new key generation, storage,
  * session issuance, passphrase strengthening, or rotation is implicit in open. */
-import {data} from '../ids/src/util.js';
-import {importKeyring,exportKeyring} from './keyring-browser.ts';
+import {data,hex} from '../ids/src/util.js';
+import {importKeyring,exportKeyring,exportCurrentPair} from './keyring-browser.ts';
 import {deriveKey,parseHeader,passphraseRejected,recoveryAad,writeHeader} from './recovery-wire.ts';
 import {RECOVERY_ABSOLUTE_MAX,KEYRING_SERIAL_MAX,ARGON2ID_LIMITS,RECOVERY_NONCE_LEN} from './keyring-limits.ts';
 import type {KeyringIdentity,KeyringState,ImportedKeyring} from '../ids/src/keyring.js';
-import type {BrowserRecoveryEnvelope} from '../ids/src/recovery.js';
+import type {BrowserRecoveryEnvelope,BrowserRecoveryCurrentView,BrowserRecoveryPut} from '../ids/src/recovery.js';
 export {encodePassphrase} from './recovery-wire.ts';
 import {checkRecoveryPassphrase,RecoveryWeakPassphraseError} from './passphrase-strength.ts';
 export {RecoveryWeakPassphraseError} from './passphrase-strength.ts';
@@ -69,4 +71,37 @@ export async function sealRecoveryKeyring(handle:ImportedKeyring,passphrase:Uint
   return {principal:handle.principal,signingPub:handle.pub,epub:handle.epub,rotationSeq:handle.rotationSeq,bytes};
  }catch(error){if(error instanceof RecoveryWeakPassphraseError)throw error;return rejected();}
  finally{phrase?.fill(0);plain?.fill(0);key?.fill(0);cryptoKeyBytes?.fill(0);cryptoPlain?.fill(0);}
+}
+
+
+/** Sign one explicit current-copy replacement against a complete freshly read
+ * generation/head/current-row view. No publication or automatic retry occurs. */
+export function signRecoveryCurrentPut(handle:ImportedKeyring,envelope:BrowserRecoveryEnvelope,
+ view:BrowserRecoveryCurrentView,currentState:KeyringState):BrowserRecoveryPut {
+ try{
+  const parsed=data(view);
+  if(!parsed.ok||Object.keys(parsed.value).sort().join()!=='generation,head,row')return rejected();
+  const v=parsed.value,h=data(v.head);
+  if(!h.ok||Object.keys(h.value).sort().join()!=='currentEpub,currentKey,sequence'||
+   h.value.sequence!==handle.rotationSeq||h.value.currentKey!==handle.pub||h.value.currentEpub!==handle.epub)return rejected();
+  const generation=v.generation as number;nextStoreGeneration(generation);
+  const snapshot=(input:BrowserRecoveryEnvelope):BrowserRecoveryEnvelope=>{
+   const item=data(input);
+   if(!item.ok||Object.keys(item.value).sort().join()!=='bytes,epub,principal,rotationSeq,signingPub')return rejected();
+   const e=item.value;
+   if(!(e.bytes instanceof Uint8Array)||e.bytes.length>RECOVERY_ABSOLUTE_MAX||e.principal!==handle.principal||
+    !parsePrincipalId(e.signingPub).ok||!parsePrincipalId(e.epub).ok||!Number.isSafeInteger(e.rotationSeq)||
+    (e.rotationSeq as number)<0||(e.rotationSeq as number)>handle.rotationSeq)return rejected();
+   const bytes=new Uint8Array(e.bytes);
+   if(parseHeader(bytes).rotationSeq!==e.rotationSeq)return rejected();
+   return {principal:e.principal as string,signingPub:e.signingPub as string,epub:e.epub as string,rotationSeq:e.rotationSeq as number,bytes};
+  };
+  const row=snapshot(envelope),old=v.row===null?null:snapshot(v.row as BrowserRecoveryEnvelope);
+  if(row.rotationSeq!==handle.rotationSeq||row.signingPub!==handle.pub||row.epub!==handle.epub)return rejected();
+  const pair=exportCurrentPair(handle,currentState);
+  const signature=signStoreWrite(pair.priv,handle.principal as any,'put',String(row.rotationSeq),
+   recoveryEnvelopeHash(row),String(handle.rotationSeq),old?recoveryEnvelopeHash(old):REPLACED_NONE,'none',String(generation));
+  exportCurrentPair(handle,currentState);
+  return {action:'put',row:{principal:row.principal,rotationSeq:row.rotationSeq,signingPub:row.signingPub,epub:row.epub,bytesHex:hex(row.bytes)},signature};
+ }catch{return rejected();}
 }
