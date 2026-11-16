@@ -18,10 +18,10 @@ try{
  }
  writeFileSync(join(temp,'package.json'),JSON.stringify({private:true,type:'module'}));
  execFileSync('npm',['install','--ignore-scripts','--no-audit','--no-fund',...packs],{cwd:temp,stdio:'inherit'});
- const types=`import {importKeyring,exportKeyring,validateKeyring,closeKeyring,openKeyringContent,type KeyringState} from 'sociacl-ids/keyring';
+ const types=`import {admitKeyring,exportCurrentPair,importKeyring,exportKeyring,validateKeyring,closeKeyring,openKeyringContent,type KeyringState} from 'sociacl-ids/keyring';
 import type {IdentityAdapter} from 'sea-device-link';
 export function validator(state:KeyringState):IdentityAdapter['validateKeyring'] {return async (bytes,identity)=>validateKeyring(bytes,identity,state);}
-export {importKeyring,exportKeyring,closeKeyring,openKeyringContent};`;
+export {admitKeyring,exportCurrentPair,importKeyring,exportKeyring,closeKeyring,openKeyringContent};`;
  writeFileSync(join(temp,'consumer.ts'),types);
  execFileSync(process.execPath,[join(root,'node_modules/typescript/bin/tsc'),'--strict','--noEmit','--target','ES2022','--module','NodeNext','--moduleResolution','NodeNext','consumer.ts'],{cwd:temp,stdio:'inherit'});
  const bundled=await build({entryPoints:[join(temp,'consumer.ts')],bundle:true,platform:'browser',format:'esm',write:false,metafile:true});
