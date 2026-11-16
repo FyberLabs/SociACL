@@ -16,4 +16,4 @@ export class RecoveryWeakPassphraseError extends Error {
 }
 /** Encrypt existing complete material using fresh native salt/nonce. Requires the
  * new-passphrase gate and fresh owner history. Does not persist or rotate keys. */
-export function sealRecoveryKeyring(handle:ImportedKeyring,passphrase:Uint8Array,currentState:KeyringState,signal?:AbortSignal):Promise<BrowserRecoveryEnvelope>;
+export function sealRecoveryKeyring(handle:ImportedKeyring,passphrase:Uint8Array,currentState:KeyringState,signal?:AbortSignal,accountHandle?:string):Promise<BrowserRecoveryEnvelope>;

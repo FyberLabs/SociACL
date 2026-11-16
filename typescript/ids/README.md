@@ -637,6 +637,8 @@ New recovery creation, signed store operations and explicit rotation remain sepa
 `sealRecoveryKeyring` prepares a fresh encrypted copy of an already imported complete
 keyring. It awaits the shared new-passphrase strength gate, using one byte snapshot
 for both strength and Argon2id, and rechecks owner history after asynchronous work.
+Pass the current account handle as the fifth argument when the account has one;
+the estimator treats it as known public information alongside the principal.
 Old weak copies can still open but cannot be resealed with a weak new passphrase.
 The output is not a signed store operation and does not rotate keys or commit a
 replacement. Explicit publication/rotation orchestration remains owner work.
