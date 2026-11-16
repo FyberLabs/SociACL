@@ -26,6 +26,9 @@ jobs:
       - run: npm ci --prefix typescript && npm ci --prefix typescript/ids
       - run: npm run --prefix typescript/ids build
       - run: node --experimental-strip-types --test typescript/tests/test_browser_keyring.ts
+      - run: node --experimental-strip-types --test --experimental-test-coverage --test-coverage-include=typescript/contract/recovery-browser.ts typescript/tests/test_browser_recovery.ts
+      - run: npx --prefix typescript/ids playwright install --with-deps chromium
+      - run: node typescript/ids/scripts/browser-recovery.mjs
       - run: npm ci --prefix sdk-contract-source/packages/sea-device-link && npm run --prefix sdk-contract-source/packages/sea-device-link build
       - run: node typescript/ids/scripts/keyring-sdk-contract.mjs
         env:

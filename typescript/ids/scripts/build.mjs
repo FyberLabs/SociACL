@@ -17,6 +17,7 @@ for (const name of readdirSync(new URL('src/',root)).filter(f=>f.endsWith('.js')
 // Browser consumer entrypoints bundle the reference contracts, never Node crypto.
 const {build}=await import('esbuild');
 const consumerEntries={
+  'recovery': "export {openRecoveryKeyring,encodePassphrase} from '../../contract/recovery-browser.ts';",
   'keyring': "export {admitKeyring,exportCurrentPair,importKeyring,exportKeyring,validateKeyring,closeKeyring,openKeyringContent} from '../../contract/keyring-browser.ts';",
   'contact-lane': "export {deriveContactLane,laneLookupKey,openContactLaneGrant,sealContactLaneGrant} from '../../contract/contact-lane-browser.ts';",
   'group-signing': "export {signMembershipAssent,signObjectSet,signGroupCancel,membershipSoul,objectSetSoul} from '../../src/group.js';",
@@ -27,6 +28,7 @@ const consumerEntries={
 for(const [name,contents] of Object.entries(consumerEntries)){
   const result=await build({stdin:{contents,resolveDir:fileURLToPath(new URL('src/',root)),loader:'ts'},
     bundle:true,platform:'browser',format:'esm',target:'es2022',packages:'external',metafile:true,
+    plugins:name==='recovery'?[{name:'shared-keyring-handle',setup(b){b.onResolve({filter:/^\.\/keyring-browser\.ts$/},()=>({path:'./keyring.js',external:true}));}}]:[],
     outfile:fileURLToPath(new URL(name+'.js',dist))});
   for(const input of Object.values(result.metafile.inputs))for(const ref of input.imports){
     if(ref.path.startsWith('node:'))throw Error('Node import in browser consumer');

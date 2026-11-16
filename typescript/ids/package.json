@@ -72,6 +72,10 @@
     "./keyring": {
       "types": "./dist/keyring.d.ts",
       "default": "./dist/keyring.js"
+    },
+    "./recovery": {
+      "types": "./dist/recovery.d.ts",
+      "default": "./dist/recovery.js"
     }
   },
   "files": [
@@ -90,7 +94,8 @@
   },
   "dependencies": {
     "@noble/curves": "2.0.1",
-    "@noble/hashes": "2.0.1"
+    "@noble/hashes": "2.0.1",
+    "hash-wasm": "4.12.0"
   },
   "peerDependencies": {
     "zod": "^4.1.12"

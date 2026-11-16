@@ -618,3 +618,18 @@ transfer or recovery export: use `exportKeyring` for that. Never log it, send it
 a server or persist it without destination-local protection. JavaScript strings
 cannot guarantee erasure; keep references short-lived. Neither API grants access,
 issues sessions, mints a principal or replaces current authorization.
+
+### Existing recovery copies in browsers
+
+`./recovery` exports `openRecoveryKeyring` and `encodePassphrase`. Opening uses
+shared canonical Argon2id parameters and AAD with WebCrypto AES-GCM, then imports
+all keyring material through `./keyring` against the owner's current authenticated
+history. Its opaque handle works with that same `./keyring` export and close API.
+Legacy passphrases are not subjected to today's new-passphrase strength gate.
+Supply current expected identity independently of the downloaded envelope.
+
+Opening does not write storage, change keys, sign in, stage a rotation or establish
+permission. The owner must recheck current state before protected persistence.
+Cancellation prevents delivering a handle after asynchronous work; it cannot stop
+an already executing Argon2 operation. Caller-owned passphrase bytes must be wiped.
+New recovery creation, signed store operations and explicit rotation remain separate.

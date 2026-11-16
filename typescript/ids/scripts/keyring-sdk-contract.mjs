@@ -19,12 +19,15 @@ try{
  writeFileSync(join(temp,'package.json'),JSON.stringify({private:true,type:'module'}));
  execFileSync('npm',['install','--ignore-scripts','--no-audit','--no-fund',...packs],{cwd:temp,stdio:'inherit'});
  const types=`import {admitKeyring,exportCurrentPair,importKeyring,exportKeyring,validateKeyring,closeKeyring,openKeyringContent,type KeyringState} from 'sociacl-ids/keyring';
+import {openRecoveryKeyring,type BrowserRecoveryEnvelope} from 'sociacl-ids/recovery';
 import type {IdentityAdapter} from 'sea-device-link';
+export function recoveryOpen(bytes:Uint8Array,envelope:BrowserRecoveryEnvelope,state:KeyringState){return openRecoveryKeyring(bytes,envelope,{principal:envelope.principal,pub:envelope.signingPub,epub:envelope.epub,rotationSeq:envelope.rotationSeq},state);}
 export function validator(state:KeyringState):IdentityAdapter['validateKeyring'] {return async (bytes,identity)=>validateKeyring(bytes,identity,state);}
 export {admitKeyring,exportCurrentPair,importKeyring,exportKeyring,closeKeyring,openKeyringContent};`;
  writeFileSync(join(temp,'consumer.ts'),types);
  execFileSync(process.execPath,[join(root,'node_modules/typescript/bin/tsc'),'--strict','--noEmit','--target','ES2022','--module','NodeNext','--moduleResolution','NodeNext','consumer.ts'],{cwd:temp,stdio:'inherit'});
- const bundled=await build({entryPoints:[join(temp,'consumer.ts')],bundle:true,platform:'browser',format:'esm',write:false,metafile:true});
+ writeFileSync(join(temp,'keyring-only.ts'),"export * from 'sociacl-ids/keyring';");
+ const bundled=await build({entryPoints:[join(temp,'keyring-only.ts')],bundle:true,platform:'browser',format:'esm',write:false,metafile:true});
  for(const [name,input] of Object.entries(bundled.metafile.inputs))for(const ref of input.imports)if(ref.path.startsWith('node:'))throw Error('Node runtime import: '+name);
  if(bundled.outputFiles.some(f=>/\brequire\(|\bBuffer\b|node:crypto/.test(f.text)))throw Error('Node runtime in browser keyring');
  copyFileSync(join(root,'test/keyring-sdk-contract.mjs'),join(temp,'contract.mjs'));
