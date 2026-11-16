@@ -17,3 +17,10 @@ export class RecoveryWeakPassphraseError extends Error {
 /** Encrypt existing complete material using fresh native salt/nonce. Requires the
  * new-passphrase gate and fresh owner history. Does not persist or rotate keys. */
 export function sealRecoveryKeyring(handle:ImportedKeyring,passphrase:Uint8Array,currentState:KeyringState,signal?:AbortSignal,accountHandle?:string):Promise<BrowserRecoveryEnvelope>;
+
+/** Authenticated API read plus owner-confirmed current head. A conflict requires
+ * rereading every field and a fresh explicit signature; never replay a prior put. */
+export type BrowserRecoveryCurrentView=Readonly<{generation:number;head:Readonly<{sequence:number;currentKey:string;currentEpub:string|null}>;row:BrowserRecoveryEnvelope|null}>;
+export type BrowserRecoveryPut=Readonly<{action:'put';row:Readonly<{principal:string;rotationSeq:number;signingPub:string;epub:string;bytesHex:string}>;signature:string}>;
+/** Signs a current-copy replacement only; no rotation, persistence or retry. */
+export function signRecoveryCurrentPut(handle:ImportedKeyring,envelope:BrowserRecoveryEnvelope,view:BrowserRecoveryCurrentView,currentState:KeyringState):BrowserRecoveryPut;

@@ -21,6 +21,7 @@
  * principal.
  */
 import { p256 } from "@noble/curves/nist.js";
+import {hex as portableHex, unhex as portableUnhex, unb64 as portableUnb64} from "../ids/src/util.js";
 import type { PrincipalId, StoreWriteAccount } from "../ids/src/index.js";
 import { canonicalDecimal, lengthPrefixed, sha256Hex } from "./canonical.ts";
 
@@ -113,7 +114,9 @@ export function signStoreWrite(
     className,
     generation,
   );
-  return bytesToHex(p256.sign(message, unb64(seaPriv), { lowS: true, prehash: true }));
+  const key = unb64(seaPriv);
+  try { return bytesToHex(p256.sign(message, key, { lowS: true, prehash: true })); }
+  finally { key.fill(0); }
 }
 
 /**
@@ -196,17 +199,16 @@ export function recoveryEnvelopeHash(envelope: {
 }
 
 function bytesToHex(bytes: Uint8Array): string {
-  return Buffer.from(bytes).toString("hex");
+  return portableHex(bytes);
 }
 
 function hexToBytes(hex: string): Uint8Array {
   if (hex.length % 2 !== 0 || !/^[0-9a-f]*$/u.test(hex)) throw new Error("store-rejected");
-  return Uint8Array.from(Buffer.from(hex, "hex"));
+  return portableUnhex(hex);
 }
 
 function unb64(text: string): Uint8Array {
-  const pad = text.length % 4 === 0 ? "" : "=".repeat(4 - (text.length % 4));
-  return Uint8Array.from(Buffer.from(text.replace(/-/g, "+").replace(/_/g, "/") + pad, "base64"));
+  return portableUnb64(text);
 }
 
 function uncompressedFromSea(sea: string): Uint8Array {
