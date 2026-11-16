@@ -35,3 +35,26 @@ test('snapshots caller bytes and refuses tamper, stale owner, malformed params a
  const c=new AbortController(),stopped=openRecoveryKeyring(good,envelope(),expected,state,c.signal);c.abort();await assert.rejects(stopped,/recovery-rejected/);
  await assert.rejects(openRecoveryKeyring(good,envelope(),expected,state,c.signal),/recovery-rejected/);
 });
+
+test('new browser copy snapshots strong passphrase and agrees with Node opening',async()=>{
+ const {sealRecoveryKeyring}=await import('../contract/recovery-browser.ts');
+ const handle=await openRecoveryKeyring(new TextEncoder().encode(legacy.passphraseUtf8),envelope(legacy),expected,state);
+ try{
+  const pass=new TextEncoder().encode(vector.passphraseUtf8),pending=sealRecoveryKeyring(handle,pass,state);pass.fill(0);
+  const copy=await pending,s=state();
+  const node=await openRecoveryCopy(new TextEncoder().encode(vector.passphraseUtf8),copy,expected.principal,0,s.rotations,s.context);
+  assert.deepEqual(encodeKeyring(node),exportKeyring(handle,state));
+  assert.notDeepEqual(copy.bytes,envelope(vector).bytes);
+  await assert.rejects(sealRecoveryKeyring(handle,new TextEncoder().encode('password'),state),/recovery-weak-passphrase/);
+  const closed=sealRecoveryKeyring(handle,new TextEncoder().encode(vector.passphraseUtf8),state);closeKeyring(handle);
+  await assert.rejects(closed,/recovery-rejected/);
+ }finally{closeKeyring(handle);}
+});
+test('new-copy cancellation and owner changes refuse ciphertext delivery',async()=>{
+ const {sealRecoveryKeyring}=await import('../contract/recovery-browser.ts');
+ const handle=await openRecoveryKeyring(new TextEncoder().encode(legacy.passphraseUtf8),envelope(legacy),expected,state);
+ try{
+  const abort=new AbortController(),pending=sealRecoveryKeyring(handle,new TextEncoder().encode(vector.passphraseUtf8),state,abort.signal);abort.abort();await assert.rejects(pending,/recovery-rejected/);
+  let count=0;await assert.rejects(sealRecoveryKeyring(handle,new TextEncoder().encode(vector.passphraseUtf8),()=>{if(++count>1)throw Error();return state();}),/recovery-rejected/);
+ }finally{closeKeyring(handle);}
+});

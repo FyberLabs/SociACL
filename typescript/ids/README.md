@@ -633,3 +633,10 @@ permission. The owner must recheck current state before protected persistence.
 Cancellation prevents delivering a handle after asynchronous work; it cannot stop
 an already executing Argon2 operation. Caller-owned passphrase bytes must be wiped.
 New recovery creation, signed store operations and explicit rotation remain separate.
+
+`sealRecoveryKeyring` prepares a fresh encrypted copy of an already imported complete
+keyring. It awaits the shared new-passphrase strength gate, using one byte snapshot
+for both strength and Argon2id, and rechecks owner history after asynchronous work.
+Old weak copies can still open but cannot be resealed with a weak new passphrase.
+The output is not a signed store operation and does not rotate keys or commit a
+replacement. Explicit publication/rotation orchestration remains owner work.

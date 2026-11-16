@@ -9,3 +9,11 @@ export function encodePassphrase(passphrase:string):Uint8Array;
  * Cancellation refuses delivery after asynchronous work. Throws recovery-rejected.
  * Caller retains responsibility for wiping its own passphrase byte buffer. */
 export function openRecoveryKeyring(passphrase:Uint8Array,envelope:BrowserRecoveryEnvelope,expected:KeyringIdentity,currentState:KeyringState,signal?:AbortSignal):Promise<ImportedKeyring>;
+
+/** Awaitable new-passphrase gate; failure includes feedback, never the passphrase. */
+export class RecoveryWeakPassphraseError extends Error {
+ readonly score:number;readonly warning:string;readonly suggestions:readonly string[];
+}
+/** Encrypt existing complete material using fresh native salt/nonce. Requires the
+ * new-passphrase gate and fresh owner history. Does not persist or rotate keys. */
+export function sealRecoveryKeyring(handle:ImportedKeyring,passphrase:Uint8Array,currentState:KeyringState,signal?:AbortSignal):Promise<BrowserRecoveryEnvelope>;
