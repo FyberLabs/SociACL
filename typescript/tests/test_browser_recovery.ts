@@ -58,3 +58,16 @@ test('new-copy cancellation and owner changes refuse ciphertext delivery',async(
   let count=0;await assert.rejects(sealRecoveryKeyring(handle,new TextEncoder().encode(vector.passphraseUtf8),()=>{if(++count>1)throw Error();return state();}),/recovery-rejected/);
  }finally{closeKeyring(handle);}
 });
+
+test('new-copy input guards reject empty passphrases, forged handles and prior cancellation',async()=>{
+ const {sealRecoveryKeyring}=await import('../contract/recovery-browser.ts');
+ const handle=await openRecoveryKeyring(new TextEncoder().encode(legacy.passphraseUtf8),envelope(legacy),expected,state);
+ try{
+  for(const value of [new Uint8Array(),new TextEncoder().encode(' \t\n'),'not-bytes' as any]){
+   await assert.rejects(sealRecoveryKeyring(handle,value,state),/recovery-rejected/);
+  }
+  await assert.rejects(sealRecoveryKeyring({...handle},new TextEncoder().encode(vector.passphraseUtf8),state),/recovery-rejected/);
+  const abort=new AbortController();abort.abort();
+  await assert.rejects(sealRecoveryKeyring(handle,new TextEncoder().encode(vector.passphraseUtf8),state,abort.signal),/recovery-rejected/);
+ }finally{closeKeyring(handle);}
+});
