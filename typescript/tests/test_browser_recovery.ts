@@ -35,3 +35,65 @@ test('snapshots caller bytes and refuses tamper, stale owner, malformed params a
  const c=new AbortController(),stopped=openRecoveryKeyring(good,envelope(),expected,state,c.signal);c.abort();await assert.rejects(stopped,/recovery-rejected/);
  await assert.rejects(openRecoveryKeyring(good,envelope(),expected,state,c.signal),/recovery-rejected/);
 });
+
+test('new browser copy snapshots strong passphrase and agrees with Node opening',async()=>{
+ const {sealRecoveryKeyring}=await import('../contract/recovery-browser.ts');
+ const handle=await openRecoveryKeyring(new TextEncoder().encode(legacy.passphraseUtf8),envelope(legacy),expected,state);
+ try{
+  const pass=new TextEncoder().encode(vector.passphraseUtf8),pending=sealRecoveryKeyring(handle,pass,state);pass.fill(0);
+  const copy=await pending,s=state();
+  const node=await openRecoveryCopy(new TextEncoder().encode(vector.passphraseUtf8),copy,expected.principal,0,s.rotations,s.context);
+  assert.deepEqual(encodeKeyring(node),exportKeyring(handle,state));
+  assert.notDeepEqual(copy.bytes,envelope(vector).bytes);
+  await assert.rejects(sealRecoveryKeyring(handle,new TextEncoder().encode('password'),state),/recovery-weak-passphrase/);
+  await assert.rejects(sealRecoveryKeyring(handle,new TextEncoder().encode('q7vN2mR9pL4xT8wK3c'),state,undefined,'q7vN2mR9pL4xT8wK3c'),/recovery-weak-passphrase/);
+  const closed=sealRecoveryKeyring(handle,new TextEncoder().encode(vector.passphraseUtf8),state);closeKeyring(handle);
+  await assert.rejects(closed,/recovery-rejected/);
+ }finally{closeKeyring(handle);}
+});
+test('new-copy cancellation and owner changes refuse ciphertext delivery',async()=>{
+ const {sealRecoveryKeyring}=await import('../contract/recovery-browser.ts');
+ const handle=await openRecoveryKeyring(new TextEncoder().encode(legacy.passphraseUtf8),envelope(legacy),expected,state);
+ try{
+  const abort=new AbortController(),pending=sealRecoveryKeyring(handle,new TextEncoder().encode(vector.passphraseUtf8),state,abort.signal);abort.abort();await assert.rejects(pending,/recovery-rejected/);
+  let count=0;await assert.rejects(sealRecoveryKeyring(handle,new TextEncoder().encode(vector.passphraseUtf8),()=>{if(++count>1)throw Error();return state();}),/recovery-rejected/);
+ }finally{closeKeyring(handle);}
+});
+
+test('new-copy input guards reject empty passphrases, forged handles and prior cancellation',async()=>{
+ const {sealRecoveryKeyring}=await import('../contract/recovery-browser.ts');
+ const handle=await openRecoveryKeyring(new TextEncoder().encode(legacy.passphraseUtf8),envelope(legacy),expected,state);
+ try{
+  for(const value of [new Uint8Array(),new TextEncoder().encode(' \t\n'),'not-bytes' as any]){
+   await assert.rejects(sealRecoveryKeyring(handle,value,state),/recovery-rejected/);
+  }
+  await assert.rejects(sealRecoveryKeyring({...handle},new TextEncoder().encode(vector.passphraseUtf8),state),/recovery-rejected/);
+  const abort=new AbortController();abort.abort();
+  await assert.rejects(sealRecoveryKeyring(handle,new TextEncoder().encode(vector.passphraseUtf8),state,abort.signal),/recovery-rejected/);
+ }finally{closeKeyring(handle);}
+});
+
+test('WebCrypto input copies are wiped after successful and failed encryption',async()=>{
+ const {sealRecoveryKeyring}=await import('../contract/recovery-browser.ts');
+ const handle=await openRecoveryKeyring(new TextEncoder().encode(legacy.passphraseUtf8),envelope(legacy),expected,state);
+ const subtle=crypto.subtle,originalImport=subtle.importKey,originalEncrypt=subtle.encrypt;
+ const captured:Uint8Array[]=[];
+ try{
+  subtle.importKey=(async function(...args:any[]){
+   if(args[0]==='raw'&&args[2]?.name==='AES-GCM')captured.push(args[1]);
+   return (originalImport as any).apply(subtle,args);
+  }) as any;
+  for(const fail of [false,true]){
+   captured.length=0;
+   subtle.encrypt=(async function(...args:any[]){
+    captured.push(args[2]);
+    if(fail)throw Error('encryption refused');
+    return (originalEncrypt as any).apply(subtle,args);
+   }) as any;
+   const pending=sealRecoveryKeyring(handle,new TextEncoder().encode(vector.passphraseUtf8),state);
+   if(fail)await assert.rejects(pending,/recovery-rejected/);else await pending;
+   assert.equal(captured.length,2);
+   for(const bytes of captured)assert.ok(bytes.every(byte=>byte===0));
+  }
+ }finally{subtle.importKey=originalImport;subtle.encrypt=originalEncrypt;closeKeyring(handle);}
+});
