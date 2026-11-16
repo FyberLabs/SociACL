@@ -7,7 +7,7 @@ permissions:
   contents: read
 jobs:
   keyring-sdk:
-    runs-on: ${{ github.event.repository.private && fromJSON('["self-hosted", "linux", "x64", "debrunner"]') || 'ubuntu-latest' }}
+    runs-on: ${{ github.event.repository.private && fromJSON('["self-hosted", "linux", "x64", "debrunner"]') || 'ubuntu-24.04' }}
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -26,7 +26,7 @@ jobs:
       - run: npm ci --prefix typescript && npm ci --prefix typescript/ids
       - run: npm run --prefix typescript/ids build
       - run: node --experimental-strip-types --test typescript/tests/test_browser_keyring.ts
-      - run: node --experimental-strip-types --test --experimental-test-coverage --test-coverage-include=typescript/contract/recovery-browser.ts typescript/tests/test_browser_recovery.ts
+      - run: node --experimental-strip-types --test --experimental-test-coverage --test-coverage-include=typescript/contract/recovery-browser.ts --test-coverage-lines=95 --test-coverage-branches=75 typescript/tests/test_browser_recovery.ts
       - run: npx --prefix typescript/ids playwright install --with-deps chromium
       - run: node typescript/ids/scripts/browser-recovery.mjs
       - run: npm ci --prefix sdk-contract-source/packages/sea-device-link && npm run --prefix sdk-contract-source/packages/sea-device-link build
