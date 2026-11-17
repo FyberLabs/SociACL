@@ -268,3 +268,7 @@ pub use vault_journal::{VaultJournal,VaultJournalHead,seal_vault_journal,open_va
 
 mod group_epoch;
 pub use group_epoch::{group_key_snapshot_bytes, group_key_snapshot_id, GroupKeyMember, GroupKeySnapshot};
+
+mod vault_sync;
+pub use vault_sync::{VaultSyncHead, VaultSyncHeadFloor, VAULT_SYNC_HEAD_DOMAIN, parse_vault_sync_head,
+    vault_sync_head_signing_bytes, vault_sync_head_floor, verify_vault_sync_head, validate_vault_sync_successor};
