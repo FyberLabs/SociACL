@@ -147,9 +147,15 @@ test('pending preparation and export refuse closed origin, missing history and b
 
 
 test('activation requires the exact published new keys and consumes the pending handle once',()=>{
- const v=vectors.accept[0],handle=importKeyring(bytes(v.encodedHex),expected(v),()=>state(v));
- const pending=prepareKeyringRotation(handle,['lost','kept'],'lost',()=>state(v));
- const encoded=exportPendingKeyring(pending,()=>state(v)),f=decodeKeyring(encoded);
+ const v=structuredClone(vectors.accept[1]);v.rotationNames=[];
+ const signing=new Uint8Array(32);signing[31]=1;const encryption=new Uint8Array(32);encryption[31]=9;
+ Object.assign(v.fields,{pub:v.fields.principal,priv:b64(signing),epub:v.fields.genesisEpub,epriv:b64(encryption),
+  rotationSeq:0,contentEpoch:0,retired:[],priorLanes:[],priorContactSecrets:[]});
+ const current=()=>{const s=state(v);return {...s,context:{...s.context,
+  links:new Map(records.context.links.filter((pair:any)=>pair[1].kind==='oidc'))}};};
+ const handle=admitKeyring(v.fields,expected(v),current);
+ const pending=prepareKeyringRotation(handle,['lost','kept'],'lost',current);
+ const encoded=exportPendingKeyring(pending,current),f=decodeKeyring(encoded);
  const link=records.context.links.find((pair:any)=>pair[1].kind==='oidc')[0];
  const issuedAt=records.context.now;
  const unsigned={v:1,kind:'rotate',principal:f.principal,seq:f.rotationSeq,prevKey:handle.pub,
@@ -162,7 +168,7 @@ test('activation requires the exact published new keys and consumes the pending 
  const body=`${header}.${b64(new TextEncoder().encode(JSON.stringify(claims)))}`;
  const witness=new Uint8Array(32);witness[31]=5;
  const attest=`${body}.${b64(p256.sign(new TextEncoder().encode(body),witness,{lowS:false}))}`;
- const published=()=>({...state(v),rotations:[{...unsigned,nextSig,attest}]});
+ const published=()=>({...current(),rotations:[{...unsigned,nextSig,attest}]});
  const activated=activatePendingKeyring(pending,published);
  assert.deepEqual(exportKeyring(activated,published),encoded);
  assert.throws(()=>activatePendingKeyring(pending,published),/keyring-rejected/);
