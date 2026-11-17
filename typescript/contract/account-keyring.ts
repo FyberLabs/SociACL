@@ -1,3 +1,4 @@
+import {mintRotationMaterial} from './rotation-mint.ts';
 import {prepareKeyringRotationFields,type RotationMint,type RotationDraft} from './keyring-rotation.ts';
 /**
  * Account keyring. Holds the current signing key, the current encryption
@@ -21,7 +22,7 @@ import {
   type ResolutionContext,
 } from "../ids/src/index.js";
 import { importGenesis, type GenesisAccount } from "./account-key.ts";
-import { bytesToHex, seaPoint, unb64 } from "./account-key-seal.ts";
+import { bytesToHex, unb64 } from "./account-key-seal.ts";
 import { openReaderWrap, sealReaderWrap } from "./content-wrap.ts";
 
 export { KEYRING_HISTORY_MAX };
@@ -301,24 +302,7 @@ export function epubForNewSeal(currentEpub: PrincipalId | null, gunUserEpub: str
 }
 
 export function mintRotation(): RotationMint {
-  const signing = randomScalar();
-  const encryption = randomScalar();
-  const lane = randomBytes(32);
-  const contact = randomBytes(32);
-  if (bytesToHex(contact) === bytesToHex(lane)) contact[0] = (contact[0] ?? 0) ^ 0x01;
-  const mint = {
-    signingPub: seaPoint(signing),
-    signingPriv: b64(signing),
-    epub: seaPoint(encryption),
-    epriv: b64(encryption),
-    laneId: bytesToHex(lane),
-    contactLaneSecret: bytesToHex(contact),
-  };
-  signing.fill(0);
-  encryption.fill(0);
-  lane.fill(0);
-  contact.fill(0);
-  return mint;
+  return mintRotationMaterial();
 }
 
 /** Mint the next v3 rotation. Name every trusted device except `lost`.
@@ -391,12 +375,6 @@ function randomScalar(): Uint8Array {
       bytes.fill(0);
     }
   }
-}
-
-function b64(bytes: Uint8Array): string {
-  let binary = "";
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/u, "");
 }
 
 function jsonString(value: string): string {
