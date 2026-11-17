@@ -148,6 +148,7 @@ test('pending preparation and export refuse closed origin, missing history and b
 
 test('activation requires the exact published new keys and consumes the pending handle once',()=>{
  const v=structuredClone(vectors.accept[1]);v.rotationNames=[];
+ v.genesisBindings=records.accept.find((row:any)=>row.name==='binding-valid-no-rotation').genesisEpubBindings;
  const signing=new Uint8Array(32);signing[31]=1;const encryption=new Uint8Array(32);encryption[31]=9;
  Object.assign(v.fields,{pub:v.fields.principal,priv:b64(signing),epub:v.fields.genesisEpub,epriv:b64(encryption),
   rotationSeq:0,contentEpoch:0,retired:[],priorLanes:[],priorContactSecrets:[]});
