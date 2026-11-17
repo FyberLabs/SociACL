@@ -104,3 +104,18 @@ retries, successor publication, replayed-head refusal, revoked sessions and
 retained state after reopening. Storage and custody are explicit in-process
 doubles. Passing this contract is not real-storage, real-browser PRF or deployed
 end-to-end vault acceptance. No nightly is manually dispatched for this work.
+
+## Native signed-head contract
+
+`sociacl-encdisc` exposes `parse_vault_sync_head`, canonical signing bytes and
+`vault_sync_head_floor`, plus `verify_vault_sync_head` with the same expected
+owner/namespace and current-history requirements as the browser contract.
+`validate_vault_sync_successor` checks structural continuity, profile and time
+monotonicity. It does not authenticate either head or commit a durable floor.
+Native consumers must authenticate, compare an independently retained floor,
+verify exact encrypted readback, and recheck authority at durable commit.
+These functions neither decrypt custody bytes nor grant item reads.
+
+The shared `vectors/vault/sync-head.json` fixture exercises transcript and parser
+parity in existing Rust/TypeScript PR CI suites. Native durable floor storage,
+key custody, enrollment and CLI wiring remain subsequent integration work.
