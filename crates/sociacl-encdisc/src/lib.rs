@@ -272,3 +272,10 @@ pub use group_epoch::{group_key_snapshot_bytes, group_key_snapshot_id, GroupKeyM
 mod vault_sync;
 pub use vault_sync::{VaultSyncHead, VaultSyncHeadFloor, VAULT_SYNC_HEAD_DOMAIN, parse_vault_sync_head,
     vault_sync_head_signing_bytes, vault_sync_head_floor, verify_vault_sync_head, validate_vault_sync_successor};
+
+mod vault_native;
+pub use vault_native::{seal_native_vault_head, open_native_vault_head};
+#[cfg(unix)]
+mod vault_native_file;
+#[cfg(unix)]
+pub use vault_native_file::NativeVaultCustody;

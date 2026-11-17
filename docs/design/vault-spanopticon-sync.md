@@ -79,7 +79,7 @@ The signed operation authorizes ciphertext storage, not plaintext access.
 | --- | --- |
 | Container v2 and custody | Durable key custody; passkey PRF or native-device daily slot plus mandatory recovery-key slot; SAVFILE1 import remains supported. |
 | Initial enrollment and recovery | Independently authenticated initial floor and owner/vault binding; fetching a server head must never silently establish or restore trust. |
-| Native consumer and CLI integration | Durable independent state, prepared-byte retry, and visible conflicts composed with the native head contract. |
+| Native consumer and CLI integration | Compose native custody with signed Spanopticon API calls, remote readback, visible conflict handling and CLI commands. |
 | UI and cross-device sync | Compose custody with the implemented API/client; surface stale state and conflicts without automatic overwrite. |
 | Merge/checkpoint history | Retain all parents and authenticated checkpoints; this head primitive does not lift the 256-version graph cap. |
 | Shared-space operation | Provision scoped server credentials and bindings, then qualify the real TEST path through the naturally scheduled nightly. |
@@ -121,5 +121,53 @@ verify exact encrypted readback, and recheck authority at durable commit.
 These functions neither decrypt custody bytes nor grant item reads.
 
 The shared `vectors/vault/sync-head.json` fixture exercises transcript and parser
-parity in existing Rust/TypeScript PR CI suites. Native durable floor storage,
-key custody, enrollment and CLI wiring remain subsequent integration work.
+parity in existing Rust/TypeScript PR CI suites. The native passphrase custody
+consumer below adds durable local state; hardware slots, enrollment and CLI
+wiring remain subsequent integration work.
+
+## Durable native head custody
+
+The Unix `NativeVaultCustody` consumer composes the native signed-head verifier,
+existing passphrase-sealed SAVFILE1 profile and local ciphertext adapter. Call
+`seal_native_vault_head` once, retain the prepared envelope, then initialize from
+an independently authenticated exact `VaultSyncHeadFloor`. Pass two new, distinct
+private directories to `NativeVaultCustody::open(..., true)`: one for immutable
+ciphertext snapshots and one for the independent trusted floor. Trusted parent
+paths are required. Reopen with `create = false`; missing or corrupt state refuses
+instead of trusting a downloaded head. The state directory must never be synced
+or restored alongside untrusted ciphertext as a way to establish freshness.
+
+`read` decrypts the pinned snapshot and verifies its exact floor, owner, vault and
+current identity history. `advance` compares the retained floor, checks successor
+continuity, writes the prepared ciphertext create-only, verifies exact readback,
+reauthenticates and atomically replaces/fsyncs the independent floor. Supply a
+callback returning a fresh `ResolutionContext` at each authentication boundary;
+clock rollback below the last committed check refuses. Retired or missing history
+fails closed. Return values are private head metadata, never item-read authority.
+Item reads still use Check and fresh epoch status.
+
+Every prepared snapshot has a fresh opaque file ID, so a failed floor commit
+leaves the prior referenced snapshot intact. Exact prepared-byte retries reconcile
+ambiguous responses; resealing is not an exact retry. Initialization also refuses
+to reset an already enrolled store if its floor disappears. Private modes,
+no-follow reads, single-link files, bounded state parsing, directory identity
+checks and an exclusive lock directory follow the existing file adapter. A crash
+can leave a lock; it is never automatically broken or guessed stale. Reconcile
+committed state before explicit operator recovery. Orphan snapshot cleanup and
+crash-lock recovery tooling remain open; automatic deletion would risk discarding
+an interrupted prepared write. Whole-device or trusted-ledger rollback remains
+outside this local trust boundary.
+
+This is a passphrase-based native head consumer, not the multi-slot v2 file, PRF
+or hardware enrollment, or a complete command-line vault. It does not implement
+a native Spanopticon HTTP adapter: remote immutable publication, signed API calls
+and exact remote readback must precede `advance`. Native and browser consumers
+share the head transcript, but SAVFILE1 custody bytes are not browser JWE bytes.
+No automatic conversion or shared-slot interoperability is claimed.
+
+PR CI runs envelope/domain/tamper, strict state-schema and authentication
+contracts. The `native-vault-custody` case in the existing scheduled adapter
+covers private-file persistence, reopen, exact retries, concurrent successors,
+expired authority before commit, lost state, unsafe modes and symlinks. It is
+ignored in PR CI and guarded against local/manual execution. Registration is not
+a passing nightly result; qualify it in the next natural scheduled batch.

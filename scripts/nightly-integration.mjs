@@ -10,6 +10,7 @@ if (process.env.GITHUB_ACTIONS !== 'true' || process.env.GITHUB_EVENT_NAME !== '
 const root = fileURLToPath(new URL('../', import.meta.url));
 const cases = [
   ['rust-c-python-runtime', 'bash', ['scripts/test-runtime.sh']],
+  ['native-vault-custody', 'cargo', ['test', '-p', 'sociacl-encdisc', '--locked', '--test', 'vault_native_file', '--', '--ignored']],
   ['vault-file-custody', 'cargo', ['test', '-p', 'sociacl-encdisc', '--locked', '--test', 'vault_file', '--', '--ignored']],
   ['installed-identity-consumer', 'npm', ['--prefix', 'typescript/ids', 'run', 'consumer']],
   ...['browser-store', 'browser-client', 'browser-checkpoint-store', 'browser-checkpoint-client', 'browser-first-contact', 'browser-independent-witness', 'browser-reader-wrap']
