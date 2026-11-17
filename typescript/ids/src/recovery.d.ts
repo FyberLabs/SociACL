@@ -1,4 +1,4 @@
-import type {ImportedKeyring,KeyringIdentity,KeyringState} from './keyring.js';
+import type {ImportedKeyring,KeyringIdentity,KeyringState,PendingKeyringRotation} from './keyring.js';
 export type BrowserRecoveryEnvelope=Readonly<{principal:string;rotationSeq:number;signingPub:string;epub:string;bytes:Uint8Array}>;
 /** Unicode16 NFC normalization for a newly entered textual passphrase. Byte
  * opening preserves exact bytes and never applies the new-passphrase strength gate. */
@@ -24,3 +24,7 @@ export type BrowserRecoveryCurrentView=Readonly<{generation:number;head:Readonly
 export type BrowserRecoveryPut=Readonly<{action:'put';row:Readonly<{principal:string;rotationSeq:number;signingPub:string;epub:string;bytesHex:string}>;signature:string}>;
 /** Signs a current-copy replacement only; no rotation, persistence or retry. */
 export function signRecoveryCurrentPut(handle:ImportedKeyring,envelope:BrowserRecoveryEnvelope,view:BrowserRecoveryCurrentView,currentState:KeyringState):BrowserRecoveryPut;
+
+/** Seal an explicitly prepared pending rotation, preserving the new-passphrase
+ * gate and fresh original-key checks. Never publishes, persists or activates. */
+export function sealPendingRecoveryKeyring(handle:PendingKeyringRotation,passphrase:Uint8Array,currentState:KeyringState,signal?:AbortSignal,accountHandle?:string):Promise<BrowserRecoveryEnvelope>;

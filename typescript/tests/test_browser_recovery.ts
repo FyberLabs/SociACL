@@ -2,10 +2,11 @@
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {test} from 'node:test';
-import {openRecoveryKeyring} from '../contract/recovery-browser.ts';
+import {openRecoveryKeyring,sealPendingRecoveryKeyring} from '../contract/recovery-browser.ts';
 import {openRecoveryCopy} from '../contract/recovery-seal.ts';
-import {exportKeyring,closeKeyring} from '../contract/keyring-browser.ts';
+import {exportKeyring,closeKeyring,prepareKeyringRotation,exportPendingKeyring,closePendingKeyring} from '../contract/keyring-browser.ts';
 import {encodeKeyring} from '../contract/keyring-codec.ts';
+import {parseHeader,deriveKey,recoveryAad} from '../contract/recovery-wire.ts';
 import {historyState} from '../ids/src/index.js';
 const read=(name:string)=>JSON.parse(readFileSync(new URL('../../vectors/'+name,import.meta.url),'utf8'));
 const vector=read('encrypted-discovery/recovery-copy.json'),legacy=read('encrypted-discovery/recovery-legacy-strength.json');
@@ -134,4 +135,38 @@ test('current-copy signer refuses invalid views, stale heads, malformed envelope
   let calls=0;assert.throws(()=>signRecoveryCurrentPut(handle,envelope(),view,()=>{if(++calls>1)throw Error();return state();}),/recovery-rejected/);
   closeKeyring(handle);assert.throws(()=>signRecoveryCurrentPut(handle,envelope(),view,state),/recovery-rejected/);
  }finally{closeKeyring(handle);}
+});
+
+
+test('pending recovery sealing preserves future metadata and refuses cancelled or closed handles',async()=>{
+ const handle=await openRecoveryKeyring(new TextEncoder().encode(legacy.passphraseUtf8),envelope(legacy),expected,state);
+ const pending=prepareKeyringRotation(handle,['lost','kept'],'lost',state);
+ const phrase=new TextEncoder().encode(vector.passphraseUtf8);
+ try{
+  const sealing=sealPendingRecoveryKeyring(pending,phrase,state);phrase.fill(0);
+  const copy=await sealing;
+  assert.equal(copy.rotationSeq,1);assert.equal(copy.signingPub,pending.pub);assert.equal(copy.epub,pending.epub);
+  assert.equal(copy.principal,handle.principal);
+  // Ciphertext cannot be opened against the still-current old history.
+  await assert.rejects(openRecoveryKeyring(new TextEncoder().encode(vector.passphraseUtf8),copy,
+   {principal:pending.principal,pub:pending.pub,epub:pending.epub,rotationSeq:pending.rotationSeq},state),/recovery-rejected/);
+  const plain=exportPendingKeyring(pending,state),header=parseHeader(copy.bytes);
+  const phraseCopy=new TextEncoder().encode(vector.passphraseUtf8);
+  const key=await deriveKey(phraseCopy,header.salt,header.memoryKiB,header.iterations,header.parallelism,header.hashLength);
+  const aad=recoveryAad(copy.principal,header.rotationSeq,copy.signingPub,copy.epub,header.memoryKiB,
+   header.iterations,header.parallelism,header.hashLength,header.version,header.salt);
+  let decrypted:Uint8Array|undefined;
+  try{
+   const cryptoKey=await crypto.subtle.importKey('raw',new Uint8Array(key),{name:'AES-GCM'},false,['decrypt']);
+   decrypted=new Uint8Array(await crypto.subtle.decrypt({name:'AES-GCM',iv:new Uint8Array(header.nonce),
+    additionalData:new Uint8Array(aad),tagLength:128},cryptoKey,new Uint8Array(header.ciphertext)));
+   assert.deepEqual(decrypted,plain);
+  }finally{decrypted?.fill(0);plain.fill(0);key.fill(0);phraseCopy.fill(0);}
+  await assert.rejects(sealPendingRecoveryKeyring(pending,new TextEncoder().encode('password'),state),/recovery-weak-passphrase/);
+  const abort=new AbortController();const cancelled=sealPendingRecoveryKeyring(pending,new TextEncoder().encode(vector.passphraseUtf8),state,abort.signal);
+  abort.abort();await assert.rejects(cancelled,/recovery-rejected/);
+  const closing=sealPendingRecoveryKeyring(pending,new TextEncoder().encode(vector.passphraseUtf8),state);
+  closePendingKeyring(pending);await assert.rejects(closing,/recovery-rejected/);
+  await assert.rejects(sealPendingRecoveryKeyring({...pending},new TextEncoder().encode(vector.passphraseUtf8),state),/recovery-rejected/);
+ }finally{phrase.fill(0);closePendingKeyring(pending);closeKeyring(handle);}
 });
