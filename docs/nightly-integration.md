@@ -12,6 +12,8 @@ nightly results are advisory and are not release or merge prerequisites.
 JUnit case per executed harness:
 
 - Rust runtime examples, six C FFI examples and six Python binding suites;
+- native passphrase vault-head custody with independent durable state, restart,
+  exact retry, competing writers and fail-closed authority/state checks;
 - a packed identity package installed and executed in a clean consumer, including
   delegated credentials, revocation, audience and scope boundaries;
 - real Chromium policy store conflict, restart and rollback checks;
