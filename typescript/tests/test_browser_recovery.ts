@@ -170,3 +170,36 @@ test('pending recovery sealing preserves future metadata and refuses cancelled o
   await assert.rejects(sealPendingRecoveryKeyring({...pending},new TextEncoder().encode(vector.passphraseUtf8),state),/recovery-rejected/);
  }finally{phrase.fill(0);closePendingKeyring(pending);closeKeyring(handle);}
 });
+
+
+test('pending-copy signatures bind exact future material and native generation CAS',async()=>{
+ const {signRecoveryPendingPut}=await import('../contract/recovery-browser.ts');
+ const {MemoryRecoveryStore}=await import('../contract/recovery-seal.ts');
+ const {HeadFloor}=await import('../contract/store-write.ts');
+ const handle=await openRecoveryKeyring(new TextEncoder().encode(legacy.passphraseUtf8),envelope(legacy),expected,state);
+ const pending=prepareKeyringRotation(handle,['lost'],'lost',state);
+ const e=await sealPendingRecoveryKeyring(pending,new TextEncoder().encode(vector.passphraseUtf8),state);
+ const account={currentKey:expected.pub,currentEpub:expected.epub,rotations:[]};
+ const store=new MemoryRecoveryStore(()=>account as any,new HeadFloor());
+ const head={sequence:0,currentKey:expected.pub,currentEpub:expected.epub},view={generation:0,head,row:null};
+ try{
+  const op=signRecoveryPendingPut(handle,pending,e,view,state);
+  const row={...op.row,bytes:new Uint8Array(Buffer.from(op.row.bytesHex,'hex'))};
+  store.put(row as any,op.signature);
+  assert.equal(store.pending(expected.principal)?.signingPub,pending.pub);
+  assert.equal(store.current(expected.principal),undefined);
+  assert.equal(store.writeGeneration(expected.principal),1);
+  assert.throws(()=>store.put(row as any,op.signature),/store-rejected/);
+  for(const bad of [{...e,signingPub:handle.pub},{...e,epub:handle.epub},{...e,rotationSeq:0}])
+   assert.throws(()=>signRecoveryPendingPut(handle,pending,bad,view,state),/recovery-rejected/);
+  assert.throws(()=>signRecoveryPendingPut(handle,{...pending},e,view,state),/recovery-rejected/);
+  assert.throws(()=>signRecoveryPendingPut(handle,pending,e,{...view,row:envelope()},state),/recovery-rejected/);
+  const replacement=signRecoveryPendingPut(handle,pending,e,{generation:1,head,row:e},state);
+  store.put({...replacement.row,bytes:new Uint8Array(Buffer.from(replacement.row.bytesHex,'hex'))} as any,replacement.signature);
+  assert.equal(store.writeGeneration(expected.principal),2);
+  let calls=0;
+  assert.throws(()=>signRecoveryPendingPut(handle,pending,e,{generation:2,head,row:e},()=>{
+   if(++calls===2)closePendingKeyring(pending);return state();
+  }),/recovery-rejected/);
+ }finally{closePendingKeyring(pending);closeKeyring(handle);}
+});
