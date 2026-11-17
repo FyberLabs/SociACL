@@ -3,10 +3,10 @@ import {parsePrincipalId} from '../ids/src/index.js';
 /** Browser opening of existing recovery copies. No new key generation, storage,
  * session issuance, passphrase strengthening, or rotation is implicit in open. */
 import {data,hex} from '../ids/src/util.js';
-import {importKeyring,exportKeyring,exportCurrentPair} from './keyring-browser.ts';
+import {importKeyring,exportKeyring,exportCurrentPair,exportPendingKeyring} from './keyring-browser.ts';
 import {deriveKey,parseHeader,passphraseRejected,recoveryAad,writeHeader} from './recovery-wire.ts';
 import {RECOVERY_ABSOLUTE_MAX,KEYRING_SERIAL_MAX,ARGON2ID_LIMITS,RECOVERY_NONCE_LEN} from './keyring-limits.ts';
-import type {KeyringIdentity,KeyringState,ImportedKeyring} from '../ids/src/keyring.js';
+import type {KeyringIdentity,KeyringState,ImportedKeyring,PendingKeyringRotation} from '../ids/src/keyring.js';
 import type {BrowserRecoveryEnvelope,BrowserRecoveryCurrentView,BrowserRecoveryPut} from '../ids/src/recovery.js';
 export {encodePassphrase} from './recovery-wire.ts';
 import {checkRecoveryPassphrase,RecoveryWeakPassphraseError} from './passphrase-strength.ts';
@@ -47,15 +47,25 @@ export async function openRecoveryKeyring(passphrase:Uint8Array,envelope:Browser
  * This does not publish, replace a stored copy, advance keys or authorize rotation. */
 export async function sealRecoveryKeyring(handle:ImportedKeyring,passphrase:Uint8Array,
  currentState:KeyringState,signal?:AbortSignal,accountHandle?:string):Promise<BrowserRecoveryEnvelope>{
+ return sealMaterial(handle,passphrase,()=>exportKeyring(handle,currentState),signal,accountHandle);
+}
+/** Encrypt explicitly prepared future keys while their original keyring remains
+ * current. This produces ciphertext only, not publication or persistence. */
+export async function sealPendingRecoveryKeyring(handle:PendingKeyringRotation,passphrase:Uint8Array,
+ currentState:KeyringState,signal?:AbortSignal,accountHandle?:string):Promise<BrowserRecoveryEnvelope>{
+ return sealMaterial(handle,passphrase,()=>exportPendingKeyring(handle,currentState),signal,accountHandle);
+}
+async function sealMaterial(handle:KeyringIdentity,passphrase:Uint8Array,exportPlain:()=>Uint8Array,
+ signal?:AbortSignal,accountHandle?:string):Promise<BrowserRecoveryEnvelope>{
  let phrase:Uint8Array|undefined,plain:Uint8Array|undefined,key:Uint8Array|undefined,cryptoKeyBytes:Uint8Array<ArrayBuffer>|undefined,cryptoPlain:Uint8Array<ArrayBuffer>|undefined;
  const guard=()=>signal?.throwIfAborted();
  try{
   guard();if(!(passphrase instanceof Uint8Array))return rejected();
   phrase=new Uint8Array(passphrase);if(passphraseRejected(phrase))return rejected();
-  plain=exportKeyring(handle,currentState);
+  plain=exportPlain();
   await checkRecoveryPassphrase(phrase,handle.principal,accountHandle);guard();
   // The estimator may load asynchronously. Retain neither a stale nor closed handle.
-  const checked=exportKeyring(handle,currentState);checked.fill(0);
+  const checked=exportPlain();checked.fill(0);
   const p=ARGON2ID_LIMITS,salt=crypto.getRandomValues(new Uint8Array(p.saltLength.floor));
   const nonce=crypto.getRandomValues(new Uint8Array(RECOVERY_NONCE_LEN));
   key=await deriveKey(phrase,salt,p.memoryKiB.floor,p.iterations.floor,p.parallelism.floor,p.hashLength.floor);guard();
@@ -67,7 +77,7 @@ export async function sealRecoveryKeyring(handle:ImportedKeyring,passphrase:Uint
   const header=writeHeader(p.version.floor,p.memoryKiB.floor,p.iterations.floor,p.parallelism.floor,p.hashLength.floor,salt,handle.rotationSeq);
   const bytes=new Uint8Array(header.length+nonce.length+encrypted.length);bytes.set(header);bytes.set(nonce,header.length);bytes.set(encrypted,header.length+nonce.length);
   if(bytes.length>RECOVERY_ABSOLUTE_MAX)return rejected();
-  const final=exportKeyring(handle,currentState);final.fill(0);guard();
+  const final=exportPlain();final.fill(0);guard();
   return {principal:handle.principal,signingPub:handle.pub,epub:handle.epub,rotationSeq:handle.rotationSeq,bytes};
  }catch(error){if(error instanceof RecoveryWeakPassphraseError)throw error;return rejected();}
  finally{phrase?.fill(0);plain?.fill(0);key?.fill(0);cryptoKeyBytes?.fill(0);cryptoPlain?.fill(0);}
