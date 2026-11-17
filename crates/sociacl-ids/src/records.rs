@@ -299,7 +299,7 @@ fn record(v: &Value, unsigned: bool) -> Result<IdentityRecord, Reason> {
         if unsigned {
             Ok(String::new())
         } else {
-            field(v, "attest", 16384).map(str::to_owned)
+            field(v, "attest", if v["kind"] == "rotate" { 128 * 1024 } else { 16384 }).map(str::to_owned)
         }
     };
     match v["kind"].as_str().ok_or(Reason::BadRecord)? {
@@ -3015,4 +3015,24 @@ pub fn parse_json_input(s: &str) -> Result<Value, Reason> {
             Reason::BadRecord
         }
     })
+}
+
+
+#[cfg(test)]
+mod rotation_capacity_tests {
+    use super::*;
+    #[test]
+    fn rotation_attestation_capacity_is_bounded_and_kind_specific() {
+        let vectors: Value = serde_json::from_str(include_str!("../../../vectors/ids/records.json")).unwrap();
+        let mut rotation = vectors["accept"].as_array().unwrap().iter()
+            .find(|row| row["name"] == "wallet-rotate").unwrap()["input"].clone();
+        rotation["attest"] = Value::String("a".repeat(128 * 1024));
+        assert!(record(&rotation, false).is_ok());
+        rotation["attest"] = Value::String("a".repeat(128 * 1024 + 1));
+        assert!(record(&rotation, false).is_err());
+        let mut wallet = vectors["accept"].as_array().unwrap().iter()
+            .find(|row| row["name"] == "wallet").unwrap()["input"].clone();
+        wallet["attest"] = Value::String("a".repeat(16385));
+        assert!(record(&wallet, false).is_err());
+    }
 }

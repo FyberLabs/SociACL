@@ -108,7 +108,7 @@ function record(x, unsigned = false) {
   const next = parsePrincipalId(r.nextKey); if (!next.ok) return next;
   const nextEpub = hasEpub ? parsePrincipalId(r.nextEpub) : undefined; if (nextEpub && !nextEpub.ok) return nextEpub;
   const sig = unsigned ? ok('') : text(r.nextSig, 128); if (!sig.ok) return sig;
-  const attest = unsigned ? ok('') : text(r.attest, 16384); if (!attest.ok) return attest;
+  const attest = unsigned ? ok('') : text(r.attest, 128 * 1024); if (!attest.ok) return attest;
   const ad = data(r.authorizer); if (!ad.ok) return ad;
   const a = ad.value;
   /** @type {Rotate['authorizer']} */ let authorizer;

@@ -99,3 +99,12 @@ test('v4 proof getters cannot restore a retired key or veto its verified copy',(
   }
   assert.equal(reads,0);
 });
+
+test('rotation attestation capacity is bounded without enlarging wallet proofs',()=>{
+  const large={...rotation,attest:'a'.repeat(128*1024)};
+  assert.equal(ids.verifyRotate(large,ctx.currentKey,ctx).reason,'bad-attestation');
+  assert.equal(ids.verifyRotate({...large,attest:large.attest+'a'},ctx.currentKey,ctx).reason,'too-long');
+  const wallet=f.accept.find(c=>c.name==='wallet').input;
+  assert.equal(ids.verifyWalletLink({...wallet,attest:'a'.repeat(16385)},ctx.jwks,ctx.policy,ctx.now,
+    ids.historyState(wallet.principal,[],wallet.issuedAt,ctx.now)).reason,'too-long');
+});
