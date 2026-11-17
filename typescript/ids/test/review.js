@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { p256 } from '@noble/curves/nist.js';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import * as ids from '../src/index.js';
@@ -107,4 +108,18 @@ test('rotation attestation capacity is bounded without enlarging wallet proofs',
   const wallet=f.accept.find(c=>c.name==='wallet').input;
   assert.equal(ids.verifyWalletLink({...wallet,attest:'a'.repeat(16385)},ctx.jwks,ctx.policy,ctx.now,
     ids.historyState(wallet.principal,[],wallet.issuedAt,ctx.now)).reason,'too-long');
+});
+
+test('a large correctly signed rotation witness retains normal verification',()=>{
+  const scalar=new Uint8Array(32);scalar[31]=7;
+  const pub=p256.getPublicKey(scalar,false),b64=value=>Buffer.from(value).toString('base64url');
+  const key={kid:'capacity-test',kty:'EC',crv:'P-256',x:b64(pub.slice(1,33)),y:b64(pub.slice(33)),
+    notBefore:0,notAfter:Number.MAX_SAFE_INTEGER};
+  const claims=Buffer.from(rotation.attest.split('.')[1],'base64url').toString('utf8');
+  const message=b64(JSON.stringify({alg:'ES256',kid:key.kid,typ:'JWT'}))+'.'+b64(claims+' '.repeat(20000));
+  const attest=message+'.'+b64(p256.sign(new TextEncoder().encode(message),scalar,{prehash:true,format:'compact'}));
+  assert.ok(attest.length>16384&&attest.length<128*1024);
+  assert.ok(ids.verifyRotate({...rotation,attest},ctx.currentKey,{...ctx,jwks:{keys:[...ctx.jwks.keys,key]}}).ok);
+  assert.equal(ids.verifyRotate({...rotation,attest:attest.slice(0,-5)+'AAAAA'},ctx.currentKey,
+    {...ctx,jwks:{keys:[...ctx.jwks.keys,key]}}).ok,false);
 });

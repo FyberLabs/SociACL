@@ -299,7 +299,12 @@ fn record(v: &Value, unsigned: bool) -> Result<IdentityRecord, Reason> {
         if unsigned {
             Ok(String::new())
         } else {
-            field(v, "attest", if v["kind"] == "rotate" { 128 * 1024 } else { 16384 }).map(str::to_owned)
+            field(
+                v,
+                "attest",
+                if v["kind"] == "rotate" { 128 * 1024 } else { 16384 },
+            )
+            .map(str::to_owned)
         }
     };
     match v["kind"].as_str().ok_or(Reason::BadRecord)? {
