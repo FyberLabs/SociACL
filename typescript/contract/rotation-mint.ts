@@ -19,7 +19,7 @@ export function mintRotationMaterial(fill:(bytes:Uint8Array)=>void=(bytes)=>{cry
   const point=(secret:Uint8Array)=>{const raw=p256.getPublicKey(secret,false);return `${b64(raw.subarray(1,33))}.${b64(raw.subarray(33))}`;};
   try{
     const signing=scalar(),encryption=scalar(),lane=draw(),contact=draw();
-    if(hex(contact)===hex(lane))contact[0]=(contact[0] ?? 0)^1;
+    if(hex(contact)===hex(lane))contact[0]=contact[0]!^1;
     return {signingPub:point(signing),signingPriv:b64(signing),epub:point(encryption),epriv:b64(encryption),
       laneId:hex(lane),contactLaneSecret:hex(contact)};
   }finally{for(const bytes of owned)bytes.fill(0);}
