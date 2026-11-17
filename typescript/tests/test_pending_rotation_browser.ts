@@ -69,12 +69,11 @@ test('present wallet selection rejects superseded, revoked and ambiguous authori
  ];
  for(const row of rows){
   const f=fixture();try{
-   const context=f.state().context;
+   const context={...f.state().context,links:new Map(f.state().context.links),revocations:row.revocations??[]};
    for(const value of row.input){const id=linkId(value);assert(id.ok);context.links.set(id.value,value);}
-   context.revocations=row.revocations??[];
    const selected=resolveWalletLinkNow(row.address,row.input,context.revocations,context);
    if(selected.ok){const id=linkId(selected.value);assert(id.ok);assert.notEqual(id.value,f.unsigned.authorizer.link);}
-   assert.throws(()=>signPendingWalletRotation(f.pending,f.unsigned,f.state),/recovery-rejected/);
+   assert.throws(()=>signPendingWalletRotation(f.pending,f.unsigned,()=>({...f.state(),context})),/recovery-rejected/);
   }finally{f.close();}
  }
 });
@@ -83,7 +82,7 @@ test('wallet eligibility is checked again before returning signed public data',(
  try{
   assert.throws(()=>signPendingWalletRotation(f.pending,f.unsigned,()=>{
    const state=f.state();
-   if(++reads>=5)state.context.revocations=records.reject.find((r:any)=>r.name==='newest-wallet-revoked').revocations;
+   if(++reads>=5)return {...state,context:{...state.context,revocations:records.reject.find((r:any)=>r.name==='newest-wallet-revoked').revocations}};
    return state;
   }),/recovery-rejected/);
  }finally{f.close();}
