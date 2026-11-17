@@ -82,8 +82,21 @@ test('wallet eligibility is checked again before returning signed public data',(
  try{
   assert.throws(()=>signPendingWalletRotation(f.pending,f.unsigned,()=>{
    const state=f.state();
-   if(++reads>=5)return {...state,context:{...state.context,revocations:records.reject.find((r:any)=>r.name==='newest-wallet-revoked').revocations}};
+   if(++reads>=4)return {...state,context:{...state.context,revocations:records.reject.find((r:any)=>r.name==='newest-wallet-revoked').revocations}};
    return state;
   }),/recovery-rejected/);
  }finally{f.close();}
+});
+
+test('final authority callback closure prevents releasing the signed request',()=>{
+ for(const origin of [false,true]){
+  const f=fixture();let reads=0;
+  try{
+   assert.throws(()=>signPendingWalletRotation(f.pending,f.unsigned,()=>{
+    if(++reads===4){if(origin)closeKeyring(f.handle);else closePendingKeyring(f.pending);}
+    return f.state();
+   }),/recovery-rejected/);
+   assert.equal(reads,4);
+  }finally{f.close();}
+ }
 });

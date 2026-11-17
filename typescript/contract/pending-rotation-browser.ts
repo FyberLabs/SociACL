@@ -43,8 +43,7 @@ export function signPendingWalletRotation(pending:PendingKeyringRotation,input:u
   const state=currentState();requireWallet(state);
   const checked=checkRotationPublish({...candidate,nextSig:signature.value},[],fields.principal as PrincipalId,state.rotations,state.context);
   if(!checked.ok)return rejected();
-  const final=exportPendingKeyring(pending,currentState);final.fill(0);
-  requireWallet(currentState());
+  const final=exportPendingKeyring(pending,()=>{const latest=currentState();requireWallet(latest);return latest;});final.fill(0);
   const {attest:_,...request}=checked.value;
   return Object.freeze(request);
  }catch{return rejected();}
