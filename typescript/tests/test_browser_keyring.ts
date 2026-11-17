@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
+import {p256} from '@noble/curves/nist.js';
+import {b64,unb64} from '../ids/src/util.js';
 import {readFileSync} from 'node:fs';
 import {test} from 'node:test';
-import {admitKeyring,exportCurrentPair,importKeyring,exportKeyring,validateKeyring,closeKeyring,openKeyringContent} from '../contract/keyring-browser.ts';
+import {prepareKeyringRotation,exportPendingKeyring,activatePendingKeyring,closePendingKeyring,admitKeyring,exportCurrentPair,importKeyring,exportKeyring,validateKeyring,closeKeyring,openKeyringContent} from '../contract/keyring-browser.ts';
 import {AccountKeyring} from '../contract/account-keyring.ts';
 import {decodeKeyring,encodeKeyring} from '../contract/keyring-codec.ts';
-import {historyState, type ResolutionContext, type PrincipalId} from '../ids/src/index.js';
+import {signingBytes,historyState, type ResolutionContext, type PrincipalId} from '../ids/src/index.js';
 import {sealReaderWrap} from '../contract/content-wrap.ts';
 const vectors=JSON.parse(readFileSync(new URL('../../vectors/encrypted-discovery/browser-keyring.json',import.meta.url),'utf8'));
 const records=JSON.parse(readFileSync(new URL('../../vectors/ids/records.json',import.meta.url),'utf8'));
@@ -103,4 +105,75 @@ test('field admission refuses incomplete, oversized, accessor and stale material
  const handle=admitKeyring(v.fields,expected(v),()=>state(v));
  assert.throws(()=>exportCurrentPair(handle,()=>({...state(v),rotations:[]})),/^Error: keyring-rejected$/);
  closeKeyring(handle);
+});
+
+
+test('pending rotation preserves old keys without admitting or publishing new authority',()=>{
+ const v=vectors.accept[1],handle=importKeyring(bytes(v.encodedHex),expected(v),()=>state(v));
+ const pending=prepareKeyringRotation(handle,['lost-device','trusted-device'],'lost-device',()=>state(v));
+ assert(Object.isFrozen(pending));assert(Object.isFrozen(pending.draft));
+ assert.equal(pending.principal,handle.principal);assert.equal(pending.rotationSeq,handle.rotationSeq+1);
+ assert.equal(pending.draft.prevKey,handle.pub);assert.equal(pending.draft.nextKey,pending.pub);
+ assert.notEqual(pending.pub,handle.pub);assert.notEqual(pending.epub,handle.epub);
+ const encoded=exportPendingKeyring(pending,()=>state(v)),fields=decodeKeyring(encoded);
+ assert.equal(fields.retired.at(-1)?.epub,handle.epub);
+ assert.deepEqual(fields.priorLanes,[...v.fields.priorLanes,v.fields.laneId]);
+ assert.deepEqual(fields.priorContactSecrets,[...v.fields.priorContactSecrets,v.fields.contactLaneSecret]);
+ assert.equal(JSON.stringify(pending).includes(fields.priv),false);
+ assert.throws(()=>exportKeyring(pending,()=>state(v)),/keyring-rejected/);
+ assert.throws(()=>activatePendingKeyring(pending,()=>state(v)),/keyring-rejected/);
+ assert.deepEqual(exportKeyring(handle,()=>state(v)),bytes(v.encodedHex));
+ assert.throws(()=>exportPendingKeyring({...pending},()=>state(v)),/keyring-rejected/);
+ closePendingKeyring(pending);
+ assert.throws(()=>exportPendingKeyring(pending,()=>state(v)),/keyring-rejected/);
+ assert.throws(()=>activatePendingKeyring(pending,()=>state(v)),/keyring-rejected/);
+ encoded.fill(0);closeKeyring(handle);
+});
+test('pending preparation and export refuse closed origin, missing history and bad devices',()=>{
+ const v=vectors.accept[1],handle=importKeyring(bytes(v.encodedHex),expected(v),()=>state(v));
+ for(const [trusted,lost] of [[[],'lost'],[['lost','lost'],'lost'],[['trusted'],'lost']] as const)
+  assert.throws(()=>prepareKeyringRotation(handle,trusted,lost,()=>state(v)),/keyring-rejected/);
+ assert.throws(()=>prepareKeyringRotation({...handle},['lost'],'lost',()=>state(v)),/keyring-rejected/);
+ assert.throws(()=>prepareKeyringRotation(handle,['lost'],'lost',()=>({...state(v),rotations:[]})),/keyring-rejected/);
+ const pending=prepareKeyringRotation(handle,['lost'],'lost',()=>state(v));
+ assert.throws(()=>exportPendingKeyring(pending,()=>({...state(v),rotations:[]})),/keyring-rejected/);
+ assert.throws(()=>exportPendingKeyring(pending,()=>{closePendingKeyring(pending);return state(v);}),/keyring-rejected/);
+ const second=prepareKeyringRotation(handle,['lost'],'lost',()=>state(v));
+ assert.throws(()=>exportPendingKeyring(second,()=>{closeKeyring(handle);return state(v);}),/keyring-rejected/);
+ assert.throws(()=>activatePendingKeyring(second,()=>state(v)),/keyring-rejected/);
+ assert.throws(()=>prepareKeyringRotation(handle,['lost'],'lost',()=>state(v)),/keyring-rejected/);
+ closePendingKeyring(second);
+});
+
+
+test('activation requires the exact published new keys and consumes the pending handle once',()=>{
+ const v=structuredClone(vectors.accept[1]);v.rotationNames=[];
+ v.genesisBindings=records.accept.find((row:any)=>row.name==='binding-valid-no-rotation').genesisEpubBindings;
+ const signing=new Uint8Array(32);signing[31]=1;const encryption=new Uint8Array(32);encryption[31]=9;
+ Object.assign(v.fields,{pub:v.fields.principal,priv:b64(signing),epub:v.fields.genesisEpub,epriv:b64(encryption),
+  rotationSeq:0,contentEpoch:0,retired:[],priorLanes:[],priorContactSecrets:[]});
+ const current=()=>{const s=state(v);return {...s,context:{...s.context,
+  links:new Map<string,unknown>(records.context.links.filter((pair:any)=>pair[1].kind==='oidc'))}};};
+ const handle=admitKeyring(v.fields,expected(v),current);
+ const pending=prepareKeyringRotation(handle,['lost','kept'],'lost',current);
+ const encoded=exportPendingKeyring(pending,current),f=decodeKeyring(encoded);
+ const link=records.context.links.find((pair:any)=>pair[1].kind==='oidc')[0];
+ const issuedAt=records.context.now;
+ const unsigned={v:1,kind:'rotate',principal:f.principal,seq:f.rotationSeq,prevKey:handle.pub,
+  nextKey:f.pub,nextEpub:f.epub,issuedAt,retainedLinks:[link],authorizer:{kind:'oidc-fresh-login',link}};
+ const transcript=signingBytes(unsigned as any);assert(transcript.ok);
+ const nextSig=b64(p256.sign(transcript.value,unb64(f.priv),{lowS:false}));
+ const claims={typ:'sociacl-rotate-attest-v3',principal:f.principal,nextKey:f.pub,nextEpub:f.epub,
+  seq:f.rotationSeq,iat:issuedAt,exp:issuedAt+600,auth:'oidc-fresh-login',linkId:link,retainedLinks:[link]};
+ const header=b64(new TextEncoder().encode(JSON.stringify({alg:'ES256',kid:'fixture-1',typ:'JWT'})));
+ const body=`${header}.${b64(new TextEncoder().encode(JSON.stringify(claims)))}`;
+ const witness=new Uint8Array(32);witness[31]=5;
+ const attest=`${body}.${b64(p256.sign(new TextEncoder().encode(body),witness,{lowS:false}))}`;
+ const published=()=>({...current(),rotations:[{...unsigned,nextSig,attest}]});
+ const activated=activatePendingKeyring(pending,published);
+ assert.deepEqual(exportKeyring(activated,published),encoded);
+ assert.throws(()=>activatePendingKeyring(pending,published),/keyring-rejected/);
+ assert.throws(()=>exportPendingKeyring(pending,()=>state(v)),/keyring-rejected/);
+ closeKeyring(handle);assert.deepEqual(exportKeyring(activated,published),encoded);
+ closeKeyring(activated);encoded.fill(0);witness.fill(0);
 });
