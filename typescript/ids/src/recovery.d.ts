@@ -38,3 +38,7 @@ export type BrowserRecoveryCommitView=Readonly<{generation:number;head:BrowserRe
 export type BrowserRecoveryCommit=Readonly<{action:'commit';signature:string}>;
 /** Uses the admitted new key to sign exact pending promotion. No mutation/retry. */
 export function signRecoveryCommit(handle:ImportedKeyring,view:BrowserRecoveryCommitView,currentState:KeyringState):BrowserRecoveryCommit;
+
+/** Sign only the exact prepared next-key transition after native present wallet
+ * proof/history checks. input has no nextSig or attest. No publication occurs. */
+export function signPendingWalletRotation(pending:PendingKeyringRotation,input:unknown,currentState:KeyringState):Readonly<Record<string,unknown>>;
