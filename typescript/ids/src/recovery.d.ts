@@ -32,3 +32,9 @@ export function sealPendingRecoveryKeyring(handle:PendingKeyringRotation,passphr
 /** Sign a prepared future copy with its original current key. view.row must be
  * the complete authenticated pending row. Reread after conflict; no auto retry. */
 export function signRecoveryPendingPut(handle:ImportedKeyring,pending:PendingKeyringRotation,envelope:BrowserRecoveryEnvelope,view:BrowserRecoveryCurrentView,currentState:KeyringState):BrowserRecoveryPut;
+
+/** Current and pending rows must come from the same authenticated generation/head. */
+export type BrowserRecoveryCommitView=Readonly<{generation:number;head:BrowserRecoveryCurrentView['head'];current:BrowserRecoveryEnvelope|null;pending:BrowserRecoveryEnvelope}>;
+export type BrowserRecoveryCommit=Readonly<{action:'commit';signature:string}>;
+/** Uses the admitted new key to sign exact pending promotion. No mutation/retry. */
+export function signRecoveryCommit(handle:ImportedKeyring,view:BrowserRecoveryCommitView,currentState:KeyringState):BrowserRecoveryCommit;
