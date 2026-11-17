@@ -77,9 +77,9 @@ The signed operation authorizes ciphertext storage, not plaintext access.
 
 | Work | Required boundary |
 | --- | --- |
-| Container v2 and custody | Real local head encryption/decryption; passkey PRF or native-device daily slot plus mandatory recovery-key slot; SAVFILE1 import remains supported. |
+| Container v2 and custody | Durable key custody; passkey PRF or native-device daily slot plus mandatory recovery-key slot; SAVFILE1 import remains supported. |
 | Initial enrollment and recovery | Independently authenticated initial floor and owner/vault binding; fetching a server head must never silently establish or restore trust. |
-| Rust and CLI parity | Same head transcript and verification rules, durable independent state, prepared-byte retry, and visible conflicts. |
+| Native consumer and CLI integration | Durable independent state, prepared-byte retry, and visible conflicts composed with the native head contract. |
 | UI and cross-device sync | Compose custody with the implemented API/client; surface stale state and conflicts without automatic overwrite. |
 | Merge/checkpoint history | Retain all parents and authenticated checkpoints; this head primitive does not lift the 256-version graph cap. |
 | Shared-space operation | Provision scoped server credentials and bindings, then qualify the real TEST path through the naturally scheduled nightly. |
@@ -102,5 +102,24 @@ SociACL client, browser API transport, authenticated service and vault-scoped
 record adapter in one CI contract. It covers lost committed responses, exact
 retries, successor publication, replayed-head refusal, revoked sessions and
 retained state after reopening. Storage and custody are explicit in-process
-doubles. Passing this contract is not real-storage, real-browser PRF or deployed
+doubles in #625. [s3r.ch#629](https://github.com/FyberLabs/s3r.ch/pull/629)
+replaces the custody double with real General JWE head encryption using a
+dedicated non-exportable AES-KW-256 key and fresh A256GCM content key. It adds
+lock and current-history checks but does not provide durable key storage or slot
+enrollment. Passing this contract is not real-storage, real-browser PRF or deployed
 end-to-end vault acceptance. No nightly is manually dispatched for this work.
+
+## Native signed-head contract
+
+`sociacl-encdisc` exposes `parse_vault_sync_head`, canonical signing bytes and
+`vault_sync_head_floor`, plus `verify_vault_sync_head` with the same expected
+owner/namespace and current-history requirements as the browser contract.
+`validate_vault_sync_successor` checks structural continuity, profile and time
+monotonicity. It does not authenticate either head or commit a durable floor.
+Native consumers must authenticate, compare an independently retained floor,
+verify exact encrypted readback, and recheck authority at durable commit.
+These functions neither decrypt custody bytes nor grant item reads.
+
+The shared `vectors/vault/sync-head.json` fixture exercises transcript and parser
+parity in existing Rust/TypeScript PR CI suites. Native durable floor storage,
+key custody, enrollment and CLI wiring remain subsequent integration work.

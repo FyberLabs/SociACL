@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { parsePrincipalId,signWithKeyring,historyState,type ResolutionContext } from '../ids/src/index.js';
-import { seaPoint } from '../contract/account-key-seal.ts';
+import { readFileSync } from 'node:fs';
+import { decodeLengthPrefixed, seaPoint } from '../contract/account-key-seal.ts';
 import { vaultSyncHeadSigningBytes,vaultSyncHeadFloor,verifyVaultSyncHead,openVaultSyncHeadStore,type VaultSyncHead } from '../contract/vault-sync-head.ts';
 const {IDBFactory}=createRequire(new URL('../ids/package.json',import.meta.url))('fake-indexeddb');
 const key=new Uint8Array(32);key[31]=1;
@@ -69,4 +70,13 @@ test('competing signed heads have one committed winner, and history is checked d
   assert.deepEqual(await a.read(),vaultSyncHeadFloor(winner));
   await assert.rejects(a.verifyCurrent(winner,()=>({rotations:[],context:{...context,now:19}})));
   a.close();b.close();
+});
+
+
+test('shared native/browser sync-head transcript and rejection vectors',()=>{
+  const fixture=JSON.parse(readFileSync(new URL('../../vectors/vault/sync-head.json',import.meta.url),'utf8'));
+  assert.deepEqual(decodeLengthPrefixed(vaultSyncHeadSigningBytes(fixture.head)),fixture.fields);
+  for(const patch of fixture.invalidPatches){
+    assert.throws(()=>vaultSyncHeadSigningBytes({...fixture.head,...patch}),JSON.stringify(patch));
+  }
 });
