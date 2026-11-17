@@ -28,3 +28,7 @@ export function signRecoveryCurrentPut(handle:ImportedKeyring,envelope:BrowserRe
 /** Seal an explicitly prepared pending rotation, preserving the new-passphrase
  * gate and fresh original-key checks. Never publishes, persists or activates. */
 export function sealPendingRecoveryKeyring(handle:PendingKeyringRotation,passphrase:Uint8Array,currentState:KeyringState,signal?:AbortSignal,accountHandle?:string):Promise<BrowserRecoveryEnvelope>;
+
+/** Sign a prepared future copy with its original current key. view.row must be
+ * the complete authenticated pending row. Reread after conflict; no auto retry. */
+export function signRecoveryPendingPut(handle:ImportedKeyring,pending:PendingKeyringRotation,envelope:BrowserRecoveryEnvelope,view:BrowserRecoveryCurrentView,currentState:KeyringState):BrowserRecoveryPut;

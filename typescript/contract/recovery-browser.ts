@@ -88,7 +88,23 @@ async function sealMaterial(handle:KeyringIdentity,passphrase:Uint8Array,exportP
  * generation/head/current-row view. No publication or automatic retry occurs. */
 export function signRecoveryCurrentPut(handle:ImportedKeyring,envelope:BrowserRecoveryEnvelope,
  view:BrowserRecoveryCurrentView,currentState:KeyringState):BrowserRecoveryPut {
+ return signRecoveryPut(handle,envelope,view,currentState);
+}
+/** Sign one explicit pending-copy replacement with the still-current old key.
+ * The view row is the authenticated pending row, not the current backup. */
+export function signRecoveryPendingPut(handle:ImportedKeyring,pending:PendingKeyringRotation,
+ envelope:BrowserRecoveryEnvelope,view:BrowserRecoveryCurrentView,currentState:KeyringState):BrowserRecoveryPut {
+ return signRecoveryPut(handle,envelope,view,currentState,pending);
+}
+function signRecoveryPut(handle:ImportedKeyring,envelope:BrowserRecoveryEnvelope,
+ view:BrowserRecoveryCurrentView,currentState:KeyringState,pending?:PendingKeyringRotation):BrowserRecoveryPut {
  try{
+  const expected=pending??handle;
+  const pendingGuard=()=>{
+   if(!pending)return;
+   if(pending.principal!==handle.principal||pending.rotationSeq!==handle.rotationSeq+1||pending.draft.prevKey!==handle.pub)return rejected();
+   const plain=exportPendingKeyring(pending,currentState);plain.fill(0);
+  };
   const parsed=data(view);
   if(!parsed.ok||Object.keys(parsed.value).sort().join()!=='generation,head,row')return rejected();
   const v=parsed.value,h=data(v.head);
@@ -101,17 +117,19 @@ export function signRecoveryCurrentPut(handle:ImportedKeyring,envelope:BrowserRe
    const e=item.value;
    if(!(e.bytes instanceof Uint8Array)||e.bytes.length>RECOVERY_ABSOLUTE_MAX||e.principal!==handle.principal||
     !parsePrincipalId(e.signingPub).ok||!parsePrincipalId(e.epub).ok||!Number.isSafeInteger(e.rotationSeq)||
-    (e.rotationSeq as number)<0||(e.rotationSeq as number)>handle.rotationSeq)return rejected();
+    (e.rotationSeq as number)<0||(e.rotationSeq as number)>expected.rotationSeq)return rejected();
    const bytes=new Uint8Array(e.bytes);
    if(parseHeader(bytes).rotationSeq!==e.rotationSeq)return rejected();
    return {principal:e.principal as string,signingPub:e.signingPub as string,epub:e.epub as string,rotationSeq:e.rotationSeq as number,bytes};
   };
   const row=snapshot(envelope),old=v.row===null?null:snapshot(v.row as BrowserRecoveryEnvelope);
-  if(row.rotationSeq!==handle.rotationSeq||row.signingPub!==handle.pub||row.epub!==handle.epub)return rejected();
+  if(row.rotationSeq!==expected.rotationSeq||row.signingPub!==expected.pub||row.epub!==expected.epub)return rejected();
+  if(pending&&old&&old.rotationSeq!==expected.rotationSeq)return rejected();
+  pendingGuard();
   const pair=exportCurrentPair(handle,currentState);
   const signature=signStoreWrite(pair.priv,handle.principal as any,'put',String(row.rotationSeq),
    recoveryEnvelopeHash(row),String(handle.rotationSeq),old?recoveryEnvelopeHash(old):REPLACED_NONE,'none',String(generation));
-  exportCurrentPair(handle,currentState);
+  exportCurrentPair(handle,currentState);pendingGuard();
   return {action:'put',row:{principal:row.principal,rotationSeq:row.rotationSeq,signingPub:row.signingPub,epub:row.epub,bytesHex:hex(row.bytes)},signature};
  }catch{return rejected();}
 }
