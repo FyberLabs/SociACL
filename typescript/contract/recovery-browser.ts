@@ -7,7 +7,7 @@ import {importKeyring,exportKeyring,exportCurrentPair,exportPendingKeyring} from
 import {deriveKey,parseHeader,passphraseRejected,recoveryAad,writeHeader} from './recovery-wire.ts';
 import {RECOVERY_ABSOLUTE_MAX,KEYRING_SERIAL_MAX,ARGON2ID_LIMITS,RECOVERY_NONCE_LEN} from './keyring-limits.ts';
 import type {KeyringIdentity,KeyringState,ImportedKeyring,PendingKeyringRotation} from '../ids/src/keyring.js';
-import type {BrowserRecoveryEnvelope,BrowserRecoveryCurrentView,BrowserRecoveryPut} from '../ids/src/recovery.js';
+import type {BrowserRecoveryEnvelope,BrowserRecoveryCurrentView,BrowserRecoveryPut,BrowserRecoveryCommitView,BrowserRecoveryCommit} from '../ids/src/recovery.js';
 export {encodePassphrase} from './recovery-wire.ts';
 import {checkRecoveryPassphrase,RecoveryWeakPassphraseError} from './passphrase-strength.ts';
 export {RecoveryWeakPassphraseError} from './passphrase-strength.ts';
@@ -111,17 +111,7 @@ function signRecoveryPut(handle:ImportedKeyring,envelope:BrowserRecoveryEnvelope
   if(!h.ok||Object.keys(h.value).sort().join()!=='currentEpub,currentKey,sequence'||
    h.value.sequence!==handle.rotationSeq||h.value.currentKey!==handle.pub||h.value.currentEpub!==handle.epub)return rejected();
   const generation=v.generation as number;nextStoreGeneration(generation);
-  const snapshot=(input:BrowserRecoveryEnvelope):BrowserRecoveryEnvelope=>{
-   const item=data(input);
-   if(!item.ok||Object.keys(item.value).sort().join()!=='bytes,epub,principal,rotationSeq,signingPub')return rejected();
-   const e=item.value;
-   if(!(e.bytes instanceof Uint8Array)||e.bytes.length>RECOVERY_ABSOLUTE_MAX||e.principal!==handle.principal||
-    !parsePrincipalId(e.signingPub).ok||!parsePrincipalId(e.epub).ok||!Number.isSafeInteger(e.rotationSeq)||
-    (e.rotationSeq as number)<0||(e.rotationSeq as number)>expected.rotationSeq)return rejected();
-   const bytes=new Uint8Array(e.bytes);
-   if(parseHeader(bytes).rotationSeq!==e.rotationSeq)return rejected();
-   return {principal:e.principal as string,signingPub:e.signingPub as string,epub:e.epub as string,rotationSeq:e.rotationSeq as number,bytes};
-  };
+  const snapshot=(input:BrowserRecoveryEnvelope)=>snapshotEnvelope(input,handle.principal,expected.rotationSeq);
   const row=snapshot(envelope),old=v.row===null?null:snapshot(v.row as BrowserRecoveryEnvelope);
   if(row.rotationSeq!==expected.rotationSeq||row.signingPub!==expected.pub||row.epub!==expected.epub)return rejected();
   if(pending&&old&&old.rotationSeq!==expected.rotationSeq)return rejected();
@@ -131,5 +121,39 @@ function signRecoveryPut(handle:ImportedKeyring,envelope:BrowserRecoveryEnvelope
    recoveryEnvelopeHash(row),String(handle.rotationSeq),old?recoveryEnvelopeHash(old):REPLACED_NONE,'none',String(generation));
   exportCurrentPair(handle,currentState);pendingGuard();
   return {action:'put',row:{principal:row.principal,rotationSeq:row.rotationSeq,signingPub:row.signingPub,epub:row.epub,bytesHex:hex(row.bytes)},signature};
+ }catch{return rejected();}
+}
+
+function snapshotEnvelope(input:BrowserRecoveryEnvelope,principal:string,maxSeq:number):BrowserRecoveryEnvelope {
+   const item=data(input);
+   if(!item.ok||Object.keys(item.value).sort().join()!=='bytes,epub,principal,rotationSeq,signingPub')return rejected();
+   const e=item.value;
+   if(!(e.bytes instanceof Uint8Array)||e.bytes.length>RECOVERY_ABSOLUTE_MAX||e.principal!==principal||
+    !parsePrincipalId(e.signingPub).ok||!parsePrincipalId(e.epub).ok||!Number.isSafeInteger(e.rotationSeq)||
+    (e.rotationSeq as number)<0||(e.rotationSeq as number)>maxSeq)return rejected();
+   const bytes=new Uint8Array(e.bytes);
+   if(parseHeader(bytes).rotationSeq!==e.rotationSeq)return rejected();
+   return {principal:e.principal as string,signingPub:e.signingPub as string,epub:e.epub as string,rotationSeq:e.rotationSeq as number,bytes};
+  }
+
+/** Promote an exact persisted pending copy only after the new key is admitted
+ * by complete authenticated history. Signing does not send or retry the commit. */
+export function signRecoveryCommit(handle:ImportedKeyring,view:BrowserRecoveryCommitView,
+ currentState:KeyringState):BrowserRecoveryCommit {
+ try{
+  const parsed=data(view);
+  if(!parsed.ok||Object.keys(parsed.value).sort().join()!=='current,generation,head,pending')return rejected();
+  const v=parsed.value,h=data(v.head);
+  if(!h.ok||Object.keys(h.value).sort().join()!=='currentEpub,currentKey,sequence'||
+   h.value.sequence!==handle.rotationSeq||h.value.currentKey!==handle.pub||h.value.currentEpub!==handle.epub)return rejected();
+  const generation=v.generation as number;nextStoreGeneration(generation);
+  const row=snapshotEnvelope(v.pending as BrowserRecoveryEnvelope,handle.principal,handle.rotationSeq);
+  const old=v.current===null?null:snapshotEnvelope(v.current as BrowserRecoveryEnvelope,handle.principal,handle.rotationSeq);
+  if(row.rotationSeq!==handle.rotationSeq||row.signingPub!==handle.pub||row.epub!==handle.epub)return rejected();
+  const pair=exportCurrentPair(handle,currentState);
+  const signature=signStoreWrite(pair.priv,handle.principal as any,'commit',String(handle.rotationSeq),
+   recoveryEnvelopeHash(row),String(handle.rotationSeq),old?recoveryEnvelopeHash(old):REPLACED_NONE,'none',String(generation));
+  exportCurrentPair(handle,currentState);
+  return {action:'commit',signature};
  }catch{return rejected();}
 }

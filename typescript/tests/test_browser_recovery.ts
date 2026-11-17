@@ -203,3 +203,40 @@ test('pending-copy signatures bind exact future material and native generation C
   }),/recovery-rejected/);
  }finally{closePendingKeyring(pending);closeKeyring(handle);}
 });
+
+
+test('new admitted key signs exact pending promotion and native store rejects replay',async()=>{
+ const {signRecoveryCommit,sealRecoveryKeyring}=await import('../contract/recovery-browser.ts');
+ const {importKeyring,exportCurrentPair}=await import('../contract/keyring-browser.ts');
+ const {MemoryRecoveryStore,signRecoveryOp}=await import('../contract/recovery-seal.ts');
+ const {HeadFloor,recoveryEnvelopeHash,REPLACED_NONE}=await import('../contract/store-write.ts');
+ const v=read('encrypted-discovery/browser-keyring.json').accept[1];
+ const rotations=v.rotationNames.map((name:string)=>records.accept.find((row:any)=>row.name===name).input);
+ const currentState=()=>{const s=state();return {...s,rotations,context:{...s.context,genesisEpubBindings:v.genesisBindings}};};
+ const identity={principal:v.fields.principal,pub:v.fields.pub,epub:v.fields.epub,rotationSeq:v.fields.rotationSeq};
+ const current=importKeyring(new Uint8Array(Buffer.from(v.encodedHex,'hex')),identity,currentState);
+ const old=await openRecoveryKeyring(new TextEncoder().encode(legacy.passphraseUtf8),envelope(legacy),expected,state);
+ const e=await sealRecoveryKeyring(current,new TextEncoder().encode(vector.passphraseUtf8),currentState);
+ try{
+  for(const withCurrent of [false,true]){
+   let account:any={currentKey:expected.pub,currentEpub:expected.epub,rotations:[]};
+   const store=new MemoryRecoveryStore(()=>account,new HeadFloor());
+   const oldPriv=exportCurrentPair(old,state).priv;
+   if(withCurrent){const original=envelope(legacy);store.put(original as any,signRecoveryOp(store,oldPriv,expected.principal,'put',0,recoveryEnvelopeHash(original),REPLACED_NONE));}
+   store.put(e as any,signRecoveryOp(store,oldPriv,expected.principal,'put',1,recoveryEnvelopeHash(e),REPLACED_NONE));
+   account={currentKey:current.pub,currentEpub:current.epub,rotations};
+   const head={sequence:1,currentKey:current.pub,currentEpub:current.epub};
+   const view={generation:store.writeGeneration(expected.principal),head,current:withCurrent?envelope(legacy):null,pending:e};
+   const op=signRecoveryCommit(current,view,currentState);
+   store.commit(expected.principal,op.signature);
+   assert.equal(store.current(expected.principal)?.signingPub,current.pub);
+   assert.equal(store.pending(expected.principal),undefined);
+   assert.throws(()=>store.commit(expected.principal,op.signature),/store-rejected/);
+   for(const bad of [{...view,extra:1},{...view,head:{}},{...view,head:{...head,sequence:0}},
+    {...view,generation:-1},{...view,pending:null},{...view,pending:{...e,signingPub:old.pub}}])
+    assert.throws(()=>signRecoveryCommit(current,bad as any,currentState),/recovery-rejected/);
+   assert.throws(()=>signRecoveryCommit(current,view,state),/recovery-rejected/);
+   let calls=0;assert.throws(()=>signRecoveryCommit(current,view,()=>{if(++calls>1)throw Error('changed');return currentState();}),/recovery-rejected/);
+  }
+ }finally{closeKeyring(current);closeKeyring(old);}
+});
