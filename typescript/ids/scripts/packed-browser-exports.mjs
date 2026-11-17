@@ -12,7 +12,9 @@ try{
   execFileSync('npm',['install','--ignore-scripts','--no-audit','--no-fund','--cache',join(temp,'cache'),join(temp,packed[0].filename)],{cwd:temp,stdio:'inherit'});
   const keys=JSON.parse(readFileSync(new URL('test/test-keys.json',new URL('../',import.meta.url))));
   const lane=JSON.parse(readFileSync(new URL('../../../vectors/encrypted-discovery/contact-lane.json',import.meta.url)));
-  const source=`import {deriveContactLane,laneLookupKey,openContactLaneGrant,sealContactLaneGrant,type ContactLaneRecipientState} from 'sociacl-ids/contact-lane';
+  const source=`import {vaultSyncHeadSigningBytes,vaultSyncHeadFloor,verifyVaultSyncHead,openVaultSyncHeadStore} from 'sociacl-ids/vault-sync';
+for(const fn of [vaultSyncHeadSigningBytes,vaultSyncHeadFloor,verifyVaultSyncHead,openVaultSyncHeadStore])if(typeof fn!=='function')throw Error('Missing vault sync API');
+import {deriveContactLane,laneLookupKey,openContactLaneGrant,sealContactLaneGrant,type ContactLaneRecipientState} from 'sociacl-ids/contact-lane';
 const lane=${JSON.stringify(lane)};
 if(deriveContactLane(lane.contactLaneSecretHex,lane.recipient,lane.sender)!==lane.laneId||laneLookupKey(lane.laneId)!==lane.laneId||typeof openContactLaneGrant!=='function'||typeof sealContactLaneGrant!=='function')throw Error('Packed contact lane failed');
 const contactState:ContactLaneRecipientState|undefined=undefined;void contactState;
