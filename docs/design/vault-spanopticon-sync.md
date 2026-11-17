@@ -1,7 +1,8 @@
 # Vault sync through Spanopticon
 
-This implements the first continuity boundary for #155 slice B. It does not yet
-provide the v2 container, an HTTP vault route, a shared-space enrollment, or a UI.
+The signed-head continuity boundary and authenticated storage transport for #155
+slice B are implemented. Container v2, shared-space enrollment and the end-user
+UI remain open; the implemented transport is not an end-to-end usable vault.
 The existing SAVFILE1 file and 1 MiB item limit remain supported. Spanopticon and
 s3r.ch must use the same vault storage contract; login never supplies a vault key.
 
@@ -33,27 +34,60 @@ conflicting proposals yield one winner; callers retain the other prepared bytes
 for explicit conflict resolution. No timestamp winner or automatic overwrite is
 provided. Both methods reauthenticate inside the serialized transaction.
 
-## Spanopticon integration boundary still to wire
+## Implemented Spanopticon API and consumer
 
-The current s3r.ch `createSpanopticonRecordStore` talks to
-`/api/v1/storage/records/{namespace}/{name}` with tenant-scoped server credentials,
-8 MiB bounded bytes, ETag reads and conditional writes. Its current namespace
-allowlist is cache/recovery/fixtures/media. `createSpanopticonObjectStore` uses
-`/api/v1/storage/objects/{sha256}` for immutable content-addressed bytes. Those
-existing adapters are transport, not end-user vault authorization.
+[controlplane-core#103](https://github.com/hyperme-sh/controlplane-core/pull/103)
+adds the opaque `vault` record namespace, dedicated read/write scopes, conditional
+writes and the 8 MiB record bound. Vault deletion and direct-access suffixes are
+not exposed. This is an untrusted ciphertext transport, not a private-head verifier.
 
-The next service/consumer slice must add the vault namespace with owner-signed
-write authorization, store immutable encrypted versions before head CAS, verify
-exact ciphertext readback, then commit the independent client floor. Ambiguous
-remote results retry the exact prepared bytes or reconcile; they must not reseal
-or blindly overwrite. A service session alone must not replace another owner's
-head. Conflict reconciliation must retain all version parents; this head primitive
-does not lift the existing 256-version graph cap or prove remote freshness.
+[s3r.ch#620](https://github.com/FyberLabs/s3r.ch/pull/620) composes installed
+SociACL head/floor verification with ciphertext publication. It checks current
+owner history and predecessor continuity, uploads immutable ciphertext before
+head CAS, verifies exact head and object readback, and only then advances the
+independent client floor. Ambiguous responses reconcile the exact prepared bytes;
+they do not reseal, overwrite a conflict, or trust a server revision as freshness.
+
+[s3r.ch#622](https://github.com/FyberLabs/s3r.ch/pull/622) adds `POST /api/vault`
+and the browser transport. The server resolves the session's current SociACL
+principal through its configured complete authority source. A separate owner
+signature binds the operation domain, site origin, vault, action, ciphertext
+digest, expected revision and a maximum 60-second validity window. A session
+alone cannot replace a head. Retired ownership history may remain non-authoritative;
+forged history and retired session signing keys refuse.
+
+The trusted deployment configuration binds each opaque vault ID to its owner.
+Requests cannot select a tenant, credential or arbitrary vault enrollment.
+The same shared storage space must be provisioned for both products; it is not
+automatically provisioned by these changes. Missing configuration leaves the
+route unavailable, and service credentials remain server-side.
+
+Authenticated object access uses create-only records whose addresses are a
+domain-separated hash of the vault ID and content digest. It never forwards a
+caller-selected digest to the tenant-wide object store. This isolates vaults
+even when another owner knows the ciphertext digest. Immutable retries compare
+the retained bytes' digest; reads recheck that digest. The 8 MiB transport bound
+does not replace the 1 MiB item or 16 KiB item-metadata caps.
+
+The service never receives the decrypted private head. The local custody
+adapter must decrypt/authenticate it before the SociACL client verifies it.
+The signed operation authorizes ciphertext storage, not plaintext access.
+
+## Remaining owner work and acceptance gates
+
+| Work | Required boundary |
+| --- | --- |
+| Container v2 and custody | Real local head encryption/decryption; passkey PRF or native-device daily slot plus mandatory recovery-key slot; SAVFILE1 import remains supported. |
+| Initial enrollment and recovery | Independently authenticated initial floor and owner/vault binding; fetching a server head must never silently establish or restore trust. |
+| Rust and CLI parity | Same head transcript and verification rules, durable independent state, prepared-byte retry, and visible conflicts. |
+| UI and cross-device sync | Compose custody with the implemented API/client; surface stale state and conflicts without automatic overwrite. |
+| Merge/checkpoint history | Retain all parents and authenticated checkpoints; this head primitive does not lift the 256-version graph cap. |
+| Shared-space operation | Provision scoped server credentials and bindings, then qualify the real TEST path through the naturally scheduled nightly. |
 
 Item reads still require Check and fresh epoch status. A valid head or storage
-receipt never grants a read, exposes plaintext to Spanopticon, or enables broker
-use. Rust parity, protected head custody beyond browser origin storage, vault
-container v2, shared-space permissions, CLI/UI and full sync remain open.
+ETag never grants a read, exposes plaintext to Spanopticon, or enables broker use.
+Browser origin storage is not protected custody against a compromised device or
+origin-wide rollback. Remote freshness remains a separate requirement.
 
 ## Validation
 
@@ -62,3 +96,11 @@ and missing-history refusals, independent anchors, reopen and lost-state refusal
 exact retry, concurrent forks and downgrade/skip refusal with in-memory IndexedDB.
 Packed-import and browser-bundle checks include the new export. Real browser and
 TEST storage lifecycles belong to the natural nightly; none is dispatched here.
+
+[s3r.ch#625](https://github.com/FyberLabs/s3r.ch/pull/625) composes the installed
+SociACL client, browser API transport, authenticated service and vault-scoped
+record adapter in one CI contract. It covers lost committed responses, exact
+retries, successor publication, replayed-head refusal, revoked sessions and
+retained state after reopening. Storage and custody are explicit in-process
+doubles. Passing this contract is not real-storage, real-browser PRF or deployed
+end-to-end vault acceptance. No nightly is manually dispatched for this work.
