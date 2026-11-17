@@ -30,3 +30,16 @@ export function admitKeyring(material:KeyringMaterial,expected:KeyringIdentity,c
 /** Explicit plaintext export for existing local SEA consumers. Fresh authority is
  * required. Caller owns the returned copy; never persist or log it unprotected. */
 export function exportCurrentPair(handle:ImportedKeyring,currentState:KeyringState):{pub:string;priv:string;epub:string;epriv:string};
+
+
+/** Prepared future keys; this handle is not an ImportedKeyring. */
+export type PendingKeyringRotation=ImportedKeyring & Readonly<{draft:Readonly<{
+ v:1;kind:'rotate';principal:string;seq:number;prevKey:string;nextKey:string;nextEpub:string;version:3;
+}>}>;
+/** Explicit preparation naming real trusted/lost local device IDs. */
+export function prepareKeyringRotation(handle:ImportedKeyring,trusted:readonly string[],lost:string,currentState:KeyringState):PendingKeyringRotation;
+/** Plaintext pending export for encryption while the origin is still current. */
+export function exportPendingKeyring(rotation:PendingKeyringRotation,currentState:KeyringState):Uint8Array;
+/** Requires authenticated history confirming exactly the prepared keys. */
+export function activatePendingKeyring(rotation:PendingKeyringRotation,currentState:KeyringState):ImportedKeyring;
+export function closePendingKeyring(rotation:PendingKeyringRotation):void;

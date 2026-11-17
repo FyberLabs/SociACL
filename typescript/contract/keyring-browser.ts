@@ -1,11 +1,13 @@
 /** Browser facade over the canonical keyring codec and validators. Import never
  * generates keys, contacts an issuer, grants access or writes browser storage. */
+import {prepareKeyringRotationFields} from './keyring-rotation.ts';
+import {mintRotationMaterial} from './rotation-mint.ts';
 import { decodeKeyring, encodeKeyring, type KeyringFields, type KeyringSource } from './keyring-codec.ts';
 import { validateKeyringFields, confirmKeyring } from './keyring-validation.ts';
 import { KEYRING_SERIAL_MAX } from './keyring-limits.ts';
 import { data } from '../ids/src/util.js';
 import { openItemDekReaderWrap } from '../ids/src/reader-wrap.js';
-import type { KeyringIdentity, ImportedKeyring, KeyringState, KeyringMaterial } from '../ids/src/keyring.js';
+import type { KeyringIdentity, ImportedKeyring, KeyringState, KeyringMaterial, PendingKeyringRotation } from '../ids/src/keyring.js';
 import type { ItemWrapContext } from '../ids/src/types.js';
 
 const held = new WeakMap<ImportedKeyring, KeyringFields>();
@@ -128,3 +130,45 @@ export function exportCurrentPair(handle:ImportedKeyring,currentState:KeyringSta
     return {pub:f.pub,priv:f.priv,epub:f.epub,epriv:f.epriv};
   } catch {return rejected();}
 }
+
+
+const pending = new WeakMap<PendingKeyringRotation,{origin:ImportedKeyring;fields:KeyringFields}>();
+/** Explicit lost-device preparation. New keys remain pending and grant no access. */
+export function prepareKeyringRotation(handle:ImportedKeyring,trusted:readonly string[],lost:string,
+ currentState:KeyringState):PendingKeyringRotation {
+ try {
+  const original=held.get(handle);if(!original)rejected();
+  const state=currentState();if(held.get(handle)!==original)rejected();
+  const {fields,draft}=prepareKeyringRotationFields(source(original),trusted,lost,state.rotations,state.context,
+   mintRotationMaterial,()=>{throw Error('missing-contact-secret');});
+  confirm(original,currentState);if(held.get(handle)!==original)rejected();
+  const result=Object.freeze({...identity(fields),genesisEpub:fields.genesisEpub,contentEpoch:fields.contentEpoch,
+   draft:Object.freeze({...draft})});
+  pending.set(result,{origin:handle,fields});return result;
+ }catch{return rejected();}
+}
+/** Plaintext pending material for explicit encryption. Requires the old key to
+ * remain current and open. This is not an admitted/current keyring export. */
+export function exportPendingKeyring(rotation:PendingKeyringRotation,currentState:KeyringState):Uint8Array {
+ try {
+  const item=pending.get(rotation);if(!item)rejected();
+  const original=held.get(item.origin);if(!original)rejected();
+  confirm(original,currentState);
+  if(pending.get(rotation)!==item||held.get(item.origin)!==original)rejected();
+  return encodeKeyring(source(item.fields));
+ }catch{return rejected();}
+}
+/** Promote only after authenticated complete history confirms exactly these new
+ * keys. Failure leaves the pending handle available for an explicit retry. */
+export function activatePendingKeyring(rotation:PendingKeyringRotation,currentState:KeyringState):ImportedKeyring {
+ try {
+  const item=pending.get(rotation);if(!item)rejected();
+  const original=held.get(item.origin);if(!original)rejected();
+  confirm(item.fields,currentState);
+  if(pending.get(rotation)!==item||held.get(item.origin)!==original)rejected();
+  const handle=Object.freeze({...identity(item.fields),genesisEpub:item.fields.genesisEpub,contentEpoch:item.fields.contentEpoch});
+  held.set(handle,item.fields);pending.delete(rotation);return handle;
+ }catch{return rejected();}
+}
+/** Drop pending secret references without changing stored or published state. */
+export function closePendingKeyring(rotation:PendingKeyringRotation):void {pending.delete(rotation);}

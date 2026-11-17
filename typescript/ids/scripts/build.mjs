@@ -18,7 +18,7 @@ for (const name of readdirSync(new URL('src/',root)).filter(f=>f.endsWith('.js')
 const {build}=await import('esbuild');
 const consumerEntries={
   'recovery': "export {openRecoveryKeyring,sealRecoveryKeyring,signRecoveryCurrentPut,encodePassphrase,RecoveryWeakPassphraseError} from '../../contract/recovery-browser.ts';",
-  'keyring': "export {admitKeyring,exportCurrentPair,importKeyring,exportKeyring,validateKeyring,closeKeyring,openKeyringContent} from '../../contract/keyring-browser.ts';",
+  'keyring': "export {prepareKeyringRotation,exportPendingKeyring,activatePendingKeyring,closePendingKeyring,admitKeyring,exportCurrentPair,importKeyring,exportKeyring,validateKeyring,closeKeyring,openKeyringContent} from '../../contract/keyring-browser.ts';",
   'contact-lane': "export {deriveContactLane,laneLookupKey,openContactLaneGrant,sealContactLaneGrant} from '../../contract/contact-lane-browser.ts';",
   'group-signing': "export {signMembershipAssent,signObjectSet,signGroupCancel,membershipSoul,objectSetSoul} from '../../src/group.js';",
   'private-media': "export {signPrivateMediaGrant,signPrivateMediaEpoch,signPrivateMediaFinalization,signPrivateMediaStatus,signPrivateMediaDeletion,signPrivateMediaGroupConfig} from '../../contract/private-media.ts'; export {parseGroupKeySnapshot,groupKeySnapshotId,signPrivateGroupEpoch,signPrivateGroupFinalization} from '../../contract/group-key-epoch.ts';",
