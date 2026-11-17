@@ -26,6 +26,7 @@ jobs:
       - run: npm ci --prefix typescript && npm ci --prefix typescript/ids
       - run: npm run --prefix typescript/ids build
       - run: node typescript/ids/scripts/check-rotation-portable.mjs
+      - run: node --experimental-strip-types --test --experimental-test-coverage --test-coverage-include=typescript/contract/rotation-mint.ts --test-coverage-lines=100 --test-coverage-branches=95 typescript/tests/test_rotation_mint.ts
       - run: node --experimental-strip-types --test --experimental-test-coverage --test-coverage-include=typescript/contract/keyring-rotation.ts --test-coverage-lines=95 --test-coverage-branches=80 typescript/tests/test_account_keyring.ts
       - run: node --experimental-strip-types --test typescript/tests/test_browser_keyring.ts
       - run: node --experimental-strip-types --test --experimental-test-coverage --test-coverage-include=typescript/contract/recovery-browser.ts --test-coverage-lines=95 --test-coverage-branches=75 typescript/tests/test_browser_recovery.ts
