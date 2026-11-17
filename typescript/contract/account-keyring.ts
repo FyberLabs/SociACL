@@ -1,3 +1,4 @@
+import {prepareKeyringRotationFields,type RotationMint,type RotationDraft} from './keyring-rotation.ts';
 /**
  * Account keyring. Holds the current signing key, the current encryption
  * key, the retired encryption keys, and the disclosed base lane id.
@@ -9,15 +10,12 @@
  *
  * Passphrase recovery lives in recovery.ts.
  */
-import { signingPoint, encryptionPoint, validateKeyringFields, confirmKeyring, requireLaneSet, requireContactSet, requireBoundedRotationSeq, requireHistoryCounts } from './keyring-validation.ts';
+import { validateKeyringFields, confirmKeyring, requireLaneSet, requireContactSet, requireBoundedRotationSeq, requireHistoryCounts } from './keyring-validation.ts';
 import { KEYRING_HISTORY_MAX } from "./keyring-limits.ts";
 import { randomBytes } from "node:crypto";
 import { p256 } from "@noble/curves/nist.js";
 import {
-  parseEip55,
   parsePrincipalId,
-  checkRotationDraft,
-  resolveCurrentKey,
   userSoul,
   type PrincipalId,
   type ResolutionContext,
@@ -33,26 +31,7 @@ export type RetiredEpriv = {
   readonly epriv: string;
 };
 
-export type RotationMint = {
-  readonly signingPub: string;
-  readonly signingPriv: string;
-  readonly epub: string;
-  readonly epriv: string;
-  readonly laneId: string;
-  readonly contactLaneSecret?: string;
-};
-
-export type RotationDraft = {
-  readonly v: 1;
-  readonly kind: "rotate";
-  readonly principal: PrincipalId;
-  readonly seq: number;
-  readonly prevKey: PrincipalId;
-  readonly nextKey: PrincipalId;
-  readonly nextEpub: PrincipalId;
-  readonly version: 3;
-};
-
+export type {RotationMint,RotationDraft} from './keyring-rotation.ts';
 export type KeyringDevice = {
   readonly localId: string;
   readonly keyring: AccountKeyring;
@@ -357,106 +336,14 @@ export function rotateKeyring(
   context: ResolutionContext,
   mint: () => RotationMint = mintRotation,
 ): KeyringRotation {
-  if (trusted.length === 0 || !trusted.includes(lost)) throw new Error("lost-device");
-  const seen = new Set<string>();
-  for (const localId of trusted) {
-    if (seen.has(localId)) throw new Error("duplicate-device");
-    seen.add(localId);
-    requireDevice(localId);
-  }
-  if (keyring.rotationSeq >= KEYRING_HISTORY_MAX) throw new Error("keyring-too-large");
-  const minted = mint();
-  const contactLaneSecret = minted.contactLaneSecret ?? randomDisjoint([
-    minted.laneId,
-    keyring.laneId(),
-    ...keyring.priorLanes(),
-    keyring.contactLaneSecret(),
-    ...keyring.priorContactSecrets(),
-  ]);
-  const nextPub = signingPoint(minted.signingPub, minted.signingPriv);
-  const nextEpub = encryptionPoint(minted.epub, minted.epriv);
-  if (nextEpub === nextPub || holdsPoint(keyring, nextEpub) || holdsPoint(keyring, nextPub)) {
-    throw new Error("epub-reuse");
-  }
-  if (
-    reusesLane(keyring, minted.laneId) ||
-    reusesContactSecret(keyring, contactLaneSecret) ||
-    reusesContactSecret(keyring, minted.laneId) ||
-    disclosedLane(contactLaneSecret, minted.laneId, keyring)
-  ) {
-    throw new Error("bad-lane");
-  }
-  keyring.confirm(rotations, context);
-  const resolved = resolveCurrentKey(keyring.principal, rotations, context);
-  if (!resolved.ok) throw new Error(resolved.reason);
-  const historical = new Set<string>([keyring.principal, keyring.pub]);
-  for (const row of resolved.value.rotations) {
-    historical.add(row.prevKey);
-    historical.add(row.nextKey);
-  }
-  if (historical.has(nextPub) || nextPub === resolved.value.bindingEpub || nextEpub === resolved.value.bindingEpub) {
-    throw new Error("epub-reuse");
-  }
-  if (keyring.retired().length >= 1024) throw new Error("too-many-keys");
-  const retired = [...keyring.retired(), { epub: keyring.epub, epriv: keyring.currentEpriv() }];
-  const seq = keyring.rotationSeq + 1;
-  const epoch = keyring.contentEpoch + 1;
-  if (!Number.isSafeInteger(seq)) throw new Error("rotation-rejected");
-  if (!Number.isSafeInteger(epoch)) throw new Error("content-epoch");
-  const rotated = new AccountKeyring(
-    keyring.principal,
-    keyring.genesisEpub,
-    nextPub,
-    minted.signingPriv,
-    nextEpub,
-    minted.epriv,
-    retired,
-    minted.laneId,
-    [...keyring.priorLanes(), keyring.laneId()],
-    contactLaneSecret,
-    [...keyring.priorContactSecrets(), keyring.contactLaneSecret()],
-    epoch,
-    seq,
-    keyringSeal,
-  );
-  const devices: KeyringDevice[] = [];
-  for (const localId of trusted) {
-    if (localId === lost) continue;
-    devices.push({
-      localId,
-      keyring: rotated,
-      grantsSee: false,
-      gunDocument: () => rotated.gunDocument(),
-    });
-  }
-  const draft: RotationDraft = {
-    v: 1,
-    kind: "rotate",
-    principal: rotated.principal,
-    seq,
-    prevKey: keyring.pub,
-    nextKey: nextPub,
-    nextEpub,
-    version: 3,
-  };
-  const published = checkRotationDraft(
-    {
-      v: 1,
-      kind: "rotate",
-      principal: draft.principal,
-      seq: draft.seq,
-      prevKey: draft.prevKey,
-      nextKey: draft.nextKey,
-      nextEpub: draft.nextEpub,
-      retainedLinks: [],
-    },
-    [],
-    keyring.principal,
-    rotations,
-    context,
-  );
-  if (!published.ok) throw new Error(published.reason);
-  return { keyring: rotated, devices, draft, lostLocalId: lost };
+  const {fields:f,draft}=prepareKeyringRotationFields(keyring,trusted,lost,rotations,context,mint,randomDisjoint);
+  const rotated = new AccountKeyring(f.principal as PrincipalId,f.genesisEpub as PrincipalId,f.pub as PrincipalId,
+    f.priv,f.epub as PrincipalId,f.epriv,f.retired as RetiredSecret[],f.laneId,f.priorLanes,
+    f.contactLaneSecret,f.priorContactSecrets,f.contentEpoch,f.rotationSeq,keyringSeal);
+  const devices:KeyringDevice[]=trusted.filter(localId=>localId!==lost).map(localId=>({
+    localId,keyring:rotated,grantsSee:false,gunDocument:()=>rotated.gunDocument(),
+  }));
+  return {keyring:rotated,devices,draft,lostLocalId:lost};
 }
 
 export function draftDocument(draft: RotationDraft): string {
@@ -487,38 +374,11 @@ function hold(
     fields.priorLanes, contactLaneSecret, fields.priorContactSecrets, contentEpoch, rotationSeq, keyringSeal);
 }
 
-function reusesLane(keyring: AccountKeyring, laneId: string): boolean {
-  return !/^[0-9a-f]{64}$/u.test(laneId) || laneId === keyring.laneId() || keyring.priorLanes().includes(laneId);
-}
-
-function reusesContactSecret(keyring: AccountKeyring, secret: string): boolean {
-  return !/^[0-9a-f]{64}$/u.test(secret) || secret === keyring.contactLaneSecret() || keyring.priorContactSecrets().includes(secret);
-}
-
-function disclosedLane(secret: string, laneId: string, keyring: AccountKeyring): boolean {
-  return secret === laneId || secret === keyring.laneId() || keyring.priorLanes().includes(secret);
-}
-
 function randomDisjoint(banned: readonly string[]): string {
   for (;;) {
     const lane = bytesToHex(randomBytes(32));
     if (!banned.includes(lane)) return lane;
   }
-}
-
-function holdsPoint(keyring: AccountKeyring, point: PrincipalId): boolean {
-  return (
-    point === keyring.principal ||
-    point === keyring.genesisEpub ||
-    point === keyring.pub ||
-    point === keyring.epub ||
-    keyring.retired().some((row) => row.epub === point)
-  );
-}
-
-function requireDevice(localId: string): void {
-  if (localId.length === 0) throw new Error("empty-device");
-  if (parsePrincipalId(localId).ok || parseEip55(localId).ok) throw new Error("device-id");
 }
 
 function randomScalar(): Uint8Array {
