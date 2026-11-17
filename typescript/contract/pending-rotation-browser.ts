@@ -1,6 +1,6 @@
 /** Explicit wallet-authorized next-key signing for an opaque prepared rotation. */
 import {data,unb64} from '../ids/src/util.js';
-import {signingBytes,signWithKeyring,checkRotationPublish,type PrincipalId} from '../ids/src/index.js';
+import {signingBytes,signWithKeyring,checkRotationPublish,resolveWalletLinkNow,linkId,type PrincipalId} from '../ids/src/index.js';
 import {exportPendingKeyring} from './keyring-browser.ts';
 import {decodeKeyring} from './keyring-codec.ts';
 import type {PendingKeyringRotation,KeyringState} from '../ids/src/keyring.js';
@@ -28,13 +28,23 @@ export function signPendingWalletRotation(pending:PendingKeyringRotation,input:u
   if(r.v!==1||r.kind!=='rotate'||r.principal!==draft.principal||r.seq!==draft.seq||r.prevKey!==draft.prevKey||
    r.nextKey!==draft.nextKey||r.nextEpub!==draft.nextEpub)return rejected();
   const transcript=signingBytes(candidate as any);if(!transcript.ok)return rejected();
+  const requireWallet=(state:ReturnType<KeyringState>)=>{
+   const own=data(state.context.links.get(String(a.value.link)));
+   if(!own.ok||own.value.kind!=='wallet'||typeof own.value.address!=='string')return rejected();
+   const selected=resolveWalletLinkNow(own.value.address as any,[...state.context.links.values()],
+    state.context.revocations??[],state.context);
+   if(!selected.ok||selected.value.principal!==draft.principal)return rejected();
+   const id=linkId(selected.value);if(!id.ok||id.value!==a.value.link)return rejected();
+  };
+  requireWallet(currentState());
   plain=exportPendingKeyring(pending,currentState);
   const fields=decodeKeyring(plain);scalar=unb64(fields.priv);
   const signature=signWithKeyring(scalar,transcript.value,fields.pub as PrincipalId);if(!signature.ok)return rejected();
-  const state=currentState();
+  const state=currentState();requireWallet(state);
   const checked=checkRotationPublish({...candidate,nextSig:signature.value},[],fields.principal as PrincipalId,state.rotations,state.context);
   if(!checked.ok)return rejected();
   const final=exportPendingKeyring(pending,currentState);final.fill(0);
+  requireWallet(currentState());
   const {attest:_,...request}=checked.value;
   return Object.freeze(request);
  }catch{return rejected();}

@@ -6,7 +6,7 @@ import {secp256k1} from '@noble/curves/secp256k1.js';
 import {sha256} from '@noble/hashes/sha2.js';
 import {keccak_256} from '@noble/hashes/sha3.js';
 import {b64,hex,utf8} from '../ids/src/util.js';
-import {signingBytes,historyState,checkRotationPublish,type ResolutionContext} from '../ids/src/index.js';
+import {signingBytes,historyState,checkRotationPublish,linkId,resolveWalletLinkNow,type ResolutionContext} from '../ids/src/index.js';
 import {admitKeyring,prepareKeyringRotation,closeKeyring,closePendingKeyring} from '../contract/keyring-browser.ts';
 import {signPendingWalletRotation} from '../contract/pending-rotation-browser.ts';
 const records=JSON.parse(readFileSync(new URL('../../vectors/ids/records.json',import.meta.url),'utf8'));
@@ -57,5 +57,34 @@ test('malformed, foreign, stale, closed or unproved transitions refuse without p
   assert.throws(()=>signPendingWalletRotation(f.pending,f.unsigned,()=>{throw Error('stale');}),/recovery-rejected/);
   assert.throws(()=>signPendingWalletRotation(f.pending,{...f.unsigned,issuedAt:-1},f.state),/recovery-rejected/);
   assert.throws(()=>signPendingWalletRotation(f.pending,f.unsigned,()=>{closePendingKeyring(f.pending);return f.state();}),/recovery-rejected/);
+ }finally{f.close();}
+});
+
+test('present wallet selection rejects superseded, revoked and ambiguous authorizers',()=>{
+ const rows=[
+  records.accept.find((r:any)=>r.name==='newest-wallet-wins'),
+  records.reject.find((r:any)=>r.name==='newest-wallet-revoked'),
+  records.reject.find((r:any)=>r.name==='duplicate-wallet-tie'),
+  records.reject.find((r:any)=>r.name==='same-principal-tie-0'),
+ ];
+ for(const row of rows){
+  const f=fixture();try{
+   const context=f.state().context;
+   for(const value of row.input){const id=linkId(value);assert(id.ok);context.links.set(id.value,value);}
+   context.revocations=row.revocations??[];
+   const selected=resolveWalletLinkNow(row.address,row.input,context.revocations,context);
+   if(selected.ok){const id=linkId(selected.value);assert(id.ok);assert.notEqual(id.value,f.unsigned.authorizer.link);}
+   assert.throws(()=>signPendingWalletRotation(f.pending,f.unsigned,f.state),/recovery-rejected/);
+  }finally{f.close();}
+ }
+});
+test('wallet eligibility is checked again before returning signed public data',()=>{
+ const f=fixture();let reads=0;
+ try{
+  assert.throws(()=>signPendingWalletRotation(f.pending,f.unsigned,()=>{
+   const state=f.state();
+   if(++reads>=5)state.context.revocations=records.reject.find((r:any)=>r.name==='newest-wallet-revoked').revocations;
+   return state;
+  }),/recovery-rejected/);
  }finally{f.close();}
 });
