@@ -152,7 +152,7 @@ test('activation requires the exact published new keys and consumes the pending 
  Object.assign(v.fields,{pub:v.fields.principal,priv:b64(signing),epub:v.fields.genesisEpub,epriv:b64(encryption),
   rotationSeq:0,contentEpoch:0,retired:[],priorLanes:[],priorContactSecrets:[]});
  const current=()=>{const s=state(v);return {...s,context:{...s.context,
-  links:new Map(records.context.links.filter((pair:any)=>pair[1].kind==='oidc'))}};};
+  links:new Map<string,unknown>(records.context.links.filter((pair:any)=>pair[1].kind==='oidc'))}};};
  const handle=admitKeyring(v.fields,expected(v),current);
  const pending=prepareKeyringRotation(handle,['lost','kept'],'lost',current);
  const encoded=exportPendingKeyring(pending,current),f=decodeKeyring(encoded);
