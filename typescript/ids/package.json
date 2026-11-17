@@ -76,6 +76,10 @@
     "./recovery": {
       "types": "./dist/recovery.d.ts",
       "default": "./dist/recovery.js"
+    },
+    "./vault-sync": {
+      "types": "./dist/vault-sync.d.ts",
+      "default": "./dist/vault-sync.js"
     }
   },
   "files": [
