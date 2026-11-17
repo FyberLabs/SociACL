@@ -17,6 +17,7 @@ for (const name of readdirSync(new URL('src/',root)).filter(f=>f.endsWith('.js')
 // Browser consumer entrypoints bundle the reference contracts, never Node crypto.
 const {build}=await import('esbuild');
 const consumerEntries={
+  'vault-sync': "export {VAULT_SYNC_HEAD_DOMAIN,vaultSyncHeadSigningBytes,vaultSyncHeadFloor,verifyVaultSyncHead,openVaultSyncHeadStore} from '../../contract/vault-sync-head.ts';",
   'recovery': "export {openRecoveryKeyring,sealRecoveryKeyring,sealPendingRecoveryKeyring,signRecoveryCurrentPut,signRecoveryPendingPut,encodePassphrase,RecoveryWeakPassphraseError} from '../../contract/recovery-browser.ts';",
   'keyring': "export {prepareKeyringRotation,exportPendingKeyring,activatePendingKeyring,closePendingKeyring,admitKeyring,exportCurrentPair,importKeyring,exportKeyring,validateKeyring,closeKeyring,openKeyringContent} from '../../contract/keyring-browser.ts';",
   'contact-lane': "export {deriveContactLane,laneLookupKey,openContactLaneGrant,sealContactLaneGrant} from '../../contract/contact-lane-browser.ts';",
