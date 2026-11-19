@@ -1,6 +1,6 @@
 // Run only through the central scheduled TEST lane.
 import { spawnSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
+import { createECDH, createHash, webcrypto } from 'node:crypto';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -27,7 +27,6 @@ try {
     typeof fixture.owner === 'string' && key.test(fixture.owner) &&
     typeof fixture.sessionKey === 'string' && key.test(fixture.sessionKey) &&
     typeof fixture.vaultId === 'string' && hex.test(fixture.vaultId) &&
-    /^[!-~][ -~]{0,8190}$/.test(fixture.cookie) && !/[\r\n]/.test(fixture.cookie) &&
     /^[A-Za-z0-9_-]{43}$/.test(fixture.scalar) &&
     Array.isArray(fixture.heads) && fixture.heads.length === 2, '');
 } catch {
@@ -44,13 +43,92 @@ function ciphertext(value) {
 
 const heads = fixture.heads.map(ciphertext);
 requireCondition(!heads[0].equals(heads[1]), 'Distinct prepared heads are required');
-const input = [origin, fixture.owner, fixture.vaultId, fixture.sessionKey, fixture.cookie, fixture.scalar].join('\n');
 const deniedInput = [origin, fixture.owner, fixture.vaultId, fixture.sessionKey, 'nightly_invalid=1', fixture.scalar].join('\n');
 const cli = join(process.env.CARGO_TARGET_DIR || 'target', 'debug', 'sociacl-vault');
 const built = spawnSync('cargo', ['build', '--locked', '-p', 'sociacl-encdisc', '--bin', 'sociacl-vault'], {
   stdio: 'ignore', timeout: 600000,
 });
 requireCondition(built.status === 0, 'Native vault CLI build failed');
+
+async function identityPost(action, body, cookie) {
+  const response = await fetch(origin + '/api/identity/sea/' + action, {
+    method: 'POST', redirect: 'error', cache: 'no-store', signal: AbortSignal.timeout(15000),
+    headers: { Origin: origin, 'Content-Type': 'application/json', ...(cookie ? { Cookie: cookie } : {}) },
+    body: JSON.stringify(body),
+  });
+  requireCondition(response.status === 200 &&
+    response.headers.get('content-type')?.split(';')[0] === 'application/json' && response.body,
+  'SEA session endpoint refused the fixture request');
+  const reader = response.body.getReader();
+  const chunks = [];
+  let size = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.length;
+      requireCondition(size <= 8192, 'SEA session response exceeded its limit');
+      chunks.push(value);
+    }
+    return { body: JSON.parse(Buffer.concat(chunks).toString('utf8')), cookies: response.headers.getSetCookie() };
+  } finally {
+    await reader.cancel().catch(() => {});
+  }
+}
+
+function cookieValue(response, name) {
+  const cookies = response.cookies.map(value => value.split(';', 1)[0]).filter(value => value.startsWith(name + '='));
+  const value = cookies[0]?.slice(name.length + 1);
+  requireCondition(cookies.length === 1 && /^[A-Za-z0-9_.-]{1,4096}$/.test(value ?? ''), 'Invalid SEA session cookie');
+  return value;
+}
+
+async function issueSession() {
+  try {
+    const scalar = Buffer.from(fixture.scalar, 'base64url');
+    const curve = createECDH('prime256v1');
+    let point;
+    try {
+      curve.setPrivateKey(scalar);
+      point = curve.getPublicKey();
+    } finally {
+      scalar.fill(0);
+    }
+    const [x, y] = fixture.sessionKey.split('.');
+    requireCondition(point.subarray(1, 33).toString('base64url') === x &&
+      point.subarray(33, 65).toString('base64url') === y, 'Fixture signer does not match its public key');
+    const signingKey = await webcrypto.subtle.importKey('jwk', {
+      kty: 'EC', crv: 'P-256', x, y, d: fixture.scalar,
+    }, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']);
+
+    const challengeName = '__Host-s3rch-squad-challenge';
+    const challengeReply = await identityPost('challenge', { key: fixture.sessionKey });
+    const challenge = cookieValue(challengeReply, challengeName);
+    requireCondition(challenge === challengeReply.body.challenge, 'SEA challenge binding mismatch');
+    const segments = challenge.split('.');
+    requireCondition(segments.length === 3, 'Invalid challenge framing');
+    const [header, claims] = segments.slice(0, 2).map(value => JSON.parse(Buffer.from(value, 'base64url').toString('utf8')));
+    const now = Math.floor(Date.now() / 1000);
+    requireCondition(header.alg === 'HS256' && /^s3rch-identity-challenge-v1(?::[0-9a-f]{64})?$/.test(header.typ) &&
+      Object.keys(claims).sort().join() === 'aud,exp,iat,iss,jti,sub' &&
+      claims.iss === origin && claims.aud === origin && claims.sub === fixture.sessionKey && hex.test(claims.jti) &&
+      Number.isSafeInteger(claims.iat) && Number.isSafeInteger(claims.exp) &&
+      claims.iat <= now && claims.exp > now && claims.exp - claims.iat === 60, 'SEA challenge intent mismatch');
+
+    // Gun SEA signs the SHA-256 digest of the challenge with P-256/SHA-256.
+    const hash = createHash('sha256').update(challenge).digest();
+    const sig = await webcrypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, signingKey, hash);
+    const signature = 'SEA' + JSON.stringify({ m: challenge, s: Buffer.from(sig).toString('base64') });
+    const exchanged = await identityPost('exchange', { challenge, signature }, challengeName + '=' + challenge);
+    requireCondition(exchanged.body.ok === true, 'SEA session exchange was refused');
+    const sessionName = '__Host-s3rch-squad-session';
+    return sessionName + '=' + cookieValue(exchanged, sessionName);
+  } catch {
+    throw new Error('Could not issue a fresh session for the dedicated TEST signer');
+  }
+}
+const session = await issueSession();
+const input = [origin, fixture.owner, fixture.vaultId, fixture.sessionKey, session, fixture.scalar].join('\n');
 
 function call(args, { credential = input, denied = false } = {}) {
   const command = spawnSync(cli, args, { input: credential, encoding: 'utf8', timeout: 390000, maxBuffer: 65536 });
@@ -93,4 +171,5 @@ try {
   requireCondition(retained?.bytes === after.bytes && retained.revision === after.revision, 'Refusal changed the live TEST head');
 } finally {
   rmSync(directory, { recursive: true, force: true });
+  await identityPost('logout', {}, session).catch(() => {});
 }
