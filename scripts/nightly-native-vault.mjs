@@ -27,7 +27,7 @@ try {
     typeof fixture.owner === 'string' && key.test(fixture.owner) &&
     typeof fixture.sessionKey === 'string' && key.test(fixture.sessionKey) &&
     typeof fixture.vaultId === 'string' && hex.test(fixture.vaultId) &&
-    /^[A-Za-z0-9_-]{43}$/.test(fixture.scalar) &&
+    typeof fixture.scalar === 'string' && /^[A-Za-z0-9_-]{43}$/.test(fixture.scalar) &&
     Array.isArray(fixture.heads) && fixture.heads.length === 2, '');
 } catch {
   throw new Error('Missing or invalid dedicated native vault TEST fixture');
@@ -110,6 +110,7 @@ async function issueSession() {
     const [header, claims] = segments.slice(0, 2).map(value => JSON.parse(Buffer.from(value, 'base64url').toString('utf8')));
     const now = Math.floor(Date.now() / 1000);
     requireCondition(header.alg === 'HS256' && /^s3rch-identity-challenge-v1(?::[0-9a-f]{64})?$/.test(header.typ) &&
+      Object.keys(header).sort().join() === 'alg,typ' &&
       Object.keys(claims).sort().join() === 'aud,exp,iat,iss,jti,sub' &&
       claims.iss === origin && claims.aud === origin && claims.sub === fixture.sessionKey && hex.test(claims.jti) &&
       Number.isSafeInteger(claims.iat) && Number.isSafeInteger(claims.exp) &&
@@ -142,8 +143,9 @@ function call(args, { credential = input, denied = false } = {}) {
   catch { throw new Error('Invalid CLI response'); }
 }
 
-const directory = mkdtempSync(join(tmpdir(), 'sociacl-vault-live-'));
+let directory;
 try {
+  directory = mkdtempSync(join(tmpdir(), 'sociacl-vault-live-'));
   const before = call(['read']);
   requireCondition(before === null || (hex.test(before.revision) && fixture.heads.includes(before.bytes)),
     'Unexpected head in the dedicated TEST fixture');
@@ -170,6 +172,9 @@ try {
   const retained = call(['read']);
   requireCondition(retained?.bytes === after.bytes && retained.revision === after.revision, 'Refusal changed the live TEST head');
 } finally {
-  rmSync(directory, { recursive: true, force: true });
-  await identityPost('logout', {}, session).catch(() => {});
+  try {
+    if (directory) rmSync(directory, { recursive: true, force: true });
+  } finally {
+    await identityPost('logout', {}, session).catch(() => {});
+  }
 }
