@@ -50,6 +50,11 @@ pub struct NativeVaultCustody {
     ciphertext: LocalVaultFileStore, root: PathBuf, device: u64, inode: u64, uid: u32, owner: String, vault: String, binding: String, create: Cell<bool>,
 }
 impl NativeVaultCustody {
+    pub(crate) fn matches(&self, owner: &str, vault: &str) -> bool {
+        self.owner == owner && self.vault == vault
+    }
+
+
     /// `create` creates both directories exclusively; it never repairs missing
     /// state in an existing installation. Initialization needs an external anchor.
     pub fn open(ciphertext_root: impl AsRef<Path>, state_root: impl AsRef<Path>, owner: &str, vault: &str,
