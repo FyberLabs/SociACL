@@ -279,3 +279,8 @@ pub use vault_native::{seal_native_vault_head, open_native_vault_head};
 mod vault_native_file;
 #[cfg(unix)]
 pub use vault_native_file::NativeVaultCustody;
+
+#[cfg(unix)]
+mod vault_http;
+#[cfg(unix)]
+pub use vault_http::{NativeVaultHttp, VaultHttpHead};

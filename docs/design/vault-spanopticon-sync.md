@@ -171,3 +171,34 @@ covers private-file persistence, reopen, exact retries, concurrent successors,
 expired authority before commit, lost state, unsafe modes and symlinks. It is
 ignored in PR CI and guarded against local/manual execution. Registration is not
 a passing nightly result; qualify it in the next natural scheduled batch.
+
+## Native signed HTTP and CLI
+
+On Unix, `NativeVaultHttp` signs the s3r.ch operation transcript with the
+current session key and sends it with the existing authenticated session cookie
+to the configured HTTPS `/api/vault` endpoint. The server still resolves current
+SociACL authority and applies the existing owner and vault binding. The native
+client supports head reads, create-only and conditional publication, and immutable
+object uploads and downloads. Publication confirms exact head readback and
+reconciles a lost response only when those exact bytes are already present.
+The HTTP revision is a CAS token. `sync_native_head` admits a downloaded native
+snapshot through the independent local floor and a fresh caller-provided identity
+context. The client never bootstraps that floor from the server.
+
+The `sociacl-vault` binary is available in the `sociacl-encdisc` crate and uses
+the system curl executable with HTTPS verification, no redirects or proxies,
+and bounded requests, responses and deadlines. Its remote commands are
+`read`, `publish FILE create`, `publish FILE CAS`, `get-object DIGEST` and
+`put-object FILE`. Supply six newline-separated stdin fields, in order:
+canonical HTTPS origin, genesis owner, vault ID, current session public key,
+Cookie header value, and unpadded base64url signing scalar. Supply these through
+a trusted credential provider. Input files contain raw ciphertext. Output is
+JSON with standard padded base64 ciphertext where applicable. The caller owns
+session acquisition and can retain the original file for an exact retry.
+
+`seal-head JSON-FILE` accepts a signed head and a passphrase on stdin (exact
+UTF-8 bytes) and emits the prepared SAVFILE1 ciphertext in JSON. It checks the
+head schema. The enrolled library consumer verifies the head against fresh trusted
+history before committing the floor. The CLI does not synthesize that history.
+Native SAVFILE1 and browser JWE remain distinct custody formats. Use a native
+vault binding until shared encrypted-container interoperability is available.
