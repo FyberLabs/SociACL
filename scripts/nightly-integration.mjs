@@ -16,6 +16,22 @@ const cases = [
   ...['browser-store', 'browser-client', 'browser-checkpoint-store', 'browser-checkpoint-client', 'browser-first-contact', 'browser-independent-witness', 'browser-reader-wrap']
     .map(name => [name, process.execPath, [`typescript/ids/scripts/${name}.mjs`]]),
 ];
+// Keep fixture credentials away from unrelated harnesses and report a missing
+// fixture as a failure when Infra explicitly enables this qualification lane.
+const vaultFixture = process.env.NIGHTLY_NATIVE_VAULT_FIXTURE_JSON ?? '';
+delete process.env.NIGHTLY_NATIVE_VAULT_FIXTURE_JSON;
+if (process.env.NIGHTLY_NATIVE_VAULT_ENABLED === 'true') {
+  test('native-vault-live-spanopticon', () => {
+    try {
+      execFileSync(process.execPath, ['scripts/nightly-native-vault.mjs'], {
+        cwd: root, stdio: 'pipe',
+        env: { ...process.env, NIGHTLY_NATIVE_VAULT_FIXTURE_JSON: vaultFixture },
+      });
+    } catch {
+      throw new Error('Native vault live qualification failed. Check the dedicated TEST binding and current fixture session.');
+    }
+  });
+}
 for (const [name, command, args] of cases) {
   test(name, () => {
     try {
