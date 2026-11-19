@@ -50,11 +50,11 @@ must be checked in a subsequent scheduled run, not inferred from this result.
 
 The scheduled native CLI live case is enabled by Infra with
 `NIGHTLY_NATIVE_VAULT_ENABLED=true`. It requires a dedicated vault binding at
-`https://test.s3r.ch`, a current session cookie and its matching signing key,
+`https://test.s3r.ch`, an enrolled signing key for fresh SEA challenge and exchange,
 and two prepared synthetic SAVFILE1 envelopes. The fixture JSON has fields
-`origin`, `dedicated` (true), `owner`, `sessionKey`, `vaultId`, `cookie`,
+`origin`, `dedicated` (true), `owner`, `sessionKey`, `vaultId`,
 `scalar` (unpadded base64url), and `heads` (two padded base64 ciphertexts).
-A missing or expired fixture fails the enabled case. Use a binding reserved
+The harness acquires its session at runtime. A missing or unadmitted fixture fails the enabled case. Use a binding reserved
 for this harness, never a shared user vault. The case alternates the two
 prepared heads and reuses two digest-addressed objects. A repeat run therefore
 requires neither remote deletion nor a reset. CI verifies signed CLI reads,
