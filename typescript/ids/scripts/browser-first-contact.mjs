@@ -1,6 +1,7 @@
-// Real browser persistence checks belong exclusively to the central scheduled batch.
-if (process.env.GITHUB_ACTIONS !== 'true' || process.env.GITHUB_EVENT_NAME !== 'schedule' ||
-    process.env.NIGHTLY_SUITE !== 'sociacl-browser') throw Error('Requires central nightly CI');
+// Real browser persistence checks belong exclusively to the central Infra nightly.
+import { requireInfraNightly } from '../../../scripts/nightly-context.mjs';
+
+requireInfraNightly();
 const { default: assert } = await import('node:assert/strict');
 const { mkdtemp,readFile,rm } = await import('node:fs/promises');
 const { tmpdir } = await import('node:os');

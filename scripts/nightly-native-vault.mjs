@@ -1,14 +1,13 @@
-// Run only through the central scheduled TEST lane.
+// Run only through the central Infra TEST lane.
 import { spawnSync } from 'node:child_process';
 import { createECDH, createHash, webcrypto } from 'node:crypto';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-if (process.env.GITHUB_ACTIONS !== 'true' || process.env.GITHUB_EVENT_NAME !== 'schedule' ||
-    process.env.NIGHTLY_SUITE !== 'sociacl-browser' || process.env.GITHUB_REPOSITORY !== 'FyberLabs/SociACL') {
-  throw new Error('Native vault qualification requires the scheduled Infra lane');
-}
+import { requireInfraNightly } from './nightly-context.mjs';
+
+requireInfraNightly();
 
 const fixtureText = process.env.NIGHTLY_NATIVE_VAULT_FIXTURE_JSON ?? '';
 delete process.env.NIGHTLY_NATIVE_VAULT_FIXTURE_JSON;

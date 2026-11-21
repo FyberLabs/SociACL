@@ -3,10 +3,9 @@ import { test } from 'node:test';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
-if (process.env.GITHUB_ACTIONS !== 'true' || process.env.GITHUB_EVENT_NAME !== 'schedule' ||
-    process.env.NIGHTLY_SUITE !== 'sociacl-browser' || process.env.GITHUB_REPOSITORY !== 'FyberLabs/SociACL') {
-  throw new Error('Integration execution requires the central Infra nightly batch');
-}
+import { requireInfraNightly } from './nightly-context.mjs';
+
+requireInfraNightly();
 const root = fileURLToPath(new URL('../', import.meta.url));
 const cases = [
   ['rust-c-python-runtime', 'bash', ['scripts/test-runtime.sh']],
