@@ -1,6 +1,8 @@
 // Real Chromium + IndexedDB acceptance contract using public, synthetic SEA keys.
-// Central scheduled CI only; no hosted accounts, service calls or login fixtures.
-if(process.env.GITHUB_ACTIONS!=='true'||process.env.GITHUB_EVENT_NAME!=='schedule'||process.env.NIGHTLY_SUITE!=='sociacl-browser')throw Error('Requires central nightly CI');
+// Central Infra CI only; no hosted accounts, service calls or login fixtures.
+import { requireInfraNightly } from '../../../scripts/nightly-context.mjs';
+
+requireInfraNightly();
 import assert from 'node:assert/strict';
 import {mkdtemp,readFile,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';

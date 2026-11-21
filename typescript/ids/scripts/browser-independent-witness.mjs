@@ -1,6 +1,7 @@
-// Real-browser state transitions and restart belong only to the central schedule.
-if(process.env.GITHUB_ACTIONS!=='true'||process.env.GITHUB_EVENT_NAME!=='schedule'||
-  process.env.NIGHTLY_SUITE!=='sociacl-browser'||process.env.GITHUB_REPOSITORY!=='FyberLabs/SociACL')throw Error('Requires central nightly CI');
+// Real-browser state transitions and restart belong only to the central Infra nightly.
+import { requireInfraNightly } from '../../../scripts/nightly-context.mjs';
+
+requireInfraNightly();
 const {default:assert}=await import('node:assert/strict');
 const {mkdtemp,rm}=await import('node:fs/promises');
 const {tmpdir}=await import('node:os');const {join}=await import('node:path');

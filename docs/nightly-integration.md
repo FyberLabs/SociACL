@@ -1,6 +1,7 @@
 # Nightly integration and browser E2E
 
-The scheduled `FyberLabs/infra` nightly batch owns SociACL integration execution,
+The `FyberLabs/infra` nightly batch owns SociACL integration execution for
+scheduled runs and owner-started manual runs from `main`,
 with one concurrency group and cancellation of superseded runs. The
 `sociacl-browser` registry entry follows current `master`; its name is retained
 for historical result comparison. SociACL has no independent cron or manual

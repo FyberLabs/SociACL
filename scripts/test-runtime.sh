@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Called only by the scheduled integration adapter.
+# Called only by the Infra nightly integration adapter.
 set -euo pipefail
-[[ "${GITHUB_ACTIONS:-}" == true && "${GITHUB_EVENT_NAME:-}" == schedule && "${NIGHTLY_SUITE:-}" == sociacl-browser ]] || { echo 'Requires the Infra nightly batch' >&2; exit 1; }
 root="$(cd "$(dirname "$0")/.." && pwd)"
+node --input-type=module -e 'const { requireInfraNightly } = await import(process.argv[1]); requireInfraNightly();' "$root/scripts/nightly-context.mjs"
 cd "$root"
 cargo build --workspace --locked
 cargo run --locked -p sociacl-core --example check

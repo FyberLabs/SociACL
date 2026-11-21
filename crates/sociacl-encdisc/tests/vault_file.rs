@@ -1,17 +1,13 @@
 #![cfg(unix)]
+mod nightly_context;
 use sociacl_encdisc::*;
 use sociacl_ids::parse_principal_id;
 use std::{fs, os::unix::fs::{symlink, PermissionsExt}, sync::{Arc, Barrier}};
 const OWNER: &str = "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY.T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU";
-fn guard() {
-    assert_eq!(std::env::var("GITHUB_ACTIONS").as_deref(), Ok("true"));
-    assert_eq!(std::env::var("GITHUB_EVENT_NAME").as_deref(), Ok("schedule"));
-    assert_eq!(std::env::var("NIGHTLY_SUITE").as_deref(), Ok("sociacl-browser"));
-}
 #[test]
-#[ignore = "filesystem lifecycle belongs to central scheduled CI"]
+#[ignore = "filesystem lifecycle belongs to central Infra nightly CI"]
 fn private_atomic_cas_restart_retry_and_hostile_paths() {
-    guard();
+    nightly_context::require_infra_nightly();
     let owner = parse_principal_id(OWNER).unwrap();
     let password = "violet radar platypus 47 granite orchestra";
     let a = seal_local_vault_item(&owner, None, b"name", b"original", password).unwrap();
@@ -55,9 +51,9 @@ fn private_atomic_cas_restart_retry_and_hostile_paths() {
 }
 
 #[test]
-#[ignore = "encrypted history persistence belongs to central scheduled CI"]
+#[ignore = "encrypted history persistence belongs to central Infra nightly CI"]
 fn encrypted_history_survives_file_restart_and_exact_retry() {
-    guard();
+    nightly_context::require_infra_nightly();
     use sociacl_ids::{history_state, PrincipalId, Jwks, SiwePolicy, ResolutionContext};
     let fixture:serde_json::Value=serde_json::from_str(include_str!("../../../vectors/encrypted-discovery/sea-fixture.json")).unwrap();
     let account=GenesisAccount::import(fixture["laneId"].as_str().unwrap(),fixture["signing"]["pub"].as_str().unwrap(),

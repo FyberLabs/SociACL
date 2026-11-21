@@ -1,4 +1,5 @@
 #![cfg(unix)]
+mod nightly_context;
 use sociacl_encdisc::*;
 use sociacl_ids::{history_state, parse_principal_id, sign_with_keyring, Jwks, PrincipalId, Reason, ResolutionContext, SiwePolicy};
 use std::{cell::Cell, fs, os::unix::fs::{symlink, PermissionsExt}, sync::{Arc, Barrier}};
@@ -20,11 +21,9 @@ fn policy() -> SiwePolicy {
     SiwePolicy { allowed_domains: vec![], allowed_uris: vec![], allowed_chain_ids: vec![], clock_skew_seconds: 0 }
 }
 #[test]
-#[ignore = "native custody filesystem lifecycle belongs to central scheduled CI"]
+#[ignore = "native custody filesystem lifecycle belongs to central Infra nightly CI"]
 fn native_custody_restart_retry_race_and_fail_closed_state() {
-    assert_eq!(std::env::var("GITHUB_ACTIONS").as_deref(), Ok("true"));
-    assert_eq!(std::env::var("GITHUB_EVENT_NAME").as_deref(), Ok("schedule"));
-    assert_eq!(std::env::var("NIGHTLY_SUITE").as_deref(), Ok("sociacl-browser"));
+    nightly_context::require_infra_nightly();
     let initial = signed(None, "34");
     let envelope = seal_native_vault_head(&initial, PASSWORD).unwrap();
     let base = std::env::temp_dir().join(format!("sociacl-native-{}", envelope.item_id()));
